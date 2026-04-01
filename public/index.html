@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>软件开发需求自动生成原型</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="hero">
+        <p class="eyebrow">Phase One Prototype</p>
+        <h1>软件开发需求自动生成平台</h1>
+        <p class="subtitle">
+          上传系统需求 PDF、模型 PDF 和 Simulink 生成 C 文件，自动生成可审核、可追溯的软件开发需求草稿。
+        </p>
+      </section>
+
+      <section class="panel panel-grid">
+        <form id="project-form" class="card">
+          <h2>1. 创建项目</h2>
+          <label>
+            项目名称
+            <input name="name" required placeholder="例如：电机控制需求补写" />
+          </label>
+          <label>
+            项目说明
+            <textarea name="description" rows="3" placeholder="可选，写明项目背景或输入说明"></textarea>
+          </label>
+          <button type="submit">创建项目</button>
+        </form>
+
+        <form id="upload-form" class="card">
+          <h2>2. 上传输入物</h2>
+          <label>
+            项目
+            <select id="project-select" name="projectId" required></select>
+          </label>
+          <label>
+            系统需求 PDF
+            <input type="file" name="systemPdf" accept=".pdf" />
+          </label>
+          <label>
+            模型 PDF
+            <input type="file" name="modelPdf" accept=".pdf" multiple />
+          </label>
+          <label>
+            生成 C 文件
+            <input type="file" name="generatedCode" accept=".c,.h,.txt" multiple />
+          </label>
+          <label>
+            SLX（预留）
+            <input type="file" name="slx" accept=".slx" multiple />
+          </label>
+          <button type="submit">上传文件</button>
+        </form>
+      </section>
+
+      <section class="panel panel-grid">
+        <div class="card">
+          <h2>3. 生成需求</h2>
+          <p id="meta"></p>
+          <button id="generate-button">启动生成</button>
+          <p id="status" class="status"></p>
+        </div>
+        <div class="card">
+          <h2>4. 审核说明</h2>
+          <ul class="plain-list">
+            <li>系统需求作为最高优先级事实源。</li>
+            <li>模型 PDF 与 C 文件用于补充实现细节与佐证。</li>
+            <li>每条需求都显示来源证据与审核状态。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="card">
+          <h2>项目概览</h2>
+          <div id="project-summary" class="summary"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="card">
+          <h2>生成结果</h2>
+          <div id="requirements" class="requirements"></div>
+        </div>
+      </section>
+    </main>
+
+    <template id="requirement-template">
+      <article class="requirement">
+        <header>
+          <div>
+            <strong data-field="requirementId"></strong>
+            <p data-field="title"></p>
+          </div>
+          <span class="pill" data-field="reviewStatus"></span>
+        </header>
+        <textarea data-field="requirementText" rows="4"></textarea>
+        <div class="meta-grid">
+          <div>
+            <span class="label">类型</span>
+            <p data-field="type"></p>
+          </div>
+          <div>
+            <span class="label">置信度</span>
+            <p data-field="confidence"></p>
+          </div>
+          <div>
+            <span class="label">验证建议</span>
+            <p data-field="verificationHint"></p>
+          </div>
+          <div>
+            <span class="label">冲突提示</span>
+            <p data-field="conflictNote"></p>
+          </div>
+        </div>
+        <div>
+          <span class="label">来源依据</span>
+          <ul data-field="sources" class="plain-list"></ul>
+        </div>
+        <div class="review-actions">
+          <button data-action="accept" type="button">接受</button>
+          <button data-action="revise" class="secondary" type="button">修改后保存</button>
+          <button data-action="reject" class="danger" type="button">驳回</button>
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
