@@ -1,0 +1,37 @@
+{
+  "name": "default-template",
+  "language": "zh-CN",
+  "requirementIdPrefix": "SWR",
+  "sections": [
+    {
+      "title": "功能需求",
+      "type": "functional",
+      "maxItems": 4,
+      "verificationHint": "通过功能测试验证输入触发与输出响应"
+    },
+    {
+      "title": "接口与信号需求",
+      "type": "interface",
+      "maxItems": 3,
+      "verificationHint": "通过接口联调或仿真验证信号定义和边界"
+    },
+    {
+      "title": "状态与模式需求",
+      "type": "state",
+      "maxItems": 3,
+      "verificationHint": "通过状态迁移测试验证模式切换行为"
+    },
+    {
+      "title": "时序与周期需求",
+      "type": "timing",
+      "maxItems": 2,
+      "verificationHint": "通过周期采样和调度测试验证执行频率"
+    },
+    {
+      "title": "诊断与异常处理需求",
+      "type": "diagnostic",
+      "maxItems": 3,
+      "verificationHint": "通过故障注入或边界条件测试验证告警和保护逻辑"
+    }
+  ]
+}
