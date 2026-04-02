@@ -1,0 +1,107 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="cli-anything" agent="cli-anything-drawio/1.0.0" version="24.0.0">
+  <diagram id="diagram_1775109465115090" name="Page-1">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="user_actor" value="业务/工程人员" style="shape=mxgraph.basic.person;whiteSpace=wrap;html=1;fillColor=#F3F3F3;strokeColor=#333333;fontSize=14;" vertex="1" parent="1">
+          <mxGeometry x="25.0" y="70.0" width="90.0" height="120.0" as="geometry" />
+        </mxCell>
+        <mxCell id="frontend_ui" value="1. 用户上传资料并点击生成&#10;网页界面&#10;选择项目、上传文件、发起生成" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#333333;fontSize=14;fillColor=#D9EAF7;" vertex="1" parent="1">
+          <mxGeometry x="130.0" y="55.0" width="250.0" height="120.0" as="geometry" />
+        </mxCell>
+        <mxCell id="express_api" value="2. 系统接收生成请求&#10;后端接口&#10;把前端请求交给生成流程" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#333333;fontSize=14;fillColor=#DCECC9;" vertex="1" parent="1">
+          <mxGeometry x="420.0" y="60.0" width="220.0" height="110.0" as="geometry" />
+        </mxCell>
+        <mxCell id="project_service" value="4. 先把材料归档&#10;记录项目、文件名、文件类型、上传时间&#10;方便后续追溯" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;strokeColor=#333333;fontSize=14;fillColor=#FCE5CD;" vertex="1" parent="1">
+          <mxGeometry x="300.0" y="300.0" width="260.0" height="120.0" as="geometry" />
+        </mxCell>
+        <mxCell id="pipeline_service" value="3. 生成流程总控&#10;把'读取输入-抽取信息-调用大模型-校验结果'串起来" style="rounded=1;whiteSpace=wrap;html=1;strokeColor=#333333;fontSize=14;fillColor=#FFF2CC;" vertex="1" parent="1">
+          <mxGeometry x="700.0" y="55.0" width="300.0" height="120.0" as="geometry" />
+        </mxCell>
+        <mxCell id="local_storage" value="项目资料库&#10;保存原始输入、生成结果、审核记录" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;strokeColor=#333333;fontSize=14;fillColor=#CFE2F3;" vertex="1" parent="1">
+          <mxGeometry x="250.0" y="545.0" width="250.0" height="120.0" as="geometry" />
+        </mxCell>
+        <mxCell id="extraction_service" value="5. 从输入材料里提取关键信息&#10;PDF: 提取正文、段落、关键描述&#10;C 代码: 提取函数、条件、阈值、接口线索&#10;产出: 摘要 + 证据片段" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#333333;fontSize=14;fillColor=#F4CCCC;" vertex="1" parent="1">
+          <mxGeometry x="600.0" y="280.0" width="310.0" height="155.0" as="geometry" />
+        </mxCell>
+        <mxCell id="llm_service" value="7. 调用大模型生成软件设计需求&#10;把'项目背景 + 输入证据 + 编写规范'一起发给大模型&#10;未配置 API 时走本地规则兜底" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#333333;fontSize=14;fillColor=#D9D2E9;" vertex="1" parent="1">
+          <mxGeometry x="1220.0" y="280.0" width="320.0" height="150.0" as="geometry" />
+        </mxCell>
+        <mxCell id="validation_service" value="8. 自动检查生成结果&#10;是否缺来源&#10;是否有重复&#10;是否表述模糊" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#333333;fontSize=14;fillColor=#F9CB9C;" vertex="1" parent="1">
+          <mxGeometry x="1220.0" y="505.0" width="260.0" height="120.0" as="geometry" />
+        </mxCell>
+        <mxCell id="skill_template" value="6. 准备生成规范&#10;需求编写规则 skills&#10;文档模板 template&#10;输出格式 schema" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;strokeColor=#333333;fontSize=14;fillColor=#FFF2CC;" vertex="1" parent="1">
+          <mxGeometry x="950.0" y="300.0" width="240.0" height="120.0" as="geometry" />
+        </mxCell>
+        <mxCell id="input_files" value="输入材料&#10;系统需求 PDF&#10;模型说明 PDF&#10;生成的 C 代码&#10;SLX 模型文件(当前预留)" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=0.27;strokeColor=#333333;fontSize=14;fillColor=#EAD1DC;" vertex="1" parent="1">
+          <mxGeometry x="40.0" y="290.0" width="220.0" height="145.0" as="geometry" />
+        </mxCell>
+        <mxCell id="openai_api" value="大模型能力&#10;理解输入材料&#10;按规范组织内容&#10;生成结构化需求条目" style="ellipse;shape=cloud;whiteSpace=wrap;html=1;strokeColor=#333333;fontSize=14;fillColor=#D0E0E3;" vertex="1" parent="1">
+          <mxGeometry x="1255.0" y="95.0" width="250.0" height="110.0" as="geometry" />
+        </mxCell>
+        <mxCell id="output_artifacts" value="9. 形成软件设计需求草稿&#10;需求条目 requirements&#10;来源追溯 traces&#10;风险/冲突提示 conflicts" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;strokeColor=#333333;fontSize=14;fillColor=#FCE5CD;" vertex="1" parent="1">
+          <mxGeometry x="900.0" y="540.0" width="260.0" height="130.0" as="geometry" />
+        </mxCell>
+        <mxCell id="review_loop" value="10. 人工审核与修订&#10;接受、修改、驳回&#10;把最终意见回写到项目中" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;strokeColor=#333333;fontSize=14;fillColor=#D9EAD3;" vertex="1" parent="1">
+          <mxGeometry x="590.0" y="545.0" width="240.0" height="120.0" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="上传资料、选择项目、点击生成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="user_actor" target="frontend_ui">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="把生成请求发送到后端" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="frontend_ui" target="express_api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="后端把任务交给生成流程" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="express_api" target="project_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="把这些输入材料挂到当前项目下" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="input_files" target="project_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="读取原始材料并开始抽取" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="project_service" target="extraction_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" value="把提取出的摘要和证据片段送去生成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="extraction_service" target="llm_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" value="把需求编写规范一起送去生成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="skill_template" target="llm_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" value="调用大模型理解材料并组织需求" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="openai_api" target="llm_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" value="得到结构化的软件设计需求草稿" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="llm_service" target="validation_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n10" value="标记问题、冲突和风险" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="validation_service" target="output_artifacts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n11" value="把草稿展示给人看并审核" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="output_artifacts" target="review_loop">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n12" value="把人工审核结论保存下来" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="review_loop" target="local_storage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n13" value="所有原始资料和结果都可追溯" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="project_service" target="local_storage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n14" value="把结果返回前端页面" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="express_api" target="output_artifacts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n15" value="启动整条生成链路" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="express_api" target="pipeline_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n16" value="读取这个项目下的输入材料" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="pipeline_service" target="project_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n17" value="协调抽取、生成、校验" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="pipeline_service" target="llm_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n18" value="汇总最终输出并准备保存" style="edgeStyle=orthogonalEdgeStyle;rounded=0;" edge="1" parent="1" source="pipeline_service" target="validation_service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
