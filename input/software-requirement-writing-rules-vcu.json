@@ -1,0 +1,215 @@
+{
+  "documentType": "writing_rules",
+  "domain": "embedded_vcu_software_requirement",
+  "title": "嵌入式VCU软件需求撰写规范总结",
+  "language": "zh-CN",
+  "version": "v1",
+  "source": {
+    "providedBy": "engineer_defined_rules",
+    "ingestMethod": "manual_text_extraction",
+    "collectedDate": "2026-04-04"
+  },
+  "sections": [
+    {
+      "sectionId": "structure",
+      "sectionTitle": "结构规范：层次清晰，模块化",
+      "rules": [
+        {
+          "ruleId": "structure-hierarchical-headings",
+          "ruleTitle": "分级标题",
+          "category": "structure",
+          "summary": "使用多级标题明确功能模块的从属关系，便于导航和管理。",
+          "requirements": [
+            "使用多级标题，例如 3.31 -> 3.31.1。",
+            "父子功能关系需要在标题层级中体现。",
+            "标题命名应便于定位模块边界和上下级关系。"
+          ],
+          "example": "“扭矩干预”是父功能，“ESC前/后轴扭矩干预”是其子功能。"
+        },
+        {
+          "ruleId": "structure-functional-isolation",
+          "ruleTitle": "功能隔离",
+          "category": "structure",
+          "summary": "将紧密关联但物理对象不同的需求拆分为独立子章节，保持结构对称，便于开发和测试。",
+          "requirements": [
+            "对物理对象不同但逻辑关联紧密的需求进行章节拆分。",
+            "相似对象的章节结构应尽量对称。",
+            "拆分后的章节应支持独立开发和独立测试。"
+          ],
+          "example": "前轴需求与后轴需求拆分为独立子章节。"
+        }
+      ]
+    },
+    {
+      "sectionId": "description",
+      "sectionTitle": "描述方式：结构化与条件化",
+      "rules": [
+        {
+          "ruleId": "description-activation-logic",
+          "ruleTitle": "激活/判断逻辑",
+          "category": "description",
+          "summary": "采用标准条件结构表达激活和判断逻辑，确保逻辑关系明确、无二义性。",
+          "requirements": [
+            "优先采用“当满足以下任一条件…，否则…”的句式。",
+            "条件项使用 1, 2, 3 等分点列出。",
+            "显式写明逻辑关系，例如“与”“或”。"
+          ]
+        },
+        {
+          "ruleId": "description-arbitration-priority",
+          "ruleTitle": "计算与仲裁逻辑：优先级声明",
+          "category": "description",
+          "summary": "多源请求仲裁时，需要直接声明优先级顺序。",
+          "requirements": [
+            "使用“优先级顺序为：X > Y > Z”这类句式。",
+            "优先级关系必须完整且不可省略。"
+          ]
+        },
+        {
+          "ruleId": "description-arbitration-branching",
+          "ruleTitle": "计算与仲裁逻辑：分情况阐述",
+          "category": "description",
+          "summary": "使用条件分支句式覆盖所有可能场景。",
+          "requirements": [
+            "采用“当…时，输出=…”的句式。",
+            "覆盖全部主要输入组合与输出路径。",
+            "避免遗漏默认路径或兜底行为。"
+          ]
+        },
+        {
+          "ruleId": "description-boundary-definition",
+          "ruleTitle": "计算与仲裁逻辑：边界定义",
+          "category": "description",
+          "summary": "对状态、阈值和判断范围给出清晰边界定义。",
+          "requirements": [
+            "对激活等状态给出明确阈值。",
+            "对区间范围给出上下边界及包含关系。",
+            "避免使用模糊区间描述。"
+          ],
+          "example": "大于低阈值且小于等于高阈值。"
+        }
+      ]
+    },
+    {
+      "sectionId": "interface_and_data",
+      "sectionTitle": "接口与数据定义：精准明确",
+      "rules": [
+        {
+          "ruleId": "interface-signal-naming",
+          "ruleTitle": "信号命名规范",
+          "category": "interface_and_data",
+          "summary": "所有输入输出信号名称应具备自解释性，并体现来源或类型。",
+          "requirements": [
+            "输入信号优先体现来源系统标识。",
+            "命名应能让读者快速识别信号用途和来源。",
+            "避免无语义缩写或无法追溯来源的命名。"
+          ],
+          "subRules": [
+            {
+              "title": "输入信号",
+              "requirements": [
+                "使用来源系统前缀，例如 ESC_、EHB_。",
+                "前缀应与实际来源系统保持一致。"
+              ],
+              "example": "ESC_ 开头表示来自 ESP，EHB_ 表示来自电子液压制动系统。"
+            },
+            {
+              "title": "内部信号/变量",
+              "requirements": [
+                "在括号内注明内部变量名。",
+                "补充变量用途说明，例如“内部使用”。"
+              ],
+              "example": "ESCWhlTq_tqTarFrntAxle（内部使用）。"
+            }
+          ]
+        },
+        {
+          "ruleId": "interface-explicit-values",
+          "ruleTitle": "数值明确",
+          "category": "interface_and_data",
+          "summary": "枚举值和状态值需要给出具体定义，不能只写名称。",
+          "requirements": [
+            "明确列出取值与语义映射。",
+            "必要时使用十六进制或约定编码表示状态。"
+          ],
+          "example": "0x1: Active, 0x3: ESPCtrlSplt。"
+        }
+      ]
+    },
+    {
+      "sectionId": "traceability_and_consistency",
+      "sectionTitle": "可追溯性与一致性",
+      "rules": [
+        {
+          "ruleId": "traceability-internal-reference",
+          "ruleTitle": "内部引用",
+          "category": "traceability_and_consistency",
+          "summary": "通过引用同一文档内的其他需求项避免重复定义，并维持需求一致性。",
+          "requirements": [
+            "优先复用既有需求定义，不重复展开已有概念。",
+            "引用时应保留需求编号。",
+            "被引用项与当前需求之间的依赖关系应清晰可见。"
+          ],
+          "example": "引用 (SMIVCU-10160)、(SMIVCU-9477) 等需求项。"
+        },
+        {
+          "ruleId": "traceability-external-system-linkage",
+          "ruleTitle": "外部系统联动",
+          "category": "traceability_and_consistency",
+          "summary": "需求中应明确与外部系统或功能的交互条件，体现系统级设计关系。",
+          "requirements": [
+            "明确与外部系统的输入输出或触发关系。",
+            "说明与 ESC、ADAS 等系统功能的交互条件。",
+            "确保系统边界和协同关系可追踪。"
+          ]
+        }
+      ]
+    },
+    {
+      "sectionId": "testability",
+      "sectionTitle": "可测试性",
+      "rules": [
+        {
+          "ruleId": "testability-verifiable-requirements",
+          "ruleTitle": "每条需求应可验证",
+          "category": "testability",
+          "summary": "每条需求应天然对应可执行或可设计的测试场景。",
+          "requirements": [
+            "激活判断类需求应支持通过输入组合验证输出状态。",
+            "计算与仲裁类需求应支持按优先级分支设计测试用例。",
+            "需求表述应足够明确，使测试预期可判定。"
+          ],
+          "examples": [
+            "通过不同输入条件组合检查输出标志位是否符合预期。",
+            "为每个优先级分支和计算路径设计测试用例，验证输出扭矩值是否正确。"
+          ]
+        }
+      ]
+    },
+    {
+      "sectionId": "non_functional_constraints",
+      "sectionTitle": "非功能性约束",
+      "rules": [
+        {
+          "ruleId": "nonfunctional-safety-boundary",
+          "ruleTitle": "安全与边界处理",
+          "category": "non_functional_constraints",
+          "summary": "通过补充说明明确最大/最小限制等安全边界，体现鲁棒性设计要求。",
+          "requirements": [
+            "对输出施加最大/最小边界限制。",
+            "边界限制可通过“注”等补充说明形式给出。",
+            "安全约束应明确、可验证、不可省略。"
+          ]
+        }
+      ]
+    }
+  ],
+  "writingPrinciples": [
+    "结构需要清晰分层，支持模块化维护。",
+    "描述方式要结构化、条件化、无歧义。",
+    "接口和数据定义必须精准明确。",
+    "需求之间需要可追溯且保持一致。",
+    "每条需求都应具备可测试性。",
+    "安全边界和非功能约束需要显式写出。"
+  ]
+}

@@ -1,0 +1,128 @@
+{
+  "documentType": "system_requirements_example",
+  "domain": "embedded_vcu",
+  "title": "系统需求示例：扭矩干预功能",
+  "language": "zh-CN",
+  "version": "v1",
+  "source": {
+    "providedBy": "debug_example_image",
+    "ingestMethod": "manual_text_extraction_from_image",
+    "collectedDate": "2026-04-04"
+  },
+  "section": {
+    "sectionNumber": "5.30",
+    "sectionTitle": "扭矩干预功能"
+  },
+  "requirements": [
+    {
+      "requirementId": "SMiVCU-9978",
+      "topic": "ESC扭矩干预请求响应与优先级",
+      "rawText": "当ESC有升扭/降扭和制动再生扭矩请求时，VCU应响应ESC扭矩干预请求，按照优先级顺序进行对前/后轴目标扭矩进行计算，优先级顺序为：前轴升扭请求>前轴降扭请求>主动制动>ADAS的VLC工况>RBS。",
+      "conditions": [
+        "ESC有升扭/降扭请求",
+        "ESC有制动再生扭矩请求"
+      ],
+      "expectedBehavior": [
+        "VCU应响应ESC扭矩干预请求。",
+        "VCU应对前/后轴目标扭矩进行计算。"
+      ],
+      "priorityOrder": [
+        "前轴升扭请求",
+        "前轴降扭请求",
+        "主动制动",
+        "ADAS的VLC工况",
+        "RBS"
+      ],
+      "functionalCategory": "torque_intervention"
+    },
+    {
+      "requirementId": "SMiVCU-9979",
+      "topic": "主动安全功能激活时的优先级顺序",
+      "rawText": "当有主动安全功能，包括AEB、CDP、ABS、DTC、ASR、VDC功能激活时，VCU应按照主动安全激活的优先级顺序对前后轴目标扭矩进行仲裁，优先级顺序为：DTC>ASR>VDC。",
+      "conditions": [
+        "AEB激活",
+        "CDP激活",
+        "ABS激活",
+        "DTC激活",
+        "ASR激活",
+        "VDC激活"
+      ],
+      "expectedBehavior": [
+        "VCU应对前后轴目标扭矩进行仲裁。"
+      ],
+      "priorityOrder": [
+        "DTC",
+        "ASR",
+        "VDC"
+      ],
+      "functionalCategory": "active_safety_arbitration",
+      "notes": [
+        "原文列出主动安全功能包括 AEB、CDP、ABS、DTC、ASR、VDC，但明确给出的优先级顺序只有 DTC>ASR>VDC。"
+      ]
+    },
+    {
+      "requirementId": "SMiVCU-4487",
+      "topic": "主动安全功能激活/退出时的扭矩变化率输出",
+      "rawText": "当以下条件任意满足时，VCU应以大的前、后轴扭矩变化率输出，即安全相关功能激活时，需快速响应：1，ABS激活；2，AEB激活；3，DTC激活；4，ASR激活；5，VDC激活；6，CDP激活。当以上条件不再满足时，VCU应以相对小的前、后轴扭矩变化率输出，即安全相关功能退出激活时，需慢速响应。",
+      "triggerConditionsAnyOf": [
+        "ABS激活",
+        "AEB激活",
+        "DTC激活",
+        "ASR激活",
+        "VDC激活",
+        "CDP激活"
+      ],
+      "expectedBehavior": [
+        "当任一条件满足时，VCU应以较大的前、后轴扭矩变化率输出。",
+        "当以上条件均不满足时，VCU应以相对较小的前、后轴扭矩变化率输出。"
+      ],
+      "behaviorIntent": [
+        "安全相关功能激活时需快速响应。",
+        "安全相关功能退出激活时需慢速响应。"
+      ],
+      "functionalCategory": "torque_rate_control"
+    },
+    {
+      "requirementId": "SMiVCU-9980",
+      "topic": "主动安全功能激活且ESC未干预时的前后轴目标扭矩",
+      "rawText": "当无主动安全功能激活且ESC未进行扭矩干预，前后轴目标扭矩则为扭矩分配后的前后轴扭矩。",
+      "conditions": [
+        "无主动安全功能激活",
+        "ESC未进行扭矩干预"
+      ],
+      "expectedBehavior": [
+        "前后轴目标扭矩应为扭矩分配后的前后轴扭矩。"
+      ],
+      "functionalCategory": "default_torque_target"
+    },
+    {
+      "requirementId": "SMiVCU-4486",
+      "topic": "安全相关功能同时激活时的响应优先原则",
+      "rawText": "当无扭矩请求类安全相关功能（AEB、ABS、CDP）与有扭矩请求类安全相关功能（DTC、ASR、VDC）同时激活时，VCU应优先响应前者。",
+      "conditions": [
+        "无扭矩请求类安全相关功能（AEB、ABS、CDP）激活",
+        "有扭矩请求类安全相关功能（DTC、ASR、VDC）激活",
+        "上述两类功能同时激活"
+      ],
+      "expectedBehavior": [
+        "VCU应优先响应无扭矩请求类安全相关功能。"
+      ],
+      "priorityOrder": [
+        "AEB/ABS/CDP",
+        "DTC/ASR/VDC"
+      ],
+      "functionalCategory": "safety_function_arbitration"
+    }
+  ],
+  "derivedSummary": {
+    "mainTheme": "VCU在扭矩干预场景下对前后轴目标扭矩及变化率进行响应、仲裁和优先级控制。",
+    "keyConcepts": [
+      "ESC扭矩干预",
+      "主动安全功能仲裁",
+      "前后轴目标扭矩",
+      "扭矩变化率",
+      "优先级顺序",
+      "快速响应与慢速响应"
+    ]
+  }
+}
