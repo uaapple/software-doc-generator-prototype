@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Skill Refinement 工作台</title>
+    <link rel="stylesheet" href="/skill-refinement.css" />
+  </head>
+  <body>
+    <main class="workbench">
+      <nav class="top-nav">
+        <a class="nav-link" href="/">项目生成</a>
+        <a class="nav-link active" href="/skill-refinement">Skill Refinement 工作台</a>
+      </nav>
+
+      <section class="hero">
+        <p class="eyebrow">Refinement Workbench</p>
+        <h1>Skill Refinement / Benchmark / KPI</h1>
+        <p class="subtitle">
+          投喂优质范例、自动进入范例库、对照人工答案打分、逐条审核 skill 改进建议，并基于 benchmark
+          报告决定是否升级 active skill。
+        </p>
+      </section>
+
+      <section class="grid-two">
+        <article class="card summary-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow small">Current Baseline</p>
+              <h2>Active Skill 概览</h2>
+            </div>
+          </div>
+          <div id="active-bundle" class="bundle-summary"></div>
+        </article>
+
+        <form id="feeding-form" class="card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow small">Upload</p>
+              <h2>上传优质范例</h2>
+            </div>
+          </div>
+
+          <label>
+            范例名称
+            <input name="name" required placeholder="例如：ESC 扭矩干预优质样例" />
+          </label>
+          <div class="form-grid">
+            <label>
+              领域
+              <input name="domain" value="embedded_vcu" />
+            </label>
+            <label>
+              子域
+              <input name="subdomain" value="torque_intervention" />
+            </label>
+          </div>
+          <label>
+            备注
+            <textarea name="notes" rows="3" placeholder="可选，说明这个范例为什么好"></textarea>
+          </label>
+          <label>
+            系统需求
+            <input type="file" name="systemPdf" accept=".pdf,.md,.txt,.json" />
+          </label>
+          <label>
+            模型 PDF
+            <input type="file" name="modelPdf" accept=".pdf,.md,.txt" multiple />
+          </label>
+          <label>
+            模型代码
+            <input type="file" name="generatedCode" accept=".c,.h,.txt" multiple />
+          </label>
+          <label>
+            人工优质软件需求
+            <input type="file" name="goldenSourceFile" accept=".json,.md,.txt,.pdf" required />
+          </label>
+          <button type="submit">上传并自动启动 Refinement</button>
+          <p id="feed-status" class="status"></p>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow small">Library</p>
+            <h2>范例库</h2>
+          </div>
+        </div>
+
+        <div class="filters">
+          <label>
+            搜索
+            <input id="filter-query" placeholder="按名称、领域、子域筛选" />
+          </label>
+          <label>
+            状态
+            <select id="filter-status">
+              <option value="all">全部状态</option>
+              <option value="proposal_review">待审核改进意见</option>
+              <option value="awaiting_decision">待决策</option>
+              <option value="approved">已通过</option>
+              <option value="archived">已归档</option>
+              <option value="certified">已认证</option>
+            </select>
+          </label>
+          <label>
+            启用状态
+            <select id="filter-enabled">
+              <option value="all">全部</option>
+              <option value="enabled">启用中</option>
+              <option value="archived">已归档</option>
+            </select>
+          </label>
+          <label>
+            分数变化
+            <select id="filter-score-trend">
+              <option value="all">全部</option>
+              <option value="improved">有提升</option>
+              <option value="regressed">有下降</option>
+              <option value="flat">无变化/暂无</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="case-list" class="case-list"></div>
+      </section>
+
+      <section class="detail-grid">
+        <article class="card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow small">Case Detail</p>
+              <h2>范例详情</h2>
+            </div>
+          </div>
+          <div id="case-detail" class="detail-body"></div>
+        </article>
+
+        <article class="card">
+          <div class="section-head stacked-mobile">
+            <div>
+              <p class="eyebrow small">Proposal Review</p>
+              <h2>改进意见审核</h2>
+            </div>
+            <button id="build-candidate-button" type="button">应用已接受意见并重跑 Benchmark</button>
+          </div>
+          <div id="run-summary" class="run-summary"></div>
+          <div id="proposal-groups" class="proposal-groups"></div>
+        </article>
+      </section>
+
+      <section class="card">
+        <div class="section-head stacked-mobile">
+          <div>
+            <p class="eyebrow small">Benchmark</p>
+            <h2>Benchmark 报告</h2>
+          </div>
+          <div id="decision-actions" class="decision-actions"></div>
+        </div>
+        <div id="benchmark-report" class="benchmark-report"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/skill-refinement.js"></script>
+  </body>
+</html>

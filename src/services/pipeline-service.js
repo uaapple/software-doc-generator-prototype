@@ -1,4 +1,5 @@
 import { SkillLoader } from "./skill-loader.js";
+import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
 import { ExtractionService } from "./extraction-service.js";
 import { LlmService } from "./llm-service.js";
@@ -12,6 +13,7 @@ export class PipelineService {
     this.extractionService = new ExtractionService();
     this.llmService = new LlmService();
     this.validationService = new ValidationService();
+    this.skillBundleService = new SkillBundleService();
   }
 
   async getMeta() {
@@ -27,7 +29,7 @@ export class PipelineService {
     };
   }
 
-  async generate(projectId) {
+  async generate(projectId, options = {}) {
     const project = await this.projectService.getProject(projectId);
     if (!project) {
       throw new Error("Project not found");
@@ -37,8 +39,9 @@ export class PipelineService {
     }
 
     const extractions = await this.extractionService.extractFiles(project);
-    const requirements = await this.llmService.generateRequirements(project, extractions);
-    const conflicts = this.validationService.validate(requirements);
+    const requirements = await this.llmService.generateRequirements(project, extractions, options);
+    const domainKnowledge = await this.skillBundleService.getDomainKnowledge(options.skillBundleId);
+    const conflicts = this.validationService.validate(requirements, { domainKnowledge });
     const traces = requirements.flatMap((requirement) =>
       requirement.sourceRefs.map((sourceRef) => ({
         requirementId: requirement.id,

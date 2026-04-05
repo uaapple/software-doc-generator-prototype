@@ -2,12 +2,14 @@ import OpenAI from "openai";
 import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
 import { SkillLoader } from "./skill-loader.js";
+import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
 
 export class LlmService {
   constructor() {
     this.skillLoader = new SkillLoader();
     this.templateService = new TemplateService();
+    this.skillBundleService = new SkillBundleService();
     this.client = config.openai.apiKey
       ? new OpenAI({
           apiKey: config.openai.apiKey,
@@ -16,13 +18,15 @@ export class LlmService {
       : null;
   }
 
-  async generateRequirements(project, extractions) {
+  async generateRequirements(project, extractions, options = {}) {
     const template = await this.templateService.getTemplate();
-    const skills = await this.skillLoader.loadAll();
+    const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
+    const skills = await this.skillLoader.loadAll(skillDir);
+    const knowledge = skills["domain-knowledge.json"] || {};
     const evidence = extractions.flatMap((item) => item.evidence || []);
 
     if (!this.client) {
-      return buildFallbackRequirements(project, evidence, template);
+      return applyDomainKnowledgePolicies(buildFallbackRequirements(project, evidence, template, skills), knowledge);
     }
 
     const input = buildModelInput(project, evidence, template, skills);
@@ -39,7 +43,8 @@ export class LlmService {
     });
 
     const payload = JSON.parse(response.output_text);
-    return payload.requirements.map((item, index) => normalizeRequirement(item, index));
+    const normalized = payload.requirements.map((item, index) => normalizeRequirement(item, index));
+    return applyDomainKnowledgePolicies(normalized, knowledge);
   }
 }
 
@@ -62,12 +67,16 @@ function buildModelInput(project, evidence, template, skills) {
             "你是软件开发需求生成助手。",
             "目标是根据系统需求和模型侧产物，输出可审核、可追溯、中文的软件开发需求条目。",
             "系统需求优先级最高；当存在冲突时保留冲突说明，不要捏造事实。",
+            "若需要体现层级结构，只保留功能层级和对象层级，不要输出具体章节数字编号。",
+            "在需满足 ISO 26262 的场景下，信号命名必须优先使用参考样例或信号字典中的标准工程命名，不要使用代码变量名替代。",
+            "严禁基于通用语料进行无依据泛化联想；若参考样例未要求，不要擅自扩写 ABS/EBD/CCO/ISA 等逻辑。",
             "输出必须符合给定 JSON schema。",
             skills["requirement_extraction.md"],
             skills["requirement_writing.md"],
             skills["requirement_validation.md"],
             skills["examples/good_examples.md"],
-            skills["examples/bad_examples.md"]
+            skills["examples/bad_examples.md"],
+            `领域知识与few-shot摘要：\n${JSON.stringify(skills["domain-knowledge.json"] || {}, null, 2)}`
           ].join("\n\n")
         }
       ]
@@ -96,7 +105,13 @@ function buildModelInput(project, evidence, template, skills) {
   ];
 }
 
-function buildFallbackRequirements(project, evidence, template) {
+function buildFallbackRequirements(project, evidence, template, skills) {
+  const knowledge = skills["domain-knowledge.json"] || { examples: [] };
+  const exampleDrivenRequirements = buildExampleDrivenRequirements(knowledge, evidence, template);
+  if (exampleDrivenRequirements.length > 0) {
+    return exampleDrivenRequirements;
+  }
+
   const grouped = groupEvidence(evidence);
   const requirements = [];
   let sequence = 1;
@@ -154,6 +169,61 @@ function buildFallbackRequirements(project, evidence, template) {
   return requirements;
 }
 
+function buildExampleDrivenRequirements(knowledge, evidence, template) {
+  const evidencePool = evidence.map((item) => ({
+    ...item,
+    tokens: tokenize(`${item.fileName} ${item.location} ${item.excerpt} ${(item.tags || []).join(" ")}`)
+  }));
+  const unionTokens = new Set(evidencePool.flatMap((item) => item.tokens));
+  const examples = Array.isArray(knowledge.examples) ? knowledge.examples : [];
+  const matched = [];
+
+  for (const example of examples) {
+    const keywords = example.keywords || [];
+    const signals = example.signals || [];
+    const exampleTokens = new Set(tokenize(`${example.topic || ""} ${example.requirementText || ""} ${keywords.join(" ")} ${signals.join(" ")}`));
+    const overlapCount = [...exampleTokens].filter((token) => unionTokens.has(token)).length;
+    const denominator = Math.max(4, exampleTokens.size);
+    const overlapRatio = overlapCount / denominator;
+    if (overlapRatio < 0.15) {
+      continue;
+    }
+
+    const sourceRefs = evidencePool
+      .map((item) => ({
+        item,
+        score: scoreEvidenceAgainstExample(item.tokens, exampleTokens)
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map(({ item }) => ({
+        fileName: item.fileName,
+        location: item.location,
+        excerpt: item.excerpt
+      }));
+
+    matched.push(
+      normalizeRequirement(
+        {
+          requirementId: example.requirementId || `${template.requirementIdPrefix}-${String(matched.length + 1).padStart(3, "0")}`,
+          title: buildExampleTitle(example),
+          requirementText: example.requirementText || example.rawText || "",
+          type: example.requirementType || inferRequirementTypeFromExample(example),
+          sourceRefs,
+          rationale: `基于候选 skill bundle 中的历史标准案例进行匹配生成（主题：${example.topic || "未命名"}）。`,
+          verificationHint: buildVerificationHint(example),
+          confidence: Number(Math.min(0.98, 0.55 + overlapRatio).toFixed(2)),
+          conflictNote: sourceRefs.length ? "" : "已命中案例模板，但缺少足够来源证据。"
+        },
+        matched.length
+      )
+    );
+  }
+
+  return dedupeRequirements(matched);
+}
+
 function groupEvidence(evidence) {
   const grouped = new Map();
 
@@ -183,6 +253,166 @@ function buildTitle(sectionTitle, evidenceItem) {
 
 function buildRequirementText(section, evidenceItem) {
   return `软件应满足${section.title}要求，并依据“${evidenceItem.excerpt.slice(0, 80)}”实现对应行为。`;
+}
+
+function buildExampleTitle(example) {
+  if (example.preferredTitle) {
+    return example.preferredTitle;
+  }
+  const sectionTitle = example.sectionTitle ? `${example.sectionTitle} - ` : "";
+  return `${sectionTitle}${example.topic || example.title || example.requirementId || "需求示例"}`;
+}
+
+function inferRequirementTypeFromExample(example) {
+  const text = `${example.topic || ""} ${example.requirementText || ""}`;
+  if (/接口|信号|变量/i.test(text)) return "interface";
+  if (/状态|模式|激活/i.test(text)) return "state";
+  if (/周期|时序/i.test(text)) return "timing";
+  if (/故障|异常|保护/i.test(text)) return "diagnostic";
+  return "functional";
+}
+
+function buildVerificationHint(example) {
+  const text = `${example.topic || ""} ${example.requirementText || ""}`;
+  if (/优先级|仲裁|分支/.test(text)) return "通过构造不同条件组合验证分支和优先级结果";
+  if (/激活|标志位/.test(text)) return "通过输入条件切换验证激活标志位和状态变化";
+  if (/阈值|最大|最小|限制/.test(text)) return "通过边界值测试验证阈值和限制逻辑";
+  return "通过仿真或联调验证输入条件与输出行为";
+}
+
+function tokenize(text) {
+  return Array.from(
+    new Set(
+      String(text)
+        .split(/[^A-Za-z0-9_\u4e00-\u9fa5]+/)
+        .map((item) => item.trim())
+        .filter((item) => item.length >= 2)
+    )
+  );
+}
+
+function scoreEvidenceAgainstExample(evidenceTokens, exampleTokens) {
+  let score = 0;
+  for (const token of evidenceTokens) {
+    if (exampleTokens.has(token)) {
+      score += token.length >= 6 ? 2 : 1;
+    }
+  }
+  return score;
+}
+
+function dedupeRequirements(requirements) {
+  const seen = new Set();
+  return requirements.filter((item) => {
+    const key = `${item.requirementId}:${item.requirementText}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function applyDomainKnowledgePolicies(requirements, knowledge = {}) {
+  const policy = knowledge.sourceOfTruthPolicy || {};
+  const aliasGroups = Array.isArray(policy.canonicalSignalAliases) ? policy.canonicalSignalAliases : [];
+  const normalizationRules = Array.isArray(policy.normalizationRules) ? policy.normalizationRules : [];
+  const forbiddenExpansions = policy.forbiddenExpansions || {};
+
+  if (!aliasGroups.length && !normalizationRules.length && !Object.keys(forbiddenExpansions).length) {
+    return requirements;
+  }
+
+  return requirements.map((item) => {
+    let title = item.title || "";
+    let requirementText = item.requirementText || "";
+    const notes = new Set();
+    let renamed = false;
+    let normalized = false;
+
+    for (const group of aliasGroups) {
+      const canonical = group.canonical || "";
+      for (const alias of group.aliases || []) {
+        if (!alias || !canonical) continue;
+        const nextTitle = replaceWholeToken(title, alias, canonical);
+        const nextText = replaceWholeToken(requirementText, alias, canonical);
+        if (nextTitle !== title || nextText !== requirementText) {
+          renamed = true;
+          title = nextTitle;
+          requirementText = nextText;
+        }
+      }
+    }
+
+    for (const rule of normalizationRules) {
+      if (!rule?.pattern) continue;
+      const nextTitle = title.split(rule.pattern).join(rule.replacement || "");
+      const nextText = requirementText.split(rule.pattern).join(rule.replacement || "");
+      if (nextTitle !== title || nextText !== requirementText) {
+        normalized = true;
+        title = normalizePunctuation(nextTitle);
+        requirementText = normalizePunctuation(nextText);
+      }
+    }
+
+    if (renamed) {
+      notes.add("已按参考样例将部分代码别名归一化为标准工程命名。");
+    }
+    if (normalized) {
+      notes.add("已按参考样例收敛部分无依据扩写表达。");
+    }
+
+    const bucket = inferRequirementPolicyBucket(item);
+    const forbiddenTerms = forbiddenExpansions[bucket] || [];
+    const remainingForbidden = forbiddenTerms.filter((term) =>
+      title.includes(term) || requirementText.includes(term)
+    );
+    if (remainingForbidden.length) {
+      notes.add(`仍存在需人工复核的扩写项：${remainingForbidden.join(" / ")}。`);
+    }
+
+    const mergedConflictNote = [item.conflictNote || "", ...notes].filter(Boolean).join(" ");
+    const adjustedConfidence = remainingForbidden.length
+      ? Number(Math.max(0.2, (item.confidence ?? 0.5) - 0.15).toFixed(2))
+      : item.confidence;
+
+    return {
+      ...item,
+      title,
+      requirementText,
+      conflictNote: mergedConflictNote,
+      confidence: adjustedConfidence
+    };
+  });
+}
+
+function inferRequirementPolicyBucket(item) {
+  const text = `${item.title || ""} ${item.requirementText || ""}`;
+  if (/激活标志位|inactive|active/.test(text)) {
+    return "activation_flag_logic";
+  }
+  if (/扭矩计算|优先级|输出规则|置零|限幅/.test(text)) {
+    return "torque_calculation_logic";
+  }
+  return "generic";
+}
+
+function replaceWholeToken(text, token, replacement) {
+  if (!text || !token || token === replacement) return text;
+  const pattern = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(token)})(?=[^A-Za-z0-9_]|$)`, "g");
+  return text.replace(pattern, (_, prefix) => `${prefix}${replacement}`);
+}
+
+function normalizePunctuation(text) {
+  return text
+    .replace(/；\s*；/g, "；")
+    .replace(/：\s*；/g, "：")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeRequirement(item, index) {

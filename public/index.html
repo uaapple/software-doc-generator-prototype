@@ -8,12 +8,20 @@
   </head>
   <body>
     <main class="layout">
+      <nav class="top-nav">
+        <a class="nav-link active" href="/">项目生成</a>
+        <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
+      </nav>
+
       <section class="hero">
         <p class="eyebrow">Phase One Prototype</p>
         <h1>软件开发需求自动生成平台</h1>
         <p class="subtitle">
-          上传系统需求 PDF、模型 PDF 和 Simulink 生成 C 文件，自动生成可审核、可追溯的软件开发需求草稿。
+          上传系统需求文档、模型文档和 Simulink 生成 C 文件，自动生成可审核、可追溯的软件开发需求草稿。
         </p>
+        <div class="hero-actions">
+          <a class="hero-link" href="/skill-refinement">进入 Skill Refinement 工作台</a>
+        </div>
       </section>
 
       <section class="panel panel-grid">
@@ -37,12 +45,12 @@
             <select id="project-select" name="projectId" required></select>
           </label>
           <label>
-            系统需求 PDF
-            <input type="file" name="systemPdf" accept=".pdf" />
+            系统需求文件
+            <input type="file" name="systemPdf" accept=".pdf,.json,.md,.txt" />
           </label>
           <label>
-            模型 PDF
-            <input type="file" name="modelPdf" accept=".pdf" multiple />
+            模型文档
+            <input type="file" name="modelPdf" accept=".pdf,.json,.md,.txt" multiple />
           </label>
           <label>
             生成 C 文件
