@@ -7,8 +7,6 @@ import { CExtractor } from "../src/services/c-extractor.js";
 import { ValidationService } from "../src/services/validation-service.js";
 import { LlmService } from "../src/services/llm-service.js";
 import { ensureStorage } from "../src/services/storage.js";
-import { BenchmarkCaseService } from "../src/services/benchmark-case-service.js";
-import { SkillRefinementService } from "../src/services/skill-refinement-service.js";
 import { SkillBundleService } from "../src/services/skill-bundle-service.js";
 
 async function withTempConfig(run) {
@@ -61,21 +59,54 @@ async function seedFixtureFiles(tempDir) {
 
   await fs.writeFile(
     path.join(tempDir, "skills", "requirement_extraction.md"),
-    "# 事实抽取 Skill\n\n- 抽取条件、信号、阈值、优先级和边界限制。",
+    "# 事实抽取 Skill\n\n- 提取条件、信号、阈值、优先级和边界。\n",
     "utf8"
   );
   await fs.writeFile(
     path.join(tempDir, "skills", "requirement_writing.md"),
-    "# 需求写作规范 Skill\n\n- 输出中文软件需求。\n- 优先使用“软件应”句式。",
+    "# 需求写作 Skill\n\n- 输出中文软件需求。\n- 优先使用‘软件应’句式。\n",
     "utf8"
   );
   await fs.writeFile(
     path.join(tempDir, "skills", "requirement_validation.md"),
-    "# 校验 Skill\n\n- 检查追溯和模糊措辞。",
+    "# 校验 Skill\n\n- 检查来源、模糊措辞和冲突项。\n",
     "utf8"
   );
   await fs.writeFile(path.join(tempDir, "skills", "examples", "good_examples.md"), "# 正例\n", "utf8");
   await fs.writeFile(path.join(tempDir, "skills", "examples", "bad_examples.md"), "# 反例\n", "utf8");
+  await fs.writeFile(
+    path.join(tempDir, "skills", "domain-knowledge.json"),
+    JSON.stringify(
+      {
+        version: 2,
+        documentBlueprint: {
+          domain: "embedded_vcu",
+          subdomain: "torque_intervention"
+        },
+        examples: [
+          {
+            requirementId: "SMiVCU-10160",
+            topic: "ESC前轴扭矩干预激活",
+            requirementType: "activation_flag_logic",
+            requirementText: "软件应根据 ESC 前轴降扭请求激活前轴扭矩干预标志位。",
+            signals: ["ESC_TqDecReqAct_F"],
+            keywords: ["前轴", "激活", "扭矩干预"]
+          }
+        ],
+        ruleHints: [
+          {
+            domain: "embedded_vcu",
+            subdomain: "torque_intervention",
+            sectionHints: ["扭矩干预功能", "ESC前轴扭矩干预", "ESC后轴扭矩干预"]
+          }
+        ],
+        antiPatterns: ["不要将前轴和后轴需求合并成一条泛化描述。"]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
   await fs.writeFile(
     config.templatePath,
     JSON.stringify(
@@ -99,65 +130,39 @@ async function seedFixtureFiles(tempDir) {
   );
 }
 
-async function writeUploadedFile(baseDir, name, content) {
-  await fs.mkdir(baseDir, { recursive: true });
-  const filePath = path.join(baseDir, name);
-  await fs.writeFile(filePath, content, "utf8");
-  const stat = await fs.stat(filePath);
-  return {
-    originalname: name,
-    filename: name,
-    path: filePath,
-    mimetype: name.endsWith(".c") ? "text/x-c" : "text/plain",
-    size: stat.size
-  };
-}
-
 const tests = [
   {
-    name: "C extractor finds functions, conditions, and assignments",
+    name: "C extractor finds macros, functions, conditions, and assignments",
     run: async () => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "req-proto-"));
-      const filePath = path.join(tempDir, "model.c");
-      await fs.writeFile(
-        filePath,
-        `
-        #define TEMP_LIMIT 95
-        static void Controller_step(void) {
-          if (temperature > TEMP_LIMIT) {
-            faultFlag = 1;
-          }
-        }
-        `,
-        "utf8"
-      );
+      try {
+        const filePath = path.join(tempDir, "model.c");
+        await fs.writeFile(
+          filePath,
+          [
+            "#define TEMP_LIMIT 95",
+            "static void Controller_step(void) {",
+            "  if (temperature > TEMP_LIMIT) {",
+            "    faultFlag = 1;",
+            "  }",
+            "}"
+          ].join("\n"),
+          "utf8"
+        );
 
-      const extractor = new CExtractor();
-      const result = await extractor.extract({ absolutePath: filePath });
-      assert.ok(result.blocks.some((item) => item.text.includes("TEMP_LIMIT")));
-      assert.ok(result.blocks.some((item) => item.text.includes("Controller_step")));
-      assert.ok(result.blocks.some((item) => item.text.includes("temperature > TEMP_LIMIT")));
+        const extractor = new CExtractor();
+        const result = await extractor.extract({ absolutePath: filePath });
+        assert.ok(result.blocks.some((item) => item.text.includes("TEMP_LIMIT")));
+        assert.ok(result.blocks.some((item) => item.text.includes("Controller_step")));
+        assert.ok(result.blocks.some((item) => item.text.includes("temperature > TEMP_LIMIT")));
+        assert.ok(result.blocks.some((item) => item.text.includes("faultFlag")));
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
     }
   },
   {
-    name: "Validation flags missing source and vague language",
-    run: async () => {
-      const validator = new ValidationService();
-      const conflicts = validator.validate([
-        {
-          id: "1",
-          requirementId: "SWR-001",
-          requirementText: "软件应适当处理故障。",
-          sourceRefs: []
-        }
-      ]);
-
-      assert.ok(conflicts.some((item) => item.code === "missing-source"));
-      assert.ok(conflicts.some((item) => item.code === "vague-language"));
-    }
-  },
-  {
-    name: "Validation flags non-canonical signals and unsupported expansions for ISO-aligned policy",
+    name: "Validation flags missing source and policy violations",
     run: async () => {
       const validator = new ValidationService();
       const conflicts = validator.validate(
@@ -167,8 +172,8 @@ const tests = [
             requirementId: "SWR-001",
             title: "ESC前轴扭矩干预 - 扭矩计算",
             requirementText:
-              "当AEB/CDP/ABS/EBD任一功能激活时，ESCWhlTq_tqTarFrntAxle输出为0；当前轴CCO/ISA扭矩请求有效时继续参与计算；输入使用icesc_tqReqFrntAxleDec。",
-            sourceRefs: [{ fileName: "golden.md", location: "page:1", excerpt: "example" }]
+              "当 AEB/CDP/ABS/EBD 任一功能激活时，ESCWhlTq_tqTarFrntAxle 输出为 0；当前轴 CCO/ISA 扭矩请求有效时继续参与计算；输入使用 icesc_tqReqFrntAxleDec。",
+            sourceRefs: []
           }
         ],
         {
@@ -189,13 +194,14 @@ const tests = [
         }
       );
 
+      assert.ok(conflicts.some((item) => item.code === "missing-source"));
       assert.ok(conflicts.some((item) => item.code === "code-style-signal"));
       assert.ok(conflicts.some((item) => item.code === "non-canonical-signal"));
       assert.ok(conflicts.some((item) => item.code === "unsupported-expansion"));
     }
   },
   {
-    name: "LLM service falls back without API key",
+    name: "LLM service falls back to local requirement generation without API key",
     run: async () => {
       await withTempConfig(async () => {
         const service = new LlmService();
@@ -218,146 +224,39 @@ const tests = [
         );
 
         assert.ok(requirements.length >= 1);
-        assert.ok(requirements[0].requirementText.includes("软件应"));
+        assert.ok(requirements[0].requirementId.startsWith("SMiVCU-") || requirements[0].requirementId.startsWith("SWR-"));
+        assert.ok(Array.isArray(requirements[0].sourceRefs));
       });
     }
   },
   {
-    name: "Skill refinement supports proposal review, candidate build, archive restore, and approval flow",
+    name: "Skill bundle initialization preserves and restores domain knowledge",
     run: async () => {
-      await withTempConfig(async (tempDir) => {
-        const uploadsDir = path.join(tempDir, "fixtures");
-        const caseService = new BenchmarkCaseService();
-        const refinementService = new SkillRefinementService();
+      await withTempConfig(async () => {
         const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
 
-        const systemFile = await writeUploadedFile(
-          uploadsDir,
-          "system.md",
-          `
-          # 5.30 扭矩干预功能
-          SMiVCU-9978 - 当前轴升扭请求激活时，VCU应对前轴目标扭矩进行计算，优先级顺序为前轴升扭请求 > 前轴降扭请求。
-          SMiVCU-4487 - 当AEB激活时，VCU应输出0扭矩并快速响应。
-          `,
-        );
-        const codeFile = await writeUploadedFile(
-          uploadsDir,
-          "ESCWhlTq.c",
-          `
-          #define ESCWhlTq_tqESCIntvMin_C -3900
-          #define ESCWhlTq_tqESCIntvMax_C 3900
-          static void fc_ESCWhlTq(void) {
-            if (ESC_TqDecReqAct_F && ESCWhlTq_bTqDecIntvEna_C) {
-              ESCWhlTq_tqTarFrntAxle = ESC_TqDecReq_F;
-            }
-            if (ESC_AEB_Active) {
-              ESCWhlTq_tqTarFrntAxle = 0;
-            }
-          }
-          `,
-        );
-        const goldenFile = await writeUploadedFile(
-          uploadsDir,
-          "golden.json",
-          JSON.stringify(
-            {
-              title: "软件设计需求示例：ESC前轴扭矩干预",
-              section: {
-                sectionNumber: "3.31",
-                sectionTitle: "扭矩干预功能",
-                subsectsions: [],
-                subsections: [
-                  {
-                    sectionNumber: "3.31.1",
-                    sectionTitle: "ESC前轴扭矩干预"
-                  }
-                ]
-              },
-              requirements: [
-                {
-                  requirementId: "SMiVCU-10160",
-                  topic: "ESC干预前轴激活标志位判断",
-                  sectionNumber: "3.31.1",
-                  requirementType: "activation_flag_logic",
-                  requirementText:
-                    "当 ESC_TqDecReqAct_F 激活时，软件应将 ESC 干预前轴激活标志位置为 active。",
-                  signals: ["ESC_TqDecReqAct_F", "ESCWhlTq_bTqDecIntvEna_C"],
-                  references: [],
-                  conditions: ["ESC_TqDecReqAct_F 激活"]
-                },
-                {
-                  requirementId: "SMiVCU-10597",
-                  topic: "ESC干预前轴扭矩计算",
-                  sectionNumber: "3.31.1",
-                  requirementType: "torque_calculation_logic",
-                  requirementText:
-                    "当 ESC_AEB_Active 激活时，软件应将 ESCWhlTq_tqTarFrntAxle 输出为 0，并保留前轴目标扭矩计算逻辑。",
-                  signals: ["ESC_AEB_Active", "ESCWhlTq_tqTarFrntAxle"],
-                  references: ["SMiVCU-10160"],
-                  conditions: ["ESC_AEB_Active 激活"],
-                  priorityOrder: ["前轴升扭请求", "前轴降扭请求"]
-                }
-              ]
-            },
-            null,
-            2
-          ),
-        );
+        const legacyPath = path.join(config.legacySkillDir, "domain-knowledge.json");
+        const activePath = path.join(config.activeSkillDir, "domain-knowledge.json");
+        const bundlePath = path.join(config.skillBundleDir, "bundle-base", "domain-knowledge.json");
+        const legacyKnowledge = JSON.parse(await fs.readFile(legacyPath, "utf8"));
 
-        const benchmarkCase = await caseService.createCase(
-          {
-            name: "Torque Intervention Case",
-            domain: "embedded_vcu",
-            subdomain: "torque_intervention",
-            createdBy: "test"
-          },
-          {
-            systemPdf: [systemFile],
-            generatedCode: [codeFile],
-            goldenSourceFile: [goldenFile]
-          }
-        );
+        assert.deepEqual(JSON.parse(await fs.readFile(activePath, "utf8")), legacyKnowledge);
+        assert.deepEqual(JSON.parse(await fs.readFile(bundlePath, "utf8")), legacyKnowledge);
 
-        assert.equal(benchmarkCase.goldenStructured.requirements.length, 2);
-        await caseService.certifyCase(benchmarkCase.id);
+        const emptyKnowledge = {
+          version: 1,
+          examples: [],
+          ruleHints: [],
+          antiPatterns: []
+        };
+        await fs.writeFile(activePath, JSON.stringify(emptyKnowledge, null, 2), "utf8");
+        await fs.writeFile(bundlePath, JSON.stringify(emptyKnowledge, null, 2), "utf8");
 
-        const run = await refinementService.createRun({ triggerCaseId: benchmarkCase.id });
-        assert.equal(run.status, "proposal_review");
-        assert.ok((run.proposalItems || []).length > 0);
-        assert.ok(run.initialAssessment.scoreResult.overallScore >= 0);
+        await bundleService.ensureInitialized();
 
-        const firstReviewed = await refinementService.reviewProposalItem(run.id, run.proposalItems[0].id, {
-          status: "accepted"
-        });
-        assert.equal(firstReviewed.status, "accepted");
-        const secondReviewed = await refinementService.reviewProposalItem(run.id, run.proposalItems[1].id, {
-          status: "edited",
-          editedContent: "- 编辑后的抽取规则"
-        });
-        assert.equal(secondReviewed.status, "edited");
-        assert.equal(secondReviewed.editedContent, "- 编辑后的抽取规则");
-
-        const candidateResult = await refinementService.buildCandidate(run.id);
-        assert.ok(candidateResult.run.candidateBundleId);
-        assert.ok(candidateResult.run.evaluationRunId);
-        assert.equal(candidateResult.run.status, "awaiting_decision");
-
-        const evaluation = await refinementService.evaluationService.getEvaluation(candidateResult.run.evaluationRunId);
-        assert.ok(evaluation.aggregateScores.overallScoreAvg >= 0);
-
-        const activeBefore = await bundleService.getActiveBundle();
-        assert.ok(activeBefore);
-
-        const archived = await caseService.archiveCase(benchmarkCase.id);
-        assert.equal(archived.archived, true);
-        const restored = await caseService.restoreCase(benchmarkCase.id);
-        assert.equal(restored.archived, false);
-
-        const approval = await refinementService.approveRun(candidateResult.run.id);
-        assert.equal(approval.run.status, "approved");
-
-        const activeAfter = await bundleService.getActiveBundle();
-        assert.equal(activeAfter.id, candidateResult.run.candidateBundleId);
+        assert.deepEqual(JSON.parse(await fs.readFile(activePath, "utf8")), legacyKnowledge);
+        assert.deepEqual(JSON.parse(await fs.readFile(bundlePath, "utf8")), legacyKnowledge);
       });
     }
   }

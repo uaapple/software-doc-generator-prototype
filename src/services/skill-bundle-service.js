@@ -11,6 +11,7 @@ const MANAGED_SKILL_FILES = [
   path.join("examples", "good_examples.md"),
   path.join("examples", "bad_examples.md")
 ];
+const DOMAIN_KNOWLEDGE_FILE = "domain-knowledge.json";
 
 const DEFAULT_DOMAIN_KNOWLEDGE = {
   version: 1,
@@ -23,6 +24,27 @@ function now() {
   return new Date().toISOString();
 }
 
+function isArrayEmpty(value) {
+  return !Array.isArray(value) || value.length === 0;
+}
+
+function isDomainKnowledgeEffectivelyEmpty(value) {
+  if (!value || typeof value !== "object") {
+    return true;
+  }
+
+  const extraKeys = Object.keys(value).filter(
+    (key) => !["version", "examples", "ruleHints", "antiPatterns"].includes(key)
+  );
+
+  return (
+    extraKeys.length === 0 &&
+    isArrayEmpty(value.examples) &&
+    isArrayEmpty(value.ruleHints) &&
+    isArrayEmpty(value.antiPatterns)
+  );
+}
+
 function getBundleMetaPath(bundleId) {
   return path.join(config.skillRefinementBundleMetaDir, `${bundleId}.json`);
 }
@@ -32,7 +54,15 @@ export class SkillBundleService {
     const activePointer = await readJson(config.activeSkillBundlePointerPath);
     const activeWritingFile = path.join(config.activeSkillDir, "requirement_writing.md");
     if (activePointer?.bundleId && (await pathExists(activeWritingFile))) {
-      await this.ensureDomainKnowledgeFile(config.activeSkillDir);
+      const activeBundleDir = this.getBundleSkillDir(activePointer.bundleId);
+      await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
+        seedDirs: [config.legacySkillDir, activeBundleDir]
+      });
+      if (await pathExists(activeBundleDir)) {
+        await this.ensureDomainKnowledgeFile(activeBundleDir, {
+          seedDirs: [config.activeSkillDir, config.legacySkillDir]
+        });
+      }
       return;
     }
 
@@ -40,15 +70,19 @@ export class SkillBundleService {
     const bundleDir = this.getBundleSkillDir(bundleId);
     await this.seedFromLegacy(config.activeSkillDir);
     await copyDirectory(config.activeSkillDir, bundleDir);
-    await this.ensureDomainKnowledgeFile(config.activeSkillDir);
-    await this.ensureDomainKnowledgeFile(bundleDir);
+    await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
+      seedDirs: [config.legacySkillDir]
+    });
+    await this.ensureDomainKnowledgeFile(bundleDir, {
+      seedDirs: [config.activeSkillDir, config.legacySkillDir]
+    });
 
     const metadata = {
       id: bundleId,
       version: "1.0.0",
       baseBundleId: "",
       status: "active",
-      files: [...MANAGED_SKILL_FILES, "domain-knowledge.json"],
+      files: [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
       changeSummary: "Seeded from legacy skills directory.",
       createdFromCaseIds: [],
       evaluationSummary: null,
@@ -70,12 +104,40 @@ export class SkillBundleService {
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.copyFile(source, target);
     }
+
+    await this.ensureDomainKnowledgeFile(targetDir, {
+      seedDirs: [config.legacySkillDir]
+    });
   }
 
-  async ensureDomainKnowledgeFile(skillDir) {
-    const filePath = path.join(skillDir, "domain-knowledge.json");
-    if (!(await pathExists(filePath))) {
-      await writeJson(filePath, DEFAULT_DOMAIN_KNOWLEDGE);
+  async findSeedDomainKnowledge(seedDirs = []) {
+    for (const seedDir of seedDirs) {
+      if (!seedDir) {
+        continue;
+      }
+
+      const filePath = path.join(seedDir, DOMAIN_KNOWLEDGE_FILE);
+      const knowledge = await readJson(filePath, null);
+      if (knowledge && !isDomainKnowledgeEffectivelyEmpty(knowledge)) {
+        return knowledge;
+      }
+    }
+
+    return null;
+  }
+
+  async ensureDomainKnowledgeFile(skillDir, options = {}) {
+    const filePath = path.join(skillDir, DOMAIN_KNOWLEDGE_FILE);
+    const existingKnowledge = await readJson(filePath, null);
+    const seededKnowledge = await this.findSeedDomainKnowledge(options.seedDirs || []);
+
+    if (!existingKnowledge) {
+      await writeJson(filePath, seededKnowledge || DEFAULT_DOMAIN_KNOWLEDGE);
+      return;
+    }
+
+    if (isDomainKnowledgeEffectivelyEmpty(existingKnowledge) && seededKnowledge) {
+      await writeJson(filePath, seededKnowledge);
     }
   }
 
@@ -122,7 +184,7 @@ export class SkillBundleService {
 
   async getDomainKnowledge(bundleId = "") {
     const skillDir = await this.getSkillDir(bundleId);
-    return readJson(path.join(skillDir, "domain-knowledge.json"), DEFAULT_DOMAIN_KNOWLEDGE);
+    return readJson(path.join(skillDir, DOMAIN_KNOWLEDGE_FILE), DEFAULT_DOMAIN_KNOWLEDGE);
   }
 
   async createCandidateBundle({ baseBundleId = "", proposal, createdFromCaseIds = [], evaluationSummary = null }) {
@@ -141,7 +203,7 @@ export class SkillBundleService {
       version: `${baseBundle?.version || "1.0.0"}-candidate-${Date.now()}`,
       baseBundleId: baseBundle?.id || "",
       status: "candidate",
-      files: [...MANAGED_SKILL_FILES, "domain-knowledge.json"],
+      files: [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
       changeSummary: proposal?.summary || "Candidate bundle generated from refinement run.",
       createdFromCaseIds,
       evaluationSummary,
@@ -157,7 +219,7 @@ export class SkillBundleService {
     if (proposal.appendWritingRules) {
       await fs.appendFile(
         path.join(bundleDir, "requirement_writing.md"),
-        `\n\n## Refinement 增补规则\n${proposal.appendWritingRules}\n`,
+        `\n\n## Refinement Additional Rules\n${proposal.appendWritingRules}\n`,
         "utf8"
       );
     }
@@ -165,7 +227,7 @@ export class SkillBundleService {
     if (proposal.appendExtractionRules) {
       await fs.appendFile(
         path.join(bundleDir, "requirement_extraction.md"),
-        `\n\n## Refinement 增补规则\n${proposal.appendExtractionRules}\n`,
+        `\n\n## Refinement Additional Rules\n${proposal.appendExtractionRules}\n`,
         "utf8"
       );
     }
@@ -173,7 +235,7 @@ export class SkillBundleService {
     if (proposal.appendValidationRules) {
       await fs.appendFile(
         path.join(bundleDir, "requirement_validation.md"),
-        `\n\n## Refinement 增补规则\n${proposal.appendValidationRules}\n`,
+        `\n\n## Refinement Additional Rules\n${proposal.appendValidationRules}\n`,
         "utf8"
       );
     }
@@ -187,7 +249,7 @@ export class SkillBundleService {
     }
 
     const existingKnowledge = await readJson(
-      path.join(bundleDir, "domain-knowledge.json"),
+      path.join(bundleDir, DOMAIN_KNOWLEDGE_FILE),
       DEFAULT_DOMAIN_KNOWLEDGE
     );
     const mergedKnowledge = {
@@ -196,7 +258,7 @@ export class SkillBundleService {
       ruleHints: [...(existingKnowledge.ruleHints || []), ...(proposal.domainKnowledge?.ruleHints || [])],
       antiPatterns: [...(existingKnowledge.antiPatterns || []), ...(proposal.domainKnowledge?.antiPatterns || [])]
     };
-    await writeJson(path.join(bundleDir, "domain-knowledge.json"), mergedKnowledge);
+    await writeJson(path.join(bundleDir, DOMAIN_KNOWLEDGE_FILE), mergedKnowledge);
   }
 
   async updateBundleEvaluationSummary(bundleId, evaluationSummary) {
