@@ -5,10 +5,16 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
+const externalEnvKeys = new Set(Object.keys(process.env));
 
-loadDotEnv(path.join(rootDir, ".env"));
+loadDotEnv(path.join(rootDir, ".env.defaults"));
+loadDotEnv(path.join(rootDir, ".env"), {
+  canOverride(key) {
+    return !externalEnvKeys.has(key);
+  }
+});
 
-function loadDotEnv(filePath) {
+function loadDotEnv(filePath, options = {}) {
   if (!fs.existsSync(filePath)) {
     return;
   }
@@ -34,7 +40,8 @@ function loadDotEnv(filePath) {
       value = value.slice(1, -1);
     }
 
-    if (!(key in process.env)) {
+    const canOverride = options.canOverride ? options.canOverride(key) : false;
+    if (!(key in process.env) || canOverride) {
       process.env[key] = value;
     }
   }

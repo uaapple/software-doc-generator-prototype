@@ -35,12 +35,15 @@
 ## 运行方式
 
 1. 安装依赖
-2. 可选配置 `OPENAI_API_KEY`、`OPENAI_MODEL`
-3. 启动服务: `npm start`
-4. 打开 `http://localhost:3000`
+2. 默认情况下无需额外配置模型，仓库自带可用的 Ark / Doubao 默认连接参数
+3. 如需覆盖默认配置，可在仓库根目录创建 `.env`
+4. 启动服务: `npm start`
+5. 打开 `http://localhost:3000`
 
 ## 环境变量
 
+- 仓库会先加载 `.env.defaults`，再加载 `.env`
+- 优先级: 系统环境变量 > `.env` > `.env.defaults`
 - `PORT`: 服务端口，默认 `3000`
 - `OPENAI_API_KEY`: 大模型 API Key
 - `OPENAI_MODEL`: 模型名，默认 `gpt-4.1-mini`
