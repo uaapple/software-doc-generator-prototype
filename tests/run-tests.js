@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -8,6 +8,7 @@ import { ValidationService } from "../src/services/validation-service.js";
 import { LlmService } from "../src/services/llm-service.js";
 import { ensureStorage } from "../src/services/storage.js";
 import { SkillBundleService } from "../src/services/skill-bundle-service.js";
+import { LlmProfileService } from "../src/services/llm-profile-service.js";
 
 async function withTempConfig(run) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-refinement-"));
@@ -25,6 +26,7 @@ async function withTempConfig(run) {
     dataDir: path.join(tempDir, "data"),
     projectStoreDir: path.join(tempDir, "data", "projects"),
     uploadDir: path.join(tempDir, "data", "uploads"),
+    llmProfileStorePath: path.join(tempDir, "data", "llm-profiles.json"),
     skillRefinementDir: path.join(tempDir, "data", "skill-refinement"),
     skillRefinementCaseDir: path.join(tempDir, "data", "skill-refinement", "cases"),
     skillRefinementRunDir: path.join(tempDir, "data", "skill-refinement", "runs"),
@@ -64,7 +66,7 @@ async function seedFixtureFiles(tempDir) {
   );
   await fs.writeFile(
     path.join(tempDir, "skills", "requirement_writing.md"),
-    "# 需求写作 Skill\n\n- 输出中文软件需求。\n- 优先使用‘软件应’句式。\n",
+    "# 需求写作 Skill\n\n- 输出中文软件需求。\n- 优先使用“软件应”句式。\n",
     "utf8"
   );
   await fs.writeFile(
@@ -86,7 +88,7 @@ async function seedFixtureFiles(tempDir) {
         examples: [
           {
             requirementId: "SMiVCU-10160",
-            topic: "ESC前轴扭矩干预激活",
+            topic: "ESC 前轴扭矩干预激活",
             requirementType: "activation_flag_logic",
             requirementText: "软件应根据 ESC 前轴降扭请求激活前轴扭矩干预标志位。",
             signals: ["ESC_TqDecReqAct_F"],
@@ -97,7 +99,7 @@ async function seedFixtureFiles(tempDir) {
           {
             domain: "embedded_vcu",
             subdomain: "torque_intervention",
-            sectionHints: ["扭矩干预功能", "ESC前轴扭矩干预", "ESC后轴扭矩干预"]
+            sectionHints: ["扭矩干预功能", "ESC 前轴扭矩干预", "ESC 后轴扭矩干预"]
           }
         ],
         antiPatterns: ["不要将前轴和后轴需求合并成一条泛化描述。"]
@@ -119,7 +121,7 @@ async function seedFixtureFiles(tempDir) {
             title: "功能需求",
             type: "functional",
             maxItems: 4,
-            verificationHint: "通过功能测试验证输入触发与输出响应"
+            verificationHint: "通过功能测试验证输入触发与输出响应。"
           }
         ]
       },
@@ -170,7 +172,7 @@ const tests = [
           {
             id: "1",
             requirementId: "SWR-001",
-            title: "ESC前轴扭矩干预 - 扭矩计算",
+            title: "ESC 前轴扭矩干预 - 扭矩计算",
             requirementText:
               "当 AEB/CDP/ABS/EBD 任一功能激活时，ESCWhlTq_tqTarFrntAxle 输出为 0；当前轴 CCO/ISA 扭矩请求有效时继续参与计算；输入使用 icesc_tqReqFrntAxleDec。",
             sourceRefs: []
@@ -198,6 +200,30 @@ const tests = [
       assert.ok(conflicts.some((item) => item.code === "code-style-signal"));
       assert.ok(conflicts.some((item) => item.code === "non-canonical-signal"));
       assert.ok(conflicts.some((item) => item.code === "unsupported-expansion"));
+    }
+  },
+  {
+    name: "LLM profile service saves provider-specific model configs",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new LlmProfileService();
+        await service.ensureInitialized();
+        const profile = await service.addProfile({
+          provider: "doubao",
+          name: "豆包测试",
+          model: "doubao-seed-1-6",
+          apiKey: "test-key",
+          baseURL: "https://ark.cn-beijing.volces.com/api/v3"
+        });
+
+        assert.equal(profile.provider, "doubao");
+        assert.equal(profile.name, "豆包测试");
+
+        const meta = await service.getMeta();
+        assert.ok(meta.profiles.some((item) => item.name === "豆包测试"));
+        assert.ok(meta.providers.some((item) => item.id === "openai"));
+        assert.ok(meta.providers.some((item) => item.id === "doubao"));
+      });
     }
   },
   {

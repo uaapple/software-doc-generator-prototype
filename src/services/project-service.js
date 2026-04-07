@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
@@ -49,6 +49,7 @@ export class ProjectService {
       requirements: [],
       traces: [],
       conflicts: [],
+      lastGeneration: null,
       auditLog: [
         {
           at: now(),
@@ -113,11 +114,22 @@ export class ProjectService {
     project.requirements = result.requirements;
     project.traces = result.traces;
     project.conflicts = result.conflicts;
+    project.lastGeneration = result.llmProfile
+      ? {
+          at: now(),
+          llmProfile: result.llmProfile
+        }
+      : {
+          at: now(),
+          llmProfile: null
+        };
     project.status = "generated";
     project.auditLog.push({
       at: now(),
       action: "requirements_generated",
-      detail: `生成 ${result.requirements.length} 条需求`
+      detail: result.llmProfile
+        ? `使用 ${result.llmProfile.name}（${result.llmProfile.model}）生成 ${result.requirements.length} 条需求`
+        : `使用本地回退模式生成 ${result.requirements.length} 条需求`
     });
 
     return this.saveProject(project);
@@ -140,7 +152,7 @@ export class ProjectService {
 
     requirement.review = {
       status: review.status || requirement.review?.status || "pending",
-      reviewer: review.reviewer || "工程师",
+      reviewer: review.reviewer || "当前用户",
       comment: review.comment?.trim() || "",
       updatedAt: now()
     };

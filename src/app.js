@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import multer from "multer";
 import path from "node:path";
 import { promises as fs } from "node:fs";
@@ -9,6 +9,7 @@ import { PipelineService } from "./services/pipeline-service.js";
 import { BenchmarkCaseService } from "./services/benchmark-case-service.js";
 import { SkillRefinementService } from "./services/skill-refinement-service.js";
 import { SkillBundleService } from "./services/skill-bundle-service.js";
+import { LlmProfileService } from "./services/llm-profile-service.js";
 
 export async function createApp() {
   await ensureStorage();
@@ -19,7 +20,9 @@ export async function createApp() {
   const benchmarkCaseService = new BenchmarkCaseService();
   const skillRefinementService = new SkillRefinementService();
   const skillBundleService = new SkillBundleService();
+  const llmProfileService = new LlmProfileService();
   await skillBundleService.ensureInitialized();
+  await llmProfileService.ensureInitialized();
 
   const upload = multer({
     storage: multer.diskStorage({
@@ -71,6 +74,32 @@ export async function createApp() {
     res.json(meta);
   });
 
+  app.get("/api/llm-profiles", async (_req, res, next) => {
+    try {
+      res.json(await llmProfileService.getMeta());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/llm-profiles", async (req, res, next) => {
+    try {
+      const profile = await llmProfileService.addProfile(req.body || {});
+      res.status(201).json(profile);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/llm-profiles/default", async (req, res, next) => {
+    try {
+      const meta = await llmProfileService.setDefaultProfile(req.body?.profileId || "");
+      res.json(meta);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/projects", async (_req, res) => {
     const projects = await projectService.listProjects();
     res.json({ projects });
@@ -119,7 +148,8 @@ export async function createApp() {
   app.post("/api/projects/:projectId/generate", async (req, res, next) => {
     try {
       const result = await pipelineService.generate(req.params.projectId, {
-        skillBundleId: req.body?.skillBundleId || ""
+        skillBundleId: req.body?.skillBundleId || "",
+        llmProfileId: req.body?.llmProfileId || ""
       });
       res.json(result);
     } catch (error) {

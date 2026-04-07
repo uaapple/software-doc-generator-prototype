@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+﻿import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
 
@@ -7,6 +7,7 @@ export async function ensureStorage() {
     fs.mkdir(config.dataDir, { recursive: true }),
     fs.mkdir(config.projectStoreDir, { recursive: true }),
     fs.mkdir(config.uploadDir, { recursive: true }),
+    fs.mkdir(path.dirname(config.llmProfileStorePath), { recursive: true }),
     fs.mkdir(config.skillRefinementDir, { recursive: true }),
     fs.mkdir(config.skillRefinementCaseDir, { recursive: true }),
     fs.mkdir(config.skillRefinementRunDir, { recursive: true }),

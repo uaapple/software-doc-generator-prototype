@@ -1,9 +1,10 @@
-import { SkillLoader } from "./skill-loader.js";
+﻿import { SkillLoader } from "./skill-loader.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
 import { ExtractionService } from "./extraction-service.js";
 import { LlmService } from "./llm-service.js";
 import { ValidationService } from "./validation-service.js";
+import { LlmProfileService } from "./llm-profile-service.js";
 
 export class PipelineService {
   constructor(projectService) {
@@ -14,18 +15,22 @@ export class PipelineService {
     this.llmService = new LlmService();
     this.validationService = new ValidationService();
     this.skillBundleService = new SkillBundleService();
+    this.llmProfileService = new LlmProfileService();
   }
 
   async getMeta() {
-    const [skills, template] = await Promise.all([
+    const [skills, template, llmMeta, llmConfigured] = await Promise.all([
       this.skillLoader.loadAll(),
-      this.templateService.getTemplate()
+      this.templateService.getTemplate(),
+      this.llmProfileService.getMeta(),
+      this.llmService.hasAvailableProfile()
     ]);
 
     return {
       template,
       skills: Object.keys(skills),
-      llmConfigured: Boolean(this.llmService.client)
+      llmConfigured,
+      llm: llmMeta
     };
   }
 
@@ -41,6 +46,7 @@ export class PipelineService {
     const extractions = await this.extractionService.extractFiles(project);
     const requirements = await this.llmService.generateRequirements(project, extractions, options);
     const domainKnowledge = await this.skillBundleService.getDomainKnowledge(options.skillBundleId);
+    const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
     const conflicts = this.validationService.validate(requirements, { domainKnowledge });
     const traces = requirements.flatMap((requirement) =>
       requirement.sourceRefs.map((sourceRef) => ({
@@ -56,7 +62,16 @@ export class PipelineService {
       extractions,
       requirements,
       traces,
-      conflicts
+      conflicts,
+      llmProfile: selectedProfile
+        ? {
+            id: selectedProfile.id,
+            provider: selectedProfile.provider,
+            name: selectedProfile.name,
+            model: selectedProfile.model,
+            baseURL: selectedProfile.baseURL
+          }
+        : null
     });
 
     return saved;

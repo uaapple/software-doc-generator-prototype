@@ -1,45 +1,67 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>软件开发需求自动生成原型</title>
+    <title>软件开发需求自动生成平台</title>
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
     <main class="layout">
       <nav class="top-nav">
-        <a class="nav-link active" href="/">项目生成</a>
-        <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>软件开发需求自动生成平台</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link active" href="/">项目生成</a>
+          <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
+        </div>
       </nav>
 
-      <section class="hero">
-        <p class="eyebrow">Phase One Prototype</p>
-        <h1>软件开发需求自动生成平台</h1>
-        <p class="subtitle">
-          上传系统需求文档、模型文档和 Simulink 生成 C 文件，自动生成可审核、可追溯的软件开发需求草稿。
-        </p>
-        <div class="hero-actions">
-          <a class="hero-link" href="/skill-refinement">进入 Skill Refinement 工作台</a>
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">内部工具</p>
+          <h1>需求生成工作台</h1>
+          <p class="strip-text">选择项目、上传材料并生成需求草案。</p>
+        </div>
+        <div class="strip-actions">
+          <a class="hero-link primary" href="#project-form">新建项目</a>
+          <a class="hero-link secondary" href="/skill-refinement">打开 Refinement</a>
         </div>
       </section>
 
       <section class="panel panel-grid">
         <form id="project-form" class="card">
-          <h2>1. 创建项目</h2>
+          <div class="section-head">
+            <span class="section-index">01</span>
+            <div>
+              <h2>创建项目</h2>
+              <p>填写项目名称和说明，建立本次需求生成任务。</p>
+            </div>
+          </div>
           <label>
             项目名称
-            <input name="name" required placeholder="例如：电机控制需求补写" />
+            <input name="name" required placeholder="例如：电机控制软件需求补全" />
           </label>
           <label>
             项目说明
-            <textarea name="description" rows="3" placeholder="可选，写明项目背景或输入说明"></textarea>
+            <textarea name="description" rows="3" placeholder="可选，写明项目背景、范围或输入说明"></textarea>
           </label>
           <button type="submit">创建项目</button>
         </form>
 
         <form id="upload-form" class="card">
-          <h2>2. 上传输入物</h2>
+          <div class="section-head">
+            <span class="section-index">02</span>
+            <div>
+              <h2>上传输入材料</h2>
+              <p>将系统需求、模型文档和生成代码关联到当前项目。</p>
+            </div>
+          </div>
           <label>
             项目
             <select id="project-select" name="projectId" required></select>
@@ -53,11 +75,11 @@
             <input type="file" name="modelPdf" accept=".pdf,.json,.md,.txt" multiple />
           </label>
           <label>
-            生成 C 文件
+            生成代码文件
             <input type="file" name="generatedCode" accept=".c,.h,.txt" multiple />
           </label>
           <label>
-            SLX（预留）
+            SLX 模型（预留）
             <input type="file" name="slx" accept=".slx" multiple />
           </label>
           <button type="submit">上传文件</button>
@@ -65,32 +87,89 @@
       </section>
 
       <section class="panel panel-grid">
-        <div class="card">
-          <h2>3. 生成需求</h2>
-          <p id="meta"></p>
+        <div class="card generate-card">
+          <div class="section-head">
+            <span class="section-index">03</span>
+            <div>
+              <h2>生成需求</h2>
+              <p>确认项目后启动结构化需求草案生成。</p>
+            </div>
+          </div>
+          <label>
+            当前模型
+            <select id="llm-profile-select"></select>
+          </label>
+          <p id="llm-profile-hint" class="inline-hint"></p>
+          <details class="llm-configurator">
+            <summary>增加模型</summary>
+            <form id="llm-profile-form" class="llm-profile-form">
+              <label>
+                服务商
+                <select id="llm-provider-select" name="provider" required></select>
+              </label>
+              <label>
+                配置名称
+                <input name="name" required placeholder="例如：OpenAI GPT-4.1 / 豆包生产环境" />
+              </label>
+              <label>
+                模型标识
+                <input id="llm-model-input" name="model" required placeholder="例如：gpt-4.1-mini" />
+              </label>
+              <label>
+                API Key
+                <input name="apiKey" type="password" required placeholder="输入 API Key" />
+              </label>
+              <label>
+                Base URL
+                <input id="llm-base-url-input" name="baseURL" required placeholder="服务地址" />
+              </label>
+              <div class="inline-actions">
+                <button type="submit">保存模型</button>
+              </div>
+            </form>
+          </details>
+          <p id="meta" class="meta-message"></p>
           <button id="generate-button">启动生成</button>
           <p id="status" class="status"></p>
         </div>
-        <div class="card">
-          <h2>4. 审核说明</h2>
-          <ul class="plain-list">
-            <li>系统需求作为最高优先级事实源。</li>
-            <li>模型 PDF 与 C 文件用于补充实现细节与佐证。</li>
-            <li>每条需求都显示来源证据与审核状态。</li>
+        <div class="card side-card">
+          <div class="section-head">
+            <span class="section-index">说明</span>
+            <div>
+              <h2>审核规则</h2>
+              <p>结果会附带来源、置信度和审核状态，便于内部评审。</p>
+            </div>
+          </div>
+          <ul class="plain-list feature-list">
+            <li>系统需求优先级最高。</li>
+            <li>模型文档和代码用于补充实现细节。</li>
+            <li>每条需求均可单独审核处理。</li>
           </ul>
         </div>
       </section>
 
       <section class="panel">
         <div class="card">
-          <h2>项目概览</h2>
+          <div class="section-head">
+            <span class="section-index">概览</span>
+            <div>
+              <h2>项目概览</h2>
+              <p>查看输入规模、证据数量和冲突项。</p>
+            </div>
+          </div>
           <div id="project-summary" class="summary"></div>
         </div>
       </section>
 
       <section class="panel">
-        <div class="card">
-          <h2>生成结果</h2>
+        <div class="card results-card">
+          <div class="section-head">
+            <span class="section-index">结果</span>
+            <div>
+              <h2>生成结果</h2>
+              <p>逐条查看并处理需求草案。</p>
+            </div>
+          </div>
           <div id="requirements" class="requirements"></div>
         </div>
       </section>

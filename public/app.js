@@ -1,12 +1,23 @@
-const state = {
+﻿const state = {
   projects: [],
   selectedProjectId: "",
-  meta: null
+  meta: null,
+  llm: {
+    providers: [],
+    profiles: [],
+    defaultProfileId: ""
+  }
 };
 
 const projectForm = document.querySelector("#project-form");
 const uploadForm = document.querySelector("#upload-form");
+const llmProfileForm = document.querySelector("#llm-profile-form");
 const projectSelect = document.querySelector("#project-select");
+const llmProfileSelect = document.querySelector("#llm-profile-select");
+const llmProfileHint = document.querySelector("#llm-profile-hint");
+const llmProviderSelect = document.querySelector("#llm-provider-select");
+const llmModelInput = document.querySelector("#llm-model-input");
+const llmBaseUrlInput = document.querySelector("#llm-base-url-input");
 const generateButton = document.querySelector("#generate-button");
 const requirementsRoot = document.querySelector("#requirements");
 const summaryRoot = document.querySelector("#project-summary");
@@ -47,8 +58,41 @@ uploadForm.addEventListener("submit", async (event) => {
     method: "POST",
     body: formData
   });
-  setStatus("文件已上传，可以开始生成需求");
+  setStatus("文件已上传，可以开始生成需求。");
   await refreshProject(projectId);
+});
+
+llmProviderSelect.addEventListener("change", () => {
+  applyProviderPreset(llmProviderSelect.value);
+});
+
+llmProfileSelect.addEventListener("change", async () => {
+  const profileId = llmProfileSelect.value;
+  renderSelectedProfileHint();
+  if (profileId) {
+    const llmMeta = await request("/api/llm-profiles/default", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId })
+    });
+    state.llm = llmMeta;
+    renderLlmProfiles();
+  }
+});
+
+llmProfileForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const formData = new FormData(llmProfileForm);
+  const payload = Object.fromEntries(formData.entries());
+  await request("/api/llm-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  llmProfileForm.reset();
+  await refreshLlmMeta();
+  applyProviderPreset(state.llm.providers[0]?.id || "openai");
+  setStatus(`已新增模型配置：${payload.name}`);
 });
 
 projectSelect.addEventListener("change", async () => {
@@ -64,15 +108,17 @@ generateButton.addEventListener("click", async () => {
     return;
   }
 
-  setStatus("正在生成需求草稿，请稍候...");
+  setStatus("正在生成需求草案，请稍候...");
   const project = await request(`/api/projects/${projectSelect.value}/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({})
+    body: JSON.stringify({
+      llmProfileId: llmProfileSelect.value || ""
+    })
   });
   upsertProject(project);
   renderProject(project);
-  setStatus(`已生成 ${project.requirements.length} 条需求`);
+  setStatus(`已生成 ${project.requirements.length} 条需求。`);
 });
 
 async function bootstrap() {
@@ -80,10 +126,7 @@ async function bootstrap() {
   state.meta = meta;
   state.projects = projectsResponse.projects;
   state.selectedProjectId = state.projects[0]?.id || "";
-
-  metaRoot.textContent = meta.llmConfigured
-    ? "LLM API 已配置，将优先调用外部模型生成结构化需求。"
-    : "未配置 LLM API，当前使用本地规则回退模式生成可审核草稿。";
+  await refreshLlmMeta();
 
   renderProjects();
 
@@ -92,6 +135,76 @@ async function bootstrap() {
   } else {
     renderProject(null);
   }
+}
+
+function renderMeta() {
+  metaRoot.textContent = state.llm.profiles.length
+    ? "已接入可用 LLM 模型，生成时将按当前选择的模型调用。"
+    : "当前未配置外部 LLM，系统会使用本地回退模式生成草案。";
+}
+
+async function refreshLlmMeta() {
+  state.llm = await request("/api/llm-profiles");
+  renderMeta();
+  renderLlmProviders();
+  renderLlmProfiles();
+}
+
+function renderLlmProviders() {
+  llmProviderSelect.innerHTML = "";
+  for (const provider of state.llm.providers) {
+    const option = document.createElement("option");
+    option.value = provider.id;
+    option.textContent = provider.label;
+    llmProviderSelect.append(option);
+  }
+  applyProviderPreset(llmProviderSelect.value || state.llm.providers[0]?.id || "openai");
+}
+
+function renderLlmProfiles() {
+  llmProfileSelect.innerHTML = "";
+
+  if (!state.llm.profiles.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "未配置，使用本地回退模式";
+    option.selected = true;
+    llmProfileSelect.append(option);
+    renderSelectedProfileHint();
+    return;
+  }
+
+  for (const profile of state.llm.profiles) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = `${profile.name} · ${profile.providerLabel}`;
+    if (profile.id === state.llm.defaultProfileId) {
+      option.selected = true;
+    }
+    llmProfileSelect.append(option);
+  }
+  renderSelectedProfileHint();
+}
+
+function renderSelectedProfileHint() {
+  const profile = state.llm.profiles.find((item) => item.id === llmProfileSelect.value);
+  llmProfileHint.textContent = profile
+    ? `当前使用 ${profile.providerLabel} / ${profile.model} / ${profile.apiKeyMasked}`
+    : "未选择外部模型，将使用本地规则回退模式。";
+}
+
+function applyProviderPreset(providerId) {
+  const provider = state.llm.providers.find((item) => item.id === providerId);
+  if (!provider) {
+    llmModelInput.placeholder = "例如：gpt-4.1-mini";
+    llmBaseUrlInput.value = "";
+    llmBaseUrlInput.placeholder = "服务地址";
+    return;
+  }
+  llmProviderSelect.value = provider.id;
+  llmModelInput.placeholder = `例如：${provider.modelPlaceholder}`;
+  llmBaseUrlInput.value = provider.defaultBaseURL || "";
+  llmBaseUrlInput.placeholder = provider.defaultBaseURL || "服务地址";
 }
 
 function renderProjects() {
@@ -114,8 +227,8 @@ function renderProjects() {
 
 function renderProject(project) {
   if (!project) {
-    summaryRoot.innerHTML = "<p>创建项目后可查看处理进度与结果。</p>";
-    requirementsRoot.innerHTML = "<p>生成结果会显示在这里。</p>";
+    summaryRoot.innerHTML = "<p>创建项目后可查看处理进度与结果概览。</p>";
+    requirementsRoot.innerHTML = "<p>生成结果会显示在这里，便于逐条审核。</p>";
     return;
   }
 
@@ -134,9 +247,16 @@ function renderProject(project) {
     summaryRoot.append(node);
   }
 
+  if (project.lastGeneration?.llmProfile) {
+    const node = document.createElement("div");
+    node.className = "metric";
+    node.innerHTML = `<span>最近生成模型</span><strong>${project.lastGeneration.llmProfile.provider === "doubao" ? "豆包" : project.lastGeneration.llmProfile.provider}</strong><p>${project.lastGeneration.llmProfile.model}</p>`;
+    summaryRoot.append(node);
+  }
+
   requirementsRoot.innerHTML = "";
   if (!project.requirements.length) {
-    requirementsRoot.innerHTML = "<p>上传文件并点击“启动生成”后，这里会出现需求草稿。</p>";
+    requirementsRoot.innerHTML = "<p>上传文件并点击“启动生成”后，这里会出现需求草案。</p>";
     return;
   }
 

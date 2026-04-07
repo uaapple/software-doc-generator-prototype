@@ -1,47 +1,74 @@
-# 发现与决策
+﻿# 发现与决策
 
-## 需求
-- 当前项目目标不是一次性生成正式 Polarion 成品，而是生成结构化、可审核的软件设计需求草稿。
-- 对扭矩干预领域，输出需要贴近工程师人工样例的层级结构和拆分粒度。
-- 输出不再需要带具体章节号，例如 `3.31.1`，但需要保留同样的层级关系。
-- 文档需满足 ISO 26262 语境下的命名精度与追溯要求。
-- 信号命名必须优先服从参考样例或信号字典，避免代码变量名替代标准工程命名。
-- 严禁无依据泛化扩写，尤其是 `ABS/EBD/CCO/ISA` 这类未在目标样例中明确要求的逻辑。
+## 当前目标理解
+- 这个项目现在同时承担两条主线：
+  - 继续保留软件需求生成的主业务能力。
+  - 把首页和工作流完善成真正可用的内部工作台。
+- 用户当前更关注“内部使用是否顺手”，因此页面要弱化介绍感、强调操作效率和布局秩序。
+- 新增的 LLM 能力不是一次性接 OpenAI / 豆包，而是为后续接入 GLM、Minimax、Kimi 等模型打基础。
 
-## 研究发现
-- 第一轮 Doubao 输出更像泛化软件需求列表，结构和粒度与人工样例差距大。
-- 第二轮 skill 调优后，输出已经能稳定拆成前轴激活、前轴计算、后轴激活、后轴计算四个核心主题。
-- 章节数字虽可被模型学习出来，但当前业务场景并不需要保留这些数字。
-- 工程师审议指出，代码化命名和无依据扩写会直接破坏 ISO 26262 下的 Single Source of Truth。
-- 现已将标准工程命名与代码别名映射写入 `domain-knowledge.json`，并在生成后处理、validation、benchmark 评分中生效。
+## 前端相关发现
+- 原始首页在视觉上更像展示页，和“内部工具”定位不一致。
+- 用户对页面最敏感的问题依次是：
+  - logo 显示不完整
+  - 上传控件保留浏览器默认样式，显得突兀
+  - 功能模块宽度不一致，破坏对齐感
+- 将首页收缩为“顶部导航 + 工作台条 + 两行核心功能卡片”后，更符合后台工具预期。
+- 第二排曾采用不等分布局，导致“生成需求”模块明显比“创建项目”窄，后已统一改为两列等宽。
 
-## 技术决策
+## LLM 接入相关发现
+- 原有后端只支持单一 `config.openai` 配置，本质上是用 OpenAI SDK 兼容 Ark / Doubao。
+- `.env.defaults` 中原本就带有豆包默认配置：
+  - `OPENAI_MODEL=doubao-seed-2-0-pro-260215`
+  - `OPENAI_BASE_URL=https://ark.cn-beijing.volces.com/api/v3`
+- 因为 Ark / Doubao 与 OpenAI 接口兼容，当前首批 provider 可以共用 OpenAI SDK，只需区分 provider 元数据和默认 URL。
+- 真正需要抽象的是“模型配置管理”，而不是调用 SDK 的代码路径。
+
+## 本轮技术决策
 | 决策 | 理由 |
 |------|------|
-| 使用 `skills/active` 作为当前生效 skill，并同步到根目录和 `bundle-base` | 避免运行时与人工查看的规则不一致 |
-| 在 `llm-service` 中对输出做领域知识归一化 | 降低模型偶发跑偏时的命名和扩写风险 |
-| 在 `validation-service` 中新增 `code-style-signal`、`non-canonical-signal`、`unsupported-expansion` 冲突类型 | 让 ISO 26262 风险能被显式暴露 |
-| 在 benchmark 写作质量评分中纳入命名与扩写风险惩罚 | 让 KPI 更贴近工程师真实审议口径 |
+| 新增 `src/services/llm-profile-service.js` | 将 provider、profile、默认模型管理集中化 |
+| 在 `data/llm-profiles.json` 持久化模型配置 | 避免只靠环境变量，支持多模型并存 |
+| provider 注册表首批只放 `openai` / `doubao` | 先把结构跑通，避免过度设计 |
+| 默认从环境变量生成 seed profile | 保留历史豆包配置，不打断现有可用能力 |
+| 若历史配置文件为空，也自动补回 seed profile | 提升初始化鲁棒性，避免“服务商下拉为空” |
+| 前端启动时单独请求 `/api/llm-profiles` | 减少依赖聚合 meta，定位和修复更直接 |
 
-## 遇到的问题
-| 问题 | 解决方案 |
-|------|---------|
-| 生成结果会把 `icesc_*` 等代码别名直接写进需求正文 | 引入标准工程命名映射并在生成后归一化 |
-| 模型会擅自把主动制动扩写成 `AEB/CDP/ABS/EBD` | 在领域知识中加入 forbidden expansions，并在 validation 中按高风险标记 |
-| planning-with-files 仓库不是单一 skill 根目录 | 先检查 `SKILL.md` 所在路径，再安装 `skills/planning-with-files-zh` |
+## 当前实现范围
+- 前端：
+  - 首页布局重构
+  - logo 品牌接入
+  - 上传控件样式统一
+  - 生成模块新增“当前模型”选择与“增加模型”表单
+- 后端：
+  - 模型配置查询、新增、默认切换接口
+  - 生成链路支持按 profile 调用
+  - 项目记录最近一次生成使用的模型
+- 测试：
+  - 新增模型配置持久化测试
+  - 保留本地回退测试
+  - 现有 `npm test` 已通过
 
-## 资源
-- `input/software-requirement-writing-rules-vcu.md`
-- `input/system-requirements-example-torque-intervention.md`
-- `input/software-design-requirements-example-esc-torque-intervention.md`
-- `reports/doubao-vs-human-requirements-comparison.md`
-- `reports/doubao-vs-human-requirements-comparison-round2.md`
-- `skills/active/domain-knowledge.json`
+## 当前未完成事项
+- 还没有“编辑模型 / 删除模型 / 测试连接”能力。
+- 还没有针对 GLM / Minimax / Kimi 等 provider 的默认配置预置。
+- 还缺少在实际运行页面中的人工联调确认，例如：
+  - 服务商下拉是否按预期显示
+  - 选择默认模型后是否能成功切换
+  - 新增模型后是否会立即出现在当前模型列表中
 
-## 视觉/浏览器发现
-- `planning-with-files` 仓库中存在三个版本：`planning-with-files`、`planning-with-files-zh`、`planning-with-files-zht`
-- 已安装简体中文版 skill：`~/.codex/skills/planning-with-files-zh`
+## 错误与经验
+- Windows 环境下 `apply_patch` 在当前工作区失败，PowerShell 直接写文件是可靠兜底方案。
+- `planning-with-files` 的 `session-catchup.py` 在本机因 `python` 命令缺失无法运行，后续如果要稳定使用该 skill，需确认 Python 可执行文件路径。
+- “服务商为空”不是 provider 定义缺失，而是初始化与前端拉取链路的联调问题。
 
----
-*每执行2次查看/浏览器/搜索操作后更新此文件*
-*防止视觉信息丢失*
+## 关键文件
+- `public/index.html`
+- `public/app.css`
+- `public/app.js`
+- `src/services/llm-profile-service.js`
+- `src/services/llm-service.js`
+- `src/services/pipeline-service.js`
+- `src/services/project-service.js`
+- `src/app.js`
+- `tests/run-tests.js`

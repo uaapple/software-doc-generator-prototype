@@ -1,4 +1,4 @@
-import path from "node:path";
+﻿import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -57,6 +57,7 @@ export const config = {
   dataDir: path.join(rootDir, "data"),
   projectStoreDir: path.join(rootDir, "data", "projects"),
   uploadDir: path.join(rootDir, "data", "uploads"),
+  llmProfileStorePath: path.join(rootDir, "data", "llm-profiles.json"),
   skillRefinementDir: path.join(rootDir, "data", "skill-refinement"),
   skillRefinementCaseDir: path.join(rootDir, "data", "skill-refinement", "cases"),
   skillRefinementRunDir: path.join(rootDir, "data", "skill-refinement", "runs"),

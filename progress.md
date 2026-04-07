@@ -1,56 +1,75 @@
-# 进度日志
+﻿# 进度日志
 
-## 会话：2026-04-05
+## 会话：2026-04-08
 
-### 阶段 1：规划文件初始化与当前主线对齐
+### 阶段 1：内部工具首页收敛
 - **状态：** complete
-- **开始时间：** 2026-04-05
-- 执行的操作：
-  - 阅读 `planning-with-files-zh` 官方说明和模板
-  - 在项目根目录创建 `task_plan.md`、`findings.md`、`progress.md`
-  - 将当前主线整理为持续化工作记忆
-- 创建/修改的文件：
-  - `task_plan.md`
-  - `findings.md`
-  - `progress.md`
+- **执行的操作：**
+  - 将首页从宣传式首屏改为更紧凑的内部工作台布局。
+  - 接入 ITK logo，并按品牌蓝灰色系统一导航、按钮、卡片和表单样式。
+  - 修复主页面中文乱码问题。
+  - 调整上传文件控件样式，使其与系统按钮视觉统一。
+  - 修复功能区“没对齐”的问题，将四个主模块统一到两列等宽栅格中。
+- **创建/修改的文件：**
+  - `public/index.html`
+  - `public/app.css`
+  - `public/app.js`
+  - `public/assets/itk-logo.jpg`
 
-### 阶段 2：skill refinement 与试跑闭环
-- **状态：** in_progress
-- 执行的操作：
-  - 完成 skill refinement + benchmark 模块实现
-  - 配置并验证 Doubao
-  - 基于 `input/` 样例生成 active skill
-  - 连续多轮对照人工样例并调优 skill
-  - 引入 ISO 26262 命名精度与禁止扩写约束
-- 创建/修改的文件：
+### 阶段 2：LLM 模型配置能力接入
+- **状态：** complete
+- **执行的操作：**
+  - 新增 `llm-profile-service`，用于管理 provider、profile 与默认模型。
+  - 增加 `/api/llm-profiles`、`/api/llm-profiles/default` 等接口。
+  - 将生成链路改为按 `llmProfileId` 解析模型配置并调用。
+  - 在生成模块中新增“当前模型”选择和“增加模型”表单。
+  - 首批支持 `OpenAI` 和 `豆包` 两种 provider。
+  - 记录项目最近一次生成时所用的模型配置。
+- **创建/修改的文件：**
+  - `src/services/llm-profile-service.js`
   - `src/services/llm-service.js`
-  - `src/services/validation-service.js`
-  - `src/services/benchmark-evaluation-service.js`
   - `src/services/pipeline-service.js`
-  - `skills/active/*`
-  - `reports/doubao-vs-human-requirements-comparison*.md`
+  - `src/services/project-service.js`
+  - `src/app.js`
+  - `src/config.js`
+  - `src/services/storage.js`
+  - `public/index.html`
+  - `public/app.js`
+  - `public/app.css`
+
+### 阶段 3：默认豆包配置保留与回归修复
+- **状态：** complete
+- **执行的操作：**
+  - 确认 `.env.defaults` 中原有豆包配置仍在，未被删除。
+  - 修复“服务商下拉为空”的问题。
+  - 为 `llm-profiles.json` 增加 seed profile 自愈逻辑，确保默认豆包配置会自动补回。
+  - 前端改为启动时独立请求 `/api/llm-profiles`，不再只依赖 `/api/meta`。
+- **创建/修改的文件：**
+  - `src/services/llm-profile-service.js`
+  - `public/app.js`
 
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
 | `npm test` | 当前仓库 | 所有自动化测试通过 | `All 5 tests passed.` | pass |
-| Doubao API 联调 | 当前 `.env` 配置 | 能成功返回测试输出 | 已验证通过 | pass |
-| 第二轮生成对照 | 扭矩干预样例 | 结构更接近人工样例 | 已明显提升 | pass |
+| LLM profile 元数据检查 | 当前 `.env.defaults` 与初始化逻辑 | 返回 `OpenAI` / `豆包` 两个 provider，默认 profile 为豆包 seed | 已验证通过 | pass |
+| 默认豆包配置保留 | 当前仓库环境变量 | `doubao-seed-2-0-pro-260215` 仍可解析为默认 profile | 已验证通过 | pass |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
 |--------|------|---------|---------|
-| 2026-04-05 | `install-skill-from-github.py` 提示 GitHub URL 缺少 `--path` | 1 | 先检查仓库结构，定位 skill 真实路径 |
-| 2026-04-05 | 安装脚本 git fallback 临时目录冲突 | 1 | 改为使用已下载仓库内容直接复制到 Codex skills 目录 |
+| 2026-04-08 | Windows 下 `apply_patch` 无法在当前工作区正常执行 | 1 | 改用 PowerShell 直接写入文件 |
+| 2026-04-08 | `planning-with-files` 的 `session-catchup.py` 调用失败，`python` 不在 PATH 中 | 1 | 直接读取计划文件并结合 `git diff --stat` 同步状态 |
+| 2026-04-08 | 页面中“服务商”下拉为空 | 1 | 后端补 seed profile 自愈，前端独立请求 `/api/llm-profiles` |
 
 ## 五问重启检查
 | 问题 | 答案 |
 |------|------|
-| 我在哪里？ | 阶段 3 / 阶段 4：持续调优 skill 并验证生成结果 |
-| 我要去哪里？ | 继续让输出更贴近人工样例，并满足 ISO 26262 命名规范 |
-| 目标是什么？ | 稳定生成可审核、可追溯、命名精确的软件设计需求草稿 |
-| 我学到了什么？ | 见 findings.md，重点是命名精度与禁止无依据扩写 |
-| 我做了什么？ | 已建好 planning files，并完成多轮 skill 调优与测试 |
+| 我在哪里？ | 阶段 4：联调、回归与状态整理 |
+| 我要去哪里？ | 继续做人机联调确认，并为后续更多 provider 扩展预留空间 |
+| 目标是什么？ | 让平台既是可用的内部工作台，又能支持可切换、可新增的多模型接入 |
+| 我学到了什么？ | UI 侧用户更关注秩序和操作效率；模型接入侧关键是 profile 管理与初始化自愈 |
+| 我做了什么？ | 完成首页收敛、首批模型接入、默认豆包保留修复，并补齐测试与计划文件 |
 
 ---
-*每个阶段完成后或遇到错误时更新此文件*
+*本次已将计划文件与当前代码状态同步，可在后续会话中直接续接。*

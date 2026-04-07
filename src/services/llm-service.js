@@ -1,21 +1,21 @@
-import OpenAI from "openai";
+﻿import OpenAI from "openai";
 import { randomUUID } from "node:crypto";
-import { config } from "../config.js";
 import { SkillLoader } from "./skill-loader.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
+import { LlmProfileService } from "./llm-profile-service.js";
 
 export class LlmService {
   constructor() {
     this.skillLoader = new SkillLoader();
     this.templateService = new TemplateService();
     this.skillBundleService = new SkillBundleService();
-    this.client = config.openai.apiKey
-      ? new OpenAI({
-          apiKey: config.openai.apiKey,
-          baseURL: config.openai.baseURL
-        })
-      : null;
+    this.profileService = new LlmProfileService();
+  }
+
+  async hasAvailableProfile() {
+    const profile = await this.profileService.resolveProfile();
+    return Boolean(profile?.apiKey);
   }
 
   async generateRequirements(project, extractions, options = {}) {
@@ -24,14 +24,20 @@ export class LlmService {
     const skills = await this.skillLoader.loadAll(skillDir);
     const knowledge = skills["domain-knowledge.json"] || {};
     const evidence = extractions.flatMap((item) => item.evidence || []);
+    const profile = await this.profileService.resolveProfile(options.llmProfileId);
 
-    if (!this.client) {
+    if (!profile?.apiKey) {
       return applyDomainKnowledgePolicies(buildFallbackRequirements(project, evidence, template, skills), knowledge);
     }
 
+    const client = new OpenAI({
+      apiKey: profile.apiKey,
+      baseURL: profile.baseURL
+    });
+
     const input = buildModelInput(project, evidence, template, skills);
-    const response = await this.client.responses.create({
-      model: config.openai.model,
+    const response = await client.responses.create({
+      model: profile.model,
       input,
       text: {
         format: {
@@ -65,18 +71,18 @@ function buildModelInput(project, evidence, template, skills) {
           type: "input_text",
           text: [
             "你是软件开发需求生成助手。",
-            "目标是根据系统需求和模型侧产物，输出可审核、可追溯、中文的软件开发需求条目。",
+            "目标是根据系统需求和模型资料，输出可审核、可追溯的中文软件需求条目。",
             "系统需求优先级最高；当存在冲突时保留冲突说明，不要捏造事实。",
-            "若需要体现层级结构，只保留功能层级和对象层级，不要输出具体章节数字编号。",
-            "在需满足 ISO 26262 的场景下，信号命名必须优先使用参考样例或信号字典中的标准工程命名，不要使用代码变量名替代。",
-            "严禁基于通用语料进行无依据泛化联想；若参考样例未要求，不要擅自扩写 ABS/EBD/CCO/ISA 等逻辑。",
+            "若需要体现层级结构，只保留功能层级和对象层级，不要输出具体章节编号。",
+            "在需满足 ISO 26262 的场景下，信号命名应优先使用参考样例或信号字典中的标准工程命名。",
+            "严禁基于通用语料进行无依据泛化联想；如果参考样例未要求，不要擅自扩展功能逻辑。",
             "输出必须符合给定 JSON schema。",
             skills["requirement_extraction.md"],
             skills["requirement_writing.md"],
             skills["requirement_validation.md"],
             skills["examples/good_examples.md"],
             skills["examples/bad_examples.md"],
-            `领域知识与few-shot摘要：\n${JSON.stringify(skills["domain-knowledge.json"] || {}, null, 2)}`
+            `领域知识与 few-shot 摘要：\n${JSON.stringify(skills["domain-knowledge.json"] || {}, null, 2)}`
           ].join("\n\n")
         }
       ]
@@ -134,7 +140,7 @@ function buildFallbackRequirements(project, evidence, template, skills) {
                 excerpt: evidenceItem.excerpt
               }
             ],
-            rationale: `基于 ${evidenceItem.fileName} 的证据自动生成草稿`,
+            rationale: `基于 ${evidenceItem.fileName} 的证据自动生成草稿。`,
             verificationHint: section.verificationHint,
             confidence: evidenceItem.confidence,
             conflictNote: ""
@@ -153,11 +159,11 @@ function buildFallbackRequirements(project, evidence, template, skills) {
           id: randomUUID(),
           requirementId: `${template.requirementIdPrefix}-001`,
           title: `${project.name} 软件需求占位条目`,
-          requirementText: "软件应根据已上传的系统需求和模型侧产物生成可审核的需求条目，当前输入尚不足以提炼出明确需求。",
+          requirementText: "软件应根据已上传的系统需求和模型资料生成可审核的需求条目，当前输入尚不足以提炼出明确需求。",
           type: "functional",
           sourceRefs: [],
           rationale: "输入证据不足",
-          verificationHint: "补充系统需求或模型文档后重新生成",
+          verificationHint: "补充系统需求或模型文档后重新生成。",
           confidence: 0.2,
           conflictNote: "缺少可用证据"
         },
@@ -211,7 +217,7 @@ function buildExampleDrivenRequirements(knowledge, evidence, template) {
           requirementText: example.requirementText || example.rawText || "",
           type: example.requirementType || inferRequirementTypeFromExample(example),
           sourceRefs,
-          rationale: `基于候选 skill bundle 中的历史标准案例进行匹配生成（主题：${example.topic || "未命名"}）。`,
+          rationale: `基于当前 skill bundle 中的历史标准案例进行匹配生成（主题：${example.topic || "未命名"}）。`,
           verificationHint: buildVerificationHint(example),
           confidence: Number(Math.min(0.98, 0.55 + overlapRatio).toFixed(2)),
           conflictNote: sourceRefs.length ? "" : "已命中案例模板，但缺少足够来源证据。"
@@ -252,7 +258,7 @@ function buildTitle(sectionTitle, evidenceItem) {
 }
 
 function buildRequirementText(section, evidenceItem) {
-  return `软件应满足${section.title}要求，并依据“${evidenceItem.excerpt.slice(0, 80)}”实现对应行为。`;
+  return `软件应满足 ${section.title} 要求，并依据“${evidenceItem.excerpt.slice(0, 80)}”实现对应行为。`;
 }
 
 function buildExampleTitle(example) {
@@ -274,10 +280,10 @@ function inferRequirementTypeFromExample(example) {
 
 function buildVerificationHint(example) {
   const text = `${example.topic || ""} ${example.requirementText || ""}`;
-  if (/优先级|仲裁|分支/.test(text)) return "通过构造不同条件组合验证分支和优先级结果";
-  if (/激活|标志位/.test(text)) return "通过输入条件切换验证激活标志位和状态变化";
-  if (/阈值|最大|最小|限制/.test(text)) return "通过边界值测试验证阈值和限制逻辑";
-  return "通过仿真或联调验证输入条件与输出行为";
+  if (/优先级|分支/.test(text)) return "通过构造不同条件组合验证分支和优先级结果。";
+  if (/激活|标志位/.test(text)) return "通过输入条件切换验证激活标志位和状态变化。";
+  if (/阈值|最大|最小|限制/.test(text)) return "通过边界值测试验证阈值和限制逻辑。";
+  return "通过仿真或联调验证输入条件与输出行为。";
 }
 
 function tokenize(text) {
@@ -404,11 +410,7 @@ function replaceWholeToken(text, token, replacement) {
 }
 
 function normalizePunctuation(text) {
-  return text
-    .replace(/；\s*；/g, "；")
-    .replace(/：\s*；/g, "：")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  return text.replace(/\s{2,}/g, " ").trim();
 }
 
 function escapeRegExp(text) {
