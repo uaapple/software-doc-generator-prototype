@@ -9,6 +9,10 @@ import { LlmService } from "../src/services/llm-service.js";
 import { ensureStorage } from "../src/services/storage.js";
 import { SkillBundleService } from "../src/services/skill-bundle-service.js";
 import { LlmProfileService } from "../src/services/llm-profile-service.js";
+import { ProjectService } from "../src/services/project-service.js";
+import { RejectionService } from "../src/services/rejection-service.js";
+import { ReplayTaskService } from "../src/services/replay-task-service.js";
+import { SkillRuleService } from "../src/services/skill-rule-service.js";
 
 async function withTempConfig(run) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-refinement-"));
@@ -35,6 +39,11 @@ async function withTempConfig(run) {
     skillRefinementBundleMetaDir: path.join(tempDir, "data", "skill-refinement", "bundles"),
     skillRefinementUploadDir: path.join(tempDir, "data", "skill-refinement", "uploads"),
     activeSkillBundlePointerPath: path.join(tempDir, "data", "skill-refinement", "active-bundle.json"),
+    skillRuleDir: path.join(tempDir, "data", "skill-rules"),
+    skillRuleChangeLogPath: path.join(tempDir, "data", "skill-rules", "change-log.json"),
+    rejectionStoreDir: path.join(tempDir, "data", "rejections"),
+    rejectionGroupStorePath: path.join(tempDir, "data", "rejections", "groups.json"),
+    replayTaskStoreDir: path.join(tempDir, "data", "replay-tasks"),
     templatePath: path.join(tempDir, "templates", "software-requirement-template.json"),
     skillDir: path.join(tempDir, "skills", "active")
   });
@@ -283,6 +292,112 @@ const tests = [
         assert.ok(requirements.length >= 1);
         assert.ok(requirements[0].requirementId.startsWith("SMiVCU-") || requirements[0].requirementId.startsWith("SWR-"));
         assert.ok(Array.isArray(requirements[0].sourceRefs));
+      });
+    }
+  },
+
+  {
+    name: "Rejected requirement creates feedback pool record",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+
+        const project = await projectService.createProject({ name: "Feedback Project" });
+        project.requirements = [
+          {
+            id: "req-1",
+            requirementId: "SWR-001",
+            title: "Need acceptance criteria",
+            requirementText: "Software shall handle faults.",
+            type: "functional",
+            confidence: 0.66,
+            verificationHint: "Add testable criteria",
+            conflictNote: "",
+            sourceRefs: [
+              {
+                fileName: "system.pdf",
+                location: "page:1",
+                excerpt: "System shall report faults."
+              }
+            ]
+          }
+        ];
+        await projectService.saveProject(project);
+
+        const updated = await projectService.reviewRequirement(project.id, "req-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "missing_info",
+          reasonTags: ["acceptance-criteria"],
+          reasonText: "Missing measurable acceptance criteria",
+          expectedNote: "Describe trigger, behavior and verification.",
+          includeInPool: true
+        });
+
+        assert.equal(updated.requirements[0].review.status, "rejected");
+        assert.ok(updated.requirements[0].review.rejectionId);
+
+        const records = await rejectionService.listRecords();
+        assert.equal(records.length, 1);
+        assert.equal(records[0].reasonCategory, "missing_info");
+        assert.equal(records[0].skillContext.targetArea, "validation");
+      });
+    }
+  },
+  {
+    name: "Replay task applies accepted proposal items into candidate bundle",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const ruleService = new SkillRuleService();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay Project" });
+        project.requirements = [
+          {
+            id: "req-2",
+            requirementId: "SWR-002",
+            title: "Need better validation",
+            requirementText: "Software shall process request.",
+            type: "functional",
+            confidence: 0.72,
+            verificationHint: "",
+            conflictNote: "",
+            sourceRefs: []
+          }
+        ];
+        await projectService.saveProject(project);
+        await projectService.reviewRequirement(project.id, "req-2", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "too_vague",
+          reasonTags: ["validation", "traceability"],
+          reasonText: "No trigger or verification details",
+          expectedNote: "Explicitly include trigger, behavior and traceability.",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords();
+        const task = await replayTaskService.createTask({ rejectionIds: [records[0].id] });
+        assert.ok(task.proposals[0].items.length >= 1);
+
+        const proposalItem = task.proposals[0].items[0];
+        await replayTaskService.reviewProposalItem(task.id, proposalItem.proposalItemId, {
+          status: "accepted"
+        });
+
+        const applied = await replayTaskService.applyTask(task.id);
+        assert.ok(applied.candidateBundle.id);
+
+        const rules = await ruleService.listRules(applied.candidateBundle.id);
+        assert.ok(rules.length >= 1);
+        assert.ok(rules.some((rule) => rule.sourceType === "replay_proposal" || rule.version > 1));
       });
     }
   },

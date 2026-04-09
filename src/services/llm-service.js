@@ -52,6 +52,36 @@ export class LlmService {
     const normalized = payload.requirements.map((item, index) => normalizeRequirement(item, index));
     return applyDomainKnowledgePolicies(normalized, knowledge);
   }
+
+  async generateReplayProposal(materialPack, options = {}) {
+    const profile = await this.profileService.resolveProfile(options.llmProfileId);
+    if (!options.llmProfileId) {
+      return buildFallbackReplayProposal(materialPack);
+    }
+    if (!profile?.apiKey) {
+      throw new Error("Selected replay LLM profile is not usable");
+    }
+
+    const client = new OpenAI({
+      apiKey: profile.apiKey,
+      baseURL: profile.baseURL
+    });
+
+    const response = await client.responses.create({
+      model: profile.model,
+      input: buildReplayModelInput(materialPack),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "skill_replay_proposal_response",
+          schema: replayProposalSchema
+        }
+      }
+    });
+
+    const payload = JSON.parse(response.output_text);
+    return normalizeReplayProposalPayload(payload, materialPack);
+  }
 }
 
 function buildModelInput(project, evidence, template, skills) {
@@ -417,6 +447,169 @@ function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function buildReplayModelInput(materialPack = {}) {
+  return [
+    {
+      role: "system",
+      content: [
+        {
+          type: "input_text",
+          text: [
+            "You generate structured skill-repair proposals from human rejection feedback.",
+            "Return only JSON that matches the schema.",
+            "Each proposal item must change exactly one target.",
+            "Use modify_rule only when a valid targetRuleId is provided in the material pack.",
+            "Use add_rule or add_example when the fix should be added as a new rule.",
+            "Do not output full markdown files."
+          ].join("\n")
+        }
+      ]
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: JSON.stringify(materialPack, null, 2)
+        }
+      ]
+    }
+  ];
+}
+
+function buildFallbackReplayProposal(materialPack = {}) {
+  const grouped = new Map();
+  for (const snapshot of materialPack.rejectionSnapshots || []) {
+    const area = snapshot.targetArea || materialPack.targetAreas?.[0] || "validation";
+    if (!grouped.has(area)) grouped.set(area, []);
+    grouped.get(area).push(snapshot);
+  }
+
+  const items = [];
+  for (const [targetArea, areaRecords] of grouped.entries()) {
+    const targetFile = resolveReplayTargetFile(targetArea);
+    const relevantRules = areaRecords.flatMap((item) => item.relevantRules || []);
+    const targetRule = relevantRules[0] || null;
+    const patchSentence = areaRecords
+      .map((item) => item.expectedNote || item.reasonText)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join("; ") || "Add clearer, testable and traceable constraints.";
+
+    if (targetRule && targetArea !== "examples") {
+      items.push({
+        action: "modify_rule",
+        targetRuleId: targetRule.ruleId,
+        targetFile,
+        title: targetRule.title + " (supplement)",
+        before: targetRule.content,
+        after: targetRule.content.trim() + "\nAdd constraint: " + patchSentence,
+        rationale: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
+        evidenceRefs: areaRecords.map((item) => item.id),
+        newRuleDraft: null
+      });
+    } else {
+      const title = (areaRecords[0]?.reasonCategory || "feedback") + " supplemental rule";
+      const content = "The system should avoid the following issue: " + patchSentence;
+      items.push({
+        action: targetArea === "examples" ? "add_example" : "add_rule",
+        targetRuleId: "",
+        targetFile,
+        title,
+        before: "",
+        after: content,
+        rationale: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
+        evidenceRefs: areaRecords.map((item) => item.id),
+        newRuleDraft: {
+          title,
+          content
+        }
+      });
+    }
+  }
+
+  return normalizeReplayProposalPayload(
+    {
+      summary: "Generated " + items.length + " fallback replay proposals.",
+      rootCauses: Array.from(
+        new Set((materialPack.rejectionSnapshots || []).map((item) => item.reasonCategory).filter(Boolean))
+      ).map((item) => "Multiple rejections point to " + item + " issues."),
+      items
+    },
+    materialPack
+  );
+}
+
+function normalizeReplayProposalPayload(payload = {}, materialPack = {}) {
+  const snapshots = materialPack.rejectionSnapshots || [];
+  const validIds = new Set(snapshots.map((item) => item.id));
+  const targetAreas = materialPack.targetAreas || [];
+  return {
+    summary: String(payload.summary || ("Generated replay proposal from " + snapshots.length + " rejection records.")).trim(),
+    rootCauses: Array.isArray(payload.rootCauses)
+      ? payload.rootCauses.map((item) => String(item || "").trim()).filter(Boolean)
+      : [],
+    items: Array.isArray(payload.items)
+      ? payload.items
+          .map((item, index) => normalizeReplayProposalItem(item, index, validIds, targetAreas))
+          .filter(Boolean)
+      : []
+  };
+}
+
+function normalizeReplayProposalItem(item, index, validIds, targetAreas = []) {
+  const action = String(item?.action || "").trim();
+  if (!["add_rule", "modify_rule", "split_rule", "deprecate_rule", "add_example", "modify_domain_knowledge"].includes(action)) {
+    return null;
+  }
+
+  const targetFile = String(item.targetFile || resolveReplayTargetFile(targetAreas[0] || "validation")).trim();
+  const evidenceRefs = Array.isArray(item.evidenceRefs)
+    ? item.evidenceRefs.map((ref) => String(ref || "").trim()).filter((ref) => validIds.has(ref))
+    : [];
+  const newRuleDraft = item.newRuleDraft && typeof item.newRuleDraft === "object"
+    ? {
+        title: String(item.newRuleDraft.title || item.title || ("Replay Proposal " + (index + 1))).trim(),
+        content: String(item.newRuleDraft.content || item.after || "").trim(),
+        rules: Array.isArray(item.newRuleDraft.rules)
+          ? item.newRuleDraft.rules
+              .map((rule) => ({
+                title: String(rule.title || "").trim(),
+                content: String(rule.content || "").trim()
+              }))
+              .filter((rule) => rule.title && rule.content)
+          : []
+      }
+    : null;
+
+  if (action === "modify_rule" && !String(item.targetRuleId || "").trim()) {
+    return null;
+  }
+  if ((action === "add_rule" || action === "add_example") && !(newRuleDraft?.content || String(item.after || "").trim())) {
+    return null;
+  }
+
+  return {
+    action,
+    targetRuleId: String(item.targetRuleId || "").trim(),
+    targetFile,
+    title: String(item.title || newRuleDraft?.title || ("Replay Proposal " + (index + 1))).trim(),
+    before: String(item.before || "").trim(),
+    after: String(item.after || newRuleDraft?.content || "").trim(),
+    rationale: String(item.rationale || "").trim(),
+    evidenceRefs,
+    newRuleDraft
+  };
+}
+
+function resolveReplayTargetFile(targetArea = "") {
+  if (targetArea === "writing") return "requirement_writing.md";
+  if (targetArea === "extraction") return "requirement_extraction.md";
+  if (targetArea === "examples") return "examples/bad_examples.md";
+  if (targetArea === "domain_knowledge") return "domain-knowledge.json";
+  return "requirement_validation.md";
+}
+
 function normalizeRequirement(item, index) {
   return {
     id: item.id || randomUUID(),
@@ -437,6 +630,66 @@ function normalizeRequirement(item, index) {
     }
   };
 }
+
+const replayProposalSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    summary: { type: "string" },
+    rootCauses: {
+      type: "array",
+      items: { type: "string" }
+    },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string" },
+          targetRuleId: { type: "string" },
+          targetFile: { type: "string" },
+          title: { type: "string" },
+          before: { type: "string" },
+          after: { type: "string" },
+          rationale: { type: "string" },
+          evidenceRefs: {
+            type: "array",
+            items: { type: "string" }
+          },
+          newRuleDraft: {
+            anyOf: [
+              { type: "null" },
+              {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  title: { type: "string" },
+                  content: { type: "string" },
+                  rules: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        title: { type: "string" },
+                        content: { type: "string" }
+                      },
+                      required: ["title", "content"]
+                    }
+                  }
+                },
+                required: ["title", "content", "rules"]
+              }
+            ]
+          }
+        },
+        required: ["action", "targetRuleId", "targetFile", "title", "before", "after", "rationale", "evidenceRefs", "newRuleDraft"]
+      }
+    }
+  },
+  required: ["summary", "rootCauses", "items"]
+};
 
 const responseSchema = {
   type: "object",

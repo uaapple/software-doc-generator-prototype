@@ -1,0 +1,97 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>反馈池</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>反馈池工作台</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">项目生成</a>
+          <a class="nav-link active" href="/feedback-pool">反馈池</a>
+          <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">Feedback Loop</p>
+          <h1>驳回记录池与回投修正</h1>
+          <p class="strip-text">按组查看驳回记录，发起回投任务，逐条审核 Skill 修正提案，并生成 candidate bundle。</p>
+        </div>
+        <div class="strip-actions">
+          <button id="refresh-groups" type="button">重建分组</button>
+          <button id="create-replay-task" type="button" class="secondary">发起回投</button>
+        </div>
+      </section>
+
+      <section class="panel feedback-grid">
+        <div class="card feedback-column">
+          <div class="section-head compact-head">
+            <span class="section-index">分组</span>
+            <div>
+              <h2>反馈分组</h2>
+              <p>按分类、标签和目标区域聚合。</p>
+            </div>
+          </div>
+          <div id="group-list" class="stack-list"></div>
+        </div>
+
+        <div class="card feedback-column wide-column">
+          <div class="section-head compact-head">
+            <span class="section-index">记录</span>
+            <div>
+              <h2>驳回记录</h2>
+              <p>支持多选后发起一次回投。</p>
+            </div>
+          </div>
+          <div class="feedback-toolbar">
+            <label>
+              分类筛选
+              <select id="record-category-filter">
+                <option value="">全部</option>
+              </select>
+            </label>
+          </div>
+          <div id="record-list" class="stack-list"></div>
+        </div>
+
+        <div class="card feedback-column">
+          <div class="section-head compact-head">
+            <span class="section-index">详情</span>
+            <div>
+              <h2>详情与提案</h2>
+              <p>查看单条记录、回投任务和逐条提案。</p>
+            </div>
+          </div>
+          <div id="detail-panel" class="detail-panel"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="card">
+          <div class="section-head compact-head">
+            <span class="section-index">任务</span>
+            <div>
+              <h2>回投任务</h2>
+              <p>最近发起的 replay task 及其 candidate bundle 结果。</p>
+            </div>
+          </div>
+          <div id="task-list" class="stack-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/feedback-pool.js"></script>
+  </body>
+</html>

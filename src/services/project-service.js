@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { getProjectPath, readJson, writeJson } from "./storage.js";
+import { RejectionService } from "./rejection-service.js";
 
 function now() {
   return new Date().toISOString();
@@ -30,7 +31,21 @@ function clearGeneratedArtifacts(project) {
   project.lastGeneration = null;
 }
 
+function normalizeReasonTags(reasonTags) {
+  if (Array.isArray(reasonTags)) {
+    return reasonTags.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  if (typeof reasonTags === "string") {
+    return reasonTags.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 export class ProjectService {
+  constructor() {
+    this.rejectionService = new RejectionService();
+  }
+
   async listProjects() {
     const names = await fs.readdir(config.projectStoreDir);
     const projects = await Promise.all(
@@ -196,6 +211,7 @@ export class ProjectService {
 
     return this.saveProject(project);
   }
+
   async reviewRequirement(projectId, requirementId, review) {
     const project = await this.getProject(projectId);
     if (!project) {
@@ -211,12 +227,39 @@ export class ProjectService {
       requirement.requirementText = review.requirementText.trim();
     }
 
+    const nextStatus = review.status || requirement.review?.status || "pending";
+    if (nextStatus === "rejected" && (!review.reasonCategory || !String(review.reasonText || "").trim())) {
+      const error = new Error("Rejected review requires reasonCategory and reasonText");
+      error.statusCode = 400;
+      throw error;
+    }
+
     requirement.review = {
-      status: review.status || requirement.review?.status || "pending",
+      status: nextStatus,
       reviewer: review.reviewer || "当前用户",
       comment: review.comment?.trim() || "",
+      reasonCategory: review.reasonCategory || requirement.review?.reasonCategory || "",
+      reasonTags: normalizeReasonTags(review.reasonTags),
+      reasonText: review.reasonText?.trim() || "",
+      severity: review.severity || requirement.review?.severity || "medium",
+      expectedNote: review.expectedNote?.trim() || "",
+      includeInPool: review.includeInPool !== false,
+      rejectionId: requirement.review?.rejectionId || "",
       updatedAt: now()
     };
+
+    if (nextStatus === "rejected") {
+      const rejection = await this.rejectionService.createRecord({
+        project,
+        requirement,
+        review: {
+          ...review,
+          status: nextStatus,
+          reasonTags: requirement.review.reasonTags
+        }
+      });
+      requirement.review.rejectionId = rejection.id;
+    }
 
     project.auditLog.push({
       at: now(),

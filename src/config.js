@@ -66,6 +66,11 @@ export const config = {
   skillRefinementBundleMetaDir: path.join(rootDir, "data", "skill-refinement", "bundles"),
   skillRefinementUploadDir: path.join(rootDir, "data", "skill-refinement", "uploads"),
   activeSkillBundlePointerPath: path.join(rootDir, "data", "skill-refinement", "active-bundle.json"),
+  skillRuleDir: path.join(rootDir, "data", "skill-rules"),
+  skillRuleChangeLogPath: path.join(rootDir, "data", "skill-rules", "change-log.json"),
+  rejectionStoreDir: path.join(rootDir, "data", "rejections"),
+  rejectionGroupStorePath: path.join(rootDir, "data", "rejections", "groups.json"),
+  replayTaskStoreDir: path.join(rootDir, "data", "replay-tasks"),
   templatePath: path.join(rootDir, "templates", "software-requirement-template.json"),
   skillDir: path.join(rootDir, "skills", "active"),
   openai: {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { copyDirectory, pathExists, readJson, writeJson } from "./storage.js";
+import { SkillRuleService } from "./skill-rule-service.js";
 
 const MANAGED_SKILL_FILES = [
   "requirement_extraction.md",
@@ -50,6 +51,10 @@ function getBundleMetaPath(bundleId) {
 }
 
 export class SkillBundleService {
+  constructor() {
+    this.skillRuleService = new SkillRuleService();
+  }
+
   async ensureInitialized() {
     const activePointer = await readJson(config.activeSkillBundlePointerPath);
     const activeWritingFile = path.join(config.activeSkillDir, "requirement_writing.md");
@@ -63,6 +68,7 @@ export class SkillBundleService {
           seedDirs: [config.activeSkillDir, config.legacySkillDir]
         });
       }
+      await this.skillRuleService.ensureBundleRuleIndex(activePointer.bundleId, config.activeSkillDir);
       return;
     }
 
@@ -90,6 +96,10 @@ export class SkillBundleService {
       updatedAt: now()
     };
 
+    const ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, bundleDir);
+    metadata.ruleIndexVersion = ruleIndex.ruleIndexVersion;
+    metadata.appliedProposalItemIds = [];
+    metadata.appliedReplayTaskIds = [];
     await writeJson(getBundleMetaPath(bundleId), metadata);
     await writeJson(config.activeSkillBundlePointerPath, { bundleId });
   }
@@ -187,7 +197,7 @@ export class SkillBundleService {
     return readJson(path.join(skillDir, DOMAIN_KNOWLEDGE_FILE), DEFAULT_DOMAIN_KNOWLEDGE);
   }
 
-  async createCandidateBundle({ baseBundleId = "", proposal, createdFromCaseIds = [], evaluationSummary = null }) {
+  async createCandidateBundle({ baseBundleId = "", proposal, proposalItems = [], replayTaskId = "", createdFromCaseIds = [], evaluationSummary = null }) {
     await this.ensureInitialized();
     const baseBundle = baseBundleId ? await this.getBundle(baseBundleId) : await this.getActiveBundle();
     const bundleId = randomUUID();
@@ -196,7 +206,19 @@ export class SkillBundleService {
 
     await copyDirectory(baseDir, targetDir);
     await this.ensureDomainKnowledgeFile(targetDir);
-    await this.applyProposalToBundle(targetDir, proposal);
+
+    let ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, targetDir, { force: true });
+    if (proposalItems.length) {
+      ruleIndex = await this.skillRuleService.applyProposalItems({
+        bundleId,
+        bundleDir: targetDir,
+        proposalItems,
+        replayTaskId
+      });
+    } else {
+      await this.applyProposalToBundle(targetDir, proposal);
+      ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, targetDir, { force: true });
+    }
 
     const metadata = {
       id: bundleId,
@@ -207,6 +229,9 @@ export class SkillBundleService {
       changeSummary: proposal?.summary || "Candidate bundle generated from refinement run.",
       createdFromCaseIds,
       evaluationSummary,
+      ruleIndexVersion: ruleIndex.ruleIndexVersion,
+      appliedProposalItemIds: proposalItems.map((item) => item.proposalItemId || item.id),
+      appliedReplayTaskIds: replayTaskId ? [replayTaskId] : [],
       createdAt: now(),
       updatedAt: now()
     };

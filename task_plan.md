@@ -39,6 +39,7 @@
 - [x] 修复“服务商下拉为空”的前端联调问题
 - [x] 记录当前项目状态与进度
 - [x] 核对前后端实现、测试入口与计划文件是否一致
+- [x] 整理本轮改动的提交范围，并完成远端推送
 - [ ] 在运行中的本地服务里人工确认新增模型 UI 表现与交互闭环
 - [ ] 基于真实页面再做一轮细节收口
 - [ ] 修复项目核心文档在当前环境中的乱码/编码一致性问题
@@ -85,3 +86,25 @@
 - 自动化测试已通过，但仍缺少对运行中页面的人工交互确认。
 - README / STATUS 文档在当前环境读取乱码，说明除代码外还存在一项交付层面的可维护性问题。
 - 后续如果继续扩 provider，优先沿用现有 provider 注册表与 profile 存储结构。
+- 当前仓库已完成一次阶段性收口提交：`4f48910 feat: productize workbench and persist model configs`，并已推送到 `origin/main`。
+## 2026-04-10 闭环开发进展补充
+### 阶段 4：驳回池、ReplayTask 与规则注册表落地
+- [x] 将 requirement 驳回从单纯状态更新扩展为结构化反馈采集，要求 `rejected` 时补充 `reasonCategory` 与 `reasonText`
+- [x] 新增 `RejectionRecord` 持久化与列表/详情/分组接口
+- [x] 新增 `ReplayTask`，支持从驳回记录或分组发起回投任务
+- [x] 新增 `SkillRule` / `SkillRuleChangeLog` / `SkillBundleRuleIndex` 基础能力
+- [x] 新增反馈池页面，支持查看驳回记录、发起 replay task、审核 proposal item 并应用为 candidate bundle
+- [x] ReplayTask 已接入现有 LLM Profile，创建任务时可选择已配置模型服务
+- [x] 未选择模型时保留本地 fallback proposal 生成器，保证闭环可兜底跑通
+- [x] 自动化验证通过：`node tests/run-tests.js` -> `All 8 tests passed.`
+- **状态：** in_progress
+
+### 后续开发任务
+- [ ] 将 replay proposal 的 LLM prompt 继续打磨，提升对 skill rules、bad examples、domain knowledge 的命中率
+- [ ] 打通反馈池与 `skill-refinement` 页面，收敛为统一的 proposal 审核体验
+- [ ] 为 replay task 补充失败重试、错误原因展示和人工恢复入口
+- [ ] 将现有 active skill 文件正式迁移为“编号化规则文档”结构，使 markdown 本身也按 `ruleId` 逐条维护
+- [ ] 建立 `SkillRule` 与 markdown 位置的稳定双向映射，避免继续依赖宽松解析
+- [ ] 将 skill 日常维护入口从“整段文档编辑”切换到“规则级新增 / 修改 / 废弃 / 拆分”
+- [ ] 在页面上显式展示当前生成实际使用的 active bundle / skill 版本，降低排查成本
+- [ ] 视需要再把 replay task 产出的 candidate bundle 纳入 benchmark / candidate 主链路联调

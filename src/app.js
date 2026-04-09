@@ -10,6 +10,8 @@ import { BenchmarkCaseService } from "./services/benchmark-case-service.js";
 import { SkillRefinementService } from "./services/skill-refinement-service.js";
 import { SkillBundleService } from "./services/skill-bundle-service.js";
 import { LlmProfileService } from "./services/llm-profile-service.js";
+import { RejectionService } from "./services/rejection-service.js";
+import { ReplayTaskService } from "./services/replay-task-service.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -37,6 +39,8 @@ export async function createApp() {
   const skillRefinementService = new SkillRefinementService();
   const skillBundleService = new SkillBundleService();
   const llmProfileService = new LlmProfileService();
+  const rejectionService = new RejectionService();
+  const replayTaskService = new ReplayTaskService();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
 
@@ -82,6 +86,9 @@ export async function createApp() {
   });
   app.get("/skill-refinement", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "skill-refinement.html"));
+  });
+  app.get("/feedback-pool", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "feedback-pool.html"));
   });
   app.use(express.static(config.publicDir));
 
@@ -225,6 +232,118 @@ export async function createApp() {
         req.body || {}
       );
       res.json(toClientProject(project));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/rejections", async (req, res, next) => {
+    try {
+      const records = await rejectionService.listRecords(req.query || {});
+      res.json({ records });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/rejections", async (req, res, next) => {
+    try {
+      const project = await projectService.getProject(req.body?.projectId || "");
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      const requirement = (project.requirements || []).find((item) => item.id === req.body?.requirementId);
+      if (!requirement) {
+        return res.status(404).json({ error: "Requirement not found" });
+      }
+      const record = await rejectionService.createRecord({
+        project,
+        requirement,
+        review: req.body || {}
+      });
+      res.status(201).json(record);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/rejections/:rejectionId", async (req, res, next) => {
+    try {
+      const record = await rejectionService.getRecord(req.params.rejectionId);
+      if (!record) {
+        return res.status(404).json({ error: "Rejection record not found" });
+      }
+      res.json(record);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/rejection-groups/rebuild", async (_req, res, next) => {
+    try {
+      const groups = await rejectionService.rebuildGroups();
+      res.json({ groups });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/rejection-groups", async (_req, res, next) => {
+    try {
+      const groups = await rejectionService.listGroups();
+      res.json({ groups });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/replay-tasks", async (req, res, next) => {
+    try {
+      const task = await replayTaskService.createTask(req.body || {});
+      res.status(201).json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/replay-tasks", async (_req, res, next) => {
+    try {
+      const tasks = await replayTaskService.listTasks();
+      res.json({ tasks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/replay-tasks/:taskId", async (req, res, next) => {
+    try {
+      const task = await replayTaskService.getTask(req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "Replay task not found" });
+      }
+      res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/replay-tasks/:taskId/proposals/:proposalItemId/review", async (req, res, next) => {
+    try {
+      const proposalItem = await replayTaskService.reviewProposalItem(
+        req.params.taskId,
+        req.params.proposalItemId,
+        req.body || {}
+      );
+      res.json(proposalItem);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/replay-tasks/:taskId/apply", async (req, res, next) => {
+    try {
+      const result = await replayTaskService.applyTask(req.params.taskId);
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -386,7 +505,7 @@ export async function createApp() {
 
   app.use((error, _req, res, _next) => {
     console.error(error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       error: error.message || "Internal server error"
     });
   });

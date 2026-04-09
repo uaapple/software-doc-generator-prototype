@@ -15,6 +15,11 @@ export async function ensureStorage() {
     fs.mkdir(config.skillRefinementAuditDir, { recursive: true }),
     fs.mkdir(config.skillRefinementBundleMetaDir, { recursive: true }),
     fs.mkdir(config.skillRefinementUploadDir, { recursive: true }),
+    fs.mkdir(config.skillRuleDir, { recursive: true }),
+    fs.mkdir(path.dirname(config.skillRuleChangeLogPath), { recursive: true }),
+    fs.mkdir(config.rejectionStoreDir, { recursive: true }),
+    fs.mkdir(path.dirname(config.rejectionGroupStorePath), { recursive: true }),
+    fs.mkdir(config.replayTaskStoreDir, { recursive: true }),
     fs.mkdir(config.activeSkillDir, { recursive: true }),
     fs.mkdir(config.skillBundleDir, { recursive: true })
   ]);
