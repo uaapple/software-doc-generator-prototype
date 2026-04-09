@@ -1,11 +1,13 @@
-﻿const state = {
+const state = {
   projects: [],
   selectedProjectId: "",
   meta: null,
   llm: {
     providers: [],
     profiles: [],
-    defaultProfileId: ""
+    defaultProfileId: "",
+    editingProfileId: "",
+    connectivityByProfileId: {}
   }
 };
 
@@ -17,49 +19,70 @@ const llmProfileSelect = document.querySelector("#llm-profile-select");
 const llmProfileHint = document.querySelector("#llm-profile-hint");
 const llmProviderSelect = document.querySelector("#llm-provider-select");
 const llmModelInput = document.querySelector("#llm-model-input");
+const llmApiKeyInput = document.querySelector("#llm-api-key-input");
 const llmBaseUrlInput = document.querySelector("#llm-base-url-input");
+const llmProfileList = document.querySelector("#llm-profile-list");
+const llmConfigurator = document.querySelector("#llm-configurator");
+const llmFormTitle = document.querySelector("#llm-form-title");
+const llmFormSubtitle = document.querySelector("#llm-form-subtitle");
+const llmProfileSubmit = document.querySelector("#llm-profile-submit");
+const llmProfileCancel = document.querySelector("#llm-profile-cancel");
 const generateButton = document.querySelector("#generate-button");
 const requirementsRoot = document.querySelector("#requirements");
 const summaryRoot = document.querySelector("#project-summary");
 const statusRoot = document.querySelector("#status");
 const metaRoot = document.querySelector("#meta");
 const requirementTemplate = document.querySelector("#requirement-template");
+const projectFilesDialog = document.querySelector("#project-files-dialog");
+const projectFilesList = document.querySelector("#project-files-list");
+const projectFilesClose = document.querySelector("#project-files-close");
+const projectFilesSubtitle = document.querySelector("#project-files-subtitle");
+const projectEvidenceDialog = document.querySelector("#project-evidence-dialog");
+const projectEvidenceList = document.querySelector("#project-evidence-list");
+const projectEvidenceClose = document.querySelector("#project-evidence-close");
+const projectEvidenceSubtitle = document.querySelector("#project-evidence-subtitle");
 
 await bootstrap();
 
 projectForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const formData = new FormData(projectForm);
-  const payload = Object.fromEntries(formData.entries());
-  const project = await request("/api/projects", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  try {
+    const payload = Object.fromEntries(new FormData(projectForm).entries());
+    const project = await request("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
 
-  state.projects.unshift(project);
-  state.selectedProjectId = project.id;
-  renderProjects();
-  renderProject(project);
-  projectForm.reset();
-  setStatus(`已创建项目：${project.name}`);
+    state.projects.unshift(project);
+    state.selectedProjectId = project.id;
+    renderProjects();
+    renderProject(project);
+    projectForm.reset();
+    setStatus(`已创建项目：${payload.name}`);
+  } catch (error) {
+    handleError(error);
+  }
 });
 
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const projectId = projectSelect.value;
-  if (!projectId) {
-    setStatus("请先创建或选择项目");
-    return;
-  }
+  try {
+    const projectId = projectSelect.value;
+    if (!projectId) {
+      setStatus("请先创建或选择项目");
+      return;
+    }
 
-  const formData = new FormData(uploadForm);
-  await request(`/api/projects/${projectId}/files`, {
-    method: "POST",
-    body: formData
-  });
-  setStatus("文件已上传，可以开始生成需求。");
-  await refreshProject(projectId);
+    await request(`/api/projects/${projectId}/files`, {
+      method: "POST",
+      body: new FormData(uploadForm)
+    });
+    setStatus("文件已上传，可以开始生成需求。");
+    await refreshProject(projectId);
+  } catch (error) {
+    handleError(error);
+  }
 });
 
 llmProviderSelect.addEventListener("change", () => {
@@ -69,71 +92,130 @@ llmProviderSelect.addEventListener("change", () => {
 llmProfileSelect.addEventListener("change", async () => {
   const profileId = llmProfileSelect.value;
   renderSelectedProfileHint();
-  if (profileId) {
+  if (!profileId) {
+    return;
+  }
+
+  try {
     const llmMeta = await request("/api/llm-profiles/default", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profileId })
     });
-    state.llm = llmMeta;
+    state.llm = {
+      ...state.llm,
+      ...llmMeta,
+      editingProfileId: state.llm.editingProfileId,
+      connectivityByProfileId: state.llm.connectivityByProfileId
+    };
     renderLlmProfiles();
+    setStatus(`已切换默认模型：${getProfileName(profileId)}`);
+  } catch (error) {
+    handleError(error);
   }
 });
 
 llmProfileForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const formData = new FormData(llmProfileForm);
-  const payload = Object.fromEntries(formData.entries());
-  await request("/api/llm-profiles", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  llmProfileForm.reset();
-  await refreshLlmMeta();
-  applyProviderPreset(state.llm.providers[0]?.id || "openai");
-  setStatus(`已新增模型配置：${payload.name}`);
+  try {
+    const payload = Object.fromEntries(new FormData(llmProfileForm).entries());
+    const editingProfile = getEditingProfile();
+    const isEditing = Boolean(editingProfile);
+    if (isEditing && !payload.apiKey) {
+      delete payload.apiKey;
+    }
+
+    const savedProfile = await request(isEditing ? `/api/llm-profiles/${editingProfile.id}` : "/api/llm-profiles", {
+      method: isEditing ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    await refreshLlmMeta();
+    resetLlmProfileForm();
+    state.llm.connectivityByProfileId[savedProfile.id] = { status: "idle", message: "" };
+    llmConfigurator.open = true;
+    setStatus(isEditing ? `已更新模型配置：${payload.name}` : `已新增模型配置：${payload.name}`);
+  } catch (error) {
+    handleError(error);
+  }
+});
+
+llmProfileCancel.addEventListener("click", () => {
+  resetLlmProfileForm();
+  setStatus("已退出编辑状态。");
 });
 
 projectSelect.addEventListener("change", async () => {
   state.selectedProjectId = projectSelect.value;
-  if (state.selectedProjectId) {
+  if (!state.selectedProjectId) {
+    return;
+  }
+
+  try {
     await refreshProject(state.selectedProjectId);
+  } catch (error) {
+    handleError(error);
   }
 });
 
 generateButton.addEventListener("click", async () => {
-  if (!projectSelect.value) {
-    setStatus("请先选择项目");
-    return;
-  }
+  try {
+    if (!projectSelect.value) {
+      setStatus("请先选择项目");
+      return;
+    }
 
-  setStatus("正在生成需求草案，请稍候...");
-  const project = await request(`/api/projects/${projectSelect.value}/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      llmProfileId: llmProfileSelect.value || ""
-    })
-  });
-  upsertProject(project);
-  renderProject(project);
-  setStatus(`已生成 ${project.requirements.length} 条需求。`);
+    setStatus("正在生成需求草案，请稍候...");
+    const project = await request(`/api/projects/${projectSelect.value}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ llmProfileId: llmProfileSelect.value || "" })
+    });
+    upsertProject(project);
+    renderProject(project);
+    setStatus(`已生成 ${project.requirements.length} 条需求。`);
+  } catch (error) {
+    handleError(error);
+  }
+});
+
+projectFilesClose.addEventListener("click", () => {
+  projectFilesDialog.close();
+});
+
+projectFilesDialog.addEventListener("click", (event) => {
+  if (event.target === projectFilesDialog) {
+    projectFilesDialog.close();
+  }
+});
+
+projectEvidenceClose.addEventListener("click", () => {
+  projectEvidenceDialog.close();
+});
+
+projectEvidenceDialog.addEventListener("click", (event) => {
+  if (event.target === projectEvidenceDialog) {
+    projectEvidenceDialog.close();
+  }
 });
 
 async function bootstrap() {
-  const [meta, projectsResponse] = await Promise.all([request("/api/meta"), request("/api/projects")]);
-  state.meta = meta;
-  state.projects = projectsResponse.projects;
-  state.selectedProjectId = state.projects[0]?.id || "";
-  await refreshLlmMeta();
+  try {
+    const [meta, projectsResponse] = await Promise.all([request("/api/meta"), request("/api/projects")]);
+    state.meta = meta;
+    state.projects = projectsResponse.projects;
+    state.selectedProjectId = state.projects[0]?.id || "";
+    await refreshLlmMeta();
+    renderProjects();
 
-  renderProjects();
-
-  if (state.selectedProjectId) {
-    await refreshProject(state.selectedProjectId);
-  } else {
-    renderProject(null);
+    if (state.selectedProjectId) {
+      await refreshProject(state.selectedProjectId);
+    } else {
+      renderProject(null);
+    }
+  } catch (error) {
+    handleError(error);
   }
 }
 
@@ -144,7 +226,16 @@ function renderMeta() {
 }
 
 async function refreshLlmMeta() {
-  state.llm = await request("/api/llm-profiles");
+  const llmMeta = await request("/api/llm-profiles");
+  state.llm = {
+    ...state.llm,
+    ...llmMeta,
+    editingProfileId: state.llm.editingProfileId,
+    connectivityByProfileId: cleanupConnectivityState(
+      state.llm.connectivityByProfileId,
+      llmMeta.profiles.map((profile) => profile.id)
+    )
+  };
   renderMeta();
   renderLlmProviders();
   renderLlmProfiles();
@@ -171,6 +262,8 @@ function renderLlmProfiles() {
     option.selected = true;
     llmProfileSelect.append(option);
     renderSelectedProfileHint();
+    renderLlmProfileList();
+    renderLlmFormState();
     return;
   }
 
@@ -183,14 +276,86 @@ function renderLlmProfiles() {
     }
     llmProfileSelect.append(option);
   }
+
   renderSelectedProfileHint();
+  renderLlmProfileList();
+  renderLlmFormState();
 }
 
 function renderSelectedProfileHint() {
   const profile = state.llm.profiles.find((item) => item.id === llmProfileSelect.value);
   llmProfileHint.textContent = profile
-    ? `当前使用 ${profile.providerLabel} / ${profile.model} / ${profile.apiKeyMasked}`
+    ? `当前使用 ${profile.providerLabel} / ${profile.model} / ${profile.apiKeyMasked || "本地免 Key"}`
     : "未选择外部模型，将使用本地规则回退模式。";
+}
+
+function renderLlmProfileList() {
+  llmProfileList.innerHTML = "";
+
+  if (!state.llm.profiles.length) {
+    llmProfileList.innerHTML = '<p class="empty-state">当前还没有可用的模型配置。</p>';
+    return;
+  }
+
+  for (const profile of state.llm.profiles) {
+    const connectivity = getConnectivityState(profile.id);
+    const card = document.createElement("article");
+    card.className = "llm-profile-item";
+    if (profile.id === state.llm.defaultProfileId) {
+      card.classList.add("is-default");
+    }
+    if (profile.id === state.llm.editingProfileId) {
+      card.classList.add("is-editing");
+    }
+
+    const badges = [
+      profile.id === state.llm.defaultProfileId ? '<span class="mini-pill">默认</span>' : "",
+      profile.seeded ? '<span class="mini-pill subtle">内置</span>' : "",
+      buildConnectivityBadge(connectivity)
+    ]
+      .filter(Boolean)
+      .join("");
+
+    card.innerHTML = `
+      <div class="llm-profile-copy">
+        <div class="llm-profile-title-row">
+          <strong>${escapeHtml(profile.name)}</strong>
+          <div class="llm-profile-badges">${badges}</div>
+        </div>
+        <p>${escapeHtml(profile.providerLabel)} / ${escapeHtml(profile.model)}</p>
+        <p>${escapeHtml(profile.baseURL)}</p>
+        <p>Key: ${escapeHtml(profile.apiKeyMasked || "本地免 Key")}</p>
+        ${connectivity.message ? `<p class="connectivity-note ${getConnectivityToneClass(connectivity.status)}">${escapeHtml(connectivity.message)}</p>` : ""}
+      </div>
+      <div class="llm-profile-actions"></div>
+    `;
+
+    const actions = card.querySelector(".llm-profile-actions");
+    actions.append(
+      createActionButton("设为默认", () => setDefaultProfile(profile.id), profile.id === state.llm.defaultProfileId),
+      createActionButton(connectivity.status === "testing" ? "测试中..." : "测试连通性", () => testProfile(profile.id), connectivity.status === "testing"),
+      createActionButton("编辑", () => startEditProfile(profile.id), connectivity.status === "testing"),
+      createActionButton("删除", () => deleteProfile(profile.id), connectivity.status === "testing", "danger")
+    );
+
+    llmProfileList.append(card);
+  }
+}
+
+function renderLlmFormState() {
+  const editingProfile = getEditingProfile();
+  const isEditing = Boolean(editingProfile);
+  llmFormTitle.textContent = isEditing ? "编辑模型" : "新增模型";
+  llmFormSubtitle.textContent = isEditing
+    ? "修改后会覆盖该配置；API Key 留空时会保留原值。"
+    : "保存后即可参与生成，也可以在列表中继续编辑、删除或测试连通性。";
+  llmProfileSubmit.textContent = isEditing ? "保存修改" : "保存模型";
+  llmProfileCancel.hidden = !isEditing;
+  const selectedProvider = state.llm.providers.find((item) => item.id === llmProviderSelect.value);
+  llmApiKeyInput.required = !isEditing && providerRequiresApiKey(selectedProvider);
+  llmApiKeyInput.placeholder = providerRequiresApiKey(selectedProvider)
+    ? "新增时必填，编辑时留空则保持原值"
+    : "可留空";
 }
 
 function applyProviderPreset(providerId) {
@@ -201,10 +366,12 @@ function applyProviderPreset(providerId) {
     llmBaseUrlInput.placeholder = "服务地址";
     return;
   }
+
   llmProviderSelect.value = provider.id;
   llmModelInput.placeholder = `例如：${provider.modelPlaceholder}`;
   llmBaseUrlInput.value = provider.defaultBaseURL || "";
   llmBaseUrlInput.placeholder = provider.defaultBaseURL || "服务地址";
+  renderLlmFormState();
 }
 
 function renderProjects() {
@@ -235,22 +402,37 @@ function renderProject(project) {
   summaryRoot.innerHTML = "";
   const metrics = [
     ["输入文件", project.files.length],
-    ["抽取证据", project.extractions.reduce((count, item) => count + item.evidence.length, 0)],
+    ["抽取证据", project.metrics?.evidenceCount ?? 0],
     ["需求条目", project.requirements.length],
     ["冲突项", project.conflicts.length]
   ];
 
   for (const [label, value] of metrics) {
-    const node = document.createElement("div");
-    node.className = "metric";
-    node.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+    const isFileMetric = label === "输入文件";
+    const isEvidenceMetric = label === "抽取证据";
+    const node = document.createElement(isFileMetric || isEvidenceMetric ? "button" : "div");
+    node.className = isFileMetric || isEvidenceMetric ? "metric metric-button" : "metric";
+
+    if (isFileMetric) {
+      node.type = "button";
+      node.innerHTML = `<span>${label}</span><strong>${value}</strong><p class="metric-hint">点击查看文件列表</p>`;
+      node.addEventListener("click", () => openProjectFilesDialog(project));
+    } else if (isEvidenceMetric) {
+      node.type = "button";
+      node.innerHTML = `<span>${label}</span><strong>${value}</strong><p class="metric-hint">点击查看证据明细</p>`;
+      node.addEventListener("click", () => openProjectEvidenceDialog(project));
+    } else {
+      node.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+    }
+
     summaryRoot.append(node);
   }
 
   if (project.lastGeneration?.llmProfile) {
     const node = document.createElement("div");
     node.className = "metric";
-    node.innerHTML = `<span>最近生成模型</span><strong>${project.lastGeneration.llmProfile.provider === "doubao" ? "豆包" : project.lastGeneration.llmProfile.provider}</strong><p>${project.lastGeneration.llmProfile.model}</p>`;
+    const providerLabel = project.lastGeneration.llmProfile.provider === "doubao" ? "豆包" : project.lastGeneration.llmProfile.providerLabel || project.lastGeneration.llmProfile.provider;
+    node.innerHTML = `<span>最近生成模型</span><strong>${escapeHtml(providerLabel)}</strong><p>${escapeHtml(project.lastGeneration.llmProfile.model)}</p>`;
     summaryRoot.append(node);
   }
 
@@ -274,7 +456,7 @@ function renderProject(project) {
     fragment.querySelector('[data-field="conflictNote"]').textContent = requirement.conflictNote || "无";
 
     const sources = fragment.querySelector('[data-field="sources"]');
-    for (const source of requirement.sourceRefs) {
+    for (const source of requirement.sourceRefs || []) {
       const li = document.createElement("li");
       li.textContent = `${source.fileName} @ ${source.location}: ${source.excerpt}`;
       sources.append(li);
@@ -289,32 +471,164 @@ function renderProject(project) {
     fragment.querySelector('[data-action="reject"]').addEventListener("click", () =>
       reviewRequirement(project.id, requirement.id, "rejected", root)
     );
+    fragment.querySelector('[data-action="delete"]').addEventListener("click", () =>
+      deleteRequirement(project.id, requirement.id, requirement.requirementId)
+    );
 
     requirementsRoot.append(fragment);
   }
 }
 
-async function reviewRequirement(projectId, requirementId, status, root) {
-  const requirementText = root.querySelector('[data-field="requirementText"]').value;
-  const project = await request(`/api/projects/${projectId}/requirements/${requirementId}/review`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status, requirementText, reviewer: "当前用户" })
+function openProjectFilesDialog(project) {
+  projectFilesSubtitle.textContent = `当前项目共上传 ${project.files.length} 个文件。删除文件后，历史抽取与生成结果会一并清空。`;
+  renderProjectFilesDialog(project);
+  projectFilesDialog.showModal();
+}
+
+function renderProjectFilesDialog(project) {
+  projectFilesList.innerHTML = "";
+  if (!project.files.length) {
+    projectFilesList.innerHTML = '<p class="empty-state">当前项目还没有上传任何文件。</p>';
+    return;
+  }
+
+  const files = [...project.files].sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+  for (const file of files) {
+    const item = document.createElement("article");
+    item.className = "file-item";
+    item.innerHTML = `
+      <div class="file-item-copy">
+        <div class="file-item-title-row">
+          <strong>${escapeHtml(file.originalName)}</strong>
+          <span class="mini-pill subtle">${escapeHtml(getFileRoleLabel(file.role))}</span>
+        </div>
+        <p>上传时间：${formatDateTime(file.uploadedAt)}</p>
+        <p>大小：${formatFileSize(file.size)}</p>
+        <p>存储名：${escapeHtml(file.storedName)}</p>
+      </div>
+      <div class="file-item-actions"></div>
+    `;
+
+    const actions = item.querySelector(".file-item-actions");
+    actions.append(createActionButton("删除", () => deleteProjectFile(project.id, file.id), false, "danger"));
+    projectFilesList.append(item);
+  }
+}
+
+function openProjectEvidenceDialog(project) {
+  const evidenceItems = collectProjectEvidence(project);
+  projectEvidenceSubtitle.textContent = `当前项目共抽取 ${evidenceItems.length} 条证据。`;
+  renderProjectEvidenceDialog(project);
+  projectEvidenceDialog.showModal();
+}
+
+function renderProjectEvidenceDialog(project) {
+  projectEvidenceList.innerHTML = "";
+  const evidenceItems = collectProjectEvidence(project);
+
+  if (!evidenceItems.length) {
+    projectEvidenceList.innerHTML = '<p class="empty-state">当前项目还没有可查看的证据明细。</p>';
+    return;
+  }
+
+  for (const evidence of evidenceItems) {
+    const item = document.createElement("article");
+    item.className = "file-item evidence-item";
+    const tags = Array.isArray(evidence.tags) && evidence.tags.length
+      ? evidence.tags.map((tag) => `<span class="mini-pill subtle">${escapeHtml(tag)}</span>`).join("")
+      : '<span class="mini-pill subtle">未分类</span>';
+    const location = escapeHtml(evidence.location || "未标注");
+    const confidence = typeof evidence.confidence === "number" ? evidence.confidence.toFixed(2) : "--";
+    const evidenceId = escapeHtml(evidence.id || "--");
+    const excerpt = escapeHtml(evidence.excerpt || evidence.summary || "无证据摘要");
+    const fileName = escapeHtml(evidence.fileName || "未命名证据来源");
+    const roleLabel = escapeHtml(getFileRoleLabel(evidence.fileRole || "other"));
+
+    item.innerHTML = `
+      <div class="file-item-copy evidence-copy">
+        <div class="file-item-title-row">
+          <strong>${fileName}</strong>
+          <span class="mini-pill subtle">${roleLabel}</span>
+        </div>
+        <div class="evidence-meta">
+          <span>位置：${location}</span>
+          <span>置信度：${confidence}</span>
+          <span>编号：${evidenceId}</span>
+        </div>
+        <div class="evidence-tags">${tags}</div>
+        <p class="evidence-excerpt">${excerpt}</p>
+      </div>
+    `;
+
+    projectEvidenceList.append(item);
+  }
+}
+
+function collectProjectEvidence(project) {
+  return (project.extractions || []).flatMap((entry) =>
+    (entry.evidence || []).map((evidence) => ({
+      ...evidence,
+      fileName: evidence.fileName || entry.fileName,
+      fileRole: evidence.fileRole || entry.fileRole,
+      summary: evidence.summary || entry.summary
+    }))
+  );
+}
+
+async function deleteProjectFile(projectId, fileId) {
+  const project = state.projects.find((item) => item.id === projectId);
+  const file = project?.files.find((item) => item.id === fileId);
+  if (!project || !file) {
+    return;
+  }
+
+  const confirmed = window.confirm(`确认删除文件“${file.originalName}”吗？删除后需要重新生成需求结果。`);
+  if (!confirmed) {
+    return;
+  }
+
+  const updatedProject = await request(`/api/projects/${projectId}/files/${fileId}`, {
+    method: "DELETE"
+  });
+
+  upsertProject(updatedProject);
+  renderProjects();
+  renderProject(updatedProject);
+  renderProjectFilesDialog(updatedProject);
+  setStatus(`已删除文件：${file.originalName}`);
+
+  if (!updatedProject.files.length) {
+    projectFilesDialog.close();
+  }
+}
+
+async function deleteRequirement(projectId, requirementId, requirementCode) {
+  const confirmed = window.confirm(`确认删除需求“${requirementCode}”吗？此操作会直接从后端移除该条生成结果。`);
+  if (!confirmed) {
+    return;
+  }
+
+  const project = await request(`/api/projects/${projectId}/requirements/${requirementId}`, {
+    method: "DELETE"
   });
   upsertProject(project);
   renderProject(project);
-  setStatus(`需求已更新为：${translateStatus(status)}`);
+  setStatus(`已删除需求：${requirementCode}`);
 }
-
-function translateStatus(status) {
-  return (
-    {
-      pending: "待审核",
-      accepted: "已接受",
-      revised: "已修改",
-      rejected: "已驳回"
-    }[status] || "待审核"
-  );
+async function reviewRequirement(projectId, requirementId, status, root) {
+  try {
+    const requirementText = root.querySelector('[data-field="requirementText"]').value;
+    const project = await request(`/api/projects/${projectId}/requirements/${requirementId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, requirementText, reviewer: "褰撳墠鐢ㄦ埛" })
+    });
+    upsertProject(project);
+    renderProject(project);
+    setStatus(`需求已更新为：${translateStatus(status)}`);
+  } catch (error) {
+    handleError(error);
+  }
 }
 
 async function refreshProject(projectId) {
@@ -333,15 +647,262 @@ function upsertProject(project) {
   }
 }
 
+async function setDefaultProfile(profileId) {
+  const llmMeta = await request("/api/llm-profiles/default", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profileId })
+  });
+  state.llm = {
+    ...state.llm,
+    ...llmMeta,
+    editingProfileId: state.llm.editingProfileId,
+    connectivityByProfileId: state.llm.connectivityByProfileId
+  };
+  renderLlmProfiles();
+  setStatus(`已设置默认模型：${getProfileName(profileId)}`);
+}
+
+function startEditProfile(profileId) {
+  const profile = state.llm.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return;
+  }
+
+  state.llm.editingProfileId = profileId;
+  llmProviderSelect.value = profile.provider;
+  llmProfileForm.elements.namedItem("name").value = profile.name;
+  llmModelInput.value = profile.model;
+  llmApiKeyInput.value = "";
+  llmBaseUrlInput.value = profile.baseURL;
+  renderLlmFormState();
+  renderLlmProfileList();
+  llmConfigurator.open = true;
+  setStatus(`正在编辑模型：${profile.name}`);
+}
+
+function resetLlmProfileForm() {
+  state.llm.editingProfileId = "";
+  llmProfileForm.reset();
+  applyProviderPreset(state.llm.providers[0]?.id || "openai");
+  renderLlmFormState();
+  renderLlmProfileList();
+}
+
+async function deleteProfile(profileId) {
+  const profile = state.llm.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return;
+  }
+
+  const confirmed = window.confirm(`确认删除模型“${profile.name}”吗？`);
+  if (!confirmed) {
+    return;
+  }
+
+  const result = await request(`/api/llm-profiles/${profileId}`, {
+    method: "DELETE"
+  });
+
+  if (state.llm.editingProfileId === profileId) {
+    resetLlmProfileForm();
+  }
+
+  delete state.llm.connectivityByProfileId[profileId];
+  state.llm = {
+    ...state.llm,
+    ...result.meta,
+    editingProfileId: state.llm.editingProfileId === profileId ? "" : state.llm.editingProfileId,
+    connectivityByProfileId: state.llm.connectivityByProfileId
+  };
+  renderMeta();
+  renderLlmProviders();
+  renderLlmProfiles();
+  setStatus(`已删除模型配置：${profile.name}`);
+}
+
+async function testProfile(profileId) {
+  const profile = state.llm.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return;
+  }
+
+  state.llm.connectivityByProfileId[profileId] = {
+    status: "testing",
+    message: "正在检测连通性，请稍候..."
+  };
+  renderLlmProfileList();
+  setStatus(`正在测试模型连通性：${profile.name}`);
+
+  try {
+    const result = await request(`/api/llm-profiles/${profileId}/test`, {
+      method: "POST"
+    });
+    state.llm.connectivityByProfileId[profileId] = {
+      status: "success",
+      message: `连通正常，耗时 ${result.durationMs} ms。`
+    };
+    renderLlmProfileList();
+    setStatus(`连通性测试通过：${profile.name}`);
+  } catch (error) {
+    state.llm.connectivityByProfileId[profileId] = {
+      status: "error",
+      message: error.message || "连通性测试失败。"
+    };
+    renderLlmProfileList();
+    handleError(error);
+  }
+}
+
+function getEditingProfile() {
+  return state.llm.profiles.find((item) => item.id === state.llm.editingProfileId) || null;
+}
+
+function getProfileName(profileId) {
+  return state.llm.profiles.find((item) => item.id === profileId)?.name || "未命名模型";
+}
+
+function providerRequiresApiKey(provider) {
+  return provider?.requiresApiKey !== false;
+}
+
+function getConnectivityState(profileId) {
+  return state.llm.connectivityByProfileId[profileId] || { status: "idle", message: "" };
+}
+
+function cleanupConnectivityState(existingState, profileIds) {
+  const nextState = {};
+  for (const profileId of profileIds) {
+    nextState[profileId] = existingState?.[profileId] || { status: "idle", message: "" };
+  }
+  return nextState;
+}
+
+function buildConnectivityBadge(connectivity) {
+  if (connectivity.status === "success") {
+    return '<span class="mini-pill success">已连通</span>';
+  }
+  if (connectivity.status === "error") {
+    return '<span class="mini-pill danger">连通失败</span>';
+  }
+  if (connectivity.status === "testing") {
+    return '<span class="mini-pill warning">检测中</span>';
+  }
+  return "";
+}
+
+function getConnectivityToneClass(status) {
+  return {
+    success: "is-success",
+    error: "is-error",
+    testing: "is-testing"
+  }[status] || "";
+}
+
+function createActionButton(label, handler, disabled = false, variant = "secondary") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.className = variant;
+  button.disabled = disabled;
+  button.addEventListener("click", async () => {
+    try {
+      await handler();
+    } catch (error) {
+      handleError(error);
+    }
+  });
+  return button;
+}
+
+function translateStatus(status) {
+  return (
+    {
+      pending: "待审核",
+      accepted: "已接受",
+      revised: "已修改",
+      rejected: "已驳回"
+    }[status] || "待审核"
+  );
+}
+
+function getFileRoleLabel(role) {
+  return (
+    {
+      system_pdf: "系统需求",
+      model_pdf: "模型文档",
+      generated_c: "生成代码",
+      simulink_slx: "SLX 模型"
+    }[role] || role
+  );
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value || "未知时间";
+  }
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatFileSize(size) {
+  const num = Number(size || 0);
+  if (num < 1024) return `${num} B`;
+  if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
+  return `${(num / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 function setStatus(message) {
   statusRoot.textContent = message;
 }
 
+function handleError(error) {
+  console.error(error);
+  setStatus(error.message || "操作失败，请稍后重试。");
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 async function request(url, options = {}) {
   const response = await fetch(url, options);
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(body.error || "Request failed");
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(body.error || "Request failed");
+    }
+    return body;
   }
-  return body;
+
+  const text = await response.text();
+  const compactText = text.replace(/\s+/g, " ").trim();
+  if (!response.ok) {
+    throw new Error(compactText || `Request failed with status ${response.status}`);
+  }
+
+  if (compactText.startsWith("<!DOCTYPE") || compactText.startsWith("<html") || compactText.startsWith("<")) {
+    throw new Error("接口返回的是页面而不是 JSON，通常说明本地服务需要重启，或当前接口路由还没有生效。");
+  }
+
+  return compactText;
 }
+
+
+
+
+
+
+
+
+
+
+
+

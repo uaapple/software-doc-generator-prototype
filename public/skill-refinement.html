@@ -9,35 +9,50 @@
   <body>
     <main class="workbench">
       <nav class="top-nav">
-        <a class="nav-link" href="/">项目生成</a>
-        <a class="nav-link active" href="/skill-refinement">Skill Refinement 工作台</a>
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>Skill Refinement 工作台</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">项目生成</a>
+          <a class="nav-link active" href="/skill-refinement">Skill Refinement 工作台</a>
+        </div>
       </nav>
 
-      <section class="hero">
-        <p class="eyebrow">Refinement Workbench</p>
-        <h1>Skill Refinement / Benchmark / KPI</h1>
-        <p class="subtitle">
-          投喂优质范例、自动进入范例库、对照人工答案打分、逐条审核 skill 改进建议，并基于 benchmark
-          报告决定是否升级 active skill。
-        </p>
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">内部工具</p>
+          <h1>Skill Refinement / Benchmark 工作流</h1>
+          <p class="strip-text">上传优质范例、审核改进建议、重跑 Benchmark，并决定是否升级 active skill。</p>
+        </div>
+        <div class="strip-side">
+          <div class="strip-chip">基线对比</div>
+          <div class="strip-chip">建议审核</div>
+          <div class="strip-chip">Benchmark 决策</div>
+        </div>
       </section>
 
       <section class="grid-two">
         <article class="card summary-card">
           <div class="section-head">
+            <span class="section-index">01</span>
             <div>
-              <p class="eyebrow small">Current Baseline</p>
               <h2>Active Skill 概览</h2>
+              <p>查看当前基线 bundle、版本状态和最近评估结果。</p>
             </div>
           </div>
           <div id="active-bundle" class="bundle-summary"></div>
         </article>
 
-        <form id="feeding-form" class="card">
+        <form id="feeding-form" class="card upload-card">
           <div class="section-head">
+            <span class="section-index">02</span>
             <div>
-              <p class="eyebrow small">Upload</p>
               <h2>上传优质范例</h2>
+              <p>投喂系统需求、模型资料、代码和人工优质答案，自动发起 refinement 流程。</p>
             </div>
           </div>
 
@@ -57,14 +72,14 @@
           </div>
           <label>
             备注
-            <textarea name="notes" rows="3" placeholder="可选，说明这个范例为什么好"></textarea>
+            <textarea name="notes" rows="3" placeholder="可选，补充说明这个范例为什么值得纳入 benchmark"></textarea>
           </label>
           <label>
             系统需求
             <input type="file" name="systemPdf" accept=".pdf,.md,.txt,.json" />
           </label>
           <label>
-            模型 PDF
+            模型文档
             <input type="file" name="modelPdf" accept=".pdf,.md,.txt" multiple />
           </label>
           <label>
@@ -75,16 +90,17 @@
             人工优质软件需求
             <input type="file" name="goldenSourceFile" accept=".json,.md,.txt,.pdf" required />
           </label>
-          <button type="submit">上传并自动启动 Refinement</button>
+          <button type="submit">上传并启动 Refinement</button>
           <p id="feed-status" class="status"></p>
         </form>
       </section>
 
-      <section class="card">
+      <section class="card wide-card">
         <div class="section-head">
+          <span class="section-index">03</span>
           <div>
-            <p class="eyebrow small">Library</p>
             <h2>范例库</h2>
+            <p>按名称、状态、是否启用和分数变化筛选当前案例。</p>
           </div>
         </div>
 
@@ -118,7 +134,7 @@
               <option value="all">全部</option>
               <option value="improved">有提升</option>
               <option value="regressed">有下降</option>
-              <option value="flat">无变化/暂无</option>
+              <option value="flat">无变化 / 暂无</option>
             </select>
           </label>
         </div>
@@ -127,21 +143,25 @@
       </section>
 
       <section class="detail-grid">
-        <article class="card">
+        <article class="card detail-card">
           <div class="section-head">
+            <span class="section-index">04</span>
             <div>
-              <p class="eyebrow small">Case Detail</p>
               <h2>范例详情</h2>
+              <p>查看人工答案结构、当前 active skill 初始生成结果和基础评估信息。</p>
             </div>
           </div>
           <div id="case-detail" class="detail-body"></div>
         </article>
 
-        <article class="card">
+        <article class="card review-card">
           <div class="section-head stacked-mobile">
-            <div>
-              <p class="eyebrow small">Proposal Review</p>
-              <h2>改进意见审核</h2>
+            <div class="section-copy">
+              <span class="section-index">05</span>
+              <div>
+                <h2>改进意见审核</h2>
+                <p>逐条接受、编辑或拒绝系统生成的 refinement 建议。</p>
+              </div>
             </div>
             <button id="build-candidate-button" type="button">应用已接受意见并重跑 Benchmark</button>
           </div>
@@ -150,11 +170,14 @@
         </article>
       </section>
 
-      <section class="card">
+      <section class="card wide-card">
         <div class="section-head stacked-mobile">
-          <div>
-            <p class="eyebrow small">Benchmark</p>
-            <h2>Benchmark 报告</h2>
+          <div class="section-copy">
+            <span class="section-index">06</span>
+            <div>
+              <h2>Benchmark 报告</h2>
+              <p>对比 candidate 与 active baseline 的得分变化，并做最终升级决策。</p>
+            </div>
           </div>
           <div id="decision-actions" class="decision-actions"></div>
         </div>

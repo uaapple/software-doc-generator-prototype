@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -223,6 +223,37 @@ const tests = [
         assert.ok(meta.profiles.some((item) => item.name === "豆包测试"));
         assert.ok(meta.providers.some((item) => item.id === "openai"));
         assert.ok(meta.providers.some((item) => item.id === "doubao"));
+      });
+    }
+  },
+  {
+    name: "LLM profile service updates and deletes saved configs",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new LlmProfileService();
+        const profile = await service.addProfile({
+          provider: "openai",
+          name: "OpenAI 测试",
+          model: "gpt-4.1-mini",
+          apiKey: "old-key-12345",
+          baseURL: "https://api.openai.com/v1"
+        });
+
+        const updated = await service.updateProfile(profile.id, {
+          provider: "doubao",
+          name: "豆包已更新",
+          model: "doubao-seed-2-0-pro-260215",
+          apiKey: "",
+          baseURL: "https://ark.cn-beijing.volces.com/api/v3"
+        });
+
+        assert.equal(updated.provider, "doubao");
+        assert.equal(updated.name, "豆包已更新");
+        assert.equal(updated.apiKeyMasked, "old***2345");
+
+        const removal = await service.deleteProfile(profile.id);
+        assert.equal(removal.removedProfileId, profile.id);
+        assert.ok(!removal.meta.profiles.some((item) => item.id === profile.id));
       });
     }
   },

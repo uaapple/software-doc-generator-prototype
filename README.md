@@ -40,6 +40,20 @@
 4. 启动服务: `npm start`
 5. 打开 `http://localhost:3000`
 
+## 一键启动
+
+- 双击根目录下的 `start-local.cmd`
+- 或在 PowerShell 里执行: `.\scripts\start-local.ps1`
+
+脚本会自动完成这些动作：
+
+- 检查 `node_modules`，缺失时自动执行 `npm install`
+- 启动本地后端服务
+- 等待 `http://127.0.0.1:3000/api/meta` 就绪
+- 自动在浏览器中打开前端页面 `http://127.0.0.1:3000`
+
+如果 `3000` 端口已经有服务在监听，脚本会直接打开当前页面，不会重复启动一个新实例。
+
 ## 环境变量
 
 - 仓库会先加载 `.env.defaults`，再加载 `.env`
@@ -49,6 +63,13 @@
 - `OPENAI_MODEL`: 模型名，默认 `gpt-4.1-mini`
 - `OPENAI_BASE_URL`: 可选，自定义兼容 API 地址
 
+## 编码协作规范
+
+- 仓库文本文件默认使用 `UTF-8`（无 BOM）
+- 大多数源码与文档使用 `LF`，Windows 脚本保留 `CRLF`
+- 提交前建议执行 `npm run check:encoding`
+- 如需清理 BOM，可执行 `npm run fix:encoding`
+- 详细约束见 `ENCODING.md`
 ## 建议协作方式
 
 长周期开发时，不要只依赖线程上下文。继续开发前，优先阅读以下文件：
@@ -57,3 +78,20 @@
 - `DECISIONS.md`: 已锁定决策
 - `ARCHITECTURE.md`: 架构与数据流
 - `STATUS.md`: 当前进展与下一步
+
+## 一键启动
+
+- 双击根目录下的 `start-local.cmd`
+- 或在 PowerShell 里执行: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local.ps1`
+- 停止服务可双击 `stop-local.cmd`
+- 或在 PowerShell 里执行: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\stop-local.ps1`
+
+脚本会自动完成这些动作：
+
+- 检查 `node_modules`，缺失时自动执行 `npm install`
+- 启动本地后端服务
+- 等待 `http://127.0.0.1:3000/api/meta` 就绪
+- 自动在浏览器中打开前端页面 `http://127.0.0.1:3000`
+- 在 `.local/server.pid` 记录当前服务进程，供停止脚本安全关闭
+
+如果 `3000` 端口已经有服务在监听，脚本会直接打开当前页面，不会重复启动一个新实例。

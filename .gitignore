@@ -1,4 +1,9 @@
 node_modules/
-data/
+data/*
+!data/llm-profiles.json
+.local/
+output/
+docs/generated-requirements-overview.html
+docs/skill-overview.html
 .env
 .DS_Store

@@ -1,4 +1,4 @@
-﻿import { SkillLoader } from "./skill-loader.js";
+import { SkillLoader } from "./skill-loader.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
 import { ExtractionService } from "./extraction-service.js";

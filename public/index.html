@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -59,7 +59,7 @@
             <span class="section-index">02</span>
             <div>
               <h2>上传输入材料</h2>
-              <p>将系统需求、模型文档和生成代码关联到当前项目。</p>
+              <p>将系统需求、生成代码，以及可选的模型文档关联到当前项目。</p>
             </div>
           </div>
           <label>
@@ -71,7 +71,7 @@
             <input type="file" name="systemPdf" accept=".pdf,.json,.md,.txt" />
           </label>
           <label>
-            模型文档
+            模型文档（可选）
             <input type="file" name="modelPdf" accept=".pdf,.json,.md,.txt" multiple />
           </label>
           <label>
@@ -100,38 +100,51 @@
             <select id="llm-profile-select"></select>
           </label>
           <p id="llm-profile-hint" class="inline-hint"></p>
-          <details class="llm-configurator">
-            <summary>增加模型</summary>
-            <form id="llm-profile-form" class="llm-profile-form">
-              <label>
-                服务商
-                <select id="llm-provider-select" name="provider" required></select>
-              </label>
-              <label>
-                配置名称
-                <input name="name" required placeholder="例如：OpenAI GPT-4.1 / 豆包生产环境" />
-              </label>
-              <label>
-                模型标识
-                <input id="llm-model-input" name="model" required placeholder="例如：gpt-4.1-mini" />
-              </label>
-              <label>
-                API Key
-                <input name="apiKey" type="password" required placeholder="输入 API Key" />
-              </label>
-              <label>
-                Base URL
-                <input id="llm-base-url-input" name="baseURL" required placeholder="服务地址" />
-              </label>
-              <div class="inline-actions">
-                <button type="submit">保存模型</button>
+
+          <details id="llm-configurator" class="llm-configurator">
+            <summary>模型管理</summary>
+            <div class="llm-configurator-body">
+              <div class="llm-manager-head">
+                <div>
+                  <h3 id="llm-form-title">新增模型</h3>
+                  <p id="llm-form-subtitle">保存后即可参与生成，也可以在列表中继续编辑、删除或测试连通性。</p>
+                </div>
               </div>
-            </form>
+              <div id="llm-profile-list" class="llm-profile-list"></div>
+              <form id="llm-profile-form" class="llm-profile-form">
+                <label>
+                  服务商
+                  <select id="llm-provider-select" name="provider" required></select>
+                </label>
+                <label>
+                  配置名称
+                  <input name="name" required placeholder="例如：OpenAI GPT-4.1 / 豆包生产环境" />
+                </label>
+                <label>
+                  模型标识
+                  <input id="llm-model-input" name="model" required placeholder="例如：gpt-4.1-mini" />
+                </label>
+                <label>
+                  API Key
+                  <input id="llm-api-key-input" name="apiKey" type="password" placeholder="新增时必填，编辑时留空则保持原值" />
+                </label>
+                <label>
+                  Base URL
+                  <input id="llm-base-url-input" name="baseURL" required placeholder="服务地址" />
+                </label>
+                <div class="inline-actions">
+                  <button id="llm-profile-submit" type="submit">保存模型</button>
+                  <button id="llm-profile-cancel" type="button" class="secondary ghost" hidden>取消编辑</button>
+                </div>
+              </form>
+            </div>
           </details>
+
           <p id="meta" class="meta-message"></p>
           <button id="generate-button">启动生成</button>
           <p id="status" class="status"></p>
         </div>
+
         <div class="card side-card">
           <div class="section-head">
             <span class="section-index">说明</span>
@@ -142,7 +155,7 @@
           </div>
           <ul class="plain-list feature-list">
             <li>系统需求优先级最高。</li>
-            <li>模型文档和代码用于补充实现细节。</li>
+            <li>生成代码用于补充实现细节，模型文档可按需上传。</li>
             <li>每条需求均可单独审核处理。</li>
           </ul>
         </div>
@@ -175,12 +188,34 @@
       </section>
     </main>
 
+    <dialog id="project-files-dialog" class="files-dialog">
+      <div class="files-dialog-head">
+        <div>
+          <h3>输入文件列表</h3>
+          <p id="project-files-subtitle">查看当前项目已上传文件，并按需删除。</p>
+        </div>
+        <button id="project-files-close" type="button" class="ghost files-dialog-close">关闭</button>
+      </div>
+      <div id="project-files-list" class="files-list"></div>
+    </dialog>
+
+    <dialog id="project-evidence-dialog" class="files-dialog evidence-dialog">
+      <div class="files-dialog-head">
+        <div>
+          <h3>抽取证据明细</h3>
+          <p id="project-evidence-subtitle">查看当前项目中所有已抽取的证据条目。</p>
+        </div>
+        <button id="project-evidence-close" type="button" class="ghost files-dialog-close">关闭</button>
+      </div>
+      <div id="project-evidence-list" class="files-list"></div>
+    </dialog>
+
     <template id="requirement-template">
       <article class="requirement">
         <header>
           <div>
             <strong data-field="requirementId"></strong>
-            <p data-field="title"></p>
+            <h3 data-field="title"></h3>
           </div>
           <span class="pill" data-field="reviewStatus"></span>
         </header>
@@ -211,6 +246,7 @@
           <button data-action="accept" type="button">接受</button>
           <button data-action="revise" class="secondary" type="button">修改后保存</button>
           <button data-action="reject" class="danger" type="button">驳回</button>
+          <button data-action="delete" class="danger ghost" type="button">删除</button>
         </div>
       </article>
     </template>

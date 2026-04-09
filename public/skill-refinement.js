@@ -110,7 +110,7 @@ async function handleFeedSubmit(event) {
       body: formData
     });
 
-    setFeedStatus("2/3 正在启用 benchmark 标准案例...");
+    setFeedStatus("2/3 正在将该范例认证为 benchmark 案例...");
     await request(`/api/skill-refinement/cases/${benchmarkCase.id}/certify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -128,9 +128,9 @@ async function handleFeedSubmit(event) {
     state.selectedCaseId = benchmarkCase.id;
     state.selectedRunId = run.id;
     await refreshWorkbench();
-    setFeedStatus("已完成投喂。当前 active skill 的评分与改进建议已生成，等待逐条审核。");
+    setFeedStatus("上传完成。当前 active skill 的评分与改进建议已生成，可以开始逐条审核。");
   } catch (error) {
-    setFeedStatus(`投喂失败：${error.message}`);
+    setFeedStatus(`上传失败：${error.message}`);
   }
 }
 
@@ -182,17 +182,14 @@ async function handleProposalAction(event) {
   if (action === "edit") status = "edited";
 
   try {
-    await request(
-      `/api/skill-refinement/runs/${state.runDetail.run.id}/proposals/${proposalId}/review`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, editedContent })
-      }
-    );
+    await request(`/api/skill-refinement/runs/${state.runDetail.run.id}/proposals/${proposalId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, editedContent })
+    });
     await loadRun(state.runDetail.run.id);
   } catch (error) {
-    setFeedStatus(`改进意见审核失败：${error.message}`);
+    setFeedStatus(`改进建议审核失败：${error.message}`);
   }
 }
 
@@ -235,7 +232,7 @@ async function handleDecisionAction(event) {
 
 function renderActiveBundle() {
   if (!state.activeBundle) {
-    activeBundleRoot.innerHTML = `<div class="empty-state">尚未发现 active skill bundle。</div>`;
+    activeBundleRoot.innerHTML = '<div class="empty-state">尚未发现 active skill bundle。</div>';
     return;
   }
 
@@ -255,7 +252,7 @@ function renderActiveBundle() {
         <strong>${escapeHtml(state.activeBundle.status || "active")}</strong>
       </div>
       <div class="metric">
-        <span>最近评分</span>
+        <span>最近评估</span>
         <strong>${formatNumber(summary.overallScoreAvg)}</strong>
       </div>
     </div>
@@ -298,7 +295,7 @@ function renderCases() {
   });
 
   if (!filteredCases.length) {
-    caseListRoot.innerHTML = `<div class="empty-state">当前筛选条件下没有范例。</div>`;
+    caseListRoot.innerHTML = '<div class="empty-state">当前筛选条件下没有范例。</div>';
     return;
   }
 
@@ -354,7 +351,7 @@ function renderCases() {
 
 function renderCaseDetail() {
   if (!state.selectedCase) {
-    caseDetailRoot.innerHTML = `<div class="empty-state">选择一个范例后可查看人工答案结构、自动打分和最近 run 信息。</div>`;
+    caseDetailRoot.innerHTML = '<div class="empty-state">选择一个范例后，可查看人工答案结构、自动评分和最近 run 信息。</div>';
     return;
   }
 
@@ -386,7 +383,7 @@ function renderCaseDetail() {
       <div class="requirement-header">
         <div>
           <h3>当前 Active Skill 首轮得分</h3>
-          <p class="mini-meta">这是上传后系统自动基于当前 active skill 对该范例生成结果的评分。</p>
+          <p class="mini-meta">这里展示的是上传范例后，当前 active skill 在首轮生成中的基础评分结果。</p>
         </div>
       </div>
       ${
@@ -400,7 +397,7 @@ function renderCaseDetail() {
               <div><span>追溯</span><p>${formatNumber(assessment.dimensionScores.traceability_score)}</p></div>
             </div>
           `
-          : `<p class="muted">暂无自动评分记录。</p>`
+          : '<p class="muted">暂无自动评分记录。</p>'
       }
     </div>
 
@@ -416,7 +413,7 @@ function renderCaseDetail() {
                       <div class="requirement-header">
                         <div>
                           <strong>${escapeHtml(item.requirementId || "未编号")}</strong>
-                          <p class="mini-meta">${escapeHtml(item.sectionNumber || "未分章")} · ${escapeHtml(item.topic || item.title || "未命名")}</p>
+                          <p class="mini-meta">${escapeHtml(item.sectionNumber || "未分章")} / ${escapeHtml(item.topic || item.title || "未命名")}</p>
                         </div>
                         <span class="pill">${escapeHtml(item.requirementType || "functional")}</span>
                       </div>
@@ -425,7 +422,7 @@ function renderCaseDetail() {
                   `
                 )
                 .join("")
-            : `<div class="empty-state">暂无结构化人工答案。</div>`
+            : '<div class="empty-state">暂无结构化人工答案。</div>'
         }
       </div>
     </div>
@@ -451,7 +448,7 @@ function renderCaseDetail() {
                   `
                 )
                 .join("")
-            : `<div class="empty-state">当前 run 还没有生成 active skill 的首轮结果。</div>`
+            : '<div class="empty-state">当前 run 还没有生成 active skill 的首轮结果。</div>'
         }
       </div>
     </div>
@@ -460,7 +457,7 @@ function renderCaseDetail() {
 
 function renderRunSummary() {
   if (!state.runDetail) {
-    runSummaryRoot.innerHTML = `<div class="empty-state">上传范例并生成 run 后，这里会显示阶段状态和初始评分摘要。</div>`;
+    runSummaryRoot.innerHTML = '<div class="empty-state">上传范例并生成 run 后，这里会显示阶段状态和初始评分摘要。</div>';
     buildCandidateButton.disabled = true;
     buildCandidateButton.textContent = "应用已接受意见并重跑 Benchmark";
     return;
@@ -508,7 +505,7 @@ function renderRunSummary() {
 
 function renderProposalGroups() {
   if (!state.runDetail) {
-    proposalGroupsRoot.innerHTML = `<div class="empty-state">当前没有可审核的改进意见。</div>`;
+    proposalGroupsRoot.innerHTML = '<div class="empty-state">当前没有可审核的改进建议。</div>';
     return;
   }
 
@@ -516,7 +513,7 @@ function renderProposalGroups() {
   const run = state.runDetail.run;
   const reviewLocked = run?.status === "approved" || run?.status === "rejected";
   if (!items.length) {
-    proposalGroupsRoot.innerHTML = `<div class="empty-state">这次 run 没有生成改进意见。</div>`;
+    proposalGroupsRoot.innerHTML = '<div class="empty-state">这次 run 没有生成改进意见。</div>';
     return;
   }
 
@@ -544,7 +541,7 @@ function renderProposalGroups() {
                     <div class="proposal-header">
                       <div>
                         <strong>${escapeHtml(item.title)}</strong>
-                        <p class="mini-meta">${escapeHtml(item.targetFile)} · 基于案例 ${escapeHtml(
+                        <p class="mini-meta">${escapeHtml(item.targetFile)} / 基于案例 ${escapeHtml(
                           (item.basedOnCaseIds || []).join(", ")
                         )}</p>
                       </div>
@@ -577,7 +574,7 @@ function renderBenchmarkReport() {
   if (!evaluation || !run) {
     benchmarkReportRoot.innerHTML = `
       <div class="empty-state">
-        还没有 benchmark 报告。请先对改进意见逐条审核，再点击“应用已接受意见并重跑 Benchmark”。
+        还没有 benchmark 报告。请先逐条审核改进意见，再点击“应用已接受意见并重跑 Benchmark”。
       </div>
     `;
     decisionActionsRoot.innerHTML = "";
@@ -605,7 +602,7 @@ function renderBenchmarkReport() {
     </div>
 
     <div class="requirement-card">
-      <h3>分维度涨跌</h3>
+      <h3>分维度趋势</h3>
       <div class="definition-grid">
         ${[
           ["section_structure_score", "结构"],
@@ -638,12 +635,9 @@ function renderBenchmarkReport() {
       ${
         evaluation.aggregateScores.topImprovements?.length
           ? `<ul class="list tight">${evaluation.aggregateScores.topImprovements
-              .map(
-                (item) =>
-                  `<li>${escapeHtml(resolveCaseLabel(item.caseId))}：${formatDelta(item.delta)}</li>`
-              )
+              .map((item) => `<li>${escapeHtml(resolveCaseLabel(item.caseId))}：${formatDelta(item.delta)}</li>`)
               .join("")}</ul>`
-          : `<p class="muted">暂无明显提升项。</p>`
+          : '<p class="muted">暂无明显提升项。</p>'
       }
     </div>
 
@@ -652,12 +646,9 @@ function renderBenchmarkReport() {
       ${
         evaluation.aggregateScores.topRegressions?.length
           ? `<ul class="list tight">${evaluation.aggregateScores.topRegressions
-              .map(
-                (item) =>
-                  `<li>${escapeHtml(resolveCaseLabel(item.caseId))}：${formatDelta(item.delta)}</li>`
-              )
+              .map((item) => `<li>${escapeHtml(resolveCaseLabel(item.caseId))}：${formatDelta(item.delta)}</li>`)
               .join("")}</ul>`
-          : `<p class="muted">暂无明显回归项。</p>`
+          : '<p class="muted">暂无明显回归项。</p>'
       }
     </div>
 
@@ -774,8 +765,8 @@ function translateCaseStatus(status) {
     {
       golden_structured: "已结构化",
       certified: "已认证",
-      proposal_review: "待审核改进",
-      awaiting_decision: "待人工决策",
+      proposal_review: "待审核改进意见",
+      awaiting_decision: "待决策",
       approved: "已通过",
       archived: "已归档"
     }[status] || status || "未知状态"
@@ -797,8 +788,8 @@ function translateStageKey(key) {
   return (
     {
       case_ingested: "案例入库",
-      golden_structured: "Golden结构化",
-      active_skill_scored: "Active Skill打分",
+      golden_structured: "Golden 结构化",
+      active_skill_scored: "Active Skill 打分",
       proposal_generated: "改进意见生成",
       candidate_benchmark: "Candidate Benchmark",
       decision: "人工决策"
@@ -811,7 +802,7 @@ function translateStageValue(value) {
     {
       completed: "已完成",
       idle: "待触发",
-      waiting_for_proposal_review: "待审核改进",
+      waiting_for_proposal_review: "待审核改进意见",
       waiting_for_manual_decision: "待人工决策",
       approved: "已通过",
       rejected: "已驳回"

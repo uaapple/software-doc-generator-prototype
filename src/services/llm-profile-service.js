@@ -1,4 +1,5 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import OpenAI from "openai";
 import { config } from "../config.js";
 import { readJson, writeJson } from "./storage.js";
 
@@ -8,14 +9,24 @@ const PROVIDERS = [
     label: "OpenAI",
     defaultBaseURL: "https://api.openai.com/v1",
     baseURLEditable: true,
-    modelPlaceholder: "gpt-4.1-mini"
+    modelPlaceholder: "gpt-4.1-mini",
+    requiresApiKey: true
   },
   {
     id: "doubao",
     label: "豆包",
     defaultBaseURL: "https://ark.cn-beijing.volces.com/api/v3",
     baseURLEditable: true,
-    modelPlaceholder: "doubao-seed-1-6"
+    modelPlaceholder: "doubao-seed-1-6",
+    requiresApiKey: true
+  },
+  {
+    id: "ollama",
+    label: "Ollama",
+    defaultBaseURL: "http://127.0.0.1:11434/v1",
+    baseURLEditable: true,
+    modelPlaceholder: "gemma3:4b",
+    requiresApiKey: false
   }
 ];
 
@@ -33,15 +44,17 @@ function maskApiKey(apiKey) {
   return `${apiKey.slice(0, 3)}***${apiKey.slice(-4)}`;
 }
 
-function normalizeProfileInput(input) {
+function normalizeProfileInput(input, options = {}) {
   const provider = getProvider(input.provider);
   if (!provider) {
     throw new Error("Unsupported LLM provider");
   }
 
+  const requireApiKey = options.requireApiKey ?? provider.requiresApiKey !== false;
+  const existingProfile = options.existingProfile || null;
   const name = String(input.name || "").trim();
   const model = String(input.model || "").trim();
-  const apiKey = String(input.apiKey || "").trim();
+  const apiKey = String(input.apiKey || "").trim() || existingProfile?.apiKey || "";
   const baseURL = String(input.baseURL || provider.defaultBaseURL || "").trim();
 
   if (!name) {
@@ -50,7 +63,7 @@ function normalizeProfileInput(input) {
   if (!model) {
     throw new Error("Model identifier is required");
   }
-  if (!apiKey) {
+  if (requireApiKey && !apiKey) {
     throw new Error("API key is required");
   }
   if (!baseURL) {
@@ -77,7 +90,8 @@ function toPublicProfile(profile) {
     baseURL: profile.baseURL,
     apiKeyMasked: maskApiKey(profile.apiKey),
     createdAt: profile.createdAt,
-    updatedAt: profile.updatedAt
+    updatedAt: profile.updatedAt,
+    seeded: Boolean(profile.seeded)
   };
 }
 
@@ -110,15 +124,37 @@ function normalizeStore(store) {
 
 export class LlmProfileService {
   async ensureInitialized() {
-    const existing = normalizeStore(await readJson(config.llmProfileStorePath, null));
+    const rawStore = await readJson(config.llmProfileStorePath, null);
+    const existing = normalizeStore(rawStore);
     const seedProfile = buildSeedProfile();
     let changed = false;
 
     if (seedProfile) {
       const existingSeedIndex = existing.profiles.findIndex((profile) => profile.id === seedProfile.id);
       if (existingSeedIndex === -1) {
-        existing.profiles.push(seedProfile);
-        changed = true;
+        if (!rawStore || !existing.profiles.length) {
+          existing.profiles.push(seedProfile);
+          changed = true;
+        }
+      } else {
+        const currentSeed = existing.profiles[existingSeedIndex];
+        const shouldRepairSeed =
+          currentSeed.name !== seedProfile.name ||
+          currentSeed.provider !== seedProfile.provider ||
+          currentSeed.baseURL !== seedProfile.baseURL ||
+          currentSeed.model !== seedProfile.model ||
+          currentSeed.apiKey !== seedProfile.apiKey ||
+          !currentSeed.seeded;
+
+        if (shouldRepairSeed) {
+          existing.profiles[existingSeedIndex] = {
+            ...currentSeed,
+            ...seedProfile,
+            createdAt: currentSeed.createdAt || seedProfile.createdAt,
+            updatedAt: now()
+          };
+          changed = true;
+        }
       }
     }
 
@@ -127,7 +163,7 @@ export class LlmProfileService {
       changed = true;
     }
 
-    if (changed || !(await readJson(config.llmProfileStorePath, null))) {
+    if (changed || !rawStore) {
       await writeJson(config.llmProfileStorePath, existing);
     }
 
@@ -186,6 +222,54 @@ export class LlmProfileService {
     return toPublicProfile(profile);
   }
 
+  async updateProfile(profileId, input) {
+    const store = await this.readStore();
+    const profileIndex = store.profiles.findIndex((profile) => profile.id === profileId);
+    if (profileIndex === -1) {
+      throw new Error("LLM profile not found");
+    }
+
+    const currentProfile = store.profiles[profileIndex];
+    const normalized = normalizeProfileInput(input || {}, {
+      requireApiKey: false,
+      existingProfile: currentProfile
+    });
+
+    const updatedProfile = {
+      ...currentProfile,
+      provider: normalized.providerId,
+      name: normalized.name,
+      model: normalized.model,
+      apiKey: normalized.apiKey,
+      baseURL: normalized.baseURL,
+      updatedAt: now()
+    };
+
+    store.profiles[profileIndex] = updatedProfile;
+    await this.writeStore(store);
+    return toPublicProfile(updatedProfile);
+  }
+
+  async deleteProfile(profileId) {
+    const store = await this.readStore();
+    const profileIndex = store.profiles.findIndex((profile) => profile.id === profileId);
+    if (profileIndex === -1) {
+      throw new Error("LLM profile not found");
+    }
+
+    const [removedProfile] = store.profiles.splice(profileIndex, 1);
+    if (store.defaultProfileId === profileId) {
+      store.defaultProfileId = store.profiles[0]?.id || "";
+    }
+
+    await this.writeStore(store);
+    return {
+      removedProfileId: profileId,
+      removedProfile: toPublicProfile(removedProfile),
+      meta: await this.getMeta()
+    };
+  }
+
   async setDefaultProfile(profileId) {
     const store = await this.readStore();
     const exists = store.profiles.some((profile) => profile.id === profileId);
@@ -205,4 +289,64 @@ export class LlmProfileService {
     }
     return store.profiles.find((profile) => profile.id === resolvedId) || null;
   }
+
+  async testProfileConnectivity(profileId) {
+    const profile = await this.resolveProfile(profileId);
+    if (!profile) {
+      throw new Error("LLM profile not found");
+    }
+
+    const startedAt = Date.now();
+
+    if (profile.provider === "ollama") {
+      const response = await fetch(`${String(profile.baseURL || "").replace(/\/v1\/?$/i, "")}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: profile.model,
+          prompt: '只输出 JSON：{"ok":true}',
+          stream: false,
+          format: "json",
+          options: { temperature: 0 }
+        }),
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama request failed with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!String(result?.response || "").trim()) {
+        throw new Error("Ollama returned empty response body");
+      }
+    } else {
+      const client = new OpenAI({
+        apiKey: profile.apiKey,
+        baseURL: profile.baseURL,
+        timeout: 15000,
+        maxRetries: 0
+      });
+
+      await client.responses.create({
+        model: profile.model,
+        input: "ping",
+        max_output_tokens: 1
+      });
+    }
+
+    return {
+      profileId: profile.id,
+      profileName: profile.name,
+      provider: profile.provider,
+      model: profile.model,
+      baseURL: profile.baseURL,
+      durationMs: Date.now() - startedAt,
+      checkedAt: now(),
+      success: true
+    };
+  }
 }
+
+
+

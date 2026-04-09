@@ -1,4 +1,4 @@
-﻿import { promises as fs } from "node:fs";
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
 
@@ -27,7 +27,8 @@ export function getProjectPath(projectId) {
 export async function readJson(filePath, fallback = null) {
   try {
     const content = await fs.readFile(filePath, "utf8");
-    return JSON.parse(content);
+    const normalizedContent = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+    return JSON.parse(normalizedContent);
   } catch (error) {
     if (error.code === "ENOENT") {
       return fallback;

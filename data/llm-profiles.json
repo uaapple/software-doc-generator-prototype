@@ -1,0 +1,46 @@
+{
+  "defaultProfileId": "2f01df6b-7340-4457-8aab-0a73666f0b86",
+  "profiles": [
+    {
+      "id": "2f01df6b-7340-4457-8aab-0a73666f0b86",
+      "provider": "doubao",
+      "name": "DeepSeek-V3.2",
+      "model": "deepseek-v3-2-251201",
+      "apiKey": "0e1c8949-f932-455d-8779-c53bbb921656",
+      "baseURL": "https://ark.cn-beijing.volces.com/api/v3",
+      "createdAt": "2026-04-09T11:38:05.3173043Z",
+      "updatedAt": "2026-04-09T11:38:05.3203071Z"
+    },
+    {
+      "id": "d7bbe9d5-4198-49ee-8caa-f80d7d36360d",
+      "provider": "ollama",
+      "name": "?? Ollama gemma4:26b",
+      "model": "gemma4:26b",
+      "apiKey": "",
+      "baseURL": "http://127.0.0.1:11434/v1",
+      "createdAt": "2026-04-09T11:05:53.770Z",
+      "updatedAt": "2026-04-09T11:05:53.770Z"
+    },
+    {
+      "id": "20b11d97-48b6-4c36-b474-3ad13115d53f",
+      "provider": "doubao",
+      "name": "GLM 4.7",
+      "model": "glm-4-7-251222",
+      "apiKey": "0e1c8949-f932-455d-8779-c53bbb921656",
+      "baseURL": "https://ark.cn-beijing.volces.com/api/v3",
+      "createdAt": "2026-04-09T08:19:54.2315195Z",
+      "updatedAt": "2026-04-09T08:44:20.0671428Z"
+    },
+    {
+      "id": "seed-profile",
+      "provider": "doubao",
+      "name": "默认豆包模型",
+      "model": "doubao-seed-2-0-pro-260215",
+      "apiKey": "0e1c8949-f932-455d-8779-c53bbb921656",
+      "baseURL": "https://ark.cn-beijing.volces.com/api/v3",
+      "createdAt": "2026-04-07T18:08:14.785Z",
+      "updatedAt": "2026-04-09T11:38:15.108Z",
+      "seeded": true
+    }
+  ]
+}

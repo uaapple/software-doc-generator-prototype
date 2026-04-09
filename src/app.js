@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import multer from "multer";
 import path from "node:path";
 import { promises as fs } from "node:fs";
@@ -11,6 +11,22 @@ import { SkillRefinementService } from "./services/skill-refinement-service.js";
 import { SkillBundleService } from "./services/skill-bundle-service.js";
 import { LlmProfileService } from "./services/llm-profile-service.js";
 
+function toClientProject(project) {
+  if (!project) {
+    return project;
+  }
+
+  const evidenceCount = Array.isArray(project.extractions)
+    ? project.extractions.reduce((count, item) => count + ((item.evidence || []).length), 0)
+    : 0;
+
+  return {
+    ...project,
+    metrics: {
+      evidenceCount
+    }
+  };
+}
 export async function createApp() {
   await ensureStorage();
 
@@ -91,6 +107,33 @@ export async function createApp() {
     }
   });
 
+  app.put("/api/llm-profiles/:profileId", async (req, res, next) => {
+    try {
+      const profile = await llmProfileService.updateProfile(req.params.profileId, req.body || {});
+      res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/llm-profiles/:profileId", async (req, res, next) => {
+    try {
+      const result = await llmProfileService.deleteProfile(req.params.profileId);
+      res.json(toClientProject(result));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/llm-profiles/:profileId/test", async (req, res, next) => {
+    try {
+      const result = await llmProfileService.testProfileConnectivity(req.params.profileId);
+      res.json(toClientProject(result));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/llm-profiles/default", async (req, res, next) => {
     try {
       const meta = await llmProfileService.setDefaultProfile(req.body?.profileId || "");
@@ -102,13 +145,13 @@ export async function createApp() {
 
   app.get("/api/projects", async (_req, res) => {
     const projects = await projectService.listProjects();
-    res.json({ projects });
+    res.json({ projects: projects.map((project) => toClientProject(project)) });
   });
 
   app.post("/api/projects", async (req, res, next) => {
     try {
       const project = await projectService.createProject(req.body || {});
-      res.status(201).json(project);
+      res.status(201).json(toClientProject(project));
     } catch (error) {
       next(error);
     }
@@ -121,7 +164,7 @@ export async function createApp() {
         return res.status(404).json({ error: "Project not found" });
       }
 
-      res.json(project);
+      res.json(toClientProject(project));
     } catch (error) {
       next(error);
     }
@@ -138,7 +181,7 @@ export async function createApp() {
     async (req, res, next) => {
       try {
         const project = await projectService.attachFiles(req.params.projectId, req.files || {});
-        res.json(project);
+        res.json(toClientProject(project));
       } catch (error) {
         next(error);
       }
@@ -151,12 +194,29 @@ export async function createApp() {
         skillBundleId: req.body?.skillBundleId || "",
         llmProfileId: req.body?.llmProfileId || ""
       });
-      res.json(result);
+      res.json(toClientProject(result));
     } catch (error) {
       next(error);
     }
   });
 
+  app.delete("/api/projects/:projectId/files/:fileId", async (req, res, next) => {
+    try {
+      const project = await projectService.deleteFile(req.params.projectId, req.params.fileId);
+      res.json(toClientProject(project));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/projects/:projectId/requirements/:requirementId", async (req, res, next) => {
+    try {
+      const project = await projectService.deleteRequirement(req.params.projectId, req.params.requirementId);
+      res.json(toClientProject(project));
+    } catch (error) {
+      next(error);
+    }
+  });
   app.post("/api/projects/:projectId/requirements/:requirementId/review", async (req, res, next) => {
     try {
       const project = await projectService.reviewRequirement(
@@ -164,7 +224,7 @@ export async function createApp() {
         req.params.requirementId,
         req.body || {}
       );
-      res.json(project);
+      res.json(toClientProject(project));
     } catch (error) {
       next(error);
     }
@@ -300,7 +360,7 @@ export async function createApp() {
   app.post("/api/skill-refinement/runs/:runId/build-candidate", async (req, res, next) => {
     try {
       const result = await skillRefinementService.buildCandidate(req.params.runId);
-      res.json(result);
+      res.json(toClientProject(result));
     } catch (error) {
       next(error);
     }
@@ -309,7 +369,7 @@ export async function createApp() {
   app.post("/api/skill-refinement/runs/:runId/approve", async (req, res, next) => {
     try {
       const result = await skillRefinementService.approveRun(req.params.runId);
-      res.json(result);
+      res.json(toClientProject(result));
     } catch (error) {
       next(error);
     }
@@ -318,7 +378,7 @@ export async function createApp() {
   app.post("/api/skill-refinement/runs/:runId/reject", async (req, res, next) => {
     try {
       const result = await skillRefinementService.rejectRun(req.params.runId);
-      res.json(result);
+      res.json(toClientProject(result));
     } catch (error) {
       next(error);
     }
@@ -333,3 +393,4 @@ export async function createApp() {
 
   return app;
 }
+

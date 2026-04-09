@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node tests/run-tests.js"
+    "test": "node tests/run-tests.js",
+    "check:encoding": "node scripts/check-text-encoding.mjs",
+    "fix:encoding": "node scripts/fix-text-encoding.mjs"
   },
   "engines": {
     "node": ">=22"

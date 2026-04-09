@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
@@ -20,6 +20,14 @@ function buildFileRecord(projectId, file, role) {
     size: file.size,
     uploadedAt: now()
   };
+}
+
+function clearGeneratedArtifacts(project) {
+  project.extractions = [];
+  project.requirements = [];
+  project.traces = [];
+  project.conflicts = [];
+  project.lastGeneration = null;
 }
 
 export class ProjectService {
@@ -104,6 +112,34 @@ export class ProjectService {
     return this.saveProject(project);
   }
 
+  async deleteFile(projectId, fileId) {
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const fileIndex = project.files.findIndex((item) => item.id === fileId);
+    if (fileIndex === -1) {
+      throw new Error("File not found");
+    }
+
+    const [removedFile] = project.files.splice(fileIndex, 1);
+
+    if (removedFile?.absolutePath) {
+      await fs.rm(removedFile.absolutePath, { force: true });
+    }
+
+    clearGeneratedArtifacts(project);
+    project.status = project.files.length ? "files_uploaded" : "draft";
+    project.auditLog.push({
+      at: now(),
+      action: "file_deleted",
+      detail: `已删除文件：${removedFile.originalName}`
+    });
+
+    return this.saveProject(project);
+  }
+
   async updateGeneratedArtifacts(projectId, result) {
     const project = await this.getProject(projectId);
     if (!project) {
@@ -135,6 +171,31 @@ export class ProjectService {
     return this.saveProject(project);
   }
 
+  async deleteRequirement(projectId, requirementId) {
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const requirementIndex = project.requirements.findIndex((item) => item.id === requirementId);
+    if (requirementIndex === -1) {
+      throw new Error("Requirement not found");
+    }
+
+    const [removedRequirement] = project.requirements.splice(requirementIndex, 1);
+    project.traces = (project.traces || []).filter((item) => item.requirementId !== requirementId);
+    project.conflicts = (project.conflicts || []).filter(
+      (item) => item.requirementId !== requirementId && item.requirementCode !== removedRequirement.requirementId
+    );
+
+    project.auditLog.push({
+      at: now(),
+      action: "requirement_deleted",
+      detail: `${removedRequirement.requirementId} 已删除`
+    });
+
+    return this.saveProject(project);
+  }
   async reviewRequirement(projectId, requirementId, review) {
     const project = await this.getProject(projectId);
     if (!project) {
