@@ -8,3 +8,4 @@ docs/skill-overview.html
 .env
 .DS_Store
 tmp/
+~$*.docx

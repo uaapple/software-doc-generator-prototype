@@ -26,6 +26,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NODE_MODULES_PATH="$PROJECT_ROOT/node_modules"
 RUNTIME_DIR="$PROJECT_ROOT/.local"
 PID_FILE="$RUNTIME_DIR/server.pid"
+LOG_FILE="$RUNTIME_DIR/server.log"
 URL="http://127.0.0.1:$PORT"
 
 if ! command -v npm >/dev/null 2>&1; then
@@ -66,7 +67,11 @@ if [[ -n "$existing_pid" ]]; then
 fi
 
 echo "Starting local service from $PROJECT_ROOT"
-(cd "$PROJECT_ROOT" && node src/server.js >/dev/null 2>&1 & echo $! >"$PID_FILE")
+(
+  cd "$PROJECT_ROOT"
+  nohup node src/server.js >"$LOG_FILE" 2>&1 &
+  echo $! >"$PID_FILE"
+)
 server_pid="$(tr -d '[:space:]' <"$PID_FILE")"
 
 ready=0
@@ -75,6 +80,9 @@ for _ in $(seq 1 30); do
 
   if ! kill -0 "$server_pid" 2>/dev/null; then
     echo "Backend startup failed. node process exited." >&2
+    if [[ -f "$LOG_FILE" ]]; then
+      tail -n 40 "$LOG_FILE" >&2 || true
+    fi
     rm -f "$PID_FILE"
     exit 1
   fi
