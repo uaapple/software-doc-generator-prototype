@@ -1,0 +1,93 @@
+{
+  "documentType": "system_requirements_example",
+  "domain": "embedded_vcu",
+  "title": "系统需求示例：充电管理",
+  "language": "zh-CN",
+  "version": "v1",
+  "source": {
+    "providedBy": "word_embedded_images",
+    "ingestMethod": "manual_text_extraction_from_image",
+    "collectedDate": "2026-04-14",
+    "sourceFile": "input/20260411/AI case_ITK_20260411.docx"
+  },
+  "section": {
+    "sectionNumber": "5.1.3.2 / 5.1.3.3",
+    "sectionTitle": "充电管理",
+    "subsections": [
+      {
+        "sectionNumber": "5.1.3.2",
+        "sectionTitle": "电池充电堵转加热"
+      },
+      {
+        "sectionNumber": "5.1.3.3",
+        "sectionTitle": "充电截止SOC控制"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "requirementId": "CheryVCU-1088",
+      "topic": "DC充电场景下的堵转加热请求转发",
+      "rawText": "当车辆处于DC充电，HCU在接收到ECC的堵转加热需求后，且MCU反馈状态允许进行堵转加热时，HCU应将堵转加热请求发送给MCU。",
+      "conditions": [
+        "车辆处于DC充电",
+        "ECC发出堵转加热需求",
+        "MCU反馈状态允许进行堵转加热"
+      ],
+      "expectedBehavior": [
+        "HCU应将堵转加热请求发送给MCU。"
+      ],
+      "functionalCategory": "stall_heating_request"
+    },
+    {
+      "requirementId": "CheryVCU-1077",
+      "topic": "堵转加热请求超时撤销",
+      "rawText": "HCU请求堵转加热2s后，如MCU反馈仍未正常进入Trq模式进行堵转加热，HCU停止请求堵转加热。",
+      "conditions": [
+        "HCU已发起堵转加热请求",
+        "持续时间达到2s",
+        "MCU反馈仍未正常进入Trq模式进行堵转加热"
+      ],
+      "expectedBehavior": [
+        "HCU应停止堵转加热请求。"
+      ],
+      "timingConstraints": [
+        "请求超时阈值为2s。"
+      ],
+      "functionalCategory": "stall_heating_timeout_protection"
+    },
+    {
+      "requirementId": "CheryVCU-10935",
+      "topic": "充电截止SOC控制与恢复",
+      "rawText": "当AC或DC充电功能激活时，用户通过大屏/手机APP上设置充电SOC截止点后，ICM/TCP向HCU发送充电SOC截止点设置信号，设置范围50%-100%（HCU需要下电记忆），当仪表显示SOC大于等于截止SOC时，HCU通过向BMS发送充电Stop指令临时停止充电，当表显SOC小于截止SOC1%时，Stop指令停止发送，OBC重新恢复充电，直到再次等于截止SOC。",
+      "conditions": [
+        "AC或DC充电功能激活",
+        "用户设置充电SOC截止点",
+        "ICM或TCP向HCU发送充电SOC截止点设置信号"
+      ],
+      "expectedBehavior": [
+        "HCU应接收并记忆充电SOC截止点。",
+        "当表显SOC大于等于截止SOC时，HCU应向BMS发送充电Stop指令以临时停止充电。",
+        "当表显SOC小于截止SOC 1%时，HCU应停止发送Stop指令。",
+        "OBC应恢复充电，直到再次达到截止SOC。"
+      ],
+      "parameterConstraints": [
+        "充电SOC截止点设置范围为50%-100%。",
+        "HCU需要对充电截止点进行下电记忆。"
+      ],
+      "functionalCategory": "charge_soc_limit_control"
+    }
+  ],
+  "derivedSummary": {
+    "mainTheme": "充电管理需要在DC充电堵转加热和充电截止SOC场景下完成请求控制、超时保护、停止与恢复控制。",
+    "keyConcepts": [
+      "DC充电",
+      "堵转加热请求",
+      "Trq模式",
+      "充电截止SOC",
+      "下电记忆",
+      "Stop指令",
+      "恢复滞回"
+    ]
+  }
+}

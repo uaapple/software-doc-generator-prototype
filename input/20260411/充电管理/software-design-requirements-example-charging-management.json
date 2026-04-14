@@ -1,0 +1,48 @@
+{
+  "documentType": "software_design_requirements_example",
+  "domain": "embedded_vcu",
+  "title": "软件设计需求示例：充电管理",
+  "language": "zh-CN",
+  "version": "v1",
+  "source": {
+    "providedBy": "word_embedded_images",
+    "ingestMethod": "manual_text_extraction_from_image",
+    "collectedDate": "2026-04-14",
+    "sourceFile": "input/20260411/AI case_ITK_20260411.docx"
+  },
+  "section": {
+    "sectionNumber": "5.3.2",
+    "sectionTitle": "充电过程"
+  },
+  "requirements": [
+    {
+      "requirementId": "CheryVCU-3015",
+      "status": "released",
+      "sectionNumber": "5.3.2",
+      "topic": "充电过程堵转加热模式",
+      "rawText": "若ECC有堵转加热请求（ECC_StallHeatingReq=0x1: ON），VCU满足以下条件则发送堵转加热请求（VCU2_St_StallHeatingReq=0x1: Request）和Trq模式（VCU82_St_RModeReq=0x1: TrqCtl）给RMCU：1.DC充电枪已连接（BMS3_St_DCChargePlugin=0x1: Connected）；2.当前挡位为P挡（VCU1_N_ActualGear=0x1: P）且车辆处于停车状态（ESC_VehiclESCspeed<3km/h）；3.电池处于DC充电状态（BMS1_St_BatteryMode = 0x4: DC Charge）；4.ECC有堵转加热需求（ECC_StallHeatingReq=0x1: ON）；5.RMCU反馈的堵转加热状态正常（RMCU2_St_StallHeating状态不为0x3: Heating Failed且0x2: Heating Over）。MCU收到请求后进入Torque模式启动堵转加热并反馈状态（RMCU2_St_StallHeating，RMCU1_St_RMCUMode），开始加热电池。若2s后MCU无法正常进入堵转加热（RMCU2_St_StallHeating ≠ 0x1: Heating），VCU收到后将停发加热请求（VCU2_St_StallHeatingReq = 0x0: No Request）。"
+    },
+    {
+      "requirementId": "CheryVCU-8102",
+      "status": "released",
+      "sectionNumber": "5.3.2",
+      "topic": "充电截止SOC",
+      "rawText": "VCU接受大屏（ICM_Chg_SOC_LimitPointSet）或远程（TCP_Chg_SOC_LimitPointSet）的充电SOC截止点并记忆，当大屏（ICM_Chg_SOC_LimitPointSet）或远程（TCP_Chg_SOC_LimitPointSet）发来得SOC限值有变化并且不是112（Invalid值）时，VCU应当将此值更新为充电SOC上限值，并将此SOC值重新反馈大屏（VCU_Chg_SOC_LimitSts）；在AC/DC充电过程中，若表显SOC（BMS2_N_SOC）不小于充电截止SOC，则VCU发送充电截至信号（VCU1_St_ChrStopRequest），否则当表显SOC值小于充电截至SOC减1%（可标定）或重新插枪（OBC1_St_ChargerConnection=0x1: Connected上升沿或BMS3_St_DCChargePlugin=0x1: Connected上升沿）时，将重新判断。"
+    },
+    {
+      "requirementId": "CheryVCU-12147",
+      "status": "released",
+      "sectionNumber": "5.3.2",
+      "topic": "充电截止SOC记忆",
+      "rawText": "VCU应当每次下电时记忆当前设置得充电截止SOC值，若ICM或TCP有设置值更新时，应及时进行更新，更新值在本次驾驶循环使用，并在下次下电记忆。"
+    }
+  ],
+  "derivedSummary": {
+    "mainTheme": "充电管理的软件需求输出集中在堵转加热模式、充电截止SOC和截止值记忆。",
+    "styleCharacteristics": [
+      "统一挂在5.3.2充电过程章节下",
+      "保留原图中的信号名、枚举值和阈值",
+      "按图片原文提取，不引入代码补充"
+    ]
+  }
+}
