@@ -22,6 +22,10 @@ function buildTraces(items) {
   );
 }
 
+function buildRunningSummary(documentType) {
+  return `正在生成${documentType === "detail_design" ? "软件详细设计" : "软件需求"}`;
+}
+
 export class PipelineService {
   constructor(projectService) {
     this.projectService = projectService;
@@ -85,10 +89,64 @@ export class PipelineService {
     return saved;
   }
 
-  async generateForModule(projectId, moduleId, documentType, options = {}) {
-    const normalizedDocumentType = normalizeDocumentType(documentType);
+  async finalizeModuleGeneration(projectId, moduleId, normalizedDocumentType, inputAssets, options = {}) {
     const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
     const domainKnowledge = await this.skillBundleService.getDomainKnowledge(options.skillBundleId);
+    const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
+    const llmProfile = selectedProfile
+      ? {
+          id: selectedProfile.id,
+          provider: selectedProfile.provider,
+          name: selectedProfile.name,
+          model: selectedProfile.model,
+          baseURL: selectedProfile.baseURL
+        }
+      : null;
+
+    const contextProject = {
+      name: `${project.name} / ${module.name}`,
+      description: module.description || project.description,
+      language: project.language,
+      documentType: normalizedDocumentType
+    };
+
+    const taskId = options.taskId || "";
+
+    try {
+      const extractions = await this.extractionService.extractFiles({ files: inputAssets });
+      const resultItems = await this.llmService.generateRequirements(contextProject, extractions, options);
+      const conflicts = this.validationService.validate(resultItems, { domainKnowledge });
+      const traces = buildTraces(resultItems);
+      const updatedTask = await this.projectService.updateGenerationTask(projectId, moduleId, normalizedDocumentType, taskId, {
+        status: "completed",
+        resultItems,
+        extractions,
+        traces,
+        conflicts,
+        llmProfile,
+        summary: selectedProfile
+          ? `使用 ${selectedProfile.name} 生成 ${resultItems.length} 条结果`
+          : `使用本地回退模式生成 ${resultItems.length} 条结果`
+      });
+
+      return {
+        projectId,
+        moduleId,
+        documentType: normalizedDocumentType,
+        task: updatedTask
+      };
+    } catch (error) {
+      await this.projectService.updateGenerationTask(projectId, moduleId, normalizedDocumentType, taskId, {
+        status: "failed",
+        summary: error.message || "生成失败"
+      });
+      throw error;
+    }
+  }
+
+  async generateForModule(projectId, moduleId, documentType, options = {}) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { module } = await this.projectService.getProjectAndModule(projectId, moduleId);
     const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
     const selectedAssetIds = Array.isArray(options.assetIds) && options.assetIds.length
       ? options.assetIds
@@ -99,44 +157,41 @@ export class PipelineService {
       throw new Error("No assets selected");
     }
 
-    const contextProject = {
-      name: `${project.name} / ${module.name}`,
-      description: module.description || project.description,
-      language: project.language,
-      documentType: normalizedDocumentType
-    };
+    const llmProfile = selectedProfile
+      ? {
+          id: selectedProfile.id,
+          provider: selectedProfile.provider,
+          name: selectedProfile.name,
+          model: selectedProfile.model,
+          baseURL: selectedProfile.baseURL
+        }
+      : null;
 
-    const extractions = await this.extractionService.extractFiles({ files: inputAssets });
-    const resultItems = await this.llmService.generateRequirements(contextProject, extractions, options);
-    const conflicts = this.validationService.validate(resultItems, { domainKnowledge });
-    const traces = buildTraces(resultItems);
     const task = await this.projectService.recordGenerationTask(projectId, moduleId, normalizedDocumentType, {
-      status: "completed",
+      status: "running",
       inputAssetIds: inputAssets.map((asset) => asset.id),
       uploadedAssetIds: Array.isArray(options.uploadedAssetIds) ? options.uploadedAssetIds : [],
-      resultItems,
-      extractions,
-      traces,
-      conflicts,
-      llmProfile: selectedProfile
-        ? {
-            id: selectedProfile.id,
-            provider: selectedProfile.provider,
-            name: selectedProfile.name,
-            model: selectedProfile.model,
-            baseURL: selectedProfile.baseURL
-          }
-        : null,
-      summary: selectedProfile
-        ? `使用 ${selectedProfile.name} 生成 ${resultItems.length} 条结果`
-        : `使用本地回退模式生成 ${resultItems.length} 条结果`
+      llmProfile,
+      summary: buildRunningSummary(normalizedDocumentType)
     });
 
-    return {
-      projectId,
-      moduleId,
-      documentType: normalizedDocumentType,
-      task
-    };
+    const resultPromise = this.finalizeModuleGeneration(projectId, moduleId, normalizedDocumentType, inputAssets, {
+      ...options,
+      taskId: task.id
+    });
+
+    if (options.asyncStart) {
+      resultPromise.catch((error) => {
+        console.error("Module generation failed", error);
+      });
+      return {
+        projectId,
+        moduleId,
+        documentType: normalizedDocumentType,
+        task
+      };
+    }
+
+    return resultPromise;
   }
 }

@@ -13,6 +13,8 @@ const assetPicker = document.querySelector("#asset-picker");
 const breadcrumbRoot = document.querySelector("#generator-breadcrumb");
 const backToModule = document.querySelector("#back-to-module");
 const generateForm = document.querySelector("#generate-form");
+const generateButton = document.querySelector("#generate-button");
+const PENDING_GENERATION_STORAGE_KEY = "pending-module-generations";
 
 let project = null;
 let moduleData = null;
@@ -64,14 +66,27 @@ async function handleGenerate(event) {
       formData.set("llmProfileId", llmProfileSelect.value);
     }
 
-    setStatus(`正在生成${documentLabel(pageDocumentType)}，请稍候...`);
+    createPendingGeneration();
+    generateButton.disabled = true;
+    setStatus(`正在上传文件并启动${documentLabel(pageDocumentType)}任务，你现在可以返回模块页查看进行中的状态。`, true);
     const result = await request(`/api/projects/${projectId}/modules/${moduleId}/spaces/${pageDocumentType}/tasks`, {
       method: "POST",
       body: formData
     });
     const taskId = result.task?.id || "";
-    window.location.href = `/projects/${projectId}/modules/${moduleId}?highlightTaskId=${encodeURIComponent(taskId)}`;
+    savePendingGeneration({
+      taskId,
+      startedAt: Date.now(),
+      projectId,
+      moduleId,
+      moduleName: moduleData?.name || "",
+      documentType: pageDocumentType,
+      documentLabel: documentLabel(pageDocumentType)
+    });
+    window.location.href = `/projects/${projectId}/modules/${moduleId}?highlightTaskId=${encodeURIComponent(taskId)}&taskStarted=1`;
   } catch (error) {
+    clearPendingGeneration(projectId, moduleId, pageDocumentType);
+    generateButton.disabled = false;
     handleError(error);
   }
 }
@@ -157,6 +172,42 @@ function disableGenerate() {
   generateForm.querySelector("button[type='submit']").disabled = true;
 }
 
+function getPendingGenerations() {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(PENDING_GENERATION_STORAGE_KEY) || "[]");
+  } catch (error) {
+    console.warn("Failed to parse pending generations", error);
+    return [];
+  }
+}
+
+function savePendingGeneration(entry) {
+  const entries = getPendingGenerations().filter(
+    (item) => !(item.projectId === entry.projectId && item.moduleId === entry.moduleId && item.documentType === entry.documentType)
+  );
+  entries.unshift(entry);
+  window.sessionStorage.setItem(PENDING_GENERATION_STORAGE_KEY, JSON.stringify(entries.slice(0, 10)));
+}
+
+function clearPendingGeneration(targetProjectId, targetModuleId, targetDocumentType) {
+  const entries = getPendingGenerations().filter(
+    (item) => !(item.projectId === targetProjectId && item.moduleId === targetModuleId && item.documentType === targetDocumentType)
+  );
+  window.sessionStorage.setItem(PENDING_GENERATION_STORAGE_KEY, JSON.stringify(entries));
+}
+
+function createPendingGeneration() {
+  savePendingGeneration({
+    taskId: "",
+    startedAt: Date.now(),
+    projectId,
+    moduleId,
+    moduleName: moduleData?.name || "",
+    documentType: pageDocumentType,
+    documentLabel: documentLabel(pageDocumentType)
+  });
+}
+
 async function request(url, options = {}) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
@@ -166,8 +217,9 @@ async function request(url, options = {}) {
   return data;
 }
 
-function setStatus(message) {
+function setStatus(message, emphasized = false) {
   statusRoot.textContent = message;
+  statusRoot.classList.toggle("status-busy", emphasized);
 }
 
 function handleError(error) {

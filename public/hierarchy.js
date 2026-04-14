@@ -1,5 +1,9 @@
 const page = document.body.dataset.page || "";
 const statusRoot = document.querySelector("#status");
+const TASK_POLL_INTERVAL_MS = 20000;
+const PENDING_GENERATION_STORAGE_KEY = "pending-module-generations";
+const PENDING_GENERATION_MAX_AGE_MS = 30 * 60 * 1000;
+let taskPollTimer = 0;
 
 await boot();
 
@@ -160,10 +164,26 @@ async function renderModuleDetailPage() {
   document.querySelector("#detail-generate-link").href =
     `/detail-design-generation?projectId=${project.id}&moduleId=${module.id}`;
 
+  const pendingGeneration = resolvePendingGeneration(project.id, module);
   renderAcceptedList(module, project.id);
-  renderTaskList(module, project.id);
+  renderTaskList(module, project.id, pendingGeneration);
 
-  const highlightTaskId = new URLSearchParams(window.location.search).get("highlightTaskId");
+  const params = new URLSearchParams(window.location.search);
+  const highlightTaskId = params.get("highlightTaskId");
+  const highlightedTask = highlightTaskId ? collectTasks(module).find((task) => task.id === highlightTaskId) : null;
+
+  if (params.get("taskStarted") === "1") {
+    setStatus(
+      highlightedTask?.status === "completed"
+        ? "生成任务已完成，结果已经出现在历史任务列表中。"
+        : "生成任务已启动，系统正在处理中，你可以留在这里等待结果刷新。"
+    );
+  } else if (highlightedTask?.status === "running") {
+    setStatus("当前有一个生成任务正在执行，列表会自动刷新。");
+  } else if (pendingGeneration) {
+    setStatus(`已发起${pendingGeneration.documentLabel}生成任务，后台正在执行。`);
+  }
+
   if (highlightTaskId) {
     const target = document.querySelector(`[data-task-id="${highlightTaskId}"]`);
     if (target) {
@@ -171,6 +191,8 @@ async function renderModuleDetailPage() {
       target.style.boxShadow = "0 0 0 2px rgba(14,106,168,0.28)";
     }
   }
+
+  ensureTaskPolling(module, pendingGeneration);
 }
 
 function renderAcceptedList(module, projectId) {
@@ -203,16 +225,35 @@ function renderAcceptedList(module, projectId) {
     .join("");
 }
 
-function renderTaskList(module, projectId) {
+function renderTaskList(module, projectId, pendingGeneration = null) {
   const taskList = document.querySelector("#task-list");
   const tasks = collectTasks(module);
-  if (!tasks.length) {
+  const cards = [];
+
+  if (pendingGeneration) {
+    cards.push(`
+      <article class="stack-card" data-pending-generation="true">
+        <div class="inline-actions">
+          <span class="doc-badge">${escapeHtml(pendingGeneration.documentLabel)}</span>
+          <span class="status-badge pending">生成中</span>
+        </div>
+        <strong>${escapeHtml(`${pendingGeneration.documentLabel}任务已启动`)}</strong>
+        <div class="card-meta">
+          <span>发起时间 ${formatDateTime(pendingGeneration.startedAt)}</span>
+          <span>状态 后台执行中</span>
+        </div>
+        <p class="inline-hint">任务已经加入后台执行，结果尚未返回，完成后这里会自动切换成真实任务记录。</p>
+      </article>
+    `);
+  }
+
+  if (!tasks.length && !cards.length) {
     taskList.innerHTML = '<div class="empty-state">当前还没有历史生成任务。</div>';
     return;
   }
 
-  taskList.innerHTML = tasks
-    .map(
+  cards.push(
+    ...tasks.map(
       (task) => `
         <article class="stack-card" data-task-id="${task.id}">
           <div class="inline-actions">
@@ -226,13 +267,17 @@ function renderTaskList(module, projectId) {
             <span>模型 ${escapeHtml(task.llmProfile?.name || "本地回退")}</span>
             <span>输入 ${(task.inputAssetIds || []).length} 个资产</span>
           </div>
+          ${task.status === "running" ? `<p class="inline-hint">任务已启动，正在生成中，完成后会自动刷新列表。</p>` : ""}
+          ${task.status === "failed" ? `<p class="inline-hint">${escapeHtml(task.summary || "任务执行失败，请重试。")}</p>` : ""}
           <div class="inline-actions">
             <a class="primary-link" href="/projects/${projectId}/modules/${module.id}/tasks/${task.id}?documentType=${task.documentType}">查看详情</a>
           </div>
         </article>
       `
     )
-    .join("");
+  );
+
+  taskList.innerHTML = cards.join("");
 }
 
 async function renderTaskDetailPage() {
@@ -263,7 +308,6 @@ async function renderTaskDetailPage() {
   document.querySelector("#task-subtitle").textContent = `${module.name} · ${documentLabel(documentType)} · ${formatDateTime(task.createdAt)}`;
 
   renderTaskMeta(task);
-  renderTaskSideInfo(task);
   renderTaskResults(task, project.id, module.id, documentType);
 }
 
@@ -277,45 +321,63 @@ function renderTaskMeta(task) {
   `;
 }
 
-function renderTaskSideInfo(task) {
-  const taskSideInfo = document.querySelector("#task-side-info");
-  const conflictBlock = (task.conflicts || []).length
-    ? `
-      <article class="stack-card">
-        <strong>冲突项</strong>
-        <div class="conflict-list">${escapeHtml(
-          task.conflicts.map((item) => `${item.code || "conflict"}: ${item.message || item.detail || ""}`).join("\n")
-        )}</div>
-      </article>
-    `
-    : `
-      <article class="stack-card">
-        <strong>冲突项</strong>
-        <p>本次任务没有记录冲突项。</p>
-      </article>
-    `;
+function getResultConflicts(task, resultItem) {
+  return (task.conflicts || []).filter((item) => item.requirementId === resultItem.id || item.requirementId === resultItem.requirementId);
+}
 
-  const traceBlock = (task.traces || []).length
-    ? `
-      <article class="stack-card">
-        <strong>追溯信息</strong>
-        <div class="trace-list">${escapeHtml(
-          task.traces.map((item) => `${item.fileName} @ ${item.location}`).join("\n")
-        )}</div>
-      </article>
-    `
-    : `
-      <article class="stack-card">
-        <strong>追溯信息</strong>
-        <p>本次任务没有可展示的追溯条目。</p>
-      </article>
-    `;
+function getResultTraces(task, resultItem) {
+  return (task.traces || []).filter(
+    (item) => item.requirementId === resultItem.id || item.requirementId === resultItem.requirementId || item.requirementCode === resultItem.requirementId
+  );
+}
 
-  taskSideInfo.innerHTML = conflictBlock + traceBlock;
+function buildResultConflictBlock(task, resultItem) {
+  const conflicts = getResultConflicts(task, resultItem);
+  return `
+    <div class="result-section">
+      <strong>冲突项</strong>
+      <div class="result-section-body">${escapeHtml(
+        conflicts.map((item) => `${item.code || "conflict"}: ${item.message || item.detail || ""}`).join("\n") || "无"
+      )}</div>
+    </div>
+  `;
+}
+
+function buildResultTraceBlock(task, resultItem) {
+  const traces = getResultTraces(task, resultItem);
+  return `
+    <div class="result-section">
+      <strong>追溯信息</strong>
+      <div class="result-section-body">${escapeHtml(
+        traces.map((item) => `${item.fileName} @ ${item.location}`).join("\n") || "无"
+      )}</div>
+    </div>
+  `;
+}
+
+function buildResultSourceBlock(resultItem) {
+  return `
+    <div class="result-section">
+      <strong>来源片段</strong>
+      <div class="result-section-body">${escapeHtml(
+        (resultItem.sourceRefs || []).map((ref) => `${ref.fileName} @ ${ref.location}: ${ref.excerpt}`).join("\n\n") || "无"
+      )}</div>
+    </div>
+  `;
 }
 
 function renderTaskResults(task, projectId, moduleId, documentType) {
   const taskResults = document.querySelector("#task-results");
+  if (task.status === "running") {
+    taskResults.innerHTML = '<div class="empty-state">任务已启动，当前正在生成中，请稍候刷新结果。</div>';
+    return;
+  }
+
+  if (task.status === "failed") {
+    taskResults.innerHTML = '<div class="empty-state">任务执行失败，请返回模块页重新发起，或检查模型与输入资产。</div>';
+    return;
+  }
+
   if (!(task.resultItems || []).length) {
     taskResults.innerHTML = '<div class="empty-state">本次任务没有生成结果。</div>';
     return;
@@ -348,9 +410,9 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
             <button data-accept-item="${item.id}">采纳</button>
             <button class="secondary-button" data-reject-item="${item.id}">驳回</button>
           </div>
-          <div class="trace-list">${escapeHtml(
-            (item.sourceRefs || []).map((ref) => `${ref.fileName} @ ${ref.location}\n${ref.excerpt}`).join("\n\n") || "无来源"
-          )}</div>
+          ${buildResultConflictBlock(task, item)}
+          ${buildResultTraceBlock(task, item)}
+          ${buildResultSourceBlock(item)}
         </article>
       `
     )
@@ -474,6 +536,68 @@ function documentLabel(documentType) {
   return documentType === "detail_design" ? "详细设计" : "软件需求";
 }
 
+function ensureTaskPolling(module, pendingGeneration = null) {
+  const hasRunningTask = collectTasks(module).some((task) => task.status === "running");
+  if (!hasRunningTask && !pendingGeneration) {
+    if (taskPollTimer) {
+      window.clearTimeout(taskPollTimer);
+      taskPollTimer = 0;
+    }
+    return;
+  }
+
+  if (taskPollTimer) {
+    return;
+  }
+
+  taskPollTimer = window.setTimeout(() => {
+    window.location.reload();
+  }, TASK_POLL_INTERVAL_MS);
+}
+
+function getPendingGenerations() {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(PENDING_GENERATION_STORAGE_KEY) || "[]");
+  } catch (error) {
+    console.warn("Failed to parse pending generations", error);
+    return [];
+  }
+}
+
+function savePendingGenerations(entries) {
+  window.sessionStorage.setItem(PENDING_GENERATION_STORAGE_KEY, JSON.stringify(entries));
+}
+
+function clearPendingGeneration(targetProjectId, targetModuleId, targetDocumentType) {
+  savePendingGenerations(
+    getPendingGenerations().filter(
+      (item) => !(item.projectId === targetProjectId && item.moduleId === targetModuleId && item.documentType === targetDocumentType)
+    )
+  );
+}
+
+function resolvePendingGeneration(projectId, module) {
+  const now = Date.now();
+  const entries = getPendingGenerations();
+  const validEntries = entries.filter((item) => now - Number(item.startedAt || 0) < PENDING_GENERATION_MAX_AGE_MS);
+  if (validEntries.length !== entries.length) {
+    savePendingGenerations(validEntries);
+  }
+
+  const matchingEntry = validEntries.find((item) => item.projectId === projectId && item.moduleId === module.id);
+  if (!matchingEntry) {
+    return null;
+  }
+
+  const realTasks = collectTasks(module).filter((task) => task.documentType === matchingEntry.documentType);
+  if (realTasks.length) {
+    clearPendingGeneration(projectId, module.id, matchingEntry.documentType);
+    return null;
+  }
+
+  return matchingEntry;
+}
+
 function formatDateTime(value) {
   return value ? new Date(value).toLocaleString("zh-CN") : "未知时间";
 }
@@ -482,13 +606,15 @@ function translateStatus(status) {
   if (status === "accepted") return "已采纳";
   if (status === "rejected") return "已驳回";
   if (status === "completed") return "已完成";
+  if (status === "running") return "生成中";
+  if (status === "failed") return "已失败";
   if (status === "proposal_review") return "待提案评审";
   return "待处理";
 }
 
 function statusTone(status) {
-  if (status === "accepted") return "accepted";
-  if (status === "rejected") return "rejected";
+  if (status === "accepted" || status === "completed") return "accepted";
+  if (status === "failed" || status === "rejected") return "rejected";
   return "pending";
 }
 

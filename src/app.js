@@ -347,10 +347,11 @@ export async function createApp() {
             assetIds: [...assetIds, ...uploadedAssetIds],
             uploadedAssetIds,
             skillBundleId: req.body?.skillBundleId || "",
-            llmProfileId: req.body?.llmProfileId || ""
+            llmProfileId: req.body?.llmProfileId || "",
+            asyncStart: true
           }
         );
-        res.status(201).json(result);
+        res.status(202).json({ ...result, taskStarted: true });
       } catch (error) {
         next(error);
       }

@@ -272,9 +272,25 @@ select {
 .accepted-content,
 .result-content,
 .trace-list,
-.conflict-list {
+.conflict-list,
+.result-section-body {
   white-space: pre-wrap;
   line-height: 1.6;
+}
+
+.result-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+}
+
+.result-section strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.result-section-body {
+  color: var(--ink-soft);
 }
 
 .doc-badge,

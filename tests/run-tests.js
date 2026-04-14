@@ -427,6 +427,7 @@ const tests = [
 
         const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
         assert.equal(result.task.documentType, "software_requirement");
+        assert.equal(result.task.status, "completed");
         assert.ok(result.task.resultItems.length >= 1);
 
         const accepted = await projectService.createAcceptedItem(project.id, module.id, "software_requirement", {
@@ -459,6 +460,7 @@ const tests = [
         const refreshedModule = refreshedProject.modules.find((item) => item.id === module.id);
         assert.equal(refreshedModule.assets.length, 1);
         assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks.length, 1);
+        assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks[0].status, "completed");
         assert.equal(refreshedModule.documentSpaces.software_requirement.acceptedItems.length, 1);
         assert.equal(refreshedModule.documentSpaces.detail_design.generationTasks.length, 0);
       });

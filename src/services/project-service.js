@@ -101,6 +101,20 @@ function normalizeTask(task = {}) {
   };
 }
 
+function buildTaskSummary(task = {}) {
+  const documentTypeLabel = getDocumentTypeLabel(task.documentType);
+  if (task.status === "running") {
+    return `正在生成${documentTypeLabel}`;
+  }
+  if (task.status === "failed") {
+    return task.summary || `${documentTypeLabel}生成失败`;
+  }
+  if (task.summary) {
+    return task.summary;
+  }
+  return `${documentTypeLabel}任务`;
+}
+
 function normalizeAcceptedItem(item = {}) {
   return {
     id: item.id || randomUUID(),
@@ -359,6 +373,57 @@ export class ProjectService {
       action: "module_task_generated",
       detail: `${module.name} / ${getDocumentTypeLabel(normalizedDocumentType)} 已新增任务`
     });
+    await this.saveProject(project);
+    return task;
+  }
+
+  async updateGenerationTask(projectId, moduleId, documentType, taskId, updates = {}) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const space = module.documentSpaces[normalizedDocumentType];
+    const task = space.generationTasks.find((item) => item.id === taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    if (updates.status) {
+      task.status = updates.status;
+    }
+    if (Array.isArray(updates.inputAssetIds)) {
+      task.inputAssetIds = updates.inputAssetIds;
+    }
+    if (Array.isArray(updates.uploadedAssetIds)) {
+      task.uploadedAssetIds = updates.uploadedAssetIds;
+    }
+    if (Array.isArray(updates.resultItems)) {
+      task.resultItems = updates.resultItems;
+    }
+    if (Array.isArray(updates.extractions)) {
+      task.extractions = updates.extractions;
+    }
+    if (Array.isArray(updates.traces)) {
+      task.traces = updates.traces;
+    }
+    if (Array.isArray(updates.conflicts)) {
+      task.conflicts = updates.conflicts;
+    }
+    if (Object.hasOwn(updates, "llmProfile")) {
+      task.llmProfile = updates.llmProfile || null;
+    }
+    if (typeof updates.summary === "string") {
+      task.summary = updates.summary;
+    }
+    task.summary = buildTaskSummary(task);
+    task.updatedAt = now();
+
+    if (task.status === "completed") {
+      touchModule(module, getGenerationActionLabel(normalizedDocumentType), `${getDocumentTypeLabel(normalizedDocumentType)}任务已完成`);
+    } else if (task.status === "failed") {
+      touchModule(module, "task_failed", `${getDocumentTypeLabel(normalizedDocumentType)}任务执行失败`);
+    } else {
+      touchModule(module, "task_updated", `${getDocumentTypeLabel(normalizedDocumentType)}任务状态已更新`);
+    }
+
     await this.saveProject(project);
     return task;
   }

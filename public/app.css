@@ -213,6 +213,11 @@ label,
   color: var(--ink-soft);
 }
 
+.status-busy {
+  color: var(--warning);
+  font-weight: 600;
+}
+
 .strip-text,
 .section-head p,
 .meta-message,
