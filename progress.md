@@ -38,8 +38,69 @@
   - 当前“规则级能力”已在系统层落地，但 `skills/active/*.md` 还没有正式迁移成显式编号的规则文档。
   - 因此当前生成需求时，仍然主要加载现有 markdown 形态的 active skill；只是系统已经具备后续按条写回和追踪的基础设施。
 
+## 会话：2026-04-14
+
+### 阶段：工程/模块模型重构与迁移演示工程
+- **状态：** complete
+- **执行的操作：**
+  - 将项目模型扩展为“工程 / 功能模块 / 文档空间 / 生成任务 / 已采纳结果”结构。
+  - 为模块资产、模块任务、模块接受结果补齐后端接口与服务方法。
+  - 新增 `scripts/migrate-legacy-demo.mjs`，把旧版 `Torque Intervention Trial` 与一条 skill refinement case/run 迁入新模型。
+  - 生成迁移演示工程 `迁移演示工程 - 扭矩干预`，用于后续界面联调。
+- **验证结果：**
+  - `npm test` -> `All 10 tests passed.`
+  - 迁移结果已确认：
+    - 模块 `扭矩干预`：6 个资产、1 条软件需求任务、7 条结果
+    - 模块 `Skill Refinement 改进记录`：1 条软件需求任务、1 条详细设计任务
+
+### 阶段：分层导航与页面职责重划
+- **状态：** complete（代码完成，仍待人工浏览器走查）
+- **执行的操作：**
+  - 将首页重做为纯工程列表页，不再堆叠模块、资产、任务和结果。
+  - 新增独立的创建工程页、工程详情页、创建模块页、模块主页、任务详情页。
+  - 功能模块主页改为主浏览页，展示已采纳结果全文和历史任务列表。
+  - 单次任务新增独立详情页，用于完整查看结果、冲突、追溯并执行采纳/驳回。
+  - 恢复 `/requirement-generation` 与 `/detail-design-generation` 为真实生成工具页。
+  - 新生成工具页支持读取 `projectId + moduleId` 上下文，并在生成完成后返回模块主页。
+  - 为分层页面补充 breadcrumb 导航。
+- **创建/修改的文件：**
+  - `public/index.html`
+  - `public/project-create.html`
+  - `public/project-detail.html`
+  - `public/module-create.html`
+  - `public/module-detail.html`
+  - `public/task-detail.html`
+  - `public/hierarchy.css`
+  - `public/hierarchy.js`
+  - `public/requirement-generation.html`
+  - `public/detail-design-generation.html`
+  - `public/generator.js`
+  - `public/app.css`
+  - `src/app.js`
+  - `src/services/project-service.js`
+  - `src/services/pipeline-service.js`
+  - `tests/run-tests.js`
+- **验证结果：**
+  - `node --check public/hierarchy.js`
+  - `node --check public/generator.js`
+  - 应用初始化检查：`APP_OK`
+  - `npm test` -> `All 10 tests passed.`
+- **补充说明：**
+  - 用户明确要求“生成页就只是做生成页”，因此主审阅入口改成了任务详情页。
+  - 模块主页保留已采纳结果全文展示，不做摘要折叠。
+
+### 阶段：分支整理与提交
+- **状态：** complete
+- **执行的操作：**
+  - 创建并切换到新开发分支：`codex-layered-navigation-workflow`
+  - 创建提交：`8bfcd66 Implement layered project module task navigation`
+- **遇到的问题：**
+  - `git switch -c codex/...` 因 ref 目录创建失败未采用
+  - sandbox 下直接创建 branch 失败，后通过提权完成
+
 ## 后续任务
-- 把现有 active skill 文件迁移为 `### RW-001 标题` 这类显式编号结构，并让 markdown 成为人类可维护的规则视图。
-- 建立 `SkillRule` 与 markdown 位置的稳定映射，避免靠宽松解析恢复规则边界。
-- 在 UI 中展示当前生成所使用的 active bundle / skill 版本，减少“代码已支持但运行态未切换”的误判。
-- 继续优化 replay proposal prompt，并补充失败重试和人工恢复流程。
+- 在真实浏览器中手动走查：
+  - 工程列表 -> 工程页 -> 模块页 -> 生成页 -> 模块页 -> 任务详情页
+- 检查迁移演示工程在新导航下的显示是否完全符合预期
+- 如有需要，继续收口任务详情页的视觉与审阅交互
+- 继续推进 skill markdown 规则化迁移与编码问题治理
