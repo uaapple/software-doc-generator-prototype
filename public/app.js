@@ -11,6 +11,9 @@ const state = {
   rejectContext: null
 };
 
+const pageDocumentType = document.body.dataset.documentType || "software_requirement";
+const pageCopy = getDocumentTypeCopy(pageDocumentType);
+
 const projectForm = document.querySelector("#project-form");
 const uploadForm = document.querySelector("#upload-form");
 const llmProfileForm = document.querySelector("#llm-profile-form");
@@ -86,8 +89,15 @@ async function bootstrap() {
 
 async function refreshProjects() {
   const response = await request("/api/projects");
-  state.projects = response.projects || [];
-  state.selectedProjectId = state.selectedProjectId || state.projects[0]?.id || "";
+  state.projects = (response.projects || [])
+    .map((project) => ({
+      ...project,
+      documentType: project.documentType || "software_requirement"
+    }))
+    .filter((project) => project.documentType === pageDocumentType);
+  if (!state.projects.some((project) => project.id === state.selectedProjectId)) {
+    state.selectedProjectId = state.projects[0]?.id || "";
+  }
 }
 
 async function refreshProject(projectId) {
@@ -116,6 +126,7 @@ async function handleCreateProject(event) {
   event.preventDefault();
   try {
     const payload = Object.fromEntries(new FormData(projectForm).entries());
+    payload.documentType = payload.documentType || pageDocumentType;
     const project = await request("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -126,7 +137,8 @@ async function handleCreateProject(event) {
     renderProjects();
     renderProject(project);
     projectForm.reset();
-    setStatus(`已创建项目：${payload.name}`);
+    syncProjectFormDocumentType();
+    setStatus(`已创建${pageCopy.projectLabel}：${payload.name}`);
   } catch (error) {
     handleError(error);
   }
@@ -146,7 +158,7 @@ async function handleUploadFiles(event) {
     });
     uploadForm.reset();
     await refreshProject(projectId);
-    setStatus("文件已上传，可以开始生成需求。");
+    setStatus(`文件已上传，可以开始生成${pageCopy.documentLabel}。`);
   } catch (error) {
     handleError(error);
   }
@@ -216,10 +228,10 @@ async function handleProjectChange() {
 async function handleGenerate() {
   try {
     if (!projectSelect.value) {
-      setStatus("请先选择项目");
+      setStatus(`请先选择${pageCopy.projectLabel}`);
       return;
     }
-    setStatus("正在生成需求草案，请稍候...");
+    setStatus(`正在生成${pageCopy.documentLabel}草案，请稍候...`);
     const project = await request(`/api/projects/${projectSelect.value}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -227,7 +239,7 @@ async function handleGenerate() {
     });
     upsertProject(project);
     renderProject(project);
-    setStatus(`已生成 ${project.requirements.length} 条需求。`);
+    setStatus(`已生成 ${project.requirements.length} 条${pageCopy.documentLabel}。`);
   } catch (error) {
     handleError(error);
   }
@@ -390,7 +402,7 @@ function renderProjects() {
   projectSelect.innerHTML = "";
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = state.projects.length ? "请选择项目" : "暂无项目";
+  empty.textContent = state.projects.length ? `请选择${pageCopy.projectLabel}` : `暂无${pageCopy.projectLabel}`;
   projectSelect.append(empty);
   for (const project of state.projects) {
     const option = document.createElement("option");
@@ -403,8 +415,8 @@ function renderProjects() {
 
 function renderProject(project) {
   if (!project) {
-    summaryRoot.innerHTML = "<p>创建项目后可查看处理进度与结果概览。</p>";
-    requirementsRoot.innerHTML = "<p>生成结果会显示在这里，便于逐条审核。</p>";
+    summaryRoot.innerHTML = `<p>创建${pageCopy.projectLabel}后可查看处理进度与结果概览。</p>`;
+    requirementsRoot.innerHTML = `<p>${pageCopy.documentLabel}生成结果会显示在这里，便于逐条审核。</p>`;
     return;
   }
 
@@ -439,7 +451,7 @@ function renderProject(project) {
 
   requirementsRoot.innerHTML = "";
   if (!project.requirements.length) {
-    requirementsRoot.innerHTML = "<p>上传文件并点击“启动生成”后，这里会出现需求草案。</p>";
+    requirementsRoot.innerHTML = `<p>上传文件并点击“启动生成”后，这里会出现${pageCopy.documentLabel}草案。</p>`;
     return;
   }
 
@@ -589,7 +601,7 @@ async function reviewRequirement(projectId, requirementId, status, root) {
     });
     upsertProject(project);
     renderProject(project);
-    setStatus(`需求已更新为：${translateStatus(status)}`);
+    setStatus(`${pageCopy.itemLabel}已更新为：${translateStatus(status)}`);
   } catch (error) {
     handleError(error);
   }
@@ -599,7 +611,7 @@ async function deleteProjectFile(projectId, fileId) {
   const project = state.projects.find((item) => item.id === projectId);
   const file = project?.files.find((item) => item.id === fileId);
   if (!project || !file) return;
-  if (!window.confirm(`确认删除文件“${file.originalName}”吗？删除后需要重新生成需求结果。`)) return;
+  if (!window.confirm(`确认删除文件“${file.originalName}”吗？删除后需要重新生成${pageCopy.documentLabel}结果。`)) return;
 
   const updatedProject = await request(`/api/projects/${projectId}/files/${fileId}`, { method: "DELETE" });
   upsertProject(updatedProject);
@@ -611,11 +623,11 @@ async function deleteProjectFile(projectId, fileId) {
 }
 
 async function deleteRequirement(projectId, requirementId, requirementCode) {
-  if (!window.confirm(`确认删除需求“${requirementCode}”吗？此操作会直接从后端移除该条生成结果。`)) return;
+  if (!window.confirm(`确认删除${pageCopy.itemLabel}“${requirementCode}”吗？此操作会直接从后端移除该条生成结果。`)) return;
   const project = await request(`/api/projects/${projectId}/requirements/${requirementId}`, { method: "DELETE" });
   upsertProject(project);
   renderProject(project);
-  setStatus(`已删除需求：${requirementCode}`);
+  setStatus(`已删除${pageCopy.itemLabel}：${requirementCode}`);
 }
 
 async function setDefaultProfile(profileId) {
@@ -762,12 +774,16 @@ function getFeedbackStateLabel(review = {}) {
 }
 
 function getFileRoleLabel(role) {
-  return {
+  const labels = {
     system_pdf: "系统需求",
-    model_pdf: "模型文档",
+    model_pdf: pageDocumentType === "detail_design" ? "PDF 文件" : "模型文档",
     generated_c: "生成代码",
     simulink_slx: "SLX 模型"
-  }[role] || role;
+  };
+  if (pageDocumentType === "detail_design") {
+    labels.generated_c = "模型代码";
+  }
+  return labels[role] || role;
 }
 
 function formatDateTime(value) {
@@ -784,6 +800,9 @@ function formatFileSize(size) {
 }
 
 function upsertProject(project) {
+  if ((project.documentType || "software_requirement") !== pageDocumentType) {
+    return;
+  }
   const index = state.projects.findIndex((item) => item.id === project.id);
   if (index >= 0) state.projects[index] = project;
   else state.projects.unshift(project);
@@ -819,3 +838,28 @@ async function request(url, options = {}) {
   if (!response.ok) throw new Error(text || `Request failed with status ${response.status}`);
   return text;
 }
+
+function syncProjectFormDocumentType() {
+  const input = projectForm?.elements?.namedItem("documentType");
+  if (input) {
+    input.value = pageDocumentType;
+  }
+}
+
+function getDocumentTypeCopy(documentType) {
+  if (documentType === "detail_design") {
+    return {
+      documentLabel: "软件详细设计",
+      projectLabel: "详细设计项目",
+      itemLabel: "详细设计条目"
+    };
+  }
+
+  return {
+    documentLabel: "软件需求",
+    projectLabel: "需求项目",
+    itemLabel: "需求条目"
+  };
+}
+
+syncProjectFormDocumentType();

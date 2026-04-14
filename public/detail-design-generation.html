@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>软件详细设计生成工作台</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body data-page-kind="generator" data-document-type="detail_design">
+    <main class="layout">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>软件开发需求自动生成平台</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">生成门户</a>
+          <a class="nav-link" href="/requirement-generation">软件需求生成</a>
+          <a class="nav-link active" href="/detail-design-generation">软件详细设计生成</a>
+          <a class="nav-link" href="/feedback-pool">反馈池</a>
+          <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">内部工具</p>
+          <h1>软件详细设计生成工作台</h1>
+          <p class="strip-text">创建项目、上传系统需求文件、模型代码文件和 PDF 文件，生成可审核的软件详细设计草案。</p>
+        </div>
+        <div class="strip-actions">
+          <a class="hero-link primary" href="#project-form">新建项目</a>
+          <a class="hero-link secondary" href="/">返回生成门户</a>
+        </div>
+      </section>
+
+      <section class="panel panel-grid">
+        <form id="project-form" class="card">
+          <div class="section-head">
+            <span class="section-index">01</span>
+            <div>
+              <h2>创建项目</h2>
+              <p>填写项目名称和说明，建立本次软件详细设计生成任务。</p>
+            </div>
+          </div>
+          <input type="hidden" name="documentType" value="detail_design" />
+          <label>
+            项目名称
+            <input name="name" required placeholder="例如：ESC 扭矩干预详细设计补齐" />
+          </label>
+          <label>
+            项目说明
+            <textarea name="description" rows="3" placeholder="可选，写明项目背景、范围或输入说明"></textarea>
+          </label>
+          <button type="submit">创建项目</button>
+        </form>
+
+        <form id="upload-form" class="card">
+          <div class="section-head">
+            <span class="section-index">02</span>
+            <div>
+              <h2>上传输入材料</h2>
+              <p>将系统需求文件、模型代码文件和 PDF 文件关联到当前软件详细设计项目。</p>
+            </div>
+          </div>
+          <label>
+            项目
+            <select id="project-select" name="projectId" required></select>
+          </label>
+          <label>
+            系统需求文件
+            <input type="file" name="systemPdf" accept=".pdf,.json,.md,.txt" />
+          </label>
+          <label>
+            PDF 文件
+            <input type="file" name="modelPdf" accept=".pdf,.json,.md,.txt" multiple />
+          </label>
+          <label>
+            模型代码文件
+            <input type="file" name="generatedCode" accept=".c,.h,.txt" multiple />
+          </label>
+          <button type="submit">上传文件</button>
+        </form>
+      </section>
+
+      <section class="panel panel-grid">
+        <div class="card generate-card">
+          <div class="section-head">
+            <span class="section-index">03</span>
+            <div>
+              <h2>生成软件详细设计</h2>
+              <p>选择当前模型后启动结构化软件详细设计草案生成。</p>
+            </div>
+          </div>
+          <label>
+            当前模型
+            <select id="llm-profile-select"></select>
+          </label>
+          <p id="llm-profile-hint" class="inline-hint"></p>
+
+          <details id="llm-configurator" class="llm-configurator">
+            <summary>模型管理</summary>
+            <div class="llm-configurator-body">
+              <div class="llm-manager-head">
+                <div>
+                  <h3 id="llm-form-title">新增模型</h3>
+                  <p id="llm-form-subtitle">保存后即可参与生成，也可以继续编辑、删除或测试连通性。</p>
+                </div>
+              </div>
+              <div id="llm-profile-list" class="llm-profile-list"></div>
+              <form id="llm-profile-form" class="llm-profile-form">
+                <label>
+                  服务商
+                  <select id="llm-provider-select" name="provider" required></select>
+                </label>
+                <label>
+                  配置名称
+                  <input name="name" required placeholder="例如：OpenAI GPT-4.1 / 豆包生产环境" />
+                </label>
+                <label>
+                  模型标识
+                  <input id="llm-model-input" name="model" required placeholder="例如：gpt-4.1-mini" />
+                </label>
+                <label>
+                  API Key
+                  <input id="llm-api-key-input" name="apiKey" type="password" placeholder="新增时填写，编辑时留空则沿用原值" />
+                </label>
+                <label>
+                  Base URL
+                  <input id="llm-base-url-input" name="baseURL" required placeholder="服务地址" />
+                </label>
+                <div class="inline-actions">
+                  <button id="llm-profile-submit" type="submit">保存模型</button>
+                  <button id="llm-profile-cancel" type="button" class="secondary ghost" hidden>取消编辑</button>
+                </div>
+              </form>
+            </div>
+          </details>
+
+          <p id="meta" class="meta-message"></p>
+          <button id="generate-button" type="button">启动生成</button>
+          <p id="status" class="status"></p>
+        </div>
+
+        <div class="card side-card">
+          <div class="section-head">
+            <span class="section-index">说明</span>
+            <div>
+              <h2>审核与反馈</h2>
+              <p>结果会附带来源、置信度和审核状态，驳回时可直接进入反馈闭环。</p>
+            </div>
+          </div>
+          <ul class="plain-list feature-list">
+            <li>系统需求仍然是最高优先级事实源。</li>
+            <li>模型代码和 PDF 文件用于补充详细设计的实现细节。</li>
+            <li>每条软件详细设计草案均可单独接受、修改后保存或驳回入池。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="card">
+          <div class="section-head">
+            <span class="section-index">概览</span>
+            <div>
+              <h2>项目概览</h2>
+              <p>查看输入规模、证据数量和冲突项。</p>
+            </div>
+          </div>
+          <div id="project-summary" class="summary"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="card results-card">
+          <div class="section-head">
+            <span class="section-index">结果</span>
+            <div>
+              <h2>软件详细设计生成结果</h2>
+              <p>逐条查看并处理软件详细设计草案。</p>
+            </div>
+          </div>
+          <div id="requirements" class="requirements"></div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="project-files-dialog" class="files-dialog">
+      <div class="files-dialog-head">
+        <div>
+          <h3>输入文件列表</h3>
+          <p id="project-files-subtitle">查看当前项目已上传文件，并按需删除。</p>
+        </div>
+        <button id="project-files-close" type="button" class="ghost files-dialog-close">关闭</button>
+      </div>
+      <div id="project-files-list" class="files-list"></div>
+    </dialog>
+
+    <dialog id="project-evidence-dialog" class="files-dialog evidence-dialog">
+      <div class="files-dialog-head">
+        <div>
+          <h3>抽取证据明细</h3>
+          <p id="project-evidence-subtitle">查看当前项目中的证据条目。</p>
+        </div>
+        <button id="project-evidence-close" type="button" class="ghost files-dialog-close">关闭</button>
+      </div>
+      <div id="project-evidence-list" class="files-list"></div>
+    </dialog>
+
+    <dialog id="reject-dialog" class="files-dialog reject-dialog">
+      <div class="files-dialog-head">
+        <div>
+          <h3>结构化驳回</h3>
+          <p id="reject-dialog-subtitle">填写驳回原因，系统将自动沉淀到反馈池。</p>
+        </div>
+        <button id="reject-dialog-close" type="button" class="ghost files-dialog-close">关闭</button>
+      </div>
+      <form id="reject-form" class="files-list reject-form">
+        <label>
+          驳回分类
+          <select name="reasonCategory" required>
+            <option value="">请选择</option>
+            <option value="missing_info">内容缺失</option>
+            <option value="wrong_structure">结构不对</option>
+            <option value="hallucination">与原始材料不一致</option>
+            <option value="too_vague">表述过于模糊</option>
+            <option value="not_actionable">不可执行</option>
+            <option value="format_error">格式问题</option>
+            <option value="domain_misunderstanding">领域理解错误</option>
+            <option value="other">其他</option>
+          </select>
+        </label>
+        <label>
+          标签
+          <input name="reasonTags" placeholder="例如：优先级, 分支逻辑, 追踪字段" />
+        </label>
+        <label>
+          严重级别
+          <select name="severity">
+            <option value="medium">中</option>
+            <option value="high">高</option>
+            <option value="low">低</option>
+          </select>
+        </label>
+        <label>
+          驳回说明
+          <textarea name="reasonText" rows="4" required placeholder="说明哪里错了，为什么不能接受"></textarea>
+        </label>
+        <label>
+          期望写法 / 缺失点
+          <textarea name="expectedNote" rows="3" placeholder="可选，补充你希望模型下次如何修正"></textarea>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" name="includeInPool" checked />
+          <span>加入反馈池并支持后续回投</span>
+        </label>
+        <div class="inline-actions">
+          <button type="submit">确认驳回并入池</button>
+          <button id="reject-form-cancel" type="button" class="secondary ghost">取消</button>
+        </div>
+      </form>
+    </dialog>
+
+    <template id="requirement-template">
+      <article class="requirement">
+        <header>
+          <div>
+            <strong data-field="requirementId"></strong>
+            <h3 data-field="title"></h3>
+          </div>
+          <span class="pill" data-field="reviewStatus"></span>
+        </header>
+        <div class="requirement-feedback-row">
+          <span class="mini-pill subtle" data-field="feedbackState">未入池</span>
+        </div>
+        <textarea data-field="requirementText" rows="4"></textarea>
+        <div class="meta-grid">
+          <div>
+            <span class="label">类型</span>
+            <p data-field="type"></p>
+          </div>
+          <div>
+            <span class="label">置信度</span>
+            <p data-field="confidence"></p>
+          </div>
+          <div>
+            <span class="label">验证建议</span>
+            <p data-field="verificationHint"></p>
+          </div>
+          <div>
+            <span class="label">冲突提示</span>
+            <p data-field="conflictNote"></p>
+          </div>
+        </div>
+        <div>
+          <span class="label">来源依据</span>
+          <ul data-field="sources" class="plain-list"></ul>
+        </div>
+        <div class="review-actions">
+          <button data-action="accept" type="button">接受</button>
+          <button data-action="revise" class="secondary" type="button">修改后保存</button>
+          <button data-action="reject" class="danger" type="button">驳回</button>
+          <button data-action="delete" class="danger ghost" type="button">删除</button>
+        </div>
+      </article>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

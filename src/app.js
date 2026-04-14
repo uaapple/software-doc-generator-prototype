@@ -84,6 +84,12 @@ export async function createApp() {
   app.get("/", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "index.html"));
   });
+  app.get("/requirement-generation", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "requirement-generation.html"));
+  });
+  app.get("/detail-design-generation", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "detail-design-generation.html"));
+  });
   app.get("/skill-refinement", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "skill-refinement.html"));
   });
@@ -512,4 +518,3 @@ export async function createApp() {
 
   return app;
 }
-

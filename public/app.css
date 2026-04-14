@@ -778,6 +778,43 @@ button.danger {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
+.portal-intro {
+  padding: 20px 22px;
+  background: linear-gradient(180deg, var(--surface), rgba(217, 229, 242, 0.35));
+}
+
+.generation-type-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.generation-type-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+}
+
+.generation-type-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.generation-type-card h3 {
+  margin-bottom: 0;
+}
+
+.generation-type-card p {
+  margin-bottom: 0;
+}
+
+.generation-type-link {
+  margin-top: auto;
+}
+
 @media (max-width: 920px) {
   .layout {
     width: min(100% - 24px, 100%);
@@ -854,4 +891,3 @@ button.danger {
     width: 100%;
   }
 }
-

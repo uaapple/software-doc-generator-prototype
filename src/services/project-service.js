@@ -9,6 +9,27 @@ function now() {
   return new Date().toISOString();
 }
 
+function normalizeDocumentType(value) {
+  return value === "detail_design" ? "detail_design" : "software_requirement";
+}
+
+function getDocumentTypeLabel(documentType) {
+  return documentType === "detail_design" ? "软件详细设计" : "软件需求";
+}
+
+function getGenerationActionLabel(documentType) {
+  return documentType === "detail_design" ? "details_generated" : "requirements_generated";
+}
+
+function ensureProjectDocumentType(project) {
+  if (!project) {
+    return project;
+  }
+
+  project.documentType = normalizeDocumentType(project.documentType);
+  return project;
+}
+
 function buildFileRecord(projectId, file, role) {
   return {
     id: randomUUID(),
@@ -51,7 +72,7 @@ export class ProjectService {
     const projects = await Promise.all(
       names
         .filter((name) => name.endsWith(".json"))
-        .map((name) => readJson(path.join(config.projectStoreDir, name)))
+        .map(async (name) => ensureProjectDocumentType(await readJson(path.join(config.projectStoreDir, name))))
     );
 
     return projects
@@ -64,6 +85,7 @@ export class ProjectService {
       id: randomUUID(),
       name: input.name?.trim() || "未命名项目",
       description: input.description?.trim() || "",
+      documentType: normalizeDocumentType(input.documentType),
       language: input.language || "zh-CN",
       templateName: input.templateName || "default-template",
       status: "draft",
@@ -89,7 +111,7 @@ export class ProjectService {
   }
 
   async getProject(projectId) {
-    return readJson(getProjectPath(projectId));
+    return ensureProjectDocumentType(await readJson(getProjectPath(projectId)));
   }
 
   async saveProject(project) {
@@ -175,12 +197,13 @@ export class ProjectService {
           llmProfile: null
         };
     project.status = "generated";
+    const documentTypeLabel = getDocumentTypeLabel(project.documentType);
     project.auditLog.push({
       at: now(),
-      action: "requirements_generated",
+      action: getGenerationActionLabel(project.documentType),
       detail: result.llmProfile
-        ? `使用 ${result.llmProfile.name}（${result.llmProfile.model}）生成 ${result.requirements.length} 条需求`
-        : `使用本地回退模式生成 ${result.requirements.length} 条需求`
+        ? `使用 ${result.llmProfile.name}（${result.llmProfile.model}）生成 ${result.requirements.length} 条${documentTypeLabel}`
+        : `使用本地回退模式生成 ${result.requirements.length} 条${documentTypeLabel}`
     });
 
     return this.saveProject(project);

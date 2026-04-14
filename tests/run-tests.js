@@ -348,6 +348,51 @@ const tests = [
     }
   },
   {
+    name: "Project service persists document type and defaults legacy projects",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+
+        const detailProject = await projectService.createProject({
+          name: "Detail Design Project",
+          documentType: "detail_design"
+        });
+        assert.equal(detailProject.documentType, "detail_design");
+
+        const legacyProjectId = "legacy-project";
+        await fs.writeFile(
+          path.join(config.projectStoreDir, `${legacyProjectId}.json`),
+          JSON.stringify(
+            {
+              id: legacyProjectId,
+              name: "Legacy Requirement Project",
+              description: "",
+              language: "zh-CN",
+              templateName: "default-template",
+              status: "draft",
+              files: [],
+              extractions: [],
+              requirements: [],
+              traces: [],
+              conflicts: [],
+              lastGeneration: null,
+              auditLog: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        const list = await projectService.listProjects();
+        assert.equal(list.find((item) => item.id === detailProject.id)?.documentType, "detail_design");
+        assert.equal(list.find((item) => item.id === legacyProjectId)?.documentType, "software_requirement");
+      });
+    }
+  },
+  {
     name: "Replay task applies accepted proposal items into candidate bundle",
     run: async () => {
       await withTempConfig(async () => {
