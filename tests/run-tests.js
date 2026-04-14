@@ -13,6 +13,7 @@ import { ProjectService } from "../src/services/project-service.js";
 import { RejectionService } from "../src/services/rejection-service.js";
 import { ReplayTaskService } from "../src/services/replay-task-service.js";
 import { SkillRuleService } from "../src/services/skill-rule-service.js";
+import { PipelineService } from "../src/services/pipeline-service.js";
 
 async function withTempConfig(run) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-refinement-"));
@@ -389,6 +390,77 @@ const tests = [
         const list = await projectService.listProjects();
         assert.equal(list.find((item) => item.id === detailProject.id)?.documentType, "detail_design");
         assert.equal(list.find((item) => item.id === legacyProjectId)?.documentType, "software_requirement");
+      });
+    }
+  },
+  {
+    name: "Project and pipeline services support module tasks and accepted result snapshots",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+
+        const project = await projectService.createProject({ name: "Workspace Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          description: "负责充电状态与控制逻辑"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging.md");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging.md",
+              filename: "charging.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ]
+        });
+
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
+        assert.equal(result.task.documentType, "software_requirement");
+        assert.ok(result.task.resultItems.length >= 1);
+
+        const accepted = await projectService.createAcceptedItem(project.id, module.id, "software_requirement", {
+          sourceTaskId: result.task.id,
+          sourceResultItemId: result.task.resultItems[0].id,
+          requirementText: "软件应在充电使能时输出充电状态信号，并记录状态变化。"
+        });
+        assert.equal(accepted.sourceTaskId, result.task.id);
+        assert.ok(accepted.acceptedSnapshot.requirementText.length > 0);
+        assert.equal(
+          accepted.currentContent.requirementText,
+          "软件应在充电使能时输出充电状态信号，并记录状态变化。"
+        );
+
+        const updated = await projectService.updateAcceptedItem(
+          project.id,
+          module.id,
+          "software_requirement",
+          accepted.id,
+          {
+            requirementText: "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
+          }
+        );
+        assert.equal(
+          updated.currentContent.requirementText,
+          "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
+        );
+
+        const refreshedProject = await projectService.getProject(project.id);
+        const refreshedModule = refreshedProject.modules.find((item) => item.id === module.id);
+        assert.equal(refreshedModule.assets.length, 1);
+        assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks.length, 1);
+        assert.equal(refreshedModule.documentSpaces.software_requirement.acceptedItems.length, 1);
+        assert.equal(refreshedModule.documentSpaces.detail_design.generationTasks.length, 0);
       });
     }
   },

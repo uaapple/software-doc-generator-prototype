@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>任务详情</title>
+    <link rel="stylesheet" href="/hierarchy.css" />
+  </head>
+  <body data-page="task-detail">
+    <main class="shell">
+      <nav id="breadcrumb" class="breadcrumb"></nav>
+
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Task Detail</p>
+          <h1 id="task-title">任务详情</h1>
+          <p id="task-subtitle" class="subtitle"></p>
+        </div>
+      </header>
+
+      <p id="status" class="status"></p>
+
+      <section class="panel">
+        <div class="meta-grid" id="task-meta"></div>
+      </section>
+
+      <section class="layout-two">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>冲突与追溯</h2>
+          </div>
+          <div id="task-side-info" class="stack-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>生成结果</h2>
+          </div>
+          <div id="task-results" class="stack-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/hierarchy.js"></script>
+  </body>
+</html>

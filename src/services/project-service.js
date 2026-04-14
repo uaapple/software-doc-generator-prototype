@@ -1,4 +1,4 @@
-﻿import { randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
@@ -21,37 +21,6 @@ function getGenerationActionLabel(documentType) {
   return documentType === "detail_design" ? "details_generated" : "requirements_generated";
 }
 
-function ensureProjectDocumentType(project) {
-  if (!project) {
-    return project;
-  }
-
-  project.documentType = normalizeDocumentType(project.documentType);
-  return project;
-}
-
-function buildFileRecord(projectId, file, role) {
-  return {
-    id: randomUUID(),
-    role,
-    originalName: file.originalname,
-    storedName: file.filename,
-    relativePath: path.join(projectId, file.filename),
-    absolutePath: file.path,
-    mimeType: file.mimetype,
-    size: file.size,
-    uploadedAt: now()
-  };
-}
-
-function clearGeneratedArtifacts(project) {
-  project.extractions = [];
-  project.requirements = [];
-  project.traces = [];
-  project.conflicts = [];
-  project.lastGeneration = null;
-}
-
 function normalizeReasonTags(reasonTags) {
   if (Array.isArray(reasonTags)) {
     return reasonTags.map((item) => String(item || "").trim()).filter(Boolean);
@@ -62,6 +31,159 @@ function normalizeReasonTags(reasonTags) {
   return [];
 }
 
+function createEmptyDocumentSpace(documentType) {
+  return {
+    documentType: normalizeDocumentType(documentType),
+    generationTasks: [],
+    acceptedItems: []
+  };
+}
+
+function ensureDocumentSpaces(documentSpaces = {}) {
+  return {
+    software_requirement:
+      documentSpaces.software_requirement || createEmptyDocumentSpace("software_requirement"),
+    detail_design: documentSpaces.detail_design || createEmptyDocumentSpace("detail_design")
+  };
+}
+
+function buildFileRecord(projectId, moduleId, file, role) {
+  return {
+    id: randomUUID(),
+    role,
+    originalName: file.originalname,
+    storedName: file.filename,
+    relativePath: moduleId ? path.join(projectId, moduleId, file.filename) : path.join(projectId, file.filename),
+    absolutePath: file.path,
+    mimeType: file.mimetype,
+    size: file.size,
+    uploadedAt: now()
+  };
+}
+
+function createModuleRecord(projectId, input = {}) {
+  return {
+    id: randomUUID(),
+    projectId,
+    name: input.name?.trim() || "未命名功能模块",
+    description: input.description?.trim() || "",
+    assets: [],
+    documentSpaces: ensureDocumentSpaces(),
+    auditLog: [
+      {
+        at: now(),
+        action: "module_created",
+        detail: "功能模块已创建"
+      }
+    ],
+    createdAt: now(),
+    updatedAt: now()
+  };
+}
+
+function normalizeTask(task = {}) {
+  return {
+    id: task.id || randomUUID(),
+    moduleId: task.moduleId || "",
+    documentType: normalizeDocumentType(task.documentType),
+    status: task.status || "completed",
+    createdAt: task.createdAt || now(),
+    updatedAt: task.updatedAt || task.createdAt || now(),
+    inputAssetIds: Array.isArray(task.inputAssetIds) ? task.inputAssetIds : [],
+    uploadedAssetIds: Array.isArray(task.uploadedAssetIds) ? task.uploadedAssetIds : [],
+    resultItems: Array.isArray(task.resultItems) ? task.resultItems : [],
+    extractions: Array.isArray(task.extractions) ? task.extractions : [],
+    traces: Array.isArray(task.traces) ? task.traces : [],
+    conflicts: Array.isArray(task.conflicts) ? task.conflicts : [],
+    llmProfile: task.llmProfile || null,
+    summary: task.summary || "",
+    auditLog: Array.isArray(task.auditLog) ? task.auditLog : []
+  };
+}
+
+function normalizeAcceptedItem(item = {}) {
+  return {
+    id: item.id || randomUUID(),
+    sourceTaskId: item.sourceTaskId || "",
+    sourceResultItemId: item.sourceResultItemId || "",
+    acceptedSnapshot: item.acceptedSnapshot || null,
+    currentContent: item.currentContent || null,
+    review: item.review || {
+      status: "accepted",
+      reviewer: "当前用户",
+      comment: ""
+    },
+    acceptedAt: item.acceptedAt || now(),
+    updatedAt: item.updatedAt || item.acceptedAt || now()
+  };
+}
+
+function normalizeModule(module, projectId) {
+  if (!module) {
+    return createModuleRecord(projectId);
+  }
+
+  return {
+    id: module.id || randomUUID(),
+    projectId: module.projectId || projectId,
+    name: module.name?.trim() || "未命名功能模块",
+    description: module.description?.trim() || "",
+    assets: Array.isArray(module.assets) ? module.assets : [],
+    documentSpaces: Object.fromEntries(
+      Object.entries(ensureDocumentSpaces(module.documentSpaces)).map(([key, value]) => [
+        key,
+        {
+          documentType: normalizeDocumentType(value.documentType || key),
+          generationTasks: Array.isArray(value.generationTasks) ? value.generationTasks.map(normalizeTask) : [],
+          acceptedItems: Array.isArray(value.acceptedItems) ? value.acceptedItems.map(normalizeAcceptedItem) : []
+        }
+      ])
+    ),
+    auditLog: Array.isArray(module.auditLog) ? module.auditLog : [],
+    createdAt: module.createdAt || now(),
+    updatedAt: module.updatedAt || module.createdAt || now()
+  };
+}
+
+function normalizeProject(project) {
+  if (!project) {
+    return project;
+  }
+
+  const normalized = {
+    ...project,
+    documentType: normalizeDocumentType(project.documentType),
+    language: project.language || "zh-CN",
+    templateName: project.templateName || "default-template",
+    status: project.status || "draft",
+    files: Array.isArray(project.files) ? project.files : [],
+    extractions: Array.isArray(project.extractions) ? project.extractions : [],
+    requirements: Array.isArray(project.requirements) ? project.requirements : [],
+    traces: Array.isArray(project.traces) ? project.traces : [],
+    conflicts: Array.isArray(project.conflicts) ? project.conflicts : [],
+    lastGeneration: project.lastGeneration || null,
+    auditLog: Array.isArray(project.auditLog) ? project.auditLog : [],
+    modules: Array.isArray(project.modules) ? project.modules.map((module) => normalizeModule(module, project.id)) : [],
+    createdAt: project.createdAt || now(),
+    updatedAt: project.updatedAt || project.createdAt || now()
+  };
+
+  return normalized;
+}
+
+function touchModule(module, action, detail) {
+  module.updatedAt = now();
+  module.auditLog.push({
+    at: module.updatedAt,
+    action,
+    detail
+  });
+}
+
+function cloneForAcceptedSnapshot(item) {
+  return JSON.parse(JSON.stringify(item));
+}
+
 export class ProjectService {
   constructor() {
     this.rejectionService = new RejectionService();
@@ -70,20 +192,16 @@ export class ProjectService {
   async listProjects() {
     const names = await fs.readdir(config.projectStoreDir);
     const projects = await Promise.all(
-      names
-        .filter((name) => name.endsWith(".json"))
-        .map(async (name) => ensureProjectDocumentType(await readJson(path.join(config.projectStoreDir, name))))
+      names.filter((name) => name.endsWith(".json")).map(async (name) => normalizeProject(await readJson(path.join(config.projectStoreDir, name))))
     );
 
-    return projects
-      .filter(Boolean)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return projects.filter(Boolean).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
   async createProject(input) {
-    const project = {
+    const project = normalizeProject({
       id: randomUUID(),
-      name: input.name?.trim() || "未命名项目",
+      name: input.name?.trim() || "未命名工程",
       description: input.description?.trim() || "",
       documentType: normalizeDocumentType(input.documentType),
       language: input.language || "zh-CN",
@@ -95,29 +213,275 @@ export class ProjectService {
       traces: [],
       conflicts: [],
       lastGeneration: null,
+      modules: [],
       auditLog: [
         {
           at: now(),
           action: "project_created",
-          detail: "项目已创建"
+          detail: "工程已创建"
         }
       ],
       createdAt: now(),
       updatedAt: now()
-    };
+    });
 
     await writeJson(getProjectPath(project.id), project);
     return project;
   }
 
   async getProject(projectId) {
-    return ensureProjectDocumentType(await readJson(getProjectPath(projectId)));
+    return normalizeProject(await readJson(getProjectPath(projectId)));
   }
 
   async saveProject(project) {
-    project.updatedAt = now();
-    await writeJson(getProjectPath(project.id), project);
-    return project;
+    const normalized = normalizeProject(project);
+    normalized.updatedAt = now();
+    await writeJson(getProjectPath(normalized.id), normalized);
+    return normalized;
+  }
+
+  async createModule(projectId, input = {}) {
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const module = createModuleRecord(project.id, input);
+    project.modules.push(module);
+    project.auditLog.push({
+      at: now(),
+      action: "module_created",
+      detail: `已创建功能模块：${module.name}`
+    });
+    await this.saveProject(project);
+    return module;
+  }
+
+  async updateModule(projectId, moduleId, input = {}) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    module.name = input.name?.trim() || module.name;
+    module.description = input.description?.trim() || "";
+    touchModule(module, "module_updated", "功能模块信息已更新");
+    await this.saveProject(project);
+    return module;
+  }
+
+  async getModule(projectId, moduleId) {
+    const { module } = await this.getProjectAndModule(projectId, moduleId);
+    return module;
+  }
+
+  async listAssets(projectId, moduleId) {
+    const module = await this.getModule(projectId, moduleId);
+    return module.assets;
+  }
+
+  async attachModuleAssets(projectId, moduleId, filesByField) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const roleMap = {
+      systemPdf: "system_pdf",
+      modelPdf: "model_pdf",
+      generatedCode: "generated_c",
+      slx: "simulink_slx"
+    };
+
+    const appendedAssets = [];
+    for (const [fieldName, files] of Object.entries(filesByField)) {
+      for (const file of files) {
+        const record = buildFileRecord(projectId, moduleId, file, roleMap[fieldName] || fieldName);
+        module.assets.push(record);
+        appendedAssets.push(record);
+      }
+    }
+
+    if (appendedAssets.length) {
+      touchModule(module, "assets_uploaded", `已上传 ${appendedAssets.length} 个模块资产`);
+      project.auditLog.push({
+        at: now(),
+        action: "module_assets_uploaded",
+        detail: `${module.name} 已上传 ${appendedAssets.length} 个文件`
+      });
+      await this.saveProject(project);
+    }
+
+    return { module, assets: appendedAssets };
+  }
+
+  async deleteModuleAsset(projectId, moduleId, assetId) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const assetIndex = module.assets.findIndex((item) => item.id === assetId);
+    if (assetIndex === -1) {
+      throw new Error("Asset not found");
+    }
+
+    const [removedAsset] = module.assets.splice(assetIndex, 1);
+    if (removedAsset?.absolutePath) {
+      await fs.rm(removedAsset.absolutePath, { force: true });
+    }
+
+    touchModule(module, "asset_deleted", `已删除资产：${removedAsset.originalName}`);
+    await this.saveProject(project);
+    return module;
+  }
+
+  async getDocumentSpace(projectId, moduleId, documentType) {
+    const module = await this.getModule(projectId, moduleId);
+    return module.documentSpaces[normalizeDocumentType(documentType)];
+  }
+
+  async listGenerationTasks(projectId, moduleId, documentType) {
+    const space = await this.getDocumentSpace(projectId, moduleId, documentType);
+    return [...space.generationTasks].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async getGenerationTask(projectId, moduleId, documentType, taskId) {
+    const space = await this.getDocumentSpace(projectId, moduleId, documentType);
+    return space.generationTasks.find((task) => task.id === taskId) || null;
+  }
+
+  async recordGenerationTask(projectId, moduleId, documentType, taskInput = {}) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const space = module.documentSpaces[normalizedDocumentType];
+    const task = normalizeTask({
+      ...taskInput,
+      moduleId,
+      documentType: normalizedDocumentType,
+      createdAt: now(),
+      updatedAt: now()
+    });
+
+    space.generationTasks.unshift(task);
+    touchModule(module, getGenerationActionLabel(normalizedDocumentType), `${getDocumentTypeLabel(normalizedDocumentType)}任务已生成`);
+    project.status = "generated";
+    project.auditLog.push({
+      at: now(),
+      action: "module_task_generated",
+      detail: `${module.name} / ${getDocumentTypeLabel(normalizedDocumentType)} 已新增任务`
+    });
+    await this.saveProject(project);
+    return task;
+  }
+
+  async reviewTaskResult(projectId, moduleId, documentType, taskId, resultItemId, review = {}) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const task = module.documentSpaces[normalizedDocumentType].generationTasks.find((item) => item.id === taskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    const resultItem = task.resultItems.find((item) => item.id === resultItemId);
+    if (!resultItem) {
+      throw new Error("Result item not found");
+    }
+
+    resultItem.review = {
+      ...(resultItem.review || {}),
+      status: review.status || resultItem.review?.status || "pending",
+      reviewer: review.reviewer || resultItem.review?.reviewer || "当前用户",
+      comment: review.comment?.trim() || "",
+      updatedAt: now()
+    };
+
+    task.updatedAt = now();
+    touchModule(module, "task_result_reviewed", `${getDocumentTypeLabel(normalizedDocumentType)}结果已审核`);
+    await this.saveProject(project);
+    return resultItem;
+  }
+
+  async listAcceptedItems(projectId, moduleId, documentType) {
+    const space = await this.getDocumentSpace(projectId, moduleId, documentType);
+    return [...space.acceptedItems].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  async createAcceptedItem(projectId, moduleId, documentType, input = {}) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const space = module.documentSpaces[normalizedDocumentType];
+    const task = space.generationTasks.find((item) => item.id === input.sourceTaskId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    const resultItem = task.resultItems.find((item) => item.id === input.sourceResultItemId);
+    if (!resultItem) {
+      throw new Error("Result item not found");
+    }
+
+    const acceptedItem = normalizeAcceptedItem({
+      sourceTaskId: task.id,
+      sourceResultItemId: resultItem.id,
+      acceptedSnapshot: cloneForAcceptedSnapshot(resultItem),
+      currentContent: {
+        ...cloneForAcceptedSnapshot(resultItem),
+        requirementText: input.requirementText?.trim() || resultItem.requirementText,
+        title: input.title?.trim() || resultItem.title
+      },
+      review: {
+        status: "accepted",
+        reviewer: input.reviewer || "当前用户",
+        comment: input.comment?.trim() || ""
+      }
+    });
+
+    resultItem.review = {
+      status: "accepted",
+      reviewer: acceptedItem.review.reviewer,
+      comment: acceptedItem.review.comment,
+      updatedAt: now()
+    };
+    task.updatedAt = now();
+    space.acceptedItems.unshift(acceptedItem);
+
+    touchModule(module, "accepted_item_created", `${getDocumentTypeLabel(normalizedDocumentType)}条目已接受`);
+    await this.saveProject(project);
+    return acceptedItem;
+  }
+
+  async updateAcceptedItem(projectId, moduleId, documentType, acceptedItemId, input = {}) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const space = module.documentSpaces[normalizedDocumentType];
+    const acceptedItem = space.acceptedItems.find((item) => item.id === acceptedItemId);
+    if (!acceptedItem) {
+      throw new Error("Accepted item not found");
+    }
+
+    acceptedItem.currentContent = {
+      ...(acceptedItem.currentContent || {}),
+      title: input.title?.trim() || acceptedItem.currentContent?.title || acceptedItem.acceptedSnapshot?.title || "",
+      requirementText:
+        input.requirementText?.trim() ||
+        acceptedItem.currentContent?.requirementText ||
+        acceptedItem.acceptedSnapshot?.requirementText ||
+        ""
+    };
+    acceptedItem.review = {
+      ...(acceptedItem.review || {}),
+      reviewer: input.reviewer || acceptedItem.review?.reviewer || "当前用户",
+      comment: input.comment?.trim() || acceptedItem.review?.comment || "",
+      updatedAt: now()
+    };
+    acceptedItem.updatedAt = now();
+
+    touchModule(module, "accepted_item_updated", `${getDocumentTypeLabel(normalizedDocumentType)}接受结果已更新`);
+    await this.saveProject(project);
+    return acceptedItem;
+  }
+
+  async getProjectAndModule(projectId, moduleId) {
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const module = project.modules.find((item) => item.id === moduleId);
+    if (!module) {
+      throw new Error("Module not found");
+    }
+
+    return { project, module };
   }
 
   async attachFiles(projectId, filesByField) {
@@ -135,7 +499,7 @@ export class ProjectService {
 
     for (const [fieldName, files] of Object.entries(filesByField)) {
       for (const file of files) {
-        project.files.push(buildFileRecord(projectId, file, roleMap[fieldName] || fieldName));
+        project.files.push(buildFileRecord(projectId, "", file, roleMap[fieldName] || fieldName));
       }
     }
 
@@ -161,12 +525,15 @@ export class ProjectService {
     }
 
     const [removedFile] = project.files.splice(fileIndex, 1);
-
     if (removedFile?.absolutePath) {
       await fs.rm(removedFile.absolutePath, { force: true });
     }
 
-    clearGeneratedArtifacts(project);
+    project.extractions = [];
+    project.requirements = [];
+    project.traces = [];
+    project.conflicts = [];
+    project.lastGeneration = null;
     project.status = project.files.length ? "files_uploaded" : "draft";
     project.auditLog.push({
       at: now(),

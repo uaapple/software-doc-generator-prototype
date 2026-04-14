@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>工程模块</title>
+    <link rel="stylesheet" href="/hierarchy.css" />
+  </head>
+  <body data-page="project-detail">
+    <main class="shell">
+      <nav id="breadcrumb" class="breadcrumb"></nav>
+
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Project</p>
+          <h1 id="project-title">工程</h1>
+          <p id="project-description" class="subtitle"></p>
+        </div>
+        <div class="top-actions">
+          <a id="create-module-link" class="primary-link" href="#">创建功能模块</a>
+        </div>
+      </header>
+
+      <p id="status" class="status"></p>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>功能模块</h2>
+        </div>
+        <div id="module-list" class="card-grid"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/hierarchy.js"></script>
+  </body>
+</html>

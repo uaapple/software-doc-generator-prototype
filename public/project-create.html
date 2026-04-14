@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>创建工程</title>
+    <link rel="stylesheet" href="/hierarchy.css" />
+  </head>
+  <body data-page="project-create">
+    <main class="shell narrow">
+      <nav id="breadcrumb" class="breadcrumb"></nav>
+
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Project</p>
+          <h1>创建工程</h1>
+          <p class="subtitle">填写工程基本信息，创建后再进入工程页维护功能模块。</p>
+        </div>
+      </header>
+
+      <p id="status" class="status"></p>
+
+      <section class="panel">
+        <form id="project-form" class="stack-form">
+          <label>
+            工程名称
+            <input name="name" required placeholder="例如：VCU 平台软件文档工程" />
+          </label>
+          <label>
+            工程说明
+            <textarea name="description" rows="4" placeholder="可选，说明工程背景、范围和目标"></textarea>
+          </label>
+          <div class="form-actions">
+            <button type="submit">创建并进入工程</button>
+            <a class="secondary-link" href="/">返回工程列表</a>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/hierarchy.js"></script>
+  </body>
+</html>

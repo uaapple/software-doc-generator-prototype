@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>功能模块</title>
+    <link rel="stylesheet" href="/hierarchy.css" />
+  </head>
+  <body data-page="module-detail">
+    <main class="shell">
+      <nav id="breadcrumb" class="breadcrumb"></nav>
+
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Module</p>
+          <h1 id="module-title">功能模块</h1>
+          <p id="module-description" class="subtitle"></p>
+        </div>
+        <div class="top-actions vertical">
+          <a id="req-generate-link" class="primary-link" href="#">进入软件需求生成</a>
+          <a id="detail-generate-link" class="secondary-link button-link" href="#">进入详细设计生成</a>
+        </div>
+      </header>
+
+      <p id="status" class="status"></p>
+
+      <section class="layout-two">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>已采纳结果</h2>
+          </div>
+          <div id="accepted-list" class="stack-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>历史生成任务</h2>
+          </div>
+          <div id="task-list" class="stack-list"></div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/hierarchy.js"></script>
+  </body>
+</html>

@@ -3,81 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>软件文档生成门户</title>
-    <link rel="stylesheet" href="/app.css" />
+    <title>工程列表</title>
+    <link rel="stylesheet" href="/hierarchy.css" />
   </head>
-  <body>
-    <main class="layout">
-      <nav class="top-nav">
-        <div class="brand-mark">
-          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
-          <div>
-            <p class="brand-kicker">ITK ENGINEERING</p>
-            <strong>软件文档生成门户</strong>
-          </div>
-        </div>
-        <div class="nav-links">
-          <a class="nav-link active" href="/">生成门户</a>
-          <a class="nav-link" href="/feedback-pool">反馈池</a>
-          <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
-        </div>
-      </nav>
-
-      <section class="workbench-strip card">
+  <body data-page="project-list">
+    <main class="shell">
+      <header class="topbar">
         <div>
-          <p class="strip-label">Generation Hub</p>
-          <h1>选择要生成的软件文档类型</h1>
-          <p class="strip-text">首页只负责承接生成类型入口，后续新增更多生成内容时可直接扩展，不需要再改整体结构。</p>
+          <p class="eyebrow">Workspace</p>
+          <h1>选择工程</h1>
+          <p class="subtitle">从这里进入已有工程，或者先创建一个新的工程。</p>
         </div>
-        <div class="strip-actions">
-          <a class="hero-link primary" href="/requirement-generation">生成软件需求</a>
-          <a class="hero-link secondary" href="/detail-design-generation">生成软件详细设计</a>
-        </div>
-      </section>
+        <nav class="top-actions">
+          <a class="text-link" href="/skill-refinement">Skill Refinement</a>
+          <a class="text-link" href="/feedback-pool">反馈池</a>
+          <a class="primary-link" href="/projects/new">创建工程</a>
+        </nav>
+      </header>
+
+      <p id="status" class="status"></p>
 
       <section class="panel">
-        <div class="portal-intro card">
-          <div>
-            <p class="strip-label">内部入口</p>
-            <h2>按文档类型进入对应工作台</h2>
-            <p class="strip-text">每个生成类型都有自己的二级页面、项目列表和结果区，便于后续继续扩展测试规范、接口说明等更多生成能力。</p>
-          </div>
+        <div class="panel-head">
+          <h2>已有工程</h2>
         </div>
-      </section>
-
-      <section class="panel">
-        <div class="generation-type-grid">
-          <article class="card generation-type-card">
-            <div class="generation-type-head">
-              <span class="section-index">01</span>
-              <span class="mini-pill">已启用</span>
-            </div>
-            <h3>生成软件需求</h3>
-            <p>进入现有需求生成工作台，创建项目、上传系统需求和模型材料，生成可审核的软件需求草案。</p>
-            <ul class="plain-list feature-list">
-              <li>适合软件需求条目补齐与审核。</li>
-              <li>输入支持系统需求、模型文档、生成代码和 SLX 预留。</li>
-              <li>结果支持逐条接受、修改、驳回入池。</li>
-            </ul>
-            <a class="hero-link primary generation-type-link" href="/requirement-generation">进入工作台</a>
-          </article>
-
-          <article class="card generation-type-card">
-            <div class="generation-type-head">
-              <span class="section-index">02</span>
-              <span class="mini-pill">已启用</span>
-            </div>
-            <h3>生成软件详细设计</h3>
-            <p>进入新的详细设计生成页面，围绕系统需求、模型代码和 PDF 材料，组织详细设计草案生成流程。</p>
-            <ul class="plain-list feature-list">
-              <li>输入聚焦系统需求文件、模型代码文件和 PDF 文件。</li>
-              <li>排版与需求工作台保持一致，降低切换成本。</li>
-              <li>后续可继续拆分专属模板与提示词链路。</li>
-            </ul>
-            <a class="hero-link primary generation-type-link" href="/detail-design-generation">进入工作台</a>
-          </article>
-        </div>
+        <div id="project-list" class="card-grid"></div>
       </section>
     </main>
+
+    <script type="module" src="/hierarchy.js"></script>
   </body>
 </html>

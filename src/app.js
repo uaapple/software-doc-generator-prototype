@@ -29,6 +29,28 @@ function toClientProject(project) {
     }
   };
 }
+
+function parseIdList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/[,，]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function moduleUploadFields() {
+  return [
+    { name: "systemPdf", maxCount: 2 },
+    { name: "modelPdf", maxCount: 8 },
+    { name: "generatedCode", maxCount: 16 },
+    { name: "slx", maxCount: 4 }
+  ];
+}
 export async function createApp() {
   await ensureStorage();
 
@@ -49,7 +71,10 @@ export async function createApp() {
       destination: async (req, file, cb) => {
         try {
           const projectId = req.params.projectId;
-          const destination = path.join(config.uploadDir, projectId);
+          const moduleId = req.params.moduleId;
+          const destination = moduleId
+            ? path.join(config.uploadDir, projectId, moduleId)
+            : path.join(config.uploadDir, projectId);
           await fs.mkdir(destination, { recursive: true });
           cb(null, destination);
         } catch (error) {
@@ -83,6 +108,21 @@ export async function createApp() {
   app.use(express.json({ limit: "2mb" }));
   app.get("/", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "index.html"));
+  });
+  app.get("/projects/new", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "project-create.html"));
+  });
+  app.get("/projects/:projectId", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "project-detail.html"));
+  });
+  app.get("/projects/:projectId/modules/new", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "module-create.html"));
+  });
+  app.get("/projects/:projectId/modules/:moduleId", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "module-detail.html"));
+  });
+  app.get("/projects/:projectId/modules/:moduleId/tasks/:taskId", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "task-detail.html"));
   });
   app.get("/requirement-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "requirement-generation.html"));
@@ -183,14 +223,207 @@ export async function createApp() {
     }
   });
 
+  app.post("/api/projects/:projectId/modules", async (req, res, next) => {
+    try {
+      const module = await projectService.createModule(req.params.projectId, req.body || {});
+      res.status(201).json(module);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/projects/:projectId/modules/:moduleId", async (req, res, next) => {
+    try {
+      const module = await projectService.updateModule(req.params.projectId, req.params.moduleId, req.body || {});
+      res.json(module);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId", async (req, res, next) => {
+    try {
+      const module = await projectService.getModule(req.params.projectId, req.params.moduleId);
+      res.json(module);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/assets", async (req, res, next) => {
+    try {
+      const assets = await projectService.listAssets(req.params.projectId, req.params.moduleId);
+      res.json({ assets });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post(
+    "/api/projects/:projectId/modules/:moduleId/assets",
+    upload.fields(moduleUploadFields()),
+    async (req, res, next) => {
+      try {
+        const result = await projectService.attachModuleAssets(req.params.projectId, req.params.moduleId, req.files || {});
+        res.status(201).json(result);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  app.delete("/api/projects/:projectId/modules/:moduleId/assets/:assetId", async (req, res, next) => {
+    try {
+      const module = await projectService.deleteModuleAsset(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.assetId
+      );
+      res.json(module);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/spaces/:documentType", async (req, res, next) => {
+    try {
+      const space = await projectService.getDocumentSpace(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.documentType
+      );
+      res.json(space);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks", async (req, res, next) => {
+    try {
+      const tasks = await projectService.listGenerationTasks(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.documentType
+      );
+      res.json({ tasks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get(
+    "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/:taskId",
+    async (req, res, next) => {
+      try {
+        const task = await projectService.getGenerationTask(
+          req.params.projectId,
+          req.params.moduleId,
+          req.params.documentType,
+          req.params.taskId
+        );
+        if (!task) {
+          return res.status(404).json({ error: "Task not found" });
+        }
+        res.json(task);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks",
+    upload.fields(moduleUploadFields()),
+    async (req, res, next) => {
+      try {
+        const uploaded = await projectService.attachModuleAssets(req.params.projectId, req.params.moduleId, req.files || {});
+        const assetIds = parseIdList(req.body?.assetIds);
+        const uploadedAssetIds = (uploaded.assets || []).map((asset) => asset.id);
+        const result = await pipelineService.generateForModule(
+          req.params.projectId,
+          req.params.moduleId,
+          req.params.documentType,
+          {
+            assetIds: [...assetIds, ...uploadedAssetIds],
+            uploadedAssetIds,
+            skillBundleId: req.body?.skillBundleId || "",
+            llmProfileId: req.body?.llmProfileId || ""
+          }
+        );
+        res.status(201).json(result);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/:taskId/results/:resultItemId/review",
+    async (req, res, next) => {
+      try {
+        const resultItem = await projectService.reviewTaskResult(
+          req.params.projectId,
+          req.params.moduleId,
+          req.params.documentType,
+          req.params.taskId,
+          req.params.resultItemId,
+          req.body || {}
+        );
+        res.json(resultItem);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  app.get("/api/projects/:projectId/modules/:moduleId/spaces/:documentType/accepted-items", async (req, res, next) => {
+    try {
+      const items = await projectService.listAcceptedItems(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.documentType
+      );
+      res.json({ items });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/projects/:projectId/modules/:moduleId/spaces/:documentType/accepted-items", async (req, res, next) => {
+    try {
+      const item = await projectService.createAcceptedItem(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.documentType,
+        req.body || {}
+      );
+      res.status(201).json(item);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put(
+    "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/accepted-items/:itemId",
+    async (req, res, next) => {
+      try {
+        const item = await projectService.updateAcceptedItem(
+          req.params.projectId,
+          req.params.moduleId,
+          req.params.documentType,
+          req.params.itemId,
+          req.body || {}
+        );
+        res.json(item);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
   app.post(
     "/api/projects/:projectId/files",
-    upload.fields([
-      { name: "systemPdf", maxCount: 1 },
-      { name: "modelPdf", maxCount: 4 },
-      { name: "generatedCode", maxCount: 12 },
-      { name: "slx", maxCount: 2 }
-    ]),
+    upload.fields(moduleUploadFields()),
     async (req, res, next) => {
       try {
         const project = await projectService.attachFiles(req.params.projectId, req.files || {});

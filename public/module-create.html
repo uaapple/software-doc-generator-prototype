@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>创建功能模块</title>
+    <link rel="stylesheet" href="/hierarchy.css" />
+  </head>
+  <body data-page="module-create">
+    <main class="shell narrow">
+      <nav id="breadcrumb" class="breadcrumb"></nav>
+
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Module</p>
+          <h1>创建功能模块</h1>
+          <p class="subtitle">例如充电管理、扭矩干预、高压管理。创建后进入该模块主页。</p>
+        </div>
+      </header>
+
+      <p id="status" class="status"></p>
+
+      <section class="panel">
+        <form id="module-form" class="stack-form">
+          <label>
+            模块名称
+            <input name="name" required placeholder="例如：扭矩干预" />
+          </label>
+          <label>
+            模块说明
+            <textarea name="description" rows="4" placeholder="可选，描述模块职责与边界"></textarea>
+          </label>
+          <div class="form-actions">
+            <button type="submit">创建并进入模块</button>
+            <a id="project-back-link" class="secondary-link" href="#">返回工程页</a>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/hierarchy.js"></script>
+  </body>
+</html>
