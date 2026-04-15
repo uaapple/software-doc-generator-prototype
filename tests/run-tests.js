@@ -6,6 +6,8 @@ import { config } from "../src/config.js";
 import { CExtractor } from "../src/services/c-extractor.js";
 import { ValidationService } from "../src/services/validation-service.js";
 import { LlmService } from "../src/services/llm-service.js";
+import { SkillLoader } from "../src/services/skill-loader.js";
+import { TemplateService } from "../src/services/template-service.js";
 import { ensureStorage } from "../src/services/storage.js";
 import { SkillBundleService } from "../src/services/skill-bundle-service.js";
 import { LlmProfileService } from "../src/services/llm-profile-service.js";
@@ -14,6 +16,7 @@ import { RejectionService } from "../src/services/rejection-service.js";
 import { ReplayTaskService } from "../src/services/replay-task-service.js";
 import { SkillRuleService } from "../src/services/skill-rule-service.js";
 import { PipelineService } from "../src/services/pipeline-service.js";
+import { ModuleSkillService } from "../src/services/module-skill-service.js";
 
 async function withTempConfig(run) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-refinement-"));
@@ -45,6 +48,7 @@ async function withTempConfig(run) {
     rejectionStoreDir: path.join(tempDir, "data", "rejections"),
     rejectionGroupStorePath: path.join(tempDir, "data", "rejections", "groups.json"),
     replayTaskStoreDir: path.join(tempDir, "data", "replay-tasks"),
+    templateDir: path.join(tempDir, "templates"),
     templatePath: path.join(tempDir, "templates", "software-requirement-template.json"),
     skillDir: path.join(tempDir, "skills", "active")
   });
@@ -67,79 +71,47 @@ async function withTempConfig(run) {
 
 async function seedFixtureFiles(tempDir) {
   await fs.mkdir(path.join(tempDir, "skills", "examples"), { recursive: true });
+  await fs.mkdir(path.join(tempDir, "skills", "active", "profiles", "generic"), { recursive: true });
+  await fs.mkdir(path.join(tempDir, "skills", "active", "profiles", "doc-types", "detail_design"), { recursive: true });
+  await fs.mkdir(path.join(tempDir, "skills", "active", "profiles", "doc-types", "hil_test_case"), { recursive: true });
+  await fs.mkdir(path.join(tempDir, "skills", "active", "profiles", "domains", "embedded_vcu"), { recursive: true });
+  await fs.mkdir(path.join(tempDir, "skills", "active", "profiles", "modules", "charging_management"), { recursive: true });
   await fs.mkdir(path.join(tempDir, "templates"), { recursive: true });
 
-  await fs.writeFile(
-    path.join(tempDir, "skills", "requirement_extraction.md"),
-    "# 事实抽取 Skill\n\n- 提取条件、信号、阈值、优先级和边界。\n",
-    "utf8"
-  );
-  await fs.writeFile(
-    path.join(tempDir, "skills", "requirement_writing.md"),
-    "# 需求写作 Skill\n\n- 输出中文软件需求。\n- 优先使用“软件应”句式。\n",
-    "utf8"
-  );
-  await fs.writeFile(
-    path.join(tempDir, "skills", "requirement_validation.md"),
-    "# 校验 Skill\n\n- 检查来源、模糊措辞和冲突项。\n",
-    "utf8"
-  );
-  await fs.writeFile(path.join(tempDir, "skills", "examples", "good_examples.md"), "# 正例\n", "utf8");
-  await fs.writeFile(path.join(tempDir, "skills", "examples", "bad_examples.md"), "# 反例\n", "utf8");
-  await fs.writeFile(
-    path.join(tempDir, "skills", "domain-knowledge.json"),
-    JSON.stringify(
-      {
-        version: 2,
-        documentBlueprint: {
-          domain: "embedded_vcu",
-          subdomain: "torque_intervention"
-        },
-        examples: [
-          {
-            requirementId: "SMiVCU-10160",
-            topic: "ESC 前轴扭矩干预激活",
-            requirementType: "activation_flag_logic",
-            requirementText: "软件应根据 ESC 前轴降扭请求激活前轴扭矩干预标志位。",
-            signals: ["ESC_TqDecReqAct_F"],
-            keywords: ["前轴", "激活", "扭矩干预"]
-          }
-        ],
-        ruleHints: [
-          {
-            domain: "embedded_vcu",
-            subdomain: "torque_intervention",
-            sectionHints: ["扭矩干预功能", "ESC 前轴扭矩干预", "ESC 后轴扭矩干预"]
-          }
-        ],
-        antiPatterns: ["不要将前轴和后轴需求合并成一条泛化描述。"]
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
-  await fs.writeFile(
-    config.templatePath,
-    JSON.stringify(
-      {
-        name: "default-template",
-        language: "zh-CN",
-        requirementIdPrefix: "SWR",
-        sections: [
-          {
-            title: "功能需求",
-            type: "functional",
-            maxItems: 4,
-            verificationHint: "通过功能测试验证输入触发与输出响应。"
-          }
-        ]
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
+  const genericKnowledge = {
+    version: 1,
+    examples: [],
+    ruleHints: [{ domain: "embedded_vcu", sectionHints: ["??", "??", "??"] }],
+    antiPatterns: []
+  };
+
+  await fs.writeFile(path.join(tempDir, "skills", "requirement_extraction.md"), "# ????\n\n- ?????????????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "requirement_writing.md"), "# ????\n\n- ???????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "requirement_validation.md"), "# ????\n\n- ?????????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "examples", "good_examples.md"), "# ??\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "examples", "bad_examples.md"), "# ??\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "domain-knowledge.json"), JSON.stringify(genericKnowledge, null, 2), "utf8");
+
+  await fs.writeFile(path.join(tempDir, "skills", "active", "requirement_extraction.md"), "# ????\n\n- ?????????????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "requirement_writing.md"), "# ????\n\n- ???????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "requirement_validation.md"), "# ????\n\n- ?????????????\n", "utf8");
+  await fs.mkdir(path.join(tempDir, "skills", "active", "examples"), { recursive: true });
+  await fs.writeFile(path.join(tempDir, "skills", "active", "examples", "good_examples.md"), "# ??\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "examples", "bad_examples.md"), "# ??\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "generic", "domain-knowledge.json"), JSON.stringify(genericKnowledge, null, 2), "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "domains", "embedded_vcu", "domain-knowledge.json"), JSON.stringify({ version: 1, ruleHints: [{ domain: "embedded_vcu", sectionHints: ["VCU"] }], examples: [], antiPatterns: [] }, null, 2), "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "doc-types", "detail_design", "requirement_writing.md"), "# ??????\n\n- ?????????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "doc-types", "detail_design", "requirement_validation.md"), "# ??????\n\n- ??????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "doc-types", "detail_design", "domain-knowledge.json"), JSON.stringify({ version: 1, examples: [], ruleHints: [{ documentType: "detail_design" }], antiPatterns: [] }, null, 2), "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "doc-types", "hil_test_case", "requirement_writing.md"), "# HIL ??\n\n- ??????????????????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "doc-types", "hil_test_case", "requirement_validation.md"), "# HIL ??\n\n- ?????????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "doc-types", "hil_test_case", "domain-knowledge.json"), JSON.stringify({ version: 1, examples: [], ruleHints: [{ documentType: "hil_test_case" }], antiPatterns: [] }, null, 2), "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "profiles", "modules", "charging_management", "domain-knowledge.json"), JSON.stringify({ version: 1, examples: [{ requirementId: "REQ-1", topic: "????SOC", requirementText: "???????SOC??????????", keywords: ["??SOC", "??"], signals: ["ICM_Chg_SOC_LimitPointSet"] }], ruleHints: [], antiPatterns: [] }, null, 2), "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "skill-manifest.json"), JSON.stringify({ version: 1, resolutionOrder: ["generic", "docType", "domain", "module"], profiles: { generic: { files: { "requirement_extraction.md": ["requirement_extraction.md"], "requirement_writing.md": ["requirement_writing.md"], "requirement_validation.md": ["requirement_validation.md"], "examples/good_examples.md": ["examples/good_examples.md"], "examples/bad_examples.md": ["examples/bad_examples.md"], "domain-knowledge.json": ["profiles/generic/domain-knowledge.json"] } }, docTypes: { software_requirement: { files: {} }, detail_design: { files: { "requirement_writing.md": ["profiles/doc-types/detail_design/requirement_writing.md"], "requirement_validation.md": ["profiles/doc-types/detail_design/requirement_validation.md"], "domain-knowledge.json": ["profiles/doc-types/detail_design/domain-knowledge.json"] } }, hil_test_case: { files: { "requirement_writing.md": ["profiles/doc-types/hil_test_case/requirement_writing.md"], "requirement_validation.md": ["profiles/doc-types/hil_test_case/requirement_validation.md"], "domain-knowledge.json": ["profiles/doc-types/hil_test_case/domain-knowledge.json"] } } }, domains: { embedded_vcu: { files: { "domain-knowledge.json": ["profiles/domains/embedded_vcu/domain-knowledge.json"] } } }, modules: { charging_management: { files: { "domain-knowledge.json": ["profiles/modules/charging_management/domain-knowledge.json"] } } } } }, null, 2), "utf8");
+
+  await fs.writeFile(path.join(tempDir, "templates", "software-requirement-template.json"), JSON.stringify({ name: "default-template", language: "zh-CN", requirementIdPrefix: "SWR", sections: [{ title: "????", type: "functional", maxItems: 4, verificationHint: "??????????????????" }] }, null, 2), "utf8");
+  await fs.writeFile(path.join(tempDir, "templates", "detail-design-template.json"), JSON.stringify({ name: "detail-design-template", language: "zh-CN", requirementIdPrefix: "SDD", sections: [{ title: "????", type: "functional", maxItems: 3, verificationHint: "?????????????" }] }, null, 2), "utf8");
+  await fs.writeFile(path.join(tempDir, "templates", "hil-test-case-template.json"), JSON.stringify({ name: "hil-test-case-template", language: "zh-CN", requirementIdPrefix: "HIL", sections: [{ title: "HIL ????", type: "functional", maxItems: 3, verificationHint: "????????????????????" }] }, null, 2), "utf8");
 }
 
 const tests = [
@@ -298,6 +270,96 @@ const tests = [
   },
 
   {
+    name: "Skill loader composes generic, document type and module profiles",
+    run: async () => {
+      await withTempConfig(async () => {
+        const loader = new SkillLoader();
+        const skills = await loader.loadForContext({
+          documentType: "hil_test_case",
+          domain: "embedded_vcu",
+          moduleSkillKey: "charging_management"
+        });
+
+        assert.ok(skills["requirement_writing.md"].includes("HIL ??"));
+        assert.ok(skills["domain-knowledge.json"].examples.some((item) => item.topic === "????SOC"));
+        assert.deepEqual(
+          skills.__profiles.map((item) => item.kind),
+          ["generic", "docType", "domain", "module"]
+        );
+      });
+    }
+  },
+  {
+    name: "Template service routes by document type",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new TemplateService();
+        const requirementTemplate = await service.getTemplate("software_requirement");
+        const detailTemplate = await service.getTemplate("detail_design");
+        const hilTemplate = await service.getTemplate("hil_test_case");
+
+        assert.equal(requirementTemplate.requirementIdPrefix, "SWR");
+        assert.equal(detailTemplate.requirementIdPrefix, "SDD");
+        assert.equal(hilTemplate.requirementIdPrefix, "HIL");
+      });
+    }
+  },
+  {
+    name: "Validation enforces HIL specific fields",
+    run: async () => {
+      const validator = new ValidationService();
+      const conflicts = validator.validate(
+        [
+          {
+            id: "hil-1",
+            documentType: "hil_test_case",
+            requirementId: "HIL-001",
+            title: "????SOC??",
+            requirementText: "????SOC?????",
+            sourceRefs: []
+          }
+        ],
+        { documentType: "hil_test_case", domainKnowledge: {} }
+      );
+
+      assert.ok(conflicts.some((item) => item.code === "missing-preconditions"));
+      assert.ok(conflicts.some((item) => item.code === "missing-test-steps"));
+      assert.ok(conflicts.some((item) => item.code === "missing-expected-results"));
+      assert.ok(conflicts.some((item) => item.code === "missing-pass-criteria"));
+    }
+  },
+  {
+    name: "LLM service falls back to HIL items with required fields",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new LlmService();
+        const items = await service.generateDocumentItems(
+          { name: "HIL Project", description: "", language: "zh-CN", documentType: "hil_test_case", domain: "embedded_vcu", moduleSkillKey: "charging_management" },
+          [
+            {
+              evidence: [
+                {
+                  fileName: "system.pdf",
+                  fileRole: "system_pdf",
+                  location: "page:1",
+                  excerpt: "???SOC????????????????",
+                  tags: ["functional"],
+                  confidence: 0.9
+                }
+              ]
+            }
+          ]
+        );
+
+        assert.equal(items[0].documentType, "hil_test_case");
+        assert.ok(Array.isArray(items[0].preconditions));
+        assert.ok(Array.isArray(items[0].testSteps));
+        assert.ok(Array.isArray(items[0].expectedResults));
+        assert.equal(typeof items[0].passCriteria, "string");
+      });
+    }
+  },
+  {
     name: "Rejected requirement creates feedback pool record",
     run: async () => {
       await withTempConfig(async () => {
@@ -349,6 +411,89 @@ const tests = [
     }
   },
   {
+    name: "Rejected task result creates feedback pool record",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+
+        const project = await projectService.createProject({ name: "Task Feedback Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "制动管理",
+          description: "负责制动相关生成结果"
+        });
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-1",
+              requirementId: "SWR-201",
+              title: "缺少验收条件",
+              requirementText: "软件应处理制动请求。",
+              type: "functional",
+              confidence: 0.61,
+              verificationHint: "补充可验证条件",
+              conflictNote: "",
+              sourceRefs: [
+                {
+                  fileName: "brake-system.pdf",
+                  location: "page:2",
+                  excerpt: "系统应在收到制动请求后输出控制信号。"
+                }
+              ]
+            }
+          ],
+          extractions: [
+            {
+              fileName: "brake-system.pdf",
+              fileRole: "system_pdf",
+              summary: "制动系统需求摘要",
+              evidence: [
+                {
+                  fileName: "brake-system.pdf",
+                  fileRole: "system_pdf",
+                  location: "page:2",
+                  excerpt: "系统应在收到制动请求后输出控制信号。",
+                  tags: ["brake", "signal"],
+                  confidence: 0.88
+                }
+              ]
+            }
+          ],
+          llmProfile: { id: "mock-profile", name: "Mock Profile" }
+        });
+
+        const reviewed = await projectService.reviewTaskResult(
+          project.id,
+          module.id,
+          "software_requirement",
+          task.id,
+          "result-1",
+          {
+            status: "rejected",
+            reviewer: "tester",
+            reasonCategory: "missing_info",
+            reasonTags: ["acceptance-criteria"],
+            reasonText: "Missing measurable acceptance criteria",
+            expectedNote: "Describe trigger, behavior and verification.",
+            includeInPool: true,
+            comment: "在任务详情页中人工驳回"
+          }
+        );
+
+        assert.equal(reviewed.review.status, "rejected");
+        assert.ok(reviewed.review.rejectionId);
+
+        const records = await rejectionService.listRecords();
+        assert.equal(records.length, 1);
+        assert.equal(records[0].requirementCode, "SWR-201");
+        assert.equal(records[0].reasonCategory, "missing_info");
+        assert.equal(records[0].poolStatus, "new");
+      });
+    }
+  },  {
     name: "Project service persists document type and defaults legacy projects",
     run: async () => {
       await withTempConfig(async () => {
@@ -399,19 +544,26 @@ const tests = [
       await withTempConfig(async () => {
         const bundleService = new SkillBundleService();
         await bundleService.ensureInitialized();
+        const moduleSkillService = new ModuleSkillService();
+        assert.equal(await moduleSkillService.hasModuleProfile("charging_management"), true);
         const projectService = new ProjectService();
         const pipelineService = new PipelineService(projectService);
 
         const project = await projectService.createProject({ name: "Workspace Project" });
         const module = await projectService.createModule(project.id, {
           name: "充电管理",
-          description: "负责充电状态与控制逻辑"
+          description: "负责充电状态与控制逻辑",
+          importedSkillKey: "charging_management"
         });
 
         const uploadDir = path.join(config.uploadDir, project.id, module.id);
         await fs.mkdir(uploadDir, { recursive: true });
         const systemFilePath = path.join(uploadDir, "charging.md");
+        const modelFilePath = path.join(uploadDir, "charging-model.c");
+        const referenceFilePath = path.join(uploadDir, "charging-example.md");
         await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+        await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+        await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
 
         await projectService.attachModuleAssets(project.id, module.id, {
           systemPdf: [
@@ -421,6 +573,24 @@ const tests = [
               path: systemFilePath,
               mimetype: "text/markdown",
               size: 24
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "charging-model.c",
+              filename: "charging-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 44
+            }
+          ],
+          referenceExample: [
+            {
+              originalname: "charging-example.md",
+              filename: "charging-example.md",
+              path: referenceFilePath,
+              mimetype: "text/markdown",
+              size: 27
             }
           ]
         });
@@ -458,7 +628,7 @@ const tests = [
 
         const refreshedProject = await projectService.getProject(project.id);
         const refreshedModule = refreshedProject.modules.find((item) => item.id === module.id);
-        assert.equal(refreshedModule.assets.length, 1);
+        assert.equal(refreshedModule.assets.length, 3);
         assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks.length, 1);
         assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks[0].status, "completed");
         assert.equal(refreshedModule.documentSpaces.software_requirement.acceptedItems.length, 1);
@@ -521,6 +691,180 @@ const tests = [
     }
   },
   {
+    name: "Module rejection record keeps module context and detail snapshot",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+
+        const project = await projectService.createProject({ name: "Feedback Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          description: "负责充电过程控制"
+        });
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-ctx-1",
+              requirementId: "SWR-301",
+              title: "充电截止控制",
+              requirementText: "当 SOC 达到阈值时，软件应停止充电。",
+              type: "functional",
+              confidence: 0.73,
+              verificationHint: "验证停止和恢复条件",
+              conflictNote: "",
+              sourceRefs: [
+                {
+                  fileName: "charging-system.md",
+                  location: "page:1",
+                  excerpt: "当 SOC 达到截止值时停止充电。"
+                }
+              ]
+            }
+          ],
+          traces: [
+            {
+              requirementId: "result-ctx-1",
+              requirementCode: "SWR-301",
+              fileName: "charging-system.md",
+              location: "page:1",
+              excerpt: "当 SOC 达到截止值时停止充电。"
+            }
+          ],
+          conflicts: [
+            {
+              requirementId: "result-ctx-1",
+              code: "wording-gap",
+              message: "缺少恢复条件"
+            }
+          ],
+          extractions: [
+            {
+              fileName: "charging-system.md",
+              fileRole: "system_pdf",
+              summary: "充电系统摘要",
+              evidence: [
+                {
+                  fileName: "charging-system.md",
+                  fileRole: "system_pdf",
+                  location: "page:1",
+                  excerpt: "当 SOC 达到截止值时停止充电。",
+                  tags: ["soc", "charging"],
+                  confidence: 0.9
+                }
+              ]
+            }
+          ],
+          llmProfile: { id: "profile-a", name: "Mock LLM" }
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-ctx-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonTags: ["案例对齐"],
+          reasonText: "表达方式没有对齐人工样例",
+          expectedNote: "按人工样例补充完整行为链路",
+          includeInPool: true,
+          comment: "任务详情页驳回"
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        assert.equal(records.length, 1);
+        assert.equal(records[0].moduleName, "充电管理");
+        assert.equal(records[0].documentType, "software_requirement");
+        assert.equal(records[0].sourceTaskId, task.id);
+        assert.equal(records[0].outputSnapshot.conflicts.length, 1);
+        assert.equal(records[0].outputSnapshot.traces.length, 1);
+      });
+    }
+  },
+  {
+    name: "Replay task carries selected module assets into material pack",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay Asset Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          description: "负责充电相关逻辑"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const assetPath = path.join(uploadDir, "charging-helper.c");
+        await fs.writeFile(assetPath, "void StallHeatingHelper(void) { /* replay reference */ }", "utf8");
+        const attached = await projectService.attachModuleAssets(project.id, module.id, {
+          generatedCode: [
+            {
+              originalname: "charging-helper.c",
+              filename: "charging-helper.c",
+              path: assetPath,
+              mimetype: "text/plain",
+              size: 58
+            }
+          ]
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-1",
+              requirementId: "SWR-401",
+              title: "堵转加热请求",
+              requirementText: "软件应在满足条件时发送堵转加热请求。",
+              type: "functional",
+              confidence: 0.8,
+              verificationHint: "检查触发条件和超时撤销",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: [],
+          llmProfile: { id: "profile-b", name: "Replay Mock" }
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-replay-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonTags: ["实现细节混入"],
+          reasonText: "正文混入了实现化表达",
+          expectedNote: "请参考模型代码但保持软件需求写法",
+          includeInPool: true,
+          comment: "任务详情页驳回"
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id,
+          referenceAssetIds: [attached.assets[0].id]
+        });
+
+        assert.equal(replayTask.materialPack.moduleContext.moduleName, "充电管理");
+        assert.equal(replayTask.materialPack.referenceAssets.length, 1);
+        assert.equal(replayTask.materialPack.referenceAssets[0].originalName, "charging-helper.c");
+        assert.ok(replayTask.materialPack.referenceAssets[0].preview.includes("StallHeatingHelper"));
+
+        const updatedRecord = await rejectionService.getRecord(records[0].id);
+        assert.equal(updatedRecord.replayCount, 1);
+        assert.equal(updatedRecord.replayStatus, "proposal_ready");
+      });
+    }
+  },  {
     name: "Skill bundle initialization preserves and restores domain knowledge",
     run: async () => {
       await withTempConfig(async () => {

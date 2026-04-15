@@ -1,0 +1,62 @@
+{
+  "version": 2,
+  "generationPriorities": [
+    "先复现目标样例的章节骨架，再补足细节，不要先生成泛化条目。",
+    "前轴和后轴必须分别成条，不要统一写成对应轴。",
+    "优先生成四个核心设计主题：前轴激活、前轴计算、后轴激活、后轴计算。",
+    "若输入明显属于充电管理，优先生成堵转加热模式、充电截止SOC、充电截止SOC记忆，再考虑充满跳转标志位等补充条目。",
+    "若当前输入同时提供人工软件设计需求样例，优先复现样例中的核心条目数、主题顺序和章节归属，不要把代码还能支持的补充逻辑提前写成新的主条目。",
+    "若输出 schema 只能承载列表，也要在标题或正文中保留层级关系和对象归属，但不要输出具体章节数字。",
+    "只有在四个核心主题已经成型后，才考虑追加接口、时序、诊断等补充条目。",
+    "信号命名优先使用参考样例中的标准工程命名，不要让代码变量名主导最终正文。",
+    "对于 ISO 26262 场景，若样例和系统需求未明确要求，不得擅自把 ABS/EBD/CCO/ISA 等逻辑扩写进核心设计需求。"
+  ],
+  "ruleHints": [
+    {
+      "domain": "embedded_vcu",
+      "subdomain": "torque_intervention",
+      "sectionHints": [
+        "扭矩干预功能",
+        "ESC前轴扭矩干预",
+        "ESC后轴扭矩干预"
+      ],
+      "writingPattern": "优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。",
+      "targetStyle": "输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。",
+      "sourceBasis": [
+        "input/software-requirement-writing-rules-vcu.md",
+        "input/system-requirements-example-torque-intervention.md",
+        "input/software-design-requirements-example-esc-torque-intervention.md"
+      ]
+    },
+    {
+      "domain": "embedded_vcu",
+      "subdomain": "charging_management",
+      "sectionHints": [
+        "充电管理",
+        "充电过程",
+        "堵转加热模式",
+        "充电截止SOC",
+        "充电截止SOC记忆"
+      ],
+      "writingPattern": "优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。",
+      "targetStyle": "输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。",
+      "sourceBasis": [
+        "input/20260411/充电管理/system-requirements-example-charging-management.md",
+        "input/20260411/充电管理/software-design-requirements-example-charging-management.md",
+        "input/20260411/Chrg.c"
+      ]
+    }
+  ],
+  "antiPatterns": [
+    "不要省略前轴/后轴等对称对象中的任一侧。",
+    "不要把优先级顺序或默认路径省略掉。",
+    "不要把工程变量名替换成笼统自然语言。",
+    "不要输出没有来源依据的内部引用编号。",
+    "不要把前轴和后轴合并成一个对应轴需求。",
+    "不要在四个核心设计主题缺失时，优先输出接口总表、执行周期、越野 TCS 等泛化条目。",
+    "不要只做系统需求复述，要尽量落到激活条件、输出变量、分支和边界处理。",
+    "不要把堵转加热、截止SOC、记忆、充满跳转标志位、电流计算等充电主题揉成一条综合需求。",
+    "不要在人工样例已经拆分“截止SOC控制”和“截止SOC记忆”时，再把两者混写成一条增强版需求。",
+    "不要把代码侧补充条目如 ChargingFull 状态跳转，提前写成与人工样例并列的核心主输出。"
+  ]
+}

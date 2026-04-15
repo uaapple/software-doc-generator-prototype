@@ -134,8 +134,8 @@ export class BenchmarkEvaluationService {
     const golden = benchmarkCase.goldenStructured.requirements || [];
     const generated = candidateGenerated.requirements || [];
     const baseline = baselineGenerated?.requirements || [];
-    const candidateValidation = candidateGenerated.conflicts || this.validationService.validate(generated);
-    const baselineValidation = baselineGenerated?.conflicts || this.validationService.validate(baseline);
+    const candidateValidation = candidateGenerated.conflicts || this.validationService.validate(generated, { documentType: benchmarkCase.documentType });
+    const baselineValidation = baselineGenerated?.conflicts || this.validationService.validate(baseline, { documentType: benchmarkCase.documentType });
 
     const sectionStructureScore = this.scoreSectionStructure(benchmarkCase.goldenStructured, generated);
     const requirementCoverageScore = this.scoreCoverage(golden, generated);

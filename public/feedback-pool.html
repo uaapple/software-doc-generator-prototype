@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <main class="layout">
+    <main class="layout feedback-page">
       <nav class="top-nav">
         <div class="brand-mark">
           <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
@@ -23,74 +23,137 @@
         </div>
       </nav>
 
-      <section class="workbench-strip card">
+      <section class="workbench-strip card feedback-strip feedback-strip-compact">
         <div>
           <p class="strip-label">Feedback Loop</p>
-          <h1>驳回记录池与回投修正</h1>
-          <p class="strip-text">按组查看驳回记录，发起回投任务，逐条审核 Skill 修正提案，并生成 candidate bundle。</p>
+          <h1 id="hero-title">反馈池</h1>
+          <p id="project-summary" class="strip-text">正在加载当前项目的驳回记录。</p>
         </div>
-        <div class="strip-actions">
-          <button id="refresh-groups" type="button">重建分组</button>
-          <button id="create-replay-task" type="button" class="secondary">发起回投</button>
-        </div>
-      </section>
-
-      <section class="panel feedback-grid">
-        <div class="card feedback-column">
-          <div class="section-head compact-head">
-            <span class="section-index">分组</span>
-            <div>
-              <h2>反馈分组</h2>
-              <p>按分类、标签和目标区域聚合。</p>
-            </div>
-          </div>
-          <div id="group-list" class="stack-list"></div>
-        </div>
-
-        <div class="card feedback-column wide-column">
-          <div class="section-head compact-head">
-            <span class="section-index">记录</span>
-            <div>
-              <h2>驳回记录</h2>
-              <p>支持多选后发起一次回投。</p>
-            </div>
-          </div>
-          <div class="feedback-toolbar">
-            <label>
-              分类筛选
-              <select id="record-category-filter">
-                <option value="">全部</option>
-              </select>
-            </label>
-          </div>
-          <div id="record-list" class="stack-list"></div>
-        </div>
-
-        <div class="card feedback-column">
-          <div class="section-head compact-head">
-            <span class="section-index">详情</span>
-            <div>
-              <h2>详情与提案</h2>
-              <p>查看单条记录、回投任务和逐条提案。</p>
-            </div>
-          </div>
-          <div id="detail-panel" class="detail-panel"></div>
+        <div class="strip-actions feedback-strip-actions">
+          <button id="open-task-drawer" type="button" class="secondary">查看最近任务</button>
+          <button id="refresh-records" type="button" class="secondary">刷新列表</button>
         </div>
       </section>
 
       <section class="panel">
-        <div class="card">
-          <div class="section-head compact-head">
-            <span class="section-index">任务</span>
+        <div class="card feedback-filter-card feedback-overview-card compact-overview-card">
+          <div class="feedback-overview-copy compact-overview-copy">
+            <div class="section-head compact-head feedback-overview-head compact-overview-head">
+              <span class="section-index">筛选</span>
+              <div>
+                <h2>当前项目</h2>
+                <p>默认显示当前项目下全部驳回记录，筛选后可直接逐条发起 Replay。</p>
+              </div>
+            </div>
+            <div id="project-metrics" class="feedback-metrics compact-metrics"></div>
+          </div>
+          <aside class="feedback-filter-sidebar compact-filter-sidebar">
+            <label>
+              功能模块
+              <select id="module-filter">
+                <option value="">全部模块</option>
+              </select>
+            </label>
+            <label>
+              原因分类
+              <select id="record-category-filter">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label>
+              Replay 状态
+              <select id="record-replay-filter">
+                <option value="">全部</option>
+                <option value="not_started">未回投</option>
+                <option value="proposal_ready">已产出提案</option>
+                <option value="replayed">已回投</option>
+                <option value="failed">回投失败</option>
+              </select>
+            </label>
+          </aside>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="card feedback-list-card">
+          <div class="section-head compact-head feedback-list-head compact-list-head">
+            <span class="section-index">记录</span>
             <div>
-              <h2>回投任务</h2>
-              <p>最近发起的 replay task 及其 candidate bundle 结果。</p>
+              <h2>驳回记录</h2>
+              <p>一条记录一行展示，点击可查看详情，也可单条发起 Replay。</p>
             </div>
           </div>
-          <div id="task-list" class="stack-list"></div>
+
+          <div class="feedback-record-table compact-record-table">
+            <div class="feedback-record-table-head compact-record-head">
+              <span>编号</span>
+              <span>标题</span>
+              <span>功能模块</span>
+              <span>分类</span>
+              <span>Replay 状态</span>
+              <span>驳回说明</span>
+              <span>操作</span>
+            </div>
+            <div id="record-list" class="feedback-record-table-body"></div>
+          </div>
         </div>
       </section>
     </main>
+
+    <dialog id="record-detail-dialog" class="files-dialog feedback-detail-dialog">
+      <div class="files-dialog-head">
+        <h2>驳回记录详情</h2>
+        <p id="record-detail-subtitle" class="subtitle">查看该条记录的生成信息和人工驳回信息。</p>
+      </div>
+      <div id="record-detail-content" class="files-list stack-form"></div>
+      <div class="form-actions">
+        <button id="record-detail-close" type="button" class="secondary-button">关闭</button>
+      </div>
+    </dialog>
+
+    <dialog id="replay-dialog" class="files-dialog replay-dialog">
+      <div class="files-dialog-head">
+        <h2>发起 Replay</h2>
+        <p id="replay-dialog-subtitle" class="subtitle">选择要参与回投的驳回记录与参考资产。</p>
+      </div>
+      <form id="replay-form" class="files-list stack-form" method="dialog">
+        <div class="replay-form-grid">
+          <div>
+            <label>
+              模型服务
+              <select id="replay-llm-profile-select" name="llmProfileId"></select>
+            </label>
+            <div class="detail-block">
+              <span class="label">已选驳回记录</span>
+              <div id="replay-selected-records" class="replay-selected-list"></div>
+            </div>
+          </div>
+          <div>
+            <div class="detail-block">
+              <span class="label">模块资产（手动勾选参考）</span>
+              <div id="replay-asset-picker" class="files-list replay-asset-picker"></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit">确认发起</button>
+          <button id="replay-form-cancel" type="button" class="secondary-button">取消</button>
+        </div>
+      </form>
+    </dialog>
+
+    <aside id="task-drawer" class="feedback-task-drawer" aria-hidden="true">
+      <div class="feedback-task-drawer-head">
+        <div>
+          <p class="strip-label">Replay Tasks</p>
+          <h2>最近任务</h2>
+        </div>
+        <button id="close-task-drawer" type="button" class="secondary-button">关闭</button>
+      </div>
+      <div id="task-drawer-list" class="stack-list feedback-task-list"></div>
+      <div id="task-drawer-detail" class="feedback-task-detail empty-state">选择一个任务查看提案详情。</div>
+    </aside>
+    <div id="task-drawer-backdrop" class="feedback-task-backdrop" hidden></div>
 
     <script type="module" src="/feedback-pool.js"></script>
   </body>

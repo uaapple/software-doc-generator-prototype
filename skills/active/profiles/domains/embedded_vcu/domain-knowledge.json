@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "sourceOfTruthPolicy": {
+    "standard": "ISO 26262",
+    "singleSourceOfTruth": true,
+    "forbidCodeStyleSignals": true,
+    "codeStylePrefixes": [
+      "icesc_",
+      "icadas_",
+      "ACCtl_",
+      "ParkCtrl_"
+    ],
+    "canonicalSignalAliases": [
+      {
+        "canonical": "ESC_TqDecReqAct_F",
+        "aliases": [
+          "icesc_bFrntAxleTqDecActv"
+        ]
+      },
+      {
+        "canonical": "ESC_EHB_RBS_F_Active",
+        "aliases": [
+          "icesc_bFrntAxleRBSTqActv"
+        ]
+      },
+      {
+        "canonical": "ESC_TrqIncReqActv_F",
+        "aliases": [
+          "icesc_bFrntAxleTqIncActv"
+        ]
+      },
+      {
+        "canonical": "ESC_TrqIncReq_F",
+        "aliases": [
+          "icesc_tqReqFrntAxleInc"
+        ]
+      },
+      {
+        "canonical": "ESC_TqDecReq_F",
+        "aliases": [
+          "icesc_tqReqFrntAxleDec"
+        ]
+      },
+      {
+        "canonical": "ESC_EHB_RBS_F_TargetRegenTrq",
+        "aliases": [
+          "icesc_tqRBSReqFrntAxle"
+        ]
+      },
+      {
+        "canonical": "ESC_TqDecReqAct_R",
+        "aliases": [
+          "icesc_bReAxleTqDecActv"
+        ]
+      },
+      {
+        "canonical": "ESC_EHB_RBS_R_Active",
+        "aliases": [
+          "icesc_bReAxleRBSTqActv"
+        ]
+      },
+      {
+        "canonical": "ESC_TrqIncReqActv_R",
+        "aliases": [
+          "icesc_bReAxleTqIncActv"
+        ]
+      },
+      {
+        "canonical": "ESC_TrqIncReq_R",
+        "aliases": [
+          "icesc_tqReqReAxleInc"
+        ]
+      },
+      {
+        "canonical": "ESC_TqDecReq_R",
+        "aliases": [
+          "icesc_tqReqReAxleDec"
+        ]
+      },
+      {
+        "canonical": "ESC_EHB_RBS_R_TargetRegenTrq",
+        "aliases": [
+          "icesc_tqRBSReqReAxle"
+        ]
+      },
+      {
+        "canonical": "ESC_AEB_Active",
+        "aliases": [
+          "icadas_bAEBActv"
+        ]
+      },
+      {
+        "canonical": "ESC_CDP_Active",
+        "aliases": [
+          "icesc_bCDPActv"
+        ]
+      },
+      {
+        "canonical": "ESC_VLC_TorqCtrlActive",
+        "aliases": [
+          "icadas_bTqVLCTrgtReqVld"
+        ]
+      }
+    ],
+    "forbiddenExpansions": {
+      "activation_flag_logic": [
+        "CCO",
+        "ISA"
+      ],
+      "torque_calculation_logic": [
+        "ABS",
+        "EBD",
+        "CCO",
+        "ISA"
+      ]
+    },
+    "normalizationRules": [
+      {
+        "pattern": "AEB/CDP/ABS/EBD任一功能",
+        "replacement": "AEB或CDP任一功能"
+      },
+      {
+        "pattern": "主动制动（AEB/CDP/ABS/EBD）",
+        "replacement": "主动制动（AEB/CDP）"
+      },
+      {
+        "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
+        "replacement": ""
+      },
+      {
+        "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
+        "replacement": ""
+      }
+    ]
+  },
+  "ruleHints": [],
+  "antiPatterns": []
+}

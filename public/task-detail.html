@@ -32,6 +32,55 @@
       </section>
     </main>
 
+    <dialog id="reject-dialog" class="files-dialog">
+      <div class="files-dialog-head">
+        <h2>结构化驳回</h2>
+        <p id="reject-dialog-subtitle" class="subtitle">请填写这条生成结果的驳回原因。</p>
+      </div>
+      <form id="reject-form" class="files-list stack-form" method="dialog">
+        <label>
+          原因分类
+          <select name="reasonCategory" required>
+            <option value="coverage_gap">覆盖缺失</option>
+            <option value="traceability_issue">来源追踪问题</option>
+            <option value="wording_issue">表述问题</option>
+            <option value="logic_issue">逻辑错误</option>
+            <option value="validation_gap">校验缺失</option>
+            <option value="other">其他</option>
+          </select>
+        </label>
+        <label>
+          原因标签
+          <input name="reasonTags" type="text" placeholder="例如：边界条件, 来源不足, 术语不一致" />
+        </label>
+        <label>
+          严重程度
+          <select name="severity">
+            <option value="low">低</option>
+            <option value="medium" selected>中</option>
+            <option value="high">高</option>
+          </select>
+        </label>
+        <label>
+          驳回说明
+          <textarea name="reasonText" rows="5" required placeholder="请说明为什么要驳回这条结果。"></textarea>
+        </label>
+        <label>
+          期望修正
+          <textarea name="expectedNote" rows="4" placeholder="可选：描述你期望模型后续如何修正。"></textarea>
+        </label>
+        <label class="checkbox-item">
+          <input name="includeInPool" type="checkbox" checked />
+          <span>加入驳回池，供后续反馈聚类与回投修正使用</span>
+        </label>
+        <div class="form-actions">
+          <button type="submit">确认驳回</button>
+          <button id="reject-form-cancel" type="button" class="secondary-button">取消</button>
+          <button id="reject-dialog-close" type="button" class="secondary-button">关闭</button>
+        </div>
+      </form>
+    </dialog>
+
     <script type="module" src="/hierarchy.js"></script>
   </body>
 </html>

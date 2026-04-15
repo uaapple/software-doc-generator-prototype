@@ -1,40 +1,53 @@
 const VAGUE_PATTERNS = [/适当/g, /必要时/g, /尽量/g, /合理/g, /优化/g, /可能/g];
 
 export class ValidationService {
-  validate(requirements, options = {}) {
+  validate(items, options = {}) {
+    const documentType = normalizeDocumentType(options.documentType || items[0]?.documentType);
     const conflicts = [];
     const policy = options.domainKnowledge?.sourceOfTruthPolicy || {};
     const codeStylePrefixes = Array.isArray(policy.codeStylePrefixes) ? policy.codeStylePrefixes : [];
     const aliasGroups = Array.isArray(policy.canonicalSignalAliases) ? policy.canonicalSignalAliases : [];
     const forbiddenExpansions = policy.forbiddenExpansions || {};
 
-    for (const requirement of requirements) {
-      if (!requirement.requirementId) {
-        conflicts.push(buildConflict(requirement.id, "missing-id", "缺少需求编号"));
+    for (const item of items) {
+      if (!item.requirementText) {
+        conflicts.push(buildConflict(item.id, "missing-text", "缺少正文内容"));
       }
-      if (!requirement.requirementText) {
-        conflicts.push(buildConflict(requirement.id, "missing-text", "缺少需求正文"));
-      }
-      if (!requirement.sourceRefs?.length) {
-        conflicts.push(buildConflict(requirement.id, "missing-source", "缺少来源追溯"));
+      if (!item.sourceRefs?.length) {
+        conflicts.push(buildConflict(item.id, "missing-source", "缺少来源追溯"));
       }
 
-      for (const pattern of VAGUE_PATTERNS) {
-        if (pattern.test(requirement.requirementText || "")) {
-          conflicts.push(buildConflict(requirement.id, "vague-language", `存在模糊措辞: ${pattern}`));
+      if (documentType === "software_requirement" && !item.verificationHint) {
+        conflicts.push(buildConflict(item.id, "missing-verification", "缺少验证提示"));
+      }
+      if (documentType === "detail_design" && item.structuredContent == null) {
+        conflicts.push(buildConflict(item.id, "missing-structure", "详细设计缺少结构化实现内容"));
+      }
+      if (documentType === "hil_test_case") {
+        if (!item.preconditions?.length) {
+          conflicts.push(buildConflict(item.id, "missing-preconditions", "HIL 用例缺少前置条件"));
+        }
+        if (!item.testSteps?.length) {
+          conflicts.push(buildConflict(item.id, "missing-test-steps", "HIL 用例缺少测试步骤"));
+        }
+        if (!item.expectedResults?.length) {
+          conflicts.push(buildConflict(item.id, "missing-expected-results", "HIL 用例缺少预期结果"));
+        }
+        if (!item.passCriteria) {
+          conflicts.push(buildConflict(item.id, "missing-pass-criteria", "HIL 用例缺少判定标准"));
         }
       }
 
-      const haystack = `${requirement.title || ""} ${requirement.requirementText || ""}`;
+      for (const pattern of VAGUE_PATTERNS) {
+        if (pattern.test(item.requirementText || "")) {
+          conflicts.push(buildConflict(item.id, "vague-language", `存在模糊措辞: ${pattern}`));
+        }
+      }
+
+      const haystack = [item.title || "", item.requirementText || "", item.passCriteria || ""].join(" ");
       for (const prefix of codeStylePrefixes) {
         if (haystack.includes(prefix)) {
-          conflicts.push(
-            buildConflict(
-              requirement.id,
-              "code-style-signal",
-              `使用了代码化信号命名前缀 ${prefix}，不利于维持 ISO 26262 所需的单一真实来源。`
-            )
-          );
+          conflicts.push(buildConflict(item.id, "code-style-signal", `出现代码化信号前缀 ${prefix}`));
         }
       }
 
@@ -42,38 +55,32 @@ export class ValidationService {
         for (const alias of group.aliases || []) {
           if (containsWholeToken(haystack, alias)) {
             conflicts.push(
-              buildConflict(
-                requirement.id,
-                "non-canonical-signal",
-                `使用了非标准信号名 ${alias}，建议改用参考样例中的标准工程命名 ${group.canonical}。`
-              )
+              buildConflict(item.id, "non-canonical-signal", `使用了非标准信号别名 ${alias}，建议改为 ${group.canonical}`)
             );
           }
         }
       }
 
-      const bucket = inferRequirementBucket(requirement);
+      const bucket = inferBucket(item, documentType);
       for (const term of forbiddenExpansions[bucket] || []) {
         if (containsWholeToken(haystack, term)) {
-          conflicts.push(
-            buildConflict(
-              requirement.id,
-              "unsupported-expansion",
-              `出现了参考样例未要求的扩写项 ${term}，需确认是否存在无依据泛化。`
-            )
-          );
+          conflicts.push(buildConflict(item.id, "unsupported-expansion", `出现未在样例中确认的扩写项 ${term}`));
         }
       }
     }
 
     const seen = new Map();
-    for (const requirement of requirements) {
-      const normalized = (requirement.requirementText || "").replace(/\s+/g, "");
+    for (const item of items) {
+      const normalized = [
+        item.requirementText || "",
+        ...(item.testSteps || []),
+        ...(item.expectedResults || [])
+      ].join(" ").replace(/\s+/g, "");
       if (!normalized) continue;
       if (seen.has(normalized)) {
-        conflicts.push(buildConflict(requirement.id, "duplicate", `与 ${seen.get(normalized)} 存在重复`));
+        conflicts.push(buildConflict(item.id, "duplicate", `与 ${seen.get(normalized)} 内容重复`));
       } else {
-        seen.set(normalized, requirement.requirementId || requirement.id);
+        seen.set(normalized, item.requirementId || item.id);
       }
     }
 
@@ -81,19 +88,35 @@ export class ValidationService {
   }
 }
 
+function normalizeDocumentType(value) {
+  if (value === "detail_design") return "detail_design";
+  if (value === "hil_test_case") return "hil_test_case";
+  return "software_requirement";
+}
+
 function buildConflict(requirementId, code, message) {
   return {
     requirementId,
     code,
-    severity: ["missing-source", "code-style-signal", "non-canonical-signal", "unsupported-expansion"].includes(code)
+    severity: [
+      "missing-source",
+      "missing-preconditions",
+      "missing-test-steps",
+      "missing-expected-results",
+      "missing-pass-criteria",
+      "code-style-signal",
+      "non-canonical-signal",
+      "unsupported-expansion"
+    ].includes(code)
       ? "high"
       : "medium",
     message
   };
 }
 
-function inferRequirementBucket(requirement) {
-  const text = `${requirement.title || ""} ${requirement.requirementText || ""}`;
+function inferBucket(item, documentType) {
+  if (documentType === "hil_test_case") return "hil_test_case";
+  const text = `${item.title || ""} ${item.requirementText || ""}`;
   if (/激活标志位|inactive|active/.test(text)) return "activation_flag_logic";
   if (/扭矩计算|优先级|输出规则|置零|限幅/.test(text)) return "torque_calculation_logic";
   return "generic";

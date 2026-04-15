@@ -1,9 +1,26 @@
 const page = document.body.dataset.page || "";
 const statusRoot = document.querySelector("#status");
+const rejectDialog = document.querySelector("#reject-dialog");
+const rejectDialogClose = document.querySelector("#reject-dialog-close");
+const rejectDialogSubtitle = document.querySelector("#reject-dialog-subtitle");
+const rejectForm = document.querySelector("#reject-form");
+const rejectFormCancel = document.querySelector("#reject-form-cancel");
 const TASK_POLL_INTERVAL_MS = 20000;
 const PENDING_GENERATION_STORAGE_KEY = "pending-module-generations";
 const PENDING_GENERATION_MAX_AGE_MS = 30 * 60 * 1000;
 let taskPollTimer = 0;
+const state = {
+  rejectContext: null
+};
+
+rejectDialogClose?.addEventListener("click", closeRejectDialog);
+rejectFormCancel?.addEventListener("click", closeRejectDialog);
+rejectForm?.addEventListener("submit", handleRejectSubmit);
+rejectDialog?.addEventListener("click", (event) => {
+  if (event.target === rejectDialog) {
+    closeRejectDialog();
+  }
+});
 
 await boot();
 
@@ -122,16 +139,102 @@ async function renderProjectDetailPage() {
 async function renderModuleCreatePage() {
   const projectId = getPathPart(1);
   const project = await request(`/api/projects/${projectId}`);
+  const form = document.querySelector("#module-form");
+  const nameInput = form?.elements?.namedItem("name");
+  const descriptionInput = form?.elements?.namedItem("description");
+  const moduleSkillKeyInput = form?.elements?.namedItem("moduleSkillKey");
+  const domainSelect = document.querySelector("#domain-select");
+  const candidateSelect = document.querySelector("#skill-candidate-select");
+  const previewHint = document.querySelector("#module-preview-hint");
+  const bootstrapRoot = document.querySelector("#bootstrap-requirements");
+  let preview = null;
+  let previewTimer = 0;
+
   renderBreadcrumb([
     { label: "工程列表", href: "/" },
     { label: project.name, href: `/projects/${project.id}` },
     { label: "创建功能模块" }
   ]);
   document.querySelector("#project-back-link").href = `/projects/${project.id}`;
-  document.querySelector("#module-form")?.addEventListener("submit", async (event) => {
+
+  const refreshPreview = async () => {
+    const name = nameInput?.value?.trim() || "";
+    const description = descriptionInput?.value?.trim() || "";
+    const moduleSkillKey = moduleSkillKeyInput?.value?.trim() || "";
+
+    if (!name) {
+      domainSelect.innerHTML = '<option value="embedded_vcu">embedded_vcu</option>';
+      candidateSelect.innerHTML = '<option value="">不导入，后续走冷启动</option>';
+      bootstrapRoot.textContent = "新模块如果不导入已有 skill，后续生成前需要上传系统需求、模型/代码输入和对应文档类型的人工优秀范例。";
+      previewHint.textContent = "输入模块名称后，系统会推荐 domain 并检索可复用的 module skill。";
+      return;
+    }
+
+    preview = await request(`/api/projects/${project.id}/modules/initialize-preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        description,
+        moduleSkillKey,
+        documentType: project.documentType
+      })
+    });
+
+    if ((!moduleSkillKeyInput.value || !moduleSkillKeyInput.value.trim()) && preview.moduleSkillKey) {
+      moduleSkillKeyInput.value = preview.moduleSkillKey;
+    }
+
+    domainSelect.innerHTML = (preview.recommendedDomains || [])
+      .map((item, index) => `<option value="${escapeHtml(item.domain)}" ${index === 0 ? "selected" : ""}>${escapeHtml(item.domain)}</option>`)
+      .join("") || '<option value="embedded_vcu">embedded_vcu</option>';
+
+    candidateSelect.innerHTML = ['<option value="">不导入，后续走冷启动</option>']
+      .concat(
+        (preview.skillCandidates || []).map(
+          (item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.key)} / ${escapeHtml(item.domain)} / score ${item.score}</option>`
+        )
+      )
+      .join("");
+
+    previewHint.textContent = preview.skillCandidates?.length
+      ? "已找到可复用的 module skill 候选；若不导入，系统会要求你在正式生成前补齐冷启动资产。"
+      : "当前没有直接命中的 module skill；后续正式生成前会按冷启动规则检查资产。";
+
+    bootstrapRoot.textContent = `冷启动至少需要：${(preview.missingBootstrapAssets || [])
+      .map((item) => bootstrapAssetLabel(item.label))
+      .join(" / ")}`;
+  };
+
+  const queuePreview = () => {
+    window.clearTimeout(previewTimer);
+    previewTimer = window.setTimeout(() => {
+      refreshPreview().catch(handleError);
+    }, 200);
+  };
+
+  nameInput?.addEventListener("input", queuePreview);
+  descriptionInput?.addEventListener("input", queuePreview);
+  moduleSkillKeyInput?.addEventListener("input", queuePreview);
+  await refreshPreview();
+
+  form?.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
+      if (!preview) {
+        await refreshPreview();
+      }
       const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+      if (payload.importedSkillKey) {
+        payload.skillStatus = "imported";
+        payload.skillSource = {
+          type: "module_profile",
+          key: payload.importedSkillKey
+        };
+      } else {
+        payload.skillStatus = "draft";
+        payload.skillSource = null;
+      }
       const module = await request(`/api/projects/${project.id}/modules`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -142,6 +245,15 @@ async function renderModuleCreatePage() {
       handleError(error);
     }
   });
+}
+
+function bootstrapAssetLabel(label) {
+  if (label === "system_requirement") return "系统需求文件";
+  if (label === "implementation_input") return "模型/代码输入";
+  if (label === "reference_requirement_example") return "优秀软件需求范例";
+  if (label === "reference_detail_design_example") return "优秀详细设计范例";
+  if (label === "reference_hil_test_case_example") return "优秀 HIL 用例范例";
+  return label;
 }
 
 async function renderModuleDetailPage() {
@@ -163,6 +275,14 @@ async function renderModuleDetailPage() {
   document.querySelector("#req-generate-link").href = `/requirement-generation?projectId=${project.id}&moduleId=${module.id}`;
   document.querySelector("#detail-generate-link").href =
     `/detail-design-generation?projectId=${project.id}&moduleId=${module.id}`;
+  const hilLink = document.querySelector("#hil-generate-link");
+  if (hilLink) {
+    hilLink.href = `/hil-test-case-generation?projectId=${project.id}&moduleId=${module.id}`;
+  }
+  const feedbackPoolLink = document.querySelector("#feedback-pool-link");
+  if (feedbackPoolLink) {
+    feedbackPoolLink.href = `/feedback-pool?projectId=${project.id}&moduleId=${module.id}`;
+  }
 
   const pendingGeneration = resolvePendingGeneration(project.id, module);
   renderAcceptedList(module, project.id);
@@ -386,7 +506,7 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
   taskResults.innerHTML = task.resultItems
     .map(
       (item) => `
-        <article class="stack-card">
+        <article class="stack-card" data-result-item-id="${item.id}">
           <div class="inline-actions">
             <span class="status-badge ${statusTone(item.review?.status || "pending")}">${escapeHtml(
               translateStatus(item.review?.status || "pending")
@@ -394,7 +514,7 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
           </div>
           <strong>${escapeHtml(item.title || item.requirementId || "未命名结果")}</strong>
           <div class="card-meta">
-            <span>${escapeHtml(item.requirementId || "未编号")}</span>
+            <span data-requirement-code>${escapeHtml(item.requirementId || "未编号")}</span>
             <span>${escapeHtml(item.type || "functional")}</span>
             <span>置信度 ${String(item.confidence ?? "--")}</span>
           </div>
@@ -443,18 +563,18 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
         });
         setStatus("结果已采纳，返回模块页即可看到已采纳内容。");
       } else {
-        await request(
-          `/api/projects/${projectId}/modules/${moduleId}/spaces/${documentType}/tasks/${task.id}/results/${resultItemId}/review`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              status: "rejected",
-              comment: "在任务详情页中人工驳回"
-            })
-          }
-        );
-        setStatus("结果已标记为驳回。");
+        const root = taskResults.querySelector(`[data-result-item-id="${resultItemId}"]`);
+        const requirementCode = root?.querySelector("[data-requirement-code]")?.textContent || "当前结果";
+        openRejectDialog({
+          projectId,
+          moduleId,
+          documentType,
+          taskId: task.id,
+          resultItemId,
+          requirementCode,
+          root
+        });
+        return;
       }
       window.location.reload();
     } catch (error) {
@@ -463,6 +583,61 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
   });
 }
 
+function openRejectDialog(context) {
+  if (!rejectDialog || !rejectForm || !context?.root) {
+    return;
+  }
+  state.rejectContext = context;
+  rejectForm.reset();
+  rejectForm.elements.namedItem("severity").value = "medium";
+  rejectDialogSubtitle.textContent = `你正在驳回 ${context.requirementCode}，请填写结构化原因。`;
+  rejectDialog.showModal();
+}
+
+function closeRejectDialog() {
+  state.rejectContext = null;
+  rejectForm?.reset();
+  rejectDialog?.close();
+}
+
+async function handleRejectSubmit(event) {
+  event.preventDefault();
+  if (!state.rejectContext?.root) {
+    return;
+  }
+
+  try {
+    const formData = new FormData(rejectForm);
+    const payload = {
+      status: "rejected",
+      title: state.rejectContext.root.querySelector(`[data-title-input="${state.rejectContext.resultItemId}"]`)?.value || "",
+      requirementText:
+        state.rejectContext.root.querySelector(`[data-text-input="${state.rejectContext.resultItemId}"]`)?.value || "",
+      reviewer: "当前用户",
+      reasonCategory: String(formData.get("reasonCategory") || "").trim(),
+      reasonTags: String(formData.get("reasonTags") || ""),
+      severity: String(formData.get("severity") || "medium"),
+      reasonText: String(formData.get("reasonText") || "").trim(),
+      expectedNote: String(formData.get("expectedNote") || "").trim(),
+      includeInPool: formData.get("includeInPool") === "on",
+      comment: "在任务详情页中人工驳回"
+    };
+
+    await request(
+      `/api/projects/${state.rejectContext.projectId}/modules/${state.rejectContext.moduleId}/spaces/${state.rejectContext.documentType}/tasks/${state.rejectContext.taskId}/results/${state.rejectContext.resultItemId}/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }
+    );
+    closeRejectDialog();
+    setStatus(payload.includeInPool ? "结果已驳回并沉淀到反馈池。" : "结果已驳回，未加入反馈池。");
+    window.location.reload();
+  } catch (error) {
+    handleError(error);
+  }
+}
 function renderBreadcrumb(items) {
   const root = document.querySelector("#breadcrumb");
   if (!root) {
@@ -478,7 +653,7 @@ function renderBreadcrumb(items) {
 }
 
 function collectAcceptedItems(module) {
-  return ["software_requirement", "detail_design"]
+  return ["software_requirement", "detail_design", "hil_test_case"]
     .flatMap((documentType) =>
       (module.documentSpaces?.[documentType]?.acceptedItems || []).map((item) => ({
         ...item,
@@ -489,7 +664,7 @@ function collectAcceptedItems(module) {
 }
 
 function collectTasks(module) {
-  return ["software_requirement", "detail_design"]
+  return ["software_requirement", "detail_design", "hil_test_case"]
     .flatMap((documentType) =>
       (module.documentSpaces?.[documentType]?.generationTasks || []).map((task) => ({
         ...task,
@@ -505,8 +680,8 @@ function countTasks(module) {
 
 function findTaskInModule(module, taskId, preferredDocumentType = "") {
   const documentTypes = preferredDocumentType
-    ? [preferredDocumentType, ...["software_requirement", "detail_design"].filter((item) => item !== preferredDocumentType)]
-    : ["software_requirement", "detail_design"];
+    ? [preferredDocumentType, ...["software_requirement", "detail_design", "hil_test_case"].filter((item) => item !== preferredDocumentType)]
+    : ["software_requirement", "detail_design", "hil_test_case"];
 
   for (const documentType of documentTypes) {
     const task = (module.documentSpaces?.[documentType]?.generationTasks || []).find((item) => item.id === taskId);
@@ -533,7 +708,9 @@ async function request(url, options = {}) {
 }
 
 function documentLabel(documentType) {
-  return documentType === "detail_design" ? "详细设计" : "软件需求";
+  if (documentType === "detail_design") return "详细设计";
+  if (documentType === "hil_test_case") return "HIL 用例";
+  return "软件需求";
 }
 
 function ensureTaskPolling(module, pendingGeneration = null) {

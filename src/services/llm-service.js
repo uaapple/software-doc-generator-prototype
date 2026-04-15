@@ -1,9 +1,24 @@
+
 import OpenAI from "openai";
 import { randomUUID } from "node:crypto";
 import { SkillLoader } from "./skill-loader.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
 import { LlmProfileService } from "./llm-profile-service.js";
+
+const SOURCE_REF_SCHEMA = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      fileName: { type: "string" },
+      location: { type: "string" },
+      excerpt: { type: "string" }
+    },
+    required: ["fileName", "location", "excerpt"]
+  }
+};
 
 export class LlmService {
   constructor() {
@@ -19,15 +34,31 @@ export class LlmService {
   }
 
   async generateRequirements(project, extractions, options = {}) {
-    const template = await this.templateService.getTemplate();
+    return this.generateDocumentItems(project, extractions, options);
+  }
+
+  async generateDocumentItems(project, extractions, options = {}) {
+    const documentType = normalizeDocumentType(project.documentType || options.documentType);
+    const template = await this.templateService.getTemplate(documentType);
     const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
-    const skills = await this.skillLoader.loadAll(skillDir);
+    const skills = await this.skillLoader.loadForContext(
+      {
+        documentType,
+        domain: project.domain || options.domain || "",
+        moduleSkillKey: project.moduleSkillKey || options.moduleSkillKey || ""
+      },
+      skillDir
+    );
     const knowledge = skills["domain-knowledge.json"] || {};
     const evidence = extractions.flatMap((item) => item.evidence || []);
     const profile = await this.profileService.resolveProfile(options.llmProfileId);
 
     if (!profile?.apiKey) {
-      return applyDomainKnowledgePolicies(buildFallbackRequirements(project, evidence, template, skills), knowledge);
+      return applyDomainKnowledgePolicies(
+        buildFallbackItems(project, evidence, template, skills, documentType),
+        knowledge,
+        documentType
+      );
     }
 
     const client = new OpenAI({
@@ -35,22 +66,26 @@ export class LlmService {
       baseURL: profile.baseURL
     });
 
-    const input = buildModelInput(project, evidence, template, skills);
     const response = await client.responses.create({
       model: profile.model,
-      input,
+      input: buildModelInput(project, evidence, template, skills, documentType),
       text: {
         format: {
           type: "json_schema",
-          name: "software_requirement_response",
-          schema: responseSchema
+          name: getResponseSchemaName(documentType),
+          schema: getResponseSchema(documentType)
         }
       }
     });
 
     const payload = JSON.parse(response.output_text);
-    const normalized = payload.requirements.map((item, index) => normalizeRequirement(item, index));
-    return applyDomainKnowledgePolicies(normalized, knowledge);
+    const rawItems = Array.isArray(payload.items)
+      ? payload.items
+      : Array.isArray(payload.requirements)
+        ? payload.requirements
+        : [];
+    const normalized = rawItems.map((item, index) => normalizeResultItem(item, index, documentType, template));
+    return applyDomainKnowledgePolicies(normalized, knowledge, documentType);
   }
 
   async generateReplayProposal(materialPack, options = {}) {
@@ -62,11 +97,7 @@ export class LlmService {
       throw new Error("Selected replay LLM profile is not usable");
     }
 
-    const client = new OpenAI({
-      apiKey: profile.apiKey,
-      baseURL: profile.baseURL
-    });
-
+    const client = new OpenAI({ apiKey: profile.apiKey, baseURL: profile.baseURL });
     const response = await client.responses.create({
       model: profile.model,
       input: buildReplayModelInput(materialPack),
@@ -79,12 +110,11 @@ export class LlmService {
       }
     });
 
-    const payload = JSON.parse(response.output_text);
-    return normalizeReplayProposalPayload(payload, materialPack);
+    return normalizeReplayProposalPayload(JSON.parse(response.output_text), materialPack);
   }
 }
 
-function buildModelInput(project, evidence, template, skills) {
+function buildModelInput(project, evidence, template, skills, documentType = "software_requirement") {
   const evidenceBrief = evidence.slice(0, 80).map((item) => ({
     fileRole: item.fileRole,
     fileName: item.fileName,
@@ -93,27 +123,27 @@ function buildModelInput(project, evidence, template, skills) {
     tags: item.tags
   }));
 
+  const guidanceBlocks = [
+    getSystemInstruction(documentType),
+    getGoalInstruction(documentType),
+    "系统需求优先级最高；当存在冲突时保留冲突说明，不要编造事实。",
+    "编号通常由外部需求管理系统生成，不要把编号差异当成质量目标，也不要编造内部引用编号。",
+    "输出必须符合给定 JSON schema。",
+    skills["requirement_extraction.md"],
+    skills["requirement_writing.md"],
+    skills["requirement_validation.md"],
+    skills["examples/good_examples.md"],
+    skills["examples/bad_examples.md"],
+    `领域知识与 few-shot 摘要:\n${JSON.stringify(skills["domain-knowledge.json"] || {}, null, 2)}`
+  ].filter(Boolean);
+
   return [
     {
       role: "system",
       content: [
         {
           type: "input_text",
-          text: [
-            "你是软件开发需求生成助手。",
-            "目标是根据系统需求和模型资料，输出可审核、可追溯的中文软件需求条目。",
-            "系统需求优先级最高；当存在冲突时保留冲突说明，不要捏造事实。",
-            "若需要体现层级结构，只保留功能层级和对象层级，不要输出具体章节编号。",
-            "在需满足 ISO 26262 的场景下，信号命名应优先使用参考样例或信号字典中的标准工程命名。",
-            "严禁基于通用语料进行无依据泛化联想；如果参考样例未要求，不要擅自扩展功能逻辑。",
-            "输出必须符合给定 JSON schema。",
-            skills["requirement_extraction.md"],
-            skills["requirement_writing.md"],
-            skills["requirement_validation.md"],
-            skills["examples/good_examples.md"],
-            skills["examples/bad_examples.md"],
-            `领域知识与 few-shot 摘要：\n${JSON.stringify(skills["domain-knowledge.json"] || {}, null, 2)}`
-          ].join("\n\n")
+          text: guidanceBlocks.join("\n\n")
         }
       ]
     },
@@ -127,8 +157,12 @@ function buildModelInput(project, evidence, template, skills) {
               project: {
                 name: project.name,
                 description: project.description,
-                language: project.language
+                language: project.language,
+                documentType,
+                domain: project.domain || "",
+                moduleSkillKey: project.moduleSkillKey || ""
               },
+              selectedProfiles: skills.__profiles || [],
               template,
               evidence: evidenceBrief
             },
@@ -141,71 +175,108 @@ function buildModelInput(project, evidence, template, skills) {
   ];
 }
 
-function buildFallbackRequirements(project, evidence, template, skills) {
+function buildFallbackItems(project, evidence, template, skills, documentType = "software_requirement") {
   const knowledge = skills["domain-knowledge.json"] || { examples: [] };
-  const exampleDrivenRequirements = buildExampleDrivenRequirements(knowledge, evidence, template);
-  if (exampleDrivenRequirements.length > 0) {
-    return exampleDrivenRequirements;
+  const exampleDrivenItems = buildExampleDrivenItems(knowledge, evidence, template, documentType);
+  if (exampleDrivenItems.length > 0) {
+    return exampleDrivenItems;
   }
 
   const grouped = groupEvidence(evidence);
-  const requirements = [];
+  const items = [];
   let sequence = 1;
 
-  for (const section of template.sections) {
-    const candidates = grouped.get(section.type) || [];
+  for (const section of template.sections || []) {
+    const candidates = grouped.get(section.type) || grouped.get("functional") || [];
     for (const evidenceItem of candidates.slice(0, section.maxItems || 3)) {
-      requirements.push(
-        normalizeRequirement(
-          {
-            id: randomUUID(),
-            requirementId: `${template.requirementIdPrefix}-${String(sequence).padStart(3, "0")}`,
-            title: buildTitle(section.title, evidenceItem),
-            requirementText: buildRequirementText(section, evidenceItem),
-            type: section.type,
-            sourceRefs: [
-              {
-                fileName: evidenceItem.fileName,
-                location: evidenceItem.location,
-                excerpt: evidenceItem.excerpt
-              }
-            ],
-            rationale: `基于 ${evidenceItem.fileName} 的证据自动生成草稿。`,
-            verificationHint: section.verificationHint,
-            confidence: evidenceItem.confidence,
-            conflictNote: ""
-          },
-          sequence - 1
+      items.push(
+        normalizeResultItem(
+          buildFallbackDraft(project, section, evidenceItem, sequence, template, documentType),
+          sequence - 1,
+          documentType,
+          template
         )
       );
       sequence += 1;
     }
   }
 
-  if (requirements.length === 0) {
-    requirements.push(
-      normalizeRequirement(
-        {
-          id: randomUUID(),
-          requirementId: `${template.requirementIdPrefix}-001`,
-          title: `${project.name} 软件需求占位条目`,
-          requirementText: "软件应根据已上传的系统需求和模型资料生成可审核的需求条目，当前输入尚不足以提炼出明确需求。",
-          type: "functional",
-          sourceRefs: [],
-          rationale: "输入证据不足",
-          verificationHint: "补充系统需求或模型文档后重新生成。",
-          confidence: 0.2,
-          conflictNote: "缺少可用证据"
-        },
-        0
-      )
-    );
+  if (items.length === 0) {
+    items.push(normalizeResultItem(buildEmptyFallbackDraft(project, template, documentType), 0, documentType, template));
   }
 
-  return requirements;
+  return dedupeItems(items, documentType);
+}
+function buildFallbackDraft(project, section, evidenceItem, sequence, template, documentType) {
+  const base = {
+    id: randomUUID(),
+    requirementId: `${template.requirementIdPrefix}-${String(sequence).padStart(3, "0")}`,
+    title: buildTitle(section.title, evidenceItem, documentType),
+    requirementText: buildRequirementText(section, evidenceItem, documentType),
+    type: section.type,
+    sourceRefs: [
+      {
+        fileName: evidenceItem.fileName,
+        location: evidenceItem.location,
+        excerpt: evidenceItem.excerpt
+      }
+    ],
+    rationale: `基于 ${evidenceItem.fileName} 的来源证据自动生成草稿。`,
+    verificationHint: buildSectionVerificationHint(section, documentType),
+    confidence: evidenceItem.confidence,
+    conflictNote: ""
+  };
+
+  if (documentType === "detail_design") {
+    base.structuredContent = {
+      designBreakdown: [
+        {
+          function: base.title,
+          behavior: evidenceItem.excerpt
+        }
+      ]
+    };
+  }
+
+  if (documentType === "hil_test_case") {
+    base.preconditions = ["完成模块初始化", "测试环境已建立必要输入连接"];
+    base.testSteps = [`注入或触发: ${truncate(evidenceItem.excerpt, 80)}`];
+    base.expectedResults = [truncate(base.requirementText, 120)];
+    base.passCriteria = "预期结果全部满足且无额外故障。";
+  }
+
+  return base;
 }
 
-function buildExampleDrivenRequirements(knowledge, evidence, template) {
+function buildEmptyFallbackDraft(project, template, documentType) {
+  const base = {
+    id: randomUUID(),
+    requirementId: `${template.requirementIdPrefix}-001`,
+    title: `${project.name} 输出占位条目`,
+    requirementText: getEmptyDraftText(documentType),
+    type: "functional",
+    sourceRefs: [],
+    rationale: "输入证据不足",
+    verificationHint: getEmptyDraftVerificationHint(documentType),
+    confidence: 0.2,
+    conflictNote: "缺少可用证据"
+  };
+
+  if (documentType === "detail_design") {
+    base.structuredContent = { designBreakdown: [] };
+  }
+
+  if (documentType === "hil_test_case") {
+    base.preconditions = [];
+    base.testSteps = [];
+    base.expectedResults = [];
+    base.passCriteria = "补充证据后重试。";
+  }
+
+  return base;
+}
+
+function buildExampleDrivenItems(knowledge, evidence, template, documentType = "software_requirement") {
   const evidencePool = evidence.map((item) => ({
     ...item,
     tokens: tokenize(`${item.fileName} ${item.location} ${item.excerpt} ${(item.tags || []).join(" ")}`)
@@ -217,19 +288,18 @@ function buildExampleDrivenRequirements(knowledge, evidence, template) {
   for (const example of examples) {
     const keywords = example.keywords || [];
     const signals = example.signals || [];
-    const exampleTokens = new Set(tokenize(`${example.topic || ""} ${example.requirementText || ""} ${keywords.join(" ")} ${signals.join(" ")}`));
+    const exampleTokens = new Set(
+      tokenize(`${example.topic || ""} ${example.requirementText || ""} ${keywords.join(" ")} ${signals.join(" ")}`)
+    );
     const overlapCount = [...exampleTokens].filter((token) => unionTokens.has(token)).length;
     const denominator = Math.max(4, exampleTokens.size);
-    const overlapRatio = overlapCount / denominator;
-    if (overlapRatio < 0.15) {
+    const overlap = overlapCount / denominator;
+    if (overlap < 0.15) {
       continue;
     }
 
     const sourceRefs = evidencePool
-      .map((item) => ({
-        item,
-        score: scoreEvidenceAgainstExample(item.tokens, exampleTokens)
-      }))
+      .map((item) => ({ item, score: scoreEvidenceAgainstExample(item.tokens, exampleTokens) }))
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
@@ -240,29 +310,36 @@ function buildExampleDrivenRequirements(knowledge, evidence, template) {
       }));
 
     matched.push(
-      normalizeRequirement(
+      normalizeResultItem(
         {
-          requirementId: example.requirementId || `${template.requirementIdPrefix}-${String(matched.length + 1).padStart(3, "0")}`,
-          title: buildExampleTitle(example),
+          requirementId:
+            example.requirementId || `${template.requirementIdPrefix}-${String(matched.length + 1).padStart(3, "0")}`,
+          title: buildExampleTitle(example, documentType),
           requirementText: example.requirementText || example.rawText || "",
           type: example.requirementType || inferRequirementTypeFromExample(example),
           sourceRefs,
-          rationale: `基于当前 skill bundle 中的历史标准案例进行匹配生成（主题：${example.topic || "未命名"}）。`,
-          verificationHint: buildVerificationHint(example),
-          confidence: Number(Math.min(0.98, 0.55 + overlapRatio).toFixed(2)),
-          conflictNote: sourceRefs.length ? "" : "已命中案例模板，但缺少足够来源证据。"
+          rationale: `基于当前 skill bundle 中的历史标准样例进行匹配生成（主题：${example.topic || "未命名"}）。`,
+          verificationHint: buildVerificationHint(example, documentType),
+          confidence: Number(Math.min(0.98, 0.55 + overlap).toFixed(2)),
+          conflictNote: sourceRefs.length ? "" : "已命中样例模板，但缺少足够来源证据。",
+          structuredContent: example.structuredContent || null,
+          preconditions: example.preconditions || [],
+          testSteps: example.testSteps || [],
+          expectedResults: example.expectedResults || [],
+          passCriteria: example.passCriteria || ""
         },
-        matched.length
+        matched.length,
+        documentType,
+        template
       )
     );
   }
 
-  return dedupeRequirements(matched);
+  return dedupeItems(matched, documentType);
 }
 
 function groupEvidence(evidence) {
   const grouped = new Map();
-
   for (const item of evidence) {
     const type = inferRequirementType(item);
     if (!grouped.has(type)) {
@@ -270,11 +347,10 @@ function groupEvidence(evidence) {
     }
     grouped.get(type).push(item);
   }
-
   return grouped;
 }
 
-function inferRequirementType(evidenceItem) {
+function inferRequirementType(evidenceItem = {}) {
   const tags = evidenceItem.tags || [];
   if (tags.includes("diagnostic")) return "diagnostic";
   if (tags.includes("interface")) return "interface";
@@ -283,36 +359,89 @@ function inferRequirementType(evidenceItem) {
   return "functional";
 }
 
-function buildTitle(sectionTitle, evidenceItem) {
-  return `${sectionTitle} - ${evidenceItem.fileName}`;
+function buildTitle(sectionTitle, evidenceItem, documentType) {
+  const conciseEvidence = truncate(stripExtension(evidenceItem.fileName || "evidence"), 24);
+  if (documentType === "hil_test_case") {
+    return `${sectionTitle} - ${conciseEvidence} 测试`;
+  }
+  return `${sectionTitle} - ${conciseEvidence}`;
 }
 
-function buildRequirementText(section, evidenceItem) {
-  return `软件应满足 ${section.title} 要求，并依据“${evidenceItem.excerpt.slice(0, 80)}”实现对应行为。`;
+function buildRequirementText(section, evidenceItem, documentType) {
+  const excerpt = truncate(evidenceItem.excerpt || "", 120);
+  if (documentType === "detail_design") {
+    return `详细设计应说明“${section.title}”在软件内部的实现分解、状态流转或接口处理，依据证据“${excerpt}”。`;
+  }
+  if (documentType === "hil_test_case") {
+    return `HIL 测试应验证“${section.title}”对应行为，测试刺激与判定需覆盖证据“${excerpt}”。`;
+  }
+  return `软件应满足“${section.title}”要求，并依据“${excerpt}”实现对应行为。`;
 }
 
-function buildExampleTitle(example) {
+function buildSectionVerificationHint(section, documentType) {
+  if (section?.verificationHint) {
+    return section.verificationHint;
+  }
+  if (documentType === "detail_design") {
+    return "通过设计评审、接口检查或状态流验证实现描述与来源一致。";
+  }
+  if (documentType === "hil_test_case") {
+    return "通过执行用例并核对预期结果与判定标准完成验证。";
+  }
+  return "通过评审或测试验证条目与来源一致。";
+}
+
+function getEmptyDraftText(documentType) {
+  if (documentType === "detail_design") {
+    return "详细设计应根据已上传系统需求和模型资料生成可审核的设计条目；当前输入不足以提炼明确设计。";
+  }
+  if (documentType === "hil_test_case") {
+    return "HIL 测试用例应根据已上传需求和设计资料生成可执行的测试条目；当前输入不足以提炼明确用例。";
+  }
+  return "软件应根据已上传系统需求和模型资料生成可审核的需求条目；当前输入不足以提炼明确需求。";
+}
+
+function getEmptyDraftVerificationHint(documentType) {
+  if (documentType === "detail_design") {
+    return "补充系统需求、接口说明或模型设计资料后重新生成。";
+  }
+  if (documentType === "hil_test_case") {
+    return "补充需求、设计或测试环境信息后重新生成。";
+  }
+  return "补充系统需求或模型文档后重新生成。";
+}
+function buildExampleTitle(example, documentType) {
   if (example.preferredTitle) {
     return example.preferredTitle;
   }
-  const sectionTitle = example.sectionTitle ? `${example.sectionTitle} - ` : "";
-  return `${sectionTitle}${example.topic || example.title || example.requirementId || "需求示例"}`;
+  const prefix = example.sectionTitle ? `${example.sectionTitle} - ` : "";
+  const title = example.topic || example.title || example.requirementId || "条目示例";
+  if (documentType === "hil_test_case" && !/测试/.test(title)) {
+    return `${prefix}${title} 测试`;
+  }
+  return `${prefix}${title}`;
 }
 
 function inferRequirementTypeFromExample(example) {
   const text = `${example.topic || ""} ${example.requirementText || ""}`;
   if (/接口|信号|变量/i.test(text)) return "interface";
-  if (/状态|模式|激活/i.test(text)) return "state";
-  if (/周期|时序/i.test(text)) return "timing";
+  if (/状态|模式|激活|切换/i.test(text)) return "state";
+  if (/周期|时序|超时/i.test(text)) return "timing";
   if (/故障|异常|保护/i.test(text)) return "diagnostic";
   return "functional";
 }
 
-function buildVerificationHint(example) {
+function buildVerificationHint(example, documentType) {
+  if (documentType === "hil_test_case") {
+    return "执行 HIL 用例并核对刺激、预期结果与判定标准。";
+  }
   const text = `${example.topic || ""} ${example.requirementText || ""}`;
   if (/优先级|分支/.test(text)) return "通过构造不同条件组合验证分支和优先级结果。";
   if (/激活|标志位/.test(text)) return "通过输入条件切换验证激活标志位和状态变化。";
   if (/阈值|最大|最小|限制/.test(text)) return "通过边界值测试验证阈值和限制逻辑。";
+  if (documentType === "detail_design") {
+    return "通过设计评审或联调验证内部状态、接口和实现分解。";
+  }
   return "通过仿真或联调验证输入条件与输出行为。";
 }
 
@@ -337,10 +466,13 @@ function scoreEvidenceAgainstExample(evidenceTokens, exampleTokens) {
   return score;
 }
 
-function dedupeRequirements(requirements) {
+function dedupeItems(items, documentType) {
   const seen = new Set();
-  return requirements.filter((item) => {
-    const key = `${item.requirementId}:${item.requirementText}`;
+  return items.filter((item) => {
+    const key =
+      documentType === "hil_test_case"
+        ? `${item.title}:${(item.testSteps || []).join("|")}:${(item.expectedResults || []).join("|")}`
+        : `${item.title}:${item.requirementText}`;
     if (seen.has(key)) {
       return false;
     }
@@ -349,19 +481,20 @@ function dedupeRequirements(requirements) {
   });
 }
 
-function applyDomainKnowledgePolicies(requirements, knowledge = {}) {
+function applyDomainKnowledgePolicies(items, knowledge = {}, documentType = "software_requirement") {
   const policy = knowledge.sourceOfTruthPolicy || {};
   const aliasGroups = Array.isArray(policy.canonicalSignalAliases) ? policy.canonicalSignalAliases : [];
   const normalizationRules = Array.isArray(policy.normalizationRules) ? policy.normalizationRules : [];
   const forbiddenExpansions = policy.forbiddenExpansions || {};
 
   if (!aliasGroups.length && !normalizationRules.length && !Object.keys(forbiddenExpansions).length) {
-    return requirements;
+    return items;
   }
 
-  return requirements.map((item) => {
+  return items.map((item) => {
     let title = item.title || "";
     let requirementText = item.requirementText || "";
+    let passCriteria = item.passCriteria || "";
     const notes = new Set();
     let renamed = false;
     let normalized = false;
@@ -372,81 +505,110 @@ function applyDomainKnowledgePolicies(requirements, knowledge = {}) {
         if (!alias || !canonical) continue;
         const nextTitle = replaceWholeToken(title, alias, canonical);
         const nextText = replaceWholeToken(requirementText, alias, canonical);
-        if (nextTitle !== title || nextText !== requirementText) {
+        const nextPass = replaceWholeToken(passCriteria, alias, canonical);
+        if (nextTitle !== title || nextText !== requirementText || nextPass !== passCriteria) {
           renamed = true;
           title = nextTitle;
           requirementText = nextText;
+          passCriteria = nextPass;
         }
       }
     }
 
     for (const rule of normalizationRules) {
       if (!rule?.pattern) continue;
-      const nextTitle = title.split(rule.pattern).join(rule.replacement || "");
-      const nextText = requirementText.split(rule.pattern).join(rule.replacement || "");
-      if (nextTitle !== title || nextText !== requirementText) {
+      const replacement = rule.replacement || "";
+      const nextTitle = title.split(rule.pattern).join(replacement);
+      const nextText = requirementText.split(rule.pattern).join(replacement);
+      const nextPass = passCriteria.split(rule.pattern).join(replacement);
+      if (nextTitle !== title || nextText !== requirementText || nextPass !== passCriteria) {
         normalized = true;
         title = normalizePunctuation(nextTitle);
         requirementText = normalizePunctuation(nextText);
+        passCriteria = normalizePunctuation(nextPass);
       }
     }
 
-    if (renamed) {
-      notes.add("已按参考样例将部分代码别名归一化为标准工程命名。");
-    }
-    if (normalized) {
-      notes.add("已按参考样例收敛部分无依据扩写表达。");
-    }
+    if (renamed) notes.add("已按参考样例将部分代码别名归一化为标准工程命名。");
+    if (normalized) notes.add("已按参考样例收敛部分无依据扩写表达。");
 
-    const bucket = inferRequirementPolicyBucket(item);
+    const bucket = inferRequirementPolicyBucket(item, documentType);
     const forbiddenTerms = forbiddenExpansions[bucket] || [];
-    const remainingForbidden = forbiddenTerms.filter((term) =>
-      title.includes(term) || requirementText.includes(term)
+    const remainingForbidden = forbiddenTerms.filter(
+      (term) => title.includes(term) || requirementText.includes(term) || passCriteria.includes(term)
     );
     if (remainingForbidden.length) {
       notes.add(`仍存在需人工复核的扩写项：${remainingForbidden.join(" / ")}。`);
     }
 
-    const mergedConflictNote = [item.conflictNote || "", ...notes].filter(Boolean).join(" ");
-    const adjustedConfidence = remainingForbidden.length
-      ? Number(Math.max(0.2, (item.confidence ?? 0.5) - 0.15).toFixed(2))
-      : item.confidence;
-
     return {
       ...item,
       title,
       requirementText,
-      conflictNote: mergedConflictNote,
-      confidence: adjustedConfidence
+      passCriteria,
+      conflictNote: [item.conflictNote || "", ...notes].filter(Boolean).join(" "),
+      confidence: remainingForbidden.length
+        ? Number(Math.max(0.2, Number(item.confidence ?? 0.5) - 0.15).toFixed(2))
+        : item.confidence
     };
   });
 }
 
-function inferRequirementPolicyBucket(item) {
+function inferRequirementPolicyBucket(item, documentType) {
+  if (documentType === "hil_test_case") return "hil_test_case";
   const text = `${item.title || ""} ${item.requirementText || ""}`;
-  if (/激活标志位|inactive|active/.test(text)) {
-    return "activation_flag_logic";
-  }
-  if (/扭矩计算|优先级|输出规则|置零|限幅/.test(text)) {
-    return "torque_calculation_logic";
-  }
+  if (/激活标志位|inactive|active/.test(text)) return "activation_flag_logic";
+  if (/扭矩计算|优先级|输出规则|置零|限幅/.test(text)) return "torque_calculation_logic";
   return "generic";
 }
 
 function replaceWholeToken(text, token, replacement) {
   if (!text || !token || token === replacement) return text;
   const pattern = new RegExp(`(^|[^A-Za-z0-9_])(${escapeRegExp(token)})(?=[^A-Za-z0-9_]|$)`, "g");
-  return text.replace(pattern, (_, prefix) => `${prefix}${replacement}`);
+  return text.replace(pattern, (_match, prefix) => `${prefix}${replacement}`);
 }
 
 function normalizePunctuation(text) {
-  return text.replace(/\s{2,}/g, " ").trim();
+  return String(text || "").replace(/\s{2,}/g, " ").trim();
 }
 
 function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function normalizeDocumentType(value) {
+  if (value === "detail_design") return "detail_design";
+  if (value === "hil_test_case") return "hil_test_case";
+  return "software_requirement";
+}
+
+function getSystemInstruction(documentType) {
+  if (documentType === "detail_design") return "你是汽车软件详细设计生成助手。";
+  if (documentType === "hil_test_case") return "你是汽车软件 HIL 测试用例生成助手。";
+  return "你是汽车软件需求生成助手。";
+}
+
+function getGoalInstruction(documentType) {
+  if (documentType === "detail_design") {
+    return "目标是根据系统需求、模型资料和代码证据，输出可审核、可追溯的中文详细设计条目，突出实现分解、状态/流程、接口与内部变量。";
+  }
+  if (documentType === "hil_test_case") {
+    return "目标是根据需求、设计和代码证据，输出可执行、可判定、可追溯的 HIL 测试用例，明确前置条件、测试步骤、预期结果和判定标准。";
+  }
+  return "目标是根据系统需求、模型资料和代码证据，输出可审核、可追溯的中文软件需求条目。";
+}
+
+function getResponseSchemaName(documentType) {
+  if (documentType === "detail_design") return "detail_design_response";
+  if (documentType === "hil_test_case") return "hil_test_case_response";
+  return "software_requirement_response";
+}
+
+function getResponseSchema(documentType) {
+  if (documentType === "detail_design") return detailDesignResponseSchema;
+  if (documentType === "hil_test_case") return hilTestCaseResponseSchema;
+  return softwareRequirementResponseSchema;
+}
 function buildReplayModelInput(materialPack = {}) {
   return [
     {
@@ -490,27 +652,25 @@ function buildFallbackReplayProposal(materialPack = {}) {
     const targetFile = resolveReplayTargetFile(targetArea);
     const relevantRules = areaRecords.flatMap((item) => item.relevantRules || []);
     const targetRule = relevantRules[0] || null;
-    const patchSentence = areaRecords
-      .map((item) => item.expectedNote || item.reasonText)
-      .filter(Boolean)
-      .slice(0, 3)
-      .join("; ") || "Add clearer, testable and traceable constraints.";
+    const patchSentence =
+      areaRecords.map((item) => item.expectedNote || item.reasonText).filter(Boolean).slice(0, 3).join("; ") ||
+      "Add clearer, testable and traceable constraints.";
 
     if (targetRule && targetArea !== "examples") {
       items.push({
         action: "modify_rule",
         targetRuleId: targetRule.ruleId,
         targetFile,
-        title: targetRule.title + " (supplement)",
+        title: `${targetRule.title} (supplement)`,
         before: targetRule.content,
-        after: targetRule.content.trim() + "\nAdd constraint: " + patchSentence,
+        after: `${String(targetRule.content || "").trim()}\nAdd constraint: ${patchSentence}`,
         rationale: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
         evidenceRefs: areaRecords.map((item) => item.id),
         newRuleDraft: null
       });
     } else {
-      const title = (areaRecords[0]?.reasonCategory || "feedback") + " supplemental rule";
-      const content = "The system should avoid the following issue: " + patchSentence;
+      const title = `${areaRecords[0]?.reasonCategory || "feedback"} supplemental rule`;
+      const content = `The system should avoid the following issue: ${patchSentence}`;
       items.push({
         action: targetArea === "examples" ? "add_example" : "add_rule",
         targetRuleId: "",
@@ -520,20 +680,17 @@ function buildFallbackReplayProposal(materialPack = {}) {
         after: content,
         rationale: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
         evidenceRefs: areaRecords.map((item) => item.id),
-        newRuleDraft: {
-          title,
-          content
-        }
+        newRuleDraft: { title, content, rules: [] }
       });
     }
   }
 
   return normalizeReplayProposalPayload(
     {
-      summary: "Generated " + items.length + " fallback replay proposals.",
+      summary: `Generated ${items.length} fallback replay proposals.`,
       rootCauses: Array.from(
         new Set((materialPack.rejectionSnapshots || []).map((item) => item.reasonCategory).filter(Boolean))
-      ).map((item) => "Multiple rejections point to " + item + " issues."),
+      ).map((item) => `Multiple rejections point to ${item} issues.`),
       items
     },
     materialPack
@@ -545,14 +702,12 @@ function normalizeReplayProposalPayload(payload = {}, materialPack = {}) {
   const validIds = new Set(snapshots.map((item) => item.id));
   const targetAreas = materialPack.targetAreas || [];
   return {
-    summary: String(payload.summary || ("Generated replay proposal from " + snapshots.length + " rejection records.")).trim(),
+    summary: String(payload.summary || `Generated replay proposal from ${snapshots.length} rejection records.`).trim(),
     rootCauses: Array.isArray(payload.rootCauses)
       ? payload.rootCauses.map((item) => String(item || "").trim()).filter(Boolean)
       : [],
     items: Array.isArray(payload.items)
-      ? payload.items
-          .map((item, index) => normalizeReplayProposalItem(item, index, validIds, targetAreas))
-          .filter(Boolean)
+      ? payload.items.map((item, index) => normalizeReplayProposalItem(item, index, validIds, targetAreas)).filter(Boolean)
       : []
   };
 }
@@ -569,7 +724,7 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = []) {
     : [];
   const newRuleDraft = item.newRuleDraft && typeof item.newRuleDraft === "object"
     ? {
-        title: String(item.newRuleDraft.title || item.title || ("Replay Proposal " + (index + 1))).trim(),
+        title: String(item.newRuleDraft.title || item.title || `Replay Proposal ${index + 1}`).trim(),
         content: String(item.newRuleDraft.content || item.after || "").trim(),
         rules: Array.isArray(item.newRuleDraft.rules)
           ? item.newRuleDraft.rules
@@ -593,7 +748,7 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = []) {
     action,
     targetRuleId: String(item.targetRuleId || "").trim(),
     targetFile,
-    title: String(item.title || newRuleDraft?.title || ("Replay Proposal " + (index + 1))).trim(),
+    title: String(item.title || newRuleDraft?.title || `Replay Proposal ${index + 1}`).trim(),
     before: String(item.before || "").trim(),
     after: String(item.after || newRuleDraft?.content || "").trim(),
     rationale: String(item.rationale || "").trim(),
@@ -610,36 +765,55 @@ function resolveReplayTargetFile(targetArea = "") {
   return "requirement_validation.md";
 }
 
-function normalizeRequirement(item, index) {
-  return {
+function normalizeResultItem(item, index, documentType = "software_requirement", template = { requirementIdPrefix: "SWR" }) {
+  const normalized = {
     id: item.id || randomUUID(),
-    requirementId: item.requirementId || `SWR-${String(index + 1).padStart(3, "0")}`,
-    title: item.title || `需求 ${index + 1}`,
+    requirementId: item.requirementId || `${template.requirementIdPrefix || "SWR"}-${String(index + 1).padStart(3, "0")}`,
+    title: item.title || `条目 ${index + 1}`,
     requirementText: item.requirementText || "",
     type: item.type || "functional",
-    sourceRefs: item.sourceRefs || [],
+    sourceRefs: Array.isArray(item.sourceRefs) ? item.sourceRefs : [],
     rationale: item.rationale || "",
     verificationHint: item.verificationHint || "",
-    confidence: item.confidence ?? 0.5,
+    confidence: Number(item.confidence ?? 0.5),
     conflictNote: item.conflictNote || "",
-    review: {
-      status: "pending",
-      reviewer: "",
-      comment: "",
-      updatedAt: ""
-    }
+    documentType,
+    review: { status: "pending", reviewer: "", comment: "", updatedAt: "" }
   };
+
+  if (documentType === "detail_design") {
+    normalized.structuredContent = item.structuredContent || null;
+  }
+  if (documentType === "hil_test_case") {
+    normalized.preconditions = asStringArray(item.preconditions);
+    normalized.testSteps = asStringArray(item.testSteps || item.steps);
+    normalized.expectedResults = asStringArray(item.expectedResults);
+    normalized.passCriteria = String(item.passCriteria || "").trim();
+  }
+
+  return normalized;
 }
 
+function asStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function stripExtension(fileName) {
+  return String(fileName || "").replace(/\.[^.]+$/, "");
+}
+
+function truncate(text, limit = 120) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= limit) return normalized;
+  return `${normalized.slice(0, limit - 1)}…`;
+}
 const replayProposalSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
     summary: { type: "string" },
-    rootCauses: {
-      type: "array",
-      items: { type: "string" }
-    },
+    rootCauses: { type: "array", items: { type: "string" } },
     items: {
       type: "array",
       items: {
@@ -653,10 +827,7 @@ const replayProposalSchema = {
           before: { type: "string" },
           after: { type: "string" },
           rationale: { type: "string" },
-          evidenceRefs: {
-            type: "array",
-            items: { type: "string" }
-          },
+          evidenceRefs: { type: "array", items: { type: "string" } },
           newRuleDraft: {
             anyOf: [
               { type: "null" },
@@ -691,7 +862,7 @@ const replayProposalSchema = {
   required: ["summary", "rootCauses", "items"]
 };
 
-const responseSchema = {
+const softwareRequirementResponseSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
@@ -706,37 +877,74 @@ const responseSchema = {
           title: { type: "string" },
           requirementText: { type: "string" },
           type: { type: "string" },
-          sourceRefs: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                fileName: { type: "string" },
-                location: { type: "string" },
-                excerpt: { type: "string" }
-              },
-              required: ["fileName", "location", "excerpt"]
-            }
-          },
+          sourceRefs: SOURCE_REF_SCHEMA,
           rationale: { type: "string" },
           verificationHint: { type: "string" },
           confidence: { type: "number" },
           conflictNote: { type: "string" }
         },
-        required: [
-          "requirementId",
-          "title",
-          "requirementText",
-          "type",
-          "sourceRefs",
-          "rationale",
-          "verificationHint",
-          "confidence",
-          "conflictNote"
-        ]
+        required: ["requirementId", "title", "requirementText", "type", "sourceRefs", "rationale", "verificationHint", "confidence", "conflictNote"]
       }
     }
   },
   required: ["requirements"]
+};
+
+const detailDesignResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          requirementId: { type: "string" },
+          title: { type: "string" },
+          requirementText: { type: "string" },
+          type: { type: "string" },
+          sourceRefs: SOURCE_REF_SCHEMA,
+          rationale: { type: "string" },
+          verificationHint: { type: "string" },
+          confidence: { type: "number" },
+          conflictNote: { type: "string" },
+          structuredContent: { type: ["string", "object", "array", "null"] }
+        },
+        required: ["requirementId", "title", "requirementText", "type", "sourceRefs", "rationale", "verificationHint", "confidence", "conflictNote"]
+      }
+    }
+  },
+  required: ["items"]
+};
+
+const hilTestCaseResponseSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          requirementId: { type: "string" },
+          title: { type: "string" },
+          requirementText: { type: "string" },
+          type: { type: "string" },
+          sourceRefs: SOURCE_REF_SCHEMA,
+          rationale: { type: "string" },
+          verificationHint: { type: "string" },
+          confidence: { type: "number" },
+          conflictNote: { type: "string" },
+          preconditions: { type: "array", items: { type: "string" } },
+          testSteps: { type: "array", items: { type: "string" } },
+          expectedResults: { type: "array", items: { type: "string" } },
+          passCriteria: { type: "string" }
+        },
+        required: ["requirementId", "title", "requirementText", "type", "sourceRefs", "rationale", "verificationHint", "confidence", "conflictNote", "preconditions", "testSteps", "expectedResults", "passCriteria"]
+      }
+    }
+  },
+  required: ["items"]
 };

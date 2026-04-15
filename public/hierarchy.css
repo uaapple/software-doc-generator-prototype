@@ -37,6 +37,10 @@ select {
   font: inherit;
 }
 
+dialog {
+  color: inherit;
+}
+
 a {
   color: inherit;
 }
@@ -260,6 +264,47 @@ select {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.files-dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-height: min(80vh, 760px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(15, 41, 74, 0.2);
+}
+
+.files-dialog::backdrop {
+  background: rgba(12, 34, 61, 0.38);
+}
+
+.files-dialog-head {
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.files-dialog-head p {
+  margin-bottom: 0;
+}
+
+.files-list {
+  display: grid;
+  gap: 12px;
+  padding: 18px 22px 22px;
+  overflow: auto;
+}
+
+.checkbox-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.checkbox-item input[type="checkbox"] {
+  width: auto;
+  margin-top: 4px;
 }
 
 .empty-state {

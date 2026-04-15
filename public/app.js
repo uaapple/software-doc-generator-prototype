@@ -849,16 +849,23 @@ function syncProjectFormDocumentType() {
 function getDocumentTypeCopy(documentType) {
   if (documentType === "detail_design") {
     return {
-      documentLabel: "软件详细设计",
-      projectLabel: "详细设计项目",
-      itemLabel: "详细设计条目"
+      documentLabel: "??????",
+      projectLabel: "??????",
+      itemLabel: "??????"
+    };
+  }
+  if (documentType === "hil_test_case") {
+    return {
+      documentLabel: "HIL ????",
+      projectLabel: "HIL ??",
+      itemLabel: "HIL ??"
     };
   }
 
   return {
-    documentLabel: "软件需求",
-    projectLabel: "需求项目",
-    itemLabel: "需求条目"
+    documentLabel: "????",
+    projectLabel: "????",
+    itemLabel: "????"
   };
 }
 

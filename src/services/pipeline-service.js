@@ -5,9 +5,12 @@ import { ExtractionService } from "./extraction-service.js";
 import { LlmService } from "./llm-service.js";
 import { ValidationService } from "./validation-service.js";
 import { LlmProfileService } from "./llm-profile-service.js";
+import { ModuleSkillService } from "./module-skill-service.js";
 
 function normalizeDocumentType(value) {
-  return value === "detail_design" ? "detail_design" : "software_requirement";
+  if (value === "detail_design") return "detail_design";
+  if (value === "hil_test_case") return "hil_test_case";
+  return "software_requirement";
 }
 
 function buildTraces(items) {
@@ -23,7 +26,9 @@ function buildTraces(items) {
 }
 
 function buildRunningSummary(documentType) {
-  return `正在生成${documentType === "detail_design" ? "软件详细设计" : "软件需求"}`;
+  if (documentType === "detail_design") return "\u6b63\u5728\u751f\u6210\u8be6\u7ec6\u8bbe\u8ba1";
+  if (documentType === "hil_test_case") return "\u6b63\u5728\u751f\u6210 HIL \u7528\u4f8b";
+  return "\u6b63\u5728\u751f\u6210\u8f6f\u4ef6\u9700\u6c42";
 }
 
 export class PipelineService {
@@ -36,6 +41,7 @@ export class PipelineService {
     this.validationService = new ValidationService();
     this.skillBundleService = new SkillBundleService();
     this.llmProfileService = new LlmProfileService();
+    this.moduleSkillService = new ModuleSkillService();
   }
 
   async getMeta() {
@@ -64,10 +70,10 @@ export class PipelineService {
     }
 
     const extractions = await this.extractionService.extractFiles(project);
-    const requirements = await this.llmService.generateRequirements(project, extractions, options);
+    const requirements = await this.llmService.generateDocumentItems(project, extractions, options);
     const domainKnowledge = await this.skillBundleService.getDomainKnowledge(options.skillBundleId);
     const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
-    const conflicts = this.validationService.validate(requirements, { domainKnowledge });
+    const conflicts = this.validationService.validate(requirements, { domainKnowledge, documentType: project.documentType });
     const traces = buildTraces(requirements);
 
     const saved = await this.projectService.updateGeneratedArtifacts(project.id, {
@@ -91,8 +97,30 @@ export class PipelineService {
 
   async finalizeModuleGeneration(projectId, moduleId, normalizedDocumentType, inputAssets, options = {}) {
     const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
-    const domainKnowledge = await this.skillBundleService.getDomainKnowledge(options.skillBundleId);
     const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
+    const readiness = await this.moduleSkillService.ensureModuleReady(project, module, normalizedDocumentType);
+    if (readiness.bootstrapped) {
+      await this.projectService.updateModuleSkillState(projectId, moduleId, {
+        skillStatus: "bootstrapped",
+        skillSource: {
+          type: "bootstrap",
+          documentType: normalizedDocumentType
+        },
+        seededAt: new Date().toISOString()
+      });
+    }
+
+    const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
+    const composedSkills = await this.skillLoader.loadForContext(
+      {
+        documentType: normalizedDocumentType,
+        domain: module.domain || "embedded_vcu",
+        moduleSkillKey: module.moduleSkillKey || ""
+      },
+      skillDir
+    );
+    const domainKnowledge = composedSkills["domain-knowledge.json"] || {};
+
     const llmProfile = selectedProfile
       ? {
           id: selectedProfile.id,
@@ -107,15 +135,17 @@ export class PipelineService {
       name: `${project.name} / ${module.name}`,
       description: module.description || project.description,
       language: project.language,
-      documentType: normalizedDocumentType
+      documentType: normalizedDocumentType,
+      domain: module.domain || "embedded_vcu",
+      moduleSkillKey: module.moduleSkillKey || ""
     };
 
     const taskId = options.taskId || "";
 
     try {
       const extractions = await this.extractionService.extractFiles({ files: inputAssets });
-      const resultItems = await this.llmService.generateRequirements(contextProject, extractions, options);
-      const conflicts = this.validationService.validate(resultItems, { domainKnowledge });
+      const resultItems = await this.llmService.generateDocumentItems(contextProject, extractions, options);
+      const conflicts = this.validationService.validate(resultItems, { domainKnowledge, documentType: normalizedDocumentType });
       const traces = buildTraces(resultItems);
       const updatedTask = await this.projectService.updateGenerationTask(projectId, moduleId, normalizedDocumentType, taskId, {
         status: "completed",
@@ -146,7 +176,7 @@ export class PipelineService {
 
   async generateForModule(projectId, moduleId, documentType, options = {}) {
     const normalizedDocumentType = normalizeDocumentType(documentType);
-    const { module } = await this.projectService.getProjectAndModule(projectId, moduleId);
+    const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
     const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
     const selectedAssetIds = Array.isArray(options.assetIds) && options.assetIds.length
       ? options.assetIds
@@ -156,6 +186,17 @@ export class PipelineService {
     if (!inputAssets.length) {
       throw new Error("No assets selected");
     }
+
+    const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
+    const composedSkills = await this.skillLoader.loadForContext(
+      {
+        documentType: normalizedDocumentType,
+        domain: module.domain || "embedded_vcu",
+        moduleSkillKey: module.moduleSkillKey || ""
+      },
+      skillDir
+    );
+    const domainKnowledge = composedSkills["domain-knowledge.json"] || {};
 
     const llmProfile = selectedProfile
       ? {

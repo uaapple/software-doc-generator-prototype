@@ -72,3 +72,11 @@ git add --renormalize .
 ```
 
 这会让 Git 按当前仓库规则重新识别文本文件换行，但不会改变文件语义。
+
+## Mandatory UTF-8 Guard
+
+- For Chinese or any non-ASCII text, default to the `windows-utf8-guard` workflow.
+- Avoid full-file rewrites when only a few lines need to change.
+- Any scripted write must use explicit UTF-8.
+- If encoding is uncertain, stop large rewrites and verify bytes first.
+- See `docs/encoding-workflow.md` for the required workflow.

@@ -45,6 +45,23 @@ function compactEvidence(project) {
     }));
 }
 
+function compactConflicts(conflicts = []) {
+  return (conflicts || []).slice(0, 12).map((item) => ({
+    code: item.code || "",
+    message: item.message || item.detail || "",
+    severity: item.severity || ""
+  }));
+}
+
+function compactTraces(traces = []) {
+  return (traces || []).slice(0, 20).map((item) => ({
+    fileName: item.fileName || "",
+    location: item.location || "",
+    excerpt: item.excerpt || "",
+    requirementCode: item.requirementCode || item.requirementId || ""
+  }));
+}
+
 function inferTargetArea(reasonCategory, reasonTags = [], reasonText = "") {
   const tags = reasonTags.join(" ");
   const text = `${reasonCategory} ${tags} ${reasonText}`.toLowerCase();
@@ -55,13 +72,36 @@ function inferTargetArea(reasonCategory, reasonTags = [], reasonText = "") {
   return "writing";
 }
 
+function toReadableReasonCategory(reasonCategory = "") {
+  const labels = {
+    coverage_gap: "覆盖缺失",
+    traceability_issue: "来源追踪问题",
+    wording_issue: "表述问题",
+    logic_issue: "逻辑错误",
+    validation_gap: "校验缺失",
+    other: "其他"
+  };
+  return labels[reasonCategory] || reasonCategory || "其他";
+}
+
+function toReadableTargetArea(targetArea = "") {
+  const labels = {
+    writing: "写作规则",
+    extraction: "抽取规则",
+    validation: "校验规则",
+    examples: "示例规则",
+    domain_knowledge: "领域知识"
+  };
+  return labels[targetArea] || targetArea || "写作规则";
+}
+
 export class RejectionService {
   constructor() {
     this.skillBundleService = new SkillBundleService();
     this.skillRuleService = new SkillRuleService();
   }
 
-  async createRecord({ project, requirement, review }) {
+  async createRecord({ project, module = null, task = null, requirement, review, documentType = "", conflicts = [], traces = [] }) {
     if (!review.reasonCategory || !String(review.reasonText || "").trim()) {
       throw createHttpError("Rejected review requires reasonCategory and reasonText");
     }
@@ -73,12 +113,19 @@ export class RejectionService {
     const reasonTags = normalizeTags(review.reasonTags);
     const targetArea = inferTargetArea(review.reasonCategory, reasonTags, review.reasonText || review.comment || "");
     const relevantRules = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, [targetArea]);
+    const normalizedDocumentType = documentType || review.documentType || "software_requirement";
 
     const record = {
       id: randomUUID(),
       projectId: project.id,
+      projectName: project.name || "",
+      moduleId: module?.id || review.moduleId || "",
+      moduleName: module?.name || review.moduleName || "",
+      documentType: normalizedDocumentType,
       requirementId: requirement.id,
       requirementCode: requirement.requirementId,
+      sourceTaskId: task?.id || review.generationId || "",
+      sourceResultItemId: review.resultItemId || requirement.id,
       generationContext: {
         generatedAt: review.generationId || project.lastGeneration?.at || "",
         llmProfile: project.lastGeneration?.llmProfile || null
@@ -95,7 +142,10 @@ export class RejectionService {
         type: requirement.type,
         confidence: requirement.confidence,
         verificationHint: requirement.verificationHint || "",
-        conflictNote: requirement.conflictNote || ""
+        conflictNote: requirement.conflictNote || "",
+        documentType: normalizedDocumentType,
+        conflicts: compactConflicts(conflicts),
+        traces: compactTraces(traces)
       },
       sourceRefsSnapshot: requirement.sourceRefs || [],
       projectEvidenceSnapshot: compactEvidence(project),
@@ -114,6 +164,9 @@ export class RejectionService {
       poolStatus: review.includeInPool === false ? "archived" : "new",
       groupId: "",
       replayStatus: "not_started",
+      replayCount: 0,
+      replayTaskIds: [],
+      lastReplayAt: "",
       createdAt: now(),
       updatedAt: now()
     };
@@ -133,9 +186,14 @@ export class RejectionService {
 
     records = records.filter(Boolean);
     if (filters.projectId) records = records.filter((item) => item.projectId === filters.projectId);
+    if (filters.moduleId) records = records.filter((item) => item.moduleId === filters.moduleId);
+    if (filters.documentType) records = records.filter((item) => item.documentType === filters.documentType);
     if (filters.reasonCategory) records = records.filter((item) => item.reasonCategory === filters.reasonCategory);
     if (filters.poolStatus) records = records.filter((item) => item.poolStatus === filters.poolStatus);
     if (filters.replayStatus) records = records.filter((item) => item.replayStatus === filters.replayStatus);
+    if (filters.targetArea) records = records.filter((item) => item.skillContext?.targetArea === filters.targetArea);
+    if (filters.hasReplay === "true") records = records.filter((item) => Number(item.replayCount || 0) > 0);
+    if (filters.hasReplay === "false") records = records.filter((item) => Number(item.replayCount || 0) === 0);
     if (filters.skillBundleId) records = records.filter((item) => item.skillContext?.activeBundleId === filters.skillBundleId);
     if (filters.tag) records = records.filter((item) => (item.reasonTags || []).includes(filters.tag));
     return records.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -166,6 +224,8 @@ export class RejectionService {
     for (const record of records.filter((item) => item.poolStatus !== "archived")) {
       const reasonTags = [...(record.reasonTags || [])].sort();
       const groupKey = [
+        record.projectId || "",
+        record.moduleId || "",
         record.reasonCategory,
         reasonTags.join("|"),
         record.skillContext?.targetArea || inferTargetArea(record.reasonCategory, reasonTags, record.reasonText),
@@ -175,10 +235,14 @@ export class RejectionService {
         groupMap.set(groupKey, {
           id: randomUUID(),
           groupKey,
-          title: `${record.reasonCategory} / ${(record.skillContext?.targetArea || "writing").replaceAll("_", " ")}`,
+          title: `${toReadableReasonCategory(record.reasonCategory)} / ${toReadableTargetArea(record.skillContext?.targetArea || "writing")}`,
           reasonCategory: record.reasonCategory,
           reasonTags,
           targetArea: record.skillContext?.targetArea || inferTargetArea(record.reasonCategory, reasonTags, record.reasonText),
+          projectId: record.projectId || "",
+          projectName: record.projectName || "",
+          moduleId: record.moduleId || "",
+          moduleName: record.moduleName || "",
           memberIds: [],
           stats: { count: 0, replayedCount: 0 },
           status: "active"
@@ -199,6 +263,8 @@ export class RejectionService {
     for (const record of records) {
       const reasonTags = [...(record.reasonTags || [])].sort();
       const key = [
+        record.projectId || "",
+        record.moduleId || "",
         record.reasonCategory,
         reasonTags.join("|"),
         record.skillContext?.targetArea || inferTargetArea(record.reasonCategory, reasonTags, record.reasonText),

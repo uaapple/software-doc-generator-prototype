@@ -95,3 +95,10 @@
 - 在 `.local/server.pid` 记录当前服务进程，供停止脚本安全关闭
 
 如果 `3000` 端口已经有服务在监听，脚本会直接打开当前页面，不会重复启动一个新实例。
+
+## UTF-8 Guard Rule
+
+- Any task that reads, edits, or rewrites Chinese or other non-ASCII text files must follow `windows-utf8-guard`.
+- Prefer small patch-style edits over full file rewrites.
+- Do not treat terminal mojibake as proof of file-byte corruption.
+- See `docs/encoding-workflow.md` for the project workflow.

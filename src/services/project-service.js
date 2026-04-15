@@ -10,15 +10,29 @@ function now() {
 }
 
 function normalizeDocumentType(value) {
-  return value === "detail_design" ? "detail_design" : "software_requirement";
+  if (value === "detail_design") return "detail_design";
+  if (value === "hil_test_case") return "hil_test_case";
+  return "software_requirement";
 }
 
 function getDocumentTypeLabel(documentType) {
-  return documentType === "detail_design" ? "软件详细设计" : "软件需求";
+  if (documentType === "detail_design") return "\u8be6\u7ec6\u8bbe\u8ba1";
+  if (documentType === "hil_test_case") return "HIL \u7528\u4f8b";
+  return "\u8f6f\u4ef6\u9700\u6c42";
 }
 
 function getGenerationActionLabel(documentType) {
-  return documentType === "detail_design" ? "details_generated" : "requirements_generated";
+  if (documentType === "detail_design") return "details_generated";
+  if (documentType === "hil_test_case") return "hil_cases_generated";
+  return "requirements_generated";
+}
+
+function normalizeDomain(value) {
+  return String(value || "").trim() || "embedded_vcu";
+}
+
+function normalizeModuleSkillKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
 }
 
 function normalizeReasonTags(reasonTags) {
@@ -43,7 +57,8 @@ function ensureDocumentSpaces(documentSpaces = {}) {
   return {
     software_requirement:
       documentSpaces.software_requirement || createEmptyDocumentSpace("software_requirement"),
-    detail_design: documentSpaces.detail_design || createEmptyDocumentSpace("detail_design")
+    detail_design: documentSpaces.detail_design || createEmptyDocumentSpace("detail_design"),
+    hil_test_case: documentSpaces.hil_test_case || createEmptyDocumentSpace("hil_test_case")
   };
 }
 
@@ -62,11 +77,17 @@ function buildFileRecord(projectId, moduleId, file, role) {
 }
 
 function createModuleRecord(projectId, input = {}) {
+  const importedSkillKey = normalizeModuleSkillKey(input.importedSkillKey || "");
   return {
     id: randomUUID(),
     projectId,
     name: input.name?.trim() || "未命名功能模块",
     description: input.description?.trim() || "",
+    domain: normalizeDomain(input.domain),
+    moduleSkillKey: normalizeModuleSkillKey(importedSkillKey || input.moduleSkillKey || input.name),
+    skillStatus: input.skillStatus || (importedSkillKey ? "imported" : "draft"),
+    skillSource: input.skillSource || (importedSkillKey ? { type: "module_profile", key: importedSkillKey } : null),
+    seededAt: input.seededAt || null,
     assets: [],
     documentSpaces: ensureDocumentSpaces(),
     auditLog: [
@@ -142,6 +163,11 @@ function normalizeModule(module, projectId) {
     projectId: module.projectId || projectId,
     name: module.name?.trim() || "未命名功能模块",
     description: module.description?.trim() || "",
+    domain: normalizeDomain(module.domain),
+    moduleSkillKey: normalizeModuleSkillKey(module.moduleSkillKey || module.name),
+    skillStatus: module.skillStatus || "draft",
+    skillSource: module.skillSource || null,
+    seededAt: module.seededAt || null,
     assets: Array.isArray(module.assets) ? module.assets : [],
     documentSpaces: Object.fromEntries(
       Object.entries(ensureDocumentSpaces(module.documentSpaces)).map(([key, value]) => [
@@ -275,7 +301,40 @@ export class ProjectService {
     const { project, module } = await this.getProjectAndModule(projectId, moduleId);
     module.name = input.name?.trim() || module.name;
     module.description = input.description?.trim() || "";
+    module.domain = normalizeDomain(input.domain || module.domain);
+    module.moduleSkillKey = normalizeModuleSkillKey(input.importedSkillKey || input.moduleSkillKey || module.moduleSkillKey || module.name);
+    if (Object.hasOwn(input, "skillStatus")) {
+      module.skillStatus = input.skillStatus || module.skillStatus || "draft";
+    }
+    if (Object.hasOwn(input, "skillSource")) {
+      module.skillSource = input.skillSource || null;
+    }
+    if (Object.hasOwn(input, "seededAt")) {
+      module.seededAt = input.seededAt || null;
+    }
     touchModule(module, "module_updated", "功能模块信息已更新");
+    await this.saveProject(project);
+    return module;
+  }
+
+  async updateModuleSkillState(projectId, moduleId, updates = {}) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    if (Object.hasOwn(updates, "moduleSkillKey")) {
+      module.moduleSkillKey = normalizeModuleSkillKey(updates.moduleSkillKey || module.moduleSkillKey || module.name);
+    }
+    if (Object.hasOwn(updates, "domain")) {
+      module.domain = normalizeDomain(updates.domain || module.domain);
+    }
+    if (Object.hasOwn(updates, "skillStatus")) {
+      module.skillStatus = updates.skillStatus || module.skillStatus || "draft";
+    }
+    if (Object.hasOwn(updates, "skillSource")) {
+      module.skillSource = updates.skillSource || null;
+    }
+    if (Object.hasOwn(updates, "seededAt")) {
+      module.seededAt = updates.seededAt || null;
+    }
+    touchModule(module, "module_skill_updated", "功能模块 skill 状态已更新");
     await this.saveProject(project);
     return module;
   }
@@ -290,13 +349,20 @@ export class ProjectService {
     return module.assets;
   }
 
-  async attachModuleAssets(projectId, moduleId, filesByField) {
+  async attachModuleAssets(projectId, moduleId, filesByField, options = {}) {
     const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const referenceRole =
+      options.documentType === "detail_design"
+        ? "reference_detail_design_example"
+        : options.documentType === "hil_test_case"
+          ? "reference_hil_test_case_example"
+          : "reference_requirement_example";
     const roleMap = {
       systemPdf: "system_pdf",
       modelPdf: "model_pdf",
       generatedCode: "generated_c",
-      slx: "simulink_slx"
+      slx: "simulink_slx",
+      referenceExample: referenceRole
     };
 
     const appendedAssets = [];
@@ -441,13 +507,81 @@ export class ProjectService {
       throw new Error("Result item not found");
     }
 
+    if (typeof review.requirementText === "string" && review.requirementText.trim()) {
+      resultItem.requirementText = review.requirementText.trim();
+    }
+    if (typeof review.title === "string" && review.title.trim()) {
+      resultItem.title = review.title.trim();
+    }
+
+    const nextStatus = review.status || resultItem.review?.status || "pending";
+    if (nextStatus === "rejected" && (!review.reasonCategory || !String(review.reasonText || "").trim())) {
+      const error = new Error("Rejected review requires reasonCategory and reasonText");
+      error.statusCode = 400;
+      throw error;
+    }
+
     resultItem.review = {
       ...(resultItem.review || {}),
-      status: review.status || resultItem.review?.status || "pending",
+      status: nextStatus,
       reviewer: review.reviewer || resultItem.review?.reviewer || "当前用户",
       comment: review.comment?.trim() || "",
+      reasonCategory: review.reasonCategory || resultItem.review?.reasonCategory || "",
+      reasonTags: normalizeReasonTags(review.reasonTags),
+      reasonText: review.reasonText?.trim() || "",
+      severity: review.severity || resultItem.review?.severity || "medium",
+      expectedNote: review.expectedNote?.trim() || "",
+      includeInPool: review.includeInPool !== false,
+      rejectionId: resultItem.review?.rejectionId || "",
       updatedAt: now()
     };
+
+    if (nextStatus === "rejected") {
+      const rejection = await this.rejectionService.createRecord({
+          project: {
+            ...project,
+            extractions: task.extractions || [],
+            lastGeneration: {
+              at: task.updatedAt || task.createdAt || now(),
+              llmProfile: task.llmProfile || null
+            }
+          },
+          module,
+          task,
+          documentType: normalizedDocumentType,
+          conflicts: (task.conflicts || []).filter(
+            (item) => item.requirementId === resultItem.id || item.requirementId === resultItem.requirementId
+          ),
+          traces: (task.traces || []).filter(
+            (item) =>
+              item.requirementId === resultItem.id ||
+              item.requirementId === resultItem.requirementId ||
+              item.requirementCode === resultItem.requirementId
+          ),
+          requirement: {
+            id: resultItem.id,
+            requirementId: resultItem.requirementId,
+            title: resultItem.title,
+            requirementText: resultItem.requirementText,
+            type: resultItem.type,
+            confidence: resultItem.confidence,
+            verificationHint: resultItem.verificationHint || "",
+            conflictNote: resultItem.conflictNote || "",
+            sourceRefs: resultItem.sourceRefs || []
+          },
+          review: {
+            ...review,
+            status: nextStatus,
+            reasonTags: resultItem.review.reasonTags,
+            generationId: task.id,
+            resultItemId: resultItem.id,
+            documentType: normalizedDocumentType,
+            moduleId: module.id,
+            moduleName: module.name
+          }
+        });
+      resultItem.review.rejectionId = rejection.id;
+    }
 
     task.updatedAt = now();
     touchModule(module, "task_result_reviewed", `${getDocumentTypeLabel(normalizedDocumentType)}结果已审核`);

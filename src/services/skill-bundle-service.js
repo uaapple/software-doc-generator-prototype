@@ -50,6 +50,13 @@ function getBundleMetaPath(bundleId) {
   return path.join(config.skillRefinementBundleMetaDir, `${bundleId}.json`);
 }
 
+async function hasStructuredProfiles(skillDir) {
+  return (
+    (await pathExists(path.join(skillDir, "skill-manifest.json"))) ||
+    (await pathExists(path.join(skillDir, "profiles")))
+  );
+}
+
 export class SkillBundleService {
   constructor() {
     this.skillRuleService = new SkillRuleService();
@@ -74,7 +81,14 @@ export class SkillBundleService {
 
     const bundleId = "bundle-base";
     const bundleDir = this.getBundleSkillDir(bundleId);
-    await this.seedFromLegacy(config.activeSkillDir);
+    const useExistingActiveSkills = await hasStructuredProfiles(config.activeSkillDir);
+    if (useExistingActiveSkills) {
+      await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
+        seedDirs: [config.legacySkillDir]
+      });
+    } else {
+      await this.seedFromLegacy(config.activeSkillDir);
+    }
     await copyDirectory(config.activeSkillDir, bundleDir);
     await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
       seedDirs: [config.legacySkillDir]
@@ -89,7 +103,9 @@ export class SkillBundleService {
       baseBundleId: "",
       status: "active",
       files: [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
-      changeSummary: "Seeded from legacy skills directory.",
+      changeSummary: useExistingActiveSkills
+        ? "Seeded from existing active skills directory."
+        : "Seeded from legacy skills directory.",
       createdFromCaseIds: [],
       evaluationSummary: null,
       createdAt: now(),

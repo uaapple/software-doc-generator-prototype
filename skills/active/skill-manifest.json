@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "resolutionOrder": [
+    "generic",
+    "docType",
+    "domain",
+    "module"
+  ],
+  "profiles": {
+    "generic": {
+      "files": {
+        "requirement_extraction.md": [
+          "requirement_extraction.md"
+        ],
+        "requirement_writing.md": [
+          "requirement_writing.md"
+        ],
+        "requirement_validation.md": [
+          "requirement_validation.md"
+        ],
+        "examples/good_examples.md": [
+          "examples/good_examples.md"
+        ],
+        "examples/bad_examples.md": [
+          "examples/bad_examples.md"
+        ],
+        "domain-knowledge.json": [
+          "profiles/generic/domain-knowledge.json"
+        ]
+      }
+    },
+    "docTypes": {
+      "software_requirement": {
+        "files": {}
+      },
+      "detail_design": {
+        "files": {
+          "requirement_writing.md": [
+            "profiles/doc-types/detail_design/requirement_writing.md"
+          ],
+          "requirement_validation.md": [
+            "profiles/doc-types/detail_design/requirement_validation.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/doc-types/detail_design/domain-knowledge.json"
+          ]
+        }
+      },
+      "hil_test_case": {
+        "files": {
+          "requirement_writing.md": [
+            "profiles/doc-types/hil_test_case/requirement_writing.md"
+          ],
+          "requirement_validation.md": [
+            "profiles/doc-types/hil_test_case/requirement_validation.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/doc-types/hil_test_case/domain-knowledge.json"
+          ]
+        }
+      }
+    },
+    "domains": {
+      "embedded_vcu": {
+        "files": {
+          "domain-knowledge.json": [
+            "profiles/domains/embedded_vcu/domain-knowledge.json"
+          ]
+        }
+      }
+    },
+    "modules": {
+      "torque_intervention": {
+        "files": {
+          "domain-knowledge.json": [
+            "profiles/modules/torque_intervention/domain-knowledge.json"
+          ]
+        }
+      },
+      "charging_management": {
+        "files": {
+          "domain-knowledge.json": [
+            "profiles/modules/charging_management/domain-knowledge.json"
+          ]
+        }
+      }
+    }
+  }
+}

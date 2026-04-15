@@ -71,6 +71,7 @@ export const config = {
   rejectionStoreDir: path.join(rootDir, "data", "rejections"),
   rejectionGroupStorePath: path.join(rootDir, "data", "rejections", "groups.json"),
   replayTaskStoreDir: path.join(rootDir, "data", "replay-tasks"),
+  templateDir: path.join(rootDir, "templates"),
   templatePath: path.join(rootDir, "templates", "software-requirement-template.json"),
   skillDir: path.join(rootDir, "skills", "active"),
   openai: {

@@ -12,6 +12,7 @@ import { SkillBundleService } from "./services/skill-bundle-service.js";
 import { LlmProfileService } from "./services/llm-profile-service.js";
 import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
+import { ModuleSkillService } from "./services/module-skill-service.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -48,7 +49,8 @@ function moduleUploadFields() {
     { name: "systemPdf", maxCount: 2 },
     { name: "modelPdf", maxCount: 8 },
     { name: "generatedCode", maxCount: 16 },
-    { name: "slx", maxCount: 4 }
+    { name: "slx", maxCount: 4 },
+    { name: "referenceExample", maxCount: 6 }
   ];
 }
 export async function createApp() {
@@ -63,6 +65,7 @@ export async function createApp() {
   const llmProfileService = new LlmProfileService();
   const rejectionService = new RejectionService();
   const replayTaskService = new ReplayTaskService();
+  const moduleSkillService = new ModuleSkillService();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
 
@@ -129,6 +132,9 @@ export async function createApp() {
   });
   app.get("/detail-design-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "detail-design-generation.html"));
+  });
+  app.get("/hil-test-case-generation", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "hil-test-case-generation.html"));
   });
   app.get("/skill-refinement", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "skill-refinement.html"));
@@ -223,6 +229,22 @@ export async function createApp() {
     }
   });
 
+  app.post("/api/projects/:projectId/modules/initialize-preview", async (req, res, next) => {
+    try {
+      const project = await projectService.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      const preview = await moduleSkillService.previewNewModule(project, req.body || {}, {
+        documentType: req.body?.documentType || project.documentType,
+        projectDomain: req.body?.domain || ""
+      });
+      res.json(preview);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/projects/:projectId/modules", async (req, res, next) => {
     try {
       const module = await projectService.createModule(req.params.projectId, req.body || {});
@@ -250,6 +272,20 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/projects/:projectId/modules/:moduleId/initialization-check", async (req, res, next) => {
+    try {
+      const project = await projectService.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      const module = await projectService.getModule(req.params.projectId, req.params.moduleId);
+      const inspection = await moduleSkillService.inspectModule(project, module, req.query?.documentType || project.documentType);
+      res.json(inspection);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/projects/:projectId/modules/:moduleId/assets", async (req, res, next) => {
     try {
       const assets = await projectService.listAssets(req.params.projectId, req.params.moduleId);
@@ -264,7 +300,9 @@ export async function createApp() {
     upload.fields(moduleUploadFields()),
     async (req, res, next) => {
       try {
-        const result = await projectService.attachModuleAssets(req.params.projectId, req.params.moduleId, req.files || {});
+        const result = await projectService.attachModuleAssets(req.params.projectId, req.params.moduleId, req.files || {}, {
+          documentType: req.body?.documentType || "software_requirement"
+        });
         res.status(201).json(result);
       } catch (error) {
         next(error);
@@ -336,7 +374,9 @@ export async function createApp() {
     upload.fields(moduleUploadFields()),
     async (req, res, next) => {
       try {
-        const uploaded = await projectService.attachModuleAssets(req.params.projectId, req.params.moduleId, req.files || {});
+        const uploaded = await projectService.attachModuleAssets(req.params.projectId, req.params.moduleId, req.files || {}, {
+          documentType: req.params.documentType
+        });
         const assetIds = parseIdList(req.body?.assetIds);
         const uploadedAssetIds = (uploaded.assets || []).map((asset) => asset.id);
         const result = await pipelineService.generateForModule(
@@ -546,7 +586,7 @@ export async function createApp() {
     }
   });
 
-  app.get("/api/replay-tasks", async (_req, res, next) => {
+  app.get("/api/replay-tasks", async (req, res, next) => {
     try {
       const tasks = await replayTaskService.listTasks();
       res.json({ tasks });
@@ -746,7 +786,9 @@ export async function createApp() {
   app.use((error, _req, res, _next) => {
     console.error(error);
     res.status(error.statusCode || 500).json({
-      error: error.message || "Internal server error"
+      error: error.message || "Internal server error",
+      code: error.code || "internal_error",
+      details: error.details || null
     });
   });
 
