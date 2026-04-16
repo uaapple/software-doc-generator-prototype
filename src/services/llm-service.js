@@ -78,12 +78,30 @@ export class LlmService {
       message: `正在调用 ${profile.name || profile.model} 生成结构化结果。`
     });
     const llmStartedAt = Date.now();
-    const payload = await createJsonChatCompletion(client, {
-      model: profile.model,
-      messages: buildModelInput(project, evidence, template, skills, documentType),
-      schemaName: getResponseSchemaName(documentType),
-      schema: getResponseSchema(documentType)
-    });
+    let payload;
+    let rawResponseText = "";
+    try {
+      const response = await createJsonChatCompletion(client, {
+        model: profile.model,
+        messages: buildModelInput(project, evidence, template, skills, documentType),
+        schemaName: getResponseSchemaName(documentType),
+        schema: getResponseSchema(documentType),
+        includeRawResponse: true
+      });
+      payload = response.payload;
+      rawResponseText = response.rawText || "";
+    } catch (error) {
+      error.debugStage = "llm_response_parse";
+      options.onProgress?.({
+        phase: "llm_postprocess_failed",
+        stage: "llm_response_parse",
+        message: error.message || "模型返回内容解析失败",
+        rawResponseText: error.rawResponseText || "",
+        rawResponseLength: Number(error.rawResponseLength || 0) || 0,
+        errorStack: error.stack || ""
+      });
+      throw error;
+    }
     options.onProgress?.({
       phase: "llm_request_completed",
       model: profile.model,
@@ -96,8 +114,49 @@ export class LlmService {
       : Array.isArray(payload.requirements)
         ? payload.requirements
         : [];
-    const normalized = rawItems.map((item, index) => normalizeResultItem(item, index, documentType, template));
-    return applyDomainKnowledgePolicies(normalized, knowledge, documentType);
+    options.onProgress?.({
+      phase: "llm_payload_parsed",
+      message: `模型原始响应解析完成，识别到 ${rawItems.length} 条候选结果。`,
+      rawResponseText,
+      rawResponseLength: rawResponseText.length,
+      parsedTopLevelKeys: Object.keys(payload || {}),
+      rawItemCount: rawItems.length
+    });
+
+    try {
+      const normalizeStartedAt = Date.now();
+      const normalized = rawItems.map((item, index) => normalizeResultItem(item, index, documentType, template));
+      const normalizeResultItemsMs = Date.now() - normalizeStartedAt;
+      options.onProgress?.({
+        phase: "llm_items_normalized",
+        message: `已完成 ${normalized.length} 条结果规范化，正在应用技能规则。`,
+        normalizeResultItemsMs,
+        normalizedItemCount: normalized.length
+      });
+
+      const policyStartedAt = Date.now();
+      const finalItems = applyDomainKnowledgePolicies(normalized, knowledge, documentType);
+      const applyPoliciesMs = Date.now() - policyStartedAt;
+      options.onProgress?.({
+        phase: "llm_policies_applied",
+        message: `技能规则处理完成，得到 ${finalItems.length} 条待校验结果。`,
+        applyPoliciesMs,
+        totalAfterModelMs: Date.now() - llmStartedAt,
+        finalItemCount: finalItems.length
+      });
+      return finalItems;
+    } catch (error) {
+      error.debugStage = "llm_result_postprocess";
+      options.onProgress?.({
+        phase: "llm_postprocess_failed",
+        stage: "llm_result_postprocess",
+        message: error.message || "模型结果后处理失败",
+        rawResponseText,
+        rawResponseLength: rawResponseText.length,
+        errorStack: error.stack || ""
+      });
+      throw error;
+    }
   }
 
   async generateReplayProposal(materialPack, options = {}) {
@@ -132,6 +191,7 @@ function buildModelInput(project, evidence, template, skills, documentType = "so
   const guidanceBlocks = [
     getSystemInstruction(documentType),
     getGoalInstruction(documentType),
+    skills.__compiledPrompt || "",
     "系统需求优先级最高；当存在冲突时保留冲突说明，不要编造事实。",
     "编号通常由外部需求管理系统生成，不要把编号差异当成质量目标，也不要编造内部引用编号。",
     "输出必须符合给定 JSON schema。",
@@ -169,6 +229,7 @@ function buildModelInput(project, evidence, template, skills, documentType = "so
                 moduleSkillKey: project.moduleSkillKey || ""
               },
               selectedProfiles: skills.__profiles || [],
+              compiledSkillPack: skills.__compiledSkillPack || null,
               template,
               evidence: evidenceBrief
             },
@@ -625,6 +686,8 @@ function getResponseSchema(documentType) {
   return softwareRequirementResponseSchema;
 }
 function buildReplayModelInput(materialPack = {}) {
+  const allowedKindsByArea = materialPack.allowedKindsByArea || {};
+  const layerDefinitions = materialPack.layerDefinitions || {};
   return [
     {
       role: "system",
@@ -632,13 +695,14 @@ function buildReplayModelInput(materialPack = {}) {
         {
           type: "input_text",
           text: [
-            "You generate structured skill-repair proposals from human rejection feedback.",
+            "You generate structured atomic-skill repair proposals from human rejection feedback.",
             "Return only JSON that matches the schema.",
-            "Each proposal item must change exactly one target skill item.",
-            "Prefer modify_skill_item when a suitable targetSkillCode is available in the material pack.",
-            "Use add_skill_item only when no existing skill item is a good fit.",
-            "Classify proposals into generic / docType / domain / module.",
-            "Do not output full markdown files."
+            "Each proposal item must change exactly one atomic skill item.",
+            "Prefer modify_skill_item, split_skill_item, or deprecate_skill_item when a suitable existing targetSkillCode exists.",
+            "Use add_skill_item only when there is no good existing skill target.",
+            "When action is add_skill_item, you MUST choose targetLayer from generic / docType / domain / module and targetProfileKey from the provided context.",
+            "Do not invent new kinds. kind must come from the allowedKindsByArea mapping provided in the material pack.",
+            "Do not output full markdown files. Do not propose freeform categories."
           ].join("\n")
         }
       ]
@@ -648,11 +712,50 @@ function buildReplayModelInput(materialPack = {}) {
       content: [
         {
           type: "input_text",
-          text: JSON.stringify(materialPack, null, 2)
+          text: JSON.stringify(
+            {
+              ...materialPack,
+              layerDefinitions,
+              allowedKindsByArea
+            },
+            null,
+            2
+          )
         }
       ]
     }
   ];
+}
+
+function getAllowedKindsByArea() {
+  return {
+    writing: ["writing_rule", "good_example", "rule_hint", "generation_priority"],
+    extraction: ["extraction_rule", "rule_hint", "generation_priority"],
+    validation: ["validation_rule", "anti_pattern", "rule_hint"],
+    examples: ["good_example", "bad_example", "anti_pattern"],
+    domain_knowledge: [
+      "source_alias",
+      "normalization_rule",
+      "forbidden_expansion",
+      "source_policy_setting",
+      "document_blueprint_section",
+      "document_blueprint_policy",
+      "code_style_prefix",
+      "rule_hint",
+      "generation_priority",
+      "anti_pattern"
+    ]
+  };
+}
+
+function collectAllowedKinds(targetAreas = []) {
+  const mapping = getAllowedKindsByArea();
+  const resolvedAreas = Array.isArray(targetAreas) && targetAreas.length ? targetAreas : ["validation"];
+  return new Set(resolvedAreas.flatMap((area) => mapping[area] || mapping.validation));
+}
+
+function isValidReplayLayer(layer = "") {
+  return ["generic", "docType", "domain", "module"].includes(String(layer || "").trim());
 }
 
 function normalizeReplaySlug(value = "") {
@@ -824,6 +927,7 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], ma
   }
 
   const inferredTarget = inferReplayDefaultTarget(targetAreas[0] || "validation", materialPack);
+  const allowedKinds = collectAllowedKinds(targetAreas);
   const kind = String(item.kind || mapReplayAreaToKind(targetAreas[0] || "validation")).trim();
   const targetLayer = String(item.targetLayer || inferredTarget.targetLayer).trim();
   const targetProfileKey = normalizeReplaySlug(item.targetProfileKey || inferredTarget.targetProfileKey || "generic");
@@ -853,10 +957,22 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], ma
     : null;
 
   const targetSkillCode = String(item.targetSkillCode || item.targetRuleId || "").trim();
+  const candidate = Array.isArray(materialPack.candidateSkillItems)
+    ? materialPack.candidateSkillItems.find((entry) => entry.skillCode === targetSkillCode)
+    : null;
   if (action === "modify_skill_item" && !targetSkillCode) {
     return null;
   }
   if (action === "add_skill_item" && !(newRuleDraft?.content || String(item.after || "").trim() || newRuleDraft?.structuredPayload)) {
+    return null;
+  }
+  if (!isValidReplayLayer(targetLayer)) {
+    return null;
+  }
+  if (!allowedKinds.has(kind)) {
+    return null;
+  }
+  if (candidate && (candidate.layer !== targetLayer || normalizeReplaySlug(candidate.profileKey) !== targetProfileKey || candidate.kind !== kind)) {
     return null;
   }
 

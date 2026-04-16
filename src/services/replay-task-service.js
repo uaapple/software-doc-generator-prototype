@@ -35,6 +35,53 @@ function normalizeSkillKey(value = "") {
     .replace(/[^\w\u4e00-\u9fa5-]/g, "_");
 }
 
+function buildAllowedKindsByArea() {
+  return {
+    writing: ["writing_rule", "good_example", "rule_hint", "generation_priority"],
+    extraction: ["extraction_rule", "rule_hint", "generation_priority"],
+    validation: ["validation_rule", "anti_pattern", "rule_hint"],
+    examples: ["good_example", "bad_example", "anti_pattern"],
+    domain_knowledge: [
+      "source_alias",
+      "normalization_rule",
+      "forbidden_expansion",
+      "source_policy_setting",
+      "document_blueprint_section",
+      "document_blueprint_policy",
+      "code_style_prefix",
+      "rule_hint",
+      "generation_priority",
+      "anti_pattern"
+    ]
+  };
+}
+
+function buildLayerDefinitions() {
+  return {
+    generic: "跨模块和跨文档通用的基础规则，只有在确实具有全局适用性时才放这里。",
+    docType: "只对某种文档类型生效的规则，例如 software_requirement / detail_design / hil_test_case。",
+    domain: "在某个领域内广泛适用但不局限于单一模块的规则。",
+    module: "只对单个功能模块或单个 moduleSkillKey 生效的规则。"
+  };
+}
+
+function validateProposalTargets(proposalItems = [], targetAreas = []) {
+  const allowedKindsByArea = buildAllowedKindsByArea();
+  const allowedKinds = new Set((targetAreas.length ? targetAreas : ["validation"]).flatMap((area) => allowedKindsByArea[area] || allowedKindsByArea.validation));
+  for (const item of proposalItems) {
+    const layer = String(item.targetLayer || "").trim();
+    if (!["generic", "docType", "domain", "module"].includes(layer)) {
+      throw createHttpError(`Unsupported proposal targetLayer: ${layer}`);
+    }
+    if (!allowedKinds.has(item.kind)) {
+      throw createHttpError(`Unsupported proposal kind for current target area: ${item.kind}`);
+    }
+    if (!String(item.targetProfileKey || "").trim()) {
+      throw createHttpError("Proposal targetProfileKey is required");
+    }
+  }
+}
+
 function collectRootCauses(records = []) {
   return [...new Set(records.map((item) => item.reasonCategory).filter(Boolean))].map(
     (category) => `Multiple rejections point to ${category} issues.`
@@ -214,6 +261,8 @@ export class ReplayTaskService {
       summary: `${records.length} rejection records selected for replay`,
       targetBundleId: bundleId,
       targetAreas: effectiveAreas,
+      allowedKindsByArea: buildAllowedKindsByArea(),
+      layerDefinitions: buildLayerDefinitions(),
       ruleIndexVersion: ruleIndex.ruleIndexVersion,
       moduleContext: {
         projectId: inferredProjectId,
@@ -316,6 +365,7 @@ export class ReplayTaskService {
 
     const normalizedItems = Array.isArray(generated.items) ? generated.items : [];
     if (normalizedItems.length) {
+      validateProposalTargets(normalizedItems, targetAreas);
       for (const item of normalizedItems) {
         proposal.items.push({
           proposalItemId: randomUUID(),
@@ -448,6 +498,7 @@ export class ReplayTaskService {
     if (!acceptedItems.length) {
       throw createHttpError("No accepted proposal items to apply");
     }
+    validateProposalTargets(acceptedItems, task.materialPack?.targetAreas || []);
 
     const candidateBundle = await this.skillBundleService.createCandidateBundle({
       baseBundleId: activeBundle?.id || task.targetBundleId,

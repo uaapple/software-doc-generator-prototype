@@ -1,7 +1,7 @@
 import path from "node:path";
 import { config } from "../config.js";
 import { promises as fs } from "node:fs";
-import { SkillRegistryService } from "./skill-registry-service.js";
+import { SkillRegistryService, buildKnowledgeFromItems } from "./skill-registry-service.js";
 import { pathExists } from "./storage.js";
 
 const EMPTY_KNOWLEDGE = {
@@ -123,8 +123,10 @@ export class SkillManagementService {
     return {
       manifest: index.manifest,
       activeSource: {
+        sourceType: skillDir === config.activeSkillDir ? "sqlite" : "files",
         skillDir,
-        manifestPath: path.join(skillDir, "skill-manifest.json")
+        manifestPath: path.join(skillDir, "skill-manifest.json"),
+        databasePath: skillDir === config.activeSkillDir ? config.skillDatabasePath : ""
       },
       summary: {
         total: profiles.length,
@@ -148,9 +150,12 @@ export class SkillManagementService {
     const item = await this.buildProfileSummary(profile, skillDir);
     const files = await describeFiles(profile.files || [], skillDir);
     const knowledgePath = files.find((entry) => entry.role === "domain-knowledge.json")?.absolutePath;
-    const knowledge = knowledgePath
-      ? JSON.parse(await fs.readFile(knowledgePath, "utf8").catch(() => JSON.stringify(EMPTY_KNOWLEDGE)))
-      : { ...EMPTY_KNOWLEDGE };
+    const knowledge =
+      skillDir === config.activeSkillDir
+        ? buildKnowledgeFromItems(registry.items || [], registry.version)
+        : knowledgePath
+          ? JSON.parse(await fs.readFile(knowledgePath, "utf8").catch(() => JSON.stringify(EMPTY_KNOWLEDGE)))
+          : { ...EMPTY_KNOWLEDGE };
 
     return {
       item,
@@ -258,6 +263,10 @@ export class SkillManagementService {
   }
 
   async materializeRegistry(skillDir = config.activeSkillDir) {
+    return this.registryService.materializeAll(skillDir);
+  }
+
+  async exportCompatibilityFiles(skillDir = config.activeSkillDir) {
     return this.registryService.materializeAll(skillDir);
   }
 }

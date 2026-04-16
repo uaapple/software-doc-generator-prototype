@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { copyDirectory, pathExists, readJson, writeJson } from "./storage.js";
 import { SkillRuleService } from "./skill-rule-service.js";
 import { SkillLoader } from "./skill-loader.js";
+import { SkillRegistryService } from "./skill-registry-service.js";
 
 const MANAGED_SKILL_FILES = [
   "requirement_extraction.md",
@@ -62,9 +63,11 @@ export class SkillBundleService {
   constructor() {
     this.skillRuleService = new SkillRuleService();
     this.skillLoader = new SkillLoader();
+    this.registryService = new SkillRegistryService();
   }
 
   async ensureInitialized() {
+    await this.registryService.materializeAll(config.activeSkillDir).catch(() => {});
     const activePointer = await readJson(config.activeSkillBundlePointerPath);
     const activeWritingFile = path.join(config.activeSkillDir, "requirement_writing.md");
     if (activePointer?.bundleId && (await pathExists(activeWritingFile))) {
@@ -230,6 +233,9 @@ export class SkillBundleService {
     const targetDir = this.getBundleSkillDir(bundleId);
     const baseDir = await this.getSkillDir(baseBundle?.id);
 
+    if (path.resolve(baseDir) === path.resolve(config.activeSkillDir)) {
+      await this.registryService.materializeAll(config.activeSkillDir);
+    }
     await copyDirectory(baseDir, targetDir);
     await this.ensureDomainKnowledgeFile(targetDir);
 
@@ -336,6 +342,7 @@ export class SkillBundleService {
     }
 
     await copyDirectory(this.getBundleSkillDir(bundleId), config.activeSkillDir);
+    await this.registryService.rebuildDatabaseFromFiles(config.activeSkillDir);
 
     if (activeBundle) {
       activeBundle.status = "archived";

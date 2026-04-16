@@ -79,7 +79,10 @@ export function extractChatCompletionText(response) {
   return "";
 }
 
-export async function createJsonChatCompletion(client, { model, messages, schemaName, schema, temperature = 0.2 }) {
+export async function createJsonChatCompletion(
+  client,
+  { model, messages, schemaName, schema, temperature = 0.2, includeRawResponse = false }
+) {
   const response = await client.chat.completions.create({
     model,
     messages: normalizeChatMessages(messages, { schemaName, schema }),
@@ -92,5 +95,13 @@ export async function createJsonChatCompletion(client, { model, messages, schema
     throw new Error("LLM returned empty response content");
   }
 
-  return JSON.parse(text);
+  try {
+    const payload = JSON.parse(text);
+    return includeRawResponse ? { payload, rawText: text } : payload;
+  } catch (error) {
+    error.message = `Failed to parse LLM JSON response: ${error.message}`;
+    error.rawResponseText = text;
+    error.rawResponseLength = text.length;
+    throw error;
+  }
 }

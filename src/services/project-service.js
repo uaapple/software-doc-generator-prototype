@@ -132,6 +132,7 @@ function normalizeTask(task = {}) {
     progress,
     timeline,
     metrics: normalizeTaskMetrics(task.metrics),
+    debug: normalizeTaskDebug(task.debug),
     errorMessage: String(task.errorMessage || "").trim()
   };
 }
@@ -171,6 +172,111 @@ function normalizeTaskMetrics(metrics = {}) {
     generatedItemCount: Math.max(0, Number(metrics?.generatedItemCount || 0) || 0),
     conflictCount: Math.max(0, Number(metrics?.conflictCount || 0) || 0)
   };
+}
+
+function normalizeDebugText(value, maxLength = 200000) {
+  const text = typeof value === "string" ? value : "";
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+function normalizeTaskDebugEvent(event = {}) {
+  return {
+    at: event?.at || now(),
+    stage: String(event?.stage || "").trim(),
+    label: String(event?.label || "").trim(),
+    message: String(event?.message || "").trim(),
+    level: String(event?.level || "info").trim() || "info"
+  };
+}
+
+function normalizeTaskDebug(debug = {}) {
+  const llm = debug?.llm || {};
+  const postProcess = debug?.postProcess || {};
+  const lastError = debug?.lastError && typeof debug.lastError === "object"
+    ? {
+        at: debug.lastError.at || "",
+        stage: String(debug.lastError.stage || "").trim(),
+        message: String(debug.lastError.message || "").trim(),
+        stack: normalizeDebugText(debug.lastError.stack || "", 40000)
+      }
+    : null;
+
+  return {
+    updatedAt: debug?.updatedAt || "",
+    llm: {
+      requestModel: String(llm.requestModel || "").trim(),
+      requestProvider: String(llm.requestProvider || "").trim(),
+      rawResponseText: normalizeDebugText(llm.rawResponseText || "", 200000),
+      rawResponseLength: Math.max(0, Number(llm.rawResponseLength || 0) || 0),
+      rawResponseTruncated: Boolean(llm.rawResponseTruncated),
+      parsedTopLevelKeys: Array.isArray(llm.parsedTopLevelKeys)
+        ? llm.parsedTopLevelKeys.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 40)
+        : [],
+      rawItemCount: Math.max(0, Number(llm.rawItemCount || 0) || 0)
+    },
+    postProcess: {
+      lastStage: String(postProcess.lastStage || "").trim(),
+      normalizeResultItemsMs: Math.max(0, Number(postProcess.normalizeResultItemsMs || 0) || 0),
+      applyPoliciesMs: Math.max(0, Number(postProcess.applyPoliciesMs || 0) || 0),
+      validationMs: Math.max(0, Number(postProcess.validationMs || 0) || 0),
+      saveMs: Math.max(0, Number(postProcess.saveMs || 0) || 0),
+      totalAfterModelMs: Math.max(0, Number(postProcess.totalAfterModelMs || 0) || 0)
+    },
+    lastError,
+    events: Array.isArray(debug?.events)
+      ? debug.events
+          .map((event) => normalizeTaskDebugEvent(event))
+          .filter((event) => event.message)
+          .slice(-40)
+      : []
+  };
+}
+
+function mergeTaskDebug(current = {}, updates = {}) {
+  const merged = normalizeTaskDebug({
+    ...current,
+    ...updates,
+    llm: {
+      ...(current.llm || {}),
+      ...(updates.llm || {})
+    },
+    postProcess: {
+      ...(current.postProcess || {}),
+      ...(updates.postProcess || {})
+    },
+    lastError: updates.lastError
+      ? {
+          ...(current.lastError || {}),
+          ...updates.lastError
+        }
+      : current.lastError,
+    events: Array.isArray(current.events) ? [...current.events] : []
+  });
+  merged.updatedAt = now();
+  return merged;
+}
+
+function appendTaskDebugEvent(task, debugEvent) {
+  if (!debugEvent?.message) {
+    return;
+  }
+
+  const entry = normalizeTaskDebugEvent(debugEvent);
+  const currentDebug = normalizeTaskDebug(task.debug);
+  const lastEntry = currentDebug.events.at(-1);
+  if (
+    lastEntry &&
+    lastEntry.stage === entry.stage &&
+    lastEntry.message === entry.message &&
+    lastEntry.level === entry.level
+  ) {
+    currentDebug.events[currentDebug.events.length - 1] = entry;
+  } else {
+    currentDebug.events.push(entry);
+    currentDebug.events = currentDebug.events.slice(-40);
+  }
+  currentDebug.updatedAt = now();
+  task.debug = currentDebug;
 }
 
 function appendTimelineEntry(task, timelineEntry) {
@@ -571,10 +677,6 @@ export class ProjectService {
     }
 
     const task = space.generationTasks[taskIndex];
-    if (task.status === "running" && !isStaleRunningTask(task)) {
-      throw new Error("Running task cannot be deleted");
-    }
-
     const [removedTask] = space.generationTasks.splice(taskIndex, 1);
 
     const acceptedCountBefore = space.acceptedItems.length;
@@ -677,8 +779,14 @@ export class ProjectService {
         })
       };
     }
+    if (updates.debug && typeof updates.debug === "object") {
+      task.debug = mergeTaskDebug(task.debug, updates.debug);
+    }
     if (updates.timelineEntry && typeof updates.timelineEntry === "object") {
       appendTimelineEntry(task, updates.timelineEntry);
+    }
+    if (updates.debugEvent && typeof updates.debugEvent === "object") {
+      appendTaskDebugEvent(task, updates.debugEvent);
     }
     task.summary = buildTaskSummary(task);
     task.updatedAt = now();

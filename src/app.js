@@ -14,6 +14,7 @@ import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
 import { ModuleSkillService } from "./services/module-skill-service.js";
 import { SkillManagementService } from "./services/skill-management-service.js";
+import { SkillLoader } from "./services/skill-loader.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -68,6 +69,7 @@ export async function createApp() {
   const replayTaskService = new ReplayTaskService();
   const moduleSkillService = new ModuleSkillService();
   const skillManagementService = new SkillManagementService();
+  const skillLoader = new SkillLoader();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
 
@@ -398,7 +400,7 @@ export async function createApp() {
           req.params.taskId
         );
         if (!task) {
-          return res.status(404).json({ error: "Task not found" });
+          return res.status(404).json({ error: "任务不存在" });
         }
         res.json(task);
       } catch (error) {
@@ -809,7 +811,32 @@ export async function createApp() {
 
   app.post("/api/skill-registry/materialize", async (_req, res, next) => {
     try {
-      res.json(await skillManagementService.materializeRegistry());
+      res.json(await skillManagementService.exportCompatibilityFiles());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-export/compatibility", async (_req, res, next) => {
+    try {
+      res.json(await skillManagementService.exportCompatibilityFiles());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/compiled-skills/preview", async (req, res, next) => {
+    try {
+      const pack = await skillLoader.loadForContext({
+        documentType: req.query.documentType || "software_requirement",
+        domain: req.query.domain || "",
+        moduleSkillKey: req.query.moduleSkillKey || ""
+      });
+      res.json({
+        profiles: pack.__profiles || [],
+        compiledPrompt: pack.__compiledPrompt || "",
+        compiledSkillPack: pack.__compiledSkillPack || null
+      });
     } catch (error) {
       next(error);
     }

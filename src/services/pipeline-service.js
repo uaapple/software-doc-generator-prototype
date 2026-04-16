@@ -39,6 +39,32 @@ function isTaskDeletedError(error) {
   return error?.message === "Task not found";
 }
 
+const DEBUG_RAW_RESPONSE_LIMIT = 200000;
+const DEBUG_STACK_LIMIT = 40000;
+
+function clipDebugText(text = "", maxLength = DEBUG_RAW_RESPONSE_LIMIT) {
+  const normalized = typeof text === "string" ? text : "";
+  return {
+    text: normalized.length > maxLength ? normalized.slice(0, maxLength) : normalized,
+    length: normalized.length,
+    truncated: normalized.length > maxLength
+  };
+}
+
+function logGenerationDebug(event, payload = {}) {
+  try {
+    console.log(
+      `[generation-debug] ${JSON.stringify({
+        at: new Date().toISOString(),
+        event,
+        ...payload
+      })}`
+    );
+  } catch (_error) {
+    console.log(`[generation-debug] ${event}`);
+  }
+}
+
 export class PipelineService {
   constructor(projectService) {
     this.projectService = projectService;
@@ -116,7 +142,15 @@ export class PipelineService {
       });
 
     try {
+      const saveStartedAt = () => Date.now();
       const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
+      logGenerationDebug("task_started", {
+        projectId,
+        moduleId,
+        taskId,
+        documentType: normalizedDocumentType,
+        inputAssetCount: inputAssets.length
+      });
       const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
       const llmProfile = selectedProfile
         ? {
@@ -300,6 +334,14 @@ export class PipelineService {
           }
           if (event.phase === "llm_request_completed") {
             llmDurationMs = Number(event.durationMs || 0) || 0;
+            logGenerationDebug("llm_request_completed", {
+              projectId,
+              moduleId,
+              taskId,
+              durationMs: llmDurationMs,
+              model: selectedProfile?.model || "",
+              provider: selectedProfile?.provider || ""
+            });
             await updateTaskProgress(
               {
                 stage: "llm_generating",
@@ -318,9 +360,165 @@ export class PipelineService {
               }
             );
           }
+          if (event.phase === "llm_payload_parsed") {
+            const rawCapture = clipDebugText(event.rawResponseText || "", DEBUG_RAW_RESPONSE_LIMIT);
+            logGenerationDebug("llm_payload_parsed", {
+              projectId,
+              moduleId,
+              taskId,
+              rawItemCount: Number(event.rawItemCount || 0) || 0,
+              rawResponseLength: rawCapture.length,
+              rawResponseTruncated: rawCapture.truncated
+            });
+            await updateTaskProgress(
+              {
+                stage: "llm_generating",
+                label: "模型结果已解析，正在规范化条目",
+                message: event.message,
+                percent: 80
+              },
+              {
+                debug: {
+                  llm: {
+                    requestModel: selectedProfile?.model || "",
+                    requestProvider: selectedProfile?.provider || "",
+                    rawResponseText: rawCapture.text,
+                    rawResponseLength: rawCapture.length,
+                    rawResponseTruncated: rawCapture.truncated,
+                    parsedTopLevelKeys: Array.isArray(event.parsedTopLevelKeys) ? event.parsedTopLevelKeys : [],
+                    rawItemCount: Number(event.rawItemCount || 0) || 0
+                  },
+                  postProcess: {
+                    lastStage: "llm_payload_parsed"
+                  }
+                },
+                debugEvent: {
+                  stage: "llm_payload_parsed",
+                  label: "模型结果已解析",
+                  message: event.message,
+                  level: "info"
+                }
+              }
+            );
+          }
+          if (event.phase === "llm_items_normalized") {
+            logGenerationDebug("llm_items_normalized", {
+              projectId,
+              moduleId,
+              taskId,
+              normalizeResultItemsMs: Number(event.normalizeResultItemsMs || 0) || 0,
+              normalizedItemCount: Number(event.normalizedItemCount || 0) || 0
+            });
+            await updateTaskProgress(
+              {
+                stage: "llm_generating",
+                label: "已完成条目规范化，正在应用技能规则",
+                message: event.message,
+                percent: 82
+              },
+              {
+                debug: {
+                  postProcess: {
+                    lastStage: "llm_items_normalized",
+                    normalizeResultItemsMs: Number(event.normalizeResultItemsMs || 0) || 0
+                  }
+                },
+                debugEvent: {
+                  stage: "llm_items_normalized",
+                  label: "条目规范化完成",
+                  message: event.message,
+                  level: "info"
+                }
+              }
+            );
+          }
+          if (event.phase === "llm_policies_applied") {
+            logGenerationDebug("llm_policies_applied", {
+              projectId,
+              moduleId,
+              taskId,
+              applyPoliciesMs: Number(event.applyPoliciesMs || 0) || 0,
+              totalAfterModelMs: Number(event.totalAfterModelMs || 0) || 0,
+              finalItemCount: Number(event.finalItemCount || 0) || 0
+            });
+            await updateTaskProgress(
+              {
+                stage: "llm_generating",
+                label: "已完成技能规则处理，准备进入校验",
+                message: event.message,
+                percent: 84
+              },
+              {
+                metrics: {
+                  generatedItemCount: Number(event.finalItemCount || 0) || 0
+                },
+                debug: {
+                  postProcess: {
+                    lastStage: "llm_policies_applied",
+                    applyPoliciesMs: Number(event.applyPoliciesMs || 0) || 0,
+                    totalAfterModelMs: Number(event.totalAfterModelMs || 0) || 0
+                  }
+                },
+                debugEvent: {
+                  stage: "llm_policies_applied",
+                  label: "技能规则处理完成",
+                  message: event.message,
+                  level: "info"
+                }
+              }
+            );
+          }
+          if (event.phase === "llm_postprocess_failed") {
+            const rawCapture = clipDebugText(event.rawResponseText || "", DEBUG_RAW_RESPONSE_LIMIT);
+            const stackCapture = clipDebugText(event.errorStack || "", DEBUG_STACK_LIMIT);
+            logGenerationDebug("llm_postprocess_failed", {
+              projectId,
+              moduleId,
+              taskId,
+              stage: event.stage || "llm_postprocess_failed",
+              message: event.message || "",
+              rawResponseLength: rawCapture.length,
+              rawResponseTruncated: rawCapture.truncated
+            });
+            await updateTaskProgress(
+              {
+                stage: "llm_generating",
+                label: "模型后处理失败",
+                message: event.message || "模型结果后处理失败",
+                percent: 79
+              },
+              {
+                debug: {
+                  llm: {
+                    requestModel: selectedProfile?.model || "",
+                    requestProvider: selectedProfile?.provider || "",
+                    rawResponseText: rawCapture.text,
+                    rawResponseLength: rawCapture.length,
+                    rawResponseTruncated: rawCapture.truncated
+                  },
+                  postProcess: {
+                    lastStage: event.stage || "llm_postprocess_failed"
+                  },
+                  lastError: {
+                    at: new Date().toISOString(),
+                    stage: event.stage || "llm_postprocess_failed",
+                    message: event.message || "模型结果后处理失败",
+                    stack: stackCapture.text
+                  }
+                },
+                debugEvent: {
+                  stage: event.stage || "llm_postprocess_failed",
+                  label: "模型后处理失败",
+                  message: event.message || "模型结果后处理失败",
+                  level: "error"
+                }
+              }
+            );
+          }
         }
       });
 
+      const validationStartedAt = saveStartedAt();
       await updateTaskProgress(
         {
           stage: "validating_results",
@@ -339,7 +537,18 @@ export class PipelineService {
         }
       );
       const conflicts = this.validationService.validate(resultItems, { domainKnowledge, documentType: normalizedDocumentType });
+      const validationMs = Date.now() - validationStartedAt;
       const traces = buildTraces(resultItems);
+      logGenerationDebug("validation_completed", {
+        projectId,
+        moduleId,
+        taskId,
+        validationMs,
+        resultCount: resultItems.length,
+        conflictCount: conflicts.length,
+        traceCount: traces.length
+      });
+      const savingStartedAt = saveStartedAt();
       await updateTaskProgress(
         {
           stage: "saving_results",
@@ -349,6 +558,12 @@ export class PipelineService {
         },
         {
           metrics: { conflictCount: conflicts.length },
+          debug: {
+            postProcess: {
+              lastStage: "validation_completed",
+              validationMs
+            }
+          },
           timelineEntry: {
             stage: "saving_results",
             label: "保存结果",
@@ -371,6 +586,13 @@ export class PipelineService {
           generatedItemCount: resultItems.length,
           conflictCount: conflicts.length
         },
+        debug: {
+          postProcess: {
+            lastStage: "completed",
+            validationMs,
+            saveMs: Date.now() - savingStartedAt
+          }
+        },
         progress: {
           stage: "completed",
           label: "任务已完成",
@@ -386,6 +608,14 @@ export class PipelineService {
         summary: selectedProfile
           ? `使用 ${selectedProfile.name} 生成 ${resultItems.length} 条结果`
           : `使用本地回退模式生成 ${resultItems.length} 条结果`
+      });
+      logGenerationDebug("task_completed", {
+        projectId,
+        moduleId,
+        taskId,
+        resultCount: resultItems.length,
+        conflictCount: conflicts.length,
+        traceCount: traces.length
       });
 
       return {
@@ -405,9 +635,34 @@ export class PipelineService {
         };
       }
 
+      const stackCapture = clipDebugText(error.stack || "", DEBUG_STACK_LIMIT);
+      logGenerationDebug("task_failed", {
+        projectId,
+        moduleId,
+        taskId,
+        stage: error.stage || error.debugStage || "pipeline",
+        message: error.message || "生成失败"
+      });
       await this.projectService.updateGenerationTask(projectId, moduleId, normalizedDocumentType, taskId, {
         status: "failed",
         errorMessage: error.message || "生成失败",
+        debug: {
+          postProcess: {
+            lastStage: error.stage || error.debugStage || "pipeline"
+          },
+          lastError: {
+            at: new Date().toISOString(),
+            stage: error.stage || error.debugStage || "pipeline",
+            message: error.message || "生成失败",
+            stack: stackCapture.text
+          }
+        },
+        debugEvent: {
+          stage: error.stage || error.debugStage || "pipeline",
+          label: "任务失败",
+          message: error.message || "生成失败",
+          level: "error"
+        },
         progress: {
           stage: "failed",
           label: "任务执行失败",

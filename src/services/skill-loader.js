@@ -1,13 +1,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
+import { SkillRegistryService, buildKnowledgeFromItems, renderMarkdownFromItems } from "./skill-registry-service.js";
 
 const MARKDOWN_FILES = [
   "requirement_extraction.md",
   "requirement_writing.md",
   "requirement_validation.md",
-  path.join("examples", "good_examples.md"),
-  path.join("examples", "bad_examples.md")
+  "examples/good_examples.md",
+  "examples/bad_examples.md"
 ];
 const KNOWLEDGE_FILE = "domain-knowledge.json";
 const EMPTY_KNOWLEDGE = {
@@ -100,7 +101,55 @@ function buildFallbackManifest() {
   };
 }
 
+function renderCompiledPrompt(pack = {}) {
+  const lines = [
+    "你正在使用一份针对当前任务动态编译出的技能包。",
+    `任务类型：${pack.context?.documentType || "software_requirement"}`,
+    `命中 profile：${(pack.selectedProfiles || []).map((item) => `${item.kind}:${item.key}`).join(" -> ") || "generic"}`
+  ];
+
+  const appendBlock = (title, values = []) => {
+    if (!values.length) return;
+    lines.push(`\n${title}`);
+    values.forEach((value, index) => {
+      lines.push(`${index + 1}. ${value}`);
+    });
+  };
+
+  appendBlock("写作规则", (pack.rules?.writing || []).map((item) => item.content || item.title));
+  appendBlock("抽取规则", (pack.rules?.extraction || []).map((item) => item.content || item.title));
+  appendBlock("校验规则", (pack.rules?.validation || []).map((item) => item.content || item.title));
+  appendBlock("正向示例", (pack.examples?.good || []).map((item) => item.content || item.title));
+  appendBlock("反向示例", (pack.examples?.bad || []).map((item) => item.content || item.title));
+
+  const knowledgeSummary = [];
+  if ((pack.knowledge?.generationPriorities || []).length) {
+    knowledgeSummary.push(`生成优先级 ${pack.knowledge.generationPriorities.length} 条`);
+  }
+  if ((pack.knowledge?.antiPatterns || []).length) {
+    knowledgeSummary.push(`反模式 ${pack.knowledge.antiPatterns.length} 条`);
+  }
+  if ((pack.knowledge?.ruleHints || []).length) {
+    knowledgeSummary.push(`规则提示 ${pack.knowledge.ruleHints.length} 条`);
+  }
+  if (pack.knowledge?.sourceOfTruthPolicy) {
+    knowledgeSummary.push("包含 source-of-truth 约束");
+  }
+  if (pack.knowledge?.documentBlueprint) {
+    knowledgeSummary.push("包含文档蓝图约束");
+  }
+  if (knowledgeSummary.length) {
+    lines.push(`\n结构化知识：${knowledgeSummary.join("，")}`);
+  }
+
+  return lines.join("\n").trim();
+}
+
 export class SkillLoader {
+  constructor() {
+    this.registryService = new SkillRegistryService();
+  }
+
   async loadSkill(fileName, skillDir = config.skillDir) {
     return fs.readFile(path.join(skillDir, fileName), "utf8");
   }
@@ -115,6 +164,10 @@ export class SkillLoader {
   }
 
   async loadManifest(skillDir = config.skillDir) {
+    if (path.resolve(skillDir) === path.resolve(config.activeSkillDir)) {
+      return this.registryService.loadManifest(skillDir);
+    }
+
     try {
       const content = await fs.readFile(path.join(skillDir, "skill-manifest.json"), "utf8");
       return JSON.parse(content);
@@ -145,7 +198,77 @@ export class SkillLoader {
     return selected;
   }
 
+  buildCompiledPack(context = {}, selectedProfiles = [], items = []) {
+    const activeItems = items
+      .filter((item) => item.status === "active")
+      .sort((left, right) => left.order - right.order);
+    const knowledge = buildKnowledgeFromItems(activeItems, Math.max(...activeItems.map((item) => Number(item.version || 1) || 1), 1));
+
+    return {
+      context: {
+        documentType: normalizeDocumentType(context.documentType),
+        domain: normalizeKey(context.domain),
+        moduleSkillKey: normalizeKey(context.moduleSkillKey)
+      },
+      selectedProfiles: selectedProfiles.map((profile) => ({ key: profile.key, kind: profile.kind })),
+      rules: {
+        extraction: activeItems.filter((item) => item.kind === "extraction_rule"),
+        writing: activeItems.filter((item) => item.kind === "writing_rule"),
+        validation: activeItems.filter((item) => item.kind === "validation_rule")
+      },
+      examples: {
+        good: activeItems.filter((item) => item.kind === "good_example"),
+        bad: activeItems.filter((item) => item.kind === "bad_example")
+      },
+      knowledge: {
+        generationPriorities: knowledge.generationPriorities || [],
+        antiPatterns: knowledge.antiPatterns || [],
+        ruleHints: knowledge.ruleHints || [],
+        sourceOfTruthPolicy: knowledge.sourceOfTruthPolicy || null,
+        documentBlueprint: knowledge.documentBlueprint || null
+      },
+      flatItems: activeItems
+    };
+  }
+
+  async loadFromRegistryContext(context = {}, skillDir = config.skillDir) {
+    const manifest = await this.registryService.loadManifest(skillDir);
+    const selectedProfiles = this.resolveProfiles(manifest, context);
+    const registries = [];
+    for (const profile of selectedProfiles) {
+      registries.push(await this.registryService.loadProfileRegistry(profile.kind, profile.key, skillDir));
+    }
+
+    const flatItems = registries.flatMap((registry) =>
+      ensureArray(registry.items).map((item) => ({
+        ...item,
+        layer: registry.layer,
+        profileKey: registry.profileKey
+      }))
+    );
+    const compiledPack = this.buildCompiledPack(context, selectedProfiles, flatItems);
+    const result = Object.fromEntries(MARKDOWN_FILES.map((file) => [file, ""]));
+    result["requirement_extraction.md"] = renderMarkdownFromItems("extraction_rule", compiledPack.flatItems);
+    result["requirement_writing.md"] = renderMarkdownFromItems("writing_rule", compiledPack.flatItems);
+    result["requirement_validation.md"] = renderMarkdownFromItems("validation_rule", compiledPack.flatItems);
+    result["examples/good_examples.md"] = renderMarkdownFromItems("good_example", compiledPack.flatItems);
+    result["examples/bad_examples.md"] = renderMarkdownFromItems("bad_example", compiledPack.flatItems);
+
+    const knowledge = buildKnowledgeFromItems(compiledPack.flatItems, 1);
+    return {
+      ...result,
+      [KNOWLEDGE_FILE]: knowledge,
+      __profiles: compiledPack.selectedProfiles,
+      __compiledSkillPack: compiledPack,
+      __compiledPrompt: renderCompiledPrompt(compiledPack)
+    };
+  }
+
   async loadForContext(context = {}, skillDir = config.skillDir) {
+    if (path.resolve(skillDir) === path.resolve(config.activeSkillDir)) {
+      return this.loadFromRegistryContext(context, skillDir);
+    }
+
     const manifest = await this.loadManifest(skillDir);
     const selectedProfiles = this.resolveProfiles(manifest, context);
     const result = Object.fromEntries(MARKDOWN_FILES.map((file) => [file, ""]));

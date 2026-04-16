@@ -114,21 +114,10 @@
   "ruleHints": [
     {
       "domain": "embedded_vcu",
+      "documentType": "-",
       "subdomain": "充电管理",
-      "sectionHints": [
-        "充电管理",
-        "充电过程",
-        "堵转加热模式",
-        "充电截止SOC",
-        "充电截止SOC记忆"
-      ],
       "writingPattern": "优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。",
-      "targetStyle": "输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。",
-      "sourceBasis": [
-        "input/20260411/充电管理/system-requirements-example-charging-management.md",
-        "input/20260411/充电管理/software-design-requirements-example-charging-management.md",
-        "input/20260411/Chrg.c"
-      ]
+      "targetStyle": "输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。"
     }
   ],
   "antiPatterns": [

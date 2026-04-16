@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ae6369b1-8342-4989-a95a-bc09dbdfedc9",
+    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb::coverage_gap::来源不足|过度推断|需求边界漂移::validation::bundle-base",
+    "title": "覆盖缺失 / 校验规则",
+    "reasonCategory": "coverage_gap",
+    "reasonTags": [
+      "来源不足",
+      "过度推断",
+      "需求边界漂移"
+    ],
+    "targetArea": "validation",
+    "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
+    "projectName": "VCU",
+    "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
+    "moduleName": "充电管理",
+    "memberIds": [
+      "76a2bc6a-b4c8-404a-9163-3c3196c42d0e"
+    ],
+    "stats": {
+      "count": 1,
+      "replayedCount": 1
+    },
+    "status": "active"
+  }
+]

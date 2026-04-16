@@ -22,8 +22,7 @@
         "ESC_TrqIncReqActv_F",
         "ESC_TrqIncReq_F",
         "ESC_EHB_RBS_F_TargetRegenTrq"
-      ],
-      "references": []
+      ]
     },
     {
       "requirementId": "CheryVCU-8102",
@@ -81,71 +80,31 @@
   "ruleHints": [
     {
       "domain": "embedded_vcu",
+      "documentType": "-",
       "subdomain": "扭矩干预",
-      "sectionHints": [
-        "扭矩干预功能",
-        "ESC前轴扭矩干预",
-        "ESC后轴扭矩干预"
-      ],
       "writingPattern": "优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。",
-      "targetStyle": "输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。",
-      "sourceBasis": [
-        "input/20260404/software-requirement-writing-rules-vcu.md",
-        "input/20260404/system-requirements-example-torque-intervention.md",
-        "input/20260404/software-design-requirements-example-esc-torque-intervention.md"
-      ]
+      "targetStyle": "输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。"
     },
     {
       "domain": "embedded_vcu",
+      "documentType": "-",
       "subdomain": "充电管理",
-      "sectionHints": [
-        "充电管理",
-        "充电过程",
-        "堵转加热模式",
-        "充电截止SOC",
-        "充电截止SOC记忆"
-      ],
       "writingPattern": "优先按充电过程下的控制主题拆条；先写进入请求与撤销，再写截止停止，再写记忆与恢复。",
-      "targetStyle": "输出应显式写出输入条件、动作、停止条件和恢复路径，但不要把内部实现细节抬升为新的主条目。",
-      "sourceBasis": [
-        "input/20260411/AI case_ITK_20260411.docx",
-        "skills/active/profiles/modules/充电管理/domain-knowledge.json",
-        "skills/active/profiles/modules/充电管理/examples/good_examples.md"
-      ]
+      "targetStyle": "输出应显式写出输入条件、动作、停止条件和恢复路径，但不要把内部实现细节抬升为新的主条目。"
     },
     {
       "domain": "embedded_vcu",
+      "documentType": "-",
       "subdomain": "高低系统管理",
-      "sectionHints": [
-        "高低系统管理",
-        "本地KL15上高压",
-        "高压建立流程",
-        "高压Ready判定"
-      ],
       "writingPattern": "围绕高压请求激活、主回路建立、附件使能和Ready判定组织软件需求，不要把整个状态机直接摊平成实现步骤。",
-      "targetStyle": "输出应体现请求条件、执行动作、完成判据和退出条件，保持功能需求语气。",
-      "sourceBasis": [
-        "input/20260411/AI case_ITK_20260411.docx",
-        "skills/active/profiles/modules/高低系统管理/domain-knowledge.json",
-        "input/20260411/HvCoorn.pdf"
-      ]
+      "targetStyle": "输出应体现请求条件、执行动作、完成判据和退出条件，保持功能需求语气。"
     },
     {
       "domain": "embedded_vcu",
+      "documentType": "-",
       "subdomain": "高压能量管理",
-      "sectionHints": [
-        "高压能量管理",
-        "电池可用充放功率计算",
-        "单体保护",
-        "峰值功率"
-      ],
       "writingPattern": "优先保持五条核心主线：可用放电功率、放电单体保护、可用充电功率、充电单体保护、峰值可用放电功率。",
-      "targetStyle": "输出应保留功率源、阈值、预留功率、查表限制和前序需求引用，不要泛化成总纲说明。",
-      "sourceBasis": [
-        "input/20260411/AI case_ITK_20260411.docx",
-        "skills/active/profiles/modules/高压能量管理/domain-knowledge.json",
-        "input/20260411/PwrLimBatt.pdf"
-      ]
+      "targetStyle": "输出应保留功率源、阈值、预留功率、查表限制和前序需求引用，不要泛化成总纲说明。"
     }
   ],
   "antiPatterns": [

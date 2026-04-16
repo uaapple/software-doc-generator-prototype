@@ -6,6 +6,7 @@ import { config } from "../config.js";
 export async function ensureStorage() {
   await Promise.all([
     fs.mkdir(config.dataDir, { recursive: true }),
+    fs.mkdir(path.dirname(config.skillDatabasePath), { recursive: true }),
     fs.mkdir(config.projectStoreDir, { recursive: true }),
     fs.mkdir(config.uploadDir, { recursive: true }),
     fs.mkdir(path.dirname(config.llmProfileStorePath), { recursive: true }),
@@ -69,9 +70,28 @@ export async function readJson(filePath, fallback = null) {
 }
 
 export async function writeJson(filePath, value) {
+  const jsonText = JSON.stringify(value, null, 2);
   const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${randomUUID()}`;
-  await fs.writeFile(tempPath, JSON.stringify(value, null, 2), "utf8");
-  await fs.rename(tempPath, filePath);
+  await fs.writeFile(tempPath, jsonText, "utf8");
+  let lastError = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await fs.rename(tempPath, filePath);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (error.code === "ENOENT") {
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, jsonText, "utf8");
+        return;
+      }
+      if (!["EPERM", "EBUSY"].includes(error.code) || attempt === 4) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
+    }
+  }
+  throw lastError;
 }
 
 export async function copyDirectory(sourceDir, targetDir) {

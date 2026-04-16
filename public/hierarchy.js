@@ -1010,7 +1010,7 @@ async function renderTaskDetailPage() {
 
   const taskInfo = findTaskInModule(module, taskId, preferredDocumentType);
   if (!taskInfo) {
-    throw new Error("Task not found");
+    throw new Error("任务不存在");
   }
 
   const { documentType, task } = taskInfo;
@@ -1570,7 +1570,7 @@ async function request(url, options = {}) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || "Request failed");
+    throw new Error(localizeErrorMessage(data.error || "请求失败"));
   }
   return data;
 }
@@ -1706,7 +1706,16 @@ function setStatus(message) {
 
 function handleError(error) {
   console.error(error);
-  setStatus(error.message || "操作失败");
+  setStatus(localizeErrorMessage(error.message || "操作失败"));
+}
+
+function localizeErrorMessage(message = "") {
+  const normalized = String(message || "").trim();
+  if (!normalized) return "操作失败";
+  if (normalized === "Task not found") return "任务不存在";
+  if (normalized === "Request failed") return "请求失败";
+  if (normalized === "Running task cannot be deleted") return "运行中的任务不能删除";
+  return normalized;
 }
 
 function escapeHtml(value) {

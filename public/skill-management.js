@@ -36,6 +36,16 @@ const KIND_LABELS = {
   document_blueprint_policy: "文档蓝图策略"
 }
 
+const TEXT_TRUTH_KINDS = new Set([
+  "source_alias",
+  "normalization_rule",
+  "source_policy_setting",
+  "forbidden_expansion",
+  "document_blueprint_section",
+  "document_blueprint_policy",
+  "rule_hint"
+])
+
 const state = {
   payload: null,
   detailProfile: null,
@@ -56,17 +66,29 @@ const refreshButton = document.querySelector("#refresh-button")
 const pageStatusRoot = document.querySelector("#page-status")
 const summaryMetricsRoot = document.querySelector("#summary-metrics")
 const sourceMetaRoot = document.querySelector("#source-meta")
+const skillWorkspaceRoot = document.querySelector(".skill-workspace")
 const profileQueryInput = document.querySelector("#profile-query")
 const profileLayerFilter = document.querySelector("#profile-layer-filter")
 const profileRailRoot = document.querySelector("#profile-rail")
 const itemBrowserChromeRoot = document.querySelector("#item-browser-chrome")
 const itemQueryInput = document.querySelector("#item-query")
 const itemBrowserRoot = document.querySelector("#item-browser")
+const reviewPaneShell = document.querySelector(".review-pane-shell")
 const reviewPaneRoot = document.querySelector("#review-pane")
+const workspaceReviewResizer = document.querySelector("#workspace-review-resizer")
 const editorBackdrop = document.querySelector("#editor-backdrop")
 const editorDrawer = document.querySelector("#editor-drawer")
 const editorDrawerBody = document.querySelector("#editor-drawer-body")
+const REVIEW_LAYOUT_BREAKPOINT = window.matchMedia("(max-width: 1180px)")
+const REVIEW_WIDTH_STORAGE_KEY = "skill-management:review-width"
 
+const reviewResizeState = {
+  active: false,
+  pointerId: null,
+  width: null
+}
+
+initializeWorkspaceResizer()
 await bootstrap()
 
 refreshButton.addEventListener("click", () => refreshAll(true))
@@ -81,6 +103,206 @@ editorBackdrop.addEventListener("click", () => closeEditor())
 editorDrawerBody.addEventListener("click", handleDrawerClick)
 editorDrawerBody.addEventListener("submit", handleEditorSubmit)
 document.addEventListener("keydown", handleGlobalKeydown)
+
+function initializeWorkspaceResizer() {
+  if (!skillWorkspaceRoot || !workspaceReviewResizer || !reviewPaneShell) return
+
+  syncWorkspaceResizer()
+  workspaceReviewResizer.addEventListener("pointerdown", handleWorkspaceResizerPointerDown)
+  workspaceReviewResizer.addEventListener("dblclick", resetWorkspaceReviewWidth)
+  workspaceReviewResizer.addEventListener("keydown", handleWorkspaceResizerKeydown)
+  window.addEventListener("resize", handleWorkspaceResize)
+
+  if (typeof REVIEW_LAYOUT_BREAKPOINT.addEventListener === "function") {
+    REVIEW_LAYOUT_BREAKPOINT.addEventListener("change", syncWorkspaceResizer)
+  } else if (typeof REVIEW_LAYOUT_BREAKPOINT.addListener === "function") {
+    REVIEW_LAYOUT_BREAKPOINT.addListener(syncWorkspaceResizer)
+  }
+}
+
+function handleWorkspaceResize() {
+  if (reviewResizeState.active) return
+  syncWorkspaceResizer()
+}
+
+function syncWorkspaceResizer() {
+  if (!skillWorkspaceRoot || !workspaceReviewResizer || !reviewPaneShell) return
+
+  if (isCompactReviewLayout()) {
+    skillWorkspaceRoot.style.removeProperty("--review-width")
+    workspaceReviewResizer.tabIndex = -1
+    workspaceReviewResizer.setAttribute("aria-hidden", "true")
+    workspaceReviewResizer.removeAttribute("aria-valuenow")
+    return
+  }
+
+  workspaceReviewResizer.tabIndex = 0
+  workspaceReviewResizer.removeAttribute("aria-hidden")
+
+  const storedWidth = readStoredReviewWidth()
+  const width = clampReviewWidth(storedWidth ?? getCurrentReviewWidth())
+  applyWorkspaceReviewWidth(width, { persist: false })
+}
+
+function isCompactReviewLayout() {
+  return REVIEW_LAYOUT_BREAKPOINT.matches
+}
+
+function getReviewWidthBounds() {
+  if (!skillWorkspaceRoot) {
+    return { min: 320, max: 760 }
+  }
+
+  const workspaceWidth = skillWorkspaceRoot.getBoundingClientRect().width || window.innerWidth
+  const railWidth = document.querySelector(".profile-rail-pane")?.getBoundingClientRect().width || 300
+  const splitterWidth = workspaceReviewResizer?.getBoundingClientRect().width || 14
+  const minReview = 320
+  const hardMax = 760
+  const browserMin = workspaceWidth <= 1440 ? 360 : 420
+  const availableMax = Math.max(minReview, workspaceWidth - railWidth - splitterWidth - browserMin)
+  return {
+    min: minReview,
+    max: Math.max(minReview, Math.min(hardMax, availableMax))
+  }
+}
+
+function clampReviewWidth(width) {
+  const { min, max } = getReviewWidthBounds()
+  const value = Number(width)
+  if (!Number.isFinite(value)) return min
+  return Math.min(Math.max(value, min), max)
+}
+
+function getCurrentReviewWidth() {
+  return reviewPaneShell?.getBoundingClientRect().width || 360
+}
+
+function calculateReviewWidth(clientX) {
+  const rect = skillWorkspaceRoot?.getBoundingClientRect()
+  if (!rect) return getCurrentReviewWidth()
+  return rect.right - clientX
+}
+
+function applyWorkspaceReviewWidth(width, { persist = true } = {}) {
+  if (!skillWorkspaceRoot || !workspaceReviewResizer || isCompactReviewLayout()) return
+
+  const nextWidth = Math.round(clampReviewWidth(width))
+  skillWorkspaceRoot.style.setProperty("--review-width", `${nextWidth}px`)
+  workspaceReviewResizer.setAttribute("role", "separator")
+  workspaceReviewResizer.setAttribute("aria-valuemin", String(getReviewWidthBounds().min))
+  workspaceReviewResizer.setAttribute("aria-valuemax", String(getReviewWidthBounds().max))
+  workspaceReviewResizer.setAttribute("aria-valuenow", String(nextWidth))
+
+  if (persist) {
+    writeStoredReviewWidth(nextWidth)
+  }
+}
+
+function handleWorkspaceResizerPointerDown(event) {
+  if (isCompactReviewLayout() || event.button !== 0) return
+
+  reviewResizeState.active = true
+  reviewResizeState.pointerId = event.pointerId
+  reviewResizeState.width = clampReviewWidth(calculateReviewWidth(event.clientX))
+  skillWorkspaceRoot.classList.add("is-review-resizing")
+  workspaceReviewResizer.setPointerCapture(event.pointerId)
+  applyWorkspaceReviewWidth(reviewResizeState.width, { persist: false })
+  workspaceReviewResizer.addEventListener("pointermove", handleWorkspaceResizerPointerMove)
+  workspaceReviewResizer.addEventListener("pointerup", handleWorkspaceResizerPointerUp)
+  workspaceReviewResizer.addEventListener("pointercancel", handleWorkspaceResizerPointerUp)
+  event.preventDefault()
+}
+
+function handleWorkspaceResizerPointerMove(event) {
+  if (!reviewResizeState.active) return
+  reviewResizeState.width = clampReviewWidth(calculateReviewWidth(event.clientX))
+  applyWorkspaceReviewWidth(reviewResizeState.width, { persist: false })
+}
+
+function handleWorkspaceResizerPointerUp(event) {
+  if (!reviewResizeState.active) return
+
+  if (workspaceReviewResizer.hasPointerCapture(reviewResizeState.pointerId)) {
+    workspaceReviewResizer.releasePointerCapture(reviewResizeState.pointerId)
+  }
+
+  workspaceReviewResizer.removeEventListener("pointermove", handleWorkspaceResizerPointerMove)
+  workspaceReviewResizer.removeEventListener("pointerup", handleWorkspaceResizerPointerUp)
+  workspaceReviewResizer.removeEventListener("pointercancel", handleWorkspaceResizerPointerUp)
+  skillWorkspaceRoot.classList.remove("is-review-resizing")
+
+  const width = clampReviewWidth(reviewResizeState.width ?? calculateReviewWidth(event.clientX))
+  applyWorkspaceReviewWidth(width)
+
+  reviewResizeState.active = false
+  reviewResizeState.pointerId = null
+  reviewResizeState.width = null
+}
+
+function handleWorkspaceResizerKeydown(event) {
+  if (isCompactReviewLayout()) return
+
+  const currentWidth = clampReviewWidth(getCurrentReviewWidth())
+  const step = event.shiftKey ? 48 : 24
+
+  if (event.key === "ArrowLeft") {
+    applyWorkspaceReviewWidth(currentWidth + step)
+    event.preventDefault()
+    return
+  }
+
+  if (event.key === "ArrowRight") {
+    applyWorkspaceReviewWidth(currentWidth - step)
+    event.preventDefault()
+    return
+  }
+
+  if (event.key === "Home") {
+    applyWorkspaceReviewWidth(getReviewWidthBounds().min)
+    event.preventDefault()
+    return
+  }
+
+  if (event.key === "End") {
+    applyWorkspaceReviewWidth(getReviewWidthBounds().max)
+    event.preventDefault()
+    return
+  }
+
+  if (event.key === "Enter" || event.key === " ") {
+    resetWorkspaceReviewWidth()
+    event.preventDefault()
+  }
+}
+
+function resetWorkspaceReviewWidth() {
+  clearStoredReviewWidth()
+  skillWorkspaceRoot?.style.removeProperty("--review-width")
+  syncWorkspaceResizer()
+}
+
+function readStoredReviewWidth() {
+  try {
+    const raw = window.localStorage.getItem(REVIEW_WIDTH_STORAGE_KEY)
+    if (!raw) return null
+    const value = Number.parseFloat(raw)
+    return Number.isFinite(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeStoredReviewWidth(width) {
+  try {
+    window.localStorage.setItem(REVIEW_WIDTH_STORAGE_KEY, String(Math.round(width)))
+  } catch {}
+}
+
+function clearStoredReviewWidth() {
+  try {
+    window.localStorage.removeItem(REVIEW_WIDTH_STORAGE_KEY)
+  } catch {}
+}
 
 async function bootstrap() {
   await refreshAll(false)
@@ -323,7 +545,7 @@ async function handleEditorSubmit(event) {
 
   try {
     const structuredPayload = parseJsonField(form.elements.namedItem("structuredPayload")?.value || "")
-    if (structuredPayload !== null) {
+    if (structuredPayload !== null && !isTextTruthKind(payload.kind)) {
       payload.structuredPayload = structuredPayload
     }
 
@@ -548,7 +770,7 @@ function renderItemBrowserChrome() {
       <div>
         <p class="browser-breadcrumb">${escapeHtml(layerLabel(profile.type))} / ${escapeHtml(profile.key)}</p>
         <h2>${escapeHtml(profile.displayName)}</h2>
-        <p>${escapeHtml(profile.abnormal ? "当前 profile 存在 registry 与物化文件不一致的情况，建议先确认 Advanced 中的文件映射。" : "当前 profile 作为 skill 容器存在，真正的审阅对象是下面分桶展示的 atomic skill items。")}</p>
+        <p>${escapeHtml(profile.abnormal ? "当前 profile 的数据库真源与已导出的兼容文件可能不一致，建议先确认右侧“兼容字段 / 调试信息”里的导出映射。" : "当前 profile 作为 skill 容器存在，真正的审阅对象是下面分桶展示的 atomic skill items。")}</p>
         <div class="browser-metrics">
           <span class="browser-metric-chip">${profile.metrics.itemCount} items</span>
           <span class="browser-metric-chip">${profile.metrics.fileCount} files</span>
@@ -557,12 +779,13 @@ function renderItemBrowserChrome() {
         </div>
         <div class="browser-path">
           <span class="code-chip">${escapeHtml(detail?.profile?.registryPath || `${profile.key}/skill-items.json`)}</span>
+          ${state.payload?.activeSource?.sourceType === "sqlite" ? `<span class="code-chip">SQLite 真源</span>` : ""}
           ${detail?.profile?.documentTypeScope ? `<span class="code-chip">${escapeHtml(detail.profile.documentTypeScope)}</span>` : ""}
         </div>
       </div>
       <div class="browser-actions">
         <button type="button" data-open-editor="create">新增 Skill Item</button>
-        <button type="button" class="secondary-button" data-materialize-registry="true">物化 Registry</button>
+        <button type="button" class="secondary-button" data-materialize-registry="true">导出兼容文件</button>
         <button type="button" class="secondary-button" data-reload-profile="true">重新加载</button>
         <button
           type="button"
@@ -738,49 +961,15 @@ function renderReviewPane() {
       <section class="review-section">
         <div class="review-section-head">
           <div>
-            <h3>文本内容</h3>
-            <p class="review-section-copy">优先阅读正文与意图，再决定是否进入抽屉编辑。</p>
+            <p class="review-section-kicker">核心内容</p>
+            <h3>原子技能正文</h3>
+            <p class="review-section-copy">右侧默认就看这一条正文。上面的类型和基本信息只负责说明这条技能是什么，真正要读的内容在下面。</p>
           </div>
         </div>
-        ${
-          item.content
-            ? `<pre class="reading-block">${escapeHtml(item.content)}</pre>`
-            : `<div class="workspace-empty"><div><h3>当前没有纯文本内容</h3><p>这条 skill 主要通过 Structured Payload 承载结构化约束。</p></div></div>`
-        }
+        ${renderPrimaryContent(item)}
       </section>
 
-      <section class="review-section">
-        <div class="review-section-head">
-          <div>
-            <h3>Structured Payload 摘要</h3>
-            <p class="review-section-copy">这里只显示提炼后的关键字段，完整 JSON 放在 Advanced。</p>
-          </div>
-        </div>
-        ${renderStructuredSummary(item.structuredPayload)}
-      </section>
-
-      <details class="advanced-panel">
-        <summary>
-          <span>Advanced</span>
-          <span>${escapeHtml(detailProfile?.files?.length ? `${detailProfile.files.length} 个物化文件` : "展开查看 JSON / provenance / 文件映射")}</span>
-        </summary>
-        <div class="advanced-grid">
-          <section class="advanced-card">
-            <h3>Raw Item JSON</h3>
-            <pre class="json-block">${escapeHtml(stringifyJson(item))}</pre>
-          </section>
-          <section class="advanced-card">
-            <h3>Provenance</h3>
-            <pre class="json-block">${escapeHtml(stringifyJson(item.provenance || {}))}</pre>
-          </section>
-          <section class="advanced-card">
-            <h3>Materialized Files</h3>
-            <div class="file-summary-list">
-              ${(detailProfile?.files || []).length ? detailProfile.files.map(renderFileSummary).join("") : '<div class="workspace-empty"><div><p>当前没有可展示的物化文件。</p></div></div>'}
-            </div>
-          </section>
-        </div>
-      </details>
+      ${renderCompatibilityPanel(item, detailProfile)}
     </div>
   `
 }
@@ -807,6 +996,7 @@ function renderEditorDrawer() {
     content: item?.content || "",
     structuredPayload: item?.structuredPayload ? stringifyJson(item.structuredPayload) : ""
   }
+  const hideStructuredEditor = isTextTruthKind(draft.kind)
 
   editorBackdrop.hidden = false
   editorBackdrop.classList.add("is-open")
@@ -859,40 +1049,81 @@ function renderEditorDrawer() {
 
         <section class="editor-section">
           <h3>内容</h3>
-          <p class="editor-section-copy">文本型规则、写法提示或短说明优先放在这里。</p>
+          <p class="editor-section-copy">默认把一条技能当成一条正文来维护。大多数技能你只需要改这里，不需要碰下面的兼容字段。</p>
+          ${
+            item && !String(item.content || "").trim() && hasStructuredPayload(item)
+              ? `
+                <div class="editor-advanced-card">
+                  <strong>当前正文预览</strong>
+                  <p class="summary">这条技能目前主要靠兼容字段生成可读正文。如果你希望以后完全按“一条正文”来维护，可以把下面正文补齐。</p>
+                  <pre class="json-block editor-readable-preview">${escapeHtml(buildReadableRuleText(item))}</pre>
+                </div>
+              `
+              : ""
+          }
           <label>
-            Content
-            <textarea name="content" rows="8" placeholder="输入这条 skill 的正文内容。">${escapeHtml(draft.content)}</textarea>
+            技能正文
+            <textarea name="content" rows="10" placeholder="输入这条技能真正要表达的正文内容。">${escapeHtml(draft.content)}</textarea>
           </label>
         </section>
 
-        <section class="editor-section">
-          <h3>Structured JSON</h3>
-          <p class="editor-section-copy">结构化 payload 会被物化回 knowledge 类文件或作为更精确的原子约束使用。</p>
-          <label>
-            Structured Payload
-            <textarea class="json-editor" name="structuredPayload" rows="12" placeholder='{"key":"value"}'>${escapeHtml(draft.structuredPayload)}</textarea>
-          </label>
-        </section>
+        ${
+          hideStructuredEditor
+            ? `
+              <section class="editor-section">
+                <h3>正文真源</h3>
+                <p class="editor-section-copy">这类技能已经改成“正文即真源”。你现在只需要维护上面的正文，底层结构会在保存时由后端自动解析和校验。</p>
+              </section>
+            `
+            : `
+              <details class="advanced-panel editor-collapsible-panel">
+                <summary>
+                  <span class="advanced-summary-title">
+                    <strong>兼容字段</strong>
+                    <small>只在少数还未切成正文真源的结构化技能里需要。</small>
+                  </span>
+                  <span class="advanced-summary-meta">${escapeHtml(hasStructuredPayload(item) ? "当前有兼容字段" : "如无需要可不填写")}</span>
+                </summary>
+                <div class="advanced-grid">
+                  <div class="advanced-explainer">
+                    这里保留对少数旧链路字段的兼容。只有在这条技能还没有切到“正文真源”时，才需要补这个 JSON。
+                  </div>
+                  <section class="advanced-card">
+                    <h3>Structured Payload JSON</h3>
+                    <label>
+                      <textarea class="json-editor" name="structuredPayload" rows="12" placeholder='{"key":"value"}'>${escapeHtml(draft.structuredPayload)}</textarea>
+                    </label>
+                  </section>
+                </div>
+              </details>
+            `
+        }
 
-        <section class="editor-section">
-          <h3>高级信息</h3>
-          <p class="editor-section-copy">这里保持只读，帮助你确认当前编辑对象的上下文与 provenance。</p>
-          <div class="form-grid-two">
-            <div class="editor-advanced-card">
-              <strong>${escapeHtml(item?.skillCode || "新建后自动分配")}</strong>
-              <p class="summary">${escapeHtml(item ? `创建于 ${formatDate(item.createdAt)}，最近更新于 ${formatDate(item.updatedAt)}` : "创建后会自动生成 skillCode，并按当前 profile 重新排位。")}</p>
+        <details class="advanced-panel editor-collapsible-panel">
+          <summary>
+            <span class="advanced-summary-title">
+              <strong>上下文 / 调试信息</strong>
+              <small>帮助确认当前编辑对象来自哪里，不影响正文编辑。</small>
+            </span>
+            <span class="advanced-summary-meta">${escapeHtml(item?.skillCode || "新建后自动分配")}</span>
+          </summary>
+          <div class="advanced-grid">
+            <div class="form-grid-two">
+              <div class="editor-advanced-card">
+                <strong>${escapeHtml(item?.skillCode || "新建后自动分配")}</strong>
+                <p class="summary">${escapeHtml(item ? `创建于 ${formatDate(item.createdAt)}，最近更新于 ${formatDate(item.updatedAt)}` : "创建后会自动生成 skillCode，并按当前 profile 重新排位。")}</p>
+              </div>
+              <div class="editor-advanced-card">
+                <strong>${escapeHtml(profile?.displayName || "未选中 Profile")}</strong>
+                <p class="summary">${escapeHtml(profile ? `${layerLabel(profile.type)} / ${profile.key}` : "请先选中 profile 再创建新 item。")}</p>
+              </div>
             </div>
             <div class="editor-advanced-card">
-              <strong>${escapeHtml(profile?.displayName || "未选中 Profile")}</strong>
-              <p class="summary">${escapeHtml(profile ? `${layerLabel(profile.type)} / ${profile.key}` : "请先选中 profile 再创建新 item。")}</p>
+              <strong>Provenance</strong>
+              <pre class="json-block">${escapeHtml(stringifyJson(item?.provenance || {}))}</pre>
             </div>
           </div>
-          <div class="editor-advanced-card">
-            <strong>Provenance</strong>
-            <pre class="json-block">${escapeHtml(stringifyJson(item?.provenance || {}))}</pre>
-          </div>
-        </section>
+        </details>
       </div>
 
       <div class="editor-footer">
@@ -972,15 +1203,148 @@ function renderItemCard(item, options = {}) {
   `
 }
 
-function renderStructuredSummary(payload) {
+function renderPrimaryContent(item) {
+  const readableText = buildReadableRuleText(item)
+  const derivedFromStructured = !String(item?.content || "").trim() && hasStructuredPayload(item)
+  return `
+    <article class="primary-content-card">
+      <div class="primary-content-banner">
+        <span class="mini-pill">${derivedFromStructured ? "正文预览" : "实际内容"}</span>
+        <strong>${derivedFromStructured ? "当前这条正文是由兼容字段自动整理出来的可读版本" : "这里展示的是当前 atomic skill 会直接参与生成或约束判断的核心内容"}</strong>
+      </div>
+      <pre class="reading-block reading-block-emphasis">${escapeHtml(readableText || "当前没有可展示的规则内容。")}</pre>
+    </article>
+  `
+}
+
+function renderCompatibilityPanel(item, detailProfile) {
+  if (isTextTruthKind(item?.kind)) {
+    return ""
+  }
+
+  const hasStructured = hasStructuredPayload(item)
+  const fileCount = (detailProfile?.files || []).length
+  const provenance = item?.provenance || {}
+  const hasProvenance = Object.keys(provenance).length > 0
+
+  return `
+    <details class="advanced-panel compatibility-panel">
+      <summary>
+        <span class="advanced-summary-title">
+          <strong>兼容字段 / 调试信息</strong>
+          <small>默认阅读可以忽略这里；只有核对结构化规则、来源或导出文件时再展开。</small>
+        </span>
+        <span class="advanced-summary-meta">${escapeHtml(hasStructured ? "含兼容字段" : fileCount ? `${fileCount} 个已导出文件` : "展开查看详情")}</span>
+      </summary>
+      <div class="advanced-grid">
+        <div class="advanced-explainer">
+          ${
+            hasStructured
+              ? "这条技能底层仍保留了结构化兼容字段，用来支持别名映射、归一化规则、蓝图策略等后端链路。阅读和日常审阅可以继续按上面的“一条正文”理解。"
+              : "这条技能本身已经接近“一个技能 = 一条正文”的形式。这里保留的更多是来源、JSON 和兼容导出文件等维护信息。"
+          }
+        </div>
+        ${
+          hasStructured
+            ? `
+              <section class="advanced-card">
+                <h3>结构化兼容字段</h3>
+                <p class="review-section-copy">这些字段主要用于兼容现有 registry 和知识文件导出，不是主阅读内容。</p>
+              ${renderStructuredSummary(item)}
+            </section>
+            `
+            : ""
+        }
+        <section class="advanced-card">
+          <h3>原始 Item JSON</h3>
+          <pre class="json-block">${escapeHtml(stringifyJson(item))}</pre>
+        </section>
+        ${
+          hasProvenance
+            ? `
+              <section class="advanced-card">
+                <h3>来源信息 Provenance</h3>
+                <pre class="json-block">${escapeHtml(stringifyJson(provenance))}</pre>
+              </section>
+            `
+            : ""
+        }
+        <section class="advanced-card">
+          <h3>兼容导出文件映射</h3>
+          <div class="file-summary-list">
+            ${fileCount ? detailProfile.files.map(renderFileSummary).join("") : '<div class="workspace-empty"><div><p>当前没有可展示的兼容导出文件。</p></div></div>'}
+          </div>
+        </section>
+      </div>
+    </details>
+  `
+}
+
+function renderStructuredSummary(item) {
+  const payload = item?.structuredPayload
   const entries = structuredEntries(payload)
   if (!entries.length) {
     return `
       <div class="workspace-empty">
         <div>
           <h3>没有结构化字段</h3>
-          <p>这条 skill 主要依赖正文内容表达约束，完整 item JSON 可以在 Advanced 中查看。</p>
+          <p>这条 skill 主要依赖正文内容表达约束，完整 item JSON 可以在“调试 / 落盘信息”中查看。</p>
         </div>
+      </div>
+    `
+  }
+
+  if (item?.kind === "forbidden_expansion" && payload?.topic && Array.isArray(payload.entries)) {
+    return `
+      <div class="structured-summary-stack">
+        <div class="structured-summary-grid structured-summary-grid-compact">
+          <article class="structured-summary-card">
+            <span>适用主题</span>
+            <strong>${escapeHtml(payload.topic)}</strong>
+          </article>
+          <article class="structured-summary-card">
+            <span>禁止扩写项数量</span>
+            <strong>${escapeHtml(String(payload.entries.length))}</strong>
+          </article>
+        </div>
+        <article class="structured-summary-card">
+          <span>禁止扩写项</span>
+          <div class="structured-chip-group">
+            ${payload.entries.map((entry) => `<span class="structured-value-chip">${escapeHtml(String(entry))}</span>`).join("")}
+          </div>
+        </article>
+      </div>
+    `
+  }
+
+  if (item?.kind === "source_alias" && payload?.canonical && Array.isArray(payload.aliases)) {
+    return `
+      <div class="structured-summary-stack">
+        <article class="structured-summary-card">
+          <span>Canonical</span>
+          <strong>${escapeHtml(payload.canonical)}</strong>
+        </article>
+        <article class="structured-summary-card">
+          <span>Aliases</span>
+          <div class="structured-chip-group">
+            ${payload.aliases.map((alias) => `<span class="structured-value-chip">${escapeHtml(String(alias))}</span>`).join("")}
+          </div>
+        </article>
+      </div>
+    `
+  }
+
+  if (item?.kind === "normalization_rule" && (payload?.pattern || payload?.replacement)) {
+    return `
+      <div class="structured-pair-grid">
+        <article class="structured-summary-card">
+          <span>Pattern</span>
+          <strong>${escapeHtml(payload.pattern || "-")}</strong>
+        </article>
+        <article class="structured-summary-card">
+          <span>Replacement</span>
+          <strong>${escapeHtml(payload.replacement || "-")}</strong>
+        </article>
       </div>
     `
   }
@@ -999,7 +1363,7 @@ function renderStructuredSummary(payload) {
         )
         .join("")}
     </div>
-    ${entries.length > 8 ? `<p class="summary">还有 ${entries.length - 8} 个字段已折叠，完整 JSON 见 Advanced。</p>` : ""}
+    ${entries.length > 8 ? `<p class="summary">还有 ${entries.length - 8} 个字段已折叠，完整 JSON 见“调试 / 落盘信息”。</p>` : ""}
   `
 }
 
@@ -1007,9 +1371,9 @@ function renderFileSummary(entry) {
   return `
     <article class="file-summary-item">
       <div class="file-summary-row">
-        <strong>${escapeHtml(entry.role)}</strong>
+        <strong>文件角色：${escapeHtml(entry.role)}</strong>
         <span class="mini-pill ${entry.exists ? "success" : "warning"}">${entry.exists ? "存在" : "缺失"}</span>
-        <span class="code-chip">${escapeHtml(entry.relativePath)}</span>
+        <span class="code-chip">导出位置：${escapeHtml(entry.relativePath)}</span>
       </div>
       <div class="inline-meta-row">
         <span class="code-chip">${escapeHtml(String(entry.size || 0))} B</span>
@@ -1021,12 +1385,12 @@ function renderFileSummary(entry) {
 
 async function materializeRegistry() {
   try {
-    setPageStatus("正在物化 skill registry...")
-    await request("/api/skill-registry/materialize", { method: "POST" })
+    setPageStatus("正在导出兼容文件...")
+    await request("/api/skill-export/compatibility", { method: "POST" })
     await refreshAll(false)
-    setPageStatus("skill registry 已物化，Markdown 与 domain-knowledge.json 已同步。")
+    setPageStatus("兼容文件已导出，Markdown 与 domain-knowledge.json 已同步。")
   } catch (error) {
-    setPageStatus(`物化失败：${error.message}`, true)
+    setPageStatus(`导出失败：${error.message}`, true)
   }
 }
 
@@ -1128,11 +1492,15 @@ function sortItems(items = []) {
 }
 
 function buildPreview(item) {
-  const base = String(item.preview || item.content || JSON.stringify(item.structuredPayload || {}))
+  const base = String(item.preview || buildReadableRuleText(item, { compact: true }) || JSON.stringify(item.structuredPayload || {}))
     .replace(/\s+/g, " ")
     .trim()
   if (!base) return "暂无内容预览。"
   return base.length > 112 ? `${base.slice(0, 112)}...` : base
+}
+
+function isTextTruthKind(kind = "") {
+  return TEXT_TRUTH_KINDS.has(String(kind || "").trim())
 }
 
 function structuredEntries(payload) {
@@ -1144,6 +1512,10 @@ function structuredEntries(payload) {
     return Object.entries(payload)
   }
   return [["value", payload]]
+}
+
+function hasStructuredPayload(item) {
+  return structuredEntries(item?.structuredPayload).length > 0
 }
 
 function summarizeValue(value, maxLength = 90) {
@@ -1158,6 +1530,268 @@ function summarizeValue(value, maxLength = 90) {
 
   const compact = normalized.replace(/\s+/g, " ").trim()
   return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact || "-"
+}
+
+function buildReadableRuleText(item, options = {}) {
+  const compact = Boolean(options.compact)
+  const textContent = String(item?.content || "").trim()
+  if (textContent) return textContent
+
+  const payload = item?.structuredPayload
+  if (!payload) return ""
+
+  if (item?.kind === "forbidden_expansion") {
+    return buildForbiddenExpansionText(payload, { compact })
+  }
+
+  if (item?.kind === "source_alias") {
+    return buildSourceAliasText(payload, { compact })
+  }
+
+  if (item?.kind === "normalization_rule") {
+    return buildNormalizationRuleText(payload, { compact })
+  }
+
+  if (item?.kind === "source_policy_setting") {
+    return buildSourcePolicySettingText(payload, { compact })
+  }
+
+  if (item?.kind === "document_blueprint_section") {
+    return buildDocumentBlueprintSectionText(payload, { compact })
+  }
+
+  if (item?.kind === "document_blueprint_policy") {
+    return buildDocumentBlueprintPolicyText(payload, { compact })
+  }
+
+  if (item?.kind === "rule_hint") {
+    return buildRuleHintText(payload, { compact })
+  }
+
+  if (item?.kind === "good_example") {
+    return buildGoodExampleText(payload, { compact })
+  }
+
+  return buildGenericStructuredText(payload, { compact })
+}
+
+function buildForbiddenExpansionText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  const topic = payload?.topic || "-"
+  const entries = Array.isArray(payload?.entries) ? payload.entries.filter(Boolean) : []
+  if (compact) {
+    return `主题 ${topic} 下禁止扩写：${entries.slice(0, 3).join("、")}${entries.length > 3 ? " 等" : ""}`
+  }
+  return [
+    `适用主题：${topic}`,
+    `规则：当生成 ${topic} 相关内容时，不要额外扩写这些对象或子功能。`,
+    `禁止扩写项：${entries.length ? entries.join("、") : "-"}`,
+    "用途：用于收紧边界，避免模型把不该带入的对象写进正文。"
+  ].join("\n")
+}
+
+function buildSourceAliasText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  const canonical = payload?.canonical || "-"
+  const aliases = Array.isArray(payload?.aliases) ? payload.aliases.filter(Boolean) : []
+  if (compact) {
+    return `规范名 ${canonical}；代码别名 ${aliases.slice(0, 2).join("、")}${aliases.length > 2 ? " 等" : ""}`
+  }
+  return [
+    `规范名称：${canonical}`,
+    `代码别名：${aliases.length ? aliases.join("、") : "-"}`,
+    `规则：正文和规则描述优先使用规范名称 ${canonical}，必要时仅把这些别名当作映射参考。`
+  ].join("\n")
+}
+
+function buildNormalizationRuleText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  const pattern = payload?.pattern || "-"
+  const replacement = payload?.replacement || "-"
+  if (compact) {
+    return `表达归一：${pattern} -> ${replacement}`
+  }
+  return [
+    `原始表达：${pattern}`,
+    `统一表达：${replacement}`,
+    "规则：遇到容易漂移的写法时，统一改写成目标表达。"
+  ].join("\n")
+}
+
+function buildSourcePolicySettingText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  const key = String(payload?.key || "").trim()
+  const value = payload?.value
+  const valueText = formatInlineValue(value)
+
+  const templates = {
+    standard: `参考标准：${valueText}`,
+    singleSourceOfTruth: `单一事实来源：${formatBooleanPolicy(value, "是", "否")}`,
+    forbidCodeStyleSignals: `禁止代码风格信号主导正文：${formatBooleanPolicy(value, "是", "否")}`
+  }
+  if (compact) return templates[key] || `${friendlyPolicyKey(key)}：${valueText}`
+  return [
+    `策略项：${friendlyPolicyKey(key)}`,
+    `配置值：${valueText}`,
+    `含义：${templates[key] || `生成时遵循 ${friendlyPolicyKey(key)} 这项事实边界设置。`}`
+  ].join("\n")
+}
+
+function buildDocumentBlueprintSectionText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  const role = payload?.role || "-"
+  const title = payload?.title || "-"
+  const requirementTypes = Array.isArray(payload?.coreRequirementTypes) ? payload.coreRequirementTypes.filter(Boolean) : []
+  const roleLabel =
+    role === "preferredFunctionSection"
+      ? "首选功能章节"
+      : role === "preferredSubsection"
+        ? "首选子章节"
+        : role
+
+  if (compact) {
+    return `${roleLabel}：${title}${requirementTypes.length ? `（覆盖 ${requirementTypes.join("、")}）` : ""}`
+  }
+
+  return [
+    `章节角色：${roleLabel}`,
+    `章节标题：${title}`,
+    requirementTypes.length ? `核心需求类型：${requirementTypes.join("、")}` : "核心需求类型：-",
+    "规则：生成文档骨架时，优先按照这条蓝图章节来落位。"
+  ].join("\n")
+}
+
+function buildDocumentBlueprintPolicyText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  const key = String(payload?.key || "").trim()
+  const value = payload?.value
+  const descriptions = {
+    coreFirst: "优先先铺开核心章节和核心规则。",
+    preferSymmetricExpansion: "优先按对象或轴对称展开章节和需求。",
+    preferObjectSpecificRequirements: "优先输出对象明确、归属明确的需求。",
+    discourageGenericScatterRequirements: "避免输出泛泛而散的零碎需求。"
+  }
+  if (compact) return `${friendlyPolicyKey(key)}：${formatInlineValue(value)}`
+  return [
+    `蓝图策略：${friendlyPolicyKey(key)}`,
+    `配置值：${formatInlineValue(value)}`,
+    `含义：${descriptions[key] || "生成文档蓝图时遵循这条高层策略。"}`
+  ].join("\n")
+}
+
+function buildRuleHintText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  const sectionHints = Array.isArray(payload?.sectionHints) ? payload.sectionHints.filter(Boolean) : []
+  const sourceBasis = Array.isArray(payload?.sourceBasis) ? payload.sourceBasis.filter(Boolean) : []
+  if (compact) {
+    return payload?.writingPattern || payload?.targetStyle || sectionHints.join("、")
+  }
+  return [
+    payload?.domain ? `适用领域：${payload.domain}${payload?.subdomain ? ` / ${payload.subdomain}` : ""}` : "",
+    sectionHints.length ? `建议章节：${sectionHints.join("、")}` : "",
+    payload?.writingPattern ? `写作模式：${payload.writingPattern}` : "",
+    payload?.targetStyle ? `目标风格：${payload.targetStyle}` : "",
+    sourceBasis.length ? `来源依据：${sourceBasis.join("、")}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+function buildGoodExampleText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  if (compact) {
+    return payload?.requirementText || payload?.preferredTitle || payload?.topic || ""
+  }
+  return [
+    payload?.preferredTitle ? `推荐标题：${payload.preferredTitle}` : "",
+    payload?.sectionTitle ? `所属章节：${payload.sectionTitle}` : "",
+    payload?.requirementType ? `需求类型：${payload.requirementType}` : "",
+    payload?.requirementId ? `参考需求：${payload.requirementId}` : "",
+    payload?.requirementText ? `示例内容：${payload.requirementText}` : "",
+    Array.isArray(payload?.references) && payload.references.length ? `关联引用：${payload.references.join("、")}` : "",
+    Array.isArray(payload?.canonicalBranches) && payload.canonicalBranches.length ? `关键分支：${payload.canonicalBranches.join("、")}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+function buildGenericStructuredText(payload, options = {}) {
+  const compact = Boolean(options.compact)
+  const entries = structuredEntries(payload)
+  if (!entries.length) return ""
+  if (compact) {
+    return entries
+      .slice(0, 2)
+      .map(([key, value]) => `${friendlyFieldLabel(key)}：${summarizeValue(value, 40)}`)
+      .join("；")
+  }
+  return entries.map(([key, value]) => `${friendlyFieldLabel(key)}：${formatBlockValue(value)}`).join("\n")
+}
+
+function formatInlineValue(value) {
+  if (Array.isArray(value)) return value.map((entry) => formatInlineValue(entry)).join("、")
+  if (value && typeof value === "object") return JSON.stringify(value)
+  if (typeof value === "boolean") return value ? "true" : "false"
+  return String(value ?? "-")
+}
+
+function formatBlockValue(value) {
+  if (Array.isArray(value)) return value.map((entry) => formatInlineValue(entry)).join("、")
+  if (value && typeof value === "object") {
+    return structuredEntries(value)
+      .map(([key, innerValue]) => `${friendlyFieldLabel(key)}=${formatInlineValue(innerValue)}`)
+      .join("；")
+  }
+  return formatInlineValue(value)
+}
+
+function friendlyFieldLabel(key = "") {
+  const mapping = {
+    key: "键",
+    value: "值",
+    topic: "主题",
+    entries: "条目",
+    canonical: "规范名",
+    aliases: "别名",
+    pattern: "原始模式",
+    replacement: "替换表达",
+    role: "角色",
+    title: "标题",
+    domain: "领域",
+    subdomain: "子领域",
+    sectionHints: "章节提示",
+    writingPattern: "写作模式",
+    targetStyle: "目标风格",
+    sourceBasis: "来源依据",
+    requirementId: "需求编号",
+    sectionTitle: "章节标题",
+    requirementType: "需求类型",
+    preferredTitle: "推荐标题",
+    requirementText: "需求正文",
+    signals: "涉及信号",
+    references: "关联引用",
+    canonicalBranches: "关键分支",
+    keywords: "关键词",
+    coreRequirementTypes: "核心需求类型"
+  }
+  return mapping[key] || key
+}
+
+function friendlyPolicyKey(key = "") {
+  const mapping = {
+    standard: "参考标准",
+    singleSourceOfTruth: "单一事实来源",
+    forbidCodeStyleSignals: "禁止代码风格信号",
+    coreFirst: "核心优先",
+    preferSymmetricExpansion: "偏好对称展开",
+    preferObjectSpecificRequirements: "偏好对象化需求",
+    discourageGenericScatterRequirements: "避免泛化散点需求"
+  }
+  return mapping[key] || key
+}
+
+function formatBooleanPolicy(value, trueLabel = "是", falseLabel = "否") {
+  return value ? trueLabel : falseLabel
 }
 
 function kindOptions(selected = "") {
@@ -1191,7 +1825,14 @@ function kindDescription(kind = "") {
   if (kind === "generation_priority") return "决定主题和章节生成时的优先顺序。"
   if (kind === "rule_hint") return "更轻量的高层提示，用于补语气和组织方式。"
   if (kind === "anti_pattern") return "列出必须避免的反模式和误写。"
-  return "结构化知识型 item，适合配合 Advanced 一起看。"
+  if (kind === "source_alias") return "把代码别名映射回规范名称，减少正文表达漂移。"
+  if (kind === "code_style_prefix") return "标记实现态命名前缀，避免它们主导最终正文。"
+  if (kind === "forbidden_expansion") return "约束某类主题下不能凭空扩写哪些对象或子功能。"
+  if (kind === "normalization_rule") return "把容易漂移的表达统一成固定说法。"
+  if (kind === "source_policy_setting") return "声明事实来源边界，约束生成时该信谁、该避开什么。"
+  if (kind === "document_blueprint_section") return "定义文档章节骨架，帮助生成时稳定落位。"
+  if (kind === "document_blueprint_policy") return "补充文档蓝图的高层策略与组织方式。"
+  return "这类 item 以结构化字段为主，右侧先看摘要，完整 JSON 在“调试 / 落盘信息”中。"
 }
 
 function stringifyJson(value) {

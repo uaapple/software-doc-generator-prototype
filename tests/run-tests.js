@@ -18,6 +18,7 @@ import { SkillRuleService } from "../src/services/skill-rule-service.js";
 import { PipelineService } from "../src/services/pipeline-service.js";
 import { ModuleSkillService } from "../src/services/module-skill-service.js";
 import { SkillManagementService } from "../src/services/skill-management-service.js";
+import { SkillDatabaseService } from "../src/services/skill-database-service.js";
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -43,6 +44,7 @@ async function withTempConfig(run) {
     activeSkillDir: path.join(tempDir, "skills", "active"),
     skillBundleDir: path.join(tempDir, "skills", "bundles"),
     dataDir: path.join(tempDir, "data"),
+    skillDatabasePath: path.join(tempDir, "data", "skills.sqlite"),
     projectStoreDir: path.join(tempDir, "data", "projects"),
     uploadDir: path.join(tempDir, "data", "uploads"),
     llmProfileStorePath: path.join(tempDir, "data", "llm-profiles.json"),
@@ -72,6 +74,7 @@ async function withTempConfig(run) {
     await ensureStorage();
     return await run(tempDir);
   } finally {
+    SkillDatabaseService.closeAll();
     Object.assign(config, originalConfig);
     config.openai.apiKey = originalConfig.openai.apiKey;
     config.openai.baseURL = originalConfig.openai.baseURL;
@@ -736,7 +739,7 @@ const tests = [
     }
   },
   {
-    name: "Project service deletes completed and stale running tasks while protecting fresh running tasks",
+    name: "Project service deletes completed and running tasks, including accepted snapshots",
     run: async () => {
       await withTempConfig(async () => {
         const projectService = new ProjectService();
@@ -796,10 +799,13 @@ const tests = [
         assert.equal(space.generationTasks.some((item) => item.id === completedTask.id), false);
         assert.equal(space.acceptedItems.some((item) => item.sourceTaskId === completedTask.id), false);
 
-        await assert.rejects(
-          projectService.deleteGenerationTask(project.id, module.id, "software_requirement", runningTask.id),
-          /Running task cannot be deleted/
+        const runningDeleted = await projectService.deleteGenerationTask(
+          project.id,
+          module.id,
+          "software_requirement",
+          runningTask.id
         );
+        assert.equal(runningDeleted.deleted, true);
 
         const staleDeleted = await projectService.deleteGenerationTask(
           project.id,
@@ -1228,6 +1234,58 @@ const tests = [
           .then(() => true)
           .catch(() => false);
         assert.equal(exists, false);
+      });
+    }
+  },
+  {
+    name: "Structured policy skills can be stored as plain readable text without raw JSON input",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new SkillManagementService();
+        const created = await service.createSkillItem({
+          layer: "module",
+          profileKey: "charging_management",
+          kind: "document_blueprint_policy",
+          title: "document blueprint policy preferSymmetricExpansion",
+          content: [
+            "蓝图策略：preferSymmetricExpansion",
+            "策略值：true",
+            "策略含义：优先按对象或轴对称展开章节和需求。"
+          ].join("\n")
+        });
+
+        assert.equal(created.kind, "document_blueprint_policy");
+        assert.equal(created.content, "优先按对象或轴对称展开章节和需求。");
+        assert.equal(created.structuredPayload.key, "preferSymmetricExpansion");
+        assert.equal(created.structuredPayload.value, true);
+
+        const detail = await service.getSkillItem(created.skillCode);
+        assert.equal(detail.item.structuredPayload.key, "preferSymmetricExpansion");
+        assert.equal(detail.item.structuredPayload.value, true);
+        assert.equal(detail.item.content, "优先按对象或轴对称展开章节和需求。");
+      });
+    }
+  },
+  {
+    name: "Legacy structured text is normalized into concise meaningful prose",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new SkillManagementService();
+        const created = await service.createSkillItem({
+          layer: "module",
+          profileKey: "charging_management",
+          kind: "source_policy_setting",
+          title: "source policy standard",
+          content: [
+            "策略名称：standard",
+            "策略值：ISO 26262",
+            "策略说明：当前技能库参考的标准是 ISO 26262。"
+          ].join("\n")
+        });
+
+        assert.equal(created.content, "当前技能库参考的标准是 ISO 26262。");
+        assert.equal(created.structuredPayload.key, "standard");
+        assert.equal(created.structuredPayload.value, "ISO 26262");
       });
     }
   }

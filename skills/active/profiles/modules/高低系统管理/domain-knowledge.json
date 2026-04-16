@@ -64,16 +64,10 @@
   "ruleHints": [
     {
       "domain": "embedded_vcu",
+      "documentType": "-",
       "subdomain": "高低系统管理",
-      "sectionHints": [
-        "5.1.1.1 本地KL15上高压"
-      ],
       "writingPattern": "基于状态机的功能需求描述",
-      "targetStyle": "软件需求条目",
-      "sourceBasis": [
-        "system-requirements-example-hv-lv-system-management.md",
-        "HvCoorn.pdf"
-      ]
+      "targetStyle": "软件需求条目"
     }
   ],
   "antiPatterns": [

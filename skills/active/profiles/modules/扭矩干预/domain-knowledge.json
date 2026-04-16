@@ -26,7 +26,6 @@
         "ESC_EHB_RBS_F_TargetRegenTrq",
         "ESCWhlTq_bFrntAxleTqIntvActv"
       ],
-      "references": [],
       "canonicalBranches": [
         "前轴降扭请求激活",
         "前轴制动再生请求激活",
@@ -104,7 +103,6 @@
         "ESC_EHB_RBS_R_TargetRegenTrq",
         "ESCWhlTq_bReAxleTqIntvActv"
       ],
-      "references": [],
       "canonicalBranches": [
         "后轴降扭请求激活",
         "后轴制动再生请求激活",
@@ -171,19 +169,10 @@
   "ruleHints": [
     {
       "domain": "embedded_vcu",
+      "documentType": "-",
       "subdomain": "torque_intervention",
-      "sectionHints": [
-        "扭矩干预功能",
-        "ESC前轴扭矩干预",
-        "ESC后轴扭矩干预"
-      ],
       "writingPattern": "优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。",
-      "targetStyle": "输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。",
-      "sourceBasis": [
-        "input/software-requirement-writing-rules-vcu.md",
-        "input/system-requirements-example-torque-intervention.md",
-        "input/software-design-requirements-example-esc-torque-intervention.md"
-      ]
+      "targetStyle": "输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。"
     }
   ],
   "antiPatterns": [
@@ -307,10 +296,12 @@
         "replacement": "主动制动（AEB/CDP）"
       },
       {
-        "pattern": "；4. 前轴CCO/ISA扭矩请求有效"
+        "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
+        "replacement": "-"
       },
       {
-        "pattern": "；4. 后轴CCO/ISA扭矩请求有效"
+        "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
+        "replacement": "-"
       }
     ],
     "forbiddenExpansions": {
@@ -328,10 +319,12 @@
   },
   "documentBlueprint": {
     "preferredFunctionSection": {
-      "title": "扭矩干预功能"
+      "title": "扭矩干预功能",
+      "sectionNumber": "-"
     },
     "preferredSubsections": [
       {
+        "sectionNumber": "-",
         "title": "ESC前轴扭矩干预",
         "coreRequirementTypes": [
           "activation_flag_logic",
@@ -339,6 +332,7 @@
         ]
       },
       {
+        "sectionNumber": "-",
         "title": "ESC后轴扭矩干预",
         "coreRequirementTypes": [
           "activation_flag_logic",

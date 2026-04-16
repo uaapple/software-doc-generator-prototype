@@ -9,6 +9,7 @@
 ### DOC-software_requirement-validation_rule-002 主题粒度校验
 检查每条需求是否只承载一个稳定主题；若把控制逻辑、记忆逻辑和保护逻辑混写在一条正文中，应标记为主题混写风险。
 
+
 ## 结构校验
 
 ### DOC-software_requirement-validation_rule-003 层级结构校验
@@ -22,6 +23,7 @@
 ### DOC-software_requirement-validation_rule-005 激活与恢复分支校验
 对激活判断、模式进入、停止控制类需求，若缺少“否则”路径、恢复条件、重新进入条件或超时撤销条件，应标记为内容不完整。
 
+
 ## 内容校验
 
 ### DOC-software_requirement-validation_rule-006 优先级与默认路径校验
@@ -34,6 +36,7 @@
 
 ### DOC-software_requirement-validation_rule-008 命名与引用校验
 检查信号命名、模式名和需求编号是否可追溯；若编造编号、误改信号名或把代码内部别名当成正式需求名，应标记为高风险。
+
 
 ## 输出风险
 

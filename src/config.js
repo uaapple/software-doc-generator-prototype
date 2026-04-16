@@ -56,6 +56,7 @@ export const config = {
   activeSkillDir: path.join(rootDir, "skills", "active"),
   skillBundleDir: path.join(rootDir, "skills", "bundles"),
   dataDir: path.join(rootDir, "data"),
+  skillDatabasePath: path.join(rootDir, "data", "skills.sqlite"),
   projectStoreDir: path.join(rootDir, "data", "projects"),
   uploadDir: path.join(rootDir, "data", "uploads"),
   llmProfileStorePath: path.join(rootDir, "data", "llm-profiles.json"),

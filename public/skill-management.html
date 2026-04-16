@@ -85,11 +85,21 @@
           <div class="item-browser-toolbar">
             <label>
               当前 Profile 检索
-              <input id="item-query" placeholder="按 skillCode、标题、内容、JSON 搜索当前 profile" />
+              <input id="item-query" placeholder="按 skillCode、标题、正文内容搜索当前 profile" />
             </label>
           </div>
           <div id="item-browser" class="item-browser-body"></div>
         </section>
+
+        <button
+          id="workspace-review-resizer"
+          class="workspace-resizer"
+          type="button"
+          aria-label="调整右侧审阅区宽度"
+          aria-controls="review-pane"
+          aria-orientation="vertical"
+          title="拖拽调整右侧审阅区宽度，双击恢复默认"
+        ></button>
 
         <aside class="workspace-pane review-pane-shell">
           <div id="review-pane" class="review-pane-body"></div>

@@ -17,15 +17,11 @@
       "id": "9b0ef9e4-1ef0-43c6-8d99-c2756759bcf8",
       "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
       "name": "扭矩干预",
-      "description": "迁移自旧版 Torque Intervention Trial，用于展示模块资产与软件需求生成历史。",
+      "description": "",
       "domain": "embedded_vcu",
       "moduleSkillKey": "扭矩干预",
-      "skillStatus": "imported",
-      "skillSource": {
-        "type": "module_profile",
-        "key": "torque_intervention",
-        "aliasKey": "扭矩干预"
-      },
+      "skillStatus": "draft",
+      "skillSource": null,
       "seededAt": "2026-04-15T10:10:00.000Z",
       "assets": [
         {
@@ -4258,282 +4254,15 @@
           "at": "2026-04-16T06:29:17.723Z",
           "action": "accepted_item_reordered",
           "detail": "软件需求接受结果顺序已调整"
+        },
+        {
+          "at": "2026-04-16T20:19:53.531Z",
+          "action": "module_updated",
+          "detail": "功能模块信息已更新"
         }
       ],
       "createdAt": "2026-04-14T06:39:33.853Z",
-      "updatedAt": "2026-04-16T06:29:17.723Z"
-    },
-    {
-      "id": "8a25eced-50c4-43ce-91d2-f1c67b641302",
-      "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
-      "name": "Skill Refinement 改进记录",
-      "description": "用于集中查看 benchmark case、golden 详细设计范例，以及 2026-04-04 的提案评审状态。",
-      "domain": "embedded_vcu",
-      "moduleSkillKey": "skill_refinement_改进记录",
-      "skillStatus": "draft",
-      "skillSource": null,
-      "seededAt": null,
-      "assets": [
-        {
-          "id": "c0b8d670-d0a9-4f16-824a-d0e7a93541a8",
-          "role": "golden_source",
-          "originalName": "software-design-requirements-example-esc-torque-intervention.md",
-          "storedName": "1776148773866-software-design-requirements-example-esc-torque-intervention.md",
-          "relativePath": "1870d5b2-1df7-4dbb-8012-17713c8a4651/8a25eced-50c4-43ce-91d2-f1c67b641302/1776148773866-software-design-requirements-example-esc-torque-intervention.md",
-          "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/1870d5b2-1df7-4dbb-8012-17713c8a4651/8a25eced-50c4-43ce-91d2-f1c67b641302/1776148773866-software-design-requirements-example-esc-torque-intervention.md",
-          "mimeType": "text/markdown",
-          "size": 5783,
-          "uploadedAt": "2026-04-04T13:53:13.028Z"
-        }
-      ],
-      "documentSpaces": {
-        "software_requirement": {
-          "documentType": "software_requirement",
-          "generationTasks": [
-            {
-              "id": "d9779da0-4017-459d-b6a4-672d3257c383",
-              "moduleId": "8a25eced-50c4-43ce-91d2-f1c67b641302",
-              "documentType": "software_requirement",
-              "status": "proposal_review",
-              "createdAt": "2026-04-04T13:55:03.464Z",
-              "updatedAt": "2026-04-04T13:55:03.464Z",
-              "inputAssetIds": [
-                "c0b8d670-d0a9-4f16-824a-d0e7a93541a8"
-              ],
-              "uploadedAssetIds": [],
-              "resultItems": [
-                {
-                  "id": "e3ca0a66-58f3-480f-a9ae-64545e88f10c",
-                  "requirementId": "SR-001",
-                  "title": "补充 torque_intervention 写作规则",
-                  "requirementText": "- 在 embedded_vcu/torque_intervention 场景下，优先采用多级章节组织需求，例如：章节号 -> 子章节号。\n- 对前轴/后轴或其他物理对象对称的能力，优先拆分为结构对称的子章节。\n- 先写激活标志位判断，再写计算/仲裁逻辑；每条需求尽量只承载一个核心逻辑主题。\n- 计算类需求显式写出优先级顺序、条件分支、默认路径和边界限制。",
-                  "type": "skill_refinement_writing",
-                  "sourceRefs": [
-                    {
-                      "fileName": "ESC扭矩干预范例",
-                      "location": "proposal:requirement_writing.md",
-                      "excerpt": "从本次优质范例中抽取出章节组织、句式与边界写法模式。"
-                    }
-                  ],
-                  "rationale": "从本次优质范例中抽取出章节组织、句式与边界写法模式。",
-                  "verificationHint": "目标文件：requirement_writing.md",
-                  "confidence": 0.88,
-                  "conflictNote": "",
-                  "review": {
-                    "status": "pending",
-                    "reviewer": "",
-                    "comment": "",
-                    "updatedAt": "2026-04-04T13:55:03.463Z"
-                  }
-                },
-                {
-                  "id": "6fd104d1-f6b6-4c23-8f12-d7166baf3bf4",
-                  "requirementId": "SR-002",
-                  "title": "补充 torque_intervention 抽取规则",
-                  "requirementText": "- 优先抽取激活标志位、阈值、优先级顺序、模式状态、min/max 边界限制。\n- 对 C 文件中的条件分支、赋值关系和前后轴对称变量建立同类候选事实。\n- 对系统需求中的条件项、否则分支和优先级排序做结构化切分。",
-                  "type": "skill_refinement_extraction",
-                  "sourceRefs": [
-                    {
-                      "fileName": "ESC扭矩干预范例",
-                      "location": "proposal:requirement_extraction.md",
-                      "excerpt": "从系统需求与模型代码的对齐中提炼更稳定的事实抽取策略。"
-                    }
-                  ],
-                  "rationale": "从系统需求与模型代码的对齐中提炼更稳定的事实抽取策略。",
-                  "verificationHint": "目标文件：requirement_extraction.md",
-                  "confidence": 0.88,
-                  "conflictNote": "",
-                  "review": {
-                    "status": "pending",
-                    "reviewer": "",
-                    "comment": "",
-                    "updatedAt": "2026-04-04T13:55:03.463Z"
-                  }
-                },
-                {
-                  "id": "ecae6035-3c46-46e2-a07a-32a4d2b7b98a",
-                  "requirementId": "SR-003",
-                  "title": "补充 torque_intervention 校验规则",
-                  "requirementText": "- 校验章节层级是否完整，是否按对称对象展开。\n- 校验需求是否保留关键信号名、变量名和内部引用编号。\n- 校验需求是否缺失来源追溯、默认路径或边界限制。",
-                  "type": "skill_refinement_validation",
-                  "sourceRefs": [
-                    {
-                      "fileName": "ESC扭矩干预范例",
-                      "location": "proposal:requirement_validation.md",
-                      "excerpt": "从人工答案的结构特征中提炼出应重点检查的约束。"
-                    }
-                  ],
-                  "rationale": "从人工答案的结构特征中提炼出应重点检查的约束。",
-                  "verificationHint": "目标文件：requirement_validation.md",
-                  "confidence": 0.88,
-                  "conflictNote": "",
-                  "review": {
-                    "status": "pending",
-                    "reviewer": "",
-                    "comment": "",
-                    "updatedAt": "2026-04-04T13:55:03.463Z"
-                  }
-                },
-                {
-                  "id": "d2705c84-638e-4cf3-8fac-6a66dc21de2c",
-                  "requirementId": "SR-004",
-                  "title": "追加 ESC扭矩干预范例 的正例样式",
-                  "requirementText": "1. - 状态：`released`\n- 所属章节：`3.31.1`\n- 主题：ESC干预前轴激活标志位判断\n- 类型：激活标志位逻辑\n- 触发条件（任一满足）：\n  - `ESC_TqDecReqAct_F = 0x1`，且前电机降扭请求标志位激活\n  - `ESC_EHB_RBS_F_Active = 0x1`，且前轴制动再生扭矩请求标志位激活\n  - `ESC_TrqIncReqActv_F = 0x1`，且前电机升扭请求标志位激活\n- 输出行为：\n  - `ESC干预前轴激活标志位 = active`\n- 否则：\n  - `ESC干预前轴激活标志位 = inactive`\n- 阈值说明：\n  - 当前驱电机增扭请求 `ESC_TrqIncReq_F` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为前轴增扭请求标志位激活\n  - 当前轴目标制动再生扭矩 `ESC_EHB_RBS_F_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为前轴制动再生扭矩请求标志位激活\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n2. - 状态：`released`\n- 所属章节：`3.31.1`\n- 主题：ESC干预前轴扭矩计算\n- 类型：扭矩计算逻辑\n- 优先级顺序：\n  - 前轴升扭请求\n  - 前轴降扭请求\n  - 主动制动\n  - ADAS的VLC工况\n  - RBS\n- 计算分支：\n  - 当前轴升扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\n    `ESCWhlTq_tqTarFrntAxle = ESC_TrqIncReq_F`\n  - 当前轴降扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\n    `ESCWhlTq_tqTarFrntAxle = ESC_TqDecReq_F`\n  - 当以下任一条件满足时：\n    - `AEB激活（ESC_AEB_Active）`\n    - `CDP激活（ESC_CDP_Active）`\n    输出：\n    `ESCWhlTq_tqTarFrntAxle = 0`\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位未激活时：\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\n    引用：`SMiVCU-9469`\n- 注：\n  - ESC干预前轴目标扭矩需要经过前轴最大扭矩和前轴最小扭矩限制后得到\n  - 限制相关需求引用：`SMiVCU-9477`\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n3. - 状态：`released`\n- 所属章节：`3.31.2`\n- 主题：ESC干预后轴激活标志位判断\n- 类型：激活标志位逻辑\n- 触发条件（任一满足）：\n  - `ESC_TqDecReqAct_R = 0x1`，且后电机降扭请求标志位激活\n  - `ESC_EHB_RBS_R_Active = 0x1`，且后轴制动再生扭矩请求标志位激活\n  - `ESC_TrqIncReqActv_R = 0x1`，且后电机升扭请求标志位激活\n- 输出行为：\n  - `ESC干预后轴激活标志位 = active`\n- 否则：\n  - `ESC干预后轴激活标志位 = inactive`\n- 阈值说明：\n  - 当后驱电机增扭请求 `ESC_TrqIncReq_R` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为后轴增扭请求标志位激活\n  - 当后轴目标制动再生扭矩 `ESC_EHB_RBS_R_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为后轴制动再生扭矩请求标志位激活\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n4. - 状态：`released`\n- 所属章节：`3.31.2`\n- 主题：ESC干预后轴扭矩计算\n- 类型：扭矩计算逻辑\n- 优先级顺序：\n  - 后轴升扭请求\n  - 后轴降扭请求\n  - 主动制动\n  - ADAS的VLC工况\n  - RBS\n- 计算分支：\n  - 当后轴升扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\n    `ESCWhlTq_tqTarReAxle = ESC_TrqIncReq_R`\n  - 当后轴降扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\n    `ESCWhlTq_tqTarReAxle = ESC_TqDecReq_R`\n  - 当以下任一条件满足时：\n    - `AEB激活（ESC_AEB_Active）`\n    - `CDP激活（ESC_CDP_Active）`\n    输出：\n    `ESCWhlTq_tqTarReAxle = 0`\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarCstRgnReAxle = min(TqSpltArbt_tqTarReAxle, 0)`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位未激活时：\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\n    引用：`SMiVCU-9469`\n- 注：\n  - ESC干预后轴目标扭矩需要经过后轴最大扭矩和后轴最小扭矩限制后得到\n  - 限制相关需求引用：`SMiVCU-9477`\n\n## 提炼摘要\n\n- 主主题：将扭矩干预功能细化为前轴/后轴对称的软件设计需求\n- 结构特征：\n  - 采用 `3.31 -> 3.31.1 / 3.31.2` 的多级章节结构\n  - 前后轴需求按相同模式展开\n  - 先定义激活标志位判断，再定义扭矩计算逻辑\n  - 通过内部引用保证设计需求之间的一致性\n  - 信号、内部变量、控制模式和边界限制均显式写出\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。",
-                  "type": "skill_refinement_good_example",
-                  "sourceRefs": [
-                    {
-                      "fileName": "ESC扭矩干预范例",
-                      "location": "proposal:examples/good_examples.md",
-                      "excerpt": "将当前人工优质范例中的高质量写法追加到正例库。"
-                    }
-                  ],
-                  "rationale": "将当前人工优质范例中的高质量写法追加到正例库。",
-                  "verificationHint": "目标文件：examples/good_examples.md",
-                  "confidence": 0.88,
-                  "conflictNote": "",
-                  "review": {
-                    "status": "pending",
-                    "reviewer": "",
-                    "comment": "",
-                    "updatedAt": "2026-04-04T13:55:03.463Z"
-                  }
-                },
-                {
-                  "id": "76154b81-25fc-4bc8-9953-b8d6c80f1daf",
-                  "requirementId": "SR-005",
-                  "title": "更新 torque_intervention 领域知识",
-                  "requirementText": "{\n  \"examples\": [\n    {\n      \"requirementId\": \"SMiVCU-10160\",\n      \"topic\": \"SMiVCU-10160\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.1`\\n- 主题：ESC干预前轴激活标志位判断\\n- 类型：激活标志位逻辑\\n- 触发条件（任一满足）：\\n  - `ESC_TqDecReqAct_F = 0x1`，且前电机降扭请求标志位激活\\n  - `ESC_EHB_RBS_F_Active = 0x1`，且前轴制动再生扭矩请求标志位激活\\n  - `ESC_TrqIncReqActv_F = 0x1`，且前电机升扭请求标志位激活\\n- 输出行为：\\n  - `ESC干预前轴激活标志位 = active`\\n- 否则：\\n  - `ESC干预前轴激活标志位 = inactive`\\n- 阈值说明：\\n  - 当前驱电机增扭请求 `ESC_TrqIncReq_F` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为前轴增扭请求标志位激活\\n  - 当前轴目标制动再生扭矩 `ESC_EHB_RBS_F_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为前轴制动再生扭矩请求标志位激活\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_F\",\n        \"ESC_EHB_RBS_F_Active\",\n        \"ESC_TrqIncReqActv_F\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ],\n      \"references\": [],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10160\",\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_F\",\n        \"ESC_EHB_RBS_F_Active\",\n        \"ESC_TrqIncReqActv_F\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10597\",\n      \"topic\": \"SMiVCU-10597\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.1`\\n- 主题：ESC干预前轴扭矩计算\\n- 类型：扭矩计算逻辑\\n- 优先级顺序：\\n  - 前轴升扭请求\\n  - 前轴降扭请求\\n  - 主动制动\\n  - ADAS的VLC工况\\n  - RBS\\n- 计算分支：\\n  - 当前轴升扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\\n    `ESCWhlTq_tqTarFrntAxle = ESC_TrqIncReq_F`\\n  - 当前轴降扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\\n    `ESCWhlTq_tqTarFrntAxle = ESC_TqDecReq_F`\\n  - 当以下任一条件满足时：\\n    - `AEB激活（ESC_AEB_Active）`\\n    - `CDP激活（ESC_CDP_Active）`\\n    输出：\\n    `ESCWhlTq_tqTarFrntAxle = 0`\\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位未激活时：\\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\\n    引用：`SMiVCU-9469`\\n- 注：\\n  - ESC干预前轴目标扭矩需要经过前轴最大扭矩和前轴最小扭矩限制后得到\\n  - 限制相关需求引用：`SMiVCU-9477`\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"SMiVCU\",\n        \"active\",\n        \"ESCWhlTq_tqTarFrntAxle\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_TqDecReq_F\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarFrntAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ],\n      \"references\": [\n        \"SMiVCU-10160\",\n        \"SMiVCU-9469\",\n        \"SMiVCU-9477\"\n      ],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10597\",\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"active\",\n        \"ESCWhlTq_tqTarFrntAxle\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_TqDecReq_F\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarFrntAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10161\",\n      \"topic\": \"SMiVCU-10161\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.2`\\n- 主题：ESC干预后轴激活标志位判断\\n- 类型：激活标志位逻辑\\n- 触发条件（任一满足）：\\n  - `ESC_TqDecReqAct_R = 0x1`，且后电机降扭请求标志位激活\\n  - `ESC_EHB_RBS_R_Active = 0x1`，且后轴制动再生扭矩请求标志位激活\\n  - `ESC_TrqIncReqActv_R = 0x1`，且后电机升扭请求标志位激活\\n- 输出行为：\\n  - `ESC干预后轴激活标志位 = active`\\n- 否则：\\n  - `ESC干预后轴激活标志位 = inactive`\\n- 阈值说明：\\n  - 当后驱电机增扭请求 `ESC_TrqIncReq_R` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为后轴增扭请求标志位激活\\n  - 当后轴目标制动再生扭矩 `ESC_EHB_RBS_R_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为后轴制动再生扭矩请求标志位激活\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_R\",\n        \"ESC_EHB_RBS_R_Active\",\n        \"ESC_TrqIncReqActv_R\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\"\n      ],\n      \"references\": [],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10161\",\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_R\",\n        \"ESC_EHB_RBS_R_Active\",\n        \"ESC_TrqIncReqActv_R\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10598\",\n      \"topic\": \"SMiVCU-10598\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.2`\\n- 主题：ESC干预后轴扭矩计算\\n- 类型：扭矩计算逻辑\\n- 优先级顺序：\\n  - 后轴升扭请求\\n  - 后轴降扭请求\\n  - 主动制动\\n  - ADAS的VLC工况\\n  - RBS\\n- 计算分支：\\n  - 当后轴升扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\\n    `ESCWhlTq_tqTarReAxle = ESC_TrqIncReq_R`\\n  - 当后轴降扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\\n    `ESCWhlTq_tqTarReAxle = ESC_TqDecReq_R`\\n  - 当以下任一条件满足时：\\n    - `AEB激活（ESC_AEB_Active）`\\n    - `CDP激活（ESC_CDP_Active）`\\n    输出：\\n    `ESCWhlTq_tqTarReAxle = 0`\\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarCstRgnReAxle = min(TqSpltArbt_tqTarReAxle, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位未激活时：\\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\\n    引用：`SMiVCU-9469`\\n- 注：\\n  - ESC干预后轴目标扭矩需要经过后轴最大扭矩和后轴最小扭矩限制后得到\\n  - 限制相关需求引用：`SMiVCU-9477`\\n\\n## 提炼摘要\\n\\n- 主主题：将扭矩干预功能细化为前轴/后轴对称的软件设计需求\\n- 结构特征：\\n  - 采用 `3.31 -> 3.31.1 / 3.31.2` 的多级章节结构\\n  - 前后轴需求按相同模式展开\\n  - 先定义激活标志位判断，再定义扭矩计算逻辑\\n  - 通过内部引用保证设计需求之间的一致性\\n  - 信号、内部变量、控制模式和边界限制均显式写出\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"SMiVCU\",\n        \"active\",\n        \"ESCWhlTq_tqTarReAxle\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_TqDecReq_R\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarReAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\",\n        \"ESCWhlTq_tqTarCstRgnReAxle\"\n      ],\n      \"references\": [\n        \"SMiVCU-10161\",\n        \"SMiVCU-9469\",\n        \"SMiVCU-9477\"\n      ],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10598\",\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"active\",\n        \"ESCWhlTq_tqTarReAxle\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_TqDecReq_R\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarReAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\",\n        \"ESCWhlTq_tqTarCstRgnReAxle\"\n      ]\n    }\n  ],\n  \"ruleHints\": [\n    {\n      \"domain\": \"embedded_vcu\",\n      \"subdomain\": \"torque_intervention\",\n      \"sectionHints\": [],\n      \"generatedFromCaseId\": \"f293b06a-6cdf-44f2-9b01-6912c156681f\"\n    }\n  ],\n  \"antiPatterns\": []\n}",
-                  "type": "skill_refinement_domain_knowledge",
-                  "sourceRefs": [
-                    {
-                      "fileName": "ESC扭矩干预范例",
-                      "location": "proposal:domain-knowledge.json",
-                      "excerpt": "把章节提示、few-shot 样例和领域反模式纳入 bundle 领域知识。"
-                    }
-                  ],
-                  "rationale": "把章节提示、few-shot 样例和领域反模式纳入 bundle 领域知识。",
-                  "verificationHint": "目标文件：domain-knowledge.json",
-                  "confidence": 0.88,
-                  "conflictNote": "",
-                  "review": {
-                    "status": "pending",
-                    "reviewer": "",
-                    "comment": "",
-                    "updatedAt": "2026-04-04T13:55:03.463Z"
-                  }
-                }
-              ],
-              "extractions": [],
-              "traces": [],
-              "conflicts": [],
-              "llmProfile": null,
-              "summary": "从 Skill Refinement run 迁移的 5 条提案",
-              "auditLog": [],
-              "progress": {
-                "stage": "",
-                "label": "",
-                "message": "",
-                "percent": 0,
-                "current": 0,
-                "total": 0,
-                "updatedAt": ""
-              },
-              "timeline": [],
-              "metrics": {
-                "extractionFileCount": 0,
-                "extractionEvidenceCount": 0,
-                "llmDurationMs": 0,
-                "generatedItemCount": 0,
-                "conflictCount": 0
-              },
-              "errorMessage": ""
-            }
-          ],
-          "acceptedItems": []
-        },
-        "detail_design": {
-          "documentType": "detail_design",
-          "generationTasks": [
-            {
-              "id": "9a534bbd-4303-4305-8041-c8ffa424da80",
-              "moduleId": "8a25eced-50c4-43ce-91d2-f1c67b641302",
-              "documentType": "detail_design",
-              "status": "completed",
-              "createdAt": "2026-04-04T13:53:13.031Z",
-              "updatedAt": "2026-04-04T13:55:03.472Z",
-              "inputAssetIds": [
-                "c0b8d670-d0a9-4f16-824a-d0e7a93541a8"
-              ],
-              "uploadedAssetIds": [],
-              "resultItems": [
-                {
-                  "id": "591e078c-bd54-484a-8bb7-2d499d6be486",
-                  "requirementId": "DD-REF-f293b06a",
-                  "title": "ESC扭矩干预范例 - golden 详细设计范例",
-                  "requirementText": "# 软件设计需求示例：ESC前后轴扭矩干预\n\n## 文档信息\n\n- 文档类型：软件设计需求示例\n- 领域：嵌入式 VCU\n- 语言：中文\n- 版本：v1\n- 来源：预期输出示例图片，人工提取整理\n- 整理日期：2026-04-04\n\n## 章节结构\n\n- `3.31` 扭矩干预功能\n- `3.31.1` ESC前轴扭矩干预\n- `3.31.2` ESC后轴扭矩干预\n\n## 需求条目\n\n### SMiVCU-10160\n\n- 状态：`released`\n- 所属章节：`3.31.1`\n- 主题：ESC干预前轴激活标志位判断\n- 类型：激活标志位逻辑\n- 触发条件（任一满足）：\n  - `ESC_TqDecReqAct_F = 0x1`，且前电机降扭请求标志位激活\n  - `ESC_EHB_RBS_F_Active = 0x1`，且前轴制动再生扭矩请求标志位激活\n  - `ESC_TrqIncReqActv_F = 0x1`，且前电机升扭请求标志位激活\n- 输出行为：\n  - `ESC干预前轴激活标志位 = active`\n- 否则：\n  - `ESC干预前轴激活标志位 = inactive`\n- 阈值说明：\n  - 当前驱电机增扭请求 `ESC_TrqIncReq_F` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为前轴增扭请求标志位激活\n  - 当前轴目标制动再生扭矩 `ESC_EHB_RBS_F_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为前轴制动再生扭矩请求标志位激活\n\n### SMiVCU-10597\n\n- 状态：`released`\n- 所属章节：`3.31.1`\n- 主题：ESC干预前轴扭矩计算\n- 类型：扭矩计算逻辑\n- 优先级顺序：\n  - 前轴升扭请求\n  - 前轴降扭请求\n  - 主动制动\n  - ADAS的VLC工况\n  - RBS\n- 计算分支：\n  - 当前轴升扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\n    `ESCWhlTq_tqTarFrntAxle = ESC_TrqIncReq_F`\n  - 当前轴降扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\n    `ESCWhlTq_tqTarFrntAxle = ESC_TqDecReq_F`\n  - 当以下任一条件满足时：\n    - `AEB激活（ESC_AEB_Active）`\n    - `CDP激活（ESC_CDP_Active）`\n    输出：\n    `ESCWhlTq_tqTarFrntAxle = 0`\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位未激活时：\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\n    引用：`SMiVCU-9469`\n- 注：\n  - ESC干预前轴目标扭矩需要经过前轴最大扭矩和前轴最小扭矩限制后得到\n  - 限制相关需求引用：`SMiVCU-9477`\n\n### SMiVCU-10161\n\n- 状态：`released`\n- 所属章节：`3.31.2`\n- 主题：ESC干预后轴激活标志位判断\n- 类型：激活标志位逻辑\n- 触发条件（任一满足）：\n  - `ESC_TqDecReqAct_R = 0x1`，且后电机降扭请求标志位激活\n  - `ESC_EHB_RBS_R_Active = 0x1`，且后轴制动再生扭矩请求标志位激活\n  - `ESC_TrqIncReqActv_R = 0x1`，且后电机升扭请求标志位激活\n- 输出行为：\n  - `ESC干预后轴激活标志位 = active`\n- 否则：\n  - `ESC干预后轴激活标志位 = inactive`\n- 阈值说明：\n  - 当后驱电机增扭请求 `ESC_TrqIncReq_R` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为后轴增扭请求标志位激活\n  - 当后轴目标制动再生扭矩 `ESC_EHB_RBS_R_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为后轴制动再生扭矩请求标志位激活\n\n### SMiVCU-10598\n\n- 状态：`released`\n- 所属章节：`3.31.2`\n- 主题：ESC干预后轴扭矩计算\n- 类型：扭矩计算逻辑\n- 优先级顺序：\n  - 后轴升扭请求\n  - 后轴降扭请求\n  - 主动制动\n  - ADAS的VLC工况\n  - RBS\n- 计算分支：\n  - 当后轴升扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\n    `ESCWhlTq_tqTarReAxle = ESC_TrqIncReq_R`\n  - 当后轴降扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\n    `ESCWhlTq_tqTarReAxle = ESC_TqDecReq_R`\n  - 当以下任一条件满足时：\n    - `AEB激活（ESC_AEB_Active）`\n    - `CDP激活（ESC_CDP_Active）`\n    输出：\n    `ESCWhlTq_tqTarReAxle = 0`\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarCstRgnReAxle = min(TqSpltArbt_tqTarReAxle, 0)`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位未激活时：\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\n    引用：`SMiVCU-9469`\n- 注：\n  - ESC干预后轴目标扭矩需要经过后轴最大扭矩和后轴最小扭矩限制后得到\n  - 限制相关需求引用：`SMiVCU-9477`\n\n## 提炼摘要\n\n- 主主题：将扭矩干预功能细化为前轴/后轴对称的软件设计需求\n- 结构特征：\n  - 采用 `3.31 -> 3.31.1 / 3.31.2` 的多级章节结构\n  - 前后轴需求按相同模式展开\n  - 先定义激活标志位判断，再定义扭矩计算逻辑\n  - 通过内部引用保证设计需求之间的一致性\n  - 信号、内部变量、控制模式和边界限制均显式写出\n",
-                  "type": "detail_design_reference",
-                  "sourceRefs": [
-                    {
-                      "fileName": "software-design-requirements-example-esc-torque-intervention.md",
-                      "location": "skill-refinement-case",
-                      "excerpt": "来自 benchmark case 的 golden source 文件"
-                    }
-                  ],
-                  "rationale": "从 Skill Refinement benchmark case 迁移的参考详细设计内容。",
-                  "verificationHint": "作为人工对照范例查看。",
-                  "confidence": 1,
-                  "conflictNote": "",
-                  "review": {
-                    "status": "pending",
-                    "reviewer": "",
-                    "comment": "",
-                    "updatedAt": ""
-                  }
-                }
-              ],
-              "extractions": [],
-              "traces": [],
-              "conflicts": [],
-              "llmProfile": null,
-              "summary": "从 benchmark case 迁移的详细设计范例（ESC扭矩干预范例）",
-              "auditLog": [],
-              "progress": {
-                "stage": "",
-                "label": "",
-                "message": "",
-                "percent": 0,
-                "current": 0,
-                "total": 0,
-                "updatedAt": ""
-              },
-              "timeline": [],
-              "metrics": {
-                "extractionFileCount": 0,
-                "extractionEvidenceCount": 0,
-                "llmDurationMs": 0,
-                "generatedItemCount": 0,
-                "conflictCount": 0
-              },
-              "errorMessage": ""
-            }
-          ],
-          "acceptedItems": []
-        },
-        "hil_test_case": {
-          "documentType": "hil_test_case",
-          "generationTasks": [],
-          "acceptedItems": []
-        }
-      },
-      "auditLog": [
-        {
-          "at": "2026-04-14T06:39:33.865Z",
-          "action": "module_migrated",
-          "detail": "已迁移模块：Skill Refinement 改进记录"
-        }
-      ],
-      "createdAt": "2026-04-14T06:39:33.865Z",
-      "updatedAt": "2026-04-14T06:39:33.865Z"
+      "updatedAt": "2026-04-16T20:19:53.531Z"
     },
     {
       "id": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
@@ -4598,6 +4327,1266 @@
         "software_requirement": {
           "documentType": "software_requirement",
           "generationTasks": [
+            {
+              "id": "436dc886-8158-4790-bf81-208f79786a1e",
+              "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
+              "documentType": "software_requirement",
+              "status": "completed",
+              "createdAt": "2026-04-16T20:32:02.952Z",
+              "updatedAt": "2026-04-16T20:46:37.657Z",
+              "inputAssetIds": [
+                "15b41741-8c4d-4000-8ad7-a18cdc2eda1d",
+                "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                "4a5de7f7-c1f7-4aa9-abb4-75cb25da4644"
+              ],
+              "uploadedAssetIds": [],
+              "resultItems": [
+                {
+                  "id": "SWR-001",
+                  "requirementId": "CheryVCU-1088",
+                  "title": "充电过程 - 堵转加热模式请求转发",
+                  "requirementText": "当车辆处于DC充电状态、ECC发出堵转加热需求(ECC_StallHeatingReq = ON)、且MCU反馈状态允许进行堵转加热(RMCU2_St_StallHeating不处于Heating Failed/Heating Over)时，VCU应将堵转加热请求发送给MCU(VCU2_St_StallHeatingReq = Request)，并发送后驱模式请求(VCU82_St_RModeReq = TrqCtl)。",
+                  "type": "functional",
+                  "sourceRefs": [
+                    {
+                      "fileName": "system-requirements-example-charging-management.md",
+                      "location": "page:1",
+                      "excerpt": "当车辆处于 DC 充电，HCU 在接收到 ECC 的堵转加热需求后，且 MCU 反馈状态允许进行堵转加热时，HCU 应将堵转加热请求发送给 MCU。"
+                    }
+                  ],
+                  "rationale": "此需求确保在DC充电场景下，当ECC请求堵转加热且MCU允许时，VCU正确转发请求并切换到后驱模式，以支持堵转加热功能。",
+                  "verificationHint": "通过HIL测试验证：在DC充电状态下，模拟ECC发送堵转加热请求，检查VCU是否正确发送请求给MCU并切换到后驱模式。",
+                  "confidence": 0.95,
+                  "conflictNote": "无冲突",
+                  "documentType": "software_requirement",
+                  "review": {
+                    "status": "pending",
+                    "reviewer": "",
+                    "comment": "",
+                    "updatedAt": ""
+                  },
+                  "passCriteria": ""
+                },
+                {
+                  "id": "SWR-002",
+                  "requirementId": "CheryVCU-1077",
+                  "title": "充电过程 - 堵转加热请求超时保护",
+                  "requirementText": "当VCU已发送堵转加热请求(VCU2_St_StallHeatingReq = Request)后，若2秒内MCU未进入Trq模式进行堵转加热(RMCU2_St_StallHeating未进入Heating状态)，VCU应停止发送堵转加热请求(VCU2_St_StallHeatingReq = Inactive)。",
+                  "type": "functional",
+                  "sourceRefs": [
+                    {
+                      "fileName": "system-requirements-example-charging-management.md",
+                      "location": "page:1",
+                      "excerpt": "HCU 请求堵转加热 2s 后，如 MCU 反馈仍未正常进入 Trq 模式进行堵转加热，HCU 停止请求堵转加热。"
+                    }
+                  ],
+                  "rationale": "此需求确保在堵转加热请求超时情况下，VCU能及时停止请求，避免持续无效请求导致的系统异常。",
+                  "verificationHint": "通过HIL测试验证：发送堵转加热请求后，模拟MCU不进入Heating状态，检查2秒后VCU是否撤销请求。",
+                  "confidence": 0.95,
+                  "conflictNote": "无冲突",
+                  "documentType": "software_requirement",
+                  "review": {
+                    "status": "pending",
+                    "reviewer": "",
+                    "comment": "",
+                    "updatedAt": ""
+                  },
+                  "passCriteria": ""
+                },
+                {
+                  "id": "SWR-003",
+                  "requirementId": "CheryVCU-10935",
+                  "title": "充电过程 - 充电截止SOC控制",
+                  "requirementText": "当AC或DC充电功能激活时，若ICM或TCP下发新的充电截止SOC且该值不等于112，VCU应更新截止SOC并反馈状态；当表显SOC(BMS2_N_SOC)大于等于截止点时，VCU应发送充电停止请求(VCU1_St_ChrStopRequest = Active)；当表显SOC小于截止点减1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
+                  "type": "functional",
+                  "sourceRefs": [
+                    {
+                      "fileName": "system-requirements-example-charging-management.md",
+                      "location": "page:1",
+                      "excerpt": "当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆），当仪表显示 SOC 大于等于截止 SOC 时，HCU 通过向 BMS 发送充电 Stop 指令临时停止充电，当表显 SOC 小于截止 SOC 1% 时，Stop 指令停止发送，OBC 重新恢复充电，直到再次等于截止 SOC。"
+                    }
+                  ],
+                  "rationale": "此需求确保充电过程能根据用户设置的截止SOC自动停止充电，并在条件满足时恢复充电，实现精确的充电控制。",
+                  "verificationHint": "通过HIL测试验证：设置不同截止SOC值，检查SOC达到截止点时是否发送Stop指令，SOC下降1%后是否恢复充电。",
+                  "confidence": 0.9,
+                  "conflictNote": "无冲突",
+                  "documentType": "software_requirement",
+                  "review": {
+                    "status": "pending",
+                    "reviewer": "",
+                    "comment": "",
+                    "updatedAt": ""
+                  },
+                  "passCriteria": ""
+                },
+                {
+                  "id": "SWR-004",
+                  "requirementId": "CheryVCU-12147",
+                  "title": "充电过程 - 充电截止SOC记忆",
+                  "requirementText": "VCU应对当前充电截止SOC值进行下电记忆；若ICM或TCP设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出50%-100%范围，则应回退为默认有效值。",
+                  "type": "functional",
+                  "sourceRefs": [
+                    {
+                      "fileName": "system-requirements-example-charging-management.md",
+                      "location": "page:1",
+                      "excerpt": "当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆）"
+                    }
+                  ],
+                  "rationale": "此需求确保用户设置的充电截止SOC能在车辆下电后保存，并在下次上电时恢复，提供一致的用户体验。",
+                  "verificationHint": "通过实车测试验证：设置充电截止SOC后下电，再次上电检查是否恢复设置值；测试超出范围设置时的回退行为。",
+                  "confidence": 0.85,
+                  "conflictNote": "无冲突",
+                  "documentType": "software_requirement",
+                  "review": {
+                    "status": "rejected",
+                    "reviewer": "当前用户",
+                    "comment": "在任务详情页中人工驳回",
+                    "updatedAt": "2026-04-16T20:46:37.372Z",
+                    "reasonCategory": "coverage_gap",
+                    "reasonTags": [
+                      "来源不足",
+                      "需求边界漂移",
+                      "过度推断"
+                    ],
+                    "reasonText": "该结果与人工软件需求范例不一致。人工范例中的 CheryVCU-12147 仅描述“下电记忆当前充电截止SOC，设置更新时及时更新，并在下次下电记忆”，未包含“记忆值无效或超出50%-100%范围时回退默认值”的要求。当前生成结果把代码侧推断出的保护/回退逻辑写进了需求正文，导致需求边界超出人工范例，也与人工范例中“以图片原文为准，不过度引入代码补充解释”的风格不一致。",
+                    "severity": "medium",
+                    "expectedNote": "请按人工范例对齐 CheryVCU-12147 的表达边界，仅保留下电记忆、更新生效、下次下电记忆这三个核心行为；不要把“无效值处理/默认值回退/范围兜底”写入该条需求，除非系统需求或人工输出范例中有明确独立表述。涉及“50%-100%范围”“112无效值”“重新插枪后重新判断”等内容，应保留在充电截止SOC控制条目中，不要混入记忆条目。优先保持与人工范例相同的条目粒度",
+                    "includeInPool": true,
+                    "rejectionId": "76a2bc6a-b4c8-404a-9163-3c3196c42d0e"
+                  },
+                  "passCriteria": ""
+                }
+              ],
+              "extractions": [
+                {
+                  "id": "50518450-2394-4616-bb38-df1ca6692c7a",
+                  "fileId": "15b41741-8c4d-4000-8ad7-a18cdc2eda1d",
+                  "fileRole": "system_pdf",
+                  "fileName": "system-requirements-example-charging-management.md",
+                  "summary": "# 系统需求示例：充电管理 ## 文档信息 - 文档类型：系统需求示例 - 领域：嵌入式 VCU - 语言：中文 - 版本：v1 - 来源：`AI case_ITK_20260411.docx` 中 `充电管理(20260410新增) -> 输入：系统需求` 图片，人工提取整理 - 整理日期：2026-04-14 ## 章节信息 - 章节编号：`5.1.3.2` - 章节标题：`电池充电堵转加热` - 章节编号：`5.1.3.3` - ",
+                  "evidence": [
+                    {
+                      "id": "3f6e6287-9ce2-45e8-9cc6-b15219861af0",
+                      "fileId": "15b41741-8c4d-4000-8ad7-a18cdc2eda1d",
+                      "fileRole": "system_pdf",
+                      "fileName": "system-requirements-example-charging-management.md",
+                      "location": "page:1",
+                      "excerpt": "# 系统需求示例：充电管理\n\n## 文档信息\n\n- 文档类型：系统需求示例\n- 领域：嵌入式 VCU\n- 语言：中文\n- 版本：v1\n- 来源：`AI case_ITK_20260411.docx` 中 `充电管理(20260410新增) -> 输入：系统需求` 图片，人工提取整理\n- 整理日期：2026-04-14\n\n## 章节信息\n\n- 章节编号：`5.1.3.2`\n- 章节标题：`电池充电堵转加热`\n- 章节编号：`5.1.3.3`\n- 章节标题：`充电截止SOC控制`\n\n## 需求条目\n\n### CheryVCU-1088\n\n- 主题：DC充电场景下的堵转加热请求转发\n- 原文：\n  当车辆处于 DC 充电，HCU 在接收到 ECC 的堵转加热需求后，且 MCU 反馈状态允许进行堵转加热时，HCU 应将堵转加热请求发送给 MCU。\n- 条件：\n  - 车辆处于 DC 充电\n  - ECC 发出堵转加热需求\n  - MCU 反馈状态允许进行堵转加热\n- 期望行为：\n  - HCU 应将堵转加热请求发送给 MCU\n\n### CheryVCU-1077\n\n- 主题：堵转加热请求超时撤销\n- 原文：\n  HCU 请求堵转加热 2s 后，如 MCU 反馈仍未正常进入 Trq 模式进行堵转加热，HCU 停止请求堵转加热。\n- 条件：\n  - HCU 已发起堵转加热请求\n  - 持续时间达到 2s\n  - MCU 反馈未正常进入 Trq 模式进行堵转加热\n- 期望行为：\n  - HCU 应停止堵转加热请求\n- 时序约束：\n  - 请求超时阈值为 2s\n\n### CheryVCU-10935\n\n- 主题：充电截止SOC控制与恢复\n- 原文：\n  当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆），当仪表显示 SOC 大于等于截止 SOC 时，HCU 通过向 BMS 发送充电 Stop 指令临时停止充电，当表显 SOC 小于截止 SOC 1% 时，Stop 指令停止发送，OBC 重新恢复充电，直到再次等于截止 SOC。\n- 条件：\n  - AC 或 DC 充电功能激活\n  - 用户通过大屏或手机 APP 设置充电 SOC 截止点\n  - ICM 或 TCP 向 HCU 发送充电 SOC 截止点设置信号\n- 参数约束：\n  - 充电 SOC 截止点设置范围为 50% - 100%\n  - HCU 需要对充电截止点进行下电记忆\n- 期望行为：\n  - HCU 应接收并记忆充电 SOC 截止点\n  - 当表显 SOC 大于等于截止 SOC 时，HCU 应向 BMS 发送充电 Stop 指令以临时停止充电\n  - 当表显 SOC 小于截止 SOC 1% 时，HCU 应停止发送 Stop 指令\n  - OBC 应恢复充电，直到再次达到截止 SOC\n\n## 提炼摘要\n\n- 主主题：充电管理在 DC 充电堵转加热和充电截止 SOC 控制场景下的请求下发、超时保护、截止停止与恢复\n- 关键概念：\n  - DC 充电\n  - 堵转加热请求\n  - Trq 模式\n  - 充电截止 SOC\n  - 下电记忆\n  - Stop 指令\n  - 充电恢复滞回",
+                      "tags": [
+                        "system-source",
+                        "state",
+                        "timing",
+                        "threshold",
+                        "requirement-like"
+                      ],
+                      "confidence": 0.9
+                    }
+                  ]
+                },
+                {
+                  "id": "f26e4a37-f3a4-43c9-baa5-063b10a2e33d",
+                  "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                  "fileRole": "generated_c",
+                  "fileName": "Chrg.c",
+                  "summary": "/*\n * File: Chrg.c\n *\n * Code generated for Simulink model 'Chrg'.\n *\n * Model version                  : 4.245\n * Simulink Coder version         : 9.8 (R2022b) 13-May-2022\n * C/C++ source code generated on : Mon Dec 22 ",
+                  "evidence": [
+                    {
+                      "id": "39c599ef-9640-418f-8520-12ffd5c94152",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_Delay_k)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "82f39089-02ff-40e8-8e54-4550c4df03ee",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_stChrgModSet == 3)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "bc39c340-00a2-4903-8f1f-181108bba9f1",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(!rtb_AND1_n)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "b9ee01a1-2b14-4606-be0f-1248e8638a0f",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtictc_c != Chrg_noSngBookStrtMthEEW)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "fcca43d4-71ce-4420-bf0b-36af333cd725",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtict_br != Chrg_noSngBookStrtDayEEW)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "ee541c55-c680-444e-85d9-42d0d33f5792",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtictc_c != Chrg_noSngBookStopMthEEW)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "eb71cd8a-14d0-4926-8b2b-e4129d9c9068",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtict_br != Chrg_noSngBookStopDayEEW)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "25b157e3-2c3f-469c-b4b9-b4529f7a4665",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_LogicalOperator2_e0)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "c94eb6d7-836a-4a27-b99a-6d462384c66b",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_bSglBookChrgNotStrt || rtb_bDcChging)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "a15cacb2-5946-4535-922a-ac5033f53fc7",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_Switch_lt < -32768)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "9204a5d7-a0f3-4b3c-bd42-aa0988741ae9",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_j)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "9e8f70fd-4257-4c4c-b20b-8f596819c774",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_ARID_DEF.is_c1_Chrg == Chrg_IN_ChargeMode)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "3b66f12a-37b4-4c3d-8f85-b2063fe21ca9",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_LogicalOperator2_ja)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "0340c691-a0db-44ff-aaee-368295ca737a",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_ARID_DEF.is_ACCharging == Chrg_IN_ACChargingEna)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "edb9bcfa-b1c2-4dbe-a461-694b1711a031",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_ARID_DEF.is_ChargingErr == Chrg_IN_ChargingForeverErr)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "19d4e84a-a76b-4041-b3b0-b5a65b326d52",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_bDcChging && rtb_RelationalOperator1_lk)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "5da53c67-2f81-4fa5-9dbf-41382fc4555f",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_LogicalOperator2_hm)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "8e0f311b-bed1-45a1-b228-a3218d1e80dc",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_LogicalOperator1_is)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "815efc27-770b-4133-9d5d-4a2ccd097ac4",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_ARID_DEF.is_DCCharging == Chrg_IN_DCChargingEna)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "30ff7f6f-b895-42d4-9947-ca554984a0d0",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_bACChrgReq)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "c7e00a15-a3ed-48d7-aacb-825bac9b6e8e",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_bChrgStopBySOCLim)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "969270ad-4209-435c-a034-d197c4ddb2e0",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtici_n1)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "8887dd6a-9567-4ea3-8cb2-fc6caaff394c",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 if(Chrg_bDChrgFctCfg_C)",
+                      "tags": [
+                        "function"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "c07fef68-c30e-4be7-a106-bc33ab0237cd",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "function",
+                      "excerpt": "函数 Chrg_Init(void)",
+                      "tags": [
+                        "function",
+                        "lifecycle"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "06e71aa5-244c-47ee-9966-d0e2f1213026",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_Equal2 && (!Chrg_ARID_DEF.UnitDelay2_DSTATE_pq)",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "0e0437a4-f03f-4535-851c-34beed1f3afb",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_rEEReadDly_C <= 0",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "0e02dd9a-3f60-4cea-9455-de2ed25b8256",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_rEEReadDly_C > 100",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "baf0965e-2219-4896-bec3-0741c1b68480",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_ARID_DEF.is_active_c3_Chrg == 0U",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "5403cf74-dfea-424f-bc39-35f1a5e85922",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (Chrg_stCycBookChrgEER == 3) && rtb_Delay_k",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "8cd67117-0c96-487e-bf5b-83473d0fd24d",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (Chrg_stChrgModSet == 1) || Chrg_bBookChrgCmpl",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "c9173c6c-09fc-41ea-981a-0fc88483f0df",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_AND1_n",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "e5e00794-8b8e-44df-b8fa-fdf013ebddb7",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_AND4",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "5c505b4b-433e-48e5-a6b2-8e8cf87aac6f",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_Logical_Operator4",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "6cea209d-cb89-42fc-b0fe-007dae510be2",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_RelationalOperator1_lk",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "bbeabcec-1de3-49eb-bc43-a6401543a2d6",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_AND4_a",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "33bd90dd-348e-4bd4-b674-c9f640fe5daf",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_LogicalOperator2_e0",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "e8193837-7d27-4e12-9e01-409134136225",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_AND4_mb",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "819769cd-8ce8-4986-8fa9-1b41d51e78ab",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_bDcChging",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "8f46f1de-a3b2-41e6-a915-0b4fe8dedead",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_AND4_i",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "45c42fbf-6ea3-462f-ad5f-fe4393ce8a16",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (uint32)rtb_Switch_lt > 255U",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "c0c2b73a-4fba-4ad7-8a1a-97596a278957",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (uint32)tmp_1 > 255U",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "8fe42587-1fb6-4a27-aaef-96b4b8ec6baf",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: ((uint8)4U) == 0",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "8f576cf9-7ca3-4919-b6cc-11c7a372ef79",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_MultiportSwitch == ((uint8)0U)",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "436d6484-1def-44ff-97d1-7cf6bae31401",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (uint32)idxDelay > 255U",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "b59e483e-6fc9-43e8-bf79-e2ce083f9d47",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtict_ac != Chrg_noSngBookStrtYearEEW",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "97739dba-f29f-4b77-bbaa-fbad2287ee7d",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtict_ac < Chrg_noSngBookStrtYearEEW",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "b984523c-adac-44c7-ae4c-b0c64b0e14ae",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtictc_c < Chrg_noSngBookStrtMthEEW",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "aa0cc5c6-bc1b-41fe-a68b-524d8385677a",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtict_br < Chrg_noSngBookStrtDayEEW",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "ae9c8ba5-5608-4906-9d61-853951383ac9",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: !rtb_AND1_n",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "89fd3399-249d-473e-83a3-117c3dc03a94",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_minBookChrgEnd <= Chrg_minBookChrgStrt",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "07f4f0ea-7c25-47c3-94dd-205fb755be44",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (uint8)tmp_1 > ((uint8)12U)",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "90f9fb72-e0ca-41d6-ac7a-fbaee0a690e2",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: !rtb_Delay_k",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "e467da57-f98a-46dc-ab4c-00600799268b",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_Delay_k",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "8a00fef8-d289-46c7-971d-e41c9afaecce",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtict_ac != Chrg_noSngBookStopYearEEW",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "77c7f3be-670b-4ca8-89d0-9244f8efc5cd",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtict_ac < Chrg_noSngBookStopYearEEW",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "0f519239-474b-4c56-98f0-ddd4ca22948b",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtictc_c < Chrg_noSngBookStopMthEEW",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "9dd3a195-9895-492e-b12e-a51a36a13c1d",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtict_br < Chrg_noSngBookStopDayEEW",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "f2466a9d-122d-4f62-a041-233b7de7ae84",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_bBookChrgSocSetEna",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "91a330b5-b153-4ba2-8f10-1a20ea5fb424",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAticic_m || rtb_TmpSignalConversionAtictc_n",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "d039be9e-3a30-4b3c-b1a3-199879083503",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_minBookChrgStrt < Chrg_minBookChrgEnd",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "9643239b-4d86-4548-a9f1-dfde1529d7f3",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_ARID_DEF.UnitDelay_DSTATE_il",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "bb8a1f11-255d-465e-b8a2-aaec05c92a3d",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: v < 8.388608E+6F",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "d582ef47-bacb-4f75-b194-f574e0a03e79",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: v >= 0.5F",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "1b886a75-1414-41ba-bb45-c2c51f216ec7",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtHvCoor && ((Chrg_stBookChrgMod == ((uint8)3U)",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "1b356b4b-69d8-4c6b-8cc7-efb0e1cd477e",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_bBookChrgStop",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "49b0ce6e-df45-498d-9e3e-87a384f27943",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_bBookChrgCmpl",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "b51313bc-bb3d-4edd-b120-637f13ceebf6",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (((!Chrg_ARID_DEF.outRanged",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "d956ccc6-23e7-413b-b51d-9c2013298c6a",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_LogicalOperator16",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "1190151b-66bb-4004-999c-9cf659dfd23b",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_Switch_lt > 32767",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "042a35d4-fb4a-41cf-98a1-09ecce33a025",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_Saturation2_h > 32766",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "7d9c349f-a0dc-4f07-b8a1-77b685352865",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: Chrg_ARID_DEF.outRanged",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "a41ae493-7d2f-4df0-92d1-d40a6280b5a8",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_RelationalOperator1_e",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "0a507d97-71be-427a-aa5b-fa9cdcd64f8e",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: tmp_0 && (!Chrg_bACChrgCmpl) && (Chrg_stBookChrgMod == ((uint8)1U)",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "6e780069-58da-4ec5-a898-4cf63653c989",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (Chrg_ARID_DEF.UnitDelay_DSTATE_e < 0",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "ea05b9f7-5100-407a-b974-831b7598d0c8",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtHvCo_i && tmp_0 && (!Chrg_bDCChrgCmpl)",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "9936b395-eea2-487e-b82f-a668a50b4131",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (Chrg_ARID_DEF.UnitDelay_DSTATE_k < 0",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "ee03233e-40f1-481b-9dc5-8114bf1a190c",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: tmpRead == ((uint8)3U)",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "8b34f5fd-234f-4e2b-a612-095db4efb84a",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (Chrg_ARID_DEF.UnitDelay_DSTATE_m < 0",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "72012f5f-22a6-44ed-aa14-fc5145bfeec7",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: !rtb_TmpSignalConversionAticob_n",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    },
+                    {
+                      "id": "1e325200-1c78-4dd8-9460-7fb639a69296",
+                      "fileId": "43782dd8-2d44-479d-8206-1b08d2f9f340",
+                      "fileRole": "generated_c",
+                      "fileName": "Chrg.c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (Chrg_ARID_DEF.UnitDelay_DSTATE_g < 0",
+                      "tags": [
+                        "condition"
+                      ],
+                      "confidence": 0.6
+                    }
+                  ]
+                },
+                {
+                  "id": "86b1ebd2-b28b-4725-b9f2-ff9c9909ad6d",
+                  "fileId": "4a5de7f7-c1f7-4aa9-abb4-75cb25da4644",
+                  "fileRole": "reference_requirement_example",
+                  "fileName": "software-design-requirements-example-charging-management.md",
+                  "summary": "# 软件设计需求示例：充电管理 ## 文档信息 - 文档类型：软件设计需求示例 - 领域：嵌入式 VCU - 语言：中文 - 版本：v1 - 来源：`AI case_ITK_20260411.docx` 中 `充电管理(20260410新增) -> 输出：软件需求` 图片，人工提取整理 - 整理日期：2026-04-14 ## 章节结构 - `5.3.2` 充电过程 ## 需求条目 ### CheryVCU-3015 - 状态：`rel",
+                  "evidence": [
+                    {
+                      "id": "d22bdad7-24c8-44f3-91c2-d63849a7e32a",
+                      "fileId": "4a5de7f7-c1f7-4aa9-abb4-75cb25da4644",
+                      "fileRole": "reference_requirement_example",
+                      "fileName": "software-design-requirements-example-charging-management.md",
+                      "location": "page:1",
+                      "excerpt": "# 软件设计需求示例：充电管理\n\n## 文档信息\n\n- 文档类型：软件设计需求示例\n- 领域：嵌入式 VCU\n- 语言：中文\n- 版本：v1\n- 来源：`AI case_ITK_20260411.docx` 中 `充电管理(20260410新增) -> 输出：软件需求` 图片，人工提取整理\n- 整理日期：2026-04-14\n\n## 章节结构\n\n- `5.3.2` 充电过程\n\n## 需求条目\n\n### CheryVCU-3015\n\n- 状态：`released`\n- 所属章节：`5.3.2`\n- 主题：充电过程堵转加热模式\n- 原文：\n  若 ECC 有堵转加热请求（`ECC_StallHeatingReq=0x1: ON`），VCU 满足以下条件则发送堵转加热请求（`VCU2_St_StallHeatingReq=0x1: Request`）和 Trq 模式（`VCU82_St_RModeReq=0x1: TrqCtl`）给 RMCU：\n  1. DC 充电枪已连接（`BMS3_St_DCChargePlugin = 0x1: Connected`）；\n  2. 当前挡位为 `P` 挡（`VCU1_N_ActualGear=0x1: P`）且车辆处于停车状态（`ESC_VehiclESCspeed < 3km/h`）；\n  3. 电池处于 DC 充电状态（`BMS1_St_BatteryMode = 0x4: DC Charge`）；\n  4. ECC 有堵转加热需求（`ECC_StallHeatingReq=0x1: ON`）；\n  5. RMCU 反馈的堵转加热状态正常（`RMCU2_St_StallHeating` 状态不为 `0x3: Heating Failed` 且 `0x2: Heating Over`）。\n  MCU 收到请求后进入 Torque 模式启动堵转加热并反馈状态（`RMCU2_St_StallHeating`，`RMCU1_St_RMCUMode`），开始加热电池。\n  若 2s 后 MCU 无法正常进入堵转加热（`RMCU2_St_StallHeating ≠ 0x1: Heating`），VCU 收回信号停止堵转加热请求（`VCU2_St_StallHeatingReq = 0x0: No Request`）。\n\n### CheryVCU-8102\n\n- 状态：`released`\n- 所属章节：`5.3.2`\n- 主题：充电截止SOC\n- 原文：\n  VCU 接受大屏（`ICM_Chg_SOC_LimitPointSet`）或远程（`TCP_Chg_SOC_LimitPointSet`）的充电 SOC 截止点并记忆，当大屏（`ICM_Chg_SOC_LimitPointSet`）或远程（`TCP_Chg_SOC_LimitPointSet`）发来得 SOC 限值有变化并且不是 `112`（Invalid 值）时，VCU 应当将此值更新为充电 SOC 上限值，并将此 SOC 值重新反馈大屏（`VCU_Chg_SOC_LimitSts`）；\n  在 AC/DC 充电过程中，若表显 SOC（`BMS2_N_SOC`）不小于充电截止 SOC，则 VCU 发送充电截至信号（`VCU1_St_ChrStopRequest`），否则当表显 SOC 值小于充电截至 SOC 减去 `1%`（可标定）或重新插枪（`OBC1_St_ChargerConnection=0x1: Connected` 上升沿或 `BMS3_St_DCChargePlugin=0x1: Connected` 上升沿）时，将重新判断。\n\n### CheryVCU-12147\n\n- 状态：`released`\n- 所属章节：`5.3.2`\n- 主题：充电截止SOC记忆\n- 原文：\n  VCU 应当每次下电时记忆当前设置得充电截止 SOC 值，若 ICM 或 TCP 有设置值更新时，应及时进行更新，更新值在本次驾驶循环使用，并在下次下电记忆。\n\n## 提炼摘要\n\n- 主主题：充电管理的输出软件需求围绕堵转加热模式、充电截止SOC和截止值记忆展开\n- 结构特征：\n  - 统一归属在 `5.3.2 充电过程`\n  - 每条需求直接保留原图中的信号名、状态值和阈值描述\n  - 以图片原文为准，不引入代码侧补充解释",
+                      "tags": [
+                        "state",
+                        "timing",
+                        "threshold",
+                        "requirement-like"
+                      ],
+                      "confidence": 0.75
+                    }
+                  ]
+                }
+              ],
+              "traces": [
+                {
+                  "requirementId": "SWR-001",
+                  "requirementCode": "CheryVCU-1088",
+                  "fileName": "system-requirements-example-charging-management.md",
+                  "location": "page:1",
+                  "excerpt": "当车辆处于 DC 充电，HCU 在接收到 ECC 的堵转加热需求后，且 MCU 反馈状态允许进行堵转加热时，HCU 应将堵转加热请求发送给 MCU。"
+                },
+                {
+                  "requirementId": "SWR-002",
+                  "requirementCode": "CheryVCU-1077",
+                  "fileName": "system-requirements-example-charging-management.md",
+                  "location": "page:1",
+                  "excerpt": "HCU 请求堵转加热 2s 后，如 MCU 反馈仍未正常进入 Trq 模式进行堵转加热，HCU 停止请求堵转加热。"
+                },
+                {
+                  "requirementId": "SWR-003",
+                  "requirementCode": "CheryVCU-10935",
+                  "fileName": "system-requirements-example-charging-management.md",
+                  "location": "page:1",
+                  "excerpt": "当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆），当仪表显示 SOC 大于等于截止 SOC 时，HCU 通过向 BMS 发送充电 Stop 指令临时停止充电，当表显 SOC 小于截止 SOC 1% 时，Stop 指令停止发送，OBC 重新恢复充电，直到再次等于截止 SOC。"
+                },
+                {
+                  "requirementId": "SWR-004",
+                  "requirementCode": "CheryVCU-12147",
+                  "fileName": "system-requirements-example-charging-management.md",
+                  "location": "page:1",
+                  "excerpt": "当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆）"
+                }
+              ],
+              "conflicts": [],
+              "llmProfile": {
+                "id": "20b11d97-48b6-4c36-b474-3ad13115d53f",
+                "provider": "zhipu",
+                "name": "GLM 4.5 Air",
+                "model": "glm-4.5-air",
+                "baseURL": "https://open.bigmodel.cn/api/paas/v4"
+              },
+              "summary": "使用 GLM 4.5 Air 生成 4 条结果",
+              "auditLog": [],
+              "progress": {
+                "stage": "completed",
+                "label": "任务已完成",
+                "message": "已生成 4 条结果，可开始审核。",
+                "percent": 100,
+                "current": 1,
+                "total": 3,
+                "updatedAt": "2026-04-16T20:32:52.250Z"
+              },
+              "timeline": [
+                {
+                  "at": "2026-04-16T20:32:02.948Z",
+                  "stage": "queued",
+                  "label": "任务已启动",
+                  "message": "任务已创建，等待后台开始处理 3 个输入资产。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-16T20:32:02.969Z",
+                  "stage": "module_bootstrap",
+                  "label": "准备模块上下文",
+                  "message": "已开始准备模块技能、文档类型和输入资产。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-16T20:32:03.116Z",
+                  "stage": "extracting_inputs",
+                  "label": "解析输入资料",
+                  "message": "开始解析 3 个输入资产。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-16T20:32:03.154Z",
+                  "stage": "extracting_inputs",
+                  "label": "文件解析完成",
+                  "message": "system-requirements-example-charging-management.md 解析完成，提取 1 条证据。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-16T20:32:52.224Z",
+                  "stage": "validating_results",
+                  "label": "校验结果",
+                  "message": "开始校验 4 条生成结果。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-16T20:32:52.237Z",
+                  "stage": "saving_results",
+                  "label": "保存结果",
+                  "message": "已完成校验，准备写入 4 条结果和 4 条追溯信息。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-16T20:32:52.250Z",
+                  "stage": "completed",
+                  "label": "任务完成",
+                  "message": "任务完成，生成 4 条结果，发现 0 个冲突。",
+                  "level": "info"
+                }
+              ],
+              "metrics": {
+                "extractionFileCount": 3,
+                "extractionEvidenceCount": 82,
+                "llmDurationMs": 48941,
+                "generatedItemCount": 4,
+                "conflictCount": 0
+              },
+              "errorMessage": ""
+            },
             {
               "id": "29a97573-d8e8-4e3e-aba3-32ba85c0d8f5",
               "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
@@ -5871,10 +6860,85 @@
           "at": "2026-04-15T05:50:39.452Z",
           "action": "requirements_generated",
           "detail": "软件需求任务已完成"
+        },
+        {
+          "at": "2026-04-16T20:15:13.315Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已生成"
+        },
+        {
+          "at": "2026-04-16T20:15:13.330Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:15:13.449Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:15:13.572Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:15:13.778Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:15:55.551Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:32:02.952Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已生成"
+        },
+        {
+          "at": "2026-04-16T20:32:02.969Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:32:03.116Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:32:03.154Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:32:52.224Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:32:52.238Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-16T20:32:52.250Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已完成"
+        },
+        {
+          "at": "2026-04-16T20:46:37.657Z",
+          "action": "task_result_reviewed",
+          "detail": "软件需求结果已审核"
+        },
+        {
+          "at": "2026-04-16T20:53:56.002Z",
+          "action": "task_deleted",
+          "detail": "软件需求任务已删除（任务在运行中被手动删除）"
         }
       ],
       "createdAt": "2026-04-15T05:48:37.246Z",
-      "updatedAt": "2026-04-15T05:50:39.452Z"
+      "updatedAt": "2026-04-16T20:53:56.002Z"
     },
     {
       "id": "674dc382-77e4-42d4-b0ba-4234b74f8fcf",
@@ -10112,10 +11176,30 @@
       "at": "2026-04-15T10:56:31.851Z",
       "action": "module_task_deleted",
       "detail": "扭矩干预 / 软件需求 已删除任务"
+    },
+    {
+      "at": "2026-04-16T20:15:13.315Z",
+      "action": "module_task_generated",
+      "detail": "充电管理 / 软件需求 已新增任务"
+    },
+    {
+      "at": "2026-04-16T20:20:07.155Z",
+      "action": "module_deleted",
+      "detail": "已删除功能模块：Skill Refinement 改进记录"
+    },
+    {
+      "at": "2026-04-16T20:32:02.952Z",
+      "action": "module_task_generated",
+      "detail": "充电管理 / 软件需求 已新增任务"
+    },
+    {
+      "at": "2026-04-16T20:53:56.002Z",
+      "action": "module_task_deleted",
+      "detail": "充电管理 / 软件需求 已删除任务"
     }
   ],
   "createdAt": "2026-04-14T06:39:33.852Z",
-  "updatedAt": "2026-04-16T06:29:17.723Z",
+  "updatedAt": "2026-04-16T20:53:56.002Z",
   "migrationMeta": {
     "kind": "legacy-workspace-demo",
     "migratedAt": "2026-04-14T06:39:33.853Z",

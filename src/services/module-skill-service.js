@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { ExtractionService } from "./extraction-service.js";
 import { ModuleSkillBootstrapLlmService } from "./module-skill-bootstrap-llm-service.js";
 import { readJson, writeJson } from "./storage.js";
+import { SkillRegistryService, buildKnowledgeFromItems } from "./skill-registry-service.js";
 
 const DEFAULT_DOMAIN = "embedded_vcu";
 const REFERENCE_ROLE_BY_DOCUMENT_TYPE = {
@@ -221,9 +222,13 @@ export class ModuleSkillService {
   constructor(options = {}) {
     this.extractionService = new ExtractionService();
     this.bootstrapLlmService = options.bootstrapLlmService || new ModuleSkillBootstrapLlmService();
+    this.registryService = new SkillRegistryService();
   }
 
   async loadManifest(skillDir = config.activeSkillDir) {
+    if (skillDir === config.activeSkillDir) {
+      return this.registryService.loadManifest(skillDir);
+    }
     return readJson(path.join(skillDir, "skill-manifest.json"), {
       version: 1,
       resolutionOrder: ["generic", "docType", "domain", "module"],
@@ -232,6 +237,23 @@ export class ModuleSkillService {
   }
 
   async listRegisteredModuleProfiles(skillDir = config.activeSkillDir) {
+    if (skillDir === config.activeSkillDir) {
+      const index = await this.registryService.getRegistryIndex(skillDir, { includeDeprecated: true });
+      const entries = [];
+      for (const profile of index.profiles.filter((entry) => entry.layer === "module")) {
+        const registry = await this.registryService.loadProfileRegistry("module", profile.profileKey, skillDir);
+        const knowledge = buildKnowledgeFromItems(registry.items || [], registry.version);
+        entries.push({
+          key: profile.profileKey,
+          domain: inferDomainFromKnowledge(knowledge, DEFAULT_DOMAIN),
+          source: "sqlite_registry",
+          knowledgePath: "",
+          knowledge
+        });
+      }
+      return entries;
+    }
+
     const manifest = await this.loadManifest(skillDir);
     const modules = manifest?.profiles?.modules || {};
     const entries = [];
@@ -253,6 +275,15 @@ export class ModuleSkillService {
   }
 
   async hasModuleProfile(moduleSkillKey, skillDir = config.activeSkillDir) {
+    if (skillDir === config.activeSkillDir) {
+      const normalizedKey = normalizeModuleSkillKey(moduleSkillKey);
+      try {
+        await this.registryService.loadProfileRegistry("module", normalizedKey, skillDir);
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    }
     const manifest = await this.loadManifest(skillDir);
     const normalizedKey = normalizeModuleSkillKey(moduleSkillKey);
     return Boolean(manifest?.profiles?.modules?.[normalizedKey]);
@@ -362,6 +393,25 @@ export class ModuleSkillService {
 
   async ensureModuleProfile(moduleSkillKey, knowledge, skillDir = config.activeSkillDir) {
     const normalizedKey = normalizeModuleSkillKey(moduleSkillKey);
+    if (skillDir === config.activeSkillDir) {
+      await this.registryService.saveProfileRegistry(
+        "module",
+        normalizedKey,
+        {
+          version: 1,
+          layer: "module",
+          profileKey: normalizedKey,
+          displayName: normalizedKey,
+          documentTypeScope: "",
+          status: "active",
+          items: []
+        },
+        skillDir
+      );
+      await this.registryService.replaceKnowledgeItems("module", normalizedKey, knowledge, skillDir);
+      return;
+    }
+
     const moduleDir = path.join(skillDir, "profiles", "modules", normalizedKey);
     const knowledgeRelativePath = path.join("profiles", "modules", normalizedKey, "domain-knowledge.json").replaceAll("\\", "/");
     await fs.mkdir(moduleDir, { recursive: true });

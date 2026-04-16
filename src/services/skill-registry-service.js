@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
 import { pathExists, readJson, writeJson } from "./storage.js";
+import { SkillDatabaseService } from "./skill-database-service.js";
 
 const PROFILE_META = {
   generic: {
@@ -61,6 +62,16 @@ const EMPTY_KNOWLEDGE = {
   ruleHints: [],
   antiPatterns: []
 };
+
+const TEXT_TRUTH_STRUCTURED_KINDS = new Set([
+  "source_alias",
+  "normalization_rule",
+  "source_policy_setting",
+  "forbidden_expansion",
+  "document_blueprint_section",
+  "document_blueprint_policy",
+  "rule_hint"
+]);
 
 function now() {
   return new Date().toISOString();
@@ -142,6 +153,413 @@ function trimObject(value) {
     }
   }
   return Object.keys(next).length ? next : undefined;
+}
+
+function isTextTruthStructuredKind(kind = "") {
+  return TEXT_TRUTH_STRUCTURED_KINDS.has(String(kind || "").trim());
+}
+
+function formatBooleanText(value) {
+  if (value === true) return "是";
+  if (value === false) return "否";
+  return String(value ?? "").trim();
+}
+
+function formatInlineValue(value) {
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string") return value.trim();
+  return JSON.stringify(value);
+}
+
+function parseLooseValue(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^(true|false)$/i.test(text)) {
+    return text.toLowerCase() === "true";
+  }
+  if (text === "是") return true;
+  if (text === "否") return false;
+  if (/^-?\d+(\.\d+)?$/.test(text)) {
+    return Number(text);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function parseStructuredTextSections(text = "") {
+  const lines = String(text || "").split(/\r?\n/);
+  const sections = new Map();
+  let currentLabel = "";
+
+  const ensureSection = (label) => {
+    if (!sections.has(label)) {
+      sections.set(label, { value: "", list: [] });
+    }
+    return sections.get(label);
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      currentLabel = "";
+      continue;
+    }
+
+    const labeled = /^([^：:]+)[：:]\s*(.*)$/.exec(line);
+    if (labeled) {
+      currentLabel = labeled[1].trim();
+      const section = ensureSection(currentLabel);
+      section.value = labeled[2].trim();
+      continue;
+    }
+
+    if (currentLabel && /^[-*]\s+/.test(line)) {
+      ensureSection(currentLabel).list.push(line.replace(/^[-*]\s+/, "").trim());
+      continue;
+    }
+
+    if (currentLabel) {
+      const section = ensureSection(currentLabel);
+      section.value = section.value ? `${section.value}\n${line}` : line;
+    }
+  }
+
+  return sections;
+}
+
+function sectionValue(sections, label) {
+  return sections.get(label)?.value?.trim() || "";
+}
+
+function sectionList(sections, label) {
+  return (sections.get(label)?.list || []).map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function describeSourcePolicySettingKey(key = "", value) {
+  const normalizedKey = String(key || "").trim();
+  if (normalizedKey === "standard") {
+    return `当前技能库参考的标准是 ${formatInlineValue(value)}。`;
+  }
+  if (normalizedKey === "singleSourceOfTruth") {
+    return value ? "启用单一事实来源约束，存在冲突时优先回到指定事实来源。" : "未启用单一事实来源约束。";
+  }
+  if (normalizedKey === "forbidCodeStyleSignals") {
+    return value ? "正文不允许直接沿用代码风格信号名，应优先回到规范术语。" : "正文允许保留代码风格信号名。";
+  }
+  return "用于约束事实来源、术语引用或正文边界。";
+}
+
+function describeBlueprintPolicyKey(key = "", value) {
+  const normalizedKey = String(key || "").trim();
+  if (normalizedKey === "coreFirst") {
+    return value ? "优先先铺开核心章节和核心规则，再补充外围内容。" : "不强制核心优先，允许按其它结构组织章节。";
+  }
+  if (normalizedKey === "preferSymmetricExpansion") {
+    return value ? "优先按对象或轴对称展开章节和需求。" : "不要求按对象或轴对称展开。";
+  }
+  if (normalizedKey === "preferObjectSpecificRequirements") {
+    return value ? "优先写面向具体对象的需求，而不是泛化描述。" : "允许使用更泛化的需求组织方式。";
+  }
+  if (normalizedKey === "discourageGenericScatterRequirements") {
+    return value ? "避免把需求打散成泛化、零散的条目。" : "允许更分散的泛化条目组织方式。";
+  }
+  return "用于约束文档蓝图的章节组织方式和展开偏好。";
+}
+
+function describeBlueprintSectionRole(role = "") {
+  if (role === "preferredFunctionSection") {
+    return "作为优先功能章节";
+  }
+  if (role === "preferredSubsection") {
+    return "作为优先子章节";
+  }
+  return "作为文档蓝图章节";
+}
+
+function joinChineseList(values = []) {
+  return asStringArray(values).join("、");
+}
+
+function inferStructuredKeyFromTitle(kind, title = "") {
+  const normalized = String(title || "").trim();
+  if (!normalized) return "";
+  if (kind === "document_blueprint_policy") {
+    const match = /document blueprint policy\s+(.+)$/i.exec(normalized);
+    return match ? match[1].trim() : "";
+  }
+  if (kind === "source_policy_setting") {
+    if (/source policy standard/i.test(normalized)) return "standard";
+    if (/single source of truth/i.test(normalized)) return "singleSourceOfTruth";
+    if (/forbid code style signals/i.test(normalized)) return "forbidCodeStyleSignals";
+    return "";
+  }
+  if (kind === "document_blueprint_section") {
+    if (/^preferred function section\b/i.test(normalized)) return "preferredFunctionSection";
+    if (/^preferred subsection\b/i.test(normalized)) return "preferredSubsection";
+    return "";
+  }
+  return "";
+}
+
+function hasLegacyStructuredMarkers(kind, content = "") {
+  const markersByKind = {
+    source_alias: ["标准名称：", "可接受别名：", "使用规则："],
+    normalization_rule: ["原始表达：", "统一表达：", "使用规则："],
+    source_policy_setting: ["策略名称：", "策略值：", "策略说明："],
+    forbidden_expansion: ["适用主题：", "禁止扩写项：", "使用规则："],
+    document_blueprint_section: ["蓝图角色：", "章节标题：", "章节编号：", "核心需求类型："],
+    document_blueprint_policy: ["蓝图策略：", "策略值：", "策略含义："],
+    rule_hint: ["适用领域：", "适用文档类型：", "适用子域：", "章节提示：", "写作模式：", "目标风格：", "来源依据："]
+  };
+  return (markersByKind[kind] || []).some((marker) => String(content || "").includes(marker));
+}
+
+function formatStructuredContent(kind, payload = {}) {
+  const trimmed = trimObject(cloneJson(payload)) || {};
+
+  if (kind === "source_alias") {
+    const aliases = asStringArray(trimmed.aliases);
+    if (trimmed.canonical && aliases.length) {
+      return `生成、抽取和审核时，统一将 ${joinChineseList(aliases)} 视为标准名称 ${trimmed.canonical}。`;
+    }
+    if (trimmed.canonical) {
+      return `生成、抽取和审核时，统一使用标准名称 ${trimmed.canonical}。`;
+    }
+    return "";
+  }
+
+  if (kind === "normalization_rule") {
+    if (trimmed.pattern && trimmed.replacement) {
+      return `出现“${trimmed.pattern}”时，统一写作“${trimmed.replacement}”。`;
+    }
+    return trimmed.replacement || trimmed.pattern || "";
+  }
+
+  if (kind === "source_policy_setting") {
+    return describeSourcePolicySettingKey(trimmed.key, trimmed.value);
+  }
+
+  if (kind === "forbidden_expansion") {
+    const entries = asStringArray(trimmed.entries || trimmed.items);
+    if (trimmed.topic && entries.length) {
+      return `涉及 ${trimmed.topic} 时，不要额外扩写 ${joinChineseList(entries)}。`;
+    }
+    return entries.length ? `不要额外扩写 ${joinChineseList(entries)}。` : "";
+  }
+
+  if (kind === "document_blueprint_section") {
+    const parts = [];
+    if (trimmed.title) {
+      parts.push(`文档蓝图中，${describeBlueprintSectionRole(trimmed.role)}“${trimmed.title}”。`);
+    }
+    if (trimmed.sectionNumber && trimmed.sectionNumber !== "-") {
+      parts.push(`建议章节编号使用 ${trimmed.sectionNumber}。`);
+    }
+    const coreRequirementTypes = asStringArray(trimmed.coreRequirementTypes).filter((item) => item && item !== "-" && item !== "无");
+    if (coreRequirementTypes.length) {
+      parts.push(`该章节主要承载 ${joinChineseList(coreRequirementTypes)} 类需求。`);
+    }
+    return parts.join("");
+  }
+
+  if (kind === "document_blueprint_policy") {
+    return describeBlueprintPolicyKey(trimmed.key, trimmed.value);
+  }
+
+  if (kind === "rule_hint") {
+    const scope = [trimmed.domain, trimmed.documentType, trimmed.subdomain].filter((item) => item && item !== "-");
+    const parts = [];
+    if (scope.length) {
+      parts.push(`在 ${scope.join(" / ")} 范围内，`);
+    }
+    const sectionHints = asStringArray(trimmed.sectionHints);
+    if (sectionHints.length) {
+      parts.push(`优先关注 ${joinChineseList(sectionHints)}。`);
+    }
+    if (trimmed.writingPattern) {
+      parts.push(`写作时采用 ${trimmed.writingPattern}。`);
+    }
+    if (trimmed.targetStyle) {
+      parts.push(`目标风格保持 ${trimmed.targetStyle}。`);
+    }
+    const sourceBasis = asStringArray(trimmed.sourceBasis);
+    if (sourceBasis.length) {
+      parts.push(`可以优先参考 ${joinChineseList(sourceBasis)}。`);
+    }
+    return parts.join("");
+  }
+
+  return "";
+}
+
+function parseStructuredContent(kind, content = "", fallbackPayload = null, titleHint = "") {
+  const text = String(content || "").trim();
+  if (!text) {
+    return trimObject(cloneJson(fallbackPayload)) || null;
+  }
+
+  const sections = parseStructuredTextSections(text);
+
+  if (kind === "source_alias") {
+    const sectionCanonical = sectionValue(sections, "标准名称");
+    const sectionAliases = sectionList(sections, "可接受别名");
+    if (sectionCanonical || sectionAliases.length) {
+      return trimObject({
+        canonical: sectionCanonical || fallbackPayload?.canonical,
+        aliases: sectionAliases.length ? sectionAliases : fallbackPayload?.aliases
+      }) || null;
+    }
+    let match = /^.*?统一将\s+(.+?)\s+视为标准名称\s+(.+?)。?$/u.exec(text);
+    if (match) {
+      return trimObject({
+        canonical: match[2].trim(),
+        aliases: match[1]
+          .split(/[、,，]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      }) || null;
+    }
+    match = /^.*?统一使用标准名称\s+(.+?)。?$/u.exec(text);
+    if (match) {
+      return trimObject({
+        canonical: match[1].trim(),
+        aliases: fallbackPayload?.aliases
+      }) || null;
+    }
+    return trimObject(cloneJson(fallbackPayload)) || null;
+  }
+
+  if (kind === "normalization_rule") {
+    const sectionPattern = sectionValue(sections, "原始表达");
+    const sectionReplacement = sectionValue(sections, "统一表达");
+    if (sectionPattern || sectionReplacement) {
+      return trimObject({
+        pattern: sectionPattern || fallbackPayload?.pattern,
+        replacement: sectionReplacement || fallbackPayload?.replacement
+      }) || null;
+    }
+    const match = /^出现[“"](.+?)[”"]时，统一写作[“"](.+?)[”"]。?$/u.exec(text);
+    if (match) {
+      return trimObject({
+        pattern: match[1].trim(),
+        replacement: match[2].trim()
+      }) || null;
+    }
+    return trimObject(cloneJson(fallbackPayload)) || null;
+  }
+
+  if (kind === "source_policy_setting") {
+    const sectionKey = sectionValue(sections, "策略名称");
+    const sectionValueText = sectionValue(sections, "策略值");
+    if (sectionKey || sectionValueText) {
+      return trimObject({
+        key: sectionKey || fallbackPayload?.key,
+        value: parseLooseValue(sectionValueText || fallbackPayload?.value)
+      }) || null;
+    }
+    const titleKey = inferStructuredKeyFromTitle(kind, titleHint) || fallbackPayload?.key;
+    if (titleKey === "standard") {
+      const match = /^当前技能库参考的标准是\s+(.+?)。?$/u.exec(text);
+      return trimObject({
+        key: "standard",
+        value: match ? match[1].trim() : fallbackPayload?.value
+      }) || null;
+    }
+    if (titleKey === "singleSourceOfTruth") {
+      if (text === describeSourcePolicySettingKey("singleSourceOfTruth", true)) return { key: "singleSourceOfTruth", value: true };
+      if (text === describeSourcePolicySettingKey("singleSourceOfTruth", false)) return { key: "singleSourceOfTruth", value: false };
+    }
+    if (titleKey === "forbidCodeStyleSignals") {
+      if (text === describeSourcePolicySettingKey("forbidCodeStyleSignals", true)) return { key: "forbidCodeStyleSignals", value: true };
+      if (text === describeSourcePolicySettingKey("forbidCodeStyleSignals", false)) return { key: "forbidCodeStyleSignals", value: false };
+    }
+    return trimObject(cloneJson(fallbackPayload)) || null;
+  }
+
+  if (kind === "forbidden_expansion") {
+    const sectionTopic = sectionValue(sections, "适用主题");
+    const sectionEntries = sectionList(sections, "禁止扩写项");
+    if (sectionTopic || sectionEntries.length) {
+      return trimObject({
+        topic: sectionTopic || fallbackPayload?.topic,
+        entries: sectionEntries.length ? sectionEntries : fallbackPayload?.entries
+      }) || null;
+    }
+    const match = /^涉及\s+(.+?)\s+时，不要额外扩写\s+(.+?)。?$/u.exec(text);
+    if (match) {
+      return trimObject({
+        topic: match[1].trim(),
+        entries: match[2]
+          .split(/[、,，]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      }) || null;
+    }
+    return trimObject(cloneJson(fallbackPayload)) || null;
+  }
+
+  if (kind === "document_blueprint_section") {
+    const sectionRole = sectionValue(sections, "蓝图角色");
+    const sectionTitle = sectionValue(sections, "章节标题");
+    const sectionNumber = sectionValue(sections, "章节编号");
+    const coreRequirementTypes = sectionList(sections, "核心需求类型");
+    if (sectionRole || sectionTitle || sectionNumber || coreRequirementTypes.length) {
+      return trimObject({
+        role: sectionRole || fallbackPayload?.role,
+        title: sectionTitle || fallbackPayload?.title,
+        sectionNumber: sectionNumber || fallbackPayload?.sectionNumber,
+        coreRequirementTypes: coreRequirementTypes.length ? coreRequirementTypes : fallbackPayload?.coreRequirementTypes
+      }) || null;
+    }
+    const carriedTypes = /\b主要承载\s+(.+?)\s+类需求/u.exec(text)?.[1];
+    return trimObject({
+      role: inferStructuredKeyFromTitle(kind, titleHint) || fallbackPayload?.role,
+      title: (/“(.+?)”/u.exec(text)?.[1] || fallbackPayload?.title || "").trim(),
+      sectionNumber: (/\b章节编号使用\s+([A-Za-z0-9._-]+)/u.exec(text)?.[1] || fallbackPayload?.sectionNumber || "").trim(),
+      coreRequirementTypes: carriedTypes
+        ? carriedTypes
+            .split(/[、,，]/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : fallbackPayload?.coreRequirementTypes
+    }) || null;
+  }
+
+  if (kind === "document_blueprint_policy") {
+    const sectionKey = sectionValue(sections, "蓝图策略");
+    const sectionValueText = sectionValue(sections, "策略值");
+    if (sectionKey || sectionValueText) {
+      return trimObject({
+        key: sectionKey || fallbackPayload?.key,
+        value: parseLooseValue(sectionValueText || fallbackPayload?.value)
+      }) || null;
+    }
+    const titleKey = inferStructuredKeyFromTitle(kind, titleHint) || fallbackPayload?.key;
+    if (titleKey) {
+      if (text === describeBlueprintPolicyKey(titleKey, true)) return { key: titleKey, value: true };
+      if (text === describeBlueprintPolicyKey(titleKey, false)) return { key: titleKey, value: false };
+    }
+    return trimObject(cloneJson(fallbackPayload)) || null;
+  }
+
+  if (kind === "rule_hint") {
+    return trimObject({
+      domain: sectionValue(sections, "适用领域") || fallbackPayload?.domain,
+      documentType: sectionValue(sections, "适用文档类型") || fallbackPayload?.documentType,
+      subdomain: sectionValue(sections, "适用子域") || fallbackPayload?.subdomain,
+      sectionHints: sectionList(sections, "章节提示"),
+      writingPattern: sectionValue(sections, "写作模式") || fallbackPayload?.writingPattern,
+      targetStyle: sectionValue(sections, "目标风格") || fallbackPayload?.targetStyle,
+      sourceBasis: sectionList(sections, "来源依据")
+    }) || null;
+  }
+
+  return trimObject(cloneJson(fallbackPayload)) || null;
 }
 
 function parseSkillCode(value = "") {
@@ -303,8 +721,14 @@ function sanitizeItem(item = {}, defaults = {}) {
   const layer = normalizeLayer(item.layer || defaults.layer);
   const profileKey = layer === "generic" ? "generic" : normalizeProfileKey(item.profileKey || defaults.profileKey);
   const kind = normalizeKind(item.kind || defaults.kind);
-  const content = typeof item.content === "string" ? item.content.trim() : "";
-  const structuredPayload = trimObject(cloneJson(item.structuredPayload));
+  let content = typeof item.content === "string" ? item.content.trim() : "";
+  let structuredPayload = trimObject(cloneJson(item.structuredPayload));
+  if (isTextTruthStructuredKind(kind)) {
+    structuredPayload = parseStructuredContent(kind, content, structuredPayload, item.title || defaults.title);
+    if ((!content || hasLegacyStructuredMarkers(kind, content)) && structuredPayload) {
+      content = formatStructuredContent(kind, structuredPayload);
+    }
+  }
   const title =
     String(item.title || defaults.title || structuredPayload?.topic || structuredPayload?.canonical || "").trim() ||
     `${kind.replaceAll("_", " ")} item`;
@@ -347,6 +771,7 @@ function parseMarkdownAsItems({ text = "", layer, profileKey, kind, relativePath
   const items = [];
   const lines = String(text || "").split(/\r?\n/);
   let currentSection = "default";
+  let fallbackTitle = kind.replaceAll("_", " ");
   let pendingExplicit = null;
   let pendingContent = [];
   let looseItems = [];
@@ -373,7 +798,7 @@ function parseMarkdownAsItems({ text = "", layer, profileKey, kind, relativePath
     if (!looseItems.length) return;
     looseItems.forEach((content, index) => {
       items.push({
-        title: inferTitle(currentSection, kind.replaceAll("_", " "), index + 1),
+        title: inferTitle(currentSection, fallbackTitle, index + 1),
         content,
         kind,
         layer,
@@ -404,6 +829,11 @@ function parseMarkdownAsItems({ text = "", layer, profileKey, kind, relativePath
       continue;
     }
 
+    if (/^#\s+/.test(trimmed)) {
+      fallbackTitle = trimmed.replace(/^#\s+/, "").trim() || fallbackTitle;
+      continue;
+    }
+
     if (pendingExplicit) {
       if (/^###\s+/.test(trimmed)) {
         flushExplicit();
@@ -427,10 +857,10 @@ function parseMarkdownAsItems({ text = "", layer, profileKey, kind, relativePath
   flushExplicit();
   flushLooseItems();
 
-  if (!items.length) {
-    toParagraphs(String(text || "").replace(/^#.*$/gm, "").trim()).forEach((content, index) => {
-      items.push({
-        title: inferTitle("default", kind.replaceAll("_", " "), index + 1),
+    if (!items.length) {
+      toParagraphs(String(text || "").replace(/^#.*$/gm, "").trim()).forEach((content, index) => {
+        items.push({
+        title: inferTitle("default", fallbackTitle, index + 1),
         content,
         kind,
         layer,
@@ -678,7 +1108,7 @@ function renderMarkdownTitle(kind) {
   }[kind] || "Skill Items";
 }
 
-function renderMarkdownFromItems(kind, items = []) {
+export function renderMarkdownFromItems(kind, items = []) {
   const activeItems = items
     .filter((item) => item.status === "active" && item.kind === kind)
     .sort((left, right) => left.order - right.order);
@@ -709,7 +1139,7 @@ function buildExamplePayload(item) {
   };
 }
 
-function buildKnowledgeFromItems(items = [], registryVersion = 1) {
+export function buildKnowledgeFromItems(items = [], registryVersion = 1) {
   const activeItems = items.filter((item) => item.status === "active").sort((left, right) => left.order - right.order);
   const knowledge = {
     ...EMPTY_KNOWLEDGE,
@@ -829,16 +1259,24 @@ function deriveTargetAreasFromItem(item = {}) {
 }
 
 export class SkillRegistryService {
-  async loadManifest(skillDir = config.activeSkillDir) {
+  constructor() {
+    this.databaseService = new SkillDatabaseService();
+  }
+
+  isDatabaseBacked(skillDir = config.activeSkillDir) {
+    return path.resolve(skillDir) === path.resolve(config.activeSkillDir);
+  }
+
+  async loadManifestFile(skillDir = config.activeSkillDir) {
     return readJson(path.join(skillDir, "skill-manifest.json"), buildDefaultManifest());
   }
 
-  async saveManifest(manifest, skillDir = config.activeSkillDir) {
+  async saveManifestFile(manifest, skillDir = config.activeSkillDir) {
     await writeJson(path.join(skillDir, "skill-manifest.json"), manifest);
   }
 
-  async ensureProfileRegistry(layer, profileKey, skillDir = config.activeSkillDir, manifest = null) {
-    const loadedManifest = manifest || (await this.loadManifest(skillDir));
+  async ensureProfileRegistryFromFiles(layer, profileKey, skillDir = config.activeSkillDir, manifest = null) {
+    const loadedManifest = manifest || (await this.loadManifestFile(skillDir));
     const resolved = resolveProfileConfig(loadedManifest, layer, profileKey);
     const normalizedLayer = resolved.layer;
     const normalizedKey = resolved.profileKey;
@@ -863,8 +1301,8 @@ export class SkillRegistryService {
         }
       };
       setProfileConfig(loadedManifest, normalizedLayer, normalizedKey, nextConfig);
-      await this.saveManifest(loadedManifest, skillDir);
-      await this.materializeProfile(normalizedLayer, normalizedKey, imported, skillDir, loadedManifest);
+      await this.saveManifestFile(loadedManifest, skillDir);
+      await this.materializeProfileToFiles(normalizedLayer, normalizedKey, imported, skillDir, loadedManifest);
       return imported;
     }
 
@@ -925,10 +1363,166 @@ export class SkillRegistryService {
     };
     setProfileConfig(loadedManifest, normalizedLayer, normalizedKey, nextConfig);
     if (changed || JSON.stringify(nextConfig) !== JSON.stringify(resolved.configEntry || {})) {
-      await this.saveManifest(loadedManifest, skillDir);
+      await this.saveManifestFile(loadedManifest, skillDir);
     }
 
     return normalizedRegistry;
+  }
+
+  normalizeRegistrySnapshot(registry = {}) {
+    return {
+      layer: registry.layer,
+      profileKey: registry.profileKey,
+      items: ensureArray(registry.items)
+        .map((item) => ({
+          skillCode: item.skillCode,
+          kind: item.kind,
+          title: item.title,
+          content: item.content || "",
+          status: item.status || "active",
+          order: Number(item.order || 0) || 0,
+          sectionKey: item.sectionKey || "default",
+          structuredPayload: trimObject(cloneJson(item.structuredPayload || null)) || null
+        }))
+        .sort((left, right) => left.order - right.order)
+    };
+  }
+
+  async importActiveRegistriesFromFiles(skillDir = config.activeSkillDir) {
+    const manifest = await this.loadManifestFile(skillDir);
+    const registries = [];
+    const collectProfile = async (layer, profileKey) => {
+      const registry = await this.ensureProfileRegistryFromFiles(layer, profileKey, skillDir, manifest);
+      registries.push(registry);
+    };
+
+    await collectProfile("generic", "generic");
+    for (const profileKey of Object.keys(manifest?.profiles?.docTypes || {})) {
+      await collectProfile("docType", profileKey);
+    }
+    for (const profileKey of Object.keys(manifest?.profiles?.domains || {})) {
+      await collectProfile("domain", profileKey);
+    }
+    for (const profileKey of Object.keys(manifest?.profiles?.modules || {})) {
+      await collectProfile("module", profileKey);
+    }
+    return registries;
+  }
+
+  validateImportedRegistries(registries = []) {
+    const expected = registries
+      .map((registry) => this.normalizeRegistrySnapshot(registry))
+      .sort((left, right) => `${left.layer}:${left.profileKey}`.localeCompare(`${right.layer}:${right.profileKey}`));
+    const actual = this.databaseService
+      .listProfiles()
+      .map((profile) => this.databaseService.loadProfileRegistry(profile.layer, profile.profileKey))
+      .filter(Boolean)
+      .map((registry) => this.normalizeRegistrySnapshot(registry))
+      .sort((left, right) => `${left.layer}:${left.profileKey}`.localeCompare(`${right.layer}:${right.profileKey}`));
+
+    if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+      throw createManagedError(
+        "Imported SQLite skill registry does not match legacy skill content",
+        500,
+        "skill_database_import_mismatch"
+      );
+    }
+  }
+
+  normalizeDatabaseTextTruth() {
+    for (const profile of this.databaseService.listProfiles()) {
+      const registry = this.databaseService.loadProfileRegistry(profile.layer, profile.profileKey);
+      if (!registry) continue;
+      const nextRegistry = {
+        ...registry,
+        items: ensureArray(registry.items)
+          .map((item, index) => sanitizeItem(item, { layer: registry.layer, profileKey: registry.profileKey, order: index + 1 }))
+          .sort((left, right) => left.order - right.order)
+          .map((item, index) => ({ ...item, order: index + 1 }))
+      };
+      const changed = nextRegistry.items.some((item, index) => {
+        const previous = registry.items[index];
+        return (
+          !previous ||
+          previous.content !== item.content ||
+          JSON.stringify(previous.structuredPayload || null) !== JSON.stringify(item.structuredPayload || null)
+        );
+      });
+      if (changed) {
+        this.databaseService.saveProfileRegistry(nextRegistry);
+      }
+    }
+  }
+
+  async ensureDatabaseImported(skillDir = config.activeSkillDir) {
+    if (!this.isDatabaseBacked(skillDir) || this.databaseService.isImported()) {
+      if (this.isDatabaseBacked(skillDir)) {
+        this.normalizeDatabaseTextTruth();
+      }
+      return;
+    }
+
+    const registries = await this.importActiveRegistriesFromFiles(skillDir);
+    this.databaseService.importRegistries(registries);
+    this.validateImportedRegistries(registries);
+    this.normalizeDatabaseTextTruth();
+  }
+
+  async rebuildDatabaseFromFiles(skillDir = config.activeSkillDir) {
+    if (!this.isDatabaseBacked(skillDir)) {
+      return;
+    }
+    const registries = await this.importActiveRegistriesFromFiles(skillDir);
+    this.databaseService.importRegistries(registries);
+    this.validateImportedRegistries(registries);
+  }
+
+  buildManifestFromDatabase() {
+    const manifest = buildDefaultManifest();
+    for (const profile of this.databaseService.listProfiles()) {
+      const registry = this.databaseService.loadProfileRegistry(profile.layer, profile.profileKey);
+      if (!registry) continue;
+      const activeKinds = ensureArray(registry.items)
+        .filter((item) => item.status === "active")
+        .map((item) => item.kind);
+      setProfileConfig(manifest, profile.layer, profile.profileKey, {
+        displayName: registry.displayName || inferDisplayName(profile.layer, profile.profileKey),
+        documentTypeScope: registry.documentTypeScope || profileDocumentTypeScope(profile.layer, profile.profileKey),
+        status: registry.status || "active",
+        registry: getRegistryRelativePath(profile.layer, profile.profileKey),
+        files: getDefaultProfileFiles(profile.layer, profile.profileKey, activeKinds)
+      });
+    }
+    return manifest;
+  }
+
+  async loadManifest(skillDir = config.activeSkillDir) {
+    if (this.isDatabaseBacked(skillDir)) {
+      await this.ensureDatabaseImported(skillDir);
+      return this.buildManifestFromDatabase();
+    }
+    return this.loadManifestFile(skillDir);
+  }
+
+  async saveManifest(manifest, skillDir = config.activeSkillDir) {
+    await this.saveManifestFile(manifest, skillDir);
+  }
+
+  async ensureProfileRegistry(layer, profileKey, skillDir = config.activeSkillDir, manifest = null) {
+    if (this.isDatabaseBacked(skillDir)) {
+      await this.ensureDatabaseImported(skillDir);
+      const normalizedLayer = normalizeLayer(layer);
+      const normalizedKey = normalizedLayer === "generic" ? "generic" : normalizeProfileKey(profileKey);
+      const registry = this.databaseService.loadProfileRegistry(normalizedLayer, normalizedKey);
+      if (!registry) {
+        throw createManagedError("Skill profile not found", 404, "skill_profile_not_found", {
+          layer: normalizedLayer,
+          profileKey: normalizedKey
+        });
+      }
+      return registry;
+    }
+    return this.ensureProfileRegistryFromFiles(layer, profileKey, skillDir, manifest);
   }
 
   async importProfileRegistry(layer, profileKey, configEntry = {}, skillDir = config.activeSkillDir) {
@@ -1010,21 +1604,25 @@ export class SkillRegistryService {
   }
 
   async ensureAllRegistries(skillDir = config.activeSkillDir) {
-    const manifest = await this.loadManifest(skillDir);
-    await this.ensureProfileRegistry("generic", "generic", skillDir, manifest);
+    if (this.isDatabaseBacked(skillDir)) {
+      await this.ensureDatabaseImported(skillDir);
+      return this.buildManifestFromDatabase();
+    }
+    const manifest = await this.loadManifestFile(skillDir);
+    await this.ensureProfileRegistryFromFiles("generic", "generic", skillDir, manifest);
     for (const [profileKey] of Object.entries(manifest?.profiles?.docTypes || {})) {
-      await this.ensureProfileRegistry("docType", profileKey, skillDir, manifest);
+      await this.ensureProfileRegistryFromFiles("docType", profileKey, skillDir, manifest);
     }
     for (const [profileKey] of Object.entries(manifest?.profiles?.domains || {})) {
-      await this.ensureProfileRegistry("domain", profileKey, skillDir, manifest);
+      await this.ensureProfileRegistryFromFiles("domain", profileKey, skillDir, manifest);
     }
     for (const [profileKey] of Object.entries(manifest?.profiles?.modules || {})) {
-      await this.ensureProfileRegistry("module", profileKey, skillDir, manifest);
+      await this.ensureProfileRegistryFromFiles("module", profileKey, skillDir, manifest);
     }
-    return this.loadManifest(skillDir);
+    return this.loadManifestFile(skillDir);
   }
 
-  async loadProfileRegistry(layer, profileKey, skillDir = config.activeSkillDir) {
+  async loadProfileRegistryFromFiles(layer, profileKey, skillDir = config.activeSkillDir) {
     const manifest = await this.ensureAllRegistries(skillDir);
     const resolved = resolveProfileConfig(manifest, layer, profileKey);
     if (!resolved.configEntry) {
@@ -1041,7 +1639,24 @@ export class SkillRegistryService {
     return registry;
   }
 
-  async saveProfileRegistry(layer, profileKey, registry, skillDir = config.activeSkillDir) {
+  async loadProfileRegistry(layer, profileKey, skillDir = config.activeSkillDir) {
+    if (this.isDatabaseBacked(skillDir)) {
+      await this.ensureDatabaseImported(skillDir);
+      const normalizedLayer = normalizeLayer(layer);
+      const normalizedKey = normalizedLayer === "generic" ? "generic" : normalizeProfileKey(profileKey);
+      const registry = this.databaseService.loadProfileRegistry(normalizedLayer, normalizedKey);
+      if (!registry) {
+        throw createManagedError("Skill profile not found", 404, "skill_profile_not_found", {
+          layer: normalizedLayer,
+          profileKey: normalizedKey
+        });
+      }
+      return registry;
+    }
+    return this.loadProfileRegistryFromFiles(layer, profileKey, skillDir);
+  }
+
+  async saveProfileRegistryToFiles(layer, profileKey, registry, skillDir = config.activeSkillDir) {
     const manifest = await this.ensureAllRegistries(skillDir);
     const resolved = resolveProfileConfig(manifest, layer, profileKey);
     const relativePath =
@@ -1061,11 +1676,36 @@ export class SkillRegistryService {
     };
     await fs.mkdir(path.dirname(path.join(skillDir, relativePath)), { recursive: true });
     await writeJson(path.join(skillDir, relativePath), nextRegistry);
-    await this.materializeProfile(layer, profileKey, nextRegistry, skillDir, manifest);
+    await this.materializeProfileToFiles(layer, profileKey, nextRegistry, skillDir, manifest);
     return nextRegistry;
   }
 
-  async materializeProfile(layer, profileKey, registry, skillDir = config.activeSkillDir, manifestOverride = null) {
+  async saveProfileRegistry(layer, profileKey, registry, skillDir = config.activeSkillDir) {
+    const normalizedLayer = normalizeLayer(layer);
+    const normalizedKey = normalizedLayer === "generic" ? "generic" : normalizeProfileKey(profileKey);
+    const nextRegistry = {
+      version: Math.max(Number(registry.version || 1) || 1, 1),
+      layer: normalizedLayer,
+      profileKey: normalizedKey,
+      displayName: registry.displayName || inferDisplayName(normalizedLayer, normalizedKey),
+      documentTypeScope: registry.documentTypeScope || profileDocumentTypeScope(normalizedLayer, normalizedKey),
+      status: registry.status || "active",
+      items: ensureArray(registry.items)
+        .map((item, index) => sanitizeItem(item, { layer: normalizedLayer, profileKey: normalizedKey, order: index + 1 }))
+        .sort((left, right) => left.order - right.order)
+        .map((item, index) => ({ ...item, order: index + 1 }))
+    };
+
+    if (this.isDatabaseBacked(skillDir)) {
+      await this.ensureDatabaseImported(skillDir);
+      this.databaseService.saveProfileRegistry(nextRegistry);
+      return nextRegistry;
+    }
+
+    return this.saveProfileRegistryToFiles(layer, profileKey, nextRegistry, skillDir);
+  }
+
+  async materializeProfileToFiles(layer, profileKey, registry, skillDir = config.activeSkillDir, manifestOverride = null) {
     const manifest = manifestOverride || (await this.ensureAllRegistries(skillDir));
     const normalizedLayer = normalizeLayer(layer);
     const normalizedKey = normalizedLayer === "generic" ? "generic" : normalizeProfileKey(profileKey);
@@ -1107,8 +1747,14 @@ export class SkillRegistryService {
     }
   }
 
-  async materializeAll(skillDir = config.activeSkillDir) {
-    const manifest = await this.ensureAllRegistries(skillDir);
+  async materializeProfile(layer, profileKey, registry, skillDir = config.activeSkillDir, manifestOverride = null) {
+    const effectiveRegistry = registry || (await this.loadProfileRegistry(layer, profileKey, skillDir));
+    const manifest = manifestOverride || (await this.loadManifest(skillDir));
+    return this.materializeProfileToFiles(layer, profileKey, effectiveRegistry, skillDir, manifest);
+  }
+
+  async materializeAllToFiles(skillDir = config.activeSkillDir) {
+    const manifest = this.isDatabaseBacked(skillDir) ? await this.loadManifest(skillDir) : await this.ensureAllRegistries(skillDir);
     const profiles = [
       { layer: "generic", profileKey: "generic" },
       ...Object.keys(manifest?.profiles?.docTypes || {}).map((profileKey) => ({ layer: "docType", profileKey })),
@@ -1117,17 +1763,99 @@ export class SkillRegistryService {
     ];
     for (const profile of profiles) {
       const registry = await this.loadProfileRegistry(profile.layer, profile.profileKey, skillDir);
-      await this.materializeProfile(profile.layer, profile.profileKey, registry, skillDir, manifest);
+      await this.materializeProfileToFiles(profile.layer, profile.profileKey, registry, skillDir, manifest);
     }
     return this.getRegistryIndex(skillDir);
   }
 
+  async materializeAll(skillDir = config.activeSkillDir) {
+    return this.materializeAllToFiles(skillDir);
+  }
+
+  async getRegistryIndexFromDatabase(skillDir = config.activeSkillDir, filters = {}) {
+    await this.ensureDatabaseImported(skillDir);
+    const manifest = this.buildManifestFromDatabase();
+    const profiles = [];
+    const items = [];
+    const addProfile = async (registry) => {
+      const layer = registry.layer;
+      const profileKey = registry.profileKey;
+      const configEntry = resolveProfileConfig(manifest, layer, profileKey).configEntry || {};
+      const fileSummary = Object.entries(configEntry.files || {}).flatMap(([role, relativeFiles]) =>
+        ensureArray(relativeFiles).map((relativePath) => ({
+          role,
+          relativePath,
+          absolutePath: path.join(skillDir, relativePath)
+        }))
+      );
+
+      const filteredItems = ensureArray(registry.items)
+        .filter((item) => (filters.includeDeprecated ? true : item.status !== "deprecated"))
+        .filter((item) => (filters.kind ? item.kind === filters.kind : true))
+        .filter((item) => (filters.query ? JSON.stringify(item).toLowerCase().includes(String(filters.query).toLowerCase()) : true))
+        .sort((left, right) => left.order - right.order);
+
+      profiles.push({
+        layer,
+        profileKey,
+        displayName: registry.displayName || inferDisplayName(layer, profileKey),
+        documentTypeScope: registry.documentTypeScope || profileDocumentTypeScope(layer, profileKey),
+        status: registry.status || "active",
+        registryPath: configEntry.registry || getRegistryRelativePath(layer, profileKey),
+        files: fileSummary,
+        itemCount: filteredItems.length,
+        items: filteredItems.map((item) => ({
+          skillCode: item.skillCode,
+          layer: item.layer,
+          profileKey: item.profileKey,
+          kind: item.kind,
+          title: item.title,
+          status: item.status,
+          order: item.order,
+          preview: itemPreview(item),
+          targetAreas: deriveTargetAreasFromItem(item),
+          provenance: cloneJson(item.provenance || {}),
+          review: cloneJson(item.review || {})
+        }))
+      });
+
+      items.push(
+        ...filteredItems.map((item) => ({
+          ...cloneJson(item),
+          displayName: registry.displayName || inferDisplayName(layer, profileKey),
+          documentTypeScope: registry.documentTypeScope || profileDocumentTypeScope(layer, profileKey),
+          registryPath: configEntry.registry || getRegistryRelativePath(layer, profileKey),
+          targetAreas: deriveTargetAreasFromItem(item),
+          preview: itemPreview(item)
+        }))
+      );
+    };
+
+    for (const profile of this.databaseService.listProfiles()) {
+      const registry = this.databaseService.loadProfileRegistry(profile.layer, profile.profileKey);
+      if (registry) {
+        await addProfile(registry);
+      }
+    }
+
+    return {
+      manifest,
+      profiles,
+      items,
+      bySkillCode: Object.fromEntries(items.map((item) => [item.skillCode, item]))
+    };
+  }
+
   async getRegistryIndex(skillDir = config.activeSkillDir, filters = {}) {
+    if (this.isDatabaseBacked(skillDir)) {
+      return this.getRegistryIndexFromDatabase(skillDir, filters);
+    }
+
     const manifest = await this.ensureAllRegistries(skillDir);
     const profiles = [];
     const items = [];
     const addProfile = async (layer, profileKey) => {
-      const registry = await this.loadProfileRegistry(layer, profileKey, skillDir);
+      const registry = await this.loadProfileRegistryFromFiles(layer, profileKey, skillDir);
       const configEntry = resolveProfileConfig(manifest, layer, profileKey).configEntry || {};
       const fileSummary = Object.entries(configEntry.files || {}).flatMap(([role, relativeFiles]) =>
         ensureArray(relativeFiles).map((relativePath) => ({
@@ -1490,6 +2218,24 @@ export class SkillRegistryService {
     const normalizedLayer = normalizeLayer(layer);
     if (normalizedLayer === "generic") {
       throw createManagedError("Generic profile cannot be removed", 400, "generic_profile_remove_blocked");
+    }
+    if (this.isDatabaseBacked(skillDir)) {
+      await this.ensureDatabaseImported(skillDir);
+      const normalizedKey = normalizeProfileKey(profileKey);
+      this.databaseService.removeProfile(normalizedLayer, normalizedKey);
+      await fs.rm(path.join(skillDir, getProfileRelativeDir(normalizedLayer, normalizedKey)), {
+        recursive: true,
+        force: true
+      }).catch(() => {});
+      await fs.rm(path.join(skillDir, getRegistryRelativePath(normalizedLayer, normalizedKey)), {
+        force: true
+      }).catch(() => {});
+      await this.materializeAllToFiles(skillDir);
+      return {
+        removed: true,
+        layer: normalizedLayer,
+        profileKey: normalizedKey
+      };
     }
     const manifest = await this.ensureAllRegistries(skillDir);
     const resolved = resolveProfileConfig(manifest, normalizedLayer, profileKey);
