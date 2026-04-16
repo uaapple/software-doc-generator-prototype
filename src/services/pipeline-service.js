@@ -31,6 +31,14 @@ function buildRunningSummary(documentType) {
   return "\u6b63\u5728\u751f\u6210\u8f6f\u4ef6\u9700\u6c42";
 }
 
+function countEvidence(extractions = []) {
+  return extractions.reduce((total, item) => total + (Array.isArray(item.evidence) ? item.evidence.length : 0), 0);
+}
+
+function isTaskDeletedError(error) {
+  return error?.message === "Task not found";
+}
+
 export class PipelineService {
   constructor(projectService) {
     this.projectService = projectService;
@@ -96,57 +104,255 @@ export class PipelineService {
   }
 
   async finalizeModuleGeneration(projectId, moduleId, normalizedDocumentType, inputAssets, options = {}) {
-    const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
-    const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
-    const readiness = await this.moduleSkillService.ensureModuleReady(project, module, normalizedDocumentType);
-    if (readiness.bootstrapped) {
-      await this.projectService.updateModuleSkillState(projectId, moduleId, {
-        skillStatus: "bootstrapped",
-        skillSource: {
-          type: "bootstrap",
-          documentType: normalizedDocumentType
-        },
-        seededAt: new Date().toISOString()
+    const taskId = options.taskId || "";
+    const updateTaskProgress = async (progress = {}, extraUpdates = {}) =>
+      this.projectService.updateGenerationTask(projectId, moduleId, normalizedDocumentType, taskId, {
+        progress,
+        ...extraUpdates
       });
-    }
 
-    const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
-    const composedSkills = await this.skillLoader.loadForContext(
-      {
+    try {
+      const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
+      const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
+      const llmProfile = selectedProfile
+        ? {
+            id: selectedProfile.id,
+            provider: selectedProfile.provider,
+            name: selectedProfile.name,
+            model: selectedProfile.model,
+            baseURL: selectedProfile.baseURL
+          }
+        : null;
+      const contextProject = {
+        name: `${project.name} / ${module.name}`,
+        description: module.description || project.description,
+        language: project.language,
         documentType: normalizedDocumentType,
         domain: module.domain || "embedded_vcu",
         moduleSkillKey: module.moduleSkillKey || ""
-      },
-      skillDir
-    );
-    const domainKnowledge = composedSkills["domain-knowledge.json"] || {};
+      };
 
-    const llmProfile = selectedProfile
-      ? {
-          id: selectedProfile.id,
-          provider: selectedProfile.provider,
-          name: selectedProfile.name,
-          model: selectedProfile.model,
-          baseURL: selectedProfile.baseURL
+      await updateTaskProgress(
+        {
+          stage: "module_bootstrap",
+          label: "正在准备模块上下文",
+          message: "正在校验模块资料、加载技能与生成上下文。",
+          percent: 10
+        },
+        {
+          timelineEntry: {
+            stage: "module_bootstrap",
+            label: "准备模块上下文",
+            message: "已开始准备模块技能、文档类型和输入资产。",
+            level: "info"
+          }
         }
-      : null;
+      );
 
-    const contextProject = {
-      name: `${project.name} / ${module.name}`,
-      description: module.description || project.description,
-      language: project.language,
-      documentType: normalizedDocumentType,
-      domain: module.domain || "embedded_vcu",
-      moduleSkillKey: module.moduleSkillKey || ""
-    };
+      const readiness = await this.moduleSkillService.ensureModuleReady(project, module, normalizedDocumentType, {
+        llmProfileId: options.llmProfileId || ""
+      });
+      if (readiness.bootstrapped) {
+        await this.projectService.updateModuleSkillState(projectId, moduleId, {
+          skillStatus: "bootstrapped",
+          skillSource: {
+            type: "bootstrap",
+            documentType: normalizedDocumentType,
+            strategy: readiness.bootstrapStrategy || "rule_based",
+            llmProfileName: readiness.bootstrapLlmProfile?.name || ""
+          },
+          seededAt: new Date().toISOString()
+        });
+      }
 
-    const taskId = options.taskId || "";
+      const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
+      const composedSkills = await this.skillLoader.loadForContext(
+        {
+          documentType: normalizedDocumentType,
+          domain: module.domain || "embedded_vcu",
+          moduleSkillKey: module.moduleSkillKey || ""
+        },
+        skillDir
+      );
+      const domainKnowledge = composedSkills["domain-knowledge.json"] || {};
 
-    try {
-      const extractions = await this.extractionService.extractFiles({ files: inputAssets });
-      const resultItems = await this.llmService.generateDocumentItems(contextProject, extractions, options);
+      await updateTaskProgress(
+        {
+          stage: "extracting_inputs",
+          label: "正在解析输入资料",
+          message: `准备解析 ${inputAssets.length} 个输入资产。`,
+          percent: 22,
+          current: 0,
+          total: inputAssets.length
+        },
+        {
+          timelineEntry: {
+            stage: "extracting_inputs",
+            label: "解析输入资料",
+            message: `开始解析 ${inputAssets.length} 个输入资产。`,
+            level: "info"
+          }
+        }
+      );
+
+      const extractions = await this.extractionService.extractFiles(
+        { files: inputAssets },
+        {
+          onProgress: async (event) => {
+            if (event.phase === "extracting_file") {
+              await updateTaskProgress({
+                stage: "extracting_inputs",
+                label: "正在解析输入资料",
+                message: `正在解析第 ${event.current}/${event.total} 个文件：${event.fileName}`,
+                percent: Math.min(48, 22 + Math.round((event.current / Math.max(event.total, 1)) * 22)),
+                current: event.current,
+                total: event.total
+              });
+            }
+            if (event.phase === "file_extracted") {
+              await updateTaskProgress(
+                {
+                  stage: "extracting_inputs",
+                  label: "正在解析输入资料",
+                  message: `已完成 ${event.current}/${event.total} 个文件：${event.fileName}`,
+                  percent: Math.min(50, 24 + Math.round((event.current / Math.max(event.total, 1)) * 24)),
+                  current: event.current,
+                  total: event.total
+                },
+                {
+                  timelineEntry: {
+                    stage: "extracting_inputs",
+                    label: "文件解析完成",
+                    message: `${event.fileName} 解析完成，提取 ${event.evidenceCount || 0} 条证据。`,
+                    level: "info"
+                  }
+                }
+              );
+            }
+          }
+        }
+      );
+
+      await updateTaskProgress(
+        {
+          stage: "llm_generating",
+          label: "正在请求模型生成",
+          message: `已提取 ${countEvidence(extractions)} 条证据，准备请求模型生成。`,
+          percent: 58
+        },
+        {
+          metrics: {
+            extractionFileCount: inputAssets.length,
+            extractionEvidenceCount: countEvidence(extractions)
+          },
+          timelineEntry: {
+            stage: "llm_generating",
+            label: "模型生成",
+            message: `输入解析完成，准备调用 ${selectedProfile?.name || "本地回退"}。`,
+            level: "info"
+          }
+        }
+      );
+
+      let llmDurationMs = 0;
+      const resultItems = await this.llmService.generateDocumentItems(contextProject, extractions, {
+        ...options,
+        onProgress: async (event) => {
+          if (event.phase === "fallback_generation") {
+            await updateTaskProgress(
+              {
+                stage: "llm_generating",
+                label: "正在使用本地回退生成",
+                message: event.message,
+                percent: 68
+              },
+              {
+                timelineEntry: {
+                  stage: "llm_generating",
+                  label: "本地回退",
+                  message: event.message,
+                  level: "warning"
+                }
+              }
+            );
+          }
+          if (event.phase === "llm_request_started") {
+            await updateTaskProgress(
+              {
+                stage: "llm_generating",
+                label: "正在等待模型返回",
+                message: event.message,
+                percent: 70
+              },
+              {
+                timelineEntry: {
+                  stage: "llm_generating",
+                  label: "模型请求已发出",
+                  message: event.message,
+                  level: "info"
+                }
+              }
+            );
+          }
+          if (event.phase === "llm_request_completed") {
+            llmDurationMs = Number(event.durationMs || 0) || 0;
+            await updateTaskProgress(
+              {
+                stage: "llm_generating",
+                label: "模型已返回，正在整理输出",
+                message: `${event.message}${llmDurationMs ? `（耗时 ${llmDurationMs} ms）` : ""}`,
+                percent: 78
+              },
+              {
+                metrics: { llmDurationMs },
+                timelineEntry: {
+                  stage: "llm_generating",
+                  label: "模型已返回",
+                  message: `${selectedProfile?.name || "模型"} 已返回结果${llmDurationMs ? `，耗时 ${llmDurationMs} ms` : ""}。`,
+                  level: "info"
+                }
+              }
+            );
+          }
+        }
+      });
+
+      await updateTaskProgress(
+        {
+          stage: "validating_results",
+          label: "正在校验生成结果",
+          message: `模型生成完成，正在校验 ${resultItems.length} 条结果。`,
+          percent: 86
+        },
+        {
+          metrics: { generatedItemCount: resultItems.length },
+          timelineEntry: {
+            stage: "validating_results",
+            label: "校验结果",
+            message: `开始校验 ${resultItems.length} 条生成结果。`,
+            level: "info"
+          }
+        }
+      );
       const conflicts = this.validationService.validate(resultItems, { domainKnowledge, documentType: normalizedDocumentType });
       const traces = buildTraces(resultItems);
+      await updateTaskProgress(
+        {
+          stage: "saving_results",
+          label: "正在保存结果",
+          message: `校验完成，发现 ${conflicts.length} 个冲突，正在保存任务结果。`,
+          percent: 94
+        },
+        {
+          metrics: { conflictCount: conflicts.length },
+          timelineEntry: {
+            stage: "saving_results",
+            label: "保存结果",
+            message: `已完成校验，准备写入 ${resultItems.length} 条结果和 ${traces.length} 条追溯信息。`,
+            level: "info"
+          }
+        }
+      );
       const updatedTask = await this.projectService.updateGenerationTask(projectId, moduleId, normalizedDocumentType, taskId, {
         status: "completed",
         resultItems,
@@ -154,6 +360,25 @@ export class PipelineService {
         traces,
         conflicts,
         llmProfile,
+        metrics: {
+          extractionFileCount: inputAssets.length,
+          extractionEvidenceCount: countEvidence(extractions),
+          llmDurationMs,
+          generatedItemCount: resultItems.length,
+          conflictCount: conflicts.length
+        },
+        progress: {
+          stage: "completed",
+          label: "任务已完成",
+          message: `已生成 ${resultItems.length} 条结果，可开始审核。`,
+          percent: 100
+        },
+        timelineEntry: {
+          stage: "completed",
+          label: "任务完成",
+          message: `任务完成，生成 ${resultItems.length} 条结果，发现 ${conflicts.length} 个冲突。`,
+          level: "info"
+        },
         summary: selectedProfile
           ? `使用 ${selectedProfile.name} 生成 ${resultItems.length} 条结果`
           : `使用本地回退模式生成 ${resultItems.length} 条结果`
@@ -166,8 +391,31 @@ export class PipelineService {
         task: updatedTask
       };
     } catch (error) {
+      if (isTaskDeletedError(error)) {
+        return {
+          projectId,
+          moduleId,
+          documentType: normalizedDocumentType,
+          task: null,
+          deleted: true
+        };
+      }
+
       await this.projectService.updateGenerationTask(projectId, moduleId, normalizedDocumentType, taskId, {
         status: "failed",
+        errorMessage: error.message || "生成失败",
+        progress: {
+          stage: "failed",
+          label: "任务执行失败",
+          message: error.message || "生成失败",
+          percent: 100
+        },
+        timelineEntry: {
+          stage: "failed",
+          label: "任务失败",
+          message: error.message || "生成失败",
+          level: "error"
+        },
         summary: error.message || "生成失败"
       });
       throw error;
@@ -213,7 +461,24 @@ export class PipelineService {
       inputAssetIds: inputAssets.map((asset) => asset.id),
       uploadedAssetIds: Array.isArray(options.uploadedAssetIds) ? options.uploadedAssetIds : [],
       llmProfile,
-      summary: buildRunningSummary(normalizedDocumentType)
+      summary: buildRunningSummary(normalizedDocumentType),
+      progress: {
+        stage: "queued",
+        label: "任务已启动",
+        message: `任务已创建，正在排队准备生成${normalizeDocumentType(documentType) === "hil_test_case" ? " HIL 用例" : ""}。`,
+        percent: 3,
+        current: 0,
+        total: inputAssets.length
+      },
+      timeline: [
+        {
+          at: new Date().toISOString(),
+          stage: "queued",
+          label: "任务已启动",
+          message: `任务已创建，等待后台开始处理 ${inputAssets.length} 个输入资产。`,
+          level: "info"
+        }
+      ]
     });
 
     const resultPromise = this.finalizeModuleGeneration(projectId, moduleId, normalizedDocumentType, inputAssets, {

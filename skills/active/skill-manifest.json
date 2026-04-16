@@ -77,10 +77,31 @@
           ]
         }
       },
-      "charging_management": {
+      "扭矩干预": {
         "files": {
           "domain-knowledge.json": [
-            "profiles/modules/charging_management/domain-knowledge.json"
+            "profiles/modules/torque_intervention/domain-knowledge.json"
+          ]
+        }
+      },
+      "充电管理": {
+        "files": {
+          "domain-knowledge.json": [
+            "profiles/modules/充电管理/domain-knowledge.json"
+          ]
+        }
+      },
+      "高压能量管理": {
+        "files": {
+          "domain-knowledge.json": [
+            "profiles/modules/高压能量管理/domain-knowledge.json"
+          ]
+        }
+      },
+      "高低系统管理": {
+        "files": {
+          "domain-knowledge.json": [
+            "profiles/modules/高低系统管理/domain-knowledge.json"
           ]
         }
       }

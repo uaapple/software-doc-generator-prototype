@@ -17,6 +17,17 @@ import { ReplayTaskService } from "../src/services/replay-task-service.js";
 import { SkillRuleService } from "../src/services/skill-rule-service.js";
 import { PipelineService } from "../src/services/pipeline-service.js";
 import { ModuleSkillService } from "../src/services/module-skill-service.js";
+import { SkillManagementService } from "../src/services/skill-management-service.js";
+
+class FakeModuleSkillBootstrapLlmService {
+  constructor(result) {
+    this.result = result;
+  }
+
+  async synthesizeKnowledge() {
+    return this.result;
+  }
+}
 
 async function withTempConfig(run) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-refinement-"));
@@ -290,6 +301,129 @@ const tests = [
     }
   },
   {
+    name: "Module skill service uses LLM bootstrap result when available",
+    run: async () => {
+      await withTempConfig(async () => {
+        const knowledge = {
+          version: 2,
+          generationPriorities: ["优先写核心主题"],
+          examples: [
+            {
+              requirementId: "CheryVCU-3015",
+              topic: "充电过程堵转加热模式",
+              sectionNumber: "",
+              sectionTitle: "充电过程",
+              requirementType: "functional",
+              preferredTitle: "充电过程 - 堵转加热模式",
+              requirementText: "当条件满足时发送堵转加热请求，超时则撤销。",
+              signals: ["ECC_StallHeatingReq"],
+              references: [],
+              canonicalBranches: ["请求成立", "超时撤销"],
+              keywords: ["充电管理", "堵转加热"]
+            }
+          ],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              subdomain: "充电管理",
+              sectionHints: ["充电过程", "堵转加热模式"],
+              writingPattern: "先写核心主线。",
+              targetStyle: "贴近人工样例。",
+              sourceBasis: ["system.md", "example.md"]
+            }
+          ],
+          antiPatterns: ["不要把多个主题揉成一条。"],
+          documentBlueprint: {
+            domain: "embedded_vcu",
+            subdomain: "充电管理",
+            preferredFunctionSection: {
+              sectionNumber: "",
+              title: "充电管理"
+            },
+            preferredSubsections: [
+              {
+                sectionNumber: "",
+                title: "充电过程",
+                coreRequirementTypes: ["software_requirement"]
+              }
+            ],
+            targetOutputPolicy: {
+              coreFirst: true,
+              preferSymmetricExpansion: true,
+              preferObjectSpecificRequirements: true,
+              discourageGenericScatterRequirements: true
+            }
+          }
+        };
+
+        const service = new ModuleSkillService({
+          bootstrapLlmService: new FakeModuleSkillBootstrapLlmService({
+            knowledge,
+            analysis: {},
+            profile: { id: "mock", name: "Mock LLM", provider: "doubao", model: "deepseek" }
+          })
+        });
+
+        const result = await service.bootstrapModuleKnowledge(
+          {
+            name: "充电管理",
+            moduleSkillKey: "充电管理",
+            domain: "embedded_vcu",
+            assets: []
+          },
+          "software_requirement",
+          { llmProfileId: "mock" }
+        );
+
+        assert.equal(result.strategy, "llm");
+        assert.equal(result.knowledge.examples[0].topic, "充电过程堵转加热模式");
+        assert.equal(result.llmProfile.name, "Mock LLM");
+      });
+    }
+  },
+  {
+    name: "Module skill service falls back to rule-based bootstrap without LLM result",
+    run: async () => {
+      await withTempConfig(async () => {
+        const systemPath = path.join(config.rootDir, "input-system.md");
+        const referencePath = path.join(config.rootDir, "input-reference.md");
+        await fs.writeFile(systemPath, "系统应在满足条件时执行充电截止SOC控制。", "utf8");
+        await fs.writeFile(referencePath, "优秀范例：先写截止SOC，再写记忆逻辑。", "utf8");
+
+        const service = new ModuleSkillService({
+          bootstrapLlmService: new FakeModuleSkillBootstrapLlmService(null)
+        });
+
+        const result = await service.bootstrapModuleKnowledge(
+          {
+            name: "充电管理",
+            moduleSkillKey: "充电管理",
+            domain: "embedded_vcu",
+            assets: [
+              {
+                id: "sys-1",
+                role: "system_pdf",
+                originalName: "system.md",
+                absolutePath: systemPath
+              },
+              {
+                id: "ref-1",
+                role: "reference_requirement_example",
+                originalName: "reference.md",
+                absolutePath: referencePath
+              }
+            ]
+          },
+          "software_requirement",
+          { llmProfileId: "" }
+        );
+
+        assert.equal(result.strategy, "rule_based");
+        assert.ok(Array.isArray(result.knowledge.generationPriorities));
+      });
+    }
+  },
+  {
     name: "Template service routes by document type",
     run: async () => {
       await withTempConfig(async () => {
@@ -535,6 +669,145 @@ const tests = [
         const list = await projectService.listProjects();
         assert.equal(list.find((item) => item.id === detailProject.id)?.documentType, "detail_design");
         assert.equal(list.find((item) => item.id === legacyProjectId)?.documentType, "software_requirement");
+      });
+    }
+  },
+  {
+    name: "Project service updates and deletes projects with uploads",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({
+          name: "Original Project",
+          description: "before"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        await fs.writeFile(path.join(uploadDir, "placeholder.txt"), "content", "utf8");
+
+        const updated = await projectService.updateProject(project.id, {
+          name: "Updated Project",
+          description: "after"
+        });
+        assert.equal(updated.name, "Updated Project");
+        assert.equal(updated.description, "after");
+        assert.equal(updated.auditLog.at(-1)?.action, "project_updated");
+
+        const deleted = await projectService.deleteProject(project.id);
+        assert.equal(deleted.deleted, true);
+        assert.equal(await projectService.getProject(project.id), null);
+        await assert.rejects(fs.access(uploadDir));
+      });
+    }
+  },
+  {
+    name: "Project service updates and deletes modules with uploads",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Module Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Original Module",
+          description: "before"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        await fs.writeFile(path.join(uploadDir, "placeholder.txt"), "content", "utf8");
+
+        const updated = await projectService.updateModule(project.id, module.id, {
+          name: "Updated Module",
+          description: "after",
+          domain: "embedded_vcu",
+          moduleSkillKey: "updated_module"
+        });
+        assert.equal(updated.name, "Updated Module");
+        assert.equal(updated.description, "after");
+        assert.equal(updated.moduleSkillKey, "updated_module");
+
+        const deleted = await projectService.deleteModule(project.id, module.id);
+        assert.equal(deleted.deleted, true);
+
+        const refreshedProject = await projectService.getProject(project.id);
+        assert.equal(refreshedProject.modules.length, 0);
+        await assert.rejects(fs.access(uploadDir));
+      });
+    }
+  },
+  {
+    name: "Project service deletes completed and stale running tasks while protecting fresh running tasks",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Task Workspace" });
+        const module = await projectService.createModule(project.id, { name: "Charging" });
+
+        const completedTask = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          summary: "已完成任务",
+          resultItems: [
+            {
+              id: "result-1",
+              requirementId: "SWR-001",
+              title: "充电状态输出",
+              requirementText: "软件应输出充电状态。",
+              type: "functional",
+              confidence: 0.9,
+              sourceRefs: []
+            }
+          ]
+        });
+
+        await projectService.createAcceptedItem(project.id, module.id, "software_requirement", {
+          sourceTaskId: completedTask.id,
+          sourceResultItemId: "result-1"
+        });
+
+        const runningTask = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "running",
+          summary: "运行中任务"
+        });
+
+        const staleRunningTask = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "running",
+          summary: "卡死任务",
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-01T00:00:00.000Z",
+          progress: {
+            stage: "llm_generating",
+            label: "等待模型返回",
+            message: "已经长时间没有更新",
+            percent: 70,
+            updatedAt: "2026-04-01T00:00:00.000Z"
+          }
+        });
+
+        const deleted = await projectService.deleteGenerationTask(
+          project.id,
+          module.id,
+          "software_requirement",
+          completedTask.id
+        );
+        assert.equal(deleted.deleted, true);
+        assert.equal(deleted.removedAcceptedCount, 1);
+
+        const space = await projectService.getDocumentSpace(project.id, module.id, "software_requirement");
+        assert.equal(space.generationTasks.some((item) => item.id === completedTask.id), false);
+        assert.equal(space.acceptedItems.some((item) => item.sourceTaskId === completedTask.id), false);
+
+        await assert.rejects(
+          projectService.deleteGenerationTask(project.id, module.id, "software_requirement", runningTask.id),
+          /Running task cannot be deleted/
+        );
+
+        const staleDeleted = await projectService.deleteGenerationTask(
+          project.id,
+          module.id,
+          "software_requirement",
+          staleRunningTask.id
+        );
+        assert.equal(staleDeleted.deleted, true);
       });
     }
   },
@@ -892,6 +1165,69 @@ const tests = [
 
         assert.deepEqual(JSON.parse(await fs.readFile(activePath, "utf8")), legacyKnowledge);
         assert.deepEqual(JSON.parse(await fs.readFile(bundlePath, "utf8")), legacyKnowledge);
+      });
+    }
+  },
+  {
+    name: "Skill management service lists, updates, and deletes skills safely",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new SkillManagementService();
+
+        const list = await service.listSkills();
+        assert.equal(list.summary.countsByType.generic, 1);
+        assert.equal(list.summary.countsByType.docType, 3);
+        assert.equal(list.summary.countsByType.domain, 1);
+        assert.equal(list.summary.countsByType.module, 1);
+
+        const detail = await service.getSkillDetail("module", "charging_management");
+        assert.equal(detail.item.key, "charging_management");
+        assert.ok(detail.capabilities.canDelete);
+
+        const updated = await service.updateSkill("module", "charging_management", {
+          knowledge: {
+            version: 2,
+            generationPriorities: ["先覆盖充电主流程"],
+            antiPatterns: ["不要遗漏 SOC 限值"],
+            ruleHints: [
+              {
+                domain: "embedded_vcu",
+                subdomain: "charging_management",
+                sectionHints: ["充电限值"],
+                writingPattern: "保持人类样例顺序",
+                targetStyle: "规约写法",
+                sourceBasis: ["charging-reference.md"]
+              }
+            ],
+            examples: [
+              {
+                requirementId: "REQ-2",
+                topic: "SOC 限制",
+                requirementText: "软件应根据 SOC 阈值限制充电功率。",
+                keywords: ["SOC"]
+              }
+            ]
+          }
+        });
+
+        assert.equal(updated.knowledge.version, 2);
+        assert.equal(updated.knowledge.examples.length, 1);
+        assert.equal(updated.knowledge.ruleHints[0].subdomain, "charging_management");
+
+        const removal = await service.deleteSkill("module", "charging_management");
+        assert.equal(removal.removed, true);
+
+        const afterDelete = await service.listSkills();
+        assert.equal(afterDelete.summary.countsByType.module, 0);
+        const manifest = JSON.parse(await fs.readFile(path.join(config.activeSkillDir, "skill-manifest.json"), "utf8"));
+        assert.equal(manifest.profiles.modules.charging_management, undefined);
+
+        const modulePath = path.join(config.activeSkillDir, "profiles", "modules", "charging_management", "domain-knowledge.json");
+        const exists = await fs
+          .access(modulePath)
+          .then(() => true)
+          .catch(() => false);
+        assert.equal(exists, false);
       });
     }
   }

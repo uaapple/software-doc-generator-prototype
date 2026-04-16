@@ -8,10 +8,20 @@ export class ExtractionService {
     this.cExtractor = new CExtractor();
   }
 
-  async extractFiles(project) {
+  async extractFiles(project, options = {}) {
     const extractions = [];
+    const files = Array.isArray(project.files) ? project.files : [];
 
-    for (const file of project.files) {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      options.onProgress?.({
+        phase: "extracting_file",
+        current: index + 1,
+        total: files.length,
+        fileName: file.originalName,
+        fileRole: file.role
+      });
+
       if (file.role === "simulink_slx") {
         extractions.push({
           id: randomUUID(),
@@ -20,6 +30,14 @@ export class ExtractionService {
           fileName: file.originalName,
           summary: "SLX 第一阶段暂不解析，已预留模型抽取接口。",
           evidence: [],
+          reservedForFuture: true
+        });
+        options.onProgress?.({
+          phase: "file_extracted",
+          current: index + 1,
+          total: files.length,
+          fileName: file.originalName,
+          evidenceCount: 0,
           reservedForFuture: true
         });
         continue;
@@ -43,6 +61,13 @@ export class ExtractionService {
           tags: block.tags || inferTags(block.text, file.role),
           confidence: inferConfidence(file.role, block.text)
         }))
+      });
+      options.onProgress?.({
+        phase: "file_extracted",
+        current: index + 1,
+        total: files.length,
+        fileName: file.originalName,
+        evidenceCount: result.blocks.length
       });
     }
 

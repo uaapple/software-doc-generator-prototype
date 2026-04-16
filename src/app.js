@@ -13,6 +13,7 @@ import { LlmProfileService } from "./services/llm-profile-service.js";
 import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
 import { ModuleSkillService } from "./services/module-skill-service.js";
+import { SkillManagementService } from "./services/skill-management-service.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -66,6 +67,7 @@ export async function createApp() {
   const rejectionService = new RejectionService();
   const replayTaskService = new ReplayTaskService();
   const moduleSkillService = new ModuleSkillService();
+  const skillManagementService = new SkillManagementService();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
 
@@ -115,10 +117,16 @@ export async function createApp() {
   app.get("/projects/new", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "project-create.html"));
   });
+  app.get("/projects/:projectId/edit", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "project-create.html"));
+  });
   app.get("/projects/:projectId", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "project-detail.html"));
   });
   app.get("/projects/:projectId/modules/new", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "module-create.html"));
+  });
+  app.get("/projects/:projectId/modules/:moduleId/edit", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "module-create.html"));
   });
   app.get("/projects/:projectId/modules/:moduleId", (_req, res) => {
@@ -138,6 +146,9 @@ export async function createApp() {
   });
   app.get("/skill-refinement", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "skill-refinement.html"));
+  });
+  app.get("/skill-management", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "skill-management.html"));
   });
   app.get("/feedback-pool", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "feedback-pool.html"));
@@ -229,6 +240,24 @@ export async function createApp() {
     }
   });
 
+  app.put("/api/projects/:projectId", async (req, res, next) => {
+    try {
+      const project = await projectService.updateProject(req.params.projectId, req.body || {});
+      res.json(toClientProject(project));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/projects/:projectId", async (req, res, next) => {
+    try {
+      const result = await projectService.deleteProject(req.params.projectId);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/projects/:projectId/modules/initialize-preview", async (req, res, next) => {
     try {
       const project = await projectService.getProject(req.params.projectId);
@@ -258,6 +287,15 @@ export async function createApp() {
     try {
       const module = await projectService.updateModule(req.params.projectId, req.params.moduleId, req.body || {});
       res.json(module);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/projects/:projectId/modules/:moduleId", async (req, res, next) => {
+    try {
+      const result = await projectService.deleteModule(req.params.projectId, req.params.moduleId);
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -369,6 +407,23 @@ export async function createApp() {
     }
   );
 
+  app.delete(
+    "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/:taskId",
+    async (req, res, next) => {
+      try {
+        const result = await projectService.deleteGenerationTask(
+          req.params.projectId,
+          req.params.moduleId,
+          req.params.documentType,
+          req.params.taskId
+        );
+        res.json(result);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
   app.post(
     "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks",
     upload.fields(moduleUploadFields()),
@@ -456,6 +511,23 @@ export async function createApp() {
           req.body || {}
         );
         res.json(item);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  app.delete(
+    "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/accepted-items/:itemId",
+    async (req, res, next) => {
+      try {
+        const result = await projectService.deleteAcceptedItem(
+          req.params.projectId,
+          req.params.moduleId,
+          req.params.documentType,
+          req.params.itemId
+        );
+        res.json(result);
       } catch (error) {
         next(error);
       }
@@ -624,6 +696,38 @@ export async function createApp() {
     try {
       const result = await replayTaskService.applyTask(req.params.taskId);
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/skill-management", async (_req, res, next) => {
+    try {
+      res.json(await skillManagementService.listSkills());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/skill-management/:type/:key", async (req, res, next) => {
+    try {
+      res.json(await skillManagementService.getSkillDetail(req.params.type, req.params.key));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/skill-management/:type/:key", async (req, res, next) => {
+    try {
+      res.json(await skillManagementService.updateSkill(req.params.type, req.params.key, req.body || {}));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/skill-management/:type/:key", async (req, res, next) => {
+    try {
+      res.json(await skillManagementService.deleteSkill(req.params.type, req.params.key));
     } catch (error) {
       next(error);
     }

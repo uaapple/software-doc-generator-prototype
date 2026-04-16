@@ -1,5 +1,5 @@
 {
-  "defaultProfileId": "2f01df6b-7340-4457-8aab-0a73666f0b86",
+  "defaultProfileId": "20b11d97-48b6-4c36-b474-3ad13115d53f",
   "profiles": [
     {
       "id": "2f01df6b-7340-4457-8aab-0a73666f0b86",
@@ -23,23 +23,33 @@
     },
     {
       "id": "20b11d97-48b6-4c36-b474-3ad13115d53f",
-      "provider": "doubao",
-      "name": "GLM 4.7",
-      "model": "glm-4-7-251222",
-      "apiKey": "0e1c8949-f932-455d-8779-c53bbb921656",
-      "baseURL": "https://ark.cn-beijing.volces.com/api/v3",
+      "provider": "zhipu",
+      "name": "GLM 4.5 Air",
+      "model": "glm-4.5-air",
+      "apiKey": "038c2194b30d4c48b2889a961de47e9c.gTqssiehp45gUV4Q",
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
       "createdAt": "2026-04-09T08:19:54.2315195Z",
-      "updatedAt": "2026-04-09T08:44:20.0671428Z"
+      "updatedAt": "2026-04-15T00:00:00.000Z"
+    },
+    {
+      "id": "b69eb8b4-9b7e-4c25-8c47-5b7da7af9355",
+      "provider": "zhipu",
+      "name": "GLM 5",
+      "model": "glm-5",
+      "apiKey": "038c2194b30d4c48b2889a961de47e9c.gTqssiehp45gUV4Q",
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
+      "createdAt": "2026-04-15T00:00:00.000Z",
+      "updatedAt": "2026-04-15T00:00:00.000Z"
     },
     {
       "id": "seed-profile",
-      "provider": "doubao",
-      "name": "默认豆包模型",
-      "model": "doubao-seed-2-0-pro-260215",
-      "apiKey": "0e1c8949-f932-455d-8779-c53bbb921656",
-      "baseURL": "https://ark.cn-beijing.volces.com/api/v3",
+      "provider": "zhipu",
+      "name": "默认智谱模型",
+      "model": "glm-4.5-air",
+      "apiKey": "038c2194b30d4c48b2889a961de47e9c.gTqssiehp45gUV4Q",
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
       "createdAt": "2026-04-07T18:08:14.785Z",
-      "updatedAt": "2026-04-09T11:38:15.108Z",
+      "updatedAt": "2026-04-15T00:00:00.000Z",
       "seeded": true
     }
   ]

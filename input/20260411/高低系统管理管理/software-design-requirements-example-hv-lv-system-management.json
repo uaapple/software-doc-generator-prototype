@@ -1,0 +1,40 @@
+{
+  "documentType": "software_design_requirements_example",
+  "domain": "embedded_vcu",
+  "title": "软件设计需求示例：高低系统管理",
+  "language": "zh-CN",
+  "version": "v1",
+  "source": {
+    "providedBy": "word_embedded_images",
+    "ingestMethod": "manual_text_extraction_from_image",
+    "collectedDate": "2026-04-15",
+    "sourceFile": "input/20260411/AI case_ITK_20260411.docx"
+  },
+  "section": {
+    "sectionNumber": "5.1.3",
+    "sectionTitle": "KL15上下高压需求判断"
+  },
+  "requirements": [
+    {
+      "requirementId": "CheryVCU-4546",
+      "status": "in rework",
+      "sectionNumber": "5.1.3",
+      "topic": "KL15上高压需求判断",
+      "rawText": "当满足如下全部条件时，KL15状态为ON，KL15上高压需求判断为激活：1.当硬线KL15信号为ON或整车电源状态（BCM_SystemPowerMode）为ON/RUN且整车电源状态有效性（BCM_SystemPowerModeValid）有效，或备份的整车电源状态（VCCM_BackUpSystemPowerMode）为ON/RUN且备份的整车电源状态有效性（VCCM_BackUpSystemPowerModeValid）有效持续超过80ms（可标定）上升沿激活且锁止并持续发送0.03s，直至出现如下任一情况得上升沿触发清；1.1：硬线KL15信号为OFF；1.2：高压状态机处于下高压流程中（CheryVCU-15344）；"
+    },
+    {
+      "requirementId": "CheryVCU-4545",
+      "status": "in rework",
+      "sectionNumber": "5.1.3",
+      "topic": "KL15下电判断",
+      "rawText": "当满足如下任一条件时，KL15下高压需求激活：1.KL15状态为OFF"
+    }
+  ],
+  "derivedSummary": {
+    "mainTheme": "高低系统管理的软件需求围绕KL15上下高压需求判断展开。",
+    "styleCharacteristics": [
+      "当前软件需求图片区段只包含4546和4545两条",
+      "保留原图中的状态、时延、标定量和编号引用"
+    ]
+  }
+}

@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1900" viewBox="0 0 1800 1900">
+  <defs>
+    <style>
+      .title { font: 700 40px "PingFang SC", "Microsoft YaHei", sans-serif; fill: #122033; }
+      .label { font: 600 26px "PingFang SC", "Microsoft YaHei", sans-serif; fill: #122033; }
+      .small { font: 500 22px "PingFang SC", "Microsoft YaHei", sans-serif; fill: #24364d; }
+      .box { fill: #f7fbff; stroke: #3a6ea5; stroke-width: 3; rx: 18; ry: 18; }
+      .decision { fill: #fff8e8; stroke: #c68a00; stroke-width: 3; }
+      .accent { fill: #edf7ed; stroke: #3f8f52; stroke-width: 3; rx: 18; ry: 18; }
+      .warn { fill: #fff1f0; stroke: #c94a3f; stroke-width: 3; rx: 18; ry: 18; }
+      .arrow { stroke: #4d5f75; stroke-width: 4; fill: none; marker-end: url(#arrowhead); }
+      .note { font: 600 22px "PingFang SC", "Microsoft YaHei", sans-serif; fill: #6b4e00; }
+    </style>
+    <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#4d5f75" />
+    </marker>
+  </defs>
+
+  <rect width="1800" height="1900" fill="#ffffff" />
+  <text x="900" y="70" text-anchor="middle" class="title">新模块首次生成软件需求的冷启动流程</text>
+
+  <rect x="620" y="110" width="560" height="90" class="box" />
+  <text x="900" y="165" text-anchor="middle" class="label">1. 创建新功能模块</text>
+
+  <polygon points="900,245 1080,335 900,425 720,335" class="decision" />
+  <text x="900" y="327" text-anchor="middle" class="label">是否导入</text>
+  <text x="900" y="362" text-anchor="middle" class="label">已有 module skill？</text>
+
+  <rect x="180" y="500" width="420" height="110" class="accent" />
+  <text x="390" y="550" text-anchor="middle" class="label">是</text>
+  <text x="390" y="590" text-anchor="middle" class="small">模块状态 = imported</text>
+
+  <rect x="1180" y="500" width="440" height="130" class="box" />
+  <text x="1400" y="548" text-anchor="middle" class="label">否</text>
+  <text x="1400" y="590" text-anchor="middle" class="small">模块状态 = draft</text>
+  <text x="1400" y="622" text-anchor="middle" class="small">进入冷启动预备状态</text>
+
+  <rect x="560" y="700" width="680" height="100" class="box" />
+  <text x="900" y="760" text-anchor="middle" class="label">2. 进入“软件需求生成”页面，前端调用 initialization-check</text>
+
+  <polygon points="900,860 1090,950 900,1040 710,950" class="decision" />
+  <text x="900" y="942" text-anchor="middle" class="label">模块已有</text>
+  <text x="900" y="977" text-anchor="middle" class="label">profile 吗？</text>
+
+  <rect x="170" y="1110" width="440" height="100" class="accent" />
+  <text x="390" y="1170" text-anchor="middle" class="label">有：直接可生成</text>
+
+  <rect x="1110" y="1100" width="580" height="120" class="box" />
+  <text x="1400" y="1156" text-anchor="middle" class="label">没有：检查冷启动资产</text>
+  <text x="1400" y="1192" text-anchor="middle" class="small">系统需求 / 模型代码 / 优秀范例</text>
+
+  <polygon points="1400,1290 1590,1380 1400,1470 1210,1380" class="decision" />
+  <text x="1400" y="1372" text-anchor="middle" class="label">三类资产</text>
+  <text x="1400" y="1407" text-anchor="middle" class="label">是否齐全？</text>
+
+  <rect x="1090" y="1540" width="430" height="130" class="warn" />
+  <text x="1305" y="1592" text-anchor="middle" class="label">不齐：拦截生成</text>
+  <text x="1305" y="1630" text-anchor="middle" class="small">页面提示继续补齐资产</text>
+
+  <rect x="650" y="1540" width="330" height="110" class="accent" />
+  <text x="815" y="1600" text-anchor="middle" class="label">齐全：允许自动 bootstrap</text>
+
+  <rect x="560" y="1720" width="680" height="110" class="box" />
+  <text x="900" y="1772" text-anchor="middle" class="label">3. 点击“开始生成”</text>
+  <text x="900" y="1810" text-anchor="middle" class="small">先上传本次文件，再创建 generation task（running）</text>
+
+  <rect x="90" y="860" width="470" height="960" fill="#f9fcff" stroke="#d8e5f2" stroke-width="2" rx="24" ry="24" />
+  <text x="325" y="910" text-anchor="middle" class="label">4A. 已有 profile 的普通生成</text>
+  <rect x="150" y="960" width="350" height="110" class="box" />
+  <text x="325" y="1020" text-anchor="middle" class="small">跳过 bootstrap</text>
+  <rect x="150" y="1110" width="350" height="110" class="box" />
+  <text x="325" y="1170" text-anchor="middle" class="small">按 generic → docType →</text>
+  <text x="325" y="1202" text-anchor="middle" class="small">domain → module 组装 skill</text>
+  <rect x="150" y="1260" width="350" height="110" class="box" />
+  <text x="325" y="1320" text-anchor="middle" class="small">拼模板 + 证据 + 领域知识</text>
+  <rect x="150" y="1410" width="350" height="110" class="box" />
+  <text x="325" y="1470" text-anchor="middle" class="small">调用外部 LLM</text>
+  <text x="325" y="1502" text-anchor="middle" class="small">或走本地 fallback</text>
+  <rect x="150" y="1560" width="350" height="130" class="accent" />
+  <text x="325" y="1620" text-anchor="middle" class="small">写回 resultItems / traces / conflicts</text>
+  <text x="325" y="1654" text-anchor="middle" class="small">任务状态 = completed / failed</text>
+
+  <rect x="650" y="860" width="1060" height="970" fill="#fcfffa" stroke="#dbead9" stroke-width="2" rx="24" ry="24" />
+  <text x="1180" y="910" text-anchor="middle" class="label">4B. 冷启动自动 bootstrap 后再生成</text>
+  <rect x="730" y="965" width="900" height="100" class="box" />
+  <text x="1180" y="1025" text-anchor="middle" class="small">ensureModuleReady：发现没有 module profile，但资产已齐全</text>
+  <rect x="730" y="1115" width="900" height="110" class="box" />
+  <text x="1180" y="1172" text-anchor="middle" class="small">抽取模块资产证据</text>
+  <text x="1180" y="1206" text-anchor="middle" class="small">系统需求 / 模型 PDF / C 代码 / 优秀范例</text>
+  <rect x="730" y="1275" width="900" height="110" class="box" />
+  <text x="1180" y="1332" text-anchor="middle" class="small">优先从“优秀范例”提炼 examples</text>
+  <text x="1180" y="1366" text-anchor="middle" class="small">同时构造 ruleHints / antiPatterns / documentBlueprint</text>
+  <rect x="730" y="1435" width="900" height="110" class="box" />
+  <text x="1180" y="1492" text-anchor="middle" class="small">写入模块级 domain-knowledge.json</text>
+  <text x="1180" y="1526" text-anchor="middle" class="small">并更新 skill-manifest.json 注册该模块 profile</text>
+  <rect x="730" y="1595" width="900" height="110" class="accent" />
+  <text x="1180" y="1652" text-anchor="middle" class="small">模块状态更新为 bootstrapped</text>
+  <text x="1180" y="1686" text-anchor="middle" class="small">然后回到普通生成主链路继续跑</text>
+
+  <path d="M900 200 L900 232" class="arrow" />
+  <path d="M720 335 L390 500" class="arrow" />
+  <path d="M1080 335 L1400 500" class="arrow" />
+  <path d="M390 610 L780 700" class="arrow" />
+  <path d="M1400 630 L1020 700" class="arrow" />
+  <path d="M900 800 L900 848" class="arrow" />
+  <path d="M710 950 L390 1110" class="arrow" />
+  <path d="M1090 950 L1400 1100" class="arrow" />
+  <path d="M1400 1220 L1400 1278" class="arrow" />
+  <path d="M1210 1380 L980 1540" class="arrow" />
+  <path d="M1400 1470 L1305 1540" class="arrow" />
+  <path d="M815 1650 L860 1720" class="arrow" />
+
+  <path d="M390 1210 L390 960" class="arrow" />
+  <path d="M325 1070 L325 1110" class="arrow" />
+  <path d="M325 1220 L325 1260" class="arrow" />
+  <path d="M325 1370 L325 1410" class="arrow" />
+  <path d="M325 1520 L325 1560" class="arrow" />
+
+  <path d="M900 1830 L1180 965" class="arrow" />
+  <path d="M1180 1065 L1180 1115" class="arrow" />
+  <path d="M1180 1225 L1180 1275" class="arrow" />
+  <path d="M1180 1385 L1180 1435" class="arrow" />
+  <path d="M1180 1545 L1180 1595" class="arrow" />
+
+  <text x="470" y="430" class="note">是</text>
+  <text x="1210" y="430" class="note">否</text>
+  <text x="565" y="1090" class="note">有</text>
+  <text x="1160" y="1090" class="note">无</text>
+  <text x="1030" y="1510" class="note">齐全</text>
+  <text x="1450" y="1515" class="note">不齐</text>
+</svg>

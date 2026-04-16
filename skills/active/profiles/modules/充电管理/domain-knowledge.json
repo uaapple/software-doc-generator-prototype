@@ -117,7 +117,7 @@
   "ruleHints": [
     {
       "domain": "embedded_vcu",
-      "subdomain": "charging_management",
+      "subdomain": "充电管理",
       "sectionHints": [
         "充电管理",
         "充电过程",

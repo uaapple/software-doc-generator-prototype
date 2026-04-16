@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
@@ -44,7 +45,9 @@ export async function readJson(filePath, fallback = null) {
 }
 
 export async function writeJson(filePath, value) {
-  await fs.writeFile(filePath, JSON.stringify(value, null, 2), "utf8");
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${randomUUID()}`;
+  await fs.writeFile(tempPath, JSON.stringify(value, null, 2), "utf8");
+  await fs.rename(tempPath, filePath);
 }
 
 export async function copyDirectory(sourceDir, targetDir) {

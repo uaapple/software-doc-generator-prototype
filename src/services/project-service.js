@@ -103,6 +103,8 @@ function createModuleRecord(projectId, input = {}) {
 }
 
 function normalizeTask(task = {}) {
+  const progress = normalizeTaskProgress(task.progress);
+  const timeline = normalizeTaskTimeline(task.timeline);
   return {
     id: task.id || randomUUID(),
     moduleId: task.moduleId || "",
@@ -118,17 +120,84 @@ function normalizeTask(task = {}) {
     conflicts: Array.isArray(task.conflicts) ? task.conflicts : [],
     llmProfile: task.llmProfile || null,
     summary: task.summary || "",
-    auditLog: Array.isArray(task.auditLog) ? task.auditLog : []
+    auditLog: Array.isArray(task.auditLog) ? task.auditLog : [],
+    progress,
+    timeline,
+    metrics: normalizeTaskMetrics(task.metrics),
+    errorMessage: String(task.errorMessage || "").trim()
   };
+}
+
+function normalizeTaskProgress(progress = {}) {
+  return {
+    stage: String(progress?.stage || "").trim(),
+    label: String(progress?.label || "").trim(),
+    message: String(progress?.message || "").trim(),
+    percent: Math.max(0, Math.min(100, Number(progress?.percent || 0) || 0)),
+    current: Math.max(0, Number(progress?.current || 0) || 0),
+    total: Math.max(0, Number(progress?.total || 0) || 0),
+    updatedAt: progress?.updatedAt || ""
+  };
+}
+
+function normalizeTaskTimeline(timeline = []) {
+  return Array.isArray(timeline)
+    ? timeline
+        .map((entry) => ({
+          at: entry?.at || now(),
+          stage: String(entry?.stage || "").trim(),
+          label: String(entry?.label || "").trim(),
+          message: String(entry?.message || "").trim(),
+          level: String(entry?.level || "info").trim() || "info"
+        }))
+        .filter((entry) => entry.message)
+        .slice(-24)
+    : [];
+}
+
+function normalizeTaskMetrics(metrics = {}) {
+  return {
+    extractionFileCount: Math.max(0, Number(metrics?.extractionFileCount || 0) || 0),
+    extractionEvidenceCount: Math.max(0, Number(metrics?.extractionEvidenceCount || 0) || 0),
+    llmDurationMs: Math.max(0, Number(metrics?.llmDurationMs || 0) || 0),
+    generatedItemCount: Math.max(0, Number(metrics?.generatedItemCount || 0) || 0),
+    conflictCount: Math.max(0, Number(metrics?.conflictCount || 0) || 0)
+  };
+}
+
+function appendTimelineEntry(task, timelineEntry) {
+  if (!timelineEntry?.message) {
+    return;
+  }
+
+  const entry = {
+    at: timelineEntry.at || now(),
+    stage: String(timelineEntry.stage || "").trim(),
+    label: String(timelineEntry.label || "").trim(),
+    message: String(timelineEntry.message || "").trim(),
+    level: String(timelineEntry.level || "info").trim() || "info"
+  };
+  const lastEntry = task.timeline.at(-1);
+  if (
+    lastEntry &&
+    lastEntry.stage === entry.stage &&
+    lastEntry.message === entry.message &&
+    lastEntry.level === entry.level
+  ) {
+    task.timeline[task.timeline.length - 1] = entry;
+  } else {
+    task.timeline.push(entry);
+    task.timeline = task.timeline.slice(-24);
+  }
 }
 
 function buildTaskSummary(task = {}) {
   const documentTypeLabel = getDocumentTypeLabel(task.documentType);
   if (task.status === "running") {
-    return `正在生成${documentTypeLabel}`;
+    return task.progress?.label || task.progress?.message || `正在生成${documentTypeLabel}`;
   }
   if (task.status === "failed") {
-    return task.summary || `${documentTypeLabel}生成失败`;
+    return task.errorMessage || task.summary || `${documentTypeLabel}生成失败`;
   }
   if (task.summary) {
     return task.summary;
@@ -280,6 +349,44 @@ export class ProjectService {
     return normalized;
   }
 
+  async updateProject(projectId, input = {}) {
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    if (typeof input.name === "string" && input.name.trim()) {
+      project.name = input.name.trim();
+    }
+    if (Object.hasOwn(input, "description")) {
+      project.description = String(input.description || "").trim();
+    }
+    if (Object.hasOwn(input, "status") && input.status) {
+      project.status = input.status;
+    }
+
+    project.auditLog.push({
+      at: now(),
+      action: "project_updated",
+      detail: "工程信息已更新"
+    });
+    return this.saveProject(project);
+  }
+
+  async deleteProject(projectId) {
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    await Promise.all([
+      fs.rm(getProjectPath(projectId), { force: true }),
+      fs.rm(path.join(config.uploadDir, projectId), { recursive: true, force: true })
+    ]);
+
+    return { id: projectId, deleted: true };
+  }
+
   async createModule(projectId, input = {}) {
     const project = await this.getProject(projectId);
     if (!project) {
@@ -315,6 +422,32 @@ export class ProjectService {
     touchModule(module, "module_updated", "功能模块信息已更新");
     await this.saveProject(project);
     return module;
+  }
+
+  async deleteModule(projectId, moduleId) {
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    const moduleIndex = project.modules.findIndex((item) => item.id === moduleId);
+    if (moduleIndex === -1) {
+      throw new Error("Module not found");
+    }
+
+    const [removedModule] = project.modules.splice(moduleIndex, 1);
+    project.auditLog.push({
+      at: now(),
+      action: "module_deleted",
+      detail: `已删除功能模块：${removedModule.name}`
+    });
+
+    await Promise.all([
+      this.saveProject(project),
+      fs.rm(path.join(config.uploadDir, projectId, moduleId), { recursive: true, force: true })
+    ]);
+
+    return { id: moduleId, deleted: true };
   }
 
   async updateModuleSkillState(projectId, moduleId, updates = {}) {
@@ -419,6 +552,35 @@ export class ProjectService {
     return space.generationTasks.find((task) => task.id === taskId) || null;
   }
 
+  async deleteGenerationTask(projectId, moduleId, documentType, taskId) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const space = module.documentSpaces[normalizedDocumentType];
+    const taskIndex = space.generationTasks.findIndex((item) => item.id === taskId);
+    if (taskIndex === -1) {
+      throw new Error("Task not found");
+    }
+
+    const [removedTask] = space.generationTasks.splice(taskIndex, 1);
+
+    const acceptedCountBefore = space.acceptedItems.length;
+    space.acceptedItems = space.acceptedItems.filter((item) => item.sourceTaskId !== taskId);
+    const removedAcceptedCount = acceptedCountBefore - space.acceptedItems.length;
+
+    touchModule(
+      module,
+      "task_deleted",
+      `${getDocumentTypeLabel(normalizedDocumentType)}任务已删除${removedAcceptedCount ? `，并移除 ${removedAcceptedCount} 条已采纳结果` : ""}${removedTask.status === "running" ? "（任务在运行中被手动删除）" : ""}`
+    );
+    project.auditLog.push({
+      at: now(),
+      action: "module_task_deleted",
+      detail: `${module.name} / ${getDocumentTypeLabel(normalizedDocumentType)} 已删除任务`
+    });
+    await this.saveProject(project);
+    return { id: taskId, deleted: true, removedAcceptedCount };
+  }
+
   async recordGenerationTask(projectId, moduleId, documentType, taskInput = {}) {
     const normalizedDocumentType = normalizeDocumentType(documentType);
     const { project, module } = await this.getProjectAndModule(projectId, moduleId);
@@ -478,6 +640,31 @@ export class ProjectService {
     }
     if (typeof updates.summary === "string") {
       task.summary = updates.summary;
+    }
+    if (Object.hasOwn(updates, "errorMessage")) {
+      task.errorMessage = String(updates.errorMessage || "").trim();
+    }
+    if (updates.progress && typeof updates.progress === "object") {
+      task.progress = {
+        ...normalizeTaskProgress(task.progress),
+        ...normalizeTaskProgress({
+          ...task.progress,
+          ...updates.progress,
+          updatedAt: now()
+        })
+      };
+    }
+    if (updates.metrics && typeof updates.metrics === "object") {
+      task.metrics = {
+        ...normalizeTaskMetrics(task.metrics),
+        ...normalizeTaskMetrics({
+          ...task.metrics,
+          ...updates.metrics
+        })
+      };
+    }
+    if (updates.timelineEntry && typeof updates.timelineEntry === "object") {
+      appendTimelineEntry(task, updates.timelineEntry);
     }
     task.summary = buildTaskSummary(task);
     task.updatedAt = now();
@@ -667,6 +854,34 @@ export class ProjectService {
     touchModule(module, "accepted_item_updated", `${getDocumentTypeLabel(normalizedDocumentType)}接受结果已更新`);
     await this.saveProject(project);
     return acceptedItem;
+  }
+
+  async deleteAcceptedItem(projectId, moduleId, documentType, acceptedItemId) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const space = module.documentSpaces[normalizedDocumentType];
+    const acceptedIndex = space.acceptedItems.findIndex((item) => item.id === acceptedItemId);
+    if (acceptedIndex === -1) {
+      throw new Error("Accepted item not found");
+    }
+
+    const [acceptedItem] = space.acceptedItems.splice(acceptedIndex, 1);
+    const sourceTask = space.generationTasks.find((item) => item.id === acceptedItem.sourceTaskId);
+    const sourceResult = sourceTask?.resultItems?.find((item) => item.id === acceptedItem.sourceResultItemId);
+    if (sourceResult?.review?.status === "accepted") {
+      sourceResult.review = {
+        ...(sourceResult.review || {}),
+        status: "pending",
+        reviewer: sourceResult.review?.reviewer || "当前用户",
+        comment: "已从采纳结果区移除",
+        updatedAt: now()
+      };
+      sourceTask.updatedAt = now();
+    }
+
+    touchModule(module, "accepted_item_deleted", `${getDocumentTypeLabel(normalizedDocumentType)}接受结果已删除`);
+    await this.saveProject(project);
+    return { id: acceptedItemId, deleted: true };
   }
 
   async getProjectAndModule(projectId, moduleId) {

@@ -5,20 +5,41 @@ const rejectDialogClose = document.querySelector("#reject-dialog-close");
 const rejectDialogSubtitle = document.querySelector("#reject-dialog-subtitle");
 const rejectForm = document.querySelector("#reject-form");
 const rejectFormCancel = document.querySelector("#reject-form-cancel");
-const TASK_POLL_INTERVAL_MS = 20000;
+const acceptedEditDialog = document.querySelector("#accepted-edit-dialog");
+const acceptedEditSubtitle = document.querySelector("#accepted-edit-subtitle");
+const acceptedEditForm = document.querySelector("#accepted-edit-form");
+const acceptedEditCancel = document.querySelector("#accepted-edit-cancel");
+const acceptedEditTitleInput = document.querySelector("#accepted-edit-title");
+const acceptedEditTextInput = document.querySelector("#accepted-edit-text");
+const historyDrawer = document.querySelector("#history-drawer");
+const historyDrawerBackdrop = document.querySelector("#history-drawer-backdrop");
+const openHistoryDrawerButton = document.querySelector("#open-history-drawer");
+const closeHistoryDrawerButton = document.querySelector("#close-history-drawer");
+const TASK_POLL_INTERVAL_MS = 30000;
 const PENDING_GENERATION_STORAGE_KEY = "pending-module-generations";
 const PENDING_GENERATION_MAX_AGE_MS = 30 * 60 * 1000;
 let taskPollTimer = 0;
 const state = {
-  rejectContext: null
+  rejectContext: null,
+  acceptedEditContext: null
 };
 
 rejectDialogClose?.addEventListener("click", closeRejectDialog);
 rejectFormCancel?.addEventListener("click", closeRejectDialog);
 rejectForm?.addEventListener("submit", handleRejectSubmit);
+acceptedEditCancel?.addEventListener("click", closeAcceptedEditDialog);
+acceptedEditForm?.addEventListener("submit", handleAcceptedEditSubmit);
+openHistoryDrawerButton?.addEventListener("click", openHistoryDrawer);
+closeHistoryDrawerButton?.addEventListener("click", closeHistoryDrawer);
+historyDrawerBackdrop?.addEventListener("click", closeHistoryDrawer);
 rejectDialog?.addEventListener("click", (event) => {
   if (event.target === rejectDialog) {
     closeRejectDialog();
+  }
+});
+acceptedEditDialog?.addEventListener("click", (event) => {
+  if (event.target === acceptedEditDialog) {
+    closeAcceptedEditDialog();
   }
 });
 
@@ -31,8 +52,7 @@ async function boot() {
       return;
     }
     if (page === "project-create") {
-      renderBreadcrumb([{ label: "工程列表", href: "/" }, { label: "创建工程" }]);
-      document.querySelector("#project-form")?.addEventListener("submit", handleCreateProject);
+      await renderProjectFormPage();
       return;
     }
     if (page === "project-detail") {
@@ -77,19 +97,42 @@ async function renderProjectListPage() {
           </div>
           <div class="inline-actions">
             <a class="primary-link" href="/projects/${project.id}">进入工程</a>
+            <a class="secondary-link" href="/projects/${project.id}/edit">编辑</a>
+            <button class="secondary-button" type="button" data-delete-project="${project.id}" data-project-name="${escapeAttribute(project.name)}">删除</button>
           </div>
         </article>
       `
     )
     .join("");
+
+  projectList.querySelectorAll("[data-delete-project]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const projectId = button.dataset.deleteProject || "";
+      const projectName = button.dataset.projectName || "该工程";
+      const confirmed = window.confirm(`确认删除“${projectName}”吗？工程下的模块和已上传文件也会一并删除。`);
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        await request(`/api/projects/${projectId}`, { method: "DELETE" });
+        setStatus(`已删除工程：${projectName}`);
+        await renderProjectListPage();
+      } catch (error) {
+        handleError(error);
+      }
+    });
+  });
 }
 
 async function handleCreateProject(event) {
   event.preventDefault();
   try {
     const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
-    const project = await request("/api/projects", {
-      method: "POST",
+    const editingProjectId = event.currentTarget.dataset.projectId || "";
+    const isEditing = Boolean(editingProjectId);
+    const project = await request(isEditing ? `/api/projects/${editingProjectId}` : "/api/projects", {
+      method: isEditing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
@@ -97,6 +140,37 @@ async function handleCreateProject(event) {
   } catch (error) {
     handleError(error);
   }
+}
+
+async function renderProjectFormPage() {
+  const form = document.querySelector("#project-form");
+  const title = document.querySelector("#project-form-title");
+  const subtitle = document.querySelector("#project-form-subtitle");
+  const submitButton = document.querySelector("#project-submit-button");
+  const cancelLink = document.querySelector("#project-cancel-link");
+  const projectId = getPathPart(1);
+  const isEditing = Boolean(projectId && getPathPart(2) === "edit");
+
+  if (!isEditing) {
+    renderBreadcrumb([{ label: "工程列表", href: "/" }, { label: "创建工程" }]);
+    form?.addEventListener("submit", handleCreateProject);
+    return;
+  }
+
+  const project = await request(`/api/projects/${projectId}`);
+  renderBreadcrumb([
+    { label: "工程列表", href: "/" },
+    { label: project.name, href: `/projects/${project.id}` },
+    { label: "编辑工程" }
+  ]);
+  title.textContent = "编辑工程";
+  subtitle.textContent = "更新工程名称和说明，保存后返回工程主页。";
+  submitButton.textContent = "保存并返回工程";
+  cancelLink.href = `/projects/${project.id}`;
+  form.dataset.projectId = project.id;
+  form.elements.namedItem("name").value = project.name || "";
+  form.elements.namedItem("description").value = project.description || "";
+  form.addEventListener("submit", handleCreateProject);
 }
 
 async function renderProjectDetailPage() {
@@ -109,7 +183,21 @@ async function renderProjectDetailPage() {
 
   document.querySelector("#project-title").textContent = project.name;
   document.querySelector("#project-description").textContent = project.description || "这个工程还没有补充说明。";
+  document.querySelector("#edit-project-link").href = `/projects/${project.id}/edit`;
   document.querySelector("#create-module-link").href = `/projects/${project.id}/modules/new`;
+  document.querySelector("#delete-project-button")?.addEventListener("click", async () => {
+    const confirmed = window.confirm(`确认删除“${project.name}”吗？工程下的模块和已上传文件也会一并删除。`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await request(`/api/projects/${project.id}`, { method: "DELETE" });
+      window.location.href = "/";
+    } catch (error) {
+      handleError(error);
+    }
+  });
 
   const moduleList = document.querySelector("#module-list");
   if (!(project.modules || []).length) {
@@ -129,16 +217,42 @@ async function renderProjectDetailPage() {
           </div>
           <div class="inline-actions">
             <a class="primary-link" href="/projects/${project.id}/modules/${module.id}">进入模块</a>
+            <a class="secondary-link" href="/projects/${project.id}/modules/${module.id}/edit">编辑</a>
+            <button class="secondary-button" type="button" data-delete-module="${module.id}" data-module-name="${escapeAttribute(module.name)}">删除</button>
           </div>
         </article>
       `
     )
     .join("");
+
+  moduleList.querySelectorAll("[data-delete-module]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const moduleId = button.dataset.deleteModule || "";
+      const moduleName = button.dataset.moduleName || "该模块";
+      const confirmed = window.confirm(`确认删除模块“${moduleName}”吗？模块下的任务记录和已上传文件也会一并删除。`);
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        await request(`/api/projects/${project.id}/modules/${moduleId}`, { method: "DELETE" });
+        setStatus(`已删除模块：${moduleName}`);
+        await renderProjectDetailPage();
+      } catch (error) {
+        handleError(error);
+      }
+    });
+  });
 }
 
 async function renderModuleCreatePage() {
   const projectId = getPathPart(1);
-  const project = await request(`/api/projects/${projectId}`);
+  const moduleId = getPathPart(3);
+  const isEditing = Boolean(moduleId && getPathPart(4) === "edit");
+  const [project, existingModule] = await Promise.all([
+    request(`/api/projects/${projectId}`),
+    isEditing ? request(`/api/projects/${projectId}/modules/${moduleId}`) : Promise.resolve(null)
+  ]);
   const form = document.querySelector("#module-form");
   const nameInput = form?.elements?.namedItem("name");
   const descriptionInput = form?.elements?.namedItem("description");
@@ -147,15 +261,30 @@ async function renderModuleCreatePage() {
   const candidateSelect = document.querySelector("#skill-candidate-select");
   const previewHint = document.querySelector("#module-preview-hint");
   const bootstrapRoot = document.querySelector("#bootstrap-requirements");
+  const title = document.querySelector("#module-form-title");
+  const subtitle = document.querySelector("#module-form-subtitle");
+  const submitButton = document.querySelector("#module-submit-button");
   let preview = null;
   let previewTimer = 0;
 
   renderBreadcrumb([
     { label: "工程列表", href: "/" },
     { label: project.name, href: `/projects/${project.id}` },
-    { label: "创建功能模块" }
+    { label: isEditing ? existingModule?.name || "编辑功能模块" : "创建功能模块" }
   ]);
-  document.querySelector("#project-back-link").href = `/projects/${project.id}`;
+  document.querySelector("#project-back-link").href = isEditing
+    ? `/projects/${project.id}/modules/${moduleId}`
+    : `/projects/${project.id}`;
+
+  if (isEditing && existingModule) {
+    title.textContent = "编辑功能模块";
+    subtitle.textContent = "更新模块名称、说明、domain 与 skill 关联配置。";
+    submitButton.textContent = "保存并返回模块";
+    nameInput.value = existingModule.name || "";
+    descriptionInput.value = existingModule.description || "";
+    moduleSkillKeyInput.value = existingModule.moduleSkillKey || "";
+    form.dataset.moduleId = existingModule.id;
+  }
 
   const refreshPreview = async () => {
     const name = nameInput?.value?.trim() || "";
@@ -189,6 +318,10 @@ async function renderModuleCreatePage() {
       .map((item, index) => `<option value="${escapeHtml(item.domain)}" ${index === 0 ? "selected" : ""}>${escapeHtml(item.domain)}</option>`)
       .join("") || '<option value="embedded_vcu">embedded_vcu</option>';
 
+    if (isEditing && existingModule?.domain) {
+      domainSelect.value = existingModule.domain;
+    }
+
     candidateSelect.innerHTML = ['<option value="">不导入，后续走冷启动</option>']
       .concat(
         (preview.skillCandidates || []).map(
@@ -196,6 +329,10 @@ async function renderModuleCreatePage() {
         )
       )
       .join("");
+
+    if (isEditing) {
+      candidateSelect.value = existingModule?.skillSource?.type === "module_profile" ? existingModule.skillSource.key || "" : "";
+    }
 
     previewHint.textContent = preview.skillCandidates?.length
       ? "已找到可复用的 module skill 候选；若不导入，系统会要求你在正式生成前补齐冷启动资产。"
@@ -235,8 +372,8 @@ async function renderModuleCreatePage() {
         payload.skillStatus = "draft";
         payload.skillSource = null;
       }
-      const module = await request(`/api/projects/${project.id}/modules`, {
-        method: "POST",
+      const module = await request(isEditing ? `/api/projects/${project.id}/modules/${existingModule.id}` : `/api/projects/${project.id}/modules`, {
+        method: isEditing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
@@ -256,6 +393,23 @@ function bootstrapAssetLabel(label) {
   return label;
 }
 
+async function deleteModuleAndReturn(projectId, moduleId, moduleName) {
+  const confirmed = window.confirm(`确认删除模块“${moduleName}”吗？模块下的任务记录和已上传文件也会一并删除。`);
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await request(`/api/projects/${projectId}/modules/${moduleId}`, { method: "DELETE" });
+    clearPendingGeneration(projectId, moduleId, "software_requirement");
+    clearPendingGeneration(projectId, moduleId, "detail_design");
+    clearPendingGeneration(projectId, moduleId, "hil_test_case");
+    window.location.href = `/projects/${projectId}`;
+  } catch (error) {
+    handleError(error);
+  }
+}
+
 async function renderModuleDetailPage() {
   const projectId = getPathPart(1);
   const moduleId = getPathPart(3);
@@ -272,6 +426,7 @@ async function renderModuleDetailPage() {
 
   document.querySelector("#module-title").textContent = module.name;
   document.querySelector("#module-description").textContent = module.description || "这个功能模块还没有补充说明。";
+  document.querySelector("#edit-module-link").href = `/projects/${project.id}/modules/${module.id}/edit`;
   document.querySelector("#req-generate-link").href = `/requirement-generation?projectId=${project.id}&moduleId=${module.id}`;
   document.querySelector("#detail-generate-link").href =
     `/detail-design-generation?projectId=${project.id}&moduleId=${module.id}`;
@@ -283,6 +438,9 @@ async function renderModuleDetailPage() {
   if (feedbackPoolLink) {
     feedbackPoolLink.href = `/feedback-pool?projectId=${project.id}&moduleId=${module.id}`;
   }
+  document.querySelector("#delete-module-button")?.addEventListener("click", () => {
+    deleteModuleAndReturn(project.id, module.id, module.name);
+  });
 
   const pendingGeneration = resolvePendingGeneration(project.id, module);
   renderAcceptedList(module, project.id);
@@ -326,23 +484,95 @@ function renderAcceptedList(module, projectId) {
   acceptedList.innerHTML = items
     .map(
       (item) => `
-        <article class="stack-card">
-          <div class="inline-actions">
+        <article class="stack-card accepted-result-card clickable" data-open-accepted-source="${item.id}">
+          <div class="accepted-result-topline">
             <span class="doc-badge">${escapeHtml(documentLabel(item.documentType))}</span>
             <span class="status-badge accepted">已采纳</span>
+            <span class="accepted-result-code">${escapeHtml(item.currentContent?.requirementId || item.acceptedSnapshot?.requirementId || "未编号")}</span>
+            <span class="accepted-result-code">${escapeHtml(item.currentContent?.type || item.acceptedSnapshot?.type || "functional")}</span>
+            <span class="accepted-result-code">来源任务 ${escapeHtml(shortId(item.sourceTaskId))}</span>
+            <span class="accepted-result-hint">点击查看原生成结果</span>
           </div>
           <strong>${escapeHtml(item.currentContent?.title || item.acceptedSnapshot?.title || "已采纳结果")}</strong>
           <div class="card-meta">
-            <span>来源任务 ${escapeHtml(shortId(item.sourceTaskId))}</span>
             <span>更新时间 ${formatDateTime(item.updatedAt)}</span>
+            <span>置信度 ${escapeHtml(String(item.currentContent?.confidence ?? item.acceptedSnapshot?.confidence ?? "--"))}</span>
           </div>
-          <div class="accepted-content">${escapeHtml(
+          <div class="accepted-result-body accepted-content">${formatReadableRequirementHtml(
             item.currentContent?.requirementText || item.acceptedSnapshot?.requirementText || ""
           )}</div>
+          <div class="accepted-result-summary">
+            ${buildAcceptedSummaryChips(module, item)}
+          </div>
+          <div class="inline-actions accepted-result-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              data-edit-accepted-item="${item.id}"
+            >编辑</button>
+            <button
+              class="secondary-button"
+              type="button"
+              data-delete-accepted-item="${item.id}"
+              data-document-type="${item.documentType}"
+              data-item-title="${escapeAttribute(item.currentContent?.title || item.acceptedSnapshot?.title || "已采纳结果")}"
+            >删除</button>
+          </div>
         </article>
       `
     )
     .join("");
+
+  acceptedList.querySelectorAll("[data-edit-accepted-item]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const acceptedItemId = button.dataset.editAcceptedItem || "";
+      const acceptedItem = items.find((item) => item.id === acceptedItemId);
+      if (!acceptedItem) {
+        return;
+      }
+      openAcceptedEditDialog(acceptedItem, projectId, module.id);
+    });
+  });
+
+  acceptedList.querySelectorAll("[data-delete-accepted-item]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const acceptedItemId = button.dataset.deleteAcceptedItem || "";
+      const documentType = button.dataset.documentType || "software_requirement";
+      const itemTitle = button.dataset.itemTitle || "该已采纳结果";
+      const confirmed = window.confirm(`确认删除“${itemTitle}”吗？删除后会从已采纳结果区移除。`);
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        await request(`/api/projects/${projectId}/modules/${module.id}/spaces/${documentType}/accepted-items/${acceptedItemId}`, {
+          method: "DELETE"
+        });
+        setStatus(`已删除已采纳结果：${itemTitle}`);
+        window.location.reload();
+      } catch (error) {
+        handleError(error);
+      }
+    });
+  });
+
+  acceptedList.querySelectorAll("[data-open-accepted-source]").forEach((card) => {
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button, a, input, textarea, select, label")) {
+        return;
+      }
+
+      const acceptedItemId = card.dataset.openAcceptedSource || "";
+      const acceptedItem = items.find((item) => item.id === acceptedItemId);
+      if (!acceptedItem?.sourceTaskId) {
+        return;
+      }
+
+      window.location.href =
+        `/projects/${projectId}/modules/${module.id}/tasks/${acceptedItem.sourceTaskId}` +
+        `?documentType=${acceptedItem.documentType}&resultItemId=${acceptedItem.sourceResultItemId}`;
+    });
+  });
 }
 
 function renderTaskList(module, projectId, pendingGeneration = null) {
@@ -387,10 +617,17 @@ function renderTaskList(module, projectId, pendingGeneration = null) {
             <span>模型 ${escapeHtml(task.llmProfile?.name || "本地回退")}</span>
             <span>输入 ${(task.inputAssetIds || []).length} 个资产</span>
           </div>
-          ${task.status === "running" ? `<p class="inline-hint">任务已启动，正在生成中，完成后会自动刷新列表。</p>` : ""}
+          ${
+            task.status === "running"
+              ? `<p class="inline-hint">${escapeHtml(
+                  task.progress?.message || `任务已启动，正在生成中，完成后会自动刷新列表。`
+                )}${task.progress?.percent ? `（${Math.round(task.progress.percent)}%）` : ""}</p>`
+              : ""
+          }
           ${task.status === "failed" ? `<p class="inline-hint">${escapeHtml(task.summary || "任务执行失败，请重试。")}</p>` : ""}
           <div class="inline-actions">
-            <a class="primary-link" href="/projects/${projectId}/modules/${module.id}/tasks/${task.id}?documentType=${task.documentType}">查看详情</a>
+            <a class="primary-link" href="/projects/${projectId}/modules/${module.id}/tasks/${task.id}?documentType=${task.documentType}" data-open-task-detail="true">查看详情</a>
+            <button class="secondary-button" type="button" data-delete-task="${task.id}" data-document-type="${task.documentType}" data-task-status="${task.status}" data-task-label="${escapeAttribute(task.summary || `${documentLabel(task.documentType)}任务`)}">删除任务</button>
           </div>
         </article>
       `
@@ -398,6 +635,37 @@ function renderTaskList(module, projectId, pendingGeneration = null) {
   );
 
   taskList.innerHTML = cards.join("");
+
+  taskList.querySelectorAll("[data-delete-task]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const taskId = button.dataset.deleteTask || "";
+      const documentType = button.dataset.documentType || "software_requirement";
+      const taskStatus = button.dataset.taskStatus || "";
+      const taskLabel = button.dataset.taskLabel || "该任务";
+
+      const confirmed = window.confirm(`确认删除“${taskLabel}”吗？该任务下已采纳的结果也会一并移除。`);
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        await request(`/api/projects/${projectId}/modules/${module.id}/spaces/${documentType}/tasks/${taskId}`, {
+          method: "DELETE"
+        });
+        clearPendingGeneration(projectId, module.id, documentType);
+        setStatus(`已删除任务：${taskLabel}`);
+        window.location.reload();
+      } catch (error) {
+        handleError(error);
+      }
+    });
+  });
+
+  taskList.querySelectorAll("[data-open-task-detail]").forEach((link) => {
+    link.addEventListener("click", () => {
+      closeHistoryDrawer();
+    });
+  });
 }
 
 async function renderTaskDetailPage() {
@@ -406,6 +674,7 @@ async function renderTaskDetailPage() {
   const taskId = getPathPart(5);
   const params = new URLSearchParams(window.location.search);
   const preferredDocumentType = params.get("documentType");
+  const highlightedResultItemId = params.get("resultItemId");
   const [project, module] = await Promise.all([
     request(`/api/projects/${projectId}`),
     request(`/api/projects/${projectId}/modules/${moduleId}`)
@@ -426,18 +695,101 @@ async function renderTaskDetailPage() {
 
   document.querySelector("#task-title").textContent = task.summary || `${documentLabel(documentType)}任务详情`;
   document.querySelector("#task-subtitle").textContent = `${module.name} · ${documentLabel(documentType)} · ${formatDateTime(task.createdAt)}`;
+  document.querySelector("#delete-task-button")?.addEventListener("click", async () => {
+    const confirmed = window.confirm(`确认删除“${task.summary || `${documentLabel(documentType)}任务`}”吗？该任务下已采纳的结果也会一并移除。`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await request(`/api/projects/${projectId}/modules/${moduleId}/spaces/${documentType}/tasks/${task.id}`, {
+        method: "DELETE"
+      });
+      clearPendingGeneration(projectId, moduleId, documentType);
+      window.location.href = `/projects/${projectId}/modules/${moduleId}`;
+    } catch (error) {
+      handleError(error);
+    }
+  });
 
   renderTaskMeta(task);
+  renderTaskProgress(task);
   renderTaskResults(task, project.id, module.id, documentType);
+  if (highlightedResultItemId) {
+    window.setTimeout(() => {
+      const target = document.querySelector(`[data-result-item-id="${highlightedResultItemId}"]`);
+      if (!target) {
+        return;
+      }
+      target.scrollIntoView({ block: "center" });
+      target.style.boxShadow = "0 0 0 2px rgba(14,106,168,0.24)";
+    }, 0);
+  }
+  ensureTaskDetailPolling(project.id, module.id, documentType, task.id, task.status);
 }
 
 function renderTaskMeta(task) {
   const taskMeta = document.querySelector("#task-meta");
   taskMeta.innerHTML = `
     <article class="meta-item"><span>任务状态</span><strong>${escapeHtml(translateStatus(task.status))}</strong></article>
+    <article class="meta-item"><span>当前阶段</span><strong>${escapeHtml(task.progress?.label || "待处理")}</strong></article>
+    <article class="meta-item"><span>完成进度</span><strong>${Math.round(Number(task.progress?.percent || 0))}%</strong></article>
     <article class="meta-item"><span>生成结果数</span><strong>${(task.resultItems || []).length}</strong></article>
     <article class="meta-item"><span>输入资产数</span><strong>${(task.inputAssetIds || []).length}</strong></article>
     <article class="meta-item"><span>生成模型</span><strong>${escapeHtml(task.llmProfile?.name || "本地回退")}</strong></article>
+    <article class="meta-item"><span>最近更新</span><strong>${escapeHtml(formatDateTime(task.progress?.updatedAt || task.updatedAt))}</strong></article>
+  `;
+}
+
+function renderTaskProgress(task) {
+  const taskProgress = document.querySelector("#task-progress");
+  if (!taskProgress) {
+    return;
+  }
+
+  const percent = Math.round(Number(task.progress?.percent || 0));
+  const timeline = Array.isArray(task.timeline) ? [...task.timeline].reverse() : [];
+  const metrics = task.metrics || {};
+
+  taskProgress.innerHTML = `
+    <div class="progress-shell">
+      <div class="progress-hero">
+        <strong>${escapeHtml(task.progress?.label || translateStatus(task.status))}</strong>
+        <p>${escapeHtml(task.progress?.message || task.summary || "任务已创建，等待执行。")}</p>
+        <div class="progress-bar" aria-hidden="true">
+          <div class="progress-bar-fill" style="width: ${Math.max(0, Math.min(100, percent))}%"></div>
+        </div>
+        <div class="progress-meta">
+          <span>进度 ${percent}%</span>
+          ${
+            task.progress?.total
+              ? `<span>文件 ${Number(task.progress?.current || 0)}/${Number(task.progress?.total || 0)}</span>`
+              : ""
+          }
+          ${metrics.extractionEvidenceCount ? `<span>证据 ${metrics.extractionEvidenceCount} 条</span>` : ""}
+          ${metrics.generatedItemCount ? `<span>结果 ${metrics.generatedItemCount} 条</span>` : ""}
+          ${metrics.conflictCount ? `<span>冲突 ${metrics.conflictCount} 个</span>` : ""}
+          ${metrics.llmDurationMs ? `<span>模型耗时 ${metrics.llmDurationMs} ms</span>` : ""}
+        </div>
+      </div>
+      <div class="timeline-list">
+        ${
+          timeline.length
+            ? timeline
+                .map(
+                  (entry) => `
+                    <article class="timeline-item ${escapeHtml(entry.level || "info")}">
+                      <time>${escapeHtml(formatDateTime(entry.at))}</time>
+                      <strong>${escapeHtml(entry.label || entry.stage || "进度更新")}</strong>
+                      <div>${escapeHtml(entry.message || "")}</div>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<div class="empty-state">任务启动后，这里会持续显示阶段进度与关键日志。</div>'
+        }
+      </div>
+    </div>
   `;
 }
 
@@ -489,12 +841,16 @@ function buildResultSourceBlock(resultItem) {
 function renderTaskResults(task, projectId, moduleId, documentType) {
   const taskResults = document.querySelector("#task-results");
   if (task.status === "running") {
-    taskResults.innerHTML = '<div class="empty-state">任务已启动，当前正在生成中，请稍候刷新结果。</div>';
+    taskResults.innerHTML = `<div class="empty-state">${escapeHtml(
+      task.progress?.message || "任务正在生成中，页面会自动刷新最新进度。"
+    )}</div>`;
     return;
   }
 
   if (task.status === "failed") {
-    taskResults.innerHTML = '<div class="empty-state">任务执行失败，请返回模块页重新发起，或检查模型与输入资产。</div>';
+    taskResults.innerHTML = `<div class="empty-state">${escapeHtml(
+      task.errorMessage || task.progress?.message || "任务执行失败，请返回模块页重新发起，或检查模型与输入资产。"
+    )}</div>`;
     return;
   }
 
@@ -506,7 +862,7 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
   taskResults.innerHTML = task.resultItems
     .map(
       (item) => `
-        <article class="stack-card" data-result-item-id="${item.id}">
+        <article class="stack-card generated-result-card" data-result-item-id="${item.id}">
           <div class="inline-actions">
             <span class="status-badge ${statusTone(item.review?.status || "pending")}">${escapeHtml(
               translateStatus(item.review?.status || "pending")
@@ -522,10 +878,21 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
             标题
             <input data-title-input="${item.id}" value="${escapeAttribute(item.title || "")}" />
           </label>
-          <label>
-            内容
-            <textarea data-text-input="${item.id}" rows="7">${escapeHtml(item.requirementText || "")}</textarea>
-          </label>
+          <div class="generated-result-preview-wrap">
+            <div class="generated-result-preview-head">
+              <span>内容预览</span>
+              <button class="secondary-button" type="button" data-toggle-result-editor="${item.id}">编辑正文</button>
+            </div>
+            <div class="accepted-result-body accepted-content generated-result-preview" data-result-preview="${item.id}">
+              ${formatReadableRequirementHtml(item.requirementText || "")}
+            </div>
+          </div>
+          <div class="generated-result-editor" data-result-editor="${item.id}" hidden>
+            <label>
+              正文编辑
+              <textarea data-text-input="${item.id}" rows="8">${escapeHtml(item.requirementText || "")}</textarea>
+            </label>
+          </div>
           <div class="inline-actions">
             <button data-accept-item="${item.id}">采纳</button>
             <button class="secondary-button" data-reject-item="${item.id}">驳回</button>
@@ -538,10 +905,32 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
     )
     .join("");
 
-  taskResults.addEventListener("click", async (event) => {
+  taskResults.onclick = async (event) => {
     const acceptButton = event.target.closest("[data-accept-item]");
     const rejectButton = event.target.closest("[data-reject-item]");
+    const toggleEditorButton = event.target.closest("[data-toggle-result-editor]");
+    if (toggleEditorButton) {
+      const resultItemId = toggleEditorButton.dataset.toggleResultEditor || "";
+      const editor = taskResults.querySelector(`[data-result-editor="${resultItemId}"]`);
+      if (!editor) {
+        return;
+      }
+      const nextHidden = !editor.hidden;
+      editor.hidden = nextHidden;
+      toggleEditorButton.textContent = nextHidden ? "编辑正文" : "收起编辑";
+      return;
+    }
+
     if (!acceptButton && !rejectButton) {
+      const textInput = event.target.closest("[data-text-input]");
+      if (!textInput) {
+        return;
+      }
+      const resultItemId = textInput.dataset.textInput || "";
+      const preview = taskResults.querySelector(`[data-result-preview="${resultItemId}"]`);
+      if (preview) {
+        preview.innerHTML = formatReadableRequirementHtml(textInput.value || "");
+      }
       return;
     }
 
@@ -580,7 +969,19 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
     } catch (error) {
       handleError(error);
     }
-  });
+  };
+
+  taskResults.oninput = (event) => {
+    const textInput = event.target.closest("[data-text-input]");
+    if (!textInput) {
+      return;
+    }
+    const resultItemId = textInput.dataset.textInput || "";
+    const preview = taskResults.querySelector(`[data-result-preview="${resultItemId}"]`);
+    if (preview) {
+      preview.innerHTML = formatReadableRequirementHtml(textInput.value || "");
+    }
+  };
 }
 
 function openRejectDialog(context) {
@@ -592,6 +993,67 @@ function openRejectDialog(context) {
   rejectForm.elements.namedItem("severity").value = "medium";
   rejectDialogSubtitle.textContent = `你正在驳回 ${context.requirementCode}，请填写结构化原因。`;
   rejectDialog.showModal();
+}
+
+function openAcceptedEditDialog(item, projectId, moduleId) {
+  state.acceptedEditContext = {
+    projectId,
+    moduleId,
+    documentType: item.documentType,
+    itemId: item.id
+  };
+  acceptedEditSubtitle.textContent = `${documentLabel(item.documentType)} · 来源任务 ${shortId(item.sourceTaskId)}`;
+  acceptedEditTitleInput.value = item.currentContent?.title || item.acceptedSnapshot?.title || "";
+  acceptedEditTextInput.value = item.currentContent?.requirementText || item.acceptedSnapshot?.requirementText || "";
+  acceptedEditDialog?.showModal();
+}
+
+function closeAcceptedEditDialog() {
+  state.acceptedEditContext = null;
+  acceptedEditForm?.reset();
+  acceptedEditDialog?.close();
+}
+
+function openHistoryDrawer() {
+  historyDrawer?.classList.add("open");
+  historyDrawer?.setAttribute("aria-hidden", "false");
+  if (historyDrawerBackdrop) {
+    historyDrawerBackdrop.hidden = false;
+  }
+}
+
+function closeHistoryDrawer() {
+  historyDrawer?.classList.remove("open");
+  historyDrawer?.setAttribute("aria-hidden", "true");
+  if (historyDrawerBackdrop) {
+    historyDrawerBackdrop.hidden = true;
+  }
+}
+
+async function handleAcceptedEditSubmit(event) {
+  event.preventDefault();
+  if (!state.acceptedEditContext) {
+    return;
+  }
+
+  try {
+    await request(
+      `/api/projects/${state.acceptedEditContext.projectId}/modules/${state.acceptedEditContext.moduleId}/spaces/${state.acceptedEditContext.documentType}/accepted-items/${state.acceptedEditContext.itemId}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: acceptedEditTitleInput.value.trim(),
+          requirementText: acceptedEditTextInput.value.trim()
+        })
+      }
+    );
+    closeAcceptedEditDialog();
+    setStatus("已更新已采纳结果。");
+    window.location.reload();
+  } catch (error) {
+    handleError(error);
+  }
 }
 
 function closeRejectDialog() {
@@ -663,6 +1125,85 @@ function collectAcceptedItems(module) {
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
+function findAcceptedSourceTask(module, item) {
+  return module.documentSpaces?.[item.documentType]?.generationTasks?.find((task) => task.id === item.sourceTaskId) || null;
+}
+
+function buildAcceptedSummaryChips(module, item) {
+  const sourceTask = findAcceptedSourceTask(module, item);
+  const sourceResultId = item.sourceResultItemId || item.acceptedSnapshot?.id || "";
+  const requirementCode = item.currentContent?.requirementId || item.acceptedSnapshot?.requirementId || "";
+  const traces = (sourceTask?.traces || []).filter(
+    (entry) => entry.requirementId === sourceResultId || entry.requirementId === requirementCode || entry.requirementCode === requirementCode
+  );
+  const conflicts = (sourceTask?.conflicts || []).filter(
+    (entry) => entry.requirementId === sourceResultId || entry.requirementId === requirementCode || entry.requirementCode === requirementCode
+  );
+  const sourceRefs = item.currentContent?.sourceRefs || item.acceptedSnapshot?.sourceRefs || [];
+  const chips = [];
+
+  chips.push(conflicts.length ? `冲突 ${conflicts.length} 项` : "冲突 已清");
+
+  if (traces.length) {
+    chips.push(`追溯 ${traces[0].fileName || "已关联"}${traces[0].location ? ` @ ${traces[0].location}` : ""}`);
+  } else if (sourceRefs.length) {
+    chips.push(`追溯 ${sourceRefs[0].fileName || "已关联"}${sourceRefs[0].location ? ` @ ${sourceRefs[0].location}` : ""}`);
+  } else {
+    chips.push("追溯 暂无");
+  }
+
+  if (sourceRefs.length) {
+    chips.push(`来源 ${sourceRefs.length} 段`);
+  }
+
+  return chips.map((label) => `<span>${escapeHtml(label)}</span>`).join("");
+}
+
+function normalizeReadableRequirementText(value) {
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u3000/g, " ")
+    .replace(/([。；])(?=(?:当|若|如果|否则|注：|说明：))/g, "$1\n")
+    .replace(/(?<!\d)(\d+\.\s*)/g, "\n$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function formatReadableRequirementHtml(value) {
+  const text = normalizeReadableRequirementText(value);
+  if (!text) {
+    return '<p class="accepted-paragraph muted">暂无内容</p>';
+  }
+
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const parts = [];
+  let listItems = [];
+
+  const flushList = () => {
+    if (!listItems.length) {
+      return;
+    }
+    parts.push(
+      `<ol class="accepted-list">${listItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`
+    );
+    listItems = [];
+  };
+
+  for (const line of lines) {
+    if (/^\d+\.\s*/.test(line)) {
+      listItems.push(line.replace(/^\d+\.\s*/, ""));
+      continue;
+    }
+
+    flushList();
+
+    parts.push(`<p class="${/^(注：|说明：)/.test(line) ? "accepted-note" : "accepted-paragraph"}">${escapeHtml(line)}</p>`);
+  }
+
+  flushList();
+  return parts.join("");
+}
+
 function collectTasks(module) {
   return ["software_requirement", "detail_design", "hil_test_case"]
     .flatMap((documentType) =>
@@ -729,6 +1270,37 @@ function ensureTaskPolling(module, pendingGeneration = null) {
 
   taskPollTimer = window.setTimeout(() => {
     window.location.reload();
+  }, TASK_POLL_INTERVAL_MS);
+}
+
+function ensureTaskDetailPolling(projectId, moduleId, documentType, taskId, taskStatus) {
+  if (taskStatus !== "running") {
+    if (taskPollTimer) {
+      window.clearTimeout(taskPollTimer);
+      taskPollTimer = 0;
+    }
+    return;
+  }
+
+  if (taskPollTimer) {
+    return;
+  }
+
+  taskPollTimer = window.setTimeout(async () => {
+    taskPollTimer = 0;
+    try {
+      const task = await request(`/api/projects/${projectId}/modules/${moduleId}/spaces/${documentType}/tasks/${taskId}`);
+      renderTaskMeta(task);
+      renderTaskProgress(task);
+      renderTaskResults(task, projectId, moduleId, documentType);
+      if (task.status === "running") {
+        ensureTaskDetailPolling(projectId, moduleId, documentType, taskId, task.status);
+      } else {
+        setStatus(task.status === "completed" ? "任务已完成，结果已更新。" : task.errorMessage || "任务执行已结束。");
+      }
+    } catch (error) {
+      handleError(error);
+    }
   }, TASK_POLL_INTERVAL_MS);
 }
 

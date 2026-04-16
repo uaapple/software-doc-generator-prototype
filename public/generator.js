@@ -123,8 +123,10 @@ function renderContext() {
   `;
   if (missing.length) {
     metaRoot.textContent = `\u5f53\u524d\u6a21\u5757\u8fd8\u6ca1\u6709\u53ef\u76f4\u63a5\u590d\u7528\u7684 module skill\uff1b\u7f3a\u5c11\u51b7\u542f\u52a8\u8d44\u4ea7\uff1a${missing.map((item) => bootstrapLabel(item.label)).join(" / ")}`;
+    disableGenerate(`缺少冷启动资产：${missing.map((item) => bootstrapLabel(item.label)).join(" / ")}`);
   } else {
     metaRoot.textContent = "\u751f\u6210\u5b8c\u6210\u540e\u4f1a\u81ea\u52a8\u8fd4\u56de\u529f\u80fd\u6a21\u5757\u4e3b\u9875\uff0c\u5e76\u5728\u5386\u53f2\u4efb\u52a1\u5217\u8868\u4e2d\u663e\u793a\u65b0\u4efb\u52a1\u3002";
+    enableGenerate();
   }
 }
 
@@ -192,8 +194,15 @@ function renderAssets() {
     .join("");
 }
 
-function disableGenerate() {
+function disableGenerate(message = "") {
   generateForm.querySelector("button[type='submit']").disabled = true;
+  if (message) {
+    setStatus(message);
+  }
+}
+
+function enableGenerate() {
+  generateForm.querySelector("button[type='submit']").disabled = false;
 }
 
 function getPendingGenerations() {
@@ -252,7 +261,8 @@ function setStatus(message, emphasized = false) {
 function handleError(error) {
   console.error(error);
   if (error?.code === "module_skill_initialization_required" && error?.details?.missingBootstrapAssets?.length) {
-    setStatus(`\u751f\u6210\u524d\u8fd8\u7f3a\u5c11\u8fd9\u4e9b\u51b7\u542f\u52a8\u8d44\u4ea7\uff1a${error.details.missingBootstrapAssets.map((item) => bootstrapLabel(item.label)).join(" / ")}`);
+    const missingLabels = error.details.missingBootstrapAssets.map((item) => bootstrapLabel(item.label)).join(" / ");
+    disableGenerate(`生成前还缺少这些冷启动资产：${missingLabels}`);
     return;
   }
   setStatus(error.message || "\u64cd\u4f5c\u5931\u8d25");

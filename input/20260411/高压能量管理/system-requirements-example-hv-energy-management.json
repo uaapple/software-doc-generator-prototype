@@ -1,0 +1,43 @@
+{
+  "documentType": "system_requirements_example",
+  "domain": "embedded_vcu",
+  "title": "系统需求示例：高压能量管理",
+  "language": "zh-CN",
+  "version": "v1",
+  "source": {
+    "providedBy": "word_embedded_images",
+    "ingestMethod": "manual_text_extraction_from_image",
+    "collectedDate": "2026-04-15",
+    "sourceFile": "input/20260411/AI case_ITK_20260411.docx"
+  },
+  "section": {
+    "sectionNumber": "5.1.4",
+    "sectionTitle": "高压能量管理"
+  },
+  "requirements": [
+    {
+      "requirementId": "CheryVCU-1244",
+      "topic": "动力电池可用充放电功率换算",
+      "rawText": "HCU接收对BMS发送的动力电池10s和2s可用充放电功率进行功率管理得到当前可用电池功率，并在电池的过充过放保护限制处理后进行梯度滤波。",
+      "inputs": [
+        "BMS发送的动力电池10s可用充放电功率",
+        "BMS发送的动力电池2s可用充放电功率"
+      ],
+      "expectedBehavior": [
+        "HCU应进行功率管理得到当前可用电池功率。",
+        "HCU应在电池过充过放保护限制处理后进行梯度滤波。"
+      ],
+      "functionalCategory": "hv_energy_management"
+    }
+  ],
+  "derivedSummary": {
+    "mainTheme": "高压能量管理对BMS提供的可用充放电功率进行管理、保护限制和滤波处理。",
+    "keyConcepts": [
+      "10s可用充放电功率",
+      "2s可用充放电功率",
+      "当前可用电池功率",
+      "过充过放保护",
+      "梯度滤波"
+    ]
+  }
+}

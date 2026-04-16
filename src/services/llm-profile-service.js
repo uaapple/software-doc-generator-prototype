@@ -21,6 +21,14 @@ const PROVIDERS = [
     requiresApiKey: true
   },
   {
+    id: "zhipu",
+    label: "智谱 GLM",
+    defaultBaseURL: "https://open.bigmodel.cn/api/paas/v4",
+    baseURLEditable: true,
+    modelPlaceholder: "glm-4.5-air",
+    requiresApiKey: true
+  },
+  {
     id: "ollama",
     label: "Ollama",
     defaultBaseURL: "http://127.0.0.1:11434/v1",
@@ -100,12 +108,22 @@ function buildSeedProfile() {
     return null;
   }
 
-  const providerId = String(config.openai.baseURL || "").includes("volces.com") ? "doubao" : "openai";
+  const baseURL = String(config.openai.baseURL || "");
+  const providerId = baseURL.includes("volces.com")
+    ? "doubao"
+    : baseURL.includes("bigmodel.cn")
+      ? "zhipu"
+      : "openai";
   const provider = getProvider(providerId);
+  const seedNameMap = {
+    doubao: "默认豆包模型",
+    zhipu: "默认智谱模型",
+    openai: "默认 OpenAI 模型"
+  };
   return {
     id: "seed-profile",
     provider: provider.id,
-    name: providerId === "doubao" ? "默认豆包模型" : "默认 OpenAI 模型",
+    name: seedNameMap[providerId] || "默认模型",
     model: config.openai.model,
     apiKey: config.openai.apiKey,
     baseURL: config.openai.baseURL || provider.defaultBaseURL,
@@ -328,10 +346,11 @@ export class LlmProfileService {
         maxRetries: 0
       });
 
-      await client.responses.create({
+      await client.chat.completions.create({
         model: profile.model,
-        input: "ping",
-        max_output_tokens: 1
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 1,
+        temperature: 0
       });
     }
 
@@ -347,6 +366,4 @@ export class LlmProfileService {
     };
   }
 }
-
-
 

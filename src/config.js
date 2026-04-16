@@ -75,8 +75,8 @@ export const config = {
   templatePath: path.join(rootDir, "templates", "software-requirement-template.json"),
   skillDir: path.join(rootDir, "skills", "active"),
   openai: {
-    apiKey: process.env.OPENAI_API_KEY || process.env.ARK_API_KEY || "",
-    model: process.env.OPENAI_MODEL || process.env.ARK_MODEL || "gpt-4.1-mini",
-    baseURL: process.env.OPENAI_BASE_URL || process.env.ARK_BASE_URL || undefined
+    apiKey: process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY || "",
+    model: process.env.OPENAI_MODEL || process.env.ZHIPU_MODEL || process.env.ARK_MODEL || "gpt-4.1-mini",
+    baseURL: process.env.OPENAI_BASE_URL || process.env.ZHIPU_BASE_URL || process.env.ARK_BASE_URL || undefined
   }
 };

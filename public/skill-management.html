@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>技能管理工作台</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/skill-management.css" />
+  </head>
+  <body>
+    <main class="layout skill-management-page">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>技能管理工作台</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">生成门户</a>
+          <a class="nav-link active" href="/skill-management">技能管理</a>
+          <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
+          <a class="nav-link" href="/feedback-pool">反馈池</a>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">Skill Registry</p>
+          <h1>当前 Active Skill 管理</h1>
+          <p class="strip-text">集中查看 Generic、Doc Type、Domain、Module 四类技能，支持结构化编辑与按项删除。</p>
+        </div>
+        <div class="strip-actions">
+          <button id="refresh-button" type="button" class="secondary-button">刷新列表</button>
+        </div>
+      </section>
+
+      <p id="page-status" class="status"></p>
+
+      <section class="panel">
+        <div class="card skill-overview-card">
+          <div class="section-head compact-head">
+            <span class="section-index">概览</span>
+            <div>
+              <h2>技能全景</h2>
+              <p>当前只管理 `skills/active` 下的 manifest 与 profile 文件，不涉及历史 candidate bundle。</p>
+            </div>
+          </div>
+          <div id="summary-metrics" class="skill-summary-grid"></div>
+          <div id="source-meta" class="summary"></div>
+        </div>
+      </section>
+
+      <section class="panel skill-management-grid">
+        <aside class="card skill-sidebar-card">
+          <div class="section-head compact-head">
+            <span class="section-index">列表</span>
+            <div>
+              <h2>技能分类</h2>
+              <p>按类型分组展示，异常项会高亮提示，可直接点击切换详情。</p>
+            </div>
+          </div>
+          <div id="skill-groups" class="skill-group-stack"></div>
+        </aside>
+
+        <section class="card skill-detail-card">
+          <div class="section-head compact-head">
+            <span class="section-index">详情</span>
+            <div>
+              <h2>结构化编辑</h2>
+              <p>首版聚焦 `domain-knowledge.json` 相关字段；Markdown 文件以只读摘要形式展示。</p>
+            </div>
+          </div>
+          <div id="skill-detail" class="skill-detail-body"></div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/skill-management.js"></script>
+  </body>
+</html>

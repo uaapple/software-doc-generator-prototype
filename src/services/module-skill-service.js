@@ -2,6 +2,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { ExtractionService } from "./extraction-service.js";
+import { ModuleSkillBootstrapLlmService } from "./module-skill-bootstrap-llm-service.js";
 import { readJson, writeJson } from "./storage.js";
 
 const DEFAULT_DOMAIN = "embedded_vcu";
@@ -217,8 +218,9 @@ function maybeBuildDocumentBlueprint(module, documentType, referenceExtractions)
 }
 
 export class ModuleSkillService {
-  constructor() {
+  constructor(options = {}) {
     this.extractionService = new ExtractionService();
+    this.bootstrapLlmService = options.bootstrapLlmService || new ModuleSkillBootstrapLlmService();
   }
 
   async loadManifest(skillDir = config.activeSkillDir) {
@@ -377,10 +379,9 @@ export class ModuleSkillService {
     await writeJson(manifestPath, manifest);
   }
 
-  async bootstrapModuleKnowledge(module, documentType = "software_requirement") {
+  buildRuleBasedBootstrapKnowledge(module, documentType = "software_requirement", extractions = []) {
     const normalizedDocumentType = normalizeDocumentType(documentType);
     const referenceRole = referenceRoleFor(normalizedDocumentType);
-    const extractions = await this.extractionService.extractFiles({ files: module.assets || [] });
     const referenceExtractions = extractions.filter((item) => item.fileRole === referenceRole);
     const referenceEvidence = referenceExtractions.flatMap((item) => item.evidence || []).filter(Boolean);
     const fallbackEvidence = extractions.flatMap((item) => item.evidence || []).filter(Boolean);
@@ -418,7 +419,36 @@ export class ModuleSkillService {
     return knowledge;
   }
 
-  async ensureModuleReady(project, module, documentType = "software_requirement") {
+  async bootstrapModuleKnowledge(module, documentType = "software_requirement", options = {}) {
+    const extractions = await this.extractionService.extractFiles({ files: module.assets || [] });
+    const llmResult = await this.bootstrapLlmService.synthesizeKnowledge({
+      module,
+      documentType,
+      extractions,
+      llmProfileId: options.llmProfileId || ""
+    }).catch((error) => {
+      console.warn("Module skill bootstrap LLM synthesis failed, falling back to rule-based bootstrap.", error);
+      return null;
+    });
+
+    if (llmResult?.knowledge) {
+      return {
+        knowledge: llmResult.knowledge,
+        strategy: "llm",
+        extractions,
+        llmProfile: llmResult.profile || null
+      };
+    }
+
+    return {
+      knowledge: this.buildRuleBasedBootstrapKnowledge(module, documentType, extractions),
+      strategy: "rule_based",
+      extractions,
+      llmProfile: null
+    };
+  }
+
+  async ensureModuleReady(project, module, documentType = "software_requirement", options = {}) {
     const inspection = await this.inspectModule(project, module, documentType);
     if (inspection.hasModuleProfile) {
       return { inspection, bootstrapped: false };
@@ -427,12 +457,14 @@ export class ModuleSkillService {
       throw createManagedError("Module skill initialization required before generation.", 409, inspection, "module_skill_initialization_required");
     }
 
-    const knowledge = await this.bootstrapModuleKnowledge(module, documentType);
-    await this.ensureModuleProfile(module.moduleSkillKey, knowledge);
+    const bootstrapResult = await this.bootstrapModuleKnowledge(module, documentType, options);
+    await this.ensureModuleProfile(module.moduleSkillKey, bootstrapResult.knowledge);
     return {
       inspection: { ...inspection, hasModuleProfile: true, missingBootstrapAssets: [], canGenerateDirectly: true, skillStatus: "bootstrapped" },
       bootstrapped: true,
-      knowledge
+      knowledge: bootstrapResult.knowledge,
+      bootstrapStrategy: bootstrapResult.strategy,
+      bootstrapLlmProfile: bootstrapResult.llmProfile
     };
   }
 }

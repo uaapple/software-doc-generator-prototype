@@ -1,0 +1,62 @@
+{
+  "documentType": "software_design_requirements_example",
+  "domain": "embedded_vcu",
+  "title": "软件设计需求示例：高压能量管理",
+  "language": "zh-CN",
+  "version": "v1",
+  "source": {
+    "providedBy": "word_embedded_images",
+    "ingestMethod": "manual_text_extraction_from_image",
+    "collectedDate": "2026-04-15",
+    "sourceFile": "input/20260411/AI case_ITK_20260411.docx"
+  },
+  "section": {
+    "sectionNumber": "5.4.1",
+    "sectionTitle": "电池可用充放功率计算"
+  },
+  "requirements": [
+    {
+      "requirementId": "CheryVCU-4098",
+      "status": "released",
+      "sectionNumber": "5.4.1",
+      "topic": "动力电池可用放电功率计算",
+      "rawText": "VCU内部对于动力电池可用放电功率采用得是BMS得10s可用放电功率，在此基础上通过单体电压保护、SOC保护等进行限制，以防止动力电池过放以及动力电池自身功率震荡；当管理员处于怠速发电（CheryVCU-7532）和行车发电（CheryVCU-7549）时，当动力电池SOC（BMS2_N_SOC）大于一定值时（默认6%），动力电池可用功率为BMS发送得10s可用放电功率（BMS4_N_SOF10D）减去预留功率（默认3kW）；动力电池SOC（BMS2_N_SOC）小于一定值时（默认6%），动力电池可用功率随SOC降低逐步降低，该值与动力电池10s可用放电功率（BMS4_N_SOF10D）取最小，到3%以下时置为3kW；当管理员处于怠速发电（CheryVCU-7532）或行车发电（CheryVCU-7549）时，根据SOC降低可用功率得算法与上述相同，但SOC得限值需要在3%以下开始限制，到0%时限制为3kW；"
+    },
+    {
+      "requirementId": "CheryVCU-15867",
+      "status": "released",
+      "sectionNumber": "5.4.1",
+      "topic": "动力电池放电单体保护",
+      "rawText": "根据电池单体电压进行保护：1.VCU根据最小单体电池电压（BMS3_N_CellVoltageMin）查表得到功率系数，乘以（CheryVCU-4098）求得得动力电池可用放电功率，当最小单体电池电压（BMS3_N_CellVoltageMin）小于一定值时（默认2.3V），开始限制系数，直到2.1V时限制为0kW，防止电芯过放。"
+    },
+    {
+      "requirementId": "CheryVCU-15868",
+      "status": "released",
+      "sectionNumber": "5.4.1",
+      "topic": "动力电池可用充电功率计算",
+      "rawText": "若动力电池可用充电功率（BMS4_N_SOF10C）小于一定值（默认1.5kW）时，认为此时充电功率无法使用，VCU内部认为可用充电功率为0kW；否则，可用充电功率应当为动力电池可用充电功率（BMS4_N_SOF10C）减去预留功率（默认3kW）；"
+    },
+    {
+      "requirementId": "CheryVCU-15869",
+      "status": "released",
+      "sectionNumber": "5.4.1",
+      "topic": "动力电池充电单体保护",
+      "rawText": "根据电池单体电压进行保护：1.VCU根据最大单体电池电压（BMS2_N_CellVoltageMax）查表得到功率系数，乘以（CheryVCU-15868）求得得动力电池可用充电功率，当最大单体电池电压（BMS2_N_CellVoltageMax）大于一定值时（默认4.8V），开始限制系数，直到5V时限制为0kW，防止电芯过充。"
+    },
+    {
+      "requirementId": "CheryVCU-15870",
+      "status": "released",
+      "sectionNumber": "5.4.1",
+      "topic": "动力电池峰值可用放电功率计算",
+      "rawText": "VCU内部发动加启用需要使用峰值功率，BMS得2s可用放电功率（BMS4_N_SOF2D），在此基础上通过单体电压保护（CheryVCU-15867）等进行限制，以防止动力电池过放；"
+    }
+  ],
+  "derivedSummary": {
+    "mainTheme": "高压能量管理的软件需求围绕动力电池可用充放电功率、单体保护和峰值放电功率展开。",
+    "styleCharacteristics": [
+      "统一挂在5.4.1电池可用充放功率计算章节下",
+      "通过需求编号引用前置条目",
+      "保留原图中的信号名、默认阈值和功率值"
+    ]
+  }
+}

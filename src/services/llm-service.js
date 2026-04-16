@@ -5,6 +5,7 @@ import { SkillLoader } from "./skill-loader.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
 import { LlmProfileService } from "./llm-profile-service.js";
+import { createJsonChatCompletion } from "./openai-compatible-chat.js";
 
 const SOURCE_REF_SCHEMA = {
   type: "array",
@@ -54,6 +55,10 @@ export class LlmService {
     const profile = await this.profileService.resolveProfile(options.llmProfileId);
 
     if (!profile?.apiKey) {
+      options.onProgress?.({
+        phase: "fallback_generation",
+        message: "未配置可用模型，切换到本地回退生成。"
+      });
       return applyDomainKnowledgePolicies(
         buildFallbackItems(project, evidence, template, skills, documentType),
         knowledge,
@@ -66,19 +71,26 @@ export class LlmService {
       baseURL: profile.baseURL
     });
 
-    const response = await client.responses.create({
+    options.onProgress?.({
+      phase: "llm_request_started",
       model: profile.model,
-      input: buildModelInput(project, evidence, template, skills, documentType),
-      text: {
-        format: {
-          type: "json_schema",
-          name: getResponseSchemaName(documentType),
-          schema: getResponseSchema(documentType)
-        }
-      }
+      provider: profile.provider,
+      message: `正在调用 ${profile.name || profile.model} 生成结构化结果。`
     });
-
-    const payload = JSON.parse(response.output_text);
+    const llmStartedAt = Date.now();
+    const payload = await createJsonChatCompletion(client, {
+      model: profile.model,
+      messages: buildModelInput(project, evidence, template, skills, documentType),
+      schemaName: getResponseSchemaName(documentType),
+      schema: getResponseSchema(documentType)
+    });
+    options.onProgress?.({
+      phase: "llm_request_completed",
+      model: profile.model,
+      provider: profile.provider,
+      durationMs: Date.now() - llmStartedAt,
+      message: `模型已返回结构化结果，正在整理输出。`
+    });
     const rawItems = Array.isArray(payload.items)
       ? payload.items
       : Array.isArray(payload.requirements)
@@ -98,19 +110,13 @@ export class LlmService {
     }
 
     const client = new OpenAI({ apiKey: profile.apiKey, baseURL: profile.baseURL });
-    const response = await client.responses.create({
+    const payload = await createJsonChatCompletion(client, {
       model: profile.model,
-      input: buildReplayModelInput(materialPack),
-      text: {
-        format: {
-          type: "json_schema",
-          name: "skill_replay_proposal_response",
-          schema: replayProposalSchema
-        }
-      }
+      messages: buildReplayModelInput(materialPack),
+      schemaName: "skill_replay_proposal_response",
+      schema: replayProposalSchema
     });
-
-    return normalizeReplayProposalPayload(JSON.parse(response.output_text), materialPack);
+    return normalizeReplayProposalPayload(payload, materialPack);
   }
 }
 
@@ -486,8 +492,9 @@ function applyDomainKnowledgePolicies(items, knowledge = {}, documentType = "sof
   const aliasGroups = Array.isArray(policy.canonicalSignalAliases) ? policy.canonicalSignalAliases : [];
   const normalizationRules = Array.isArray(policy.normalizationRules) ? policy.normalizationRules : [];
   const forbiddenExpansions = policy.forbiddenExpansions || {};
+  const conflictHints = Array.isArray(knowledge.conflictHints) ? knowledge.conflictHints : [];
 
-  if (!aliasGroups.length && !normalizationRules.length && !Object.keys(forbiddenExpansions).length) {
+  if (!aliasGroups.length && !normalizationRules.length && !Object.keys(forbiddenExpansions).length && !conflictHints.length) {
     return items;
   }
 
@@ -539,6 +546,14 @@ function applyDomainKnowledgePolicies(items, knowledge = {}, documentType = "sof
     );
     if (remainingForbidden.length) {
       notes.add(`仍存在需人工复核的扩写项：${remainingForbidden.join(" / ")}。`);
+    }
+
+    const matchedConflictHints = conflictHints.filter((hint) => {
+      const tokens = [hint.topic, ...(hint.keywords || [])].filter(Boolean);
+      return tokens.some((token) => title.includes(token) || requirementText.includes(token) || passCriteria.includes(token));
+    });
+    for (const hint of matchedConflictHints) {
+      notes.add(`冲突提示：${hint.conflictSummary} 建议处理：${hint.preferredHandling}`);
     }
 
     return {

@@ -1,0 +1,60 @@
+{
+  "documentType": "system_requirements_example",
+  "domain": "embedded_vcu",
+  "title": "系统需求示例：高低系统管理",
+  "language": "zh-CN",
+  "version": "v1",
+  "source": {
+    "providedBy": "word_embedded_image",
+    "ingestMethod": "manual_text_extraction_from_image",
+    "collectedDate": "2026-04-15",
+    "sourceFile": "input/20260411/AI case_ITK_20260411.docx"
+  },
+  "section": {
+    "sectionNumber": "5.1.1.1",
+    "sectionTitle": "本地KL15上高压"
+  },
+  "requirements": [
+    {
+      "requirementId": "CheryVCU-1123",
+      "topic": "本地KL15上高压请求激活判断",
+      "rawText": "HCU根据VCCM控制器的KL15上拉或者ZCU发送的Powerup信号标志位判断本地KL15上高压请求被激活；",
+      "inputs": [
+        "VCCM控制器的KL15上拉",
+        "ZCU发送的Powerup信号标志位"
+      ],
+      "expectedBehavior": [
+        "HCU应判断本地KL15上高压请求被激活。"
+      ],
+      "functionalCategory": "local_kl15_hv_request_activation"
+    },
+    {
+      "requirementId": "CheryVCU-1120",
+      "topic": "本地KL15上高压建立流程",
+      "rawText": "当HCU确定整车高压需求后，应向BMS发送高压连通请求，以使BMS进行预充并闭合主高压回路。HCU通过BMS反馈的主回路继电器状态、MCU母线电压、ISG母线电压综合判断高压回路的连通状态，并在高压回路连通后请求高压附件使能，请求DCDC进入buck状态同时对DCDC输出的电压进行限制；随后判定整车上高压成功。",
+      "conditions": [
+        "HCU确定整车高压需求"
+      ],
+      "expectedBehavior": [
+        "HCU应向BMS发送高压连通请求。",
+        "BMS应进行预充并闭合主高压回路。",
+        "HCU应通过主回路继电器状态、MCU母线电压、ISG母线电压综合判断高压回路连通状态。",
+        "在高压回路连通后，HCU应请求高压附件使能。",
+        "HCU应请求DCDC进入buck状态并限制DCDC输出电压。",
+        "HCU应随后判定整车上高压成功。"
+      ],
+      "functionalCategory": "local_kl15_hv_establishment"
+    }
+  ],
+  "derivedSummary": {
+    "mainTheme": "高低系统管理的系统需求围绕本地KL15上高压请求激活和上高压建立流程展开。",
+    "keyConcepts": [
+      "KL15上拉",
+      "Powerup信号",
+      "高压连通请求",
+      "预充",
+      "主高压回路闭合",
+      "DCDC buck状态"
+    ]
+  }
+}
