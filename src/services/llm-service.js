@@ -634,9 +634,10 @@ function buildReplayModelInput(materialPack = {}) {
           text: [
             "You generate structured skill-repair proposals from human rejection feedback.",
             "Return only JSON that matches the schema.",
-            "Each proposal item must change exactly one target.",
-            "Use modify_rule only when a valid targetRuleId is provided in the material pack.",
-            "Use add_rule or add_example when the fix should be added as a new rule.",
+            "Each proposal item must change exactly one target skill item.",
+            "Prefer modify_skill_item when a suitable targetSkillCode is available in the material pack.",
+            "Use add_skill_item only when no existing skill item is a good fit.",
+            "Classify proposals into generic / docType / domain / module.",
             "Do not output full markdown files."
           ].join("\n")
         }
@@ -654,6 +655,83 @@ function buildReplayModelInput(materialPack = {}) {
   ];
 }
 
+function normalizeReplaySlug(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w\u4e00-\u9fa5-]/g, "_");
+}
+
+function mapReplayAreaToKind(targetArea = "") {
+  if (targetArea === "writing") return "writing_rule";
+  if (targetArea === "extraction") return "extraction_rule";
+  if (targetArea === "examples") return "bad_example";
+  if (targetArea === "domain_knowledge") return "rule_hint";
+  return "validation_rule";
+}
+
+function mapReplayKindToTargetFile(kind = "") {
+  if (kind === "writing_rule") return "requirement_writing.md";
+  if (kind === "extraction_rule") return "requirement_extraction.md";
+  if (kind === "validation_rule") return "requirement_validation.md";
+  if (kind === "good_example") return "examples/good_examples.md";
+  if (kind === "bad_example") return "examples/bad_examples.md";
+  return "domain-knowledge.json";
+}
+
+function inferReplayDefaultTarget(targetArea = "", materialPack = {}) {
+  const documentType = normalizeReplaySlug(materialPack.moduleContext?.documentType || "software_requirement");
+  const domain = normalizeReplaySlug(materialPack.moduleContext?.domain || "embedded_vcu");
+  const moduleSkillKey = normalizeReplaySlug(
+    materialPack.moduleContext?.moduleSkillKey || materialPack.moduleContext?.moduleName || ""
+  );
+  if (targetArea === "examples") {
+    return {
+      targetLayer: moduleSkillKey ? "module" : "docType",
+      targetProfileKey: moduleSkillKey || documentType,
+      kind: "bad_example"
+    };
+  }
+  if (targetArea === "domain_knowledge") {
+    return {
+      targetLayer: "domain",
+      targetProfileKey: domain || "embedded_vcu",
+      kind: "rule_hint"
+    };
+  }
+  if (targetArea === "extraction") {
+    return {
+      targetLayer: "generic",
+      targetProfileKey: "generic",
+      kind: "extraction_rule"
+    };
+  }
+  if (targetArea === "writing") {
+    return {
+      targetLayer: "docType",
+      targetProfileKey: documentType,
+      kind: "writing_rule"
+    };
+  }
+  return {
+    targetLayer: "docType",
+    targetProfileKey: documentType,
+    kind: "validation_rule"
+  };
+}
+
+function chooseReplayCandidate(targetArea = "", materialPack = {}) {
+  const candidates = Array.isArray(materialPack.candidateSkillItems) ? materialPack.candidateSkillItems : [];
+  const preferredKind = mapReplayAreaToKind(targetArea);
+  return (
+    candidates.find((item) => item.kind === preferredKind) ||
+    candidates.find((item) => (item.targetAreas || []).includes(targetArea)) ||
+    candidates[0] ||
+    null
+  );
+}
+
 function buildFallbackReplayProposal(materialPack = {}) {
   const grouped = new Map();
   for (const snapshot of materialPack.rejectionSnapshots || []) {
@@ -664,21 +742,22 @@ function buildFallbackReplayProposal(materialPack = {}) {
 
   const items = [];
   for (const [targetArea, areaRecords] of grouped.entries()) {
-    const targetFile = resolveReplayTargetFile(targetArea);
-    const relevantRules = areaRecords.flatMap((item) => item.relevantRules || []);
-    const targetRule = relevantRules[0] || null;
+    const target = chooseReplayCandidate(targetArea, materialPack);
     const patchSentence =
       areaRecords.map((item) => item.expectedNote || item.reasonText).filter(Boolean).slice(0, 3).join("; ") ||
       "Add clearer, testable and traceable constraints.";
 
-    if (targetRule && targetArea !== "examples") {
+    if (target?.skillCode) {
       items.push({
-        action: "modify_rule",
-        targetRuleId: targetRule.ruleId,
-        targetFile,
-        title: `${targetRule.title} (supplement)`,
-        before: targetRule.content,
-        after: `${String(targetRule.content || "").trim()}\nAdd constraint: ${patchSentence}`,
+        action: "modify_skill_item",
+        targetSkillCode: target.skillCode,
+        targetLayer: target.layer,
+        targetProfileKey: target.profileKey,
+        kind: target.kind,
+        targetFile: target.targetFile || mapReplayKindToTargetFile(target.kind),
+        title: `${target.title} (supplement)`,
+        before: target.content || target.contentSummary || "",
+        after: `${String(target.content || target.contentSummary || "").trim()}\nAdd constraint: ${patchSentence}`,
         rationale: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
         evidenceRefs: areaRecords.map((item) => item.id),
         newRuleDraft: null
@@ -686,16 +765,20 @@ function buildFallbackReplayProposal(materialPack = {}) {
     } else {
       const title = `${areaRecords[0]?.reasonCategory || "feedback"} supplemental rule`;
       const content = `The system should avoid the following issue: ${patchSentence}`;
+      const inferred = inferReplayDefaultTarget(targetArea, materialPack);
       items.push({
-        action: targetArea === "examples" ? "add_example" : "add_rule",
-        targetRuleId: "",
-        targetFile,
+        action: "add_skill_item",
+        targetSkillCode: "",
+        targetLayer: inferred.targetLayer,
+        targetProfileKey: inferred.targetProfileKey,
+        kind: inferred.kind,
+        targetFile: mapReplayKindToTargetFile(inferred.kind),
         title,
         before: "",
         after: content,
         rationale: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
         evidenceRefs: areaRecords.map((item) => item.id),
-        newRuleDraft: { title, content, rules: [] }
+        newRuleDraft: { title, content, structuredPayload: null, rules: [] }
       });
     }
   }
@@ -722,18 +805,29 @@ function normalizeReplayProposalPayload(payload = {}, materialPack = {}) {
       ? payload.rootCauses.map((item) => String(item || "").trim()).filter(Boolean)
       : [],
     items: Array.isArray(payload.items)
-      ? payload.items.map((item, index) => normalizeReplayProposalItem(item, index, validIds, targetAreas)).filter(Boolean)
+      ? payload.items.map((item, index) => normalizeReplayProposalItem(item, index, validIds, targetAreas, materialPack)).filter(Boolean)
       : []
   };
 }
 
-function normalizeReplayProposalItem(item, index, validIds, targetAreas = []) {
-  const action = String(item?.action || "").trim();
-  if (!["add_rule", "modify_rule", "split_rule", "deprecate_rule", "add_example", "modify_domain_knowledge"].includes(action)) {
+function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], materialPack = {}) {
+  const rawAction = String(item?.action || "").trim();
+  const action = {
+    add_rule: "add_skill_item",
+    add_example: "add_skill_item",
+    modify_rule: "modify_skill_item",
+    split_rule: "split_skill_item",
+    deprecate_rule: "deprecate_skill_item"
+  }[rawAction] || rawAction;
+  if (!["add_skill_item", "modify_skill_item", "split_skill_item", "deprecate_skill_item"].includes(action)) {
     return null;
   }
 
-  const targetFile = String(item.targetFile || resolveReplayTargetFile(targetAreas[0] || "validation")).trim();
+  const inferredTarget = inferReplayDefaultTarget(targetAreas[0] || "validation", materialPack);
+  const kind = String(item.kind || mapReplayAreaToKind(targetAreas[0] || "validation")).trim();
+  const targetLayer = String(item.targetLayer || inferredTarget.targetLayer).trim();
+  const targetProfileKey = normalizeReplaySlug(item.targetProfileKey || inferredTarget.targetProfileKey || "generic");
+  const targetFile = String(item.targetFile || mapReplayKindToTargetFile(kind)).trim();
   const evidenceRefs = Array.isArray(item.evidenceRefs)
     ? item.evidenceRefs.map((ref) => String(ref || "").trim()).filter((ref) => validIds.has(ref))
     : [];
@@ -741,27 +835,37 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = []) {
     ? {
         title: String(item.newRuleDraft.title || item.title || `Replay Proposal ${index + 1}`).trim(),
         content: String(item.newRuleDraft.content || item.after || "").trim(),
+        structuredPayload:
+          item.newRuleDraft.structuredPayload && typeof item.newRuleDraft.structuredPayload === "object"
+            ? item.newRuleDraft.structuredPayload
+            : null,
         rules: Array.isArray(item.newRuleDraft.rules)
           ? item.newRuleDraft.rules
               .map((rule) => ({
                 title: String(rule.title || "").trim(),
-                content: String(rule.content || "").trim()
+                content: String(rule.content || "").trim(),
+                structuredPayload:
+                  rule.structuredPayload && typeof rule.structuredPayload === "object" ? rule.structuredPayload : null
               }))
               .filter((rule) => rule.title && rule.content)
           : []
       }
     : null;
 
-  if (action === "modify_rule" && !String(item.targetRuleId || "").trim()) {
+  const targetSkillCode = String(item.targetSkillCode || item.targetRuleId || "").trim();
+  if (action === "modify_skill_item" && !targetSkillCode) {
     return null;
   }
-  if ((action === "add_rule" || action === "add_example") && !(newRuleDraft?.content || String(item.after || "").trim())) {
+  if (action === "add_skill_item" && !(newRuleDraft?.content || String(item.after || "").trim() || newRuleDraft?.structuredPayload)) {
     return null;
   }
 
   return {
     action,
-    targetRuleId: String(item.targetRuleId || "").trim(),
+    targetSkillCode,
+    targetLayer,
+    targetProfileKey,
+    kind,
     targetFile,
     title: String(item.title || newRuleDraft?.title || `Replay Proposal ${index + 1}`).trim(),
     before: String(item.before || "").trim(),
@@ -770,14 +874,6 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = []) {
     evidenceRefs,
     newRuleDraft
   };
-}
-
-function resolveReplayTargetFile(targetArea = "") {
-  if (targetArea === "writing") return "requirement_writing.md";
-  if (targetArea === "extraction") return "requirement_extraction.md";
-  if (targetArea === "examples") return "examples/bad_examples.md";
-  if (targetArea === "domain_knowledge") return "domain-knowledge.json";
-  return "requirement_validation.md";
 }
 
 function normalizeResultItem(item, index, documentType = "software_requirement", template = { requirementIdPrefix: "SWR" }) {
@@ -836,8 +932,10 @@ const replayProposalSchema = {
         additionalProperties: false,
         properties: {
           action: { type: "string" },
-          targetRuleId: { type: "string" },
-          targetFile: { type: "string" },
+          targetSkillCode: { type: "string" },
+          targetLayer: { type: "string" },
+          targetProfileKey: { type: "string" },
+          kind: { type: "string" },
           title: { type: "string" },
           before: { type: "string" },
           after: { type: "string" },
@@ -852,25 +950,30 @@ const replayProposalSchema = {
                 properties: {
                   title: { type: "string" },
                   content: { type: "string" },
+                  structuredPayload: {
+                    anyOf: [{ type: "null" }, { type: "object" }]
+                  },
                   rules: {
                     type: "array",
                     items: {
                       type: "object",
-                      additionalProperties: false,
                       properties: {
                         title: { type: "string" },
-                        content: { type: "string" }
+                        content: { type: "string" },
+                        structuredPayload: {
+                          anyOf: [{ type: "null" }, { type: "object" }]
+                        }
                       },
                       required: ["title", "content"]
                     }
                   }
                 },
-                required: ["title", "content", "rules"]
+                required: ["title", "content", "rules", "structuredPayload"]
               }
             ]
           }
         },
-        required: ["action", "targetRuleId", "targetFile", "title", "before", "after", "rationale", "evidenceRefs", "newRuleDraft"]
+        required: ["action", "targetSkillCode", "targetLayer", "targetProfileKey", "kind", "title", "before", "after", "rationale", "evidenceRefs", "newRuleDraft"]
       }
     }
   },

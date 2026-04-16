@@ -2,11 +2,19 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
-import { getProjectPath, readJson, writeJson } from "./storage.js";
+import { getProjectPath, readJson, resolveStoredFilePath, writeJson } from "./storage.js";
 import { RejectionService } from "./rejection-service.js";
 
 function now() {
   return new Date().toISOString();
+}
+
+function isStaleRunningTask(task = {}) {
+  if (task.status !== "running") return false;
+  const reference = task.progress?.updatedAt || task.updatedAt || task.createdAt || "";
+  const timestamp = new Date(reference).getTime();
+  if (Number.isNaN(timestamp)) return false;
+  return Date.now() - timestamp > 30 * 60 * 1000;
 }
 
 function normalizeDocumentType(value) {
@@ -528,8 +536,9 @@ export class ProjectService {
     }
 
     const [removedAsset] = module.assets.splice(assetIndex, 1);
-    if (removedAsset?.absolutePath) {
-      await fs.rm(removedAsset.absolutePath, { force: true });
+    const assetPath = resolveStoredFilePath(removedAsset, { baseDir: config.uploadDir });
+    if (assetPath) {
+      await fs.rm(assetPath, { force: true });
     }
 
     touchModule(module, "asset_deleted", `已删除资产：${removedAsset.originalName}`);
@@ -559,6 +568,11 @@ export class ProjectService {
     const taskIndex = space.generationTasks.findIndex((item) => item.id === taskId);
     if (taskIndex === -1) {
       throw new Error("Task not found");
+    }
+
+    const task = space.generationTasks[taskIndex];
+    if (task.status === "running" && !isStaleRunningTask(task)) {
+      throw new Error("Running task cannot be deleted");
     }
 
     const [removedTask] = space.generationTasks.splice(taskIndex, 1);
@@ -961,8 +975,9 @@ export class ProjectService {
     }
 
     const [removedFile] = project.files.splice(fileIndex, 1);
-    if (removedFile?.absolutePath) {
-      await fs.rm(removedFile.absolutePath, { force: true });
+    const filePath = resolveStoredFilePath(removedFile, { baseDir: config.uploadDir });
+    if (filePath) {
+      await fs.rm(filePath, { force: true });
     }
 
     project.extractions = [];

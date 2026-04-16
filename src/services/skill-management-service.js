@@ -1,15 +1,8 @@
 import path from "node:path";
-import { promises as fs } from "node:fs";
 import { config } from "../config.js";
-import { pathExists, readJson, writeJson } from "./storage.js";
-
-const MARKDOWN_FILE_KEYS = [
-  "requirement_extraction.md",
-  "requirement_writing.md",
-  "requirement_validation.md",
-  "examples/good_examples.md",
-  "examples/bad_examples.md"
-];
+import { promises as fs } from "node:fs";
+import { SkillRegistryService } from "./skill-registry-service.js";
+import { pathExists } from "./storage.js";
 
 const EMPTY_KNOWLEDGE = {
   version: 1,
@@ -19,28 +12,11 @@ const EMPTY_KNOWLEDGE = {
   antiPatterns: []
 };
 
-const SKILL_TYPE_META = {
-  generic: {
-    section: "generic",
-    label: "通用层",
-    displayName: "Generic / 通用基础层",
-    deletable: false
-  },
-  docType: {
-    section: "docTypes",
-    label: "文档类型层",
-    deletable: true
-  },
-  domain: {
-    section: "domains",
-    label: "领域层",
-    deletable: true
-  },
-  module: {
-    section: "modules",
-    label: "模块层",
-    deletable: true
-  }
+const PROFILE_LABELS = {
+  generic: "通用层",
+  docType: "文档类型层",
+  domain: "领域层",
+  module: "模块层"
 };
 
 function createManagedError(message, statusCode = 400, code = "skill_management_error", details = {}) {
@@ -51,331 +27,237 @@ function createManagedError(message, statusCode = 400, code = "skill_management_
   return error;
 }
 
-function normalizeSkillType(type) {
-  if (!type || !SKILL_TYPE_META[type]) {
-    throw createManagedError("Unsupported skill type", 400, "unsupported_skill_type");
-  }
-  return type;
+function normalizeLayer(type = "") {
+  if (type === "doc-type" || type === "doc_type" || type === "doctype") return "docType";
+  if (["generic", "docType", "domain", "module"].includes(type)) return type;
+  throw createManagedError("Unsupported skill type", 400, "unsupported_skill_type", { type });
 }
 
-function sanitizeKey(value) {
-  return String(value || "").trim();
-}
-
-function unique(values) {
-  return Array.from(new Set((values || []).filter(Boolean)));
-}
-
-function trimString(value) {
-  return typeof value === "string" ? value.trim() : value;
-}
-
-function removeUndefinedDeep(value) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => removeUndefinedDeep(item))
-      .filter((item) => item !== undefined);
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  const next = {};
-  for (const [key, entry] of Object.entries(value)) {
-    const normalized = removeUndefinedDeep(entry);
-    if (normalized !== undefined) {
-      next[key] = normalized;
-    }
-  }
-  return next;
-}
-
-function sanitizeKnowledge(input = {}) {
-  const knowledge = input && typeof input === "object" ? input : {};
-  const version = Math.max(1, Number(knowledge.version || 1) || 1);
-  return removeUndefinedDeep({
-    version,
-    generationPriorities: Array.isArray(knowledge.generationPriorities)
-      ? knowledge.generationPriorities.map((item) => String(item || "").trim()).filter(Boolean)
-      : [],
-    ruleHints: Array.isArray(knowledge.ruleHints) ? knowledge.ruleHints.map((item) => removeUndefinedDeep(item || {})) : [],
-    antiPatterns: Array.isArray(knowledge.antiPatterns)
-      ? knowledge.antiPatterns.map((item) => String(item || "").trim()).filter(Boolean)
-      : [],
-    examples: Array.isArray(knowledge.examples) ? knowledge.examples.map((item) => removeUndefinedDeep(item || {})) : [],
-    sourceOfTruthPolicy: knowledge.sourceOfTruthPolicy ? removeUndefinedDeep(knowledge.sourceOfTruthPolicy) : undefined,
-    documentBlueprint: knowledge.documentBlueprint ? removeUndefinedDeep(knowledge.documentBlueprint) : undefined
-  });
-}
-
-function buildFallbackManifest() {
+function groupByLayer(profiles = []) {
   return {
-    version: 1,
-    resolutionOrder: ["generic", "docType", "domain", "module"],
-    profiles: {
-      generic: {
-        files: Object.fromEntries([
-          ...MARKDOWN_FILE_KEYS.map((file) => [file, [file]]),
-          ["domain-knowledge.json", ["profiles/generic/domain-knowledge.json"]]
-        ])
-      },
-      docTypes: {},
-      domains: {},
-      modules: {}
-    }
+    generic: profiles.filter((item) => item.layer === "generic"),
+    docType: profiles.filter((item) => item.layer === "docType"),
+    domain: profiles.filter((item) => item.layer === "domain"),
+    module: profiles.filter((item) => item.layer === "module")
   };
 }
 
-function getProfileEntry(manifest, type, key) {
-  const normalizedType = normalizeSkillType(type);
-  const meta = SKILL_TYPE_META[normalizedType];
-  if (normalizedType === "generic") {
-    return { key: "generic", configEntry: manifest?.profiles?.generic || null };
+function summarizeKindCounts(items = []) {
+  const counts = {};
+  for (const item of items) {
+    counts[item.kind] = (counts[item.kind] || 0) + 1;
   }
-  const normalizedKey = sanitizeKey(key);
-  const bucket = manifest?.profiles?.[meta.section] || {};
-  return { key: normalizedKey, configEntry: bucket[normalizedKey] || null };
+  return counts;
 }
 
-function getDisplayName(type, key) {
-  if (type === "generic") return SKILL_TYPE_META.generic.displayName;
-  if (type === "docType") {
-    return (
-      {
-        software_requirement: "Software Requirement",
-        detail_design: "Detail Design",
-        hil_test_case: "HIL Test Case"
-      }[key] || key
-    );
+async function describeFiles(entries = [], skillDir = config.activeSkillDir) {
+  const described = [];
+  for (const entry of entries) {
+    const exists = await pathExists(entry.absolutePath);
+    const stat = exists ? await fs.stat(entry.absolutePath).catch(() => null) : null;
+    described.push({
+      role: entry.role,
+      relativePath: entry.relativePath,
+      absolutePath: entry.absolutePath,
+      exists,
+      size: stat?.size || 0
+    });
   }
-  return key;
-}
-
-function buildPreview(content = "", maxLength = 200) {
-  const normalized = String(content || "").replace(/\s+/g, " ").trim();
-  if (!normalized) return "";
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
-}
-
-async function removeEmptyParents(startDir, stopDir) {
-  let current = startDir;
-  while (current && current.startsWith(stopDir) && current !== stopDir) {
-    const entries = await fs.readdir(current).catch(() => null);
-    if (!entries || entries.length > 0) {
-      break;
-    }
-    await fs.rmdir(current).catch(() => {});
-    current = path.dirname(current);
-  }
+  return described.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "zh-CN"));
 }
 
 export class SkillManagementService {
-  async loadManifest(skillDir = config.activeSkillDir) {
-    return readJson(path.join(skillDir, "skill-manifest.json"), buildFallbackManifest());
+  constructor() {
+    this.registryService = new SkillRegistryService();
   }
 
-  async readKnowledge(relativePath = "", skillDir = config.activeSkillDir) {
-    if (!relativePath) {
-      return { ...EMPTY_KNOWLEDGE };
-    }
-    return readJson(path.join(skillDir, relativePath), { ...EMPTY_KNOWLEDGE });
-  }
-
-  async describeFiles(files = {}, skillDir = config.activeSkillDir) {
-    const described = [];
-
-    for (const [role, relativeFiles] of Object.entries(files || {})) {
-      for (const relativePath of Array.isArray(relativeFiles) ? relativeFiles : [relativeFiles]) {
-        if (!relativePath) continue;
-        const absolutePath = path.join(skillDir, relativePath);
-        const exists = await pathExists(absolutePath);
-        let size = 0;
-        let preview = "";
-
-        if (exists) {
-          const stat = await fs.stat(absolutePath).catch(() => null);
-          size = stat?.size || 0;
-          if (MARKDOWN_FILE_KEYS.includes(role)) {
-            const content = await fs.readFile(absolutePath, "utf8").catch(() => "");
-            preview = buildPreview(content);
-          }
-        }
-
-        described.push({
-          role,
-          relativePath,
-          absolutePath,
-          exists,
-          size,
-          preview
-        });
-      }
-    }
-
-    return described;
-  }
-
-  async buildSkillItem(type, key, configEntry, skillDir = config.activeSkillDir) {
-    const files = await this.describeFiles(configEntry?.files || {}, skillDir);
-    const knowledgeFile = files.find((item) => item.role === "domain-knowledge.json") || null;
-    const knowledge = knowledgeFile ? await this.readKnowledge(knowledgeFile.relativePath, skillDir) : { ...EMPTY_KNOWLEDGE };
-    const abnormal = files.some((item) => !item.exists);
-    const ruleHint = (knowledge.ruleHints || []).find((item) => item && typeof item === "object") || {};
-
+  async buildProfileSummary(profile, skillDir = config.activeSkillDir) {
+    const files = await describeFiles(profile.files || [], skillDir);
+    const abnormal = files.some((entry) => !entry.exists);
+    const knowledgePath = files.find((entry) => entry.role === "domain-knowledge.json")?.relativePath || "";
     return {
-      type,
-      key,
-      id: `${type}:${key}`,
-      label: SKILL_TYPE_META[type].label,
-      displayName: getDisplayName(type, key),
-      deletable: SKILL_TYPE_META[type].deletable,
-      editable: Boolean(knowledgeFile),
+      layer: profile.layer,
+      type: profile.layer,
+      key: profile.profileKey,
+      id: `${profile.layer}:${profile.profileKey}`,
+      label: PROFILE_LABELS[profile.layer] || profile.layer,
+      displayName: profile.displayName,
+      documentTypeScope: profile.documentTypeScope || "",
+      deletable: profile.layer !== "generic",
+      editable: true,
       abnormal,
-      knowledgePath: knowledgeFile?.relativePath || "",
-      hasMarkdownFiles: files.some((item) => item.role !== "domain-knowledge.json"),
-      fileSummary: files.map((item) => ({
-        role: item.role,
-        relativePath: item.relativePath,
-        exists: item.exists,
-        size: item.size
+      knowledgePath,
+      hasMarkdownFiles: files.some((entry) => entry.role !== "domain-knowledge.json"),
+      fileSummary: files.map((entry) => ({
+        role: entry.role,
+        relativePath: entry.relativePath,
+        exists: entry.exists,
+        size: entry.size
       })),
-      domain: trimString(ruleHint.domain || "") || "",
-      subdomain: trimString(ruleHint.subdomain || "") || "",
       metrics: {
         fileCount: files.length,
-        exampleCount: Array.isArray(knowledge.examples) ? knowledge.examples.length : 0,
-        ruleHintCount: Array.isArray(knowledge.ruleHints) ? knowledge.ruleHints.length : 0,
-        antiPatternCount: Array.isArray(knowledge.antiPatterns) ? knowledge.antiPatterns.length : 0
-      }
+        itemCount: profile.itemCount || (profile.items || []).length,
+        kinds: summarizeKindCounts(profile.items || []),
+        goodExampleCount: (profile.items || []).filter((item) => item.kind === "good_example").length,
+        badExampleCount: (profile.items || []).filter((item) => item.kind === "bad_example").length
+      },
+      items: (profile.items || []).map((item) => ({
+        skillCode: item.skillCode,
+        kind: item.kind,
+        title: item.title,
+        status: item.status,
+        order: item.order,
+        preview: item.preview
+      }))
     };
   }
 
   async listSkills(skillDir = config.activeSkillDir) {
-    const manifest = await this.loadManifest(skillDir);
-    const groups = {
-      generic: [],
-      docType: [],
-      domain: [],
-      module: []
-    };
-
-    groups.generic.push(await this.buildSkillItem("generic", "generic", manifest?.profiles?.generic || { files: {} }, skillDir));
-
-    for (const [key, entry] of Object.entries(manifest?.profiles?.docTypes || {})) {
-      groups.docType.push(await this.buildSkillItem("docType", key, entry, skillDir));
-    }
-    for (const [key, entry] of Object.entries(manifest?.profiles?.domains || {})) {
-      groups.domain.push(await this.buildSkillItem("domain", key, entry, skillDir));
-    }
-    for (const [key, entry] of Object.entries(manifest?.profiles?.modules || {})) {
-      groups.module.push(await this.buildSkillItem("module", key, entry, skillDir));
+    const index = await this.registryService.getRegistryIndex(skillDir);
+    const profiles = [];
+    for (const profile of index.profiles) {
+      profiles.push(await this.buildProfileSummary(profile, skillDir));
     }
 
-    for (const list of Object.values(groups)) {
-      list.sort((left, right) => left.displayName.localeCompare(right.displayName, "zh-CN"));
-    }
-
+    const groups = groupByLayer(profiles);
     return {
-      manifest,
+      manifest: index.manifest,
       activeSource: {
         skillDir,
         manifestPath: path.join(skillDir, "skill-manifest.json")
       },
       summary: {
-        total: Object.values(groups).reduce((sum, items) => sum + items.length, 0),
-        countsByType: Object.fromEntries(Object.entries(groups).map(([type, items]) => [type, items.length])),
-        abnormalCount: Object.values(groups)
-          .flat()
-          .filter((item) => item.abnormal).length
+        total: profiles.length,
+        itemTotal: index.items.length,
+        countsByType: Object.fromEntries(Object.entries(groups).map(([layer, items]) => [layer, items.length])),
+        abnormalCount: profiles.filter((item) => item.abnormal).length
       },
       groups
     };
   }
 
   async getSkillDetail(type, key, skillDir = config.activeSkillDir) {
-    const manifest = await this.loadManifest(skillDir);
-    const { configEntry, key: resolvedKey } = getProfileEntry(manifest, type, key);
-
-    if (!configEntry) {
-      throw createManagedError("Skill not found", 404, "skill_not_found", { type, key });
+    const layer = normalizeLayer(type);
+    const registry = await this.registryService.loadProfileRegistry(layer, key, skillDir);
+    const index = await this.registryService.getRegistryIndex(skillDir, { includeDeprecated: true });
+    const profile = index.profiles.find((item) => item.layer === layer && item.profileKey === (layer === "generic" ? "generic" : key));
+    if (!profile) {
+      throw createManagedError("Skill profile not found", 404, "skill_profile_not_found", { type, key });
     }
 
-    const item = await this.buildSkillItem(type, resolvedKey, configEntry, skillDir);
-    const files = await this.describeFiles(configEntry.files || {}, skillDir);
-    const markdownFiles = files.filter((entry) => entry.role !== "domain-knowledge.json");
-    const knowledgeFile = files.find((entry) => entry.role === "domain-knowledge.json") || null;
-    const knowledge = knowledgeFile ? await this.readKnowledge(knowledgeFile.relativePath, skillDir) : { ...EMPTY_KNOWLEDGE };
+    const item = await this.buildProfileSummary(profile, skillDir);
+    const files = await describeFiles(profile.files || [], skillDir);
+    const knowledgePath = files.find((entry) => entry.role === "domain-knowledge.json")?.absolutePath;
+    const knowledge = knowledgePath
+      ? JSON.parse(await fs.readFile(knowledgePath, "utf8").catch(() => JSON.stringify(EMPTY_KNOWLEDGE)))
+      : { ...EMPTY_KNOWLEDGE };
 
     return {
       item,
+      profile: {
+        layer: registry.layer,
+        profileKey: registry.profileKey,
+        displayName: registry.displayName,
+        documentTypeScope: registry.documentTypeScope || "",
+        status: registry.status || "active",
+        registryPath: profile.registryPath
+      },
       files,
-      markdownFiles,
       knowledge,
+      skillItems: (registry.items || []).sort((left, right) => left.order - right.order),
       capabilities: {
-        canEdit: item.editable,
-        canDelete: item.deletable,
-        deleteDisabledReason: item.deletable ? "" : "基础通用层暂不支持删除"
+        canEdit: true,
+        canDelete: layer !== "generic",
+        deleteDisabledReason: layer === "generic" ? "基础通用层暂不支持删除" : ""
       }
     };
   }
 
   async updateSkill(type, key, payload = {}, skillDir = config.activeSkillDir) {
-    const manifest = await this.loadManifest(skillDir);
-    const { configEntry, key: resolvedKey } = getProfileEntry(manifest, type, key);
-
-    if (!configEntry) {
-      throw createManagedError("Skill not found", 404, "skill_not_found", { type, key });
+    const layer = normalizeLayer(type);
+    if (!payload.knowledge || typeof payload.knowledge !== "object") {
+      throw createManagedError("Profile update requires payload.knowledge", 400, "missing_knowledge_payload");
     }
-
-    const files = await this.describeFiles(configEntry.files || {}, skillDir);
-    const knowledgeFile = files.find((entry) => entry.role === "domain-knowledge.json") || null;
-    if (!knowledgeFile) {
-      throw createManagedError("This skill does not support structured editing yet", 400, "skill_edit_unsupported");
-    }
-
-    const currentKnowledge = await this.readKnowledge(knowledgeFile.relativePath, skillDir);
-    const nextKnowledge = {
-      ...currentKnowledge,
-      ...sanitizeKnowledge(payload.knowledge || {})
-    };
-    if (!payload.knowledge?.sourceOfTruthPolicy) {
-      delete nextKnowledge.sourceOfTruthPolicy;
-    }
-    if (!payload.knowledge?.documentBlueprint) {
-      delete nextKnowledge.documentBlueprint;
-    }
-
-    await writeJson(path.join(skillDir, knowledgeFile.relativePath), nextKnowledge);
-    return this.getSkillDetail(type, resolvedKey, skillDir);
+    await this.registryService.replaceKnowledgeItems(layer, key, payload.knowledge, skillDir);
+    return this.getSkillDetail(layer, key, skillDir);
   }
 
   async deleteSkill(type, key, skillDir = config.activeSkillDir) {
-    const normalizedType = normalizeSkillType(type);
-    if (normalizedType === "generic") {
+    const layer = normalizeLayer(type);
+    if (layer === "generic") {
       throw createManagedError("Generic skill cannot be deleted", 400, "generic_delete_blocked");
     }
+    return this.registryService.removeProfile(layer, key, skillDir);
+  }
 
-    const manifest = await this.loadManifest(skillDir);
-    const { configEntry, key: resolvedKey } = getProfileEntry(manifest, normalizedType, key);
-
-    if (!configEntry) {
-      throw createManagedError("Skill not found", 404, "skill_not_found", { type, key });
-    }
-
-    const files = await this.describeFiles(configEntry.files || {}, skillDir);
-    const absolutePaths = unique(files.map((item) => item.absolutePath));
-    for (const targetPath of absolutePaths) {
-      await fs.rm(targetPath, { recursive: true, force: true }).catch(() => {});
-      await removeEmptyParents(path.dirname(targetPath), skillDir);
-    }
-
-    const section = SKILL_TYPE_META[normalizedType].section;
-    delete manifest.profiles[section][resolvedKey];
-    await writeJson(path.join(skillDir, "skill-manifest.json"), manifest);
+  async listSkillItems(filters = {}, skillDir = config.activeSkillDir) {
+    const index = await this.registryService.getRegistryIndex(skillDir, {
+      includeDeprecated: Boolean(filters.includeDeprecated),
+      kind: filters.kind || "",
+      query: filters.query || ""
+    });
+    const items = index.items.filter((item) => {
+      if (filters.layer && normalizeLayer(filters.layer) !== item.layer) return false;
+      if (filters.profileKey && String(filters.profileKey).trim() !== item.profileKey) return false;
+      if (filters.documentTypeScope && String(filters.documentTypeScope).trim() !== item.documentTypeScope) return false;
+      return true;
+    });
 
     return {
-      removed: true,
-      type: normalizedType,
-      key: resolvedKey
+      summary: {
+        total: items.length,
+        countsByLayer: {
+          generic: items.filter((item) => item.layer === "generic").length,
+          docType: items.filter((item) => item.layer === "docType").length,
+          domain: items.filter((item) => item.layer === "domain").length,
+          module: items.filter((item) => item.layer === "module").length
+        }
+      },
+      items
     };
+  }
+
+  async getSkillItem(skillCode, skillDir = config.activeSkillDir) {
+    const item = await this.registryService.getItem(skillCode, skillDir);
+    const detail = await this.getSkillDetail(item.layer, item.profileKey, skillDir);
+    return {
+      item,
+      profile: detail.profile,
+      siblings: detail.skillItems.map((entry) => ({
+        skillCode: entry.skillCode,
+        kind: entry.kind,
+        title: entry.title,
+        status: entry.status,
+        order: entry.order
+      })),
+      capabilities: {
+        canEdit: true,
+        canDelete: true,
+        canReorder: true
+      }
+    };
+  }
+
+  async createSkillItem(payload = {}, skillDir = config.activeSkillDir) {
+    if (!payload.layer || !payload.kind || !payload.profileKey) {
+      throw createManagedError("Creating a skill item requires layer, profileKey, and kind", 400, "missing_skill_item_fields");
+    }
+    return this.registryService.createItem(payload, skillDir);
+  }
+
+  async updateSkillItem(skillCode, payload = {}, skillDir = config.activeSkillDir) {
+    return this.registryService.updateItem(skillCode, payload, skillDir);
+  }
+
+  async deleteSkillItem(skillCode, skillDir = config.activeSkillDir) {
+    return this.registryService.deleteItem(skillCode, skillDir);
+  }
+
+  async reorderSkillItem(skillCode, payload = {}, skillDir = config.activeSkillDir) {
+    return this.registryService.reorderItem(skillCode, payload, skillDir);
+  }
+
+  async materializeRegistry(skillDir = config.activeSkillDir) {
+    return this.registryService.materializeAll(skillDir);
   }
 }

@@ -79,7 +79,11 @@ export class PipelineService {
 
     const extractions = await this.extractionService.extractFiles(project);
     const requirements = await this.llmService.generateDocumentItems(project, extractions, options);
-    const domainKnowledge = await this.skillBundleService.getDomainKnowledge(options.skillBundleId);
+    const domainKnowledge = await this.skillBundleService.getDomainKnowledge(options.skillBundleId, {
+      documentType: project.documentType,
+      domain: project.domain || "",
+      moduleSkillKey: project.moduleSkillKey || ""
+    });
     const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
     const conflicts = this.validationService.validate(requirements, { domainKnowledge, documentType: project.documentType });
     const traces = buildTraces(requirements);

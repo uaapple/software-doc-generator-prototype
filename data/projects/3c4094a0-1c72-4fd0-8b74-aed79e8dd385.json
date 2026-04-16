@@ -1,0 +1,2540 @@
+{
+  "id": "3c4094a0-1c72-4fd0-8b74-aed79e8dd385",
+  "name": "Torque Intervention Trial",
+  "description": "Use input sample materials with active skill and Doubao",
+  "language": "zh-CN",
+  "templateName": "default-template",
+  "status": "generated",
+  "files": [
+    {
+      "id": "55e4e2d7-bcfe-4713-b1c7-fce7352756be",
+      "role": "system_pdf",
+      "originalName": "system-requirements-example-torque-intervention.md",
+      "storedName": "1775279975808-system-requirements-example-torque-intervention.md",
+      "relativePath": "3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775279975808-system-requirements-example-torque-intervention.md",
+      "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775279975808-system-requirements-example-torque-intervention.md",
+      "mimeType": "application/octet-stream",
+      "size": 3838,
+      "uploadedAt": "2026-04-04T05:19:35.828Z"
+    },
+    {
+      "id": "86668557-a6a1-40da-939d-920309c569c2",
+      "role": "model_pdf",
+      "originalName": "ESCWhlTq.pdf",
+      "storedName": "1775279975809-ESCWhlTq.pdf",
+      "relativePath": "3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775279975809-ESCWhlTq.pdf",
+      "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775279975809-ESCWhlTq.pdf",
+      "mimeType": "application/pdf",
+      "size": 1624858,
+      "uploadedAt": "2026-04-04T05:19:35.830Z"
+    },
+    {
+      "id": "040421ac-6797-4642-b66d-8b18272f7564",
+      "role": "generated_c",
+      "originalName": "ESCWhlTq.c",
+      "storedName": "1775279975823-ESCWhlTq.c",
+      "relativePath": "3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775279975823-ESCWhlTq.c",
+      "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775279975823-ESCWhlTq.c",
+      "mimeType": "application/octet-stream",
+      "size": 47869,
+      "uploadedAt": "2026-04-04T05:19:35.830Z"
+    },
+    {
+      "id": "044bd465-709c-4890-ab46-e5a56b053822",
+      "role": "system_pdf",
+      "originalName": "system-requirements-example-torque-intervention.md",
+      "storedName": "1775317703137-system-requirements-example-torque-intervention.md",
+      "relativePath": "3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775317703137-system-requirements-example-torque-intervention.md",
+      "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775317703137-system-requirements-example-torque-intervention.md",
+      "mimeType": "text/markdown",
+      "size": 3838,
+      "uploadedAt": "2026-04-04T15:48:23.168Z"
+    },
+    {
+      "id": "33fb54f4-0df8-469b-8a23-924d8cc865de",
+      "role": "model_pdf",
+      "originalName": "ESCWhlTq.pdf",
+      "storedName": "1775317703132-ESCWhlTq.pdf",
+      "relativePath": "3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775317703132-ESCWhlTq.pdf",
+      "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775317703132-ESCWhlTq.pdf",
+      "mimeType": "application/pdf",
+      "size": 1624858,
+      "uploadedAt": "2026-04-04T15:48:23.171Z"
+    },
+    {
+      "id": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+      "role": "generated_c",
+      "originalName": "ESCWhlTq.c",
+      "storedName": "1775317703158-ESCWhlTq.c",
+      "relativePath": "3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775317703158-ESCWhlTq.c",
+      "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/3c4094a0-1c72-4fd0-8b74-aed79e8dd385/1775317703158-ESCWhlTq.c",
+      "mimeType": "application/octet-stream",
+      "size": 47869,
+      "uploadedAt": "2026-04-04T15:48:23.171Z"
+    }
+  ],
+  "extractions": [
+    {
+      "id": "2d99c494-353f-428c-ba14-032127d871c3",
+      "fileId": "55e4e2d7-bcfe-4713-b1c7-fce7352756be",
+      "fileRole": "system_pdf",
+      "fileName": "system-requirements-example-torque-intervention.md",
+      "summary": "# 系统需求示例：扭矩干预功能 ## 文档信息 - 文档类型：系统需求示例 - 领域：嵌入式 VCU - 语言：中文 - 版本：v1 - 来源：调试用示例图片，人工提取整理 - 整理日期：2026-04-04 ## 章节信息 - 章节编号：`5.30` - 章节标题：`扭矩干预功能` ## 需求条目 ### SMiVCU-9978 - 主题：ESC 扭矩干预请求响应与优先级 - 原文： 当 ESC 有升扭/降扭和制动再生扭矩请求时，VC",
+      "evidence": [
+        {
+          "id": "a8819809-f3b7-48c3-8b99-551325dce4d9",
+          "fileId": "55e4e2d7-bcfe-4713-b1c7-fce7352756be",
+          "fileRole": "system_pdf",
+          "fileName": "system-requirements-example-torque-intervention.md",
+          "location": "page:1",
+          "excerpt": "# 系统需求示例：扭矩干预功能\n\n## 文档信息\n\n- 文档类型：系统需求示例\n- 领域：嵌入式 VCU\n- 语言：中文\n- 版本：v1\n- 来源：调试用示例图片，人工提取整理\n- 整理日期：2026-04-04\n\n## 章节信息\n\n- 章节编号：`5.30`\n- 章节标题：`扭矩干预功能`\n\n## 需求条目\n\n### SMiVCU-9978\n\n- 主题：ESC 扭矩干预请求响应与优先级\n- 原文：\n  当 ESC 有升扭/降扭和制动再生扭矩请求时，VCU 应响应 ESC 扭矩干预请求，按照优先级顺序进行对前/后轴目标扭矩进行计算，优先级顺序为：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。\n- 条件：\n  - ESC 有升扭/降扭请求\n  - ESC 有制动再生扭矩请求\n- 期望行为：\n  - VCU 应响应 ESC 扭矩干预请求\n  - VCU 应对前/后轴目标扭矩进行计算\n- 优先级顺序：\n  - 前轴升扭请求\n  - 前轴降扭请求\n  - 主动制动\n  - ADAS 的 VLC 工况\n  - RBS\n\n### SMiVCU-9979\n\n- 主题：主动安全功能激活时的优先级顺序\n- 原文：\n  当有主动安全功能，包括 AEB、CDP、ABS、DTC、ASR、VDC 功能激活时，VCU 应按照主动安全激活的优先级顺序对前后轴目标扭矩进行仲裁，优先级顺序为：DTC > ASR > VDC。\n- 条件：\n  - AEB 激活\n  - CDP 激活\n  - ABS 激活\n  - DTC 激活\n  - ASR 激活\n  - VDC 激活\n- 期望行为：\n  - VCU 应对前后轴目标扭矩进行仲裁\n- 优先级顺序：\n  - DTC\n  - ASR\n  - VDC\n- 备注：\n  - 原文列出主动安全功能包括 AEB、CDP、ABS、DTC、ASR、VDC，但明确给出的优先级顺序只有 DTC > ASR > VDC\n\n### SMiVCU-4487\n\n- 主题：主动安全功能激活/退出时的扭矩变化率输出\n- 原文：\n  当以下条件任意满足时，VCU 应以大的前、后轴扭矩变化率输出，即安全相关功能激活时，需快速响应：\n  1. ABS 激活\n  2. AEB 激活\n  3. DTC 激活\n  4. ASR 激活\n  5. VDC 激活\n  6. CDP 激活\n  当以上条件不再满足时，VCU 应以相对小的前、后轴扭矩变化率输出，即安全相关功能退出激活时，需慢速响应。\n- 任一触发条件：\n  - ABS 激活\n  - AEB 激活\n  - DTC 激活\n  - ASR 激活\n  - VDC 激活\n  - CDP 激活\n- 期望行为：\n  - 任一条件满足时，VCU 应以较大的前、后轴扭矩变化率输出\n  - 条件均不满足时，VCU 应以相对较小的前、后轴扭矩变化率输出\n- 设计意图：\n  - 安全相关功能激活时需快速响应\n  - 安全相关功能退出激活时需慢速响应\n\n### SMiVCU-9980\n\n- 主题：主动安全功能未激活且 ESC 未干预时的前后轴目标扭矩\n- 原文：\n  当无主动安全功能激活且 ESC 未进行扭矩干预，前后轴目标扭矩则为扭矩分配后的前后轴扭矩。\n- 条件：\n  - 无主动安全功能激活\n  - ESC 未进行扭矩干预\n- 期望行为：\n  - 前后轴目标扭矩应为扭矩分配后的前后轴扭矩\n\n### SMiVCU-4486\n\n- 主题：安全相关功能同时激活时的响应优先原则\n- 原文：\n  当无扭矩请求类安全相关功能（AEB、ABS、CDP）与有扭矩请求类安全相关功能（DTC、ASR、VDC）同时激活时，VCU 应优先响应前者。\n- 条件：\n  - 无扭矩请求类安全相关功能（AEB、ABS、CDP）激活\n  - 有扭矩请求类安全相关功能（DTC、ASR、VDC）激活\n  - 上述两类功能同时激活\n- 期望行为：\n  - VCU 应优先响应无扭矩请求类安全相关功能\n- 优先顺序：\n  - AEB / ABS / CDP\n  - DTC / ASR / VDC\n\n## 提炼摘要\n\n- 主主题：VCU 在扭矩干预场景下对前后轴目标扭矩及变化率进行响应、仲裁和优先级控制\n- 关键概念：\n  - ESC 扭矩干预\n  - 主动安全功能仲裁\n  - 前后轴目标扭矩\n  - 扭矩变化率\n  - 优先级顺序\n  - 快速响应与慢速响应",
+          "tags": [
+            "system-source",
+            "requirement-like"
+          ],
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "id": "fef8018e-4030-4d81-8028-1edb9934b159",
+      "fileId": "86668557-a6a1-40da-939d-920309c569c2",
+      "fileRole": "model_pdf",
+      "fileName": "ESCWhlTq.pdf",
+      "summary": "11 ESCWhlTq_tqFrntBrkRegenMax single 10 ESCWhlTq_bReAxleTqDecActv boolean 9 ESCWhlTq_bFrntAxleTqDecActv boolean 12 ESCWhlTq_tqReBrkRegenMax single 4 ESCWhlTq_bReAxleTqIntvActv boolean 5 ESCWhlTq_tqTarCstRgnFrntAxle singl",
+      "evidence": [
+        {
+          "id": "8230f9d5-197d-4a42-a28e-54abfcb68333",
+          "fileId": "86668557-a6a1-40da-939d-920309c569c2",
+          "fileRole": "model_pdf",
+          "fileName": "ESCWhlTq.pdf",
+          "location": "page:1",
+          "excerpt": "11\nESCWhlTq_tqFrntBrkRegenMax\nsingle\n10\nESCWhlTq_bReAxleTqDecActv\nboolean\n9\nESCWhlTq_bFrntAxleTqDecActv\nboolean\n12\nESCWhlTq_tqReBrkRegenMax\nsingle\n4\nESCWhlTq_bReAxleTqIntvActv\nboolean\n5\nESCWhlTq_tqTarCstRgnFrntAxle\nsingle\n8\nESCWhlTq_bReAxleOnlyRBSActv\nboolean\n52\nicems_stEng\nuint8\n50\nHvCoorn_stVoltMod\nuint8\n49\nicesc_tqISAReReq\nsingle\n48\nicesc_bISAReTqReqVld\nboolean\n6\nESCWhlTq_tqTarCstRgnReAxle\nsingle\nicesc_bFrntAxleTqDecActv\nicesc_bFrntAxleTqIncActv\nicesc_bReAxleTqDecActv\nicesc_bReAxleTqIncActv\nicesc_tqReqFrntAxleDec\nicesc_tqReqReAxleDec\nicesc_tqReqFrntAxleInc\nicesc_tqReqReAxleInc\nicesc_bFrntAxleRBSTqActv\nicesc_bReAxleRBSTqActv\nicesc_tqRBSReqFrntAxle\nicesc_tqRBSReqReAxle\nTqSpltArbt_tqTarFrntAxle\nTqSpltArbt_tqTarReAxle\nPwrLimEM_tqMaxFrntAxle\nPwrLimEM_tqMinFrntAxle\nPwrLimEM_tqMaxReAxle\nPwrLimEM_tqMinReAxle\nVehCfg_stRBCCtrlModeSel\nicesc_bABSActv\nicesc_bEBDActv\nicadas_bAEBActv\nicesc_bCDPActv\nParkCtrl_bAPAActv\nACCtl_bAccActv\nicadas_bTqVLCTrgtReqVld\nicesc_bTCSActv\nicesc_stCCOActv\nicesc_stTABActv\nicesc_bCCOFrntTqReqVld\nicesc_tqCCOFrntTqReq\nicesc_bCCOReTqReqVld\nicesc_tqCCOReTqReq\nPwrLimEM_tqMinFrntAxle4ESC\nPwrLimEM_tqMinReAxle4ESC\nipf_bCCAN0x10BSG6Vld\nipf_bCCAN0x10FSG4Vld\nCrCtl_stCrCtl\nBrkPedDev_bBrk\nGearLvr_stDrvGear\nVehSpd_vVeh\nDrvMod_stDrvMod\nicesc_bISAActv\nicesc_stISAAvl\nicesc_bISAFrntTqReqVld\nicesc_tqISAFrntReq\nicesc_bISAReTqReqVld\nicesc_tqISAReReq\nHvCoorn_stVoltMod\nicbms_tMinBat\nicems_stEng\nESCWhlTq_tqTarFrntAxle\nESCWhlTq_bFrntAxleTqIntvActv\nESCWhlTq_tqTarReAxle\nESCWhlTq_bReAxleTqIntvActv\nESCWhlTq_tqTarCstRgnFrntAxle\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_bFrntAxleOnlyRBSActv\nESCWhlTq_bReAxleOnlyRBSActv\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bReAxleTqDecActv\nESCWhlTq_tqFrntBrkRegenMax\nESCWhlTq_tqReBrkRegenMax\nfc_ESCWhlTq()\nESCWhlTq\nboolean\nsingle\nsingle\nsingle\nboolean\nboolean\nsingle\nsingle\nboolean\nboolean\nsingle\nsingle\nsingle\nboolean\nboolean\nsingle\nsingle\nsingle\nsingle\nsingle\nboolean\nsingle\nsingle\nuint8\nsingle\n45\nicesc_stISAAvl\nuint8\n44\nicesc_bISAActv\nboolean\n43\nDrvMod_stDrvMod\nuint8\n42\nVehSpd_vVeh\nsingle\n2\nESCWhlTq_bFrntAxleTqIntvActv\nboolean\n39\nCrCtl_stCrCtl\nuint8\n36\nPwrLimEM_tqMinReAxle4ESC\nsingle\n35\nPwrLimEM_tqMinFrntAxle4ESC\nsingle\n40\nBrkPedDev_bBrk\nboolean\n34\nicesc_tqCCOReTqReq\nsingle\n29\nicesc_stCCOActv\nuint8\n28\nicesc_bTCSActv\nboolean\n<ModelName>:\tESCWhlTq\n<Project>:\tChery_ICAR05\n<Creator>:\tLiShuai\n<CreatedDate>:\t2022\t08\t02\t16:50\n<ModelVersion>:\t1.1.3.6\n<Description>:\tESC\tTorque\tRequest\tCoordination\nxuliu1\nMon\tJan\t05\t14:35:14\t2026\n33\nicesc_bCCOReTqReqVld\nboolean\n26\nACCtl_bAccActv\nboolean\n25\nParkCtrl_bAPAActv\nboolean\n23\nicadas_bAEBActv\nboolean\n22\nicesc_bEBDActv\nboolean\n21\nicesc_bABSActv\nboolean\n20\nVehCfg_stRBCCtrlModeSel\nuint8\n18\nPwrLimEM_tqMaxReAxle\nsingle\n14\nTqSpltArbt_tqTarFrntAxle\nsingle\n38\nipf_bCCAN0x10FSG4Vld\nboolean\n46\nicesc_bISAFrntTqReqVld\nboolean\n27\nicadas_bTqVLCTrgtReqVld\nboolean\n12\nicesc_tqRBSReqFrntAxle\nsingle\n11\nicesc_bReAxleRBSTqActv\nboolean\n10\nicesc_bFrntAxleRBSTqActv\nboolean\n7\nicesc_tqReqReAxleDec\nsingle\n3\nESCWhlTq_tqTarReAxle\nsingle\n5\nicesc_bReAxleTqIncActv\nboolean\n16\nPwrLimEM_tqMaxFrntAxle\nsingle\n41\nGearLvr_stDrvGear\nuint8\n9\nicesc_tqReqReAxleInc\nsingle\n19\nPwrLimEM_tqMinReAxle\nsingle\n3\nicesc_bFrntAxleTqIncActv\nboolean\n31\nicesc_bCCOFrntTqReqVld\nboolean\n2\nicesc_bFrntAxleTqDecActv\nboolean\n1\nESCWhlTq_tqTarFrntAxle\nsingle\n7\nESCWhlTq_bFrntAxleOnlyRBSActv\nboolean\n15\nTqSpltArbt_tqTarReAxle\nsingle\n8\nicesc_tqReqFrntAxleInc\nsingle\n24\nicesc_bCDPActv\nboolean\n32\nicesc_tqCCOFrntTqReq\nsingle\n30\nicesc_stTABActv\nuint8\n47\nicesc_tqISAFrntReq\nsingle\n13\nicesc_tqRBSReqReAxle\nsingle\n6\nicesc_tqReqFrntAxleDec\nsingle\n1\nfc_ESCWhlTq\n51\nicbms_tMinBat\nsingle\n37\nipf_bCCAN0x10BSG6Vld\nboolean\n17\nPwrLimEM_tqMinFrntAxle\nsingle\n4\nicesc_bReAxleTqDecActv\nboolean\n\n10\nESCWhlTq_bReAxleTqDecActv\n6\nESCWhlTq_tqTarCstRgnReAxle\nsingle\n5\nESCWhlTq_tqTarCstRgnFrntAxle\nsingle\n11\nESCWhlTq_tqFrntBrkRegenMax\n4\nESCWhlTq_bReAxleTqIntvActv\nboolean\n2\nESCWhlTq_bFrntAxleTqIntvActv\nboolean\nuint32\n12\nESCWhlTq_tqReBrkRegenMax\n51\nicems_stEng\n50\nicbms_tMinBat\n49\nHvCoorn_stVoltMod\nDOC\nText\n45\nicesc_bISAFrntTqReqVld\n7\nESCWhlTq_bFrntAxleOnlyRBSActv\n43\nicesc_bISAActv\n41\nVehSpd_vVeh\n9\nESCWhlTq_bFrntAxleTqDecActv\n39\nBrkPedDev_bBrk\n37\nipf_bCCAN0x10FSG4Vld\n36\nipf_bCCAN0x10BSG6Vld\n34\nPwrLimEM_tqMinFrntAxle4ESC\n42\nDrvMod_stDrvMod\n33\nicesc_tqCCOReTqReq\nf()\nfc_ESCWhlTq\n29\nicesc_stTABActv\n27\nicesc_bTCSActv\nicesc_bFrntAxleTqDecActv\nicesc_bFrntAxleTqIncActv\nicesc_bReAxleTqDecActv\nicesc_bReAxleTqIncActv\nicesc_tqReqFrntAxleDec\nicesc_tqReqReAxleDec\nicesc_tqReqFrntAxleInc\nicesc_tqReqReAxleInc\nicesc_bFrntAxleRBSTqActv\nicesc_bReAxleRBSTqActv\nicesc_tqRBSReqFrntAxle\nicesc_tqRBSReqReAxle\nTqSpltArbt_tqTarFrntAxle\nTqSpltArbt_tqTarReAxle\nPwrLimEM_tqMaxFrntAxle\nPwrLimEM_tqMinFrntAxle\nPwrLimEM_tqMaxReAxle\nPwrLimEM_tqMinReAxle\nVehCfg_stRBCCtrlModeSel\nicesc_bABSActv\nicesc_bEBDActv\nicadas_bAEBActv\nicesc_bCDPActv\nParkCtrl_bAPAActv\nACCtl_bAccActv\nicadas_bTqVLCTrgtReqVld\nicesc_bTCSActv\nicesc_stCCOActv\nicesc_stTABActv\nicesc_bCCOFrntTqReqVld\nicesc_tqCCOFrntTqReq\nicesc_bCCOReTqReqVld\nicesc_tqCCOReTqReq\nPwrLimEM_tqMinFrntAxle4ESC\nPwrLimEM_tqMinReAxle4ESC\nipf_bCCAN0x10BSG6Vld\nipf_bCCAN0x10FSG4Vld\nCrCtl_stCrCtl\nBrkPedDev_bBrk\nGearLvr_stDrvGear\nVehSpd_vVeh\nDrvMod_stDrvMod\nicesc_bISAActv\nicesc_stISAAvl\nicesc_bISAFrntTqReqVld\nicesc_tqISAFrntReq\nicesc_bISAReTqReqVld\nicesc_tqISAReReq\nHvCoorn_stVoltMod\nicbms_tMinBat\nicems_stEng\nESCWhlTq_tqTarFrntAxle\nESCWhlTq_bFrntAxleTqIntvActv\nESCWhlTq_tqTarReAxle\nESCWhlTq_bReAxleTqIntvActv\nESCWhlTq_tqTarCstRgnFrntAxle\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_bFrntAxleOnlyRBSActv\nESCWhlTq_bReAxleOnlyRBSActv\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bReAxleTqDecActv\nESCWhlTq_tqFrntBrkRegenMax\nESCWhlTq_tqReBrkRegenMax\nESCWhlTq_TorqueRequestCoordination\n38\nCrCtl_stCrCtl\n25\nACCtl_bAccActv\n1\nESCWhlTq_tqTarFrntAxle\nsingle\n22\nicadas_bAEBActv\n21\nicesc_bEBDActv\n47\nicesc_bISAReTqReqVld\n20\nicesc_bABSActv\n32\nicesc_bCCOReTqReqVld\n23\nicesc_bCDPActv\n18\nPwrLimEM_tqMinReAxle\nsingle\n17\nPwrLimEM_tqMaxReAxle\nsingle\n30\nicesc_bCCOFrntTqReqVld\n16\nPwrLimEM_tqMinFrntAxle\nsingle\n19\nVehCfg_stRBCCtrlModeSel\nuint8\n26\nicadas_bTqVLCTrgtReqVld\n40\nGearLvr_stDrvGear\n14\nTqSpltArbt_tqTarReAxle\nsingle\n13\nTqSpltArbt_tqTarFrntAxle\nsingle\n8\nESCWhlTq_bReAxleOnlyRBSActv\n48\nicesc_tqISAReReq\n28\nicesc_stCCOActv\n8\nicesc_tqReqReAxleInc\nsingle\n3\nESCWhlTq_tqTarReAxle\nsingle\n11\nicesc_tqRBSReqFrntAxle\nsingle\n7\nicesc_tqReqFrntAxleInc\nsingle\n9\nicesc_bFrntAxleRBSTqActv\nboolean\n6\nicesc_tqReqReAxleDec\nsingle\n24\nParkCtrl_bAPAActv\n31\nicesc_tqCCOFrntTqReq\n5\nicesc_tqReqFrntAxleDec\nsingle\n35\nPwrLimEM_tqMinReAxle4ESC\n4\nicesc_bReAxleTqIncActv\nboolean\n10\nicesc_bReAxleRBSTqActv\nboolean\n2\nicesc_bFrntAxleTqIncActv\nboolean\n46\nicesc_tqISAFrntReq\n12\nicesc_tqRBSReqReAxle\nsingle\n3\nicesc_bReAxleTqDecActv\nboolean\n44\nicesc_stISAAvl\n1\nicesc_bFrntAxleTqDecActv\nboolean\n15\nPwrLimEM_tqMaxFrntAxle\nsingle\nESCWhlTq_bFrntAxleTqIntvActv\nESCWhlTq_bReAxleTqIntvActv\nESCWhlTq_tqTarReAxle\nESCWhlTq_tqTarFrntAxle\nESCWhlTq_tqTarCstRgnFrntAxle\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_bFrntAxleOnlyRBSActv\nESCWhlTq_bReAxleOnlyRBSActv\nESCWhlTq_Version\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bReAxleTqDecActv\nESCWhlTq_tqFrntBrkRegenMax\nESCWhlTq_tqReBrkRegenMax\n\nThis\tsubsystem\tis\tmainly\tused\tto\tcalculate\twheel\ttarget\ttorque\tafter\tESP\tintervention\tand\tfast\ttorque\tactive\tflag,\tbased\ton\twheel\ttarget\ttorque\tbefore\tESP\tintervention,\tESP\tdecrease\ttorque\tactive\tflag,\tESP\tincrease\ttorque\tactive\tflag,\tthe\ndecrease\ttorque\tvalue\tof\tESP,\tthe\tincrease\ttorque\tvalue\tof\tESP,\tetc.\n5\nicesc_tqReqFrntAxleDec\n6\nicesc_tqReqReAxleDec\n1\nicesc_bFrntAxleTqDecActv\n2\nicesc_bFrntAxleTqIncActv\n11\nESCWhlTq_tqFrntBrkRegenMax\n10\nESCWhlTq_bReAxleTqDecActv\n6\nESCWhlTq_tqTarCstRgnReAxle\n4\nESCWhlTq_bReAxleTqIntvActv\n3\nESCWhlTq_tqTarReAxle\n7\nESCWhlTq_bFrntAxleOnlyRBSActv\n2\nESCWhlTq_bFrntAxleTqIntvActv\n9\nESCWhlTq_bFrntAxleTqDecActv\nicesc_bTCSActv\nVehCfg_stRBCCtrlModeSel\nicesc_bReAxleTqDecActv\nicesc_tqReqReAxleDec\nicesc_bReAxleTqIncActv\nicesc_tqReqReAxleInc\nicesc_bReAxleRBSTqActv\nicesc_tqRBSReqReAxle\nTqSpltArbt_tqTarReAxle\nPwrLimEM_tqMaxReAxle\nPwrLimEM_tqMinReAxle\nicesc_bABSActv\nicesc_bEBDActv\nicadas_bAEBActv\nicesc_bCDPActv\nParkCtrl_bAPAActv\nACCtl_bAccActv\nicadas_bTqVLCTrgtReqVld\nESCWhlTq_tqTarFrntAxleDif\nESCWhlTq_bFrntAxleTqIncActv\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bCCOActv\nicesc_bCCOReTqReqVld\nicesc_tqCCOReTqReq\nESCWhlTq_bOffRoadTCSActv\nicesc_bISAActv\nicesc_stISAAvl\nicesc_bISAReTqReqVld\nicesc_tqISAReReq\nESCWhlTq_tqTarReAxle\nESCWhlTq_bReAxleTqIntvActv\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_bReAxleOnlyRBSActv\nESCWhlTq_tqTarReAxleDif\nESCWhlTq_bReAxleTqIncActv\nESCWhlTq_bReAxleTqDecActv\nA02_ReAxleESCIntv\nsingle\nsingle\n49\nHvCoorn_stVoltMod\n47\nicesc_bISAReTqReqVld\n48\nicesc_tqISAReReq\n8\nESCWhlTq_bReAxleOnlyRBSActv\n46\nicesc_tqISAFrntReq\n45\nicesc_bISAFrntTqReqVld\n41\nVehSpd_vVeh\n40\nGearLvr_stDrvGear\n39\nBrkPedDev_bBrk\n38\nCrCtl_stCrCtl\n37\nipf_bCCAN0x10FSG4Vld\n36\nipf_bCCAN0x10BSG6Vld\n34\nPwrLimEM_tqMinFrntAxle4ESC\n32\nicesc_bCCOReTqReqVld\n31\nicesc_tqCCOFrntTqReq\nicesc_tqReqFrntAxleDec\nicesc_tqReqFrntAxleInc\nicesc_tqRBSReqFrntAxle\nTqSpltArbt_tqTarFrntAxle\nPwrLimEM_tqMaxFrntAxle\nPwrLimEM_tqMinFrntAxle\nicesc_bFrntAxleTqDecActv\nicesc_bFrntAxleTqIncActv\nicesc_bFrntAxleRBSTqActv\nicesc_bABSActv\nicesc_bEBDActv\nicadas_bAEBActv\nicesc_bCDPActv\nParkCtrl_bAPAActv\nACCtl_bAccActv\nicadas_bTqVLCTrgtReqVld\nESCWhlTq_tqTarReAxleDif\nESCWhlTq_bReAxleTqIncActv\nESCWhlTq_bReAxleTqDecActv\nicesc_stCCOActv\nicesc_stTABActv\nicesc_bCCOFrntTqReqVld\nicesc_tqCCOFrntTqReq\nDrvMod_stDrvMod\nicesc_bISAActv\nicesc_stISAAvl\nicesc_bISAFrntTqReqVld\nicesc_tqISAFrntReq\nicesc_bTCSActv\nVehCfg_stRBCCtrlModeSel\nESCWhlTq_tqTarFrntAxle\nESCWhlTq_bFrntAxleTqIntvActv\nESCWhlTq_tqTarCstRgnFrntAxle\nESCWhlTq_bFrntAxleOnlyRBSActv\nESCWhlTq_tqTarFrntAxleDif\nESCWhlTq_bFrntAxleTqIncActv\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bCCOActv\nESCWhlTq_bOffRoadTCSActv\nA01_FrntAxleESCIntv\nsingle\nsingle\n5\nESCWhlTq_tqTarCstRgnFrntAxle\n30\nicesc_bCCOFrntTqReqVld\n29\nicesc_stTABActv\n24\nParkCtrl_bAPAActv\n28\nicesc_stCCOActv\n22\nicadas_bAEBActv\n43\nicesc_bISAActv\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_tqTarCstRgnFrntAxle\nPwrLimEM_tqMinFrntAxle4ESC\nPwrLimEM_tqMinReAxle4ESC\nipf_bCCAN0x10BSG6Vld\nipf_bCCAN0x10FSG4Vld\nCrCtl_stCrCtl\nBrkPedDev_bBrk\nGearLvr_stDrvGear\nVehSpd_vVeh\nHvCoorn_stVoltMod\nicbms_tMinBat\nicems_stEng\nESCWhlTq_tqFrntBrkRegenMax\nESCWhlTq_tqReBrkRegenMax\nA03_BrkMaxRgnTq\n23\nicesc_bCDPActv\n18\nPwrLimEM_tqMinReAxle\n19\nVehCfg_stRBCCtrlModeSel\n17\nPwrLimEM_tqMaxReAxle\n12\nESCWhlTq_tqReBrkRegenMax\n27\nicesc_bTCSActv\n50\nicbms_tMinBat\n20\nicesc_bABSActv\n15\nPwrLimEM_tqMaxFrntAxle\n14\nTqSpltArbt_tqTarReAxle\n25\nACCtl_bAccActv\n26\nicadas_bTqVLCTrgtReqVld\n9\nicesc_bFrntAxleRBSTqActv\n8\nicesc_tqReqReAxleInc\n12\nicesc_tqRBSReqReAxle\n11\nicesc_tqRBSReqFrntAxle\n44\nicesc_stISAAvl\n13\nTqSpltArbt_tqTarFrntAxle\n7\nicesc_tqReqFrntAxleInc\n33\nicesc_tqCCOReTqReq\n42\nDrvMod_stDrvMod\n1\nESCWhlTq_tqTarFrntAxle\n16\nPwrLimEM_tqMinFrntAxle\n21\nicesc_bEBDActv\n35\nPwrLimEM_tqMinReAxle4ESC\n3\nicesc_bReAxleTqDecActv\n51\nicems_stEng\n4\nicesc_bReAxleTqIncActv\n10\nicesc_bReAxleRBSTqActv\n\nDocumentation\n9\nESCWhlTq_bOffRoadTCSActv\n8\nESCWhlTq_bCCOActv\n6\nESCWhlTq_bFrntAxleTqIncActv\n5\nESCWhlTq_tqTarFrntAxleDif\n4\nESCWhlTq_bFrntAxleOnlyRBSActv\nuint8\nsingle\nsingle\nDOC\nText\nUnit\tdetailed\tdesign\n<initial=0>\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nuint8\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\n\t~=\t\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nbit0\nbit1\nbit2\nbit3\nbit4\nout\nMerge\tBit\nITK\nboolean\nboolean\nboolean\nboolean\nboolean\nIn\nMask\nOut\nMask\tOr\nITK\nMX\nu\nMN\ny\nITK\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\n<initial=0>\n2\nESCWhlTq_bFrntAxleTqIntvActv\n7\nESCWhlTq_bFrntAxleTqDecActv\n[1]\n[3900]\n[0]\n[0]\n©\tITK\tEngineering\tTechnology\t(Wu\tXi)\tCo.,\tLtd.\t(ITKC)\nModel\tVersion:\t4.94\nDate:\tMon\tJan\t05\t14:35:14\t2026\n[1]\n[1]\nCriteria\t:\tu2\t~=\t0\n[8]\n[9]\n[1]\n[1]\n[1]\n+\n+\n+\n−\n[5]\n[0]\n+\n+\n30\nVehCfg_stRBCCtrlModeSel\n28\nicesc_tqISAFrntReq\n[-3900]\n27\nicesc_bISAFrntTqReqVld\n22\nicesc_bCCOFrntTqReqVld\n23\nicesc_tqCCOFrntTqReq\n[3]\n20\nicesc_stCCOActv\n19\nESCWhlTq_bReAxleTqDecActv\n18\nESCWhlTq_bReAxleTqIncActv\n17\nESCWhlTq_tqTarReAxleDif\n21\nicesc_stTABActv\n16\nicadas_bTqVLCTrgtReqVld\nsingle\n11\nicesc_bEBDActv\n25\nicesc_bISAActv\n10\nicesc_bABSActv\n29\nicesc_bTCSActv\n9\nicesc_bFrntAxleRBSTqActv\n[7]\nCriteria\t:\tu2\t~=\t0\n14\nParkCtrl_bAPAActv\n26\nicesc_stISAAvl\n1\nESCWhlTq_tqTarFrntAxle\n7\nicesc_bFrntAxleTqDecActv\n[4]\nsingle\n5\nPwrLimEM_tqMaxFrntAxle\nsingle\n12\nicadas_bAEBActv\n[30]\n15\nACCtl_bAccActv\n13\nicesc_bCDPActv\n4\nTqSpltArbt_tqTarFrntAxle\n6\nPwrLimEM_tqMinFrntAxle\nsingle\n3\nicesc_tqRBSReqFrntAxle\n2\nicesc_tqReqFrntAxleInc\nCriteria\t:\tu2\t~=\t0\nuint8\n24\nDrvMod_stDrvMod\n[0]\n3\nESCWhlTq_tqTarCstRgnFrntAxle\n8\nicesc_bFrntAxleTqIncActv\n前轴扭矩计算\n1\nicesc_tqReqFrntAxleDec\nActive\nActive\nESCWhlTq_bOffRoadTCSActv\nActive\n\nDocumentation\n6\nESCWhlTq_bReAxleTqIncActv\n5\nESCWhlTq_tqTarReAxleDif\n2\nESCWhlTq_bReAxleTqIntvActv\n1\nESCWhlTq_tqTarReAxle\nuint8\n[3]\nsingle\nsingle\nDOC\nText\nUnit\tdetailed\tdesign\n7\nESCWhlTq_bReAxleTqDecActv\n<initial=0>\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\n-ln\t\t\n4\nESCWhlTq_bReAxleOnlyRBSActv\nCriteria\t:\tu2\t~=\t0\nsingle\nCriteria\t:\tu2\t~=\t0\nMX\nu\nMN\ny\nITK\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\n[3900]\n[-3900]\n[0]\n[0]\n[0]\n[0]\n[1]\n[1]\n[1]\nCriteria\t:\tu2\t~=\t0\n+\n−\n+\n+\n+\n+\n©\tITK\tEngineering\tTechnology\t(Wu\tXi)\tCo.,\tLtd.\t(ITKC)\nModel\tVersion:\t4.94\nDate:\tMon\tJan\t05\t14:35:14\t2026\n后轴扭矩计算\n29\nicesc_tqISAReReq\n27\nicesc_stISAAvl\n26\nicesc_bISAActv\n25\nESCWhlTq_bOffRoadTCSActv\n23\nicesc_bCCOReTqReqVld\n22\nESCWhlTq_bCCOActv\n21\nESCWhlTq_bFrntAxleTqDecActv\n20\nESCWhlTq_bFrntAxleTqIncActv\n[1]\n3\nESCWhlTq_tqTarCstRgnReAxle\n16\nParkCtrl_bAPAActv\n28\nicesc_bISAReTqReqVld\n15\nicesc_bCDPActv\n14\nicadas_bAEBActv\n[1]\n18\nicadas_bTqVLCTrgtReqVld\n13\nicesc_bEBDActv\n10\nPwrLimEM_tqMaxReAxle\nsingle\n24\nicesc_tqCCOReTqReq\n9\nTqSpltArbt_tqTarReAxle\n12\nicesc_bABSActv\n8\nicesc_tqRBSReqReAxle\n7\nicesc_bReAxleRBSTqActv\n6\nicesc_tqReqReAxleInc\n5\nicesc_bReAxleTqIncActv\n11\nPwrLimEM_tqMinReAxle\nsingle\nCriteria\t:\tu2\t~=\t0\nsingle\n2\nVehCfg_stRBCCtrlModeSel\n[1]\n17\nACCtl_bAccActv\n19\nESCWhlTq_tqTarFrntAxleDif\n1\nicesc_bTCSActv\n3\nicesc_bReAxleTqDecActv\n4\nicesc_tqReqReAxleDec\nActive\n\n2\nESCWhlTq_tqReBrkRegenMax\n[4]\n[1]\nsingle\nsingle\nsingle\n[3]\n[5]\n[3]\n<initial=0>\n[0.01]\nCriteria\t:\tu2\t~=\t0\n+\n−\nsingle\nCriteria\t:\tu2\t~=\t0\nRS\tLatch\nS\nR\nQ\nITK\nboolean\nboolean\nboolean\nx\nx\nCriteria\t:\tu2\t~=\t0\n1\nESCWhlTq_tqFrntBrkRegenMax\n[5]\n<initial=0>\ny\nT\nu\ndT\nT\nITK\nLowPass\nsingle\nsingle\nsingle\nCriteria\t:\tu2\t~=\t0\n+\n−\nboolean\nboolean\nCriteria\t:\tu2\t~=\t0\n[0.01]\n[2]\n[1]\n[1]\n[7]\n12\nicbms_tMinBat\nRS\tLatch\nS\nR\nQ\nITK\nboolean\nboolean\nboolean\n11\nHvCoorn_stVoltMod\n[1]\n10\nVehSpd_vVeh\n13\nicems_stEng\n8\nBrkPedDev_bBrk\n7\nCrCtl_stCrCtl\n[3]\n[4]\nsingle\n1-D\tT(u)\ninput\t=\tESCWhlTq_tBatMinBrkMaxRgnTq_AX\noutput\t=\tESCWhlTq_facBrkMaxRgnTqBatMin_T\nextrapolation-use\tend\tvalues:\ton\n6\nipf_bCCAN0x10FSG4Vld\n9\nGearLvr_stDrvGear\n4\nPwrLimEM_tqMinReAxle4ESC\n3\nPwrLimEM_tqMinFrntAxle4ESC\n[1]\n2\nESCWhlTq_tqTarCstRgnFrntAxle\nsingle\n5\nipf_bCCAN0x10BSG6Vld\n1\nESCWhlTq_tqTarCstRgnReAxle\n\nEmptySubsystem\n\n1\ny\n2\nu\n3\nMN\n1\nMX\nCriteria\t:\tu2\t~=\t0\n\nuint32\n1\nOut\nBitwise\nAND\n2\nMask\n1\nIn\n\n1\nout\nQy\t=\tQu\t<<\t4\t\nVy\t=\tVu\t*\t2^4\t\nEy\t=\tEu\t\nQy\t=\tQu\t<<\t3\t\nVy\t=\tVu\t*\t2^3\t\nEy\t=\tEu\t\nQy\t=\tQu\t<<\t1\t\nVy\t=\tVu\t*\t2^1\t\nEy\t=\tEu\t\n+\n+\n+\n+\n+\n5\nbit4\n4\nbit3\n3\nbit2\n2\nbit1\n1\nbit0\nQy\t=\tQu\t<<\t2\t\nVy\t=\tVu\t*\t2^2\t\nEy\t=\tEu\t\n\n1\n\tOut\t\n1\nIn\nsingle\nx\n\n1\ny\n<initial=0>\n1\nu\n\nLP\tFilter\ty(n)\t=\tK*u(n)\t+\t(1-K)*y(n-1)\nstability\n0\t<=\tK=Ts/tau\t\t<=\t1\n1\ny\n+\n−\n+\n+\nx\nx\n÷\n3\ndT\n2\nu\n1\nT\nZ\n-1\nsingle\n\n1\nQ\n2\nR\n1\nS\n<initial=0>",
+          "tags": [
+            "model-source",
+            "state",
+            "interface",
+            "timing",
+            "threshold"
+          ],
+          "confidence": 0.65
+        }
+      ]
+    },
+    {
+      "id": "3d9f9c2d-95b5-4a80-9da5-b17a1b02e859",
+      "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+      "fileRole": "generated_c",
+      "fileName": "ESCWhlTq.c",
+      "summary": "/*\r\n * File: ESCWhlTq.c\r\n *\r\n * Code generated for Simulink model 'ESCWhlTq'.\r\n *\r\n * Model version                  : 4.93\r\n * Simulink Coder version         : 9.8 (R2022b) 13-May-2022\r\n * C/C++ source code generated on",
+      "evidence": [
+        {
+          "id": "242c587d-0be4-42c5-a938-2544719541c5",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 look1_iflf_binlca(float32 u0, const float32 bp0[], const float32 table[], uint32 maxIndex)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "97cdb10f-23af-4e15-aa6f-3ebc6c8c49ea",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(u0 < bp0[maxIndex])",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "47ba3491-7943-47e9-8a5a-0596662a347a",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(ESCWhlTq_bFrntAxleTqDecActv)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d59595c1-e934-4015-8e9f-dc662db0606f",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_TmpSignalConversionAtice_h2)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "07f83948-9497-4b64-9c4c-c8e77cfb1799",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_AND11)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "afb63110-6a70-4fca-8344-c3f6f7c01a70",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_TmpSignalConversionAtParkCt)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "0417835b-6b96-47dc-961e-81a773ffbab8",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_AND)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "7e19f9f6-3734-4830-8308-1997dcf5596c",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(ESCWhlTq_bReAxleTqDecActv)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "9fc9a57c-5090-4e69-9f88-d5e6ceeda349",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_TmpSignalConversionAtice_cn)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "27dd2520-8901-4154-b4f1-086ce66ab100",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_AND_b)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "7176c90c-37dd-49fe-a273-eabeb42e691d",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 ESCWhlTq_Init(void)",
+          "tags": [
+            "function",
+            "lifecycle"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "9ca269bf-6b68-4a45-a784-1c869060a439",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: u0 <= bp0[0U]",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "74987383-5693-423e-b3ce-5bca3baa616d",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: u0 < bp0[bpIdx]",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "220659b3-a9ca-42cb-ad92-f3b475c5909a",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: iLeft == maxIndex",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f7aa3066-f914-40cc-9274-a2e5f93352a9",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_AND && ESCWhlTq_bRBSRgnTrqLock_C",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "8aeca273-7cd0-4276-8a33-e0c288160892",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_AND2",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "0bc44503-c5d3-4ecc-92fc-2cf4144e4181",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_TmpSignalConversionAtVehCfg == ((uint8)3U)",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "84f3590e-ebb5-4926-bba6-8b665e087087",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: !rtb_AND9",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "62cd93d1-72fc-4e16-be8c-83274ec822ad",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_TmpSignalConversionAtPwrLim >= rtb_TmpSignalConversionAtPwrL_a",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "6a7fc3eb-c2ec-4bee-a465-b980d5e0ec43",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_OR6",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "cf3f8349-7feb-4649-a900-d0922d4d418f",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_AND_b && ESCWhlTq_bRBSRgnTrqLock_C",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "e2354e93-35ca-4e92-82aa-3cffbe0afe61",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_AND2_m",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "811cf990-3861-4698-a752-7a06c786de91",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: !rtb_AND9_j",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "72930958-b94c-4a35-b653-8b408778c24b",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_TmpSignalConversionAtPwrL_d >= rtb_TmpSignalConversionAtPwrL_n",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f2c9bbe2-d450-4dfc-b65c-6da85a383768",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_TmpSignalConversionAtGearLv == ((uint8)1U)",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "50ddc3a1-b879-4808-84a4-00c816e5040e",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: ESCWhlTq_bSelBrkMaxRgnTqCalc_C",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "75bf8ec8-12ee-467a-b1f5-0f926d9deb85",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: tmpRead_5 == ((uint8)3U)",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "1db3073b-819e-44ec-85b4-4b0584f0e79f",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: ESCWhlTq_ARID_DEF.icLoad",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f1c39b18-71a2-474d-80c6-c472495a8d26",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_OR3_g || (!tmpRead_1) || rtb_OR6",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "4e8a269e-215d-4a6a-a40a-ba9ae45fc968",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_OR3_g || (!tmpRead_2) || rtb_OR6",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "a3e20810-966e-4f39-bd57-80a368b95810",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iLeft = 0U",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "fd5d8142-6717-4854-9841-561e2bdf8c23",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: frac = 0.0F",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "cb259dfb-d897-438c-a83d-a29246c16a5f",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: bpIdx = maxIndex >> 1U",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d620ea7f-ccc5-427b-8ced-e2f7c1f6ae70",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iRght = maxIndex",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d73c865f-6d2e-484b-89f0-09e7f9e584f9",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iRght = bpIdx",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "118ec72b-75d0-4ca9-94a5-b2deb43d17be",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iLeft = bpIdx",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "b8e99f14-b72b-4cc4-90d5-ac78ba42388e",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: bpIdx = (iRght + iLeft) >> 1U",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "040c3ca4-90ac-43b1-a8b1-f7cde39dd4e4",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: frac = (u0 - bp0[iLeft]) / (bp0[iLeft + 1U] - bp0[iLeft])",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "abbce4e4-cc7c-4625-be4d-de8610310d92",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iLeft = maxIndex",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "4e3c8b83-027b-429b-8f3d-a6aef7356aa6",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: y = table[iLeft]",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "2eddd63d-c7ee-410a-a204-59f382547659",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: yL_0d0 = table[iLeft]",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "afab0f5e-c529-44d2-a9d0-4f63f45d9748",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: y = (table[iLeft + 1U] - yL_0d0) * frac + yL_0d0",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "af7574aa-4a73-447e-9915-064a6246b0b9",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND = (rtb_AND && ESCWhlTq_bRBSIntvEna_C &&\r\n             ((rtb_TmpSignalConversionAtices_m >= ESCWhlTq_tqESCIntvMin_C) &&\r\n              (rtb_TmpSignalConversionAtices_m <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "7f0cc151-12a5-4379-ad34-6baf1a1270bf",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bFrntAxleTqDecActv = (rtb_OR6 && ESCWhlTq_bTqDecIntvEna_C &&\r\n    ((rtb_TmpSignalConversionAticesc_ >= ESCWhlTq_tqESCIntvMin_C) &&\r\n     (rtb_TmpSignalConversionAticesc_ <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "6bef982e-e53c-47b8-a1bd-b2abe5f09182",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_OR6 = (rtb_TmpSignalConversionAtice_cn && (rtb_TmpSignalConversionAtice_px\r\n              == ((uint8)2U)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "bcf8fcf6-f7b1-4e97-a22d-81d9d6edd685",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND11 = (rtb_OR6 && ESCWhlTq_bISATqIntvEna_C && rtb_AND11)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "a9c0626a-466e-4867-8465-86cb1cded744",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND2 = (rtb_AND2 && ESCWhlTq_bTqIncIntvEna_C &&\r\n              ((rtb_TmpSignalConversionAtices_e >= ESCWhlTq_tqESCIntvMin_C) &&\r\n               (rtb_TmpSignalConversionAtices_e <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "5e7bd105-481b-421b-b9eb-0b27bb8758a4",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtice_h2 = ((rtb_TmpSignalConversionAtice_h2 &&\r\n    ESCWhlTq_bABS0TqEna_C) || (rtb_TmpSignalConversionAtices_a &&\r\n    ESCWhlTq_bEBD0TqEna_C) || rtb_TmpSignalConversionAticadas ||\r\n    rtb_TmpSignalConversionAtices_i)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f8d66dd5-bbd7-458d-9a1f-6a01fc1e60c6",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtParkCt = ((rtb_TmpSignalConversionAtParkCt ||\r\n    rtb_TmpSignalConversionAtACCtl_) && rtb_TmpSignalConversionAticad_h)",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "9bb8d14f-ad52-4a57-84d5-185eb004fecb",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtACCtl_ = !rtb_AND2",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "a7a0c50d-5fa5-4fb7-8452-99909418c366",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtices_a = !rtb_TmpSignalConversionAtice_h2",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "348d37da-39ce-495a-89f3-9986d909b517",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAticadas = !rtb_TmpSignalConversionAtParkCt",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "4cbd36f1-80bf-4a40-9335-90f47f61fb74",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bFrntAxleOnlyRBSActv = (rtb_TmpSignalConversionAtACCtl_ &&\r\n    (!ESCWhlTq_bFrntAxleTqDecActv) && rtb_TmpSignalConversionAtices_a && rtb_AND\r\n    && rtb_TmpSignalConversionAticadas && (!rtb_AND11))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "fe4e034a-b82c-4729-9a39-50f04dcaba08",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND2_m = (rtb_AND2_m && ESCWhlTq_bTqIncIntvEna_C &&\r\n                ((rtb_TmpSignalConversionAtices_k >= ESCWhlTq_tqESCIntvMin_C) &&\r\n                 (rtb_TmpSignalConversionAtices_k <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "8888666a-2aa5-4cce-b11a-a916a6594c8f",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bReAxleTqDecActv = (rtb_OR3_g && ESCWhlTq_bTqDecIntvEna_C &&\r\n    ((rtb_TmpSignalConversionAtices_f >= ESCWhlTq_tqESCIntvMin_C) &&\r\n     (rtb_TmpSignalConversionAtices_f <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "595bd95e-9157-4cad-b9a9-4b8d802dad34",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bOffRoadTCSActv = (((((((uint32)((rtb_TmpSignalConversionAtDrvMod ==\r\n    ((uint8)5U)) << 1) + (uint32)(rtb_TmpSignalConversionAtDrvMod == ((uint8)4U)))\r\n    + (uint32)((rtb_TmpSignalConversionAtDrvMod == ((uint8)7U)) << 2)) + (uint32)\r\n    ((rtb_TmpSignalConversionAtDrvMod == ((uint8)8U)) << 3)) + (uint32)\r\n    ((rtb_TmpSignalConversionAtDrvMod == ((uint8)9U)) << 4)) &\r\n    ESCWhlTq_noOffRoadTCSActv_C) >= 1U)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "29d5a315-b1c4-4689-942c-1ae88a787d7b",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_OR3_g = (((tmpRead == ((uint8)2U)) || (tmpRead_0 == ((uint8)2U))) &&\r\n               ESCWhlTq_bCCOTqIntvEna_C)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "894815c7-50ea-40ef-914f-8b7b7ec4f12f",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND9 = (rtb_OR3_g && rtb_AND9)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "75e11fa9-f4bc-4917-8e16-6e9930fc17db",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch5 = ESCWhlTq_ARID_DEF.UnitDelay_DSTATE",
+          "tags": [
+            "assignment",
+            "state",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "2176ee36-be8e-4d8d-a516-81765d173c24",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch5 = rtb_TmpSignalConversionAtTqSplt",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "1edb0fa2-d33c-4d7f-b43a-98e1db091c91",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_tqTarCstRgnFrntAxle = fminf(rtb_Switch5, 0.0F)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "9adfd14e-2146-4644-82e3-ba7076f3e599",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = rtb_TmpSignalConversionAtices_e",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "33ed78ef-6bce-479d-b935-62c167e43cb0",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = rtb_TmpSignalConversionAticesc_",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "cb6f054f-70b1-4a69-b6a1-7c47b63c359e",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = 0.0F",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "ad88c6ce-800d-482a-9523-3e0d4dcb3e7b",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = rtb_TmpSignalConversionAtTqSplt",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "68e0b54f-7d5a-47b1-a43a-90530ecaaac3",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAticesc_ = ESCWhlTq_tqTarCstRgnFrntAxle +\r\n        rtb_TmpSignalConversionAtices_m",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "c8b038d5-3f65-4428-b418-b6d8e857bb8e",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAticesc_ = rtb_TmpSignalConversionAtTqSplt",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "3d9592b5-7997-4fa6-ae89-d7555e852a41",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = fminf(rtb_TmpSignalConversionAticesc_, 0.0F)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "c0baa5be-6cee-4470-ab2d-977b6a96096a",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = fmaxf(ESCWhlTq_ARID_DEF.UnitDelay1_DSTATE, 0.0F) +\r\n      rtb_TmpSignalConversionAtTqSplt",
+          "tags": [
+            "assignment",
+            "state",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "6b0bd428-9987-494b-8164-51e2b5069225",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtPwrL_a = fminf(rtb_TmpSignalConversionAtPwrLim,\r\n      fmaxf(rtb_Switch2, rtb_TmpSignalConversionAtPwrL_a))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "ab61ae71-75bc-4f7b-af83-938119990efd",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtPwrL_a = fminf(fmaxf(rtb_Switch2,\r\n      rtb_TmpSignalConversionAtPwrLim), rtb_TmpSignalConversionAtPwrL_a)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "49668260-dc84-4b51-adf5-1496fd89507e",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bFrntAxleTqIntvActv = (rtb_AND || ESCWhlTq_bFrntAxleTqDecActv ||\r\n    rtb_AND2 || rtb_AND9 || rtb_AND11)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "8a8cfd8c-2656-4d66-bfb1-e5ac0b87a0f0",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_tqTarFrntAxle = fabsf(rtb_TmpSignalConversionAtPwrL_a)",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "fae15b00-ebaa-4378-b00f-a9691be8c279",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_tqTarFrntAxle = rtb_TmpSignalConversionAtPwrL_a",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "e1fe8652-6d8e-47b3-ba54-c53fff50be54",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND_b = (rtb_AND_b && ESCWhlTq_bRBSIntvEna_C &&\r\n               ((rtb_TmpSignalConversionAtices_j >= ESCWhlTq_tqESCIntvMin_C) &&\r\n                (rtb_TmpSignalConversionAtices_j <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "b05d69c0-6e26-4b6e-8cac-19f13ca269ad",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtice_cn = (rtb_OR6 && ESCWhlTq_bISATqIntvEna_C &&\r\n    tmpRead_4)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "cfecf9bb-8d93-43a2-baaf-68e33205c6bc",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bReAxleOnlyRBSActv = ((!ESCWhlTq_bReAxleTqDecActv) && (!rtb_AND2_m) &&\r\n    rtb_TmpSignalConversionAtices_a && rtb_AND_b &&\r\n    rtb_TmpSignalConversionAticadas && (!rtb_TmpSignalConversionAtice_cn))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "8d2f7cf8-ae2a-42ea-bc49-4b19de3cce2e",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND9_j = (rtb_OR3_g && rtb_AND9_j)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "08479817-86de-4000-9f98-e6e71d4b0a0c",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtPwrLim = ESCWhlTq_ARID_DEF.UnitDelay_DSTATE_d",
+          "tags": [
+            "assignment",
+            "state"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "201194c8-c862-49f7-839b-ba95966c4f4c",
+          "fileId": "040421ac-6797-4642-b66d-8b18272f7564",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtPwrLim = rtb_TmpSignalConversionAtTqSp_h",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        }
+      ]
+    },
+    {
+      "id": "93a7470e-d850-4f8d-b312-6d65bc046fad",
+      "fileId": "044bd465-709c-4890-ab46-e5a56b053822",
+      "fileRole": "system_pdf",
+      "fileName": "system-requirements-example-torque-intervention.md",
+      "summary": "# 系统需求示例：扭矩干预功能 ## 文档信息 - 文档类型：系统需求示例 - 领域：嵌入式 VCU - 语言：中文 - 版本：v1 - 来源：调试用示例图片，人工提取整理 - 整理日期：2026-04-04 ## 章节信息 - 章节编号：`5.30` - 章节标题：`扭矩干预功能` ## 需求条目 ### SMiVCU-9978 - 主题：ESC 扭矩干预请求响应与优先级 - 原文： 当 ESC 有升扭/降扭和制动再生扭矩请求时，VC",
+      "evidence": [
+        {
+          "id": "9f76d3a9-e021-4c4b-9d16-57a3f098f977",
+          "fileId": "044bd465-709c-4890-ab46-e5a56b053822",
+          "fileRole": "system_pdf",
+          "fileName": "system-requirements-example-torque-intervention.md",
+          "location": "page:1",
+          "excerpt": "# 系统需求示例：扭矩干预功能\n\n## 文档信息\n\n- 文档类型：系统需求示例\n- 领域：嵌入式 VCU\n- 语言：中文\n- 版本：v1\n- 来源：调试用示例图片，人工提取整理\n- 整理日期：2026-04-04\n\n## 章节信息\n\n- 章节编号：`5.30`\n- 章节标题：`扭矩干预功能`\n\n## 需求条目\n\n### SMiVCU-9978\n\n- 主题：ESC 扭矩干预请求响应与优先级\n- 原文：\n  当 ESC 有升扭/降扭和制动再生扭矩请求时，VCU 应响应 ESC 扭矩干预请求，按照优先级顺序进行对前/后轴目标扭矩进行计算，优先级顺序为：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。\n- 条件：\n  - ESC 有升扭/降扭请求\n  - ESC 有制动再生扭矩请求\n- 期望行为：\n  - VCU 应响应 ESC 扭矩干预请求\n  - VCU 应对前/后轴目标扭矩进行计算\n- 优先级顺序：\n  - 前轴升扭请求\n  - 前轴降扭请求\n  - 主动制动\n  - ADAS 的 VLC 工况\n  - RBS\n\n### SMiVCU-9979\n\n- 主题：主动安全功能激活时的优先级顺序\n- 原文：\n  当有主动安全功能，包括 AEB、CDP、ABS、DTC、ASR、VDC 功能激活时，VCU 应按照主动安全激活的优先级顺序对前后轴目标扭矩进行仲裁，优先级顺序为：DTC > ASR > VDC。\n- 条件：\n  - AEB 激活\n  - CDP 激活\n  - ABS 激活\n  - DTC 激活\n  - ASR 激活\n  - VDC 激活\n- 期望行为：\n  - VCU 应对前后轴目标扭矩进行仲裁\n- 优先级顺序：\n  - DTC\n  - ASR\n  - VDC\n- 备注：\n  - 原文列出主动安全功能包括 AEB、CDP、ABS、DTC、ASR、VDC，但明确给出的优先级顺序只有 DTC > ASR > VDC\n\n### SMiVCU-4487\n\n- 主题：主动安全功能激活/退出时的扭矩变化率输出\n- 原文：\n  当以下条件任意满足时，VCU 应以大的前、后轴扭矩变化率输出，即安全相关功能激活时，需快速响应：\n  1. ABS 激活\n  2. AEB 激活\n  3. DTC 激活\n  4. ASR 激活\n  5. VDC 激活\n  6. CDP 激活\n  当以上条件不再满足时，VCU 应以相对小的前、后轴扭矩变化率输出，即安全相关功能退出激活时，需慢速响应。\n- 任一触发条件：\n  - ABS 激活\n  - AEB 激活\n  - DTC 激活\n  - ASR 激活\n  - VDC 激活\n  - CDP 激活\n- 期望行为：\n  - 任一条件满足时，VCU 应以较大的前、后轴扭矩变化率输出\n  - 条件均不满足时，VCU 应以相对较小的前、后轴扭矩变化率输出\n- 设计意图：\n  - 安全相关功能激活时需快速响应\n  - 安全相关功能退出激活时需慢速响应\n\n### SMiVCU-9980\n\n- 主题：主动安全功能未激活且 ESC 未干预时的前后轴目标扭矩\n- 原文：\n  当无主动安全功能激活且 ESC 未进行扭矩干预，前后轴目标扭矩则为扭矩分配后的前后轴扭矩。\n- 条件：\n  - 无主动安全功能激活\n  - ESC 未进行扭矩干预\n- 期望行为：\n  - 前后轴目标扭矩应为扭矩分配后的前后轴扭矩\n\n### SMiVCU-4486\n\n- 主题：安全相关功能同时激活时的响应优先原则\n- 原文：\n  当无扭矩请求类安全相关功能（AEB、ABS、CDP）与有扭矩请求类安全相关功能（DTC、ASR、VDC）同时激活时，VCU 应优先响应前者。\n- 条件：\n  - 无扭矩请求类安全相关功能（AEB、ABS、CDP）激活\n  - 有扭矩请求类安全相关功能（DTC、ASR、VDC）激活\n  - 上述两类功能同时激活\n- 期望行为：\n  - VCU 应优先响应无扭矩请求类安全相关功能\n- 优先顺序：\n  - AEB / ABS / CDP\n  - DTC / ASR / VDC\n\n## 提炼摘要\n\n- 主主题：VCU 在扭矩干预场景下对前后轴目标扭矩及变化率进行响应、仲裁和优先级控制\n- 关键概念：\n  - ESC 扭矩干预\n  - 主动安全功能仲裁\n  - 前后轴目标扭矩\n  - 扭矩变化率\n  - 优先级顺序\n  - 快速响应与慢速响应",
+          "tags": [
+            "system-source",
+            "requirement-like"
+          ],
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "id": "7fefdb0a-0e9f-4232-84b1-a999ea4d612a",
+      "fileId": "33fb54f4-0df8-469b-8a23-924d8cc865de",
+      "fileRole": "model_pdf",
+      "fileName": "ESCWhlTq.pdf",
+      "summary": "11 ESCWhlTq_tqFrntBrkRegenMax single 10 ESCWhlTq_bReAxleTqDecActv boolean 9 ESCWhlTq_bFrntAxleTqDecActv boolean 12 ESCWhlTq_tqReBrkRegenMax single 4 ESCWhlTq_bReAxleTqIntvActv boolean 5 ESCWhlTq_tqTarCstRgnFrntAxle singl",
+      "evidence": [
+        {
+          "id": "3fd60301-1aca-4aa5-9fdd-62de17fb834c",
+          "fileId": "33fb54f4-0df8-469b-8a23-924d8cc865de",
+          "fileRole": "model_pdf",
+          "fileName": "ESCWhlTq.pdf",
+          "location": "page:1",
+          "excerpt": "11\nESCWhlTq_tqFrntBrkRegenMax\nsingle\n10\nESCWhlTq_bReAxleTqDecActv\nboolean\n9\nESCWhlTq_bFrntAxleTqDecActv\nboolean\n12\nESCWhlTq_tqReBrkRegenMax\nsingle\n4\nESCWhlTq_bReAxleTqIntvActv\nboolean\n5\nESCWhlTq_tqTarCstRgnFrntAxle\nsingle\n8\nESCWhlTq_bReAxleOnlyRBSActv\nboolean\n52\nicems_stEng\nuint8\n50\nHvCoorn_stVoltMod\nuint8\n49\nicesc_tqISAReReq\nsingle\n48\nicesc_bISAReTqReqVld\nboolean\n6\nESCWhlTq_tqTarCstRgnReAxle\nsingle\nicesc_bFrntAxleTqDecActv\nicesc_bFrntAxleTqIncActv\nicesc_bReAxleTqDecActv\nicesc_bReAxleTqIncActv\nicesc_tqReqFrntAxleDec\nicesc_tqReqReAxleDec\nicesc_tqReqFrntAxleInc\nicesc_tqReqReAxleInc\nicesc_bFrntAxleRBSTqActv\nicesc_bReAxleRBSTqActv\nicesc_tqRBSReqFrntAxle\nicesc_tqRBSReqReAxle\nTqSpltArbt_tqTarFrntAxle\nTqSpltArbt_tqTarReAxle\nPwrLimEM_tqMaxFrntAxle\nPwrLimEM_tqMinFrntAxle\nPwrLimEM_tqMaxReAxle\nPwrLimEM_tqMinReAxle\nVehCfg_stRBCCtrlModeSel\nicesc_bABSActv\nicesc_bEBDActv\nicadas_bAEBActv\nicesc_bCDPActv\nParkCtrl_bAPAActv\nACCtl_bAccActv\nicadas_bTqVLCTrgtReqVld\nicesc_bTCSActv\nicesc_stCCOActv\nicesc_stTABActv\nicesc_bCCOFrntTqReqVld\nicesc_tqCCOFrntTqReq\nicesc_bCCOReTqReqVld\nicesc_tqCCOReTqReq\nPwrLimEM_tqMinFrntAxle4ESC\nPwrLimEM_tqMinReAxle4ESC\nipf_bCCAN0x10BSG6Vld\nipf_bCCAN0x10FSG4Vld\nCrCtl_stCrCtl\nBrkPedDev_bBrk\nGearLvr_stDrvGear\nVehSpd_vVeh\nDrvMod_stDrvMod\nicesc_bISAActv\nicesc_stISAAvl\nicesc_bISAFrntTqReqVld\nicesc_tqISAFrntReq\nicesc_bISAReTqReqVld\nicesc_tqISAReReq\nHvCoorn_stVoltMod\nicbms_tMinBat\nicems_stEng\nESCWhlTq_tqTarFrntAxle\nESCWhlTq_bFrntAxleTqIntvActv\nESCWhlTq_tqTarReAxle\nESCWhlTq_bReAxleTqIntvActv\nESCWhlTq_tqTarCstRgnFrntAxle\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_bFrntAxleOnlyRBSActv\nESCWhlTq_bReAxleOnlyRBSActv\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bReAxleTqDecActv\nESCWhlTq_tqFrntBrkRegenMax\nESCWhlTq_tqReBrkRegenMax\nfc_ESCWhlTq()\nESCWhlTq\nboolean\nsingle\nsingle\nsingle\nboolean\nboolean\nsingle\nsingle\nboolean\nboolean\nsingle\nsingle\nsingle\nboolean\nboolean\nsingle\nsingle\nsingle\nsingle\nsingle\nboolean\nsingle\nsingle\nuint8\nsingle\n45\nicesc_stISAAvl\nuint8\n44\nicesc_bISAActv\nboolean\n43\nDrvMod_stDrvMod\nuint8\n42\nVehSpd_vVeh\nsingle\n2\nESCWhlTq_bFrntAxleTqIntvActv\nboolean\n39\nCrCtl_stCrCtl\nuint8\n36\nPwrLimEM_tqMinReAxle4ESC\nsingle\n35\nPwrLimEM_tqMinFrntAxle4ESC\nsingle\n40\nBrkPedDev_bBrk\nboolean\n34\nicesc_tqCCOReTqReq\nsingle\n29\nicesc_stCCOActv\nuint8\n28\nicesc_bTCSActv\nboolean\n<ModelName>:\tESCWhlTq\n<Project>:\tChery_ICAR05\n<Creator>:\tLiShuai\n<CreatedDate>:\t2022\t08\t02\t16:50\n<ModelVersion>:\t1.1.3.6\n<Description>:\tESC\tTorque\tRequest\tCoordination\nxuliu1\nMon\tJan\t05\t14:35:14\t2026\n33\nicesc_bCCOReTqReqVld\nboolean\n26\nACCtl_bAccActv\nboolean\n25\nParkCtrl_bAPAActv\nboolean\n23\nicadas_bAEBActv\nboolean\n22\nicesc_bEBDActv\nboolean\n21\nicesc_bABSActv\nboolean\n20\nVehCfg_stRBCCtrlModeSel\nuint8\n18\nPwrLimEM_tqMaxReAxle\nsingle\n14\nTqSpltArbt_tqTarFrntAxle\nsingle\n38\nipf_bCCAN0x10FSG4Vld\nboolean\n46\nicesc_bISAFrntTqReqVld\nboolean\n27\nicadas_bTqVLCTrgtReqVld\nboolean\n12\nicesc_tqRBSReqFrntAxle\nsingle\n11\nicesc_bReAxleRBSTqActv\nboolean\n10\nicesc_bFrntAxleRBSTqActv\nboolean\n7\nicesc_tqReqReAxleDec\nsingle\n3\nESCWhlTq_tqTarReAxle\nsingle\n5\nicesc_bReAxleTqIncActv\nboolean\n16\nPwrLimEM_tqMaxFrntAxle\nsingle\n41\nGearLvr_stDrvGear\nuint8\n9\nicesc_tqReqReAxleInc\nsingle\n19\nPwrLimEM_tqMinReAxle\nsingle\n3\nicesc_bFrntAxleTqIncActv\nboolean\n31\nicesc_bCCOFrntTqReqVld\nboolean\n2\nicesc_bFrntAxleTqDecActv\nboolean\n1\nESCWhlTq_tqTarFrntAxle\nsingle\n7\nESCWhlTq_bFrntAxleOnlyRBSActv\nboolean\n15\nTqSpltArbt_tqTarReAxle\nsingle\n8\nicesc_tqReqFrntAxleInc\nsingle\n24\nicesc_bCDPActv\nboolean\n32\nicesc_tqCCOFrntTqReq\nsingle\n30\nicesc_stTABActv\nuint8\n47\nicesc_tqISAFrntReq\nsingle\n13\nicesc_tqRBSReqReAxle\nsingle\n6\nicesc_tqReqFrntAxleDec\nsingle\n1\nfc_ESCWhlTq\n51\nicbms_tMinBat\nsingle\n37\nipf_bCCAN0x10BSG6Vld\nboolean\n17\nPwrLimEM_tqMinFrntAxle\nsingle\n4\nicesc_bReAxleTqDecActv\nboolean\n\n10\nESCWhlTq_bReAxleTqDecActv\n6\nESCWhlTq_tqTarCstRgnReAxle\nsingle\n5\nESCWhlTq_tqTarCstRgnFrntAxle\nsingle\n11\nESCWhlTq_tqFrntBrkRegenMax\n4\nESCWhlTq_bReAxleTqIntvActv\nboolean\n2\nESCWhlTq_bFrntAxleTqIntvActv\nboolean\nuint32\n12\nESCWhlTq_tqReBrkRegenMax\n51\nicems_stEng\n50\nicbms_tMinBat\n49\nHvCoorn_stVoltMod\nDOC\nText\n45\nicesc_bISAFrntTqReqVld\n7\nESCWhlTq_bFrntAxleOnlyRBSActv\n43\nicesc_bISAActv\n41\nVehSpd_vVeh\n9\nESCWhlTq_bFrntAxleTqDecActv\n39\nBrkPedDev_bBrk\n37\nipf_bCCAN0x10FSG4Vld\n36\nipf_bCCAN0x10BSG6Vld\n34\nPwrLimEM_tqMinFrntAxle4ESC\n42\nDrvMod_stDrvMod\n33\nicesc_tqCCOReTqReq\nf()\nfc_ESCWhlTq\n29\nicesc_stTABActv\n27\nicesc_bTCSActv\nicesc_bFrntAxleTqDecActv\nicesc_bFrntAxleTqIncActv\nicesc_bReAxleTqDecActv\nicesc_bReAxleTqIncActv\nicesc_tqReqFrntAxleDec\nicesc_tqReqReAxleDec\nicesc_tqReqFrntAxleInc\nicesc_tqReqReAxleInc\nicesc_bFrntAxleRBSTqActv\nicesc_bReAxleRBSTqActv\nicesc_tqRBSReqFrntAxle\nicesc_tqRBSReqReAxle\nTqSpltArbt_tqTarFrntAxle\nTqSpltArbt_tqTarReAxle\nPwrLimEM_tqMaxFrntAxle\nPwrLimEM_tqMinFrntAxle\nPwrLimEM_tqMaxReAxle\nPwrLimEM_tqMinReAxle\nVehCfg_stRBCCtrlModeSel\nicesc_bABSActv\nicesc_bEBDActv\nicadas_bAEBActv\nicesc_bCDPActv\nParkCtrl_bAPAActv\nACCtl_bAccActv\nicadas_bTqVLCTrgtReqVld\nicesc_bTCSActv\nicesc_stCCOActv\nicesc_stTABActv\nicesc_bCCOFrntTqReqVld\nicesc_tqCCOFrntTqReq\nicesc_bCCOReTqReqVld\nicesc_tqCCOReTqReq\nPwrLimEM_tqMinFrntAxle4ESC\nPwrLimEM_tqMinReAxle4ESC\nipf_bCCAN0x10BSG6Vld\nipf_bCCAN0x10FSG4Vld\nCrCtl_stCrCtl\nBrkPedDev_bBrk\nGearLvr_stDrvGear\nVehSpd_vVeh\nDrvMod_stDrvMod\nicesc_bISAActv\nicesc_stISAAvl\nicesc_bISAFrntTqReqVld\nicesc_tqISAFrntReq\nicesc_bISAReTqReqVld\nicesc_tqISAReReq\nHvCoorn_stVoltMod\nicbms_tMinBat\nicems_stEng\nESCWhlTq_tqTarFrntAxle\nESCWhlTq_bFrntAxleTqIntvActv\nESCWhlTq_tqTarReAxle\nESCWhlTq_bReAxleTqIntvActv\nESCWhlTq_tqTarCstRgnFrntAxle\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_bFrntAxleOnlyRBSActv\nESCWhlTq_bReAxleOnlyRBSActv\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bReAxleTqDecActv\nESCWhlTq_tqFrntBrkRegenMax\nESCWhlTq_tqReBrkRegenMax\nESCWhlTq_TorqueRequestCoordination\n38\nCrCtl_stCrCtl\n25\nACCtl_bAccActv\n1\nESCWhlTq_tqTarFrntAxle\nsingle\n22\nicadas_bAEBActv\n21\nicesc_bEBDActv\n47\nicesc_bISAReTqReqVld\n20\nicesc_bABSActv\n32\nicesc_bCCOReTqReqVld\n23\nicesc_bCDPActv\n18\nPwrLimEM_tqMinReAxle\nsingle\n17\nPwrLimEM_tqMaxReAxle\nsingle\n30\nicesc_bCCOFrntTqReqVld\n16\nPwrLimEM_tqMinFrntAxle\nsingle\n19\nVehCfg_stRBCCtrlModeSel\nuint8\n26\nicadas_bTqVLCTrgtReqVld\n40\nGearLvr_stDrvGear\n14\nTqSpltArbt_tqTarReAxle\nsingle\n13\nTqSpltArbt_tqTarFrntAxle\nsingle\n8\nESCWhlTq_bReAxleOnlyRBSActv\n48\nicesc_tqISAReReq\n28\nicesc_stCCOActv\n8\nicesc_tqReqReAxleInc\nsingle\n3\nESCWhlTq_tqTarReAxle\nsingle\n11\nicesc_tqRBSReqFrntAxle\nsingle\n7\nicesc_tqReqFrntAxleInc\nsingle\n9\nicesc_bFrntAxleRBSTqActv\nboolean\n6\nicesc_tqReqReAxleDec\nsingle\n24\nParkCtrl_bAPAActv\n31\nicesc_tqCCOFrntTqReq\n5\nicesc_tqReqFrntAxleDec\nsingle\n35\nPwrLimEM_tqMinReAxle4ESC\n4\nicesc_bReAxleTqIncActv\nboolean\n10\nicesc_bReAxleRBSTqActv\nboolean\n2\nicesc_bFrntAxleTqIncActv\nboolean\n46\nicesc_tqISAFrntReq\n12\nicesc_tqRBSReqReAxle\nsingle\n3\nicesc_bReAxleTqDecActv\nboolean\n44\nicesc_stISAAvl\n1\nicesc_bFrntAxleTqDecActv\nboolean\n15\nPwrLimEM_tqMaxFrntAxle\nsingle\nESCWhlTq_bFrntAxleTqIntvActv\nESCWhlTq_bReAxleTqIntvActv\nESCWhlTq_tqTarReAxle\nESCWhlTq_tqTarFrntAxle\nESCWhlTq_tqTarCstRgnFrntAxle\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_bFrntAxleOnlyRBSActv\nESCWhlTq_bReAxleOnlyRBSActv\nESCWhlTq_Version\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bReAxleTqDecActv\nESCWhlTq_tqFrntBrkRegenMax\nESCWhlTq_tqReBrkRegenMax\n\nThis\tsubsystem\tis\tmainly\tused\tto\tcalculate\twheel\ttarget\ttorque\tafter\tESP\tintervention\tand\tfast\ttorque\tactive\tflag,\tbased\ton\twheel\ttarget\ttorque\tbefore\tESP\tintervention,\tESP\tdecrease\ttorque\tactive\tflag,\tESP\tincrease\ttorque\tactive\tflag,\tthe\ndecrease\ttorque\tvalue\tof\tESP,\tthe\tincrease\ttorque\tvalue\tof\tESP,\tetc.\n5\nicesc_tqReqFrntAxleDec\n6\nicesc_tqReqReAxleDec\n1\nicesc_bFrntAxleTqDecActv\n2\nicesc_bFrntAxleTqIncActv\n11\nESCWhlTq_tqFrntBrkRegenMax\n10\nESCWhlTq_bReAxleTqDecActv\n6\nESCWhlTq_tqTarCstRgnReAxle\n4\nESCWhlTq_bReAxleTqIntvActv\n3\nESCWhlTq_tqTarReAxle\n7\nESCWhlTq_bFrntAxleOnlyRBSActv\n2\nESCWhlTq_bFrntAxleTqIntvActv\n9\nESCWhlTq_bFrntAxleTqDecActv\nicesc_bTCSActv\nVehCfg_stRBCCtrlModeSel\nicesc_bReAxleTqDecActv\nicesc_tqReqReAxleDec\nicesc_bReAxleTqIncActv\nicesc_tqReqReAxleInc\nicesc_bReAxleRBSTqActv\nicesc_tqRBSReqReAxle\nTqSpltArbt_tqTarReAxle\nPwrLimEM_tqMaxReAxle\nPwrLimEM_tqMinReAxle\nicesc_bABSActv\nicesc_bEBDActv\nicadas_bAEBActv\nicesc_bCDPActv\nParkCtrl_bAPAActv\nACCtl_bAccActv\nicadas_bTqVLCTrgtReqVld\nESCWhlTq_tqTarFrntAxleDif\nESCWhlTq_bFrntAxleTqIncActv\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bCCOActv\nicesc_bCCOReTqReqVld\nicesc_tqCCOReTqReq\nESCWhlTq_bOffRoadTCSActv\nicesc_bISAActv\nicesc_stISAAvl\nicesc_bISAReTqReqVld\nicesc_tqISAReReq\nESCWhlTq_tqTarReAxle\nESCWhlTq_bReAxleTqIntvActv\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_bReAxleOnlyRBSActv\nESCWhlTq_tqTarReAxleDif\nESCWhlTq_bReAxleTqIncActv\nESCWhlTq_bReAxleTqDecActv\nA02_ReAxleESCIntv\nsingle\nsingle\n49\nHvCoorn_stVoltMod\n47\nicesc_bISAReTqReqVld\n48\nicesc_tqISAReReq\n8\nESCWhlTq_bReAxleOnlyRBSActv\n46\nicesc_tqISAFrntReq\n45\nicesc_bISAFrntTqReqVld\n41\nVehSpd_vVeh\n40\nGearLvr_stDrvGear\n39\nBrkPedDev_bBrk\n38\nCrCtl_stCrCtl\n37\nipf_bCCAN0x10FSG4Vld\n36\nipf_bCCAN0x10BSG6Vld\n34\nPwrLimEM_tqMinFrntAxle4ESC\n32\nicesc_bCCOReTqReqVld\n31\nicesc_tqCCOFrntTqReq\nicesc_tqReqFrntAxleDec\nicesc_tqReqFrntAxleInc\nicesc_tqRBSReqFrntAxle\nTqSpltArbt_tqTarFrntAxle\nPwrLimEM_tqMaxFrntAxle\nPwrLimEM_tqMinFrntAxle\nicesc_bFrntAxleTqDecActv\nicesc_bFrntAxleTqIncActv\nicesc_bFrntAxleRBSTqActv\nicesc_bABSActv\nicesc_bEBDActv\nicadas_bAEBActv\nicesc_bCDPActv\nParkCtrl_bAPAActv\nACCtl_bAccActv\nicadas_bTqVLCTrgtReqVld\nESCWhlTq_tqTarReAxleDif\nESCWhlTq_bReAxleTqIncActv\nESCWhlTq_bReAxleTqDecActv\nicesc_stCCOActv\nicesc_stTABActv\nicesc_bCCOFrntTqReqVld\nicesc_tqCCOFrntTqReq\nDrvMod_stDrvMod\nicesc_bISAActv\nicesc_stISAAvl\nicesc_bISAFrntTqReqVld\nicesc_tqISAFrntReq\nicesc_bTCSActv\nVehCfg_stRBCCtrlModeSel\nESCWhlTq_tqTarFrntAxle\nESCWhlTq_bFrntAxleTqIntvActv\nESCWhlTq_tqTarCstRgnFrntAxle\nESCWhlTq_bFrntAxleOnlyRBSActv\nESCWhlTq_tqTarFrntAxleDif\nESCWhlTq_bFrntAxleTqIncActv\nESCWhlTq_bFrntAxleTqDecActv\nESCWhlTq_bCCOActv\nESCWhlTq_bOffRoadTCSActv\nA01_FrntAxleESCIntv\nsingle\nsingle\n5\nESCWhlTq_tqTarCstRgnFrntAxle\n30\nicesc_bCCOFrntTqReqVld\n29\nicesc_stTABActv\n24\nParkCtrl_bAPAActv\n28\nicesc_stCCOActv\n22\nicadas_bAEBActv\n43\nicesc_bISAActv\nESCWhlTq_tqTarCstRgnReAxle\nESCWhlTq_tqTarCstRgnFrntAxle\nPwrLimEM_tqMinFrntAxle4ESC\nPwrLimEM_tqMinReAxle4ESC\nipf_bCCAN0x10BSG6Vld\nipf_bCCAN0x10FSG4Vld\nCrCtl_stCrCtl\nBrkPedDev_bBrk\nGearLvr_stDrvGear\nVehSpd_vVeh\nHvCoorn_stVoltMod\nicbms_tMinBat\nicems_stEng\nESCWhlTq_tqFrntBrkRegenMax\nESCWhlTq_tqReBrkRegenMax\nA03_BrkMaxRgnTq\n23\nicesc_bCDPActv\n18\nPwrLimEM_tqMinReAxle\n19\nVehCfg_stRBCCtrlModeSel\n17\nPwrLimEM_tqMaxReAxle\n12\nESCWhlTq_tqReBrkRegenMax\n27\nicesc_bTCSActv\n50\nicbms_tMinBat\n20\nicesc_bABSActv\n15\nPwrLimEM_tqMaxFrntAxle\n14\nTqSpltArbt_tqTarReAxle\n25\nACCtl_bAccActv\n26\nicadas_bTqVLCTrgtReqVld\n9\nicesc_bFrntAxleRBSTqActv\n8\nicesc_tqReqReAxleInc\n12\nicesc_tqRBSReqReAxle\n11\nicesc_tqRBSReqFrntAxle\n44\nicesc_stISAAvl\n13\nTqSpltArbt_tqTarFrntAxle\n7\nicesc_tqReqFrntAxleInc\n33\nicesc_tqCCOReTqReq\n42\nDrvMod_stDrvMod\n1\nESCWhlTq_tqTarFrntAxle\n16\nPwrLimEM_tqMinFrntAxle\n21\nicesc_bEBDActv\n35\nPwrLimEM_tqMinReAxle4ESC\n3\nicesc_bReAxleTqDecActv\n51\nicems_stEng\n4\nicesc_bReAxleTqIncActv\n10\nicesc_bReAxleRBSTqActv\n\nDocumentation\n9\nESCWhlTq_bOffRoadTCSActv\n8\nESCWhlTq_bCCOActv\n6\nESCWhlTq_bFrntAxleTqIncActv\n5\nESCWhlTq_tqTarFrntAxleDif\n4\nESCWhlTq_bFrntAxleOnlyRBSActv\nuint8\nsingle\nsingle\nDOC\nText\nUnit\tdetailed\tdesign\n<initial=0>\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nuint8\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\n\t~=\t\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nbit0\nbit1\nbit2\nbit3\nbit4\nout\nMerge\tBit\nITK\nboolean\nboolean\nboolean\nboolean\nboolean\nIn\nMask\nOut\nMask\tOr\nITK\nMX\nu\nMN\ny\nITK\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\n<initial=0>\n2\nESCWhlTq_bFrntAxleTqIntvActv\n7\nESCWhlTq_bFrntAxleTqDecActv\n[1]\n[3900]\n[0]\n[0]\n©\tITK\tEngineering\tTechnology\t(Wu\tXi)\tCo.,\tLtd.\t(ITKC)\nModel\tVersion:\t4.94\nDate:\tMon\tJan\t05\t14:35:14\t2026\n[1]\n[1]\nCriteria\t:\tu2\t~=\t0\n[8]\n[9]\n[1]\n[1]\n[1]\n+\n+\n+\n−\n[5]\n[0]\n+\n+\n30\nVehCfg_stRBCCtrlModeSel\n28\nicesc_tqISAFrntReq\n[-3900]\n27\nicesc_bISAFrntTqReqVld\n22\nicesc_bCCOFrntTqReqVld\n23\nicesc_tqCCOFrntTqReq\n[3]\n20\nicesc_stCCOActv\n19\nESCWhlTq_bReAxleTqDecActv\n18\nESCWhlTq_bReAxleTqIncActv\n17\nESCWhlTq_tqTarReAxleDif\n21\nicesc_stTABActv\n16\nicadas_bTqVLCTrgtReqVld\nsingle\n11\nicesc_bEBDActv\n25\nicesc_bISAActv\n10\nicesc_bABSActv\n29\nicesc_bTCSActv\n9\nicesc_bFrntAxleRBSTqActv\n[7]\nCriteria\t:\tu2\t~=\t0\n14\nParkCtrl_bAPAActv\n26\nicesc_stISAAvl\n1\nESCWhlTq_tqTarFrntAxle\n7\nicesc_bFrntAxleTqDecActv\n[4]\nsingle\n5\nPwrLimEM_tqMaxFrntAxle\nsingle\n12\nicadas_bAEBActv\n[30]\n15\nACCtl_bAccActv\n13\nicesc_bCDPActv\n4\nTqSpltArbt_tqTarFrntAxle\n6\nPwrLimEM_tqMinFrntAxle\nsingle\n3\nicesc_tqRBSReqFrntAxle\n2\nicesc_tqReqFrntAxleInc\nCriteria\t:\tu2\t~=\t0\nuint8\n24\nDrvMod_stDrvMod\n[0]\n3\nESCWhlTq_tqTarCstRgnFrntAxle\n8\nicesc_bFrntAxleTqIncActv\n前轴扭矩计算\n1\nicesc_tqReqFrntAxleDec\nActive\nActive\nESCWhlTq_bOffRoadTCSActv\nActive\n\nDocumentation\n6\nESCWhlTq_bReAxleTqIncActv\n5\nESCWhlTq_tqTarReAxleDif\n2\nESCWhlTq_bReAxleTqIntvActv\n1\nESCWhlTq_tqTarReAxle\nuint8\n[3]\nsingle\nsingle\nDOC\nText\nUnit\tdetailed\tdesign\n7\nESCWhlTq_bReAxleTqDecActv\n<initial=0>\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\n-ln\t\t\n4\nESCWhlTq_bReAxleOnlyRBSActv\nCriteria\t:\tu2\t~=\t0\nsingle\nCriteria\t:\tu2\t~=\t0\nMX\nu\nMN\ny\nITK\nCriteria\t:\tu2\t~=\t0\nCriteria\t:\tu2\t~=\t0\n[3900]\n[-3900]\n[0]\n[0]\n[0]\n[0]\n[1]\n[1]\n[1]\nCriteria\t:\tu2\t~=\t0\n+\n−\n+\n+\n+\n+\n©\tITK\tEngineering\tTechnology\t(Wu\tXi)\tCo.,\tLtd.\t(ITKC)\nModel\tVersion:\t4.94\nDate:\tMon\tJan\t05\t14:35:14\t2026\n后轴扭矩计算\n29\nicesc_tqISAReReq\n27\nicesc_stISAAvl\n26\nicesc_bISAActv\n25\nESCWhlTq_bOffRoadTCSActv\n23\nicesc_bCCOReTqReqVld\n22\nESCWhlTq_bCCOActv\n21\nESCWhlTq_bFrntAxleTqDecActv\n20\nESCWhlTq_bFrntAxleTqIncActv\n[1]\n3\nESCWhlTq_tqTarCstRgnReAxle\n16\nParkCtrl_bAPAActv\n28\nicesc_bISAReTqReqVld\n15\nicesc_bCDPActv\n14\nicadas_bAEBActv\n[1]\n18\nicadas_bTqVLCTrgtReqVld\n13\nicesc_bEBDActv\n10\nPwrLimEM_tqMaxReAxle\nsingle\n24\nicesc_tqCCOReTqReq\n9\nTqSpltArbt_tqTarReAxle\n12\nicesc_bABSActv\n8\nicesc_tqRBSReqReAxle\n7\nicesc_bReAxleRBSTqActv\n6\nicesc_tqReqReAxleInc\n5\nicesc_bReAxleTqIncActv\n11\nPwrLimEM_tqMinReAxle\nsingle\nCriteria\t:\tu2\t~=\t0\nsingle\n2\nVehCfg_stRBCCtrlModeSel\n[1]\n17\nACCtl_bAccActv\n19\nESCWhlTq_tqTarFrntAxleDif\n1\nicesc_bTCSActv\n3\nicesc_bReAxleTqDecActv\n4\nicesc_tqReqReAxleDec\nActive\n\n2\nESCWhlTq_tqReBrkRegenMax\n[4]\n[1]\nsingle\nsingle\nsingle\n[3]\n[5]\n[3]\n<initial=0>\n[0.01]\nCriteria\t:\tu2\t~=\t0\n+\n−\nsingle\nCriteria\t:\tu2\t~=\t0\nRS\tLatch\nS\nR\nQ\nITK\nboolean\nboolean\nboolean\nx\nx\nCriteria\t:\tu2\t~=\t0\n1\nESCWhlTq_tqFrntBrkRegenMax\n[5]\n<initial=0>\ny\nT\nu\ndT\nT\nITK\nLowPass\nsingle\nsingle\nsingle\nCriteria\t:\tu2\t~=\t0\n+\n−\nboolean\nboolean\nCriteria\t:\tu2\t~=\t0\n[0.01]\n[2]\n[1]\n[1]\n[7]\n12\nicbms_tMinBat\nRS\tLatch\nS\nR\nQ\nITK\nboolean\nboolean\nboolean\n11\nHvCoorn_stVoltMod\n[1]\n10\nVehSpd_vVeh\n13\nicems_stEng\n8\nBrkPedDev_bBrk\n7\nCrCtl_stCrCtl\n[3]\n[4]\nsingle\n1-D\tT(u)\ninput\t=\tESCWhlTq_tBatMinBrkMaxRgnTq_AX\noutput\t=\tESCWhlTq_facBrkMaxRgnTqBatMin_T\nextrapolation-use\tend\tvalues:\ton\n6\nipf_bCCAN0x10FSG4Vld\n9\nGearLvr_stDrvGear\n4\nPwrLimEM_tqMinReAxle4ESC\n3\nPwrLimEM_tqMinFrntAxle4ESC\n[1]\n2\nESCWhlTq_tqTarCstRgnFrntAxle\nsingle\n5\nipf_bCCAN0x10BSG6Vld\n1\nESCWhlTq_tqTarCstRgnReAxle\n\nEmptySubsystem\n\n1\ny\n2\nu\n3\nMN\n1\nMX\nCriteria\t:\tu2\t~=\t0\n\nuint32\n1\nOut\nBitwise\nAND\n2\nMask\n1\nIn\n\n1\nout\nQy\t=\tQu\t<<\t4\t\nVy\t=\tVu\t*\t2^4\t\nEy\t=\tEu\t\nQy\t=\tQu\t<<\t3\t\nVy\t=\tVu\t*\t2^3\t\nEy\t=\tEu\t\nQy\t=\tQu\t<<\t1\t\nVy\t=\tVu\t*\t2^1\t\nEy\t=\tEu\t\n+\n+\n+\n+\n+\n5\nbit4\n4\nbit3\n3\nbit2\n2\nbit1\n1\nbit0\nQy\t=\tQu\t<<\t2\t\nVy\t=\tVu\t*\t2^2\t\nEy\t=\tEu\t\n\n1\n\tOut\t\n1\nIn\nsingle\nx\n\n1\ny\n<initial=0>\n1\nu\n\nLP\tFilter\ty(n)\t=\tK*u(n)\t+\t(1-K)*y(n-1)\nstability\n0\t<=\tK=Ts/tau\t\t<=\t1\n1\ny\n+\n−\n+\n+\nx\nx\n÷\n3\ndT\n2\nu\n1\nT\nZ\n-1\nsingle\n\n1\nQ\n2\nR\n1\nS\n<initial=0>",
+          "tags": [
+            "model-source",
+            "state",
+            "interface",
+            "timing",
+            "threshold"
+          ],
+          "confidence": 0.65
+        }
+      ]
+    },
+    {
+      "id": "bacbb4ab-19ac-49ed-9164-4a98a73c4863",
+      "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+      "fileRole": "generated_c",
+      "fileName": "ESCWhlTq.c",
+      "summary": "/*\r\n * File: ESCWhlTq.c\r\n *\r\n * Code generated for Simulink model 'ESCWhlTq'.\r\n *\r\n * Model version                  : 4.93\r\n * Simulink Coder version         : 9.8 (R2022b) 13-May-2022\r\n * C/C++ source code generated on",
+      "evidence": [
+        {
+          "id": "b733303d-e938-4d7d-90ab-0cf4bde2593c",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 look1_iflf_binlca(float32 u0, const float32 bp0[], const float32 table[], uint32 maxIndex)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "06cb88ff-d930-4191-a191-7b19295cd56c",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(u0 < bp0[maxIndex])",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "3cb42f02-0568-4b17-baea-6b32431fa570",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(ESCWhlTq_bFrntAxleTqDecActv)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "67c483e6-cd98-41e4-9e20-1408bb6c8a8b",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_TmpSignalConversionAtice_h2)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "01f0fba5-7f8a-40cd-95a3-1b0216464287",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_AND11)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "b3b9123c-5171-43f1-b1bd-bff997408b56",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_TmpSignalConversionAtParkCt)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "4778754e-bf68-472c-8dc8-9c2d4657b9c7",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_AND)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "fb734fd2-5093-486f-bd85-3cde791cd646",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(ESCWhlTq_bReAxleTqDecActv)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "299293bf-61af-4baa-a34f-8a6cb60eaf46",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_TmpSignalConversionAtice_cn)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "1fc19e26-ad6e-43fc-ae10-06e82274b5dd",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 if(rtb_AND_b)",
+          "tags": [
+            "function"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "7f2cd061-e542-4f66-9091-562412c1ca76",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "function",
+          "excerpt": "函数 ESCWhlTq_Init(void)",
+          "tags": [
+            "function",
+            "lifecycle"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "53fd9acc-da90-43df-aed4-2a7246ed0f37",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: u0 <= bp0[0U]",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "e893433a-1396-4ff9-8ee8-b1d3d058d449",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: u0 < bp0[bpIdx]",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "15938518-5b68-45c2-8c49-ca28b6193f89",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: iLeft == maxIndex",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "7d9d4a75-63ff-43a5-81ac-ba652b7bcd99",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_AND && ESCWhlTq_bRBSRgnTrqLock_C",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "e8aba47a-02c9-4834-8e86-d8d1fb9d524c",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_AND2",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "859c524e-7c02-42b7-96a6-bc1aebb5b93e",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_TmpSignalConversionAtVehCfg == ((uint8)3U)",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d53256db-b509-43f7-9903-8a8f40abce73",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: !rtb_AND9",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "46e06c9a-3645-40d0-ace1-1321e130faf0",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_TmpSignalConversionAtPwrLim >= rtb_TmpSignalConversionAtPwrL_a",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "21b0b8b4-1fb8-4eec-8e74-6b2e9b73ae79",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_OR6",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "fd2e031c-462d-4178-95ed-4ccd6d6d99d7",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_AND_b && ESCWhlTq_bRBSRgnTrqLock_C",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "ce406b6f-738c-4493-b157-8458192b49bb",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_AND2_m",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "73c2a5e1-e842-4e3b-9f9c-6c9446ac7f0b",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: !rtb_AND9_j",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "bea9c511-de29-446c-9194-ad096637c95e",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_TmpSignalConversionAtPwrL_d >= rtb_TmpSignalConversionAtPwrL_n",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "950c61d0-8ac8-44f9-b8a2-a728da8ae681",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_TmpSignalConversionAtGearLv == ((uint8)1U)",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d44684c5-c183-425e-bc53-d1f9931b8dac",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: ESCWhlTq_bSelBrkMaxRgnTqCalc_C",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "3b669f08-7925-402f-8b52-51c61de50822",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: tmpRead_5 == ((uint8)3U)",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "69e5d801-d624-4316-af75-437344b62c8d",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: ESCWhlTq_ARID_DEF.icLoad",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "3b7fd127-068d-417c-82e6-c49b30e5dd2e",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_OR3_g || (!tmpRead_1) || rtb_OR6",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f8abc21d-c598-4206-bd68-40de963dce61",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "condition",
+          "excerpt": "条件分支: rtb_OR3_g || (!tmpRead_2) || rtb_OR6",
+          "tags": [
+            "condition"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "25b7cdb0-032a-4e08-8c42-33631f92cd54",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iLeft = 0U",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "237b5f6a-92c2-4111-9080-ced86c701cbd",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: frac = 0.0F",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "e63228c6-c598-479b-b269-85a822182ff5",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: bpIdx = maxIndex >> 1U",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f7beb99c-6f13-4375-aa76-0281413f7077",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iRght = maxIndex",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "6819c9db-7e65-46d9-bdba-59078e6f901d",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iRght = bpIdx",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d9cb07b9-c2bb-4ac4-9838-309773a25d43",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iLeft = bpIdx",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "502c7573-0452-4810-9ca9-da89a2820131",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: bpIdx = (iRght + iLeft) >> 1U",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "0f31526e-c687-4c7f-80ed-c0d730b0d0d3",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: frac = (u0 - bp0[iLeft]) / (bp0[iLeft + 1U] - bp0[iLeft])",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "a7cb3820-9d5b-4c8e-ab92-3162f2b8ccb7",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: iLeft = maxIndex",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "09db4620-2e5d-45a4-a668-be6e649ea3a5",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: y = table[iLeft]",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "3dbac9f8-1670-40b0-8b0c-a58b37bc82d0",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: yL_0d0 = table[iLeft]",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f15a5e5c-88bc-44fe-89d8-cb21c26304ba",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: y = (table[iLeft + 1U] - yL_0d0) * frac + yL_0d0",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "c0837656-909b-489e-937f-82ccd75ea5ca",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND = (rtb_AND && ESCWhlTq_bRBSIntvEna_C &&\r\n             ((rtb_TmpSignalConversionAtices_m >= ESCWhlTq_tqESCIntvMin_C) &&\r\n              (rtb_TmpSignalConversionAtices_m <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "300f8e45-70af-45bb-8e4b-7c7d07419991",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bFrntAxleTqDecActv = (rtb_OR6 && ESCWhlTq_bTqDecIntvEna_C &&\r\n    ((rtb_TmpSignalConversionAticesc_ >= ESCWhlTq_tqESCIntvMin_C) &&\r\n     (rtb_TmpSignalConversionAticesc_ <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "10f3546a-3a02-435a-b1b7-8ea721ae6304",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_OR6 = (rtb_TmpSignalConversionAtice_cn && (rtb_TmpSignalConversionAtice_px\r\n              == ((uint8)2U)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "896cd182-c810-4874-9a89-d21bcfc2e4bd",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND11 = (rtb_OR6 && ESCWhlTq_bISATqIntvEna_C && rtb_AND11)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "074e1657-ece2-4dba-8727-21093a816dda",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND2 = (rtb_AND2 && ESCWhlTq_bTqIncIntvEna_C &&\r\n              ((rtb_TmpSignalConversionAtices_e >= ESCWhlTq_tqESCIntvMin_C) &&\r\n               (rtb_TmpSignalConversionAtices_e <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "2195cf4f-dc9e-43ce-aa44-b6b968834b2b",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtice_h2 = ((rtb_TmpSignalConversionAtice_h2 &&\r\n    ESCWhlTq_bABS0TqEna_C) || (rtb_TmpSignalConversionAtices_a &&\r\n    ESCWhlTq_bEBD0TqEna_C) || rtb_TmpSignalConversionAticadas ||\r\n    rtb_TmpSignalConversionAtices_i)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "4c30d3ba-b887-4da9-bcfc-64ba88cbf355",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtParkCt = ((rtb_TmpSignalConversionAtParkCt ||\r\n    rtb_TmpSignalConversionAtACCtl_) && rtb_TmpSignalConversionAticad_h)",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "53bce7c0-a976-410c-9c58-2a92573681ea",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtACCtl_ = !rtb_AND2",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "726972bf-a55c-407d-a61e-8eb3b2a653cb",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtices_a = !rtb_TmpSignalConversionAtice_h2",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "683e935d-f4b6-4cfb-b20a-1b66b7f26df9",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAticadas = !rtb_TmpSignalConversionAtParkCt",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "010e72b0-dfad-464b-a3f1-a98847e3739f",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bFrntAxleOnlyRBSActv = (rtb_TmpSignalConversionAtACCtl_ &&\r\n    (!ESCWhlTq_bFrntAxleTqDecActv) && rtb_TmpSignalConversionAtices_a && rtb_AND\r\n    && rtb_TmpSignalConversionAticadas && (!rtb_AND11))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "c257aa11-fc3a-4973-bbcd-cd3d5cd160bb",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND2_m = (rtb_AND2_m && ESCWhlTq_bTqIncIntvEna_C &&\r\n                ((rtb_TmpSignalConversionAtices_k >= ESCWhlTq_tqESCIntvMin_C) &&\r\n                 (rtb_TmpSignalConversionAtices_k <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "97bf0030-aace-46ef-a5fd-0e584f3cff1d",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bReAxleTqDecActv = (rtb_OR3_g && ESCWhlTq_bTqDecIntvEna_C &&\r\n    ((rtb_TmpSignalConversionAtices_f >= ESCWhlTq_tqESCIntvMin_C) &&\r\n     (rtb_TmpSignalConversionAtices_f <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "6e2a6453-c056-4743-9e1e-15d7b484a654",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bOffRoadTCSActv = (((((((uint32)((rtb_TmpSignalConversionAtDrvMod ==\r\n    ((uint8)5U)) << 1) + (uint32)(rtb_TmpSignalConversionAtDrvMod == ((uint8)4U)))\r\n    + (uint32)((rtb_TmpSignalConversionAtDrvMod == ((uint8)7U)) << 2)) + (uint32)\r\n    ((rtb_TmpSignalConversionAtDrvMod == ((uint8)8U)) << 3)) + (uint32)\r\n    ((rtb_TmpSignalConversionAtDrvMod == ((uint8)9U)) << 4)) &\r\n    ESCWhlTq_noOffRoadTCSActv_C) >= 1U)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d55d4904-35c9-4fba-b38f-cd0e75c266e7",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_OR3_g = (((tmpRead == ((uint8)2U)) || (tmpRead_0 == ((uint8)2U))) &&\r\n               ESCWhlTq_bCCOTqIntvEna_C)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "1e7e113f-00f1-4152-a16c-a75af3d2c90e",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND9 = (rtb_OR3_g && rtb_AND9)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "4e516218-4aed-4b3e-b217-e8c6a9744186",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch5 = ESCWhlTq_ARID_DEF.UnitDelay_DSTATE",
+          "tags": [
+            "assignment",
+            "state",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "8043c12c-896f-496d-bd71-ef67e608c011",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch5 = rtb_TmpSignalConversionAtTqSplt",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f6fc0cd0-71f9-4ee2-bd99-984a743c8277",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_tqTarCstRgnFrntAxle = fminf(rtb_Switch5, 0.0F)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "98418025-0d9a-4fbf-95cd-6fdf1bf76f93",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = rtb_TmpSignalConversionAtices_e",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "a66b73c3-ad2b-4ef8-b9ee-69f505ab5e64",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = rtb_TmpSignalConversionAticesc_",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "6241e4a6-c7ff-4609-892f-548285f9c0b0",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = 0.0F",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "b199c989-a36e-43e1-a238-ac2879da295c",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = rtb_TmpSignalConversionAtTqSplt",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "aa0b458a-8e2a-4885-b5da-23f56ab62af6",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAticesc_ = ESCWhlTq_tqTarCstRgnFrntAxle +\r\n        rtb_TmpSignalConversionAtices_m",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "88912361-f6e3-4bdd-ac27-4475c66ce3d9",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAticesc_ = rtb_TmpSignalConversionAtTqSplt",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "5043ddc6-c8b7-4b4a-bf15-82650f155518",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = fminf(rtb_TmpSignalConversionAticesc_, 0.0F)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d65012b7-e8da-4af4-9263-7d02a3f83111",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_Switch2 = fmaxf(ESCWhlTq_ARID_DEF.UnitDelay1_DSTATE, 0.0F) +\r\n      rtb_TmpSignalConversionAtTqSplt",
+          "tags": [
+            "assignment",
+            "state",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "a6f475b3-fa02-40f3-8d42-a6dbe8307431",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtPwrL_a = fminf(rtb_TmpSignalConversionAtPwrLim,\r\n      fmaxf(rtb_Switch2, rtb_TmpSignalConversionAtPwrL_a))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "3359eb84-c2e4-4eac-828f-89974f0359eb",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtPwrL_a = fminf(fmaxf(rtb_Switch2,\r\n      rtb_TmpSignalConversionAtPwrLim), rtb_TmpSignalConversionAtPwrL_a)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "d4bd427e-76d2-43bc-b1db-9f06e5143751",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bFrntAxleTqIntvActv = (rtb_AND || ESCWhlTq_bFrntAxleTqDecActv ||\r\n    rtb_AND2 || rtb_AND9 || rtb_AND11)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "abb94913-e9b9-40c2-ac37-216eccbbcbb8",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_tqTarFrntAxle = fabsf(rtb_TmpSignalConversionAtPwrL_a)",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "ee37129b-7881-4563-945a-cb44f7fecc8c",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_tqTarFrntAxle = rtb_TmpSignalConversionAtPwrL_a",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "542c3311-c971-4d6d-bf38-7663399bd510",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND_b = (rtb_AND_b && ESCWhlTq_bRBSIntvEna_C &&\r\n               ((rtb_TmpSignalConversionAtices_j >= ESCWhlTq_tqESCIntvMin_C) &&\r\n                (rtb_TmpSignalConversionAtices_j <= ESCWhlTq_tqESCIntvMax_C)))",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "f16d828b-58a9-4f45-9a71-9e1644623239",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtice_cn = (rtb_OR6 && ESCWhlTq_bISATqIntvEna_C &&\r\n    tmpRead_4)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "9dcd5675-9a3c-48e9-96d3-4c980298ca94",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bReAxleOnlyRBSActv = ((!ESCWhlTq_bReAxleTqDecActv) && (!rtb_AND2_m) &&\r\n    rtb_TmpSignalConversionAtices_a && rtb_AND_b &&\r\n    rtb_TmpSignalConversionAticadas && (!rtb_TmpSignalConversionAtice_cn))",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "132198ba-10e0-40e4-b4ee-02ab051ea21b",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_AND9_j = (rtb_OR3_g && rtb_AND9_j)",
+          "tags": [
+            "assignment",
+            "threshold"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "436340b9-4071-4d49-9b96-9bba5229dcda",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtPwrLim = ESCWhlTq_ARID_DEF.UnitDelay_DSTATE_d",
+          "tags": [
+            "assignment",
+            "state"
+          ],
+          "confidence": 0.6
+        },
+        {
+          "id": "36020dd0-f8b4-4e27-9bcc-05cffba7d1a2",
+          "fileId": "9f38687c-8e55-4ebb-a8c8-827341ed8d7d",
+          "fileRole": "generated_c",
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: rtb_TmpSignalConversionAtPwrLim = rtb_TmpSignalConversionAtTqSp_h",
+          "tags": [
+            "assignment"
+          ],
+          "confidence": 0.6
+        }
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "1",
+      "requirementId": "SWR-0001",
+      "title": "ESC前轴扭矩干预 - 激活标志位判断",
+      "requirementText": "当满足以下任一条件时，ESC干预前轴激活标志位（ESCWhlTq_bFrntAxleTqIntvActv）置为active：1. ESC前轴降扭请求有效（ESC_TqDecReqAct_F = 0x1），且请求值在ESC扭矩干预阈值范围[ESCWhlTq_tqESCIntvMin_C, ESCWhlTq_tqESCIntvMax_C]内；2. 前轴制动再生请求有效（ESC_EHB_RBS_F_Active = 0x1），且请求值在ESC扭矩干预阈值范围内；3. ESC前轴升扭请求有效（ESC_TrqIncReqActv_F = 0x1），且请求值在ESC扭矩干预阈值范围内。否则，ESC干预前轴激活标志位置为inactive。",
+      "type": "functional",
+      "sourceRefs": [
+        {
+          "fileName": "system-requirements-example-torque-intervention.md",
+          "location": "page:1",
+          "excerpt": "当 ESC 有升扭/降扭和制动再生扭矩请求时，VCU 应响应 ESC 扭矩干预请求"
+        },
+        {
+          "fileName": "ESCWhlTq.pdf",
+          "location": "page:1",
+          "excerpt": "icesc_bFrntAxleTqDecActv icesc_bFrntAxleTqIncActv icesc_bFrntAxleRBSTqActv ESCWhlTq_bFrntAxleTqIntvActv"
+        },
+        {
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bFrntAxleTqIntvActv = (rtb_AND || ESCWhlTq_bFrntAxleTqDecActv || rtb_AND2 || rtb_AND9 || rtb_AND11)"
+        }
+      ],
+      "rationale": "承接系统需求SMiVCU-9978的ESC扭矩干预响应要求，符合模型前轴激活标志位判断逻辑，满足ISO 26262可追溯要求。",
+      "verificationHint": "通过功能测试构造前轴升扭/降扭/制动再生请求输入，验证激活标志位输出是否符合预期。",
+      "confidence": 1,
+      "conflictNote": "",
+      "review": {
+        "status": "pending",
+        "reviewer": "",
+        "comment": "",
+        "updatedAt": ""
+      }
+    },
+    {
+      "id": "2",
+      "requirementId": "SWR-0002",
+      "title": "ESC前轴扭矩干预 - 扭矩计算",
+      "requirementText": "ESC干预前轴目标扭矩（ESCWhlTq_tqTarFrntAxle）计算优先级顺序为：前轴升扭请求 > 前轴降扭请求 > 主动制动（AEB/CDP）> ADAS VLC工况 > RBS。分支逻辑如下：1. 前轴升扭请求有效时，输出=ESC_TrqIncReq_F；2. 前轴降扭请求有效时，输出=ESC_TqDecReq_F；3. AEB激活（ESC_AEB_Active=0x1）或CDP激活（ESC_CDP_Active=0x1）时，输出=0；4. APA激活或ACC激活且VLC扭矩控制有效（ESC_VLC_TorqCtrlActive=0x1）时，输出=扭矩仲裁前轴目标扭矩（TqSpltArbt_tqTarFrntAxle）；5. 前轴RBS请求有效且RBC控制模式为0x3（ESPCtrlSplt）时，输出=min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)；6. 前轴RBS请求有效且RBC控制模式不为0x3时，输出=min(TqSpltArbt_tqTarFrntAxle, 0)；7. 无上述请求时，输出=TqSpltArbt_tqTarFrntAxle。注：输出需经过前轴最大扭矩（PwrLimEM_tqMaxFrntAxle）和前轴最小扭矩（PwrLimEM_tqMinFrntAxle）限幅。",
+      "type": "functional",
+      "sourceRefs": [
+        {
+          "fileName": "system-requirements-example-torque-intervention.md",
+          "location": "page:1",
+          "excerpt": "优先级顺序为：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS"
+        },
+        {
+          "fileName": "ESCWhlTq.pdf",
+          "location": "page:1",
+          "excerpt": "A01_FrntAxleESCIntv 前轴扭矩计算逻辑"
+        },
+        {
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_tqTarFrntAxle = rtb_TmpSignalConversionAtPwrL_a"
+        }
+      ],
+      "rationale": "遵循系统需求SMiVCU-9978、SMiVCU-4486的优先级要求，匹配模型前轴扭矩计算逻辑，满足扭矩仲裁准确性要求。",
+      "verificationHint": "通过功能测试构造不同优先级的请求输入，验证前轴目标扭矩输出是否符合优先级和分支逻辑。",
+      "confidence": 1,
+      "conflictNote": "",
+      "review": {
+        "status": "pending",
+        "reviewer": "",
+        "comment": "",
+        "updatedAt": ""
+      }
+    },
+    {
+      "id": "3",
+      "requirementId": "SWR-0003",
+      "title": "ESC后轴扭矩干预 - 激活标志位判断",
+      "requirementText": "当满足以下任一条件时，ESC干预后轴激活标志位（ESCWhlTq_bReAxleTqIntvActv）置为active：1. ESC后轴降扭请求有效（ESC_TqDecReqAct_R = 0x1），且请求值在ESC扭矩干预阈值范围[ESCWhlTq_tqESCIntvMin_C, ESCWhlTq_tqESCIntvMax_C]内；2. 后轴制动再生请求有效（ESC_EHB_RBS_R_Active = 0x1），且请求值在ESC扭矩干预阈值范围内；3. ESC后轴升扭请求有效（ESC_TrqIncReqActv_R = 0x1），且请求值在ESC扭矩干预阈值范围内。否则，ESC干预后轴激活标志位置为inactive。",
+      "type": "functional",
+      "sourceRefs": [
+        {
+          "fileName": "system-requirements-example-torque-intervention.md",
+          "location": "page:1",
+          "excerpt": "按照优先级顺序进行对前/后轴目标扭矩进行计算"
+        },
+        {
+          "fileName": "ESCWhlTq.pdf",
+          "location": "page:1",
+          "excerpt": "icesc_bReAxleTqDecActv icesc_bReAxleTqIncActv icesc_bReAxleRBSTqActv ESCWhlTq_bReAxleTqIntvActv"
+        },
+        {
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_bReAxleTqDecActv = (rtb_OR3_g && ESCWhlTq_bTqDecIntvEna_C && ((rtb_TmpSignalConversionAtices_f >= ESCWhlTq_tqESCIntvMin_C) && (rtb_TmpSignalConversionAtices_f <= ESCWhlTq_tqESCIntvMax_C)))"
+        }
+      ],
+      "rationale": "承接系统需求前后轴对称扭矩干预要求，符合模型后轴激活标志位判断逻辑，保持前/后轴功能一致性。",
+      "verificationHint": "通过功能测试构造后轴升扭/降扭/制动再生请求输入，验证激活标志位输出是否符合预期。",
+      "confidence": 1,
+      "conflictNote": "",
+      "review": {
+        "status": "pending",
+        "reviewer": "",
+        "comment": "",
+        "updatedAt": ""
+      }
+    },
+    {
+      "id": "4",
+      "requirementId": "SWR-0004",
+      "title": "ESC后轴扭矩干预 - 扭矩计算",
+      "requirementText": "ESC干预后轴目标扭矩（ESCWhlTq_tqTarReAxle）计算优先级顺序为：后轴升扭请求 > 后轴降扭请求 > 主动制动（AEB/CDP）> ADAS VLC工况 > RBS。分支逻辑如下：1. 后轴升扭请求有效时，输出=ESC_TrqIncReq_R；2. 后轴降扭请求有效时，输出=ESC_TqDecReq_R；3. AEB激活（ESC_AEB_Active=0x1）或CDP激活（ESC_CDP_Active=0x1）时，输出=0；4. APA激活或ACC激活且VLC扭矩控制有效（ESC_VLC_TorqCtrlActive=0x1）时，输出=扭矩仲裁后轴目标扭矩（TqSpltArbt_tqTarReAxle）；5. 后轴RBS请求有效且RBC控制模式为0x3（ESPCtrlSplt）时，输出=min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)；6. 后轴RBS请求有效且RBC控制模式不为0x3时，输出=min(TqSpltArbt_tqTarReAxle, 0)；7. 无上述请求时，输出=TqSpltArbt_tqTarReAxle。注：输出需经过后轴最大扭矩（PwrLimEM_tqMaxReAxle）和后轴最小扭矩（PwrLimEM_tqMinReAxle）限幅。",
+      "type": "functional",
+      "sourceRefs": [
+        {
+          "fileName": "system-requirements-example-torque-intervention.md",
+          "location": "page:1",
+          "excerpt": "当无主动安全功能激活且 ESC 未进行扭矩干预，前后轴目标扭矩则为扭矩分配后的前后轴扭矩"
+        },
+        {
+          "fileName": "ESCWhlTq.pdf",
+          "location": "page:1",
+          "excerpt": "A02_ReAxleESCIntv 后轴扭矩计算逻辑"
+        },
+        {
+          "fileName": "ESCWhlTq.c",
+          "location": "assignment",
+          "excerpt": "赋值: ESCWhlTq_tqTarReAxle = rtb_TmpSignalConversionAtPwrL_d"
+        }
+      ],
+      "rationale": "遵循系统需求前后轴对称扭矩仲裁要求，匹配模型后轴扭矩计算逻辑，满足扭矩输出准确性要求。",
+      "verificationHint": "通过功能测试构造不同优先级的请求输入，验证后轴目标扭矩输出是否符合优先级和分支逻辑。",
+      "confidence": 1,
+      "conflictNote": "",
+      "review": {
+        "status": "pending",
+        "reviewer": "",
+        "comment": "",
+        "updatedAt": ""
+      }
+    },
+    {
+      "id": "5",
+      "requirementId": "SWR-0005",
+      "title": "ESC扭矩干预模块输入输出信号定义",
+      "requirementText": "ESC扭矩干预模块应严格遵循以下信号定义：输入信号包含ESC前后轴升扭/降扭请求信号、RBS请求信号、主动安全功能激活信号、VLC控制信号、RBC模式信号、扭矩仲裁前后轴目标扭矩信号、电机扭矩限制信号；输出信号包含前后轴ESC干预激活标志位、前后轴ESC干预目标扭矩、前后轴仅RBS激活标志位、前后轴制动再生最大扭矩。所有信号数据类型、单位、取值范围应符合信号字典定义。",
+      "type": "interface",
+      "sourceRefs": [
+        {
+          "fileName": "ESCWhlTq.pdf",
+          "location": "page:1",
+          "excerpt": "ESCWhlTq输入输出信号列表"
+        }
+      ],
+      "rationale": "明确模块接口边界，确保与上下游模块的信号交互一致性，符合汽车电子接口设计规范。",
+      "verificationHint": "通过接口联调或仿真工具验证所有输入输出信号的定义、取值范围和交互时序是否符合要求。",
+      "confidence": 0.95,
+      "conflictNote": "",
+      "review": {
+        "status": "pending",
+        "reviewer": "",
+        "comment": "",
+        "updatedAt": ""
+      }
+    },
+    {
+      "id": "6",
+      "requirementId": "SWR-0006",
+      "title": "ESC扭矩干预状态迁移要求",
+      "requirementText": "ESC扭矩干预状态分为未激活态和激活态，状态迁移规则如下：1. 未激活态下，前轴或后轴ESC干预激活标志位置为active时，进入激活态；2. 激活态下，前轴和后轴ESC干预激活标志位均为inactive且持续时间大于去抖阈值时，退回未激活态。激活态下扭矩变化率应采用快速响应参数，未激活态下扭矩变化率应采用慢速响应参数。",
+      "type": "state",
+      "sourceRefs": [
+        {
+          "fileName": "system-requirements-example-torque-intervention.md",
+          "location": "page:1",
+          "excerpt": "当以上条件不再满足时，VCU 应以相对小的前、后轴扭矩变化率输出"
+        }
+      ],
+      "rationale": "承接系统需求SMiVCU-4487的扭矩变化率要求，避免状态频繁切换导致的扭矩波动，提升驾驶舒适性和安全性。",
+      "verificationHint": "通过状态迁移测试构造激活/退出触发条件，验证状态切换逻辑和扭矩变化率是否符合要求。",
+      "confidence": 0.9,
+      "conflictNote": "",
+      "review": {
+        "status": "pending",
+        "reviewer": "",
+        "comment": "",
+        "updatedAt": ""
+      }
+    },
+    {
+      "id": "7",
+      "requirementId": "SWR-0007",
+      "title": "ESC扭矩干预模块执行周期要求",
+      "requirementText": "ESC扭矩干预模块应采用10ms周期执行，所有输入信号采样、逻辑计算、输出信号更新均应在单个执行周期内完成，最大执行延迟不得超过1ms。",
+      "type": "timing",
+      "sourceRefs": [
+        {
+          "fileName": "ESCWhlTq.pdf",
+          "location": "page:1",
+          "excerpt": "ESC Torque Request Coordination 实时控制模块"
+        }
+      ],
+      "rationale": "满足主动安全功能的实时响应要求，确保扭矩干预的及时性，符合ISO 26262功能安全实时性要求。",
+      "verificationHint": "通过周期采样和调度测试验证模块执行周期和执行延迟是否符合要求。",
+      "confidence": 0.85,
+      "conflictNote": "目前无明确证据指定执行周期，基于动力域控制模块行业通用要求推导，需后续确认",
+      "review": {
+        "status": "pending",
+        "reviewer": "",
+        "comment": "",
+        "updatedAt": ""
+      }
+    }
+  ],
+  "traces": [
+    {
+      "requirementId": "1",
+      "requirementCode": "SWR-0001",
+      "fileName": "system-requirements-example-torque-intervention.md",
+      "location": "page:1",
+      "excerpt": "当 ESC 有升扭/降扭和制动再生扭矩请求时，VCU 应响应 ESC 扭矩干预请求"
+    },
+    {
+      "requirementId": "1",
+      "requirementCode": "SWR-0001",
+      "fileName": "ESCWhlTq.pdf",
+      "location": "page:1",
+      "excerpt": "icesc_bFrntAxleTqDecActv icesc_bFrntAxleTqIncActv icesc_bFrntAxleRBSTqActv ESCWhlTq_bFrntAxleTqIntvActv"
+    },
+    {
+      "requirementId": "1",
+      "requirementCode": "SWR-0001",
+      "fileName": "ESCWhlTq.c",
+      "location": "assignment",
+      "excerpt": "赋值: ESCWhlTq_bFrntAxleTqIntvActv = (rtb_AND || ESCWhlTq_bFrntAxleTqDecActv || rtb_AND2 || rtb_AND9 || rtb_AND11)"
+    },
+    {
+      "requirementId": "2",
+      "requirementCode": "SWR-0002",
+      "fileName": "system-requirements-example-torque-intervention.md",
+      "location": "page:1",
+      "excerpt": "优先级顺序为：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS"
+    },
+    {
+      "requirementId": "2",
+      "requirementCode": "SWR-0002",
+      "fileName": "ESCWhlTq.pdf",
+      "location": "page:1",
+      "excerpt": "A01_FrntAxleESCIntv 前轴扭矩计算逻辑"
+    },
+    {
+      "requirementId": "2",
+      "requirementCode": "SWR-0002",
+      "fileName": "ESCWhlTq.c",
+      "location": "assignment",
+      "excerpt": "赋值: ESCWhlTq_tqTarFrntAxle = rtb_TmpSignalConversionAtPwrL_a"
+    },
+    {
+      "requirementId": "3",
+      "requirementCode": "SWR-0003",
+      "fileName": "system-requirements-example-torque-intervention.md",
+      "location": "page:1",
+      "excerpt": "按照优先级顺序进行对前/后轴目标扭矩进行计算"
+    },
+    {
+      "requirementId": "3",
+      "requirementCode": "SWR-0003",
+      "fileName": "ESCWhlTq.pdf",
+      "location": "page:1",
+      "excerpt": "icesc_bReAxleTqDecActv icesc_bReAxleTqIncActv icesc_bReAxleRBSTqActv ESCWhlTq_bReAxleTqIntvActv"
+    },
+    {
+      "requirementId": "3",
+      "requirementCode": "SWR-0003",
+      "fileName": "ESCWhlTq.c",
+      "location": "assignment",
+      "excerpt": "赋值: ESCWhlTq_bReAxleTqDecActv = (rtb_OR3_g && ESCWhlTq_bTqDecIntvEna_C && ((rtb_TmpSignalConversionAtices_f >= ESCWhlTq_tqESCIntvMin_C) && (rtb_TmpSignalConversionAtices_f <= ESCWhlTq_tqESCIntvMax_C)))"
+    },
+    {
+      "requirementId": "4",
+      "requirementCode": "SWR-0004",
+      "fileName": "system-requirements-example-torque-intervention.md",
+      "location": "page:1",
+      "excerpt": "当无主动安全功能激活且 ESC 未进行扭矩干预，前后轴目标扭矩则为扭矩分配后的前后轴扭矩"
+    },
+    {
+      "requirementId": "4",
+      "requirementCode": "SWR-0004",
+      "fileName": "ESCWhlTq.pdf",
+      "location": "page:1",
+      "excerpt": "A02_ReAxleESCIntv 后轴扭矩计算逻辑"
+    },
+    {
+      "requirementId": "4",
+      "requirementCode": "SWR-0004",
+      "fileName": "ESCWhlTq.c",
+      "location": "assignment",
+      "excerpt": "赋值: ESCWhlTq_tqTarReAxle = rtb_TmpSignalConversionAtPwrL_d"
+    },
+    {
+      "requirementId": "5",
+      "requirementCode": "SWR-0005",
+      "fileName": "ESCWhlTq.pdf",
+      "location": "page:1",
+      "excerpt": "ESCWhlTq输入输出信号列表"
+    },
+    {
+      "requirementId": "6",
+      "requirementCode": "SWR-0006",
+      "fileName": "system-requirements-example-torque-intervention.md",
+      "location": "page:1",
+      "excerpt": "当以上条件不再满足时，VCU 应以相对小的前、后轴扭矩变化率输出"
+    },
+    {
+      "requirementId": "7",
+      "requirementCode": "SWR-0007",
+      "fileName": "ESCWhlTq.pdf",
+      "location": "page:1",
+      "excerpt": "ESC Torque Request Coordination 实时控制模块"
+    }
+  ],
+  "conflicts": [],
+  "auditLog": [
+    {
+      "at": "2026-04-04T05:16:51.764Z",
+      "action": "project_created",
+      "detail": "项目已创建"
+    },
+    {
+      "at": "2026-04-04T05:19:35.830Z",
+      "action": "files_uploaded",
+      "detail": "已上传 3 个文件"
+    },
+    {
+      "at": "2026-04-04T05:23:00.320Z",
+      "action": "requirements_generated",
+      "detail": "生成 10 条需求"
+    },
+    {
+      "at": "2026-04-04T05:42:46.470Z",
+      "action": "requirements_generated",
+      "detail": "生成 6 条需求"
+    },
+    {
+      "at": "2026-04-04T15:48:23.171Z",
+      "action": "files_uploaded",
+      "detail": "已上传 6 个文件"
+    },
+    {
+      "at": "2026-04-04T15:50:26.050Z",
+      "action": "requirements_generated",
+      "detail": "生成 7 条需求"
+    }
+  ],
+  "createdAt": "2026-04-04T05:16:51.765Z",
+  "updatedAt": "2026-04-04T15:50:26.054Z"
+}

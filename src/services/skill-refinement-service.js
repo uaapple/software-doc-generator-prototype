@@ -6,6 +6,7 @@ import { BenchmarkCaseService } from "./benchmark-case-service.js";
 import { BenchmarkEvaluationService } from "./benchmark-evaluation-service.js";
 import { SkillRefinementAuditService } from "./skill-refinement-audit-service.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
+import { SkillRegistryService } from "./skill-registry-service.js";
 
 function now() {
   return new Date().toISOString();
@@ -15,18 +16,106 @@ function getRunPath(runId) {
   return path.join(config.skillRefinementRunDir, `${runId}.json`);
 }
 
-function unique(items) {
+function unique(items = []) {
   return Array.from(new Set(items.filter(Boolean)));
 }
 
-function ensureEditableContent(item, payload = {}) {
-  if (typeof payload.editedContent === "string" && payload.editedContent.trim()) {
-    return payload.editedContent.trim();
+function normalizeKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w\u4e00-\u9fa5-]/g, "_");
+}
+
+function kindToTargetFile(kind = "") {
+  if (kind === "writing_rule") return "requirement_writing.md";
+  if (kind === "extraction_rule") return "requirement_extraction.md";
+  if (kind === "validation_rule") return "requirement_validation.md";
+  if (kind === "good_example") return "examples/good_examples.md";
+  if (kind === "bad_example") return "examples/bad_examples.md";
+  return "domain-knowledge.json";
+}
+
+function proposalCategoryForKind(kind = "") {
+  if (kind === "writing_rule") return "writing";
+  if (kind === "extraction_rule") return "extraction";
+  if (kind === "validation_rule") return "validation";
+  if (kind === "good_example" || kind === "bad_example") return "good_example";
+  return "domain_knowledge";
+}
+
+function buildEditableContent(kind = "", content = "", structuredPayload = null) {
+  if (structuredPayload && ["good_example", "bad_example", "rule_hint"].includes(kind)) {
+    return JSON.stringify(structuredPayload, null, 2);
   }
-  if (typeof payload.proposedContent === "string" && payload.proposedContent.trim()) {
-    return payload.proposedContent.trim();
+  return String(content || "").trim();
+}
+
+function hydrateDraftFromEditedContent(kind = "", editedContent = "", draft = {}) {
+  const trimmed = String(editedContent || "").trim();
+  if (!trimmed) return draft;
+  if (["good_example", "bad_example", "rule_hint"].includes(kind)) {
+    try {
+      const payload = JSON.parse(trimmed);
+      return {
+        ...draft,
+        content: String(payload.requirementText || draft.content || "").trim(),
+        structuredPayload: payload
+      };
+    } catch (_error) {
+      return {
+        ...draft,
+        content: trimmed
+      };
+    }
   }
-  return item.editedContent || item.proposedContent || "";
+  return {
+    ...draft,
+    content: trimmed
+  };
+}
+
+function inferDocTypeWritingPattern(documentType = "software_requirement", sectionHints = []) {
+  if (documentType === "detail_design") {
+    return `详细设计条目优先围绕功能分解、接口/状态、内部变量与边界保护展开，章节线索参考：${sectionHints.join(" / ") || "功能分解 -> 接口 -> 状态"}`;
+  }
+  if (documentType === "hil_test_case") {
+    return "HIL 用例必须显式写出前置条件、测试步骤、预期结果和判定标准，避免把实现细节直接写成测试动作。";
+  }
+  return `软件需求优先写清条件、动作、默认/恢复路径与边界限制，章节线索参考：${sectionHints.join(" / ") || "条件 -> 动作 -> 限制"}`;
+}
+
+function inferGenericValidationRule(triggerCase) {
+  return `当需求来自案例「${triggerCase.name}」这类控制逻辑场景时，校验规则必须显式检查触发条件、执行行为、默认或恢复路径、边界限制和来源追溯是否完整。`;
+}
+
+function inferDomainRuleHint(triggerCase, sectionHints = []) {
+  return {
+    domain: normalizeKey(triggerCase.domain || "embedded_vcu"),
+    documentType: triggerCase.documentType || "software_requirement",
+    sectionHints,
+    writingPattern: "优先拆解进入条件 / 执行动作 / 退出或恢复条件，并保留阈值、滞回、优先级和默认路径。",
+    targetStyle: "shared_vcu_knowhow",
+    sourceBasis: [triggerCase.id]
+  };
+}
+
+function firstGoldenExample(triggerCase) {
+  const golden = triggerCase.goldenStructured || { requirements: [] };
+  const first = (golden.requirements || [])[0] || {};
+  return {
+    requirementId: first.requirementId || `${normalizeKey(triggerCase.subdomain || triggerCase.domain || "skill")}-EX-001`,
+    topic: first.topic || first.title || triggerCase.name,
+    sectionNumber: first.sectionNumber || "",
+    sectionTitle: first.sectionTitle || triggerCase.subdomain || triggerCase.domain || "",
+    requirementType: first.requirementType || "functional",
+    preferredTitle: first.preferredTitle || first.title || triggerCase.name,
+    requirementText: first.requirementText || "",
+    signals: first.signals || [],
+    references: first.references || [],
+    keywords: first.keywords || []
+  };
 }
 
 export class SkillRefinementService {
@@ -35,6 +124,7 @@ export class SkillRefinementService {
     this.evaluationService = new BenchmarkEvaluationService();
     this.skillBundleService = new SkillBundleService();
     this.auditService = new SkillRefinementAuditService();
+    this.registryService = new SkillRegistryService();
   }
 
   async createRun({ triggerCaseId, baseBundleId = "" }) {
@@ -49,16 +139,16 @@ export class SkillRefinementService {
       benchmarkCase: triggerCase,
       bundleId: baselineBundleId
     });
-    const proposal = this.buildProposal(triggerCase);
-    const proposalItems = this.buildProposalItems(triggerCase, proposal);
+    const proposalItems = await this.buildProposalItems(triggerCase, baselineBundleId);
     const run = {
       id: randomUUID(),
       triggerCaseId: triggerCase.id,
       baseBundleId: baselineBundleId,
       candidateBundleId: "",
+      proposalModelVersion: 2,
       status: "proposal_review",
       proposalItems,
-      proposalSummary: proposal.summary,
+      proposalSummary: `Refined ${proposalItems.length} layered skill proposals from benchmark case ${triggerCase.name}.`,
       initialAssessment: {
         generatedRequirements: baselineAssessment.generated.requirements,
         scoreResult: baselineAssessment.scoreResult
@@ -115,7 +205,31 @@ export class SkillRefinementService {
     }
 
     item.status = payload.status || item.status || "pending";
-    item.editedContent = ensureEditableContent(item, payload);
+    if (payload.editedPayload && typeof payload.editedPayload === "object") {
+      item.editedPayload = {
+        ...item,
+        ...payload.editedPayload
+      };
+      item.editedContent = String(payload.editedPayload.editedContent || payload.editedPayload.after || item.editedContent || "");
+    } else if (typeof payload.editedContent === "string") {
+      item.editedContent = payload.editedContent.trim();
+      item.editedPayload = {
+        ...item,
+        newItemDraft: hydrateDraftFromEditedContent(item.kind, payload.editedContent, item.newItemDraft),
+        after: payload.editedContent.trim()
+      };
+    }
+    if (payload.targetLayer || payload.targetProfileKey || payload.targetSkillCode || payload.kind || payload.title) {
+      item.editedPayload = {
+        ...item,
+        ...(item.editedPayload || {}),
+        targetLayer: payload.targetLayer || item.targetLayer,
+        targetProfileKey: payload.targetProfileKey || item.targetProfileKey,
+        targetSkillCode: payload.targetSkillCode || item.targetSkillCode,
+        kind: payload.kind || item.kind,
+        title: payload.title || item.title
+      };
+    }
     item.updatedAt = now();
 
     run.updatedAt = now();
@@ -138,9 +252,13 @@ export class SkillRefinementService {
       throw new Error("Run has already reached a final decision");
     }
 
-    const acceptedItems = (run.proposalItems || []).filter((item) =>
-      item.status === "accepted" || item.status === "edited"
-    );
+    const acceptedItems = (run.proposalItems || [])
+      .filter((item) => item.status === "accepted" || item.status === "edited")
+      .map((item) => ({
+        ...item,
+        ...(item.editedPayload || {}),
+        newItemDraft: hydrateDraftFromEditedContent(item.kind, item.editedContent || item.after || "", item.newItemDraft || {})
+      }));
     if (!acceptedItems.length) {
       throw new Error("No accepted proposal items");
     }
@@ -157,13 +275,12 @@ export class SkillRefinementService {
       throw new Error("Trigger case not found");
     }
 
-    const materializedProposal = this.materializeProposalFromItems(acceptedItems);
     const candidateBundle = await this.skillBundleService.createCandidateBundle({
       baseBundleId: run.baseBundleId,
       proposal: {
-        ...materializedProposal,
         summary: run.proposalSummary
       },
+      proposalItems: acceptedItems,
       createdFromCaseIds: [run.triggerCaseId]
     });
 
@@ -311,180 +428,112 @@ export class SkillRefinementService {
     };
   }
 
-  buildProposal(triggerCase) {
+  async buildProposalItems(triggerCase, baseBundleId = "") {
+    const bundle = baseBundleId ? await this.skillBundleService.getBundle(baseBundleId) : await this.skillBundleService.getActiveBundle();
+    const skillDir = await this.skillBundleService.getSkillDir(bundle?.id || baseBundleId);
     const golden = triggerCase.goldenStructured || { requirements: [], sections: [] };
-    const sectionHints = unique((golden.sections || []).map((item) => `${item.sectionNumber} ${item.sectionTitle}`.trim()));
-    const requirementExamples = (golden.requirements || []).slice(0, 8).map((item) => ({
-      requirementId: item.requirementId,
-      topic: item.topic,
-      sectionNumber: item.sectionNumber,
-      requirementType: item.requirementType,
-      requirementText: item.requirementText,
-      signals: item.signals || [],
-      references: item.references || [],
-      keywords: item.keywords || []
-    }));
-
-    const writingRules = [
-      `- 在 ${triggerCase.domain}/${triggerCase.subdomain || "通用子域"} 场景下，优先采用多级章节组织需求，例如：${sectionHints.join(" -> ") || "章节号 -> 子章节号"}。`,
-      "- 对前轴/后轴或其他物理对象对称的能力，优先拆分为结构对称的子章节。",
-      "- 先写激活标志位判断，再写计算/仲裁逻辑；每条需求尽量只承载一个核心逻辑主题。",
-      "- 计算类需求显式写出优先级顺序、条件分支、默认路径和边界限制。"
-    ].join("\n");
-
-    const extractionRules = [
-      "- 优先抽取激活标志位、阈值、优先级顺序、模式状态、min/max 边界限制。",
-      "- 对 C 文件中的条件分支、赋值关系和前后轴对称变量建立同类候选事实。",
-      "- 对系统需求中的条件项、否则分支和优先级排序做结构化切分。"
-    ].join("\n");
-
-    const validationRules = [
-      "- 校验章节层级是否完整，是否按对称对象展开。",
-      "- 校验需求是否保留关键信号名、变量名和内部引用编号。",
-      "- 校验需求是否缺失来源追溯、默认路径或边界限制。"
-    ].join("\n");
-
-    const goodExamples = requirementExamples
-      .map(
-        (item, index) =>
-          `${index + 1}. ${item.requirementText || item.topic}\n原因：来自案例“${triggerCase.name}”，保留了章节、条件/分支、信号与引用信息。`
-      )
-      .join("\n\n");
-
-    return {
-      summary: `Refined from benchmark case ${triggerCase.name} (${triggerCase.id}).`,
-      appendWritingRules: writingRules,
-      appendExtractionRules: extractionRules,
-      appendValidationRules: validationRules,
-      appendGoodExamples: goodExamples,
-      domainKnowledge: {
-        examples: requirementExamples,
-        ruleHints: [
-          {
-            domain: triggerCase.domain,
-            subdomain: triggerCase.subdomain,
-            sectionHints,
-            generatedFromCaseId: triggerCase.id
-          }
-        ],
-        antiPatterns: []
-      }
-    };
-  }
-
-  buildProposalItems(triggerCase, proposal) {
+    const sectionHints = unique((golden.sections || []).map((item) => `${item.sectionNumber} ${item.sectionTitle}`.trim()).filter(Boolean));
+    const documentType = triggerCase.documentType || "software_requirement";
+    const domainKey = normalizeKey(triggerCase.domain || "embedded_vcu");
+    const moduleKey = normalizeKey(triggerCase.subdomain || triggerCase.domain || "module");
+    const goodExample = firstGoldenExample(triggerCase);
     const basedOnCaseIds = [triggerCase.id];
     const createdAt = now();
 
-    return [
+    const drafts = [
       {
-        id: randomUUID(),
-        category: "writing",
-        targetFile: "requirement_writing.md",
-        title: `补充 ${triggerCase.subdomain || triggerCase.domain} 写作规则`,
-        proposedContent: proposal.appendWritingRules,
-        editedContent: proposal.appendWritingRules,
-        reason: "从本次优质范例中抽取出章节组织、句式与边界写法模式。",
-        basedOnCaseIds,
-        status: "pending",
-        createdAt,
-        updatedAt: createdAt
-      },
-      {
-        id: randomUUID(),
-        category: "extraction",
-        targetFile: "requirement_extraction.md",
-        title: `补充 ${triggerCase.subdomain || triggerCase.domain} 抽取规则`,
-        proposedContent: proposal.appendExtractionRules,
-        editedContent: proposal.appendExtractionRules,
-        reason: "从系统需求与模型代码的对齐中提炼更稳定的事实抽取策略。",
-        basedOnCaseIds,
-        status: "pending",
-        createdAt,
-        updatedAt: createdAt
-      },
-      {
-        id: randomUUID(),
+        layer: "generic",
+        profileKey: "generic",
+        kind: "validation_rule",
+        title: `校验 ${triggerCase.name} 同类控制逻辑的完整性`,
+        content: inferGenericValidationRule(triggerCase),
+        structuredPayload: null,
         category: "validation",
-        targetFile: "requirement_validation.md",
-        title: `补充 ${triggerCase.subdomain || triggerCase.domain} 校验规则`,
-        proposedContent: proposal.appendValidationRules,
-        editedContent: proposal.appendValidationRules,
-        reason: "从人工答案的结构特征中提炼出应重点检查的约束。",
-        basedOnCaseIds,
-        status: "pending",
-        createdAt,
-        updatedAt: createdAt
+        reason: "把当前案例暴露出来的完整性检查点回收到 generic 层，避免后续同类需求漏写条件、默认路径或边界限制。",
+        scopeRationale: "这是跨文档、跨模块都成立的校验口径，不依赖当前功能专有对象。",
+        scopeConfidence: 0.64
       },
       {
-        id: randomUUID(),
-        category: "good_example",
-        targetFile: "examples/good_examples.md",
-        title: `追加 ${triggerCase.name} 的正例样式`,
-        proposedContent: proposal.appendGoodExamples,
-        editedContent: proposal.appendGoodExamples,
-        reason: "将当前人工优质范例中的高质量写法追加到正例库。",
-        basedOnCaseIds,
-        status: "pending",
-        createdAt,
-        updatedAt: createdAt
+        layer: "docType",
+        profileKey: documentType,
+        kind: "writing_rule",
+        title: `${documentType} 写作骨架补充`,
+        content: inferDocTypeWritingPattern(documentType, sectionHints),
+        structuredPayload: null,
+        category: "writing",
+        reason: "把当前案例中的体裁性写法沉淀到 docType 层，而不是继续挤到 module 层。",
+        scopeRationale: "该规则主要约束产物体裁的组织方式，跨模块可复用。",
+        scopeConfidence: 0.78
       },
       {
-        id: randomUUID(),
+        layer: "domain",
+        profileKey: domainKey,
+        kind: "rule_hint",
+        title: `${domainKey} 共享控制写法提示`,
+        content: "",
+        structuredPayload: inferDomainRuleHint(triggerCase, sectionHints),
         category: "domain_knowledge",
-        targetFile: "domain-knowledge.json",
-        title: `更新 ${triggerCase.subdomain || triggerCase.domain} 领域知识`,
-        proposedContent: JSON.stringify(proposal.domainKnowledge, null, 2),
-        editedContent: JSON.stringify(proposal.domainKnowledge, null, 2),
-        reason: "把章节提示、few-shot 样例和领域反模式纳入 bundle 领域知识。",
-        basedOnCaseIds,
-        status: "pending",
-        createdAt,
-        updatedAt: createdAt
+        reason: "把当前案例里可泛化到 VCU 域的控制逻辑写法，沉淀到 domain 层。",
+        scopeRationale: "去掉模块名后仍然成立，更像 VCU 共享 know-how 而不是模块专属骨架。",
+        scopeConfidence: 0.72
+      },
+      {
+        layer: "module",
+        profileKey: moduleKey,
+        kind: "good_example",
+        title: `${moduleKey} few-shot 正例补充`,
+        content: goodExample.requirementText || "",
+        structuredPayload: goodExample,
+        category: "good_example",
+        reason: "把当前案例中的模块专属 few-shot 留在 module 层，供后续同模块生成直接参考。",
+        scopeRationale: "包含明显的模块对象、主题和章节信息，应保留在 module 层。",
+        scopeConfidence: 0.9
       }
     ];
-  }
 
-  materializeProposalFromItems(items) {
-    const proposal = {
-      appendWritingRules: "",
-      appendExtractionRules: "",
-      appendValidationRules: "",
-      appendGoodExamples: "",
-      domainKnowledge: {
-        examples: [],
-        ruleHints: [],
-        antiPatterns: []
-      }
-    };
-
-    for (const item of items) {
-      const content = (item.editedContent || item.proposedContent || "").trim();
-      if (!content) {
-        continue;
-      }
-
-      if (item.targetFile === "requirement_writing.md") {
-        proposal.appendWritingRules = content;
-      } else if (item.targetFile === "requirement_extraction.md") {
-        proposal.appendExtractionRules = content;
-      } else if (item.targetFile === "requirement_validation.md") {
-        proposal.appendValidationRules = content;
-      } else if (item.targetFile === "examples/good_examples.md") {
-        proposal.appendGoodExamples = content;
-      } else if (item.targetFile === "domain-knowledge.json") {
-        try {
-          proposal.domainKnowledge = JSON.parse(content);
-        } catch (_error) {
-          proposal.domainKnowledge = {
-            examples: [],
-            ruleHints: [],
-            antiPatterns: []
-          };
-        }
-      }
+    const proposalItems = [];
+    for (const draft of drafts) {
+      const target = await this.registryService.findBestTarget(
+        {
+          layer: draft.layer,
+          profileKey: draft.profileKey,
+          kind: draft.kind,
+          query: `${draft.title}\n${draft.content}\n${JSON.stringify(draft.structuredPayload || {})}`
+        },
+        skillDir
+      );
+      const editableContent = buildEditableContent(draft.kind, draft.content, draft.structuredPayload);
+      proposalItems.push({
+        id: randomUUID(),
+        category: draft.category || proposalCategoryForKind(draft.kind),
+        action: target ? "modify_skill_item" : "add_skill_item",
+        targetSkillCode: target?.skillCode || "",
+        targetLayer: draft.layer,
+        targetProfileKey: draft.profileKey,
+        kind: draft.kind,
+        targetFile: kindToTargetFile(draft.kind),
+        title: draft.title,
+        before: target ? buildEditableContent(target.kind, target.content, target.structuredPayload) : "",
+        after: editableContent,
+        proposedContent: editableContent,
+        editedContent: editableContent,
+        newItemDraft: {
+          title: draft.title,
+          content: draft.content,
+          structuredPayload: draft.structuredPayload,
+          rules: []
+        },
+        scopeRationale: draft.scopeRationale,
+        scopeConfidence: draft.scopeConfidence,
+        reason: draft.reason,
+        basedOnCaseIds,
+        status: "pending",
+        editedPayload: null,
+        createdAt,
+        updatedAt: createdAt
+      });
     }
 
-    return proposal;
+    return proposalItems;
   }
 }

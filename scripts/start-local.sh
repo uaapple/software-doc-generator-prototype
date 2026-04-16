@@ -3,6 +3,7 @@
 set -euo pipefail
 
 PORT="${PORT:-3000}"
+HOST="${HOST:-127.0.0.1}"
 NO_BROWSER="${NO_BROWSER:-0}"
 
 while (($# > 0)); do
@@ -27,7 +28,11 @@ NODE_MODULES_PATH="$PROJECT_ROOT/node_modules"
 RUNTIME_DIR="$PROJECT_ROOT/.local"
 PID_FILE="$RUNTIME_DIR/server.pid"
 LOG_FILE="$RUNTIME_DIR/server.log"
-URL="http://127.0.0.1:$PORT"
+URL_HOST="$HOST"
+if [[ "$URL_HOST" == *:* && "$URL_HOST" != \[*\] ]]; then
+  URL_HOST="[$URL_HOST]"
+fi
+URL="http://$URL_HOST:$PORT"
 
 if ! command -v npm >/dev/null 2>&1; then
   echo "npm was not found. Please install Node.js 22+ first." >&2
@@ -69,7 +74,7 @@ fi
 echo "Starting local service from $PROJECT_ROOT"
 (
   cd "$PROJECT_ROOT"
-  nohup node src/server.js >"$LOG_FILE" 2>&1 &
+  nohup env HOST="$HOST" PORT="$PORT" node src/server.js >"$LOG_FILE" 2>&1 &
   echo $! >"$PID_FILE"
 )
 server_pid="$(tr -d '[:space:]' <"$PID_FILE")"

@@ -85,11 +85,9 @@
     "不要写成“步骤如下”或“a) b) c)”这种说明文风格"
   ],
   "documentBlueprint": {
-    "domain": "embedded_vcu",
-    "subdomain": "高低系统管理",
     "preferredFunctionSection": {
-      "sectionNumber": "5.1.1.1",
-      "title": "本地KL15上高压"
+      "title": "本地KL15上高压",
+      "sectionNumber": "5.1.1.1"
     },
     "preferredSubsections": [
       {

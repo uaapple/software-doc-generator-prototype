@@ -115,7 +115,13 @@ export class BenchmarkEvaluationService {
   }
 
   async generateForCase(benchmarkCase, skillBundleId) {
-    const extractions = await this.extractionService.extractFiles({ files: benchmarkCase.inputFiles });
+    const extractions = await this.extractionService.extractFiles(
+      { files: benchmarkCase.inputFiles },
+      {
+        fileBaseDir: config.skillRefinementUploadDir,
+        allowStoredNameFallback: true
+      }
+    );
     const requirements = await this.llmService.generateRequirements(
       {
         name: benchmarkCase.name,
@@ -125,7 +131,11 @@ export class BenchmarkEvaluationService {
       extractions,
       { skillBundleId }
     );
-    const domainKnowledge = await this.skillBundleService.getDomainKnowledge(skillBundleId);
+    const domainKnowledge = await this.skillBundleService.getDomainKnowledge(skillBundleId, {
+      documentType: benchmarkCase.documentType || "software_requirement",
+      domain: benchmarkCase.domain || "",
+      moduleSkillKey: benchmarkCase.subdomain || ""
+    });
     const conflicts = this.validationService.validate(requirements, { domainKnowledge });
     return { extractions, requirements, conflicts };
   }

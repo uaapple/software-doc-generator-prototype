@@ -1,0 +1,19 @@
+{
+  "id": "bundle-base",
+  "version": "1.0.0",
+  "baseBundleId": "",
+  "status": "active",
+  "files": [
+    "requirement_extraction.md",
+    "requirement_writing.md",
+    "requirement_validation.md",
+    "examples/good_examples.md",
+    "examples/bad_examples.md",
+    "domain-knowledge.json"
+  ],
+  "changeSummary": "Initialized active skill from input sample materials for torque intervention software design requirements.",
+  "createdFromCaseIds": [],
+  "evaluationSummary": null,
+  "createdAt": "2026-04-04T00:00:00.000Z",
+  "updatedAt": "2026-04-04T00:00:00.000Z"
+}

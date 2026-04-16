@@ -104,3 +104,26 @@
 - 检查迁移演示工程在新导航下的显示是否完全符合预期
 - 如有需要，继续收口任务详情页的视觉与审阅交互
 - 继续推进 skill markdown 规则化迁移与编码问题治理
+
+## 会话：2026-04-16
+
+### 阶段：软件需求文档类型技能初始化
+- **状态：** complete
+- **执行的操作：**
+  - 读取 `input/20260404` 中的软件需求写作规范、系统需求示例与扭矩干预样例，提炼软件需求条目的共性写法。
+  - 读取 `input/20260411/AI case_ITK_20260411.docx`，确认本轮只需要覆盖软件需求层，并识别充电管理、高低系统管理、高压能量管理等主题范围。
+  - 检查 `software_requirement` profile 当前状态，确认 manifest 已注册但 profile 仍为空壳，仅有空的 `skill-items.json`。
+  - 交叉读取 `充电管理`、`高低系统管理`、`高压能量管理` 模块 profile 中的 good examples 与 domain knowledge，作为软件需求文档类型层的样例锚点。
+- **创建/修改的文件：**
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+  - `skills/active/skill-manifest.json`
+  - `skills/active/profiles/doc-types/software_requirement/requirement_writing.md`
+  - `skills/active/profiles/doc-types/software_requirement/requirement_validation.md`
+  - `skills/active/profiles/doc-types/software_requirement/examples/good_examples.md`
+  - `skills/active/profiles/doc-types/software_requirement/domain-knowledge.json`
+  - `skills/active/profiles/doc-types/software_requirement/skill-items.json`
+- **补充说明：**
+  - 当前方向不是恢复 `detail_design` / `hil_test_case`，而是为 `software_requirement` 文档类型层补齐第一版可用技能文件。
+  - 静态校验已通过：相关 JSON 文件均可解析，`git diff --check` 通过，registry 与 markdown / domain knowledge 的条目数量一致。

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "layer": "docType",
+  "profileKey": "detail_design",
+  "displayName": "Detail Design",
+  "documentTypeScope": "detail_design",
+  "status": "active",
+  "items": []
+}

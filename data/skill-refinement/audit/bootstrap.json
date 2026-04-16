@@ -1,0 +1,8 @@
+[
+  {
+    "at": "2026-04-04T00:00:00.000Z",
+    "action": "bootstrap_active_skill",
+    "bundleId": "bundle-base",
+    "detail": "Initialized active skill from input writing rules, system requirement example, software design requirement example, and model code samples."
+  }
+]

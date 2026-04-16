@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { resolveStoredFilePath } from "./storage.js";
 
 const FUNC_REGEX = /(?:static\s+)?(?:inline\s+)?[A-Za-z_][\w\s\*]*\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*\{/g;
 const DEFINE_REGEX = /^\s*#define\s+([A-Z_][A-Z0-9_]*)\s+(.+)$/gm;
@@ -6,8 +7,9 @@ const ASSIGNMENT_REGEX = /^\s*([A-Za-z_]\w*)\s*=\s*([^;]+);/gm;
 const IF_REGEX = /^\s*if\s*\((.+)\)/gm;
 
 export class CExtractor {
-  async extract(fileRecord) {
-    const content = await readFile(fileRecord.absolutePath, "utf8");
+  async extract(fileRecord, options = {}) {
+    const sourcePath = resolveStoredFilePath(fileRecord, options);
+    const content = await readFile(sourcePath, "utf8");
     const blocks = [];
 
     for (const match of content.matchAll(DEFINE_REGEX)) {

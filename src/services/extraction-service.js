@@ -44,7 +44,10 @@ export class ExtractionService {
       }
 
       const extractor = file.role === "generated_c" ? this.cExtractor : this.pdfExtractor;
-      const result = await extractor.extract(file);
+      const result = await extractor.extract(file, {
+        baseDir: options.fileBaseDir,
+        allowStoredNameFallback: options.allowStoredNameFallback
+      });
       extractions.push({
         id: randomUUID(),
         fileId: file.id,

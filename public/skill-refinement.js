@@ -174,6 +174,11 @@ async function handleProposalAction(event) {
 
   const { action, proposalId } = button.dataset;
   const editor = proposalGroupsRoot.querySelector(`textarea[data-proposal-editor="${proposalId}"]`);
+  const targetLayerInput = proposalGroupsRoot.querySelector(`[data-proposal-target-layer="${proposalId}"]`);
+  const targetProfileInput = proposalGroupsRoot.querySelector(`[data-proposal-target-profile="${proposalId}"]`);
+  const targetSkillInput = proposalGroupsRoot.querySelector(`[data-proposal-target-skill="${proposalId}"]`);
+  const targetKindInput = proposalGroupsRoot.querySelector(`[data-proposal-kind="${proposalId}"]`);
+  const titleInput = proposalGroupsRoot.querySelector(`[data-proposal-title="${proposalId}"]`);
   const editedContent = editor?.value || "";
   let status = "pending";
 
@@ -185,7 +190,15 @@ async function handleProposalAction(event) {
     await request(`/api/skill-refinement/runs/${state.runDetail.run.id}/proposals/${proposalId}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, editedContent })
+      body: JSON.stringify({
+        status,
+        editedContent,
+        targetLayer: targetLayerInput?.value || "",
+        targetProfileKey: targetProfileInput?.value || "",
+        targetSkillCode: targetSkillInput?.value || "",
+        kind: targetKindInput?.value || "",
+        title: titleInput?.value || ""
+      })
     });
     await loadRun(state.runDetail.run.id);
   } catch (error) {
@@ -521,7 +534,7 @@ function renderProposalGroups() {
     ["writing", "写作规则"],
     ["extraction", "抽取规则"],
     ["validation", "校验规则"],
-    ["good_example", "正例样例"],
+    ["good_example", "Examples"],
     ["domain_knowledge", "领域知识"]
   ];
 
@@ -541,13 +554,24 @@ function renderProposalGroups() {
                     <div class="proposal-header">
                       <div>
                         <strong>${escapeHtml(item.title)}</strong>
-                        <p class="mini-meta">${escapeHtml(item.targetFile)} / 基于案例 ${escapeHtml(
-                          (item.basedOnCaseIds || []).join(", ")
-                        )}</p>
+                        <p class="mini-meta">
+                          ${escapeHtml(item.action)} · ${escapeHtml(item.kind || "-")} · ${escapeHtml(item.targetFile || "-")}
+                        </p>
                       </div>
                       <span class="pill ${resolveStatusClass(item.status)}">${escapeHtml(translateProposalStatus(item.status))}</span>
                     </div>
                     <p class="mini-meta">${escapeHtml(item.reason || "无原因说明")}</p>
+                    <div class="definition-grid">
+                      <div><span>Layer</span><p><input data-proposal-target-layer="${item.id}" value="${escapeHtml(item.targetLayer || "")}" ${reviewLocked ? "disabled" : ""} /></p></div>
+                      <div><span>Profile</span><p><input data-proposal-target-profile="${item.id}" value="${escapeHtml(item.targetProfileKey || "")}" ${reviewLocked ? "disabled" : ""} /></p></div>
+                      <div><span>Skill Code</span><p><input data-proposal-target-skill="${item.id}" value="${escapeHtml(item.targetSkillCode || "")}" ${reviewLocked ? "disabled" : ""} /></p></div>
+                      <div><span>Kind</span><p><input data-proposal-kind="${item.id}" value="${escapeHtml(item.kind || "")}" ${reviewLocked ? "disabled" : ""} /></p></div>
+                    </div>
+                    <label>
+                      标题
+                      <input data-proposal-title="${item.id}" value="${escapeHtml(item.title || "")}" ${reviewLocked ? "disabled" : ""} />
+                    </label>
+                    <p class="mini-meta">Scope rationale：${escapeHtml(item.scopeRationale || "未提供")} · 置信度 ${escapeHtml(String(item.scopeConfidence ?? "-"))}</p>
                     <textarea data-proposal-editor="${item.id}" ${reviewLocked ? "disabled" : ""}>${escapeHtml(
                       item.editedContent || item.proposedContent || ""
                     )}</textarea>

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
-import { readJson, writeJson } from "./storage.js";
+import { readJson, resolveStoredFilePath, writeJson } from "./storage.js";
 import { ProjectService } from "./project-service.js";
 import { RejectionService } from "./rejection-service.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
@@ -25,6 +25,14 @@ function getTaskPath(taskId) {
 
 function normalizeArea(area = "") {
   return area || "validation";
+}
+
+function normalizeSkillKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w\u4e00-\u9fa5-]/g, "_");
 }
 
 function collectRootCauses(records = []) {
@@ -120,9 +128,10 @@ export class ReplayTaskService {
     const assets = [];
     for (const asset of selected) {
       let preview = "";
-      if (asset.absolutePath && isPreviewableAsset(asset)) {
+      const assetPath = resolveStoredFilePath(asset, { baseDir: config.uploadDir });
+      if (assetPath && isPreviewableAsset(asset)) {
         try {
-          preview = truncate(await fs.readFile(asset.absolutePath, "utf8"));
+          preview = truncate(await fs.readFile(assetPath, "utf8"));
         } catch (_error) {
           preview = "";
         }
@@ -192,6 +201,14 @@ export class ReplayTaskService {
       module = await this.projectService.getModule(inferredProjectId, inferredModuleId);
     }
     const referenceAssets = await this.buildReferenceAssets(inferredProjectId, inferredModuleId, normalizedReferenceAssetIds);
+    const moduleSkillKey = normalizeSkillKey(module?.moduleSkillKey || module?.name || records[0]?.moduleName || "");
+    const domainKey = normalizeSkillKey(module?.domain || project?.domain || records[0]?.domain || "embedded_vcu");
+    const documentType = records[0]?.documentType || "software_requirement";
+    const candidateSkillItems = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, effectiveAreas, {
+      documentType,
+      domain: domainKey,
+      moduleSkillKey
+    });
 
     const materialPack = {
       summary: `${records.length} rejection records selected for replay`,
@@ -203,8 +220,22 @@ export class ReplayTaskService {
         projectName: project?.name || records[0]?.projectName || "",
         moduleId: inferredModuleId,
         moduleName: module?.name || records[0]?.moduleName || "",
-        documentType: records[0]?.documentType || "software_requirement"
+        moduleSkillKey,
+        domain: domainKey,
+        documentType
       },
+      candidateSkillItems: candidateSkillItems.map((item) => ({
+        skillCode: item.skillCode || item.ruleId,
+        layer: item.layer,
+        profileKey: item.profileKey,
+        kind: item.kind,
+        title: item.title,
+        content: item.content,
+        contentSummary: truncate(item.content || "", 220),
+        targetAreas: [item.targetArea],
+        targetFile: item.targetFile,
+        whyRelevant: `${item.layer}/${item.profileKey}`
+      })),
       referenceAssets,
       rejectionSnapshots: records.map((record) => ({
         id: record.id,
@@ -261,7 +292,11 @@ export class ReplayTaskService {
   }
 
   async buildProposal({ records, bundleId, targetAreas = [], materialPack = {}, llmProfileId = "" }) {
-    const relevantRules = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, targetAreas);
+    const relevantRules = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, targetAreas, {
+      documentType: materialPack.moduleContext?.documentType || "software_requirement",
+      domain: materialPack.moduleContext?.domain || "",
+      moduleSkillKey: materialPack.moduleContext?.moduleSkillKey || ""
+    });
     const grouped = new Map();
     for (const record of records) {
       const area = normalizeArea(record.skillContext?.targetArea);
@@ -286,7 +321,10 @@ export class ReplayTaskService {
           proposalItemId: randomUUID(),
           proposalId: proposal.id,
           action: item.action,
-          targetRuleId: item.targetRuleId,
+          targetSkillCode: item.targetSkillCode,
+          targetLayer: item.targetLayer,
+          targetProfileKey: item.targetProfileKey,
+          kind: item.kind,
           targetFile: item.targetFile,
           newRuleDraft: item.newRuleDraft || null,
           before: item.before || "",
@@ -316,8 +354,11 @@ export class ReplayTaskService {
         proposal.items.push({
           proposalItemId: randomUUID(),
           proposalId: proposal.id,
-          action: "modify_rule",
-          targetRuleId: targetRule.ruleId,
+          action: "modify_skill_item",
+          targetSkillCode: targetRule.skillCode || targetRule.ruleId,
+          targetLayer: targetRule.layer,
+          targetProfileKey: targetRule.profileKey,
+          kind: targetRule.kind,
           targetFile,
           newRuleDraft: null,
           before: targetRule.content,
@@ -336,12 +377,27 @@ export class ReplayTaskService {
         proposal.items.push({
           proposalItemId: randomUUID(),
           proposalId: proposal.id,
-          action: targetArea === "examples" ? "add_example" : "add_rule",
-          targetRuleId: "",
+          action: "add_skill_item",
+          targetSkillCode: "",
+          targetLayer: targetArea === "examples" ? "module" : "docType",
+          targetProfileKey:
+            targetArea === "examples"
+              ? materialPack.moduleContext?.moduleSkillKey || normalizeSkillKey(materialPack.moduleContext?.moduleName || "")
+              : materialPack.moduleContext?.documentType || "software_requirement",
+          kind:
+            targetArea === "examples"
+              ? "bad_example"
+              : targetArea === "writing"
+                ? "writing_rule"
+                : targetArea === "extraction"
+                  ? "extraction_rule"
+                  : "validation_rule",
           targetFile,
           newRuleDraft: {
             title,
-            content
+            content,
+            structuredPayload: null,
+            rules: []
           },
           before: "",
           after: content,

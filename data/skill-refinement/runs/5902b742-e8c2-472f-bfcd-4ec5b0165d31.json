@@ -1,0 +1,317 @@
+{
+  "id": "5902b742-e8c2-472f-bfcd-4ec5b0165d31",
+  "triggerCaseId": "f293b06a-6cdf-44f2-9b01-6912c156681f",
+  "baseBundleId": "bundle-base",
+  "candidateBundleId": "",
+  "status": "proposal_review",
+  "proposalItems": [
+    {
+      "id": "e3ca0a66-58f3-480f-a9ae-64545e88f10c",
+      "category": "writing",
+      "targetFile": "requirement_writing.md",
+      "title": "补充 torque_intervention 写作规则",
+      "proposedContent": "- 在 embedded_vcu/torque_intervention 场景下，优先采用多级章节组织需求，例如：章节号 -> 子章节号。\n- 对前轴/后轴或其他物理对象对称的能力，优先拆分为结构对称的子章节。\n- 先写激活标志位判断，再写计算/仲裁逻辑；每条需求尽量只承载一个核心逻辑主题。\n- 计算类需求显式写出优先级顺序、条件分支、默认路径和边界限制。",
+      "editedContent": "- 在 embedded_vcu/torque_intervention 场景下，优先采用多级章节组织需求，例如：章节号 -> 子章节号。\n- 对前轴/后轴或其他物理对象对称的能力，优先拆分为结构对称的子章节。\n- 先写激活标志位判断，再写计算/仲裁逻辑；每条需求尽量只承载一个核心逻辑主题。\n- 计算类需求显式写出优先级顺序、条件分支、默认路径和边界限制。",
+      "reason": "从本次优质范例中抽取出章节组织、句式与边界写法模式。",
+      "basedOnCaseIds": [
+        "f293b06a-6cdf-44f2-9b01-6912c156681f"
+      ],
+      "status": "pending",
+      "createdAt": "2026-04-04T13:55:03.463Z",
+      "updatedAt": "2026-04-04T13:55:03.463Z"
+    },
+    {
+      "id": "6fd104d1-f6b6-4c23-8f12-d7166baf3bf4",
+      "category": "extraction",
+      "targetFile": "requirement_extraction.md",
+      "title": "补充 torque_intervention 抽取规则",
+      "proposedContent": "- 优先抽取激活标志位、阈值、优先级顺序、模式状态、min/max 边界限制。\n- 对 C 文件中的条件分支、赋值关系和前后轴对称变量建立同类候选事实。\n- 对系统需求中的条件项、否则分支和优先级排序做结构化切分。",
+      "editedContent": "- 优先抽取激活标志位、阈值、优先级顺序、模式状态、min/max 边界限制。\n- 对 C 文件中的条件分支、赋值关系和前后轴对称变量建立同类候选事实。\n- 对系统需求中的条件项、否则分支和优先级排序做结构化切分。",
+      "reason": "从系统需求与模型代码的对齐中提炼更稳定的事实抽取策略。",
+      "basedOnCaseIds": [
+        "f293b06a-6cdf-44f2-9b01-6912c156681f"
+      ],
+      "status": "pending",
+      "createdAt": "2026-04-04T13:55:03.463Z",
+      "updatedAt": "2026-04-04T13:55:03.463Z"
+    },
+    {
+      "id": "ecae6035-3c46-46e2-a07a-32a4d2b7b98a",
+      "category": "validation",
+      "targetFile": "requirement_validation.md",
+      "title": "补充 torque_intervention 校验规则",
+      "proposedContent": "- 校验章节层级是否完整，是否按对称对象展开。\n- 校验需求是否保留关键信号名、变量名和内部引用编号。\n- 校验需求是否缺失来源追溯、默认路径或边界限制。",
+      "editedContent": "- 校验章节层级是否完整，是否按对称对象展开。\n- 校验需求是否保留关键信号名、变量名和内部引用编号。\n- 校验需求是否缺失来源追溯、默认路径或边界限制。",
+      "reason": "从人工答案的结构特征中提炼出应重点检查的约束。",
+      "basedOnCaseIds": [
+        "f293b06a-6cdf-44f2-9b01-6912c156681f"
+      ],
+      "status": "pending",
+      "createdAt": "2026-04-04T13:55:03.463Z",
+      "updatedAt": "2026-04-04T13:55:03.463Z"
+    },
+    {
+      "id": "d2705c84-638e-4cf3-8fac-6a66dc21de2c",
+      "category": "good_example",
+      "targetFile": "examples/good_examples.md",
+      "title": "追加 ESC扭矩干预范例 的正例样式",
+      "proposedContent": "1. - 状态：`released`\n- 所属章节：`3.31.1`\n- 主题：ESC干预前轴激活标志位判断\n- 类型：激活标志位逻辑\n- 触发条件（任一满足）：\n  - `ESC_TqDecReqAct_F = 0x1`，且前电机降扭请求标志位激活\n  - `ESC_EHB_RBS_F_Active = 0x1`，且前轴制动再生扭矩请求标志位激活\n  - `ESC_TrqIncReqActv_F = 0x1`，且前电机升扭请求标志位激活\n- 输出行为：\n  - `ESC干预前轴激活标志位 = active`\n- 否则：\n  - `ESC干预前轴激活标志位 = inactive`\n- 阈值说明：\n  - 当前驱电机增扭请求 `ESC_TrqIncReq_F` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为前轴增扭请求标志位激活\n  - 当前轴目标制动再生扭矩 `ESC_EHB_RBS_F_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为前轴制动再生扭矩请求标志位激活\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n2. - 状态：`released`\n- 所属章节：`3.31.1`\n- 主题：ESC干预前轴扭矩计算\n- 类型：扭矩计算逻辑\n- 优先级顺序：\n  - 前轴升扭请求\n  - 前轴降扭请求\n  - 主动制动\n  - ADAS的VLC工况\n  - RBS\n- 计算分支：\n  - 当前轴升扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\n    `ESCWhlTq_tqTarFrntAxle = ESC_TrqIncReq_F`\n  - 当前轴降扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\n    `ESCWhlTq_tqTarFrntAxle = ESC_TqDecReq_F`\n  - 当以下任一条件满足时：\n    - `AEB激活（ESC_AEB_Active）`\n    - `CDP激活（ESC_CDP_Active）`\n    输出：\n    `ESCWhlTq_tqTarFrntAxle = 0`\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位未激活时：\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\n    引用：`SMiVCU-9469`\n- 注：\n  - ESC干预前轴目标扭矩需要经过前轴最大扭矩和前轴最小扭矩限制后得到\n  - 限制相关需求引用：`SMiVCU-9477`\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n3. - 状态：`released`\n- 所属章节：`3.31.2`\n- 主题：ESC干预后轴激活标志位判断\n- 类型：激活标志位逻辑\n- 触发条件（任一满足）：\n  - `ESC_TqDecReqAct_R = 0x1`，且后电机降扭请求标志位激活\n  - `ESC_EHB_RBS_R_Active = 0x1`，且后轴制动再生扭矩请求标志位激活\n  - `ESC_TrqIncReqActv_R = 0x1`，且后电机升扭请求标志位激活\n- 输出行为：\n  - `ESC干预后轴激活标志位 = active`\n- 否则：\n  - `ESC干预后轴激活标志位 = inactive`\n- 阈值说明：\n  - 当后驱电机增扭请求 `ESC_TrqIncReq_R` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为后轴增扭请求标志位激活\n  - 当后轴目标制动再生扭矩 `ESC_EHB_RBS_R_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为后轴制动再生扭矩请求标志位激活\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n4. - 状态：`released`\n- 所属章节：`3.31.2`\n- 主题：ESC干预后轴扭矩计算\n- 类型：扭矩计算逻辑\n- 优先级顺序：\n  - 后轴升扭请求\n  - 后轴降扭请求\n  - 主动制动\n  - ADAS的VLC工况\n  - RBS\n- 计算分支：\n  - 当后轴升扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\n    `ESCWhlTq_tqTarReAxle = ESC_TrqIncReq_R`\n  - 当后轴降扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\n    `ESCWhlTq_tqTarReAxle = ESC_TqDecReq_R`\n  - 当以下任一条件满足时：\n    - `AEB激活（ESC_AEB_Active）`\n    - `CDP激活（ESC_CDP_Active）`\n    输出：\n    `ESCWhlTq_tqTarReAxle = 0`\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarCstRgnReAxle = min(TqSpltArbt_tqTarReAxle, 0)`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位未激活时：\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\n    引用：`SMiVCU-9469`\n- 注：\n  - ESC干预后轴目标扭矩需要经过后轴最大扭矩和后轴最小扭矩限制后得到\n  - 限制相关需求引用：`SMiVCU-9477`\n\n## 提炼摘要\n\n- 主主题：将扭矩干预功能细化为前轴/后轴对称的软件设计需求\n- 结构特征：\n  - 采用 `3.31 -> 3.31.1 / 3.31.2` 的多级章节结构\n  - 前后轴需求按相同模式展开\n  - 先定义激活标志位判断，再定义扭矩计算逻辑\n  - 通过内部引用保证设计需求之间的一致性\n  - 信号、内部变量、控制模式和边界限制均显式写出\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。",
+      "editedContent": "1. - 状态：`released`\n- 所属章节：`3.31.1`\n- 主题：ESC干预前轴激活标志位判断\n- 类型：激活标志位逻辑\n- 触发条件（任一满足）：\n  - `ESC_TqDecReqAct_F = 0x1`，且前电机降扭请求标志位激活\n  - `ESC_EHB_RBS_F_Active = 0x1`，且前轴制动再生扭矩请求标志位激活\n  - `ESC_TrqIncReqActv_F = 0x1`，且前电机升扭请求标志位激活\n- 输出行为：\n  - `ESC干预前轴激活标志位 = active`\n- 否则：\n  - `ESC干预前轴激活标志位 = inactive`\n- 阈值说明：\n  - 当前驱电机增扭请求 `ESC_TrqIncReq_F` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为前轴增扭请求标志位激活\n  - 当前轴目标制动再生扭矩 `ESC_EHB_RBS_F_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为前轴制动再生扭矩请求标志位激活\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n2. - 状态：`released`\n- 所属章节：`3.31.1`\n- 主题：ESC干预前轴扭矩计算\n- 类型：扭矩计算逻辑\n- 优先级顺序：\n  - 前轴升扭请求\n  - 前轴降扭请求\n  - 主动制动\n  - ADAS的VLC工况\n  - RBS\n- 计算分支：\n  - 当前轴升扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\n    `ESCWhlTq_tqTarFrntAxle = ESC_TrqIncReq_F`\n  - 当前轴降扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\n    `ESCWhlTq_tqTarFrntAxle = ESC_TqDecReq_F`\n  - 当以下任一条件满足时：\n    - `AEB激活（ESC_AEB_Active）`\n    - `CDP激活（ESC_CDP_Active）`\n    输出：\n    `ESCWhlTq_tqTarFrntAxle = 0`\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)`\n    引用：`SMiVCU-9469`\n  - 当前轴制动再生扭矩请求标志位未激活时：\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\n    引用：`SMiVCU-9469`\n- 注：\n  - ESC干预前轴目标扭矩需要经过前轴最大扭矩和前轴最小扭矩限制后得到\n  - 限制相关需求引用：`SMiVCU-9477`\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n3. - 状态：`released`\n- 所属章节：`3.31.2`\n- 主题：ESC干预后轴激活标志位判断\n- 类型：激活标志位逻辑\n- 触发条件（任一满足）：\n  - `ESC_TqDecReqAct_R = 0x1`，且后电机降扭请求标志位激活\n  - `ESC_EHB_RBS_R_Active = 0x1`，且后轴制动再生扭矩请求标志位激活\n  - `ESC_TrqIncReqActv_R = 0x1`，且后电机升扭请求标志位激活\n- 输出行为：\n  - `ESC干预后轴激活标志位 = active`\n- 否则：\n  - `ESC干预后轴激活标志位 = inactive`\n- 阈值说明：\n  - 当后驱电机增扭请求 `ESC_TrqIncReq_R` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为后轴增扭请求标志位激活\n  - 当后轴目标制动再生扭矩 `ESC_EHB_RBS_R_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为后轴制动再生扭矩请求标志位激活\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。\n\n4. - 状态：`released`\n- 所属章节：`3.31.2`\n- 主题：ESC干预后轴扭矩计算\n- 类型：扭矩计算逻辑\n- 优先级顺序：\n  - 后轴升扭请求\n  - 后轴降扭请求\n  - 主动制动\n  - ADAS的VLC工况\n  - RBS\n- 计算分支：\n  - 当后轴升扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\n    `ESCWhlTq_tqTarReAxle = ESC_TrqIncReq_R`\n  - 当后轴降扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\n    `ESCWhlTq_tqTarReAxle = ESC_TqDecReq_R`\n  - 当以下任一条件满足时：\n    - `AEB激活（ESC_AEB_Active）`\n    - `CDP激活（ESC_CDP_Active）`\n    输出：\n    `ESCWhlTq_tqTarReAxle = 0`\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\n    `ESCWhlTq_tqTarCstRgnReAxle = min(TqSpltArbt_tqTarReAxle, 0)`\n    引用：`SMiVCU-9469`\n  - 当后轴制动再生扭矩请求标志位未激活时：\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\n    引用：`SMiVCU-9469`\n- 注：\n  - ESC干预后轴目标扭矩需要经过后轴最大扭矩和后轴最小扭矩限制后得到\n  - 限制相关需求引用：`SMiVCU-9477`\n\n## 提炼摘要\n\n- 主主题：将扭矩干预功能细化为前轴/后轴对称的软件设计需求\n- 结构特征：\n  - 采用 `3.31 -> 3.31.1 / 3.31.2` 的多级章节结构\n  - 前后轴需求按相同模式展开\n  - 先定义激活标志位判断，再定义扭矩计算逻辑\n  - 通过内部引用保证设计需求之间的一致性\n  - 信号、内部变量、控制模式和边界限制均显式写出\n原因：来自案例“ESC扭矩干预范例”，保留了章节、条件/分支、信号与引用信息。",
+      "reason": "将当前人工优质范例中的高质量写法追加到正例库。",
+      "basedOnCaseIds": [
+        "f293b06a-6cdf-44f2-9b01-6912c156681f"
+      ],
+      "status": "pending",
+      "createdAt": "2026-04-04T13:55:03.463Z",
+      "updatedAt": "2026-04-04T13:55:03.463Z"
+    },
+    {
+      "id": "76154b81-25fc-4bc8-9953-b8d6c80f1daf",
+      "category": "domain_knowledge",
+      "targetFile": "domain-knowledge.json",
+      "title": "更新 torque_intervention 领域知识",
+      "proposedContent": "{\n  \"examples\": [\n    {\n      \"requirementId\": \"SMiVCU-10160\",\n      \"topic\": \"SMiVCU-10160\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.1`\\n- 主题：ESC干预前轴激活标志位判断\\n- 类型：激活标志位逻辑\\n- 触发条件（任一满足）：\\n  - `ESC_TqDecReqAct_F = 0x1`，且前电机降扭请求标志位激活\\n  - `ESC_EHB_RBS_F_Active = 0x1`，且前轴制动再生扭矩请求标志位激活\\n  - `ESC_TrqIncReqActv_F = 0x1`，且前电机升扭请求标志位激活\\n- 输出行为：\\n  - `ESC干预前轴激活标志位 = active`\\n- 否则：\\n  - `ESC干预前轴激活标志位 = inactive`\\n- 阈值说明：\\n  - 当前驱电机增扭请求 `ESC_TrqIncReq_F` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为前轴增扭请求标志位激活\\n  - 当前轴目标制动再生扭矩 `ESC_EHB_RBS_F_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为前轴制动再生扭矩请求标志位激活\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_F\",\n        \"ESC_EHB_RBS_F_Active\",\n        \"ESC_TrqIncReqActv_F\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ],\n      \"references\": [],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10160\",\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_F\",\n        \"ESC_EHB_RBS_F_Active\",\n        \"ESC_TrqIncReqActv_F\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10597\",\n      \"topic\": \"SMiVCU-10597\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.1`\\n- 主题：ESC干预前轴扭矩计算\\n- 类型：扭矩计算逻辑\\n- 优先级顺序：\\n  - 前轴升扭请求\\n  - 前轴降扭请求\\n  - 主动制动\\n  - ADAS的VLC工况\\n  - RBS\\n- 计算分支：\\n  - 当前轴升扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\\n    `ESCWhlTq_tqTarFrntAxle = ESC_TrqIncReq_F`\\n  - 当前轴降扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\\n    `ESCWhlTq_tqTarFrntAxle = ESC_TqDecReq_F`\\n  - 当以下任一条件满足时：\\n    - `AEB激活（ESC_AEB_Active）`\\n    - `CDP激活（ESC_CDP_Active）`\\n    输出：\\n    `ESCWhlTq_tqTarFrntAxle = 0`\\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位未激活时：\\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\\n    引用：`SMiVCU-9469`\\n- 注：\\n  - ESC干预前轴目标扭矩需要经过前轴最大扭矩和前轴最小扭矩限制后得到\\n  - 限制相关需求引用：`SMiVCU-9477`\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"SMiVCU\",\n        \"active\",\n        \"ESCWhlTq_tqTarFrntAxle\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_TqDecReq_F\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarFrntAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ],\n      \"references\": [\n        \"SMiVCU-10160\",\n        \"SMiVCU-9469\",\n        \"SMiVCU-9477\"\n      ],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10597\",\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"active\",\n        \"ESCWhlTq_tqTarFrntAxle\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_TqDecReq_F\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarFrntAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10161\",\n      \"topic\": \"SMiVCU-10161\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.2`\\n- 主题：ESC干预后轴激活标志位判断\\n- 类型：激活标志位逻辑\\n- 触发条件（任一满足）：\\n  - `ESC_TqDecReqAct_R = 0x1`，且后电机降扭请求标志位激活\\n  - `ESC_EHB_RBS_R_Active = 0x1`，且后轴制动再生扭矩请求标志位激活\\n  - `ESC_TrqIncReqActv_R = 0x1`，且后电机升扭请求标志位激活\\n- 输出行为：\\n  - `ESC干预后轴激活标志位 = active`\\n- 否则：\\n  - `ESC干预后轴激活标志位 = inactive`\\n- 阈值说明：\\n  - 当后驱电机增扭请求 `ESC_TrqIncReq_R` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为后轴增扭请求标志位激活\\n  - 当后轴目标制动再生扭矩 `ESC_EHB_RBS_R_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为后轴制动再生扭矩请求标志位激活\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_R\",\n        \"ESC_EHB_RBS_R_Active\",\n        \"ESC_TrqIncReqActv_R\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\"\n      ],\n      \"references\": [],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10161\",\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_R\",\n        \"ESC_EHB_RBS_R_Active\",\n        \"ESC_TrqIncReqActv_R\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10598\",\n      \"topic\": \"SMiVCU-10598\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.2`\\n- 主题：ESC干预后轴扭矩计算\\n- 类型：扭矩计算逻辑\\n- 优先级顺序：\\n  - 后轴升扭请求\\n  - 后轴降扭请求\\n  - 主动制动\\n  - ADAS的VLC工况\\n  - RBS\\n- 计算分支：\\n  - 当后轴升扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\\n    `ESCWhlTq_tqTarReAxle = ESC_TrqIncReq_R`\\n  - 当后轴降扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\\n    `ESCWhlTq_tqTarReAxle = ESC_TqDecReq_R`\\n  - 当以下任一条件满足时：\\n    - `AEB激活（ESC_AEB_Active）`\\n    - `CDP激活（ESC_CDP_Active）`\\n    输出：\\n    `ESCWhlTq_tqTarReAxle = 0`\\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarCstRgnReAxle = min(TqSpltArbt_tqTarReAxle, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位未激活时：\\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\\n    引用：`SMiVCU-9469`\\n- 注：\\n  - ESC干预后轴目标扭矩需要经过后轴最大扭矩和后轴最小扭矩限制后得到\\n  - 限制相关需求引用：`SMiVCU-9477`\\n\\n## 提炼摘要\\n\\n- 主主题：将扭矩干预功能细化为前轴/后轴对称的软件设计需求\\n- 结构特征：\\n  - 采用 `3.31 -> 3.31.1 / 3.31.2` 的多级章节结构\\n  - 前后轴需求按相同模式展开\\n  - 先定义激活标志位判断，再定义扭矩计算逻辑\\n  - 通过内部引用保证设计需求之间的一致性\\n  - 信号、内部变量、控制模式和边界限制均显式写出\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"SMiVCU\",\n        \"active\",\n        \"ESCWhlTq_tqTarReAxle\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_TqDecReq_R\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarReAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\",\n        \"ESCWhlTq_tqTarCstRgnReAxle\"\n      ],\n      \"references\": [\n        \"SMiVCU-10161\",\n        \"SMiVCU-9469\",\n        \"SMiVCU-9477\"\n      ],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10598\",\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"active\",\n        \"ESCWhlTq_tqTarReAxle\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_TqDecReq_R\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarReAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\",\n        \"ESCWhlTq_tqTarCstRgnReAxle\"\n      ]\n    }\n  ],\n  \"ruleHints\": [\n    {\n      \"domain\": \"embedded_vcu\",\n      \"subdomain\": \"torque_intervention\",\n      \"sectionHints\": [],\n      \"generatedFromCaseId\": \"f293b06a-6cdf-44f2-9b01-6912c156681f\"\n    }\n  ],\n  \"antiPatterns\": []\n}",
+      "editedContent": "{\n  \"examples\": [\n    {\n      \"requirementId\": \"SMiVCU-10160\",\n      \"topic\": \"SMiVCU-10160\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.1`\\n- 主题：ESC干预前轴激活标志位判断\\n- 类型：激活标志位逻辑\\n- 触发条件（任一满足）：\\n  - `ESC_TqDecReqAct_F = 0x1`，且前电机降扭请求标志位激活\\n  - `ESC_EHB_RBS_F_Active = 0x1`，且前轴制动再生扭矩请求标志位激活\\n  - `ESC_TrqIncReqActv_F = 0x1`，且前电机升扭请求标志位激活\\n- 输出行为：\\n  - `ESC干预前轴激活标志位 = active`\\n- 否则：\\n  - `ESC干预前轴激活标志位 = inactive`\\n- 阈值说明：\\n  - 当前驱电机增扭请求 `ESC_TrqIncReq_F` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为前轴增扭请求标志位激活\\n  - 当前轴目标制动再生扭矩 `ESC_EHB_RBS_F_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为前轴制动再生扭矩请求标志位激活\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_F\",\n        \"ESC_EHB_RBS_F_Active\",\n        \"ESC_TrqIncReqActv_F\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ],\n      \"references\": [],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10160\",\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_F\",\n        \"ESC_EHB_RBS_F_Active\",\n        \"ESC_TrqIncReqActv_F\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10597\",\n      \"topic\": \"SMiVCU-10597\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.1`\\n- 主题：ESC干预前轴扭矩计算\\n- 类型：扭矩计算逻辑\\n- 优先级顺序：\\n  - 前轴升扭请求\\n  - 前轴降扭请求\\n  - 主动制动\\n  - ADAS的VLC工况\\n  - RBS\\n- 计算分支：\\n  - 当前轴升扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\\n    `ESCWhlTq_tqTarFrntAxle = ESC_TrqIncReq_F`\\n  - 当前轴降扭请求标志位（引用 `SMiVCU-10160`）为 `active` 时：\\n    `ESCWhlTq_tqTarFrntAxle = ESC_TqDecReq_F`\\n  - 当以下任一条件满足时：\\n    - `AEB激活（ESC_AEB_Active）`\\n    - `CDP激活（ESC_CDP_Active）`\\n    输出：\\n    `ESCWhlTq_tqTarFrntAxle = 0`\\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当前轴制动再生扭矩请求标志位未激活时：\\n    `ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle`\\n    引用：`SMiVCU-9469`\\n- 注：\\n  - ESC干预前轴目标扭矩需要经过前轴最大扭矩和前轴最小扭矩限制后得到\\n  - 限制相关需求引用：`SMiVCU-9477`\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"SMiVCU\",\n        \"active\",\n        \"ESCWhlTq_tqTarFrntAxle\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_TqDecReq_F\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarFrntAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ],\n      \"references\": [\n        \"SMiVCU-10160\",\n        \"SMiVCU-9469\",\n        \"SMiVCU-9477\"\n      ],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10597\",\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"active\",\n        \"ESCWhlTq_tqTarFrntAxle\",\n        \"ESC_TrqIncReq_F\",\n        \"ESC_TqDecReq_F\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarFrntAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_F_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10161\",\n      \"topic\": \"SMiVCU-10161\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.2`\\n- 主题：ESC干预后轴激活标志位判断\\n- 类型：激活标志位逻辑\\n- 触发条件（任一满足）：\\n  - `ESC_TqDecReqAct_R = 0x1`，且后电机降扭请求标志位激活\\n  - `ESC_EHB_RBS_R_Active = 0x1`，且后轴制动再生扭矩请求标志位激活\\n  - `ESC_TrqIncReqActv_R = 0x1`，且后电机升扭请求标志位激活\\n- 输出行为：\\n  - `ESC干预后轴激活标志位 = active`\\n- 否则：\\n  - `ESC干预后轴激活标志位 = inactive`\\n- 阈值说明：\\n  - 当后驱电机增扭请求 `ESC_TrqIncReq_R` 大于 ESC 扭矩干预低阈值，且小于等于 ESC 扭矩干预高阈值时，认为后轴增扭请求标志位激活\\n  - 当后轴目标制动再生扭矩 `ESC_EHB_RBS_R_TargetRegenTrq` 大于等于 ESC 扭矩干预低阈值，且小于 `0` 时，认为后轴制动再生扭矩请求标志位激活\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_R\",\n        \"ESC_EHB_RBS_R_Active\",\n        \"ESC_TrqIncReqActv_R\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\"\n      ],\n      \"references\": [],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10161\",\n        \"released\",\n        \"ESC\",\n        \"ESC_TqDecReqAct_R\",\n        \"ESC_EHB_RBS_R_Active\",\n        \"ESC_TrqIncReqActv_R\",\n        \"active\",\n        \"inactive\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\"\n      ]\n    },\n    {\n      \"requirementId\": \"SMiVCU-10598\",\n      \"topic\": \"SMiVCU-10598\",\n      \"sectionNumber\": \"\",\n      \"requirementType\": \"activation_flag_logic\",\n      \"requirementText\": \"- 状态：`released`\\n- 所属章节：`3.31.2`\\n- 主题：ESC干预后轴扭矩计算\\n- 类型：扭矩计算逻辑\\n- 优先级顺序：\\n  - 后轴升扭请求\\n  - 后轴降扭请求\\n  - 主动制动\\n  - ADAS的VLC工况\\n  - RBS\\n- 计算分支：\\n  - 当后轴升扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\\n    `ESCWhlTq_tqTarReAxle = ESC_TrqIncReq_R`\\n  - 当后轴降扭请求标志位（引用 `SMiVCU-10161`）为 `active` 时：\\n    `ESCWhlTq_tqTarReAxle = ESC_TqDecReq_R`\\n  - 当以下任一条件满足时：\\n    - `AEB激活（ESC_AEB_Active）`\\n    - `CDP激活（ESC_CDP_Active）`\\n    输出：\\n    `ESCWhlTq_tqTarReAxle = 0`\\n  - 当 APA 或 ACC 激活，且 VLC 扭矩控制激活（`ESC_VLC_TorqCtrlActive`）时：\\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位激活，且 `VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt` 时：\\n    `ESCWhlTq_tqTarCstRgnReAxle = min(TqSpltArbt_tqTarReAxle, 0)`\\n    引用：`SMiVCU-9469`\\n  - 当后轴制动再生扭矩请求标志位未激活时：\\n    `ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle`\\n    引用：`SMiVCU-9469`\\n- 注：\\n  - ESC干预后轴目标扭矩需要经过后轴最大扭矩和后轴最小扭矩限制后得到\\n  - 限制相关需求引用：`SMiVCU-9477`\\n\\n## 提炼摘要\\n\\n- 主主题：将扭矩干预功能细化为前轴/后轴对称的软件设计需求\\n- 结构特征：\\n  - 采用 `3.31 -> 3.31.1 / 3.31.2` 的多级章节结构\\n  - 前后轴需求按相同模式展开\\n  - 先定义激活标志位判断，再定义扭矩计算逻辑\\n  - 通过内部引用保证设计需求之间的一致性\\n  - 信号、内部变量、控制模式和边界限制均显式写出\",\n      \"signals\": [\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"SMiVCU\",\n        \"active\",\n        \"ESCWhlTq_tqTarReAxle\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_TqDecReq_R\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarReAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\",\n        \"ESCWhlTq_tqTarCstRgnReAxle\"\n      ],\n      \"references\": [\n        \"SMiVCU-10161\",\n        \"SMiVCU-9469\",\n        \"SMiVCU-9477\"\n      ],\n      \"keywords\": [\n        \"SMiVCU\",\n        \"10598\",\n        \"released\",\n        \"ESC\",\n        \"ADAS\",\n        \"VLC\",\n        \"RBS\",\n        \"active\",\n        \"ESCWhlTq_tqTarReAxle\",\n        \"ESC_TrqIncReq_R\",\n        \"ESC_TqDecReq_R\",\n        \"AEB\",\n        \"ESC_AEB_Active\",\n        \"CDP\",\n        \"ESC_CDP_Active\",\n        \"APA\",\n        \"ACC\",\n        \"ESC_VLC_TorqCtrlActive\",\n        \"TqSpltArbt_tqTarReAxle\",\n        \"VehCfg_stRBCCtrlModeSel\",\n        \"ESPCtrlSplt\",\n        \"min\",\n        \"ESC_EHB_RBS_R_TargetRegenTrq\",\n        \"ESCWhlTq_tqTarCstRgnReAxle\"\n      ]\n    }\n  ],\n  \"ruleHints\": [\n    {\n      \"domain\": \"embedded_vcu\",\n      \"subdomain\": \"torque_intervention\",\n      \"sectionHints\": [],\n      \"generatedFromCaseId\": \"f293b06a-6cdf-44f2-9b01-6912c156681f\"\n    }\n  ],\n  \"antiPatterns\": []\n}",
+      "reason": "把章节提示、few-shot 样例和领域反模式纳入 bundle 领域知识。",
+      "basedOnCaseIds": [
+        "f293b06a-6cdf-44f2-9b01-6912c156681f"
+      ],
+      "status": "pending",
+      "createdAt": "2026-04-04T13:55:03.463Z",
+      "updatedAt": "2026-04-04T13:55:03.463Z"
+    }
+  ],
+  "proposalSummary": "Refined from benchmark case ESC扭矩干预范例 (f293b06a-6cdf-44f2-9b01-6912c156681f).",
+  "initialAssessment": {
+    "generatedRequirements": [
+      {
+        "id": "6d26755f-5976-402a-bdb1-ed5e29a912f9",
+        "requirementId": "SWR-001",
+        "title": "ESC前轴扭矩干预 - 激活标志位判断",
+        "requirementText": "当满足以下任一条件时，前轴ESC扭矩干预激活标志位ESCWhlTq_bFrntAxleTqIntvActv置为active：1. 前轴降扭请求有效标志icesc_bFrntAxleTqDecActv为真，且降扭请求值在[ESCWhlTq_tqESCIntvMin_C, ESCWhlTq_tqESCIntvMax_C]区间内；2. 前轴升扭请求有效标志icesc_bFrntAxleTqIncActv为真，且升扭请求值在[ESCWhlTq_tqESCIntvMin_C, ESCWhlTq_tqESCIntvMax_C]区间内；3. 前轴制动再生请求有效标志icesc_bFrntAxleRBSTqActv为真，且再生扭矩请求值在[ESCWhlTq_tqESCIntvMin_C, ESCWhlTq_tqESCIntvMax_C]区间内；4. 前轴CCO扭矩请求有效标志icesc_bCCOFrntTqReqVld为真；5. 前轴ISA扭矩请求有效标志icesc_bISAFrntTqReqVld为真。否则ESCWhlTq_bFrntAxleTqIntvActv置为inactive。",
+        "type": "functional",
+        "sourceRefs": [
+          {
+            "fileName": "system-requirements-example-torque-intervention.md",
+            "location": "page:1",
+            "excerpt": "当 ESC 有升扭/降扭和制动再生扭矩请求时，VCU 应响应 ESC 扭矩干预请求"
+          },
+          {
+            "fileName": "ESCWhlTq.pdf",
+            "location": "page:1",
+            "excerpt": "ESCWhlTq_bFrntAxleTqIntvActv 布尔类型输出变量，代表前轴ESC扭矩干预激活标志"
+          },
+          {
+            "fileName": "ESCWhlTq.c",
+            "location": "assignment",
+            "excerpt": "赋值: ESCWhlTq_bFrntAxleTqIntvActv = (rtb_AND || ESCWhlTq_bFrntAxleTqDecActv || rtb_AND2 || rtb_AND9 || rtb_AND11)"
+          }
+        ],
+        "rationale": "符合系统需求对ESC扭矩干预的响应要求，匹配模型侧前轴激活标志位的判断逻辑，满足可追溯性要求。",
+        "verificationHint": "通过功能测试验证输入触发与输出响应",
+        "confidence": 0.95,
+        "conflictNote": "",
+        "review": {
+          "status": "pending",
+          "reviewer": "",
+          "comment": "",
+          "updatedAt": ""
+        }
+      },
+      {
+        "id": "b561273e-228b-4682-90b6-12b7c5a43c84",
+        "requirementId": "SWR-002",
+        "title": "ESC前轴扭矩干预 - 扭矩计算",
+        "requirementText": "ESC干预前轴目标扭矩ESCWhlTq_tqTarFrntAxle的计算优先级顺序为：前轴升扭请求 > 前轴降扭请求 > 主动制动(AEB/CDP/ABS/EBD) > ADAS VLC工况 > CCO请求 > ISA请求 > RBS。当AEB/CDP/ABS/EBD任一功能激活时，输出值为0；当前轴升扭请求有效时，输出值为icesc_tqReqFrntAxleInc；当前轴降扭请求有效时，输出值为icesc_tqReqFrntAxleDec；当APA/ACC激活且VLC扭矩控制有效时，输出值为TqSpltArbt_tqTarFrntAxle；当前轴RBS请求有效且VehCfg_stRBCCtrlModeSel=0x3时，输出值为min(TqSpltArbt_tqTarFrntAxle + icesc_tqRBSReqFrntAxle, 0)；当前轴RBS请求有效且VehCfg_stRBCCtrlModeSel≠0x3时，输出值为min(TqSpltArbt_tqTarFrntAxle, 0)；其他场景输出值为TqSpltArbt_tqTarFrntAxle。注：最终输出需经过PwrLimEM_tqMaxFrntAxle和PwrLimEM_tqMinFrntAxle限幅处理。",
+        "type": "functional",
+        "sourceRefs": [
+          {
+            "fileName": "system-requirements-example-torque-intervention.md",
+            "location": "page:1",
+            "excerpt": "优先级顺序为：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS"
+          },
+          {
+            "fileName": "ESCWhlTq.pdf",
+            "location": "page:1",
+            "excerpt": "ESCWhlTq_tqTarFrntAxle 单精度浮点类型输出变量，代表前轴ESC干预目标扭矩"
+          },
+          {
+            "fileName": "ESCWhlTq.c",
+            "location": "assignment",
+            "excerpt": "赋值: rtb_TmpSignalConversionAtPwrL_a = fminf(rtb_TmpSignalConversionAtPwrLim, fmaxf(rtb_Switch2, rtb_TmpSignalConversionAtPwrL_a))"
+          }
+        ],
+        "rationale": "符合系统需求对扭矩优先级的定义，匹配模型侧前轴扭矩计算逻辑，覆盖所有分支场景和边界限制。",
+        "verificationHint": "通过功能测试验证输入触发与输出响应",
+        "confidence": 0.95,
+        "conflictNote": "",
+        "review": {
+          "status": "pending",
+          "reviewer": "",
+          "comment": "",
+          "updatedAt": ""
+        }
+      },
+      {
+        "id": "9ddb491e-6f94-4942-b79b-f2180f43e44c",
+        "requirementId": "SWR-003",
+        "title": "ESC后轴扭矩干预 - 激活标志位判断",
+        "requirementText": "当满足以下任一条件时，后轴ESC扭矩干预激活标志位ESCWhlTq_bReAxleTqIntvActv置为active：1. 后轴降扭请求有效标志icesc_bReAxleTqDecActv为真，且降扭请求值在[ESCWhlTq_tqESCIntvMin_C, ESCWhlTq_tqESCIntvMax_C]区间内；2. 后轴升扭请求有效标志icesc_bReAxleTqIncActv为真，且升扭请求值在[ESCWhlTq_tqESCIntvMin_C, ESCWhlTq_tqESCIntvMax_C]区间内；3. 后轴制动再生请求有效标志icesc_bReAxleRBSTqActv为真，且再生扭矩请求值在[ESCWhlTq_tqESCIntvMin_C, ESCWhlTq_tqESCIntvMax_C]区间内；4. 后轴CCO扭矩请求有效标志icesc_bCCOReTqReqVld为真；5. 后轴ISA扭矩请求有效标志icesc_bISAReTqReqVld为真。否则ESCWhlTq_bReAxleTqIntvActv置为inactive。",
+        "type": "functional",
+        "sourceRefs": [
+          {
+            "fileName": "system-requirements-example-torque-intervention.md",
+            "location": "page:1",
+            "excerpt": "VCU 应对前/后轴目标扭矩进行计算"
+          },
+          {
+            "fileName": "ESCWhlTq.pdf",
+            "location": "page:1",
+            "excerpt": "ESCWhlTq_bReAxleTqIntvActv 布尔类型输出变量，代表后轴ESC扭矩干预激活标志"
+          },
+          {
+            "fileName": "ESCWhlTq.c",
+            "location": "assignment",
+            "excerpt": "赋值: ESCWhlTq_bReAxleTqDecActv = (rtb_OR3_g && ESCWhlTq_bTqDecIntvEna_C && ((rtb_TmpSignalConversionAtices_f >= ESCWhlTq_tqESCIntvMin_C) && (rtb_TmpSignalConversionAtices_f <= ESCWhlTq_tqESCIntvMax_C)))"
+          }
+        ],
+        "rationale": "与前轴激活逻辑对称，符合系统需求对前后轴统一处理的要求，匹配模型侧后轴激活标志位判断逻辑。",
+        "verificationHint": "通过功能测试验证输入触发与输出响应",
+        "confidence": 0.95,
+        "conflictNote": "",
+        "review": {
+          "status": "pending",
+          "reviewer": "",
+          "comment": "",
+          "updatedAt": ""
+        }
+      },
+      {
+        "id": "2969d5e5-63a7-4091-8d50-1f0ee72add16",
+        "requirementId": "SWR-004",
+        "title": "ESC后轴扭矩干预 - 扭矩计算",
+        "requirementText": "ESC干预后轴目标扭矩ESCWhlTq_tqTarReAxle的计算优先级顺序为：后轴升扭请求 > 后轴降扭请求 > 主动制动(AEB/CDP/ABS/EBD) > ADAS VLC工况 > CCO请求 > ISA请求 > RBS。当AEB/CDP/ABS/EBD任一功能激活时，输出值为0；当前后轴升扭请求有效时，输出值为icesc_tqReqReAxleInc；当前后轴降扭请求有效时，输出值为icesc_tqReqReAxleDec；当APA/ACC激活且VLC扭矩控制有效时，输出值为TqSpltArbt_tqTarReAxle；当后轴RBS请求有效且VehCfg_stRBCCtrlModeSel=0x3时，输出值为min(TqSpltArbt_tqTarReAxle + icesc_tqRBSReqReAxle, 0)；当后轴RBS请求有效且VehCfg_stRBCCtrlModeSel≠0x3时，输出值为min(TqSpltArbt_tqTarReAxle, 0)；其他场景输出值为TqSpltArbt_tqTarReAxle。注：最终输出需经过PwrLimEM_tqMaxReAxle和PwrLimEM_tqMinReAxle限幅处理。",
+        "type": "functional",
+        "sourceRefs": [
+          {
+            "fileName": "system-requirements-example-torque-intervention.md",
+            "location": "page:1",
+            "excerpt": "VCU 应对前/后轴目标扭矩进行计算"
+          },
+          {
+            "fileName": "ESCWhlTq.pdf",
+            "location": "page:1",
+            "excerpt": "ESCWhlTq_tqTarReAxle 单精度浮点类型输出变量，代表后轴ESC干预目标扭矩"
+          },
+          {
+            "fileName": "ESCWhlTq.c",
+            "location": "assignment",
+            "excerpt": "赋值: rtb_TmpSignalConversionAtPwrL_d >= rtb_TmpSignalConversionAtPwrL_n"
+          }
+        ],
+        "rationale": "与前轴扭矩计算逻辑对称，符合系统需求对扭矩优先级的定义，匹配模型侧后轴扭矩计算逻辑。",
+        "verificationHint": "通过功能测试验证输入触发与输出响应",
+        "confidence": 0.95,
+        "conflictNote": "",
+        "review": {
+          "status": "pending",
+          "reviewer": "",
+          "comment": "",
+          "updatedAt": ""
+        }
+      },
+      {
+        "id": "aeca2a5f-4161-483c-a8e9-ef94f12e423f",
+        "requirementId": "SWR-005",
+        "title": "ESC扭矩干预接口信号定义",
+        "requirementText": "ESC扭矩干预模块的输入信号应包含：ESC升扭/降扭请求信号、主动安全功能激活信号、RBS扭矩请求信号、VLC扭矩控制信号、CCO/ISA扭矩请求信号、扭矩仲裁输出前后轴目标扭矩信号、上下限扭矩限制信号、RBC控制模式信号；输出信号应包含：前后轴ESC扭矩干预激活标志位、前后轴ESC干预目标扭矩、前后轴仅RBS激活标志位、前后轴扭矩降扭激活标志位。所有信号命名与模型侧定义保持一致。",
+        "type": "interface",
+        "sourceRefs": [
+          {
+            "fileName": "ESCWhlTq.pdf",
+            "location": "page:1",
+            "excerpt": "列出所有输入输出信号列表，包含icesc_前缀输入信号和ESCWhlTq_前缀输出信号"
+          }
+        ],
+        "rationale": "匹配模型侧接口定义，满足上下游模块的交互要求，保证信号一致性。",
+        "verificationHint": "通过接口联调或仿真验证信号定义和边界",
+        "confidence": 0.9,
+        "conflictNote": "",
+        "review": {
+          "status": "pending",
+          "reviewer": "",
+          "comment": "",
+          "updatedAt": ""
+        }
+      },
+      {
+        "id": "4799fe64-7393-444d-a184-bf7b011fa51f",
+        "requirementId": "SWR-006",
+        "title": "ESC扭矩干预扭矩变化率控制",
+        "requirementText": "当ABS/AEB/DTC/ASR/VDC/CDP任一安全相关功能激活时，前后轴目标扭矩的变化率采用大斜率参数，实现快速响应；当所有安全相关功能均退出激活时，前后轴目标扭矩的变化率采用小斜率参数，实现平顺过渡。",
+        "type": "state",
+        "sourceRefs": [
+          {
+            "fileName": "system-requirements-example-torque-intervention.md",
+            "location": "page:1",
+            "excerpt": "安全相关功能激活时，需快速响应；安全相关功能退出激活时，需慢速响应"
+          }
+        ],
+        "rationale": "符合系统需求对安全功能响应速度的要求，兼顾驾驶安全性和舒适性。",
+        "verificationHint": "通过状态迁移测试验证模式切换行为",
+        "confidence": 0.9,
+        "conflictNote": "",
+        "review": {
+          "status": "pending",
+          "reviewer": "",
+          "comment": "",
+          "updatedAt": ""
+        }
+      }
+    ],
+    "scoreResult": {
+      "caseId": "f293b06a-6cdf-44f2-9b01-6912c156681f",
+      "overallScore": 51.07,
+      "baselineOverallScore": 0,
+      "overallScoreDelta": 51.07,
+      "dimensionScores": {
+        "section_structure_score": 20,
+        "requirement_coverage_score": 0.9,
+        "logic_branch_score": 20,
+        "signal_reference_score": 1.17,
+        "traceability_score": 15,
+        "writing_quality_score": 10
+      },
+      "baselineDimensionScores": {
+        "section_structure_score": 0,
+        "requirement_coverage_score": 0,
+        "logic_branch_score": 0,
+        "signal_reference_score": 0,
+        "traceability_score": 0,
+        "writing_quality_score": 0
+      },
+      "penalties": {
+        "hallucination_penalty": 0,
+        "missing_critical_item_penalty": 16
+      },
+      "regressions": [],
+      "improvements": [
+        "总体得分从 0 提升到 51.07"
+      ],
+      "generatedRequirementCount": 6,
+      "baselineRequirementCount": 0
+    }
+  },
+  "stageStatus": {
+    "case_ingested": "completed",
+    "golden_structured": "completed",
+    "active_skill_scored": "completed",
+    "proposal_generated": "completed",
+    "candidate_benchmark": "idle",
+    "decision": "waiting_for_proposal_review"
+  },
+  "evaluationRunId": "",
+  "decisionHints": null,
+  "createdAt": "2026-04-04T13:55:03.464Z",
+  "updatedAt": "2026-04-04T13:55:03.464Z"
+}

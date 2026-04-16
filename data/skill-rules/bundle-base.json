@@ -1,0 +1,3141 @@
+{
+  "bundleId": "bundle-base",
+  "ruleIndexVersion": "import-1775980215892",
+  "importedAt": "2026-04-12T07:50:15.892Z",
+  "skillDir": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/skills/active",
+  "rules": [
+    {
+      "id": "3273de05-15b7-4a42-a97a-dfdccb29dda8",
+      "ruleId": "RE-001",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "任务目标",
+      "title": "任务目标 1",
+      "content": "从系统需求 PDF、模型 PDF、生成 C 文件中抽取能支撑软件设计需求编写的结构化事实。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.886Z",
+      "updatedAt": "2026-04-12T07:50:15.886Z"
+    },
+    {
+      "id": "0036c181-78fe-4841-81c0-ba9d2e4c385a",
+      "ruleId": "RE-002",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "任务目标",
+      "title": "任务目标 2",
+      "content": "重点抽取条件、状态、优先级、阈值、边界、内部变量、仲裁路径和内部引用线索。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "975b0c07-be5b-4999-9637-9ebac055e114",
+      "ruleId": "RE-003",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "任务目标",
+      "title": "任务目标 3",
+      "content": "不直接生成需求正文；先把证据整理成后续写作可消费的事实。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "46477d0a-a113-4d13-af75-0b8583a915f7",
+      "ruleId": "RE-004",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "任务目标",
+      "title": "任务目标 4",
+      "content": "对需遵守 ISO 26262 的输出，优先保障命名精度和来源一致性，确保需求条目能够充当单一真实来源（Single Source of Truth）。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ba709d3b-fb97-4ebf-9e9e-613494bdc8f7",
+      "ruleId": "RE-005",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 1",
+      "content": "优先抽取带编号的系统需求条目及其章节上下文。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "6b21f5c0-6ac3-46b0-a3bc-08fc448e8a45",
+      "ruleId": "RE-006",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 2",
+      "content": "对每条系统需求优先拆出：主题、触发条件、期望行为、优先级顺序、默认行为、适用对象。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "6883080c-3f4c-4809-9187-38caeb2785e9",
+      "ruleId": "RE-007",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 3",
+      "content": "若系统需求中出现“当...时”“否则”“任一条件”“优先级顺序为”等表达，应保留其结构。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "5a8cf721-45a5-4d45-a1e2-03e345dc9839",
+      "ruleId": "RE-008",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 4",
+      "content": "对前轴/后轴、前后轮、左右侧等对称对象，应标记为对称候选事实。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "4b935e39-0609-4d31-b7cc-4256ca6773f2",
+      "ruleId": "RE-009",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 5",
+      "content": "若系统需求和样例都指向“扭矩干预”领域，应进一步标记以下四类候选条目：",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "f2f401cf-c187-4809-a9e6-96af52db9049",
+      "ruleId": "RE-010",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 6",
+      "content": "前轴激活标志位判断",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "c7634be1-07f6-4b7c-91be-a5f9c8cec56a",
+      "ruleId": "RE-011",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 7",
+      "content": "前轴扭矩计算",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "daa7b354-de69-48a8-acae-9b012c34225a",
+      "ruleId": "RE-012",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 8",
+      "content": "后轴激活标志位判断",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "390c1332-161f-4c0e-9d11-97364f0fbd2e",
+      "ruleId": "RE-013",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 9",
+      "content": "后轴扭矩计算",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "4e1bab06-a921-49fd-aa06-6f14ccd00e7f",
+      "ruleId": "RE-014",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "系统需求侧抽取规则",
+      "title": "系统需求侧抽取规则 10",
+      "content": "对“无主动安全功能激活”“否则”“不再满足时”等默认或退出条件，应单独抽取，避免后续写作时丢失兜底路径。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "f6f621bf-626f-4722-93a3-9eab284991a3",
+      "ruleId": "RE-015",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 1",
+      "content": "从 C 文件中优先抽取函数、条件分支、赋值关系、宏定义、限幅逻辑和模式判断。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "cf7d64d8-a02a-4b07-9bdc-16fb1e5c5306",
+      "ruleId": "RE-016",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 2",
+      "content": "优先识别布尔标志位、扭矩请求、制动再生请求、阈值上下限、模式枚举值和目标扭矩输出变量。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e3d0d88b-bb54-47ca-b9fc-6e1fdabf2327",
+      "ruleId": "RE-017",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 3",
+      "content": "若同一逻辑同时在 PDF 和 C 文件中出现，PDF 更适合作为结构提示，C 更适合作为实现细节证据。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "dfefb53b-ee62-4841-ba89-e7434ae76206",
+      "ruleId": "RE-018",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 4",
+      "content": "从模型产物中抽取的事实只能补充和细化系统需求，不能覆盖系统需求的优先级和边界。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "753fef8e-7dbd-4f07-8542-0f249bccc21e",
+      "ruleId": "RE-019",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 5",
+      "content": "对扭矩干预领域，优先把代码事实归并到以下设计主题中，而不是只做零散抽取：",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e765f16d-e911-4beb-991b-62b99a35b7e6",
+      "ruleId": "RE-020",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 6",
+      "content": "激活标志位赋值表达式",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ffd54cf1-d1c7-4dec-bad2-2efa50c9825c",
+      "ruleId": "RE-021",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 7",
+      "content": "升扭/降扭/RBS/ISA/CCO 触发条件",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "a3671b29-e3d9-4bc6-bbd5-032b74843c63",
+      "ruleId": "RE-022",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 8",
+      "content": "AEB/CDP 等置零条件",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "b6fe24ee-8a95-42ec-af51-09b905988f38",
+      "ruleId": "RE-023",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 9",
+      "content": "`VehCfg_stRBCCtrlModeSel` 等模式分支",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "74e66903-c50f-4af2-8df1-2d7ff3365eaa",
+      "ruleId": "RE-024",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 10",
+      "content": "`TqSpltArbt_tqTarFrntAxle / TqSpltArbt_tqTarReAxle` 目标扭矩承接逻辑",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "d0927ed6-8cf0-4da4-ae35-65a8224b1f4c",
+      "ruleId": "RE-025",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 11",
+      "content": "`min/max/fminf/fmaxf` 类边界限制",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "cb40c260-60bf-4a6a-b8d3-72b169ef10bc",
+      "ruleId": "RE-026",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 12",
+      "content": "对 `Frnt/Front/F` 和 `Re/Rear/R` 的对象信号，分别建立前轴和后轴事实集合，避免写作时被合并。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "52a7b193-820d-4b64-abcd-b5e90ea1a04b",
+      "ruleId": "RE-027",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 13",
+      "content": "若样例库或信号字典中已存在工程侧标准命名，应将代码变量名仅作为别名或实现证据保留，不能直接替代标准工程命名进入最终需求正文。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "28725cfa-9930-4ee6-8f26-dc3c266f6317",
+      "ruleId": "RE-028",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "模型代码与模型文档侧抽取规则",
+      "title": "模型代码与模型文档侧抽取规则 14",
+      "content": "若代码侧变量与样例中的标准工程命名不一致，应优先记录“标准名 + 代码别名”的映射，而不是让写作阶段自行联想。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "9c888cf8-cd94-4d58-9a1c-b454cbced580",
+      "ruleId": "RE-029",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "证据归并规则",
+      "title": "证据归并规则 1",
+      "content": "对同一事实的多来源证据应保留文件名、位置、原文片段和标签。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "91bb5c6e-bb02-4776-bb3e-875281745a7a",
+      "ruleId": "RE-030",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "证据归并规则",
+      "title": "证据归并规则 2",
+      "content": "对存在冲突的事实保留差异，不在抽取阶段裁决。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "476e5879-a24e-451d-9ee1-d732a1ff260b",
+      "ruleId": "RE-031",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "证据归并规则",
+      "title": "证据归并规则 3",
+      "content": "对内部引用编号、信号名、变量名、控制模式名优先原样保留。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "3ded5854-dd43-4b3e-a670-8b99d9ba9ea4",
+      "ruleId": "RE-032",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "证据归并规则",
+      "title": "证据归并规则 4",
+      "content": "当事实明显对应激活标志位判断、扭矩计算、仲裁逻辑或边界限制时，应标注对应类别，供写作阶段使用。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "a8ef9547-dcd2-47e7-a68d-8dae5593fe46",
+      "ruleId": "RE-033",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "证据归并规则",
+      "title": "证据归并规则 5",
+      "content": "若证据只支持某个章节的共性说明，不要据此生成跨前轴/后轴的合并条目；应优先等待或寻找对象级证据。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "8ea0e515-3697-4625-8dab-96f6af754605",
+      "ruleId": "RE-034",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "证据归并规则",
+      "title": "证据归并规则 6",
+      "content": "若存在样例库中的标准章节骨架，应在抽取结果中显式保留该骨架的命中情况，供写作阶段决定“先写哪四条”。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ea5f2f35-ccca-430c-a826-ca68b937d337",
+      "ruleId": "RE-035",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "sectionKey": "证据归并规则",
+      "title": "证据归并规则 7",
+      "content": "若某一安全功能、模式或信号没有在系统需求、参考样例或信号字典中被明确要求，不要因为代码中出现相关变量就自动扩写进设计需求正文。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "09dc6b9c-3cc3-41c1-97d4-49d4b8fcb5be",
+      "ruleId": "RW-001",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "写作目标",
+      "title": "写作目标 1",
+      "content": "输出中文、可审核、可追溯、可验证的软件设计需求。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ef2a0427-a87d-4a57-bfb1-4654542507a8",
+      "ruleId": "RW-002",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "写作目标",
+      "title": "写作目标 2",
+      "content": "优先生成贴近工程师现有写法的结构化设计需求，而不是松散的说明性文字。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "030e51c2-03c4-4635-94b2-3c443b6c8837",
+      "ruleId": "RW-003",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "写作目标",
+      "title": "写作目标 3",
+      "content": "需求要能承接系统需求和模型代码证据，并可用于后续评审、测试和导出。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "a0c705e8-ed7e-4b29-aba0-a2a3388afb30",
+      "ruleId": "RW-004",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "写作目标",
+      "title": "写作目标 4",
+      "content": "当输入与已知领域样例高度匹配时，优先复现目标样例的章节骨架、拆分粒度和句式风格，而不是扩散生成更多“看起来也合理”的泛化条目。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "3f9b065c-4303-48b0-bb44-6a47b82e1b51",
+      "ruleId": "RW-005",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "写作目标",
+      "title": "写作目标 5",
+      "content": "在需遵守 ISO 26262 的场景下，命名必须优先服从参考样例或信号字典，避免破坏单一真实来源。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "0591a09a-7bda-4abb-a16a-eeff85d50a27",
+      "ruleId": "RW-006",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 1",
+      "content": "对“扭矩干预功能”领域，首选对齐目标不是“尽量多写需求”，而是“先把人工样例里的核心四条设计需求写准”。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e4945af7-c2d7-4969-b385-6366c1fbf1d7",
+      "ruleId": "RW-007",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 2",
+      "content": "若证据同时支持“核心设计条目”和“泛化补充条目”，优先输出核心设计条目，补充条目只有在不破坏主结构时才追加。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "45784b71-f650-4522-9023-fdb3f9399f11",
+      "ruleId": "RW-008",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 3",
+      "content": "若当前输入明显对应“扭矩干预功能”，优先输出以下骨架：",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "a4db5651-3611-45a4-b752-6d81465dcc7d",
+      "ruleId": "RW-009",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 4",
+      "content": "`ESC前轴扭矩干预`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e84cb818-bebc-4698-8643-4ad9bfef9b2d",
+      "ruleId": "RW-010",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 5",
+      "content": "前轴激活标志位判断",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "379fa934-c809-443e-b0f2-71a4498d9bdf",
+      "ruleId": "RW-011",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 6",
+      "content": "前轴扭矩计算",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "a3e2900e-70eb-456d-955c-bf22ee595c7a",
+      "ruleId": "RW-012",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 7",
+      "content": "`ESC后轴扭矩干预`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "4cd9f5f1-e7c7-447d-90ad-cb73237d6192",
+      "ruleId": "RW-013",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 8",
+      "content": "后轴激活标志位判断",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "f6dcf999-e59b-4b66-8577-42ae112d0c31",
+      "ruleId": "RW-014",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 9",
+      "content": "后轴扭矩计算",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "b58679fa-5a9c-4dc0-84eb-daaea65f119c",
+      "ruleId": "RW-015",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 10",
+      "content": "对应关系不清晰时，也应尽量维持“对象拆分优先于主题汇总”的写法，不要把前轴/后轴揉成一条。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "f7e34c3c-b29e-4c51-81c2-403ea06f51d0",
+      "ruleId": "RW-016",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "本轮对齐优先级",
+      "title": "本轮对齐优先级 11",
+      "content": "章节层级结构要保留，但章节数字编号只是样例背景，不是当前输出的必需内容。除非用户明确要求，否则不要在输出标题里带 `3.31`、`3.31.1`、`3.31.2` 这类具体编号。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "d26a0990-c192-4632-a1c0-601f0f0834fd",
+      "ruleId": "RW-017",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "结构组织规则",
+      "title": "结构组织规则 1",
+      "content": "优先使用多级章节组织需求，明确父功能与子功能的从属关系，例如“扭矩干预功能 -> ESC前轴扭矩干预 -> 前轴激活标志位判断”。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "d7ed97a4-3412-470d-8e8f-79a148829087",
+      "ruleId": "RW-018",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "结构组织规则",
+      "title": "结构组织规则 2",
+      "content": "对物理对象不同但逻辑对称的需求，优先拆分为对称子章节，例如前轴/后轴、左侧/右侧。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "eccda507-e11e-4d78-bf23-60825f30df2c",
+      "ruleId": "RW-019",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "结构组织规则",
+      "title": "结构组织规则 3",
+      "content": "在同一子章节内，优先按照“激活标志位判断 -> 计算/仲裁逻辑 -> 边界限制说明”的顺序展开。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "b8fda778-b84d-425b-bd3c-004a583e229b",
+      "ruleId": "RW-020",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "结构组织规则",
+      "title": "结构组织规则 4",
+      "content": "标题和章节名要直接体现功能主题和对象，避免笼统命名。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "2fb210d7-b0cb-4e5d-8752-c092e3b3bd24",
+      "ruleId": "RW-021",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "结构组织规则",
+      "title": "结构组织规则 5",
+      "content": "若输出 schema 只能承载平铺需求列表，也要通过 `title`、顺序或正文中的结构描述保留层级归属，例如 `ESC前轴扭矩干预 - 激活标志位判断`。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "4841743b-86f3-4db3-a2c5-a61975d70b20",
+      "ruleId": "RW-022",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "结构组织规则",
+      "title": "结构组织规则 6",
+      "content": "每条需求只承载一个设计主题。前轴激活判断、后轴激活判断、前轴扭矩计算、后轴扭矩计算应视为四条独立主题。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ac8e2e04-c18a-4fe2-acc9-9343e57913fd",
+      "ruleId": "RW-023",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 1",
+      "content": "激活或判断逻辑优先采用“当满足以下任一条件时...，否则...”的句式。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ecaeb192-b525-4981-8e2d-12130d60fdc0",
+      "ruleId": "RW-024",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 2",
+      "content": "条件应分点列出，并明确逻辑关系是“与”还是“或”。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "97fab2a5-ac46-4e37-bc9d-01d556e35a81",
+      "ruleId": "RW-025",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 3",
+      "content": "计算或仲裁逻辑优先显式声明优先级顺序，使用“优先级顺序为：X > Y > Z”。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "fbf211c6-66d4-4958-8918-4d1dad8db25f",
+      "ruleId": "RW-026",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 4",
+      "content": "分支逻辑优先采用“当...时，输出=...”的句式，覆盖主要路径、兜底路径和退出条件。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "be760961-1d0d-4655-ab56-6fc69f06c5f1",
+      "ruleId": "RW-027",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 5",
+      "content": "对状态、区间、阈值、比较关系写明边界，例如“大于低阈值且小于等于高阈值”。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "8798353d-937c-4059-801b-9b92438b3cb7",
+      "ruleId": "RW-028",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 6",
+      "content": "对激活标志位类需求，正文中应显式出现 `active` 和 `inactive` 两个输出状态。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "60f4b80d-42e1-446b-b73c-18908b91f84f",
+      "ruleId": "RW-029",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 7",
+      "content": "对扭矩计算类需求，应尽量显式写出以下分支：",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ead35a6a-0ddb-4ec3-813f-790679350349",
+      "ruleId": "RW-030",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 8",
+      "content": "升扭请求分支",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e75e97c7-1b76-4788-a12b-3c10c1d74b88",
+      "ruleId": "RW-031",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 9",
+      "content": "降扭请求分支",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "1910bb5f-2001-480e-9188-9d9ed439bf14",
+      "ruleId": "RW-032",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 10",
+      "content": "AEB/CDP 等置零分支",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "6925df44-b47d-4db8-9e48-3993bd6f5773",
+      "ruleId": "RW-033",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 11",
+      "content": "VLC 分支",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "01f37fbd-3799-48a9-9fef-e7c749e928f5",
+      "ruleId": "RW-034",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 12",
+      "content": "RBS 分支",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "8f350261-1052-46da-b5d3-cc3442173f67",
+      "ruleId": "RW-035",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 13",
+      "content": "默认分支",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "1d0269d4-44d1-42e6-a5d8-fa978388aad6",
+      "ruleId": "RW-036",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "句式与逻辑规则",
+      "title": "句式与逻辑规则 14",
+      "content": "对边界限制，优先使用“注：...”单独写出，而不是埋在长句里。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e0e0c55c-9e34-4f36-8526-1185f76f96b7",
+      "ruleId": "RW-037",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 1",
+      "content": "保留输入信号、输出信号、内部变量和控制模式的原始命名，避免将工程信号泛化成自然语言概念。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "589661f5-48b2-4057-b869-1a2734e01da2",
+      "ruleId": "RW-038",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 2",
+      "content": "输入信号优先保留来源前缀，例如 `ESC_`、`EHB_`、`ADAS_`。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e0591e2c-6b45-405a-aec6-38f991d9d940",
+      "ruleId": "RW-039",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 3",
+      "content": "内部变量或内部使用量应在正文中显式出现，必要时补充“内部使用”说明。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "61302b55-dbe4-4be7-afea-329cc7ee1d47",
+      "ruleId": "RW-040",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 4",
+      "content": "如果设计需求依赖其他需求项，应显式保留内部引用编号，例如 `SMiVCU-10160`、`SMiVCU-9477`。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "923a0f85-044f-4255-84f5-c0a9bcaa17a0",
+      "ruleId": "RW-041",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 5",
+      "content": "不得编造需求编号或内部引用；没有证据时宁可留空并标注证据不足。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "6ab917db-cb73-42f9-be54-cb4a07ddf58e",
+      "ruleId": "RW-042",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 6",
+      "content": "若样例库中已经给出领域内标准写法，应优先沿用其信号命名和引用习惯。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "d896119a-e238-43d5-9f98-ab32650f18d3",
+      "ruleId": "RW-043",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 7",
+      "content": "若当前输入能明确区分前轴与后轴，应分别保留 `_F / _R`、`Frnt / Re` 等对象后缀，不可统一改写为“对应轴”。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "b5e4f020-e62b-4ee5-8eff-4211b265ae0b",
+      "ruleId": "RW-044",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 8",
+      "content": "若参考样例中已经给出标准工程命名，如 `ESC_TqDecReqAct_F`、`ESC_EHB_RBS_F_Active`、`ESC_TrqIncReqActv_F`，则最终正文优先使用这些标准名，不要退化成 `icesc_*` 等代码变量名。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "2984b8af-7761-41f8-8823-8da0825ae00b",
+      "ruleId": "RW-045",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 9",
+      "content": "若代码变量和标准工程命名并存，正文中优先写标准工程命名；代码变量只可作为追溯证据，不应主导需求正文表达。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "59b43d17-1efa-4ac4-a363-4e242f28babd",
+      "ruleId": "RW-046",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "信号与引用规则",
+      "title": "信号与引用规则 10",
+      "content": "不要因为代码中出现相关变量，就自动把未在参考样例中出现的逻辑写入需求，例如 `ABS/EBD/CCO/ISA` 等；除非系统需求、样例或信号字典明确要求。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "5b4d5370-cb45-4a4a-be6d-fd6bbe13e36c",
+      "ruleId": "RW-047",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "测试与边界规则",
+      "title": "测试与边界规则 1",
+      "content": "每条需求应具备明确的可验证预期，便于测试人员构造输入组合验证输出行为。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "d62d6621-085e-46fd-b23f-502437b4bc66",
+      "ruleId": "RW-048",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "测试与边界规则",
+      "title": "测试与边界规则 2",
+      "content": "对激活标志位类需求，应能通过输入条件切换验证输出状态。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "c67d23fd-1a38-42eb-a7f1-3c9942ab0820",
+      "ruleId": "RW-049",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "测试与边界规则",
+      "title": "测试与边界规则 3",
+      "content": "对仲裁和计算类需求，应能基于优先级分支和边界条件设计测试用例。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "0c23b93f-f517-4de6-9c23-5f5b465f3fa7",
+      "ruleId": "RW-050",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "测试与边界规则",
+      "title": "测试与边界规则 4",
+      "content": "对最大值、最小值、限幅、保护逻辑等安全边界，优先在“注”或边界说明中显式写出。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "c6b346a8-11ae-417a-b8fa-6d31ff437007",
+      "ruleId": "RW-051",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "取舍规则",
+      "title": "取舍规则 1",
+      "content": "若目标样例没有把某些接口、时序、诊断条目作为主输出，就不要为了“覆盖更全”而优先输出这类泛化条目。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "06930d31-fff6-41db-afe1-a9d929f1afd0",
+      "ruleId": "RW-052",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "取舍规则",
+      "title": "取舍规则 2",
+      "content": "若必须在“多写几条泛化需求”和“少写但贴近人工样例的设计条目”之间取舍，优先后者。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "5377e20a-c034-42ce-a00d-ea672f2d66f9",
+      "ruleId": "RW-053",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "取舍规则",
+      "title": "取舍规则 3",
+      "content": "不要先写总括性条目，再用一句“前后轴类似”带过；应优先分别落成前轴和后轴条目。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e9e613e3-1499-460a-9a0b-0302631a5ac3",
+      "ruleId": "RW-054",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "禁止事项",
+      "title": "禁止事项 1",
+      "content": "避免“适当”“尽量”“必要时”“合理”“优化”“可能”等模糊措辞。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "5eac4e57-6157-43b6-bb52-d6b95f51f6fc",
+      "ruleId": "RW-055",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "禁止事项",
+      "title": "禁止事项 2",
+      "content": "不要把系统需求未明确、模型证据也未支持的推测写成设计需求。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "dc875fc0-b14f-45fc-b847-596d86578fbb",
+      "ruleId": "RW-056",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "禁止事项",
+      "title": "禁止事项 3",
+      "content": "不要把多个独立逻辑主题挤在同一条需求里，除非样例明确采用该组织方式。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ffa601a7-3ec7-4676-bdd0-f3e756117e50",
+      "ruleId": "RW-057",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "禁止事项",
+      "title": "禁止事项 4",
+      "content": "不要把前轴/后轴合并成“对应轴”后统一描述。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "ffb88d11-5a9f-418c-abe3-df3379da0bb3",
+      "ruleId": "RW-058",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "sectionKey": "禁止事项",
+      "title": "禁止事项 5",
+      "content": "不要在扭矩干预样例中优先生成“接口总表”“执行周期”“越野 TCS”等偏离目标样例核心结构的条目，除非用户明确要求或证据强制要求。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "3dda9213-089c-4746-a403-83cd3c0b3072",
+      "ruleId": "RV-001",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "校验目标",
+      "title": "校验目标 1",
+      "content": "检查每条需求是否有编号、正文、来源、验证建议和置信度。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "4b4f3e90-6351-400f-acc8-88afaf5f865c",
+      "ruleId": "RV-002",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "校验目标",
+      "title": "校验目标 2",
+      "content": "检查需求是否遵循目标样例的章节层级和对称展开方式。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "eeef6317-22bb-424f-a681-a49e699d4051",
+      "ruleId": "RV-003",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "校验目标",
+      "title": "校验目标 3",
+      "content": "检查是否保留了关键信号、内部变量、优先级、边界说明和内部引用。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "63f4c599-0e17-47af-a52d-8f804fb6b010",
+      "ruleId": "RV-004",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "校验目标",
+      "title": "校验目标 4",
+      "content": "检查是否存在重复、模糊措辞、臆造事实和明显冲突。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "dadb8450-77f3-456e-b118-9fea337deb8f",
+      "ruleId": "RV-005",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "校验目标",
+      "title": "校验目标 5",
+      "content": "对需满足 ISO 26262 的文档，检查信号命名是否来自参考样例或信号字典，避免破坏单一真实来源。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "53b27954-bdb3-4007-9490-798816c5f10b",
+      "ruleId": "RV-006",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "结构校验",
+      "title": "结构校验 1",
+      "content": "若输出应为章节化设计需求，需校验章节编号是否连续且层级合理。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "9169b6dc-bd11-44f2-b01f-88f9ebc28c5c",
+      "ruleId": "RV-007",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "结构校验",
+      "title": "结构校验 2",
+      "content": "对前轴/后轴等对称对象，若只生成单侧需求，应标记为结构缺失风险。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "75146dc4-3e8b-4794-9088-4b36175f8d4d",
+      "ruleId": "RV-008",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "结构校验",
+      "title": "结构校验 3",
+      "content": "若需求主题属于激活标志位判断或扭矩计算，应检查是否落在正确的功能子章节内。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "c95dc3cf-6f8a-4840-95f8-d5ab7506e076",
+      "ruleId": "RV-009",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "结构校验",
+      "title": "结构校验 4",
+      "content": "若输入明显命中“扭矩干预功能”样例，而输出未形成“前轴激活 / 前轴计算 / 后轴激活 / 后轴计算”四个核心主题，应标记为高风险结构偏差。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "82d39e44-bd76-4a6a-b515-959705187eca",
+      "ruleId": "RV-010",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "结构校验",
+      "title": "结构校验 5",
+      "content": "若输出主要由泛化条目组成，而缺少核心设计条目，应标记为“与目标样例风格不一致”。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "9c1b8f95-93a8-4a71-bb8b-160e4f359d1a",
+      "ruleId": "RV-011",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "结构校验",
+      "title": "结构校验 6",
+      "content": "若用户未要求具体章节编号，而输出仍带 `3.31`、`3.31.1` 等字面数字编号，应标记为格式偏差。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "a4756c69-480f-4133-8f80-e5f762297bfe",
+      "ruleId": "RV-012",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 1",
+      "content": "若系统需求给出优先级顺序，设计需求中应显式保留。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "27b05fdb-3f7b-41da-8aca-2cd109432278",
+      "ruleId": "RV-013",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 2",
+      "content": "若模型代码提供阈值、限幅、模式状态或内部变量，设计需求中应尽量保留关键命名。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e5e2df5f-efc3-4f92-8a72-a6d2daed1047",
+      "ruleId": "RV-014",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 3",
+      "content": "若正文中引用其他需求编号，应检查编号是否存在、格式是否合理。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "b2a9ce0a-2efd-44ad-a394-c5c41545b216",
+      "ruleId": "RV-015",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 4",
+      "content": "若发现来源不足、逻辑分支缺失、默认路径缺失或边界限制缺失，应保留问题说明。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "084dd13c-13d7-4d04-ae29-a10ffd738dbd",
+      "ruleId": "RV-016",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 5",
+      "content": "对激活标志位类需求，若缺少 `active/inactive` 或缺少“否则”路径，应标记为内容不完整。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "7b61f044-87e4-4b1f-92f4-fe67b3099432",
+      "ruleId": "RV-017",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 6",
+      "content": "对扭矩计算类需求，若缺少优先级、置零分支、模式分支或限幅说明，应标记为内容不完整。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "766b6f71-66f6-40ff-b3c8-0779efab46fd",
+      "ruleId": "RV-018",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 7",
+      "content": "若输出把前轴/后轴统一写成“对应轴”，应标记为对象粒度退化。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "b19d5ee3-a06b-43f3-bbc3-8a08acb66633",
+      "ruleId": "RV-019",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 8",
+      "content": "若输出使用 `icesc_*`、`icadas_*`、`ACCtl_*` 等代码化输入信号命名，而参考样例中存在对应的标准工程命名，应标记为高风险命名偏差。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "386b7c41-6019-4f6d-855b-86c9f1871a94",
+      "ruleId": "RV-020",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "内容校验",
+      "title": "内容校验 9",
+      "content": "若输出把人工样例中未要求的逻辑擅自扩写进正文，例如把 `AEB/CDP` 扩成 `AEB/CDP/ABS/EBD`，或加入 `CCO/ISA` 等未在目标样例中的分支，应标记为高风险泛化扩写。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "67043c0c-055b-4bbe-b9a9-16516040f097",
+      "ruleId": "RV-021",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "输出要求",
+      "title": "输出要求 1",
+      "content": "若发现问题，保留问题说明并降低置信度。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "e81b81f5-da0c-4ec8-a483-52521ccaba2c",
+      "ruleId": "RV-022",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "输出要求",
+      "title": "输出要求 2",
+      "content": "若发现多来源冲突，不自动消解，保留冲突说明给审核人员。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "2c281bef-9cb9-420c-8e84-dfd94abdafe4",
+      "ruleId": "RV-023",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "输出要求",
+      "title": "输出要求 3",
+      "content": "对模糊措辞、无来源结论和臆造编号优先标记为高风险。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "3eb25495-5285-494b-87f2-0e7401f4bc27",
+      "ruleId": "RV-024",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "输出要求",
+      "title": "输出要求 4",
+      "content": "若输出比目标样例“更全”但“更散”，应优先判定为结构退化，而不是加分。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "726891cd-35ef-415f-a13c-60ffb6601796",
+      "ruleId": "RV-025",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "sectionKey": "输出要求",
+      "title": "输出要求 5",
+      "content": "对违反命名精度或单一真实来源约束的问题，应按高风险处理，因为这类问题会直接影响 ISO 26262 合规性审查。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.891Z",
+      "updatedAt": "2026-04-12T07:50:15.891Z"
+    },
+    {
+      "id": "4333c336-64d9-4e69-9a22-ca97abe3241c",
+      "ruleId": "EX-GOOD-001",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 1",
+      "content": "在“扭矩干预功能”领域，优先形成如下骨架：",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "91c13dde-48c4-486c-add6-95886d2a2341",
+      "ruleId": "EX-GOOD-002",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 2",
+      "content": "`扭矩干预功能`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "3acc8ea6-7806-41f5-a60d-0df2d29d4ca9",
+      "ruleId": "EX-GOOD-003",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 3",
+      "content": "`ESC前轴扭矩干预`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "86174d74-ac46-42d5-9267-44bde53d5801",
+      "ruleId": "EX-GOOD-004",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 4",
+      "content": "`SMiVCU-10160 ESC干预前轴激活标志位判断`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "7d0b96d0-9fcc-4473-bb34-fa6749c0ebab",
+      "ruleId": "EX-GOOD-005",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 5",
+      "content": "`SMiVCU-10597 ESC干预前轴扭矩计算`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "b6d34bdd-f266-46ae-80c6-e0380152431b",
+      "ruleId": "EX-GOOD-006",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 6",
+      "content": "`ESC后轴扭矩干预`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "d88a941e-b733-48a5-bb50-2a01027101ba",
+      "ruleId": "EX-GOOD-007",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 7",
+      "content": "`SMiVCU-10161 ESC干预后轴激活标志位判断`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "e08ec3d9-e9e7-4dc8-95fe-d3a26d486ee8",
+      "ruleId": "EX-GOOD-008",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 8",
+      "content": "`SMiVCU-10598 ESC干预后轴扭矩计算`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "03252945-d03f-45ce-a28e-d374a3fcf7c7",
+      "ruleId": "EX-GOOD-009",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 9",
+      "content": "当 `ESC_TqDecReqAct_F = 0x1` 且前电机降扭请求标志位激活时，软件应将 `ESC干预前轴激活标志位` 置为 `active`；否则置为 `inactive`。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "8d14b814-be27-4c4d-85f7-93487fa72826",
+      "ruleId": "EX-GOOD-010",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 10",
+      "content": "ESC干预前轴扭矩的优先级顺序应为：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS的VLC工况 > RBS。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "023a0778-17f8-40c8-8e08-d622b5277b4c",
+      "ruleId": "EX-GOOD-011",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 11",
+      "content": "当 `ESC_AEB_Active` 或 `ESC_CDP_Active` 激活时，`ESCWhlTq_tqTarFrntAxle` 应输出为 `0`。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "9cb6a791-21f8-4a1a-8228-8cdd3b9d6093",
+      "ruleId": "EX-GOOD-012",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 12",
+      "content": "当 `VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt` 且前轴制动再生扭矩请求标志位激活时，`ESCWhlTq_tqTarFrntAxle` 应等于 `TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq` 与 `0` 取小值。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "4ce305dc-ad14-4d3b-b316-486491645876",
+      "ruleId": "EX-GOOD-013",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 13",
+      "content": "ESC干预前轴目标扭矩应经过前轴最大扭矩和前轴最小扭矩限制后得到，相关限制引用 `SMiVCU-9477`。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "44a3e52f-a539-40b6-8f45-181c6e00ce0b",
+      "ruleId": "EX-GOOD-014",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 14",
+      "content": "`ESC后轴扭矩干预 - 激活标志位判断：当满足以下任一条件时，ESC干预后轴激活标志位置为 active，否则置为 inactive：1. ... 2. ... 3. ...`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "3ea94e9d-1dc1-465c-b110-bcf3c5d7a8b5",
+      "ruleId": "EX-GOOD-015",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "default",
+      "title": "default 15",
+      "content": "`ESC后轴扭矩干预 - 扭矩计算：当 AEB 或 CDP 激活时，ESCWhlTq_tqTarReAxle = 0；当 APA 或 ACC 激活且 VLC 扭矩控制激活时，ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle；注：输出需经过后轴最大/最小扭矩限制。`",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "9312e2c3-9008-43b0-bf01-1b02028359dd",
+      "ruleId": "EX-BAD-001",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "default",
+      "title": "default 1",
+      "content": "软件应合理处理扭矩干预请求。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "55e329a0-c407-4775-b972-a9bd892f17ae",
+      "ruleId": "EX-BAD-002",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "default",
+      "title": "default 2",
+      "content": "当前后轴有请求时，系统按情况处理。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "7392bb2d-ec85-4a4b-88b5-e69a81e1025b",
+      "ruleId": "EX-BAD-003",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "default",
+      "title": "default 3",
+      "content": "软件应根据需要限制输出扭矩。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "15dd604b-a077-448e-acf5-4b11efbb1307",
+      "ruleId": "EX-BAD-004",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "default",
+      "title": "default 4",
+      "content": "当功能激活时，输出标志位。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "9d29f6c1-1018-43bd-8ff6-414d01b4c522",
+      "ruleId": "EX-BAD-005",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "default",
+      "title": "default 5",
+      "content": "参考其他需求即可。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "571fb151-d7e0-4f58-8ff9-9e79431b1c74",
+      "ruleId": "EX-BAD-006",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "default",
+      "title": "default 6",
+      "content": "ESC前后轴扭矩干预激活标志位根据对应轴请求综合判断。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "df136546-2283-4e7c-82ba-ebe13b2b4981",
+      "ruleId": "EX-BAD-007",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "default",
+      "title": "default 7",
+      "content": "软件应提供接口定义、时序要求、诊断要求和越野模式处理。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "bullet_or_paragraph"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "005c8ced-8d84-4bfd-adfb-c8fc5735825a",
+      "ruleId": "EX-GOOD-001",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "domain_examples",
+      "title": "ESC干预前轴激活标志位判断",
+      "content": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：1. ESC 降扭请求前电机降扭有效 ESC_TqDecReqAct_F = 0x1，且前电机降扭请求标志位激活；2. 前轴制动再生活跃 ESC_EHB_RBS_F_Active = 0x1，且前轴制动再生扭矩请求标志位激活；3. 前驱电机增扭请求标志位 ESC_TrqIncReqActv_F = 0x1，且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_example",
+        "item": {
+          "requirementId": "SMiVCU-10160",
+          "topic": "ESC干预前轴激活标志位判断",
+          "sectionNumber": "",
+          "sectionTitle": "ESC前轴扭矩干预",
+          "requirementType": "activation_flag_logic",
+          "preferredTitle": "ESC前轴扭矩干预 - 激活标志位判断",
+          "requirementText": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：1. ESC 降扭请求前电机降扭有效 ESC_TqDecReqAct_F = 0x1，且前电机降扭请求标志位激活；2. 前轴制动再生活跃 ESC_EHB_RBS_F_Active = 0x1，且前轴制动再生扭矩请求标志位激活；3. 前驱电机增扭请求标志位 ESC_TrqIncReqActv_F = 0x1，且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+          "signals": [
+            "ESC_TqDecReqAct_F",
+            "ESC_EHB_RBS_F_Active",
+            "ESC_TrqIncReqActv_F",
+            "ESC_TrqIncReq_F",
+            "ESC_EHB_RBS_F_TargetRegenTrq",
+            "ESCWhlTq_bFrntAxleTqIntvActv"
+          ],
+          "references": [],
+          "canonicalBranches": [
+            "前轴降扭请求激活",
+            "前轴制动再生请求激活",
+            "前轴升扭请求激活",
+            "否则 inactive",
+            "阈值有效性判断"
+          ],
+          "keywords": [
+            "前轴",
+            "激活标志位",
+            "active",
+            "inactive",
+            "降扭请求",
+            "升扭请求",
+            "制动再生",
+            "阈值"
+          ]
+        }
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "b7e08757-6ba0-44de-826b-64191e6aa7a0",
+      "ruleId": "EX-GOOD-002",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "domain_examples",
+      "title": "ESC干预前轴扭矩计算",
+      "content": "ESC干预前轴扭矩的计算应按以下优先级顺序展开：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前前轴升扭请求标志位置为 active 时，ESC干预前轴目标扭矩 ESCWhlTq_tqTarFrntAxle = 前驱电机增扭请求 ESC_TrqIncReq_F；当前前轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarFrntAxle = ESC 前电机降扭请求 ESC_TqDecReq_F；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarFrntAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarFrntAxle = 扭矩仲裁后前轴目标扭矩 TqSpltArbt_tqTarFrntAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle。注：ESC干预前轴目标扭矩需经过前轴最大扭矩和前轴最小扭矩限制后得到。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_example",
+        "item": {
+          "requirementId": "SMiVCU-10597",
+          "topic": "ESC干预前轴扭矩计算",
+          "sectionNumber": "",
+          "sectionTitle": "ESC前轴扭矩干预",
+          "requirementType": "torque_calculation_logic",
+          "preferredTitle": "ESC前轴扭矩干预 - 扭矩计算",
+          "requirementText": "ESC干预前轴扭矩的计算应按以下优先级顺序展开：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前前轴升扭请求标志位置为 active 时，ESC干预前轴目标扭矩 ESCWhlTq_tqTarFrntAxle = 前驱电机增扭请求 ESC_TrqIncReq_F；当前前轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarFrntAxle = ESC 前电机降扭请求 ESC_TqDecReq_F；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarFrntAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarFrntAxle = 扭矩仲裁后前轴目标扭矩 TqSpltArbt_tqTarFrntAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle。注：ESC干预前轴目标扭矩需经过前轴最大扭矩和前轴最小扭矩限制后得到。",
+          "signals": [
+            "ESCWhlTq_tqTarFrntAxle",
+            "ESC_TqDecReq_F",
+            "ESC_TrqIncReq_F",
+            "ESC_AEB_Active",
+            "ESC_CDP_Active",
+            "ESC_VLC_TorqCtrlActive",
+            "VehCfg_stRBCCtrlModeSel",
+            "TqSpltArbt_tqTarFrntAxle",
+            "ESC_EHB_RBS_F_TargetRegenTrq"
+          ],
+          "references": [
+            "SMiVCU-10160",
+            "SMiVCU-9469",
+            "SMiVCU-9477"
+          ],
+          "canonicalBranches": [
+            "升扭请求分支",
+            "降扭请求分支",
+            "AEB/CDP 置零分支",
+            "APA/ACC + VLC 分支",
+            "RBC 模式 0x3 分支",
+            "RBC 模式非 0x3 分支",
+            "默认扭矩分配分支",
+            "最大/最小扭矩限制"
+          ],
+          "keywords": [
+            "前轴",
+            "扭矩计算",
+            "优先级顺序",
+            "AEB",
+            "CDP",
+            "VLC",
+            "RBC模式",
+            "边界限制"
+          ]
+        }
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "6b5090df-7bb0-4fbb-84e1-6586d20eb54e",
+      "ruleId": "EX-GOOD-003",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "domain_examples",
+      "title": "ESC干预后轴激活标志位判断",
+      "content": "当满足以下任一条件时，ESC干预后轴激活标志位置为 active：1. ESC 降扭请求后电机降扭有效 ESC_TqDecReqAct_R = 0x1，且后电机降扭请求标志位激活；2. 后轴制动再生活跃 ESC_EHB_RBS_R_Active = 0x1，且后轴制动再生扭矩请求标志位激活；3. 后驱电机增扭请求标志位 ESC_TrqIncReqActv_R = 0x1，且后电机升扭请求标志位激活。否则，ESC干预后轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_example",
+        "item": {
+          "requirementId": "SMiVCU-10161",
+          "topic": "ESC干预后轴激活标志位判断",
+          "sectionNumber": "",
+          "sectionTitle": "ESC后轴扭矩干预",
+          "requirementType": "activation_flag_logic",
+          "preferredTitle": "ESC后轴扭矩干预 - 激活标志位判断",
+          "requirementText": "当满足以下任一条件时，ESC干预后轴激活标志位置为 active：1. ESC 降扭请求后电机降扭有效 ESC_TqDecReqAct_R = 0x1，且后电机降扭请求标志位激活；2. 后轴制动再生活跃 ESC_EHB_RBS_R_Active = 0x1，且后轴制动再生扭矩请求标志位激活；3. 后驱电机增扭请求标志位 ESC_TrqIncReqActv_R = 0x1，且后电机升扭请求标志位激活。否则，ESC干预后轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+          "signals": [
+            "ESC_TqDecReqAct_R",
+            "ESC_EHB_RBS_R_Active",
+            "ESC_TrqIncReqActv_R",
+            "ESC_TrqIncReq_R",
+            "ESC_EHB_RBS_R_TargetRegenTrq",
+            "ESCWhlTq_bReAxleTqIntvActv"
+          ],
+          "references": [],
+          "canonicalBranches": [
+            "后轴降扭请求激活",
+            "后轴制动再生请求激活",
+            "后轴升扭请求激活",
+            "否则 inactive",
+            "阈值有效性判断"
+          ],
+          "keywords": [
+            "后轴",
+            "激活标志位",
+            "active",
+            "inactive",
+            "降扭请求",
+            "升扭请求",
+            "制动再生",
+            "阈值"
+          ]
+        }
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "3654be27-c097-4f1e-8efe-ca4ee9fa21da",
+      "ruleId": "EX-GOOD-004",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "sectionKey": "domain_examples",
+      "title": "ESC干预后轴扭矩计算",
+      "content": "ESC干预后轴扭矩的计算应按以下优先级顺序展开：后轴升扭请求 > 后轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前后轴升扭请求标志位置为 active 时，ESC干预后轴目标扭矩 ESCWhlTq_tqTarReAxle = 后驱电机增扭请求 ESC_TrqIncReq_R；当前后轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarReAxle = ESC 后电机降扭请求 ESC_TqDecReq_R；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarReAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarReAxle = 扭矩仲裁后后轴目标扭矩 TqSpltArbt_tqTarReAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle。注：ESC干预后轴目标扭矩需经过后轴最大扭矩和后轴最小扭矩限制后得到。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_example",
+        "item": {
+          "requirementId": "SMiVCU-10598",
+          "topic": "ESC干预后轴扭矩计算",
+          "sectionNumber": "",
+          "sectionTitle": "ESC后轴扭矩干预",
+          "requirementType": "torque_calculation_logic",
+          "preferredTitle": "ESC后轴扭矩干预 - 扭矩计算",
+          "requirementText": "ESC干预后轴扭矩的计算应按以下优先级顺序展开：后轴升扭请求 > 后轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前后轴升扭请求标志位置为 active 时，ESC干预后轴目标扭矩 ESCWhlTq_tqTarReAxle = 后驱电机增扭请求 ESC_TrqIncReq_R；当前后轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarReAxle = ESC 后电机降扭请求 ESC_TqDecReq_R；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarReAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarReAxle = 扭矩仲裁后后轴目标扭矩 TqSpltArbt_tqTarReAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle。注：ESC干预后轴目标扭矩需经过后轴最大扭矩和后轴最小扭矩限制后得到。",
+          "signals": [
+            "ESCWhlTq_tqTarReAxle",
+            "ESC_TqDecReq_R",
+            "ESC_TrqIncReq_R",
+            "ESC_AEB_Active",
+            "ESC_CDP_Active",
+            "ESC_VLC_TorqCtrlActive",
+            "VehCfg_stRBCCtrlModeSel",
+            "TqSpltArbt_tqTarReAxle",
+            "ESC_EHB_RBS_R_TargetRegenTrq"
+          ],
+          "references": [
+            "SMiVCU-10161",
+            "SMiVCU-9469",
+            "SMiVCU-9477"
+          ],
+          "canonicalBranches": [
+            "升扭请求分支",
+            "降扭请求分支",
+            "AEB/CDP 置零分支",
+            "APA/ACC + VLC 分支",
+            "RBC 模式 0x3 分支",
+            "RBC 模式非 0x3 分支",
+            "默认扭矩分配分支",
+            "最大/最小扭矩限制"
+          ],
+          "keywords": [
+            "后轴",
+            "扭矩计算",
+            "优先级顺序",
+            "AEB",
+            "CDP",
+            "VLC",
+            "RBC模式",
+            "边界限制"
+          ]
+        }
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "d21e65a9-b666-40be-b7e2-f1f5b7984595",
+      "ruleId": "DK-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "sectionKey": "ruleHints",
+      "title": "torque_intervention 1",
+      "content": "{\n  \"domain\": \"embedded_vcu\",\n  \"subdomain\": \"torque_intervention\",\n  \"sectionHints\": [\n    \"扭矩干预功能\",\n    \"ESC前轴扭矩干预\",\n    \"ESC后轴扭矩干预\"\n  ],\n  \"writingPattern\": \"优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。\",\n  \"targetStyle\": \"输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。\",\n  \"sourceBasis\": [\n    \"input/software-requirement-writing-rules-vcu.md\",\n    \"input/system-requirements-example-torque-intervention.md\",\n    \"input/software-design-requirements-example-esc-torque-intervention.md\"\n  ]\n}",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_hint",
+        "item": {
+          "domain": "embedded_vcu",
+          "subdomain": "torque_intervention",
+          "sectionHints": [
+            "扭矩干预功能",
+            "ESC前轴扭矩干预",
+            "ESC后轴扭矩干预"
+          ],
+          "writingPattern": "优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。",
+          "targetStyle": "输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。",
+          "sourceBasis": [
+            "input/software-requirement-writing-rules-vcu.md",
+            "input/system-requirements-example-torque-intervention.md",
+            "input/software-design-requirements-example-esc-torque-intervention.md"
+          ]
+        }
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "f0b06db5-3595-455b-96b3-900e9c84fe01",
+      "ruleId": "EX-BAD-001",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "anti_patterns",
+      "title": "Anti Pattern 1",
+      "content": "不要省略前轴/后轴等对称对象中的任一侧。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_antipattern",
+        "item": "不要省略前轴/后轴等对称对象中的任一侧。"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "83b34c36-a467-4cda-84ca-1f229dde8459",
+      "ruleId": "EX-BAD-002",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "anti_patterns",
+      "title": "Anti Pattern 2",
+      "content": "不要把优先级顺序或默认路径省略掉。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_antipattern",
+        "item": "不要把优先级顺序或默认路径省略掉。"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "47181f00-2a16-4bff-b801-10db4a048d8e",
+      "ruleId": "EX-BAD-003",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "anti_patterns",
+      "title": "Anti Pattern 3",
+      "content": "不要把工程变量名替换成笼统自然语言。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_antipattern",
+        "item": "不要把工程变量名替换成笼统自然语言。"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "8a7b108b-61f9-401a-b572-e4d830cb592f",
+      "ruleId": "EX-BAD-004",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "anti_patterns",
+      "title": "Anti Pattern 4",
+      "content": "不要输出没有来源依据的内部引用编号。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_antipattern",
+        "item": "不要输出没有来源依据的内部引用编号。"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "0450e18f-9622-4e4e-af6c-89b9f4fe7ea3",
+      "ruleId": "EX-BAD-005",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "anti_patterns",
+      "title": "Anti Pattern 5",
+      "content": "不要把前轴和后轴合并成一个对应轴需求。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_antipattern",
+        "item": "不要把前轴和后轴合并成一个对应轴需求。"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "ce32c06c-4610-4081-bbd0-0dabaedc7e53",
+      "ruleId": "EX-BAD-006",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "anti_patterns",
+      "title": "Anti Pattern 6",
+      "content": "不要在四个核心设计主题缺失时，优先输出接口总表、执行周期、越野 TCS 等泛化条目。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_antipattern",
+        "item": "不要在四个核心设计主题缺失时，优先输出接口总表、执行周期、越野 TCS 等泛化条目。"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    },
+    {
+      "id": "cd59c836-7da6-4da1-b44c-f29654b23fba",
+      "ruleId": "EX-BAD-007",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/bad_examples.md",
+      "sectionKey": "anti_patterns",
+      "title": "Anti Pattern 7",
+      "content": "不要只做系统需求复述，要尽量落到激活条件、输出变量、分支和边界处理。",
+      "status": "active",
+      "version": 1,
+      "sourceType": "legacy_import",
+      "sourceRef": {
+        "importStrategy": "domain_knowledge_antipattern",
+        "item": "不要只做系统需求复述，要尽量落到激活条件、输出变量、分支和边界处理。"
+      },
+      "createdAt": "2026-04-12T07:50:15.892Z",
+      "updatedAt": "2026-04-12T07:50:15.892Z"
+    }
+  ],
+  "domainKnowledge": {
+    "version": 2,
+    "documentBlueprint": {
+      "domain": "embedded_vcu",
+      "subdomain": "torque_intervention",
+      "preferredFunctionSection": {
+        "sectionNumber": "",
+        "title": "扭矩干预功能"
+      },
+      "preferredSubsections": [
+        {
+          "sectionNumber": "",
+          "title": "ESC前轴扭矩干预",
+          "coreRequirementTypes": [
+            "activation_flag_logic",
+            "torque_calculation_logic"
+          ]
+        },
+        {
+          "sectionNumber": "",
+          "title": "ESC后轴扭矩干预",
+          "coreRequirementTypes": [
+            "activation_flag_logic",
+            "torque_calculation_logic"
+          ]
+        }
+      ],
+      "targetOutputPolicy": {
+        "coreFirst": true,
+        "preferSymmetricExpansion": true,
+        "preferObjectSpecificRequirements": true,
+        "discourageGenericScatterRequirements": true
+      }
+    },
+    "generationPriorities": [
+      "先复现目标样例的章节骨架，再补足细节，不要先生成泛化条目。",
+      "前轴和后轴必须分别成条，不要统一写成对应轴。",
+      "优先生成四个核心设计主题：前轴激活、前轴计算、后轴激活、后轴计算。",
+      "若输出 schema 只能承载列表，也要在标题或正文中保留层级关系和对象归属，但不要输出具体章节数字。",
+      "只有在四个核心主题已经成型后，才考虑追加接口、时序、诊断等补充条目。",
+      "信号命名优先使用参考样例中的标准工程命名，不要让代码变量名主导最终正文。",
+      "对于 ISO 26262 场景，若样例和系统需求未明确要求，不得擅自把 ABS/EBD/CCO/ISA 等逻辑扩写进核心设计需求。"
+    ],
+    "sourceOfTruthPolicy": {
+      "standard": "ISO 26262",
+      "singleSourceOfTruth": true,
+      "forbidCodeStyleSignals": true,
+      "codeStylePrefixes": [
+        "icesc_",
+        "icadas_",
+        "ACCtl_",
+        "ParkCtrl_"
+      ],
+      "canonicalSignalAliases": [
+        {
+          "canonical": "ESC_TqDecReqAct_F",
+          "aliases": [
+            "icesc_bFrntAxleTqDecActv"
+          ]
+        },
+        {
+          "canonical": "ESC_EHB_RBS_F_Active",
+          "aliases": [
+            "icesc_bFrntAxleRBSTqActv"
+          ]
+        },
+        {
+          "canonical": "ESC_TrqIncReqActv_F",
+          "aliases": [
+            "icesc_bFrntAxleTqIncActv"
+          ]
+        },
+        {
+          "canonical": "ESC_TrqIncReq_F",
+          "aliases": [
+            "icesc_tqReqFrntAxleInc"
+          ]
+        },
+        {
+          "canonical": "ESC_TqDecReq_F",
+          "aliases": [
+            "icesc_tqReqFrntAxleDec"
+          ]
+        },
+        {
+          "canonical": "ESC_EHB_RBS_F_TargetRegenTrq",
+          "aliases": [
+            "icesc_tqRBSReqFrntAxle"
+          ]
+        },
+        {
+          "canonical": "ESC_TqDecReqAct_R",
+          "aliases": [
+            "icesc_bReAxleTqDecActv"
+          ]
+        },
+        {
+          "canonical": "ESC_EHB_RBS_R_Active",
+          "aliases": [
+            "icesc_bReAxleRBSTqActv"
+          ]
+        },
+        {
+          "canonical": "ESC_TrqIncReqActv_R",
+          "aliases": [
+            "icesc_bReAxleTqIncActv"
+          ]
+        },
+        {
+          "canonical": "ESC_TrqIncReq_R",
+          "aliases": [
+            "icesc_tqReqReAxleInc"
+          ]
+        },
+        {
+          "canonical": "ESC_TqDecReq_R",
+          "aliases": [
+            "icesc_tqReqReAxleDec"
+          ]
+        },
+        {
+          "canonical": "ESC_EHB_RBS_R_TargetRegenTrq",
+          "aliases": [
+            "icesc_tqRBSReqReAxle"
+          ]
+        },
+        {
+          "canonical": "ESC_AEB_Active",
+          "aliases": [
+            "icadas_bAEBActv"
+          ]
+        },
+        {
+          "canonical": "ESC_CDP_Active",
+          "aliases": [
+            "icesc_bCDPActv"
+          ]
+        },
+        {
+          "canonical": "ESC_VLC_TorqCtrlActive",
+          "aliases": [
+            "icadas_bTqVLCTrgtReqVld"
+          ]
+        }
+      ],
+      "forbiddenExpansions": {
+        "activation_flag_logic": [
+          "CCO",
+          "ISA"
+        ],
+        "torque_calculation_logic": [
+          "ABS",
+          "EBD",
+          "CCO",
+          "ISA"
+        ]
+      },
+      "normalizationRules": [
+        {
+          "pattern": "AEB/CDP/ABS/EBD任一功能",
+          "replacement": "AEB或CDP任一功能"
+        },
+        {
+          "pattern": "主动制动（AEB/CDP/ABS/EBD）",
+          "replacement": "主动制动（AEB/CDP）"
+        },
+        {
+          "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
+          "replacement": ""
+        },
+        {
+          "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
+          "replacement": ""
+        }
+      ]
+    },
+    "examples": [
+      {
+        "requirementId": "SMiVCU-10160",
+        "topic": "ESC干预前轴激活标志位判断",
+        "sectionNumber": "",
+        "sectionTitle": "ESC前轴扭矩干预",
+        "requirementType": "activation_flag_logic",
+        "preferredTitle": "ESC前轴扭矩干预 - 激活标志位判断",
+        "requirementText": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：1. ESC 降扭请求前电机降扭有效 ESC_TqDecReqAct_F = 0x1，且前电机降扭请求标志位激活；2. 前轴制动再生活跃 ESC_EHB_RBS_F_Active = 0x1，且前轴制动再生扭矩请求标志位激活；3. 前驱电机增扭请求标志位 ESC_TrqIncReqActv_F = 0x1，且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+        "signals": [
+          "ESC_TqDecReqAct_F",
+          "ESC_EHB_RBS_F_Active",
+          "ESC_TrqIncReqActv_F",
+          "ESC_TrqIncReq_F",
+          "ESC_EHB_RBS_F_TargetRegenTrq",
+          "ESCWhlTq_bFrntAxleTqIntvActv"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "前轴降扭请求激活",
+          "前轴制动再生请求激活",
+          "前轴升扭请求激活",
+          "否则 inactive",
+          "阈值有效性判断"
+        ],
+        "keywords": [
+          "前轴",
+          "激活标志位",
+          "active",
+          "inactive",
+          "降扭请求",
+          "升扭请求",
+          "制动再生",
+          "阈值"
+        ]
+      },
+      {
+        "requirementId": "SMiVCU-10597",
+        "topic": "ESC干预前轴扭矩计算",
+        "sectionNumber": "",
+        "sectionTitle": "ESC前轴扭矩干预",
+        "requirementType": "torque_calculation_logic",
+        "preferredTitle": "ESC前轴扭矩干预 - 扭矩计算",
+        "requirementText": "ESC干预前轴扭矩的计算应按以下优先级顺序展开：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前前轴升扭请求标志位置为 active 时，ESC干预前轴目标扭矩 ESCWhlTq_tqTarFrntAxle = 前驱电机增扭请求 ESC_TrqIncReq_F；当前前轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarFrntAxle = ESC 前电机降扭请求 ESC_TqDecReq_F；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarFrntAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarFrntAxle = 扭矩仲裁后前轴目标扭矩 TqSpltArbt_tqTarFrntAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle。注：ESC干预前轴目标扭矩需经过前轴最大扭矩和前轴最小扭矩限制后得到。",
+        "signals": [
+          "ESCWhlTq_tqTarFrntAxle",
+          "ESC_TqDecReq_F",
+          "ESC_TrqIncReq_F",
+          "ESC_AEB_Active",
+          "ESC_CDP_Active",
+          "ESC_VLC_TorqCtrlActive",
+          "VehCfg_stRBCCtrlModeSel",
+          "TqSpltArbt_tqTarFrntAxle",
+          "ESC_EHB_RBS_F_TargetRegenTrq"
+        ],
+        "references": [
+          "SMiVCU-10160",
+          "SMiVCU-9469",
+          "SMiVCU-9477"
+        ],
+        "canonicalBranches": [
+          "升扭请求分支",
+          "降扭请求分支",
+          "AEB/CDP 置零分支",
+          "APA/ACC + VLC 分支",
+          "RBC 模式 0x3 分支",
+          "RBC 模式非 0x3 分支",
+          "默认扭矩分配分支",
+          "最大/最小扭矩限制"
+        ],
+        "keywords": [
+          "前轴",
+          "扭矩计算",
+          "优先级顺序",
+          "AEB",
+          "CDP",
+          "VLC",
+          "RBC模式",
+          "边界限制"
+        ]
+      },
+      {
+        "requirementId": "SMiVCU-10161",
+        "topic": "ESC干预后轴激活标志位判断",
+        "sectionNumber": "",
+        "sectionTitle": "ESC后轴扭矩干预",
+        "requirementType": "activation_flag_logic",
+        "preferredTitle": "ESC后轴扭矩干预 - 激活标志位判断",
+        "requirementText": "当满足以下任一条件时，ESC干预后轴激活标志位置为 active：1. ESC 降扭请求后电机降扭有效 ESC_TqDecReqAct_R = 0x1，且后电机降扭请求标志位激活；2. 后轴制动再生活跃 ESC_EHB_RBS_R_Active = 0x1，且后轴制动再生扭矩请求标志位激活；3. 后驱电机增扭请求标志位 ESC_TrqIncReqActv_R = 0x1，且后电机升扭请求标志位激活。否则，ESC干预后轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+        "signals": [
+          "ESC_TqDecReqAct_R",
+          "ESC_EHB_RBS_R_Active",
+          "ESC_TrqIncReqActv_R",
+          "ESC_TrqIncReq_R",
+          "ESC_EHB_RBS_R_TargetRegenTrq",
+          "ESCWhlTq_bReAxleTqIntvActv"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "后轴降扭请求激活",
+          "后轴制动再生请求激活",
+          "后轴升扭请求激活",
+          "否则 inactive",
+          "阈值有效性判断"
+        ],
+        "keywords": [
+          "后轴",
+          "激活标志位",
+          "active",
+          "inactive",
+          "降扭请求",
+          "升扭请求",
+          "制动再生",
+          "阈值"
+        ]
+      },
+      {
+        "requirementId": "SMiVCU-10598",
+        "topic": "ESC干预后轴扭矩计算",
+        "sectionNumber": "",
+        "sectionTitle": "ESC后轴扭矩干预",
+        "requirementType": "torque_calculation_logic",
+        "preferredTitle": "ESC后轴扭矩干预 - 扭矩计算",
+        "requirementText": "ESC干预后轴扭矩的计算应按以下优先级顺序展开：后轴升扭请求 > 后轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前后轴升扭请求标志位置为 active 时，ESC干预后轴目标扭矩 ESCWhlTq_tqTarReAxle = 后驱电机增扭请求 ESC_TrqIncReq_R；当前后轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarReAxle = ESC 后电机降扭请求 ESC_TqDecReq_R；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarReAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarReAxle = 扭矩仲裁后后轴目标扭矩 TqSpltArbt_tqTarReAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle。注：ESC干预后轴目标扭矩需经过后轴最大扭矩和后轴最小扭矩限制后得到。",
+        "signals": [
+          "ESCWhlTq_tqTarReAxle",
+          "ESC_TqDecReq_R",
+          "ESC_TrqIncReq_R",
+          "ESC_AEB_Active",
+          "ESC_CDP_Active",
+          "ESC_VLC_TorqCtrlActive",
+          "VehCfg_stRBCCtrlModeSel",
+          "TqSpltArbt_tqTarReAxle",
+          "ESC_EHB_RBS_R_TargetRegenTrq"
+        ],
+        "references": [
+          "SMiVCU-10161",
+          "SMiVCU-9469",
+          "SMiVCU-9477"
+        ],
+        "canonicalBranches": [
+          "升扭请求分支",
+          "降扭请求分支",
+          "AEB/CDP 置零分支",
+          "APA/ACC + VLC 分支",
+          "RBC 模式 0x3 分支",
+          "RBC 模式非 0x3 分支",
+          "默认扭矩分配分支",
+          "最大/最小扭矩限制"
+        ],
+        "keywords": [
+          "后轴",
+          "扭矩计算",
+          "优先级顺序",
+          "AEB",
+          "CDP",
+          "VLC",
+          "RBC模式",
+          "边界限制"
+        ]
+      }
+    ],
+    "ruleHints": [
+      {
+        "domain": "embedded_vcu",
+        "subdomain": "torque_intervention",
+        "sectionHints": [
+          "扭矩干预功能",
+          "ESC前轴扭矩干预",
+          "ESC后轴扭矩干预"
+        ],
+        "writingPattern": "优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。",
+        "targetStyle": "输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。",
+        "sourceBasis": [
+          "input/software-requirement-writing-rules-vcu.md",
+          "input/system-requirements-example-torque-intervention.md",
+          "input/software-design-requirements-example-esc-torque-intervention.md"
+        ]
+      }
+    ],
+    "antiPatterns": [
+      "不要省略前轴/后轴等对称对象中的任一侧。",
+      "不要把优先级顺序或默认路径省略掉。",
+      "不要把工程变量名替换成笼统自然语言。",
+      "不要输出没有来源依据的内部引用编号。",
+      "不要把前轴和后轴合并成一个对应轴需求。",
+      "不要在四个核心设计主题缺失时，优先输出接口总表、执行周期、越野 TCS 等泛化条目。",
+      "不要只做系统需求复述，要尽量落到激活条件、输出变量、分支和边界处理。"
+    ]
+  }
+}

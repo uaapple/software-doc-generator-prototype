@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { copyDirectory, pathExists, readJson, writeJson } from "./storage.js";
 import { SkillRuleService } from "./skill-rule-service.js";
+import { SkillLoader } from "./skill-loader.js";
 
 const MANAGED_SKILL_FILES = [
   "requirement_extraction.md",
@@ -60,6 +61,7 @@ async function hasStructuredProfiles(skillDir) {
 export class SkillBundleService {
   constructor() {
     this.skillRuleService = new SkillRuleService();
+    this.skillLoader = new SkillLoader();
   }
 
   async ensureInitialized() {
@@ -208,9 +210,17 @@ export class SkillBundleService {
     return this.getBundleSkillDir(bundleId);
   }
 
-  async getDomainKnowledge(bundleId = "") {
+  async getDomainKnowledge(bundleId = "", context = {}) {
     const skillDir = await this.getSkillDir(bundleId);
-    return readJson(path.join(skillDir, DOMAIN_KNOWLEDGE_FILE), DEFAULT_DOMAIN_KNOWLEDGE);
+    const composed = await this.skillLoader.loadForContext(
+      {
+        documentType: context.documentType || "software_requirement",
+        domain: context.domain || "",
+        moduleSkillKey: context.moduleSkillKey || ""
+      },
+      skillDir
+    );
+    return composed[DOMAIN_KNOWLEDGE_FILE] || DEFAULT_DOMAIN_KNOWLEDGE;
   }
 
   async createCandidateBundle({ baseBundleId = "", proposal, proposalItems = [], replayTaskId = "", createdFromCaseIds = [], evaluationSummary = null }) {

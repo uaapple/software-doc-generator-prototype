@@ -12,6 +12,7 @@ const MARKDOWN_FILES = [
 const KNOWLEDGE_FILE = "domain-knowledge.json";
 const EMPTY_KNOWLEDGE = {
   version: 1,
+  generationPriorities: [],
   examples: [],
   ruleHints: [],
   antiPatterns: []
@@ -41,6 +42,7 @@ function mergeKnowledge(base = {}, overlay = {}) {
     ...base,
     ...overlay,
     version: Math.max(Number(base.version || 1), Number(overlay.version || 1) || 1),
+    generationPriorities: [...(base.generationPriorities || []), ...(overlay.generationPriorities || [])],
     examples: [...(base.examples || []), ...(overlay.examples || [])],
     ruleHints: [...(base.ruleHints || []), ...(overlay.ruleHints || [])],
     antiPatterns: [...(base.antiPatterns || []), ...(overlay.antiPatterns || [])]
@@ -58,6 +60,21 @@ function mergeKnowledge(base = {}, overlay = {}) {
       forbiddenExpansions: {
         ...(left.forbiddenExpansions || {}),
         ...(right.forbiddenExpansions || {})
+      }
+    };
+  }
+
+  if (base.documentBlueprint || overlay.documentBlueprint) {
+    merged.documentBlueprint = {
+      ...(base.documentBlueprint || {}),
+      ...(overlay.documentBlueprint || {}),
+      preferredSubsections: [
+        ...((base.documentBlueprint || {}).preferredSubsections || []),
+        ...((overlay.documentBlueprint || {}).preferredSubsections || [])
+      ],
+      targetOutputPolicy: {
+        ...((base.documentBlueprint || {}).targetOutputPolicy || {}),
+        ...((overlay.documentBlueprint || {}).targetOutputPolicy || {})
       }
     };
   }

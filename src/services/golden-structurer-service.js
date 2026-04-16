@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { PdfExtractor } from "./pdf-extractor.js";
+import { resolveStoredFilePath } from "./storage.js";
 
 function unique(items) {
   return Array.from(new Set(items.filter(Boolean)));
@@ -213,24 +214,25 @@ export class GoldenStructurerService {
     this.pdfExtractor = new PdfExtractor();
   }
 
-  async structure(fileRecord) {
-    const ext = path.extname(fileRecord.originalName || fileRecord.absolutePath).toLowerCase();
+  async structure(fileRecord, options = {}) {
+    const sourcePath = resolveStoredFilePath(fileRecord, options);
+    const ext = path.extname(fileRecord.originalName || sourcePath).toLowerCase();
     if (ext === ".json") {
-      const content = await readFile(fileRecord.absolutePath, "utf8");
+      const content = await readFile(sourcePath, "utf8");
       return normalizeFromJson(JSON.parse(content));
     }
 
     if (ext === ".md" || ext === ".txt") {
-      const content = await readFile(fileRecord.absolutePath, "utf8");
+      const content = await readFile(sourcePath, "utf8");
       return normalizeFromMarkdown(content);
     }
 
     if (ext === ".pdf") {
-      const result = await this.pdfExtractor.extract(fileRecord);
+      const result = await this.pdfExtractor.extract(fileRecord, options);
       return normalizeFromMarkdown(result.blocks.map((item) => item.text).join("\n"));
     }
 
-    const content = await readFile(fileRecord.absolutePath, "utf8");
+    const content = await readFile(sourcePath, "utf8");
     return normalizeFromMarkdown(content);
   }
 }

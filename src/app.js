@@ -750,6 +750,71 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/skill-items", async (req, res, next) => {
+    try {
+      res.json(
+        await skillManagementService.listSkillItems({
+          layer: req.query.layer || "",
+          profileKey: req.query.profileKey || "",
+          kind: req.query.kind || "",
+          query: req.query.query || "",
+          documentTypeScope: req.query.documentTypeScope || "",
+          includeDeprecated: req.query.includeDeprecated === "true"
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/skill-items/:skillCode", async (req, res, next) => {
+    try {
+      res.json(await skillManagementService.getSkillItem(req.params.skillCode));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-items", async (req, res, next) => {
+    try {
+      res.status(201).json(await skillManagementService.createSkillItem(req.body || {}));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/skill-items/:skillCode", async (req, res, next) => {
+    try {
+      res.json(await skillManagementService.updateSkillItem(req.params.skillCode, req.body || {}));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/skill-items/:skillCode", async (req, res, next) => {
+    try {
+      res.json(await skillManagementService.deleteSkillItem(req.params.skillCode));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-items/:skillCode/reorder", async (req, res, next) => {
+    try {
+      res.json(await skillManagementService.reorderSkillItem(req.params.skillCode, req.body || {}));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-registry/materialize", async (_req, res, next) => {
+    try {
+      res.json(await skillManagementService.materializeRegistry());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/skill-refinement/bundles", async (_req, res, next) => {
     try {
       const activeBundle = await skillBundleService.getActiveBundle();

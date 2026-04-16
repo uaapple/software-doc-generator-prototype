@@ -281,7 +281,8 @@ function buildTaskDetail(task) {
                       <strong>${escapeHtml(item.title)}</strong>
                       <span class="mini-pill subtle">${escapeHtml(item.action)}</span>
                     </div>
-                    <p><strong>目标规则：</strong>${escapeHtml(item.targetRuleId || "新增规则")}</p>
+                    <p><strong>目标 Skill：</strong>${escapeHtml(item.targetSkillCode || "新增 skill item")}</p>
+                    <p><strong>目标层级：</strong>${escapeHtml(item.targetLayer || "-")} / ${escapeHtml(item.targetProfileKey || "-")} / ${escapeHtml(item.kind || "-")}</p>
                     <p><strong>证据：</strong>${escapeHtml((item.evidenceRefs || []).join("，") || "无")}</p>
                     <label>
                       状态
@@ -291,6 +292,22 @@ function buildTaskDetail(task) {
                         <option value="edited" ${item.status === "edited" ? "selected" : ""}>编辑后接受</option>
                         <option value="rejected" ${item.status === "rejected" ? "selected" : ""}>拒绝</option>
                       </select>
+                    </label>
+                    <label>
+                      Target Layer
+                      <input data-proposal-layer="${item.proposalItemId}" value="${escapeHtml(item.targetLayer || "")}" />
+                    </label>
+                    <label>
+                      Target Profile
+                      <input data-proposal-profile="${item.proposalItemId}" value="${escapeHtml(item.targetProfileKey || "")}" />
+                    </label>
+                    <label>
+                      Target Skill Code
+                      <input data-proposal-skill="${item.proposalItemId}" value="${escapeHtml(item.targetSkillCode || "")}" />
+                    </label>
+                    <label>
+                      Kind
+                      <input data-proposal-kind="${item.proposalItemId}" value="${escapeHtml(item.kind || "")}" />
                     </label>
                     <label>
                       改后内容
@@ -540,12 +557,22 @@ async function handleTaskDetailAction(event) {
     const [taskId, proposalItemId] = saveButton.dataset.proposalSave.split(":");
     const statusSelect = taskDrawerDetailRoot.querySelector(`[data-proposal-status="${proposalItemId}"]`);
     const afterInput = taskDrawerDetailRoot.querySelector(`[data-proposal-after="${proposalItemId}"]`);
+    const layerInput = taskDrawerDetailRoot.querySelector(`[data-proposal-layer="${proposalItemId}"]`);
+    const profileInput = taskDrawerDetailRoot.querySelector(`[data-proposal-profile="${proposalItemId}"]`);
+    const skillInput = taskDrawerDetailRoot.querySelector(`[data-proposal-skill="${proposalItemId}"]`);
+    const kindInput = taskDrawerDetailRoot.querySelector(`[data-proposal-kind="${proposalItemId}"]`);
     await request(`/api/replay-tasks/${taskId}/proposals/${proposalItemId}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         status: statusSelect.value,
-        editedPayload: { after: afterInput.value }
+        editedPayload: {
+          after: afterInput.value,
+          targetLayer: layerInput?.value || "",
+          targetProfileKey: profileInput?.value || "",
+          targetSkillCode: skillInput?.value || "",
+          kind: kindInput?.value || ""
+        }
       })
     });
     await refreshTasks();

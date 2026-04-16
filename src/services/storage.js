@@ -30,6 +30,30 @@ export function getProjectPath(projectId) {
   return path.join(config.projectStoreDir, `${projectId}.json`);
 }
 
+export function resolveStoredFilePath(fileRecord = {}, options = {}) {
+  const baseDir = options.baseDir || config.uploadDir;
+  const normalizedRelativePath = normalizeStoredPath(fileRecord.relativePath);
+  if (normalizedRelativePath) {
+    return path.join(baseDir, normalizedRelativePath);
+  }
+
+  if (options.allowStoredNameFallback) {
+    const normalizedStoredName = normalizeStoredPath(fileRecord.storedName);
+    if (normalizedStoredName) {
+      return path.join(baseDir, normalizedStoredName);
+    }
+  }
+
+  const absolutePath = String(fileRecord.absolutePath || "").trim();
+  if (!absolutePath) {
+    return "";
+  }
+
+  return path.isAbsolute(absolutePath)
+    ? absolutePath
+    : path.join(baseDir, normalizeStoredPath(absolutePath));
+}
+
 export async function readJson(filePath, fallback = null) {
   try {
     const content = await fs.readFile(filePath, "utf8");
@@ -63,4 +87,11 @@ export async function pathExists(targetPath) {
   } catch (_error) {
     return false;
   }
+}
+
+function normalizeStoredPath(value = "") {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .trim();
 }

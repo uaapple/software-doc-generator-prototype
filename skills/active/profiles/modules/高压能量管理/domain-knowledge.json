@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 1,
   "generationPriorities": [
     "优先严格复现人工样例中的 5 条核心主线：动力电池可用放电功率计算、动力电池放电单体保护、动力电池可用充电功率计算、动力电池充电单体保护、动力电池峰值可用放电功率计算。",
     "若系统需求只给出总纲，而人工样例已经拆出稳定条目边界，应优先沿用人工样例的主题拆分、顺序和内部引用关系，不要重新泛化为更大的总纲条目。",
@@ -173,11 +173,9 @@
     "不要丢失人工样例里的需求编号引用关系，例如 15867 依赖 4098、15869 依赖 15868、15870 依赖 15867。"
   ],
   "documentBlueprint": {
-    "domain": "embedded_vcu",
-    "subdomain": "高压能量管理",
     "preferredFunctionSection": {
-      "sectionNumber": "5.4.1",
-      "title": "电池可用充放功率计算"
+      "title": "电池可用充放功率计算",
+      "sectionNumber": "5.4.1"
     },
     "preferredSubsections": [
       {

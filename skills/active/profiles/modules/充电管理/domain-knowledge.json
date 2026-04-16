@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 1,
   "generationPriorities": [
     "若输入明显属于充电管理，优先生成堵转加热模式、充电截止SOC、充电截止SOC记忆，再考虑充满跳转标志位等补充条目。",
     "若当前输入同时提供人工软件设计需求样例，优先复现样例中的核心条目数、主题顺序和章节归属，不要把代码还能支持的补充逻辑提前写成新的主条目。",
@@ -9,7 +9,6 @@
     {
       "requirementId": "CheryVCU-3015",
       "topic": "充电过程堵转加热模式",
-      "sectionNumber": "",
       "sectionTitle": "充电过程",
       "requirementType": "charge_mode_request_logic",
       "preferredTitle": "充电过程 - 堵转加热模式",
@@ -48,7 +47,6 @@
     {
       "requirementId": "CheryVCU-8102",
       "topic": "充电截止SOC",
-      "sectionNumber": "",
       "sectionTitle": "充电过程",
       "requirementType": "charge_soc_limit_control",
       "preferredTitle": "充电过程 - 充电截止SOC",
@@ -84,7 +82,6 @@
     {
       "requirementId": "CheryVCU-12147",
       "topic": "充电截止SOC记忆",
-      "sectionNumber": "",
       "sectionTitle": "充电过程",
       "requirementType": "charge_soc_memory",
       "preferredTitle": "充电过程 - 充电截止SOC记忆",
@@ -138,5 +135,8 @@
     "不要把堵转加热、截止SOC、记忆、充满跳转标志位、电流计算等充电主题揉成一条综合需求。",
     "不要在人工样例已经拆分“截止SOC控制”和“截止SOC记忆”时，再把两者混写成一条增强版需求。",
     "不要把代码侧补充条目如 ChargingFull 状态跳转，提前写成与人工样例并列的核心主输出。"
-  ]
+  ],
+  "documentBlueprint": {
+    "preferredSubsections": []
+  }
 }

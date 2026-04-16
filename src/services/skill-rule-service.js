@@ -1,314 +1,127 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { promises as fs } from "node:fs";
 import { config } from "../config.js";
-import { pathExists, readJson, writeJson } from "./storage.js";
-
-const RULE_FILE_MAP = {
-  writing: "requirement_writing.md",
-  extraction: "requirement_extraction.md",
-  validation: "requirement_validation.md",
-  examples_good: path.join("examples", "good_examples.md"),
-  examples_bad: path.join("examples", "bad_examples.md")
-};
-
-const FILE_META = {
-  "requirement_writing.md": { prefix: "RW", title: "Requirement Writing Rules" },
-  "requirement_extraction.md": { prefix: "RE", title: "Requirement Extraction Rules" },
-  "requirement_validation.md": { prefix: "RV", title: "Requirement Validation Rules" },
-  [path.join("examples", "good_examples.md")]: { prefix: "EX-GOOD", title: "Good Examples" },
-  [path.join("examples", "bad_examples.md")]: { prefix: "EX-BAD", title: "Bad Examples" },
-  "domain-knowledge.json": { prefix: "DK", title: "Domain Knowledge" }
-};
-
-const MANAGED_SKILL_FILES = [
-  RULE_FILE_MAP.extraction,
-  RULE_FILE_MAP.writing,
-  RULE_FILE_MAP.validation,
-  RULE_FILE_MAP.examples_good,
-  RULE_FILE_MAP.examples_bad,
-  "domain-knowledge.json"
-];
+import { readJson, writeJson } from "./storage.js";
+import { SkillRegistryService } from "./skill-registry-service.js";
 
 function now() {
   return new Date().toISOString();
-}
-
-function normalizeTargetFile(targetFile = "") {
-  return targetFile.replaceAll("/", path.sep);
 }
 
 function getRuleIndexPath(bundleId) {
   return path.join(config.skillRuleDir, `${bundleId}.json`);
 }
 
-function getMetaForFile(targetFile) {
-  return FILE_META[normalizeTargetFile(targetFile)] || { prefix: "RULE", title: targetFile };
+function normalizeTargetArea(area = "") {
+  return area || "validation";
 }
 
-function parseExplicitRuleId(line) {
-  const match = /^###\s+([A-Z-]+-\d{3})\s*(.*)$/.exec(line.trim());
-  if (!match) return null;
-  return {
-    ruleId: match[1],
-    title: match[2]?.trim() || match[1]
-  };
+function mapKindToTargetFile(kind = "") {
+  if (kind === "writing_rule") return "requirement_writing.md";
+  if (kind === "extraction_rule") return "requirement_extraction.md";
+  if (kind === "validation_rule") return "requirement_validation.md";
+  if (kind === "good_example") return "examples/good_examples.md";
+  if (kind === "bad_example") return "examples/bad_examples.md";
+  return "domain-knowledge.json";
 }
 
-function toParagraphs(text) {
-  return text
-    .split(/\r?\n\s*\r?\n/g)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function inferTitle(sectionKey, fallbackTitle, index) {
-  const base = (sectionKey || fallbackTitle || "Rule").trim();
-  return `${base} ${index}`;
-}
-
-function createRule({ bundleId, targetFile, sectionKey, title, content, ruleId = "", sourceType = "legacy_import", sourceRef = {} }) {
-  const createdAt = now();
-  return {
-    id: randomUUID(),
-    ruleId,
-    bundleId,
-    targetFile: normalizeTargetFile(targetFile),
-    sectionKey: sectionKey || "default",
-    title: title || ruleId,
-    content: (content || "").trim(),
-    status: "active",
-    version: 1,
-    sourceType,
-    sourceRef,
-    createdAt,
-    updatedAt: createdAt
-  };
-}
-
-function ensureRuleIds(rules) {
-  const counters = new Map();
-  for (const rule of rules) {
-    const targetFile = normalizeTargetFile(rule.targetFile);
-    const prefix = getMetaForFile(targetFile).prefix;
-    const explicit = rule.ruleId && /^([A-Z-]+)-(\d{3})$/.exec(rule.ruleId);
-    if (explicit) {
-      const value = Number(explicit[2]);
-      counters.set(prefix, Math.max(counters.get(prefix) || 0, value));
-      continue;
-    }
-    const nextValue = (counters.get(prefix) || 0) + 1;
-    counters.set(prefix, nextValue);
-    rule.ruleId = `${prefix}-${String(nextValue).padStart(3, "0")}`;
+function mapTargetAreaToKinds(area = "") {
+  if (area === "writing") return ["writing_rule", "good_example", "rule_hint", "generation_priority"];
+  if (area === "extraction") return ["extraction_rule", "rule_hint", "generation_priority"];
+  if (area === "examples") return ["good_example", "bad_example", "anti_pattern"];
+  if (area === "domain_knowledge") {
+    return [
+      "generation_priority",
+      "rule_hint",
+      "anti_pattern",
+      "source_alias",
+      "code_style_prefix",
+      "forbidden_expansion",
+      "normalization_rule",
+      "source_policy_setting",
+      "document_blueprint_section",
+      "document_blueprint_policy"
+    ];
   }
-  return rules;
+  return ["validation_rule", "anti_pattern", "rule_hint"];
 }
 
-function parseMarkdownRules(text, bundleId, targetFile) {
-  const normalizedTargetFile = normalizeTargetFile(targetFile);
-  const lines = text.split(/\r?\n/);
-  const rules = [];
-  let currentSection = "default";
-  let pendingExplicit = null;
-  let pendingContent = [];
-  let looseItems = [];
-
-  function flushExplicit() {
-    if (!pendingExplicit) return;
-    rules.push(
-      createRule({
-        bundleId,
-        targetFile: normalizedTargetFile,
-        sectionKey: currentSection,
-        title: pendingExplicit.title,
-        content: pendingContent.join("\n").trim() || pendingExplicit.title,
-        ruleId: pendingExplicit.ruleId,
-        sourceRef: { importStrategy: "explicit_heading" }
-      })
-    );
-    pendingExplicit = null;
-    pendingContent = [];
-  }
-
-  function flushLooseItems() {
-    if (!looseItems.length) return;
-    looseItems.forEach((item, index) => {
-      rules.push(
-        createRule({
-          bundleId,
-          targetFile: normalizedTargetFile,
-          sectionKey: currentSection,
-          title: inferTitle(currentSection, getMetaForFile(normalizedTargetFile).title, index + 1),
-          content: item,
-          sourceRef: { importStrategy: "bullet_or_paragraph" }
-        })
-      );
-    });
-    looseItems = [];
-  }
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    const explicit = parseExplicitRuleId(line);
-    if (explicit) {
-      flushExplicit();
-      flushLooseItems();
-      pendingExplicit = explicit;
-      continue;
-    }
-
-    if (/^##\s+/.test(line)) {
-      flushExplicit();
-      flushLooseItems();
-      currentSection = line.replace(/^##\s+/, "").trim() || "default";
-      continue;
-    }
-
-    if (pendingExplicit) {
-      if (/^###\s+/.test(line)) {
-        flushExplicit();
-        pendingExplicit = parseExplicitRuleId(line);
-        continue;
-      }
-      if (line) {
-        pendingContent.push(line);
-      }
-      continue;
-    }
-
-    if (/^[-*]\s+/.test(line)) {
-      looseItems.push(line.replace(/^[-*]\s+/, "").trim());
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(line)) {
-      looseItems.push(line.replace(/^\d+\.\s+/, "").trim());
-      continue;
-    }
-  }
-
-  flushExplicit();
-  flushLooseItems();
-
-  if (!rules.length) {
-    const paragraphs = toParagraphs(text.replace(/^#.*$/gm, "").trim());
-    paragraphs.forEach((paragraph, index) => {
-      rules.push(
-        createRule({
-          bundleId,
-          targetFile: normalizedTargetFile,
-          sectionKey: "default",
-          title: inferTitle(getMetaForFile(normalizedTargetFile).title, "Rule", index + 1),
-          content: paragraph,
-          sourceRef: { importStrategy: "paragraph_fallback" }
-        })
-      );
+function flattenKnowledgePatch(patch = {}, targetLayer, targetProfileKey, evidenceRefs = []) {
+  const items = [];
+  for (const content of patch.generationPriorities || []) {
+    items.push({
+      action: "add_skill_item",
+      targetLayer,
+      targetProfileKey,
+      kind: "generation_priority",
+      title: "generation priority",
+      newItemDraft: { content, structuredPayload: null },
+      evidenceRefs
     });
   }
-
-  return ensureRuleIds(rules).filter((rule) => rule.content);
-}
-
-function parseDomainKnowledgeRules(bundleId, knowledge = {}) {
-  const rules = [];
-  const examples = Array.isArray(knowledge.examples) ? knowledge.examples : [];
-  const hints = Array.isArray(knowledge.ruleHints) ? knowledge.ruleHints : [];
-  const antiPatterns = Array.isArray(knowledge.antiPatterns) ? knowledge.antiPatterns : [];
-
-  examples.forEach((item, index) => {
-    rules.push(
-      createRule({
-        bundleId,
-        targetFile: path.join("examples", "good_examples.md"),
-        sectionKey: "domain_examples",
-        title: item.topic || `Domain Example ${index + 1}`,
-        content: item.requirementText || JSON.stringify(item),
-        sourceRef: { importStrategy: "domain_knowledge_example", item }
-      })
-    );
-  });
-
-  hints.forEach((item, index) => {
-    rules.push(
-      createRule({
-        bundleId,
-        targetFile: "domain-knowledge.json",
-        sectionKey: "ruleHints",
-        title: `${item.subdomain || item.domain || "Hint"} ${index + 1}`,
-        content: JSON.stringify(item, null, 2),
-        sourceRef: { importStrategy: "domain_knowledge_hint", item }
-      })
-    );
-  });
-
-  antiPatterns.forEach((item, index) => {
-    rules.push(
-      createRule({
-        bundleId,
-        targetFile: path.join("examples", "bad_examples.md"),
-        sectionKey: "anti_patterns",
-        title: `Anti Pattern ${index + 1}`,
-        content: String(item),
-        sourceRef: { importStrategy: "domain_knowledge_antipattern", item }
-      })
-    );
-  });
-
-  return ensureRuleIds(rules);
-}
-
-function renderMarkdownFile(targetFile, rules = []) {
-  const meta = getMetaForFile(targetFile);
-  const groups = new Map();
-  for (const rule of rules.filter((item) => item.status === "active" && normalizeTargetFile(item.targetFile) === normalizeTargetFile(targetFile))) {
-    const key = rule.sectionKey || "default";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(rule);
+  for (const example of patch.examples || []) {
+    items.push({
+      action: "add_skill_item",
+      targetLayer,
+      targetProfileKey,
+      kind: "good_example",
+      title: example.topic || example.requirementId || "example",
+      newItemDraft: {
+        content: example.requirementText || "",
+        structuredPayload: example
+      },
+      evidenceRefs
+    });
   }
-
-  const sections = [`# ${meta.title}`];
-  for (const [sectionKey, items] of groups.entries()) {
-    if (sectionKey && sectionKey !== "default") {
-      sections.push(`\n## ${sectionKey}`);
-    }
-    for (const rule of items) {
-      sections.push(`\n### ${rule.ruleId} ${rule.title}\n${rule.content.trim()}\n`);
-    }
+  for (const hint of patch.ruleHints || []) {
+    items.push({
+      action: "add_skill_item",
+      targetLayer,
+      targetProfileKey,
+      kind: "rule_hint",
+      title: hint.subdomain || hint.domain || hint.documentType || "rule hint",
+      newItemDraft: {
+        content: "",
+        structuredPayload: hint
+      },
+      evidenceRefs
+    });
   }
-  return `${sections.join("\n").trim()}\n`;
-}
-
-async function appendChangeLog(entries) {
-  const existing = await readJson(config.skillRuleChangeLogPath, []);
-  await writeJson(config.skillRuleChangeLogPath, [...existing, ...entries]);
+  for (const antiPattern of patch.antiPatterns || []) {
+    items.push({
+      action: "add_skill_item",
+      targetLayer,
+      targetProfileKey,
+      kind: "anti_pattern",
+      title: "anti pattern",
+      newItemDraft: { content: antiPattern, structuredPayload: null },
+      evidenceRefs
+    });
+  }
+  return items;
 }
 
 export class SkillRuleService {
+  constructor() {
+    this.registryService = new SkillRegistryService();
+  }
+
   async getRuleIndex(bundleId) {
     return readJson(getRuleIndexPath(bundleId));
+  }
+
+  resolveAreaTargetFile(targetArea = "") {
+    const area = normalizeTargetArea(targetArea);
+    if (area === "writing") return "requirement_writing.md";
+    if (area === "extraction") return "requirement_extraction.md";
+    if (area === "examples") return "examples/bad_examples.md";
+    if (area === "domain_knowledge") return "domain-knowledge.json";
+    return "requirement_validation.md";
   }
 
   async listRules(bundleId) {
     const index = await this.getRuleIndex(bundleId);
     return index?.rules || [];
-  }
-
-  async getRelevantRuleSnapshot(bundleId, targetAreas = []) {
-    const rules = await this.listRules(bundleId);
-    if (!targetAreas.length) {
-      return rules.slice(0, 20);
-    }
-    const files = new Set(targetAreas.map((area) => this.resolveAreaTargetFile(area)));
-    return rules.filter((rule) => files.has(normalizeTargetFile(rule.targetFile))).slice(0, 20);
-  }
-
-  resolveAreaTargetFile(targetArea = "") {
-    const area = targetArea || "validation";
-    if (area === "writing") return RULE_FILE_MAP.writing;
-    if (area === "extraction") return RULE_FILE_MAP.extraction;
-    if (area === "examples") return RULE_FILE_MAP.examples_bad;
-    if (area === "domain_knowledge") return "domain-knowledge.json";
-    return RULE_FILE_MAP.validation;
   }
 
   async ensureBundleRuleIndex(bundleId, skillDir, options = {}) {
@@ -320,194 +133,246 @@ export class SkillRuleService {
   }
 
   async importBundleRules(bundleId, skillDir, options = {}) {
-    const rules = [];
-    for (const relativeFile of MANAGED_SKILL_FILES) {
-      const absolutePath = path.join(skillDir, relativeFile);
-      if (!(await pathExists(absolutePath))) {
-        continue;
-      }
-      if (relativeFile === "domain-knowledge.json") {
-        continue;
-      }
-      const text = await fs.readFile(absolutePath, "utf8");
-      rules.push(...parseMarkdownRules(text, bundleId, relativeFile));
-    }
-
-    const domainKnowledge = await readJson(path.join(skillDir, "domain-knowledge.json"), {
-      version: 1,
-      examples: [],
-      ruleHints: [],
-      antiPatterns: []
-    });
-    rules.push(...parseDomainKnowledgeRules(bundleId, domainKnowledge));
+    const registryIndex = await this.registryService.getRegistryIndex(skillDir, { includeDeprecated: true });
+    const rules = registryIndex.items.map((item) => ({
+      id: item.skillCode,
+      ruleId: item.skillCode,
+      skillCode: item.skillCode,
+      bundleId,
+      targetFile: mapKindToTargetFile(item.kind),
+      targetArea: item.targetAreas?.[0] || "domain_knowledge",
+      layer: item.layer,
+      profileKey: item.profileKey,
+      documentTypeScope: item.documentTypeScope || "",
+      kind: item.kind,
+      title: item.title,
+      content: item.content || item.structuredPayload?.requirementText || JSON.stringify(item.structuredPayload || {}),
+      sectionKey: item.sectionKey || "default",
+      status: item.status,
+      version: item.provenance?.createdFromProposalId ? 2 : 1,
+      sourceType: item.provenance?.replayTaskId ? "replay_proposal" : item.provenance?.createdFromProposalId ? "proposal" : "registry",
+      sourceRef: {
+        migratedFromRuleId: item.provenance?.migratedFromRuleId || "",
+        createdFromCaseIds: item.provenance?.createdFromCaseIds || [],
+        createdFromProposalId: item.provenance?.createdFromProposalId || "",
+        replayTaskId: item.provenance?.replayTaskId || "",
+        legacySource: item.provenance?.legacySource || "",
+        registryPath: item.registryPath || ""
+      },
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    }));
 
     const ruleIndex = {
       bundleId,
-      ruleIndexVersion: options.ruleIndexVersion || `import-${Date.now()}`,
+      ruleIndexVersion: options.ruleIndexVersion || `registry-${Date.now()}`,
       importedAt: now(),
       skillDir,
-      rules: ensureRuleIds(rules),
-      domainKnowledge
+      rules,
+      domainKnowledge: await readJson(path.join(skillDir, "domain-knowledge.json"), {
+        version: 1,
+        generationPriorities: [],
+        examples: [],
+        ruleHints: [],
+        antiPatterns: []
+      })
     };
+
     await writeJson(getRuleIndexPath(bundleId), ruleIndex);
     return ruleIndex;
   }
 
+  async getRelevantRuleSnapshot(bundleId, targetAreas = [], context = {}) {
+    const index = await this.getRuleIndex(bundleId);
+    const baseRules = index?.rules || [];
+    if (!baseRules.length) return [];
+
+    const kinds = new Set(targetAreas.flatMap((area) => mapTargetAreaToKinds(area)));
+    const selected = baseRules
+      .filter((rule) => (!kinds.size ? true : kinds.has(rule.kind)))
+      .filter((rule) => {
+        if (rule.layer === "docType" && context.documentType) return rule.profileKey === context.documentType;
+        if (rule.layer === "domain" && context.domain) return rule.profileKey === context.domain;
+        if (rule.layer === "module" && context.moduleSkillKey) return rule.profileKey === context.moduleSkillKey;
+        return true;
+      })
+      .sort((left, right) => this.scoreRule(right, targetAreas, context) - this.scoreRule(left, targetAreas, context))
+      .slice(0, 20);
+
+    return selected;
+  }
+
+  scoreRule(rule, targetAreas = [], context = {}) {
+    let score = 0;
+    if (rule.layer === "module" && context.moduleSkillKey && rule.profileKey === context.moduleSkillKey) score += 20;
+    if (rule.layer === "domain" && context.domain && rule.profileKey === context.domain) score += 16;
+    if (rule.layer === "docType" && context.documentType && rule.profileKey === context.documentType) score += 12;
+    if (rule.layer === "generic") score += 5;
+    if (targetAreas.includes(rule.targetArea)) score += 8;
+    return score;
+  }
+
   async applyProposalItems({ bundleId, bundleDir, proposalItems = [], replayTaskId = "" }) {
-    const index = await this.ensureBundleRuleIndex(bundleId, bundleDir, { force: true });
-    const rules = [...(index.rules || [])].map((rule) => ({ ...rule }));
-    const domainKnowledge = { ...(index.domainKnowledge || { version: 1, examples: [], ruleHints: [], antiPatterns: [] }) };
+    await this.registryService.ensureAllRegistries(bundleDir);
     const changeLogEntries = [];
 
-    const nextRuleId = (targetFile) => {
-      const prefix = getMetaForFile(targetFile).prefix;
-      const max = rules
-        .filter((rule) => rule.ruleId.startsWith(`${prefix}-`))
-        .reduce((acc, rule) => Math.max(acc, Number(rule.ruleId.split("-").pop()) || 0), 0);
-      return `${prefix}-${String(max + 1).padStart(3, "0")}`;
-    };
+    const normalizedItems = [];
+    for (const proposalItem of proposalItems) {
+      const payload = proposalItem.editedPayload || proposalItem;
+      if (payload.action === "modify_domain_knowledge") {
+        normalizedItems.push(
+          ...flattenKnowledgePatch(
+            payload.domainKnowledgePatch || payload.newRuleDraft?.domainKnowledgePatch || {},
+            payload.targetLayer || "generic",
+            payload.targetProfileKey || "generic",
+            payload.evidenceRefs || proposalItem.evidenceRefs || []
+          )
+        );
+        continue;
+      }
 
-    for (const item of proposalItems) {
-      const payload = item.editedPayload || item;
-      const action = payload.action || item.action;
-      const targetFile = normalizeTargetFile(payload.targetFile || item.targetFile || this.resolveAreaTargetFile(payload.targetArea));
-      const timestamp = now();
+      normalizedItems.push({
+        ...proposalItem,
+        ...payload
+      });
+    }
 
-      if (action === "modify_rule") {
-        const target = rules.find((rule) => rule.ruleId === payload.targetRuleId);
-        if (!target) {
-          continue;
-        }
-        target.title = payload.title || target.title;
-        target.content = (payload.after || payload.newRuleDraft?.content || target.content).trim();
-        target.version += 1;
-        target.updatedAt = timestamp;
-        target.sourceType = "replay_proposal";
-        target.sourceRef = { replayTaskId, proposalItemId: item.proposalItemId || item.id, evidenceRefs: payload.evidenceRefs || item.evidenceRefs || [] };
+    for (const item of normalizedItems) {
+      const action = item.action || "add_skill_item";
+      const targetSkillCode = item.targetSkillCode || item.targetRuleId || "";
+      const targetLayer = item.targetLayer || (targetSkillCode ? (await this.registryService.getItem(targetSkillCode, bundleDir)).layer : "generic");
+      const targetProfileKey =
+        item.targetProfileKey ||
+        (targetSkillCode ? (await this.registryService.getItem(targetSkillCode, bundleDir)).profileKey : "generic");
+      const kind = item.kind || item.newItemDraft?.kind || "validation_rule";
+      const proposalItemId = item.proposalItemId || item.id || randomUUID();
+
+      if (action === "modify_skill_item" || action === "modify_rule") {
+        if (!targetSkillCode) continue;
+        await this.registryService.updateItem(
+          targetSkillCode,
+          {
+            title: item.title || item.newItemDraft?.title || undefined,
+            content: item.after || item.newItemDraft?.content || undefined,
+            structuredPayload: item.newItemDraft?.structuredPayload,
+            review: {
+              reviewer: "system",
+              note: item.rationale || "",
+              updatedAt: now()
+            },
+            provenance: {
+              createdFromProposalId: proposalItemId,
+              createdFromCaseIds: item.basedOnCaseIds || [],
+              replayTaskId
+            }
+          },
+          bundleDir
+        );
         changeLogEntries.push({
           id: randomUUID(),
           bundleId,
-          ruleId: target.ruleId,
-          action,
+          skillCode: targetSkillCode,
+          action: "modify_skill_item",
           replayTaskId,
-          proposalItemId: item.proposalItemId || item.id,
-          at: timestamp
+          proposalItemId,
+          at: now()
         });
         continue;
       }
 
-      if (action === "deprecate_rule") {
-        const target = rules.find((rule) => rule.ruleId === payload.targetRuleId);
-        if (!target) {
-          continue;
-        }
-        target.status = "deprecated";
-        target.version += 1;
-        target.updatedAt = timestamp;
+      if (action === "deprecate_skill_item" || action === "deprecate_rule") {
+        if (!targetSkillCode) continue;
+        await this.registryService.updateItem(
+          targetSkillCode,
+          {
+            status: "deprecated",
+            review: {
+              reviewer: "system",
+              note: item.rationale || "",
+              updatedAt: now()
+            }
+          },
+          bundleDir
+        );
         changeLogEntries.push({
           id: randomUUID(),
           bundleId,
-          ruleId: target.ruleId,
-          action,
+          skillCode: targetSkillCode,
+          action: "deprecate_skill_item",
           replayTaskId,
-          proposalItemId: item.proposalItemId || item.id,
-          at: timestamp
+          proposalItemId,
+          at: now()
         });
         continue;
       }
 
-      if (action === "split_rule") {
-        const target = rules.find((rule) => rule.ruleId === payload.targetRuleId);
-        if (target) {
-          target.status = "deprecated";
-          target.version += 1;
-          target.updatedAt = timestamp;
-        }
-        const newRules = Array.isArray(payload.newRuleDraft?.rules) ? payload.newRuleDraft.rules : [];
-        for (const newRule of newRules) {
-          const created = createRule({
-            bundleId,
-            targetFile,
-            sectionKey: payload.sectionKey || target?.sectionKey || "default",
-            title: newRule.title,
-            content: newRule.content,
-            ruleId: nextRuleId(targetFile),
-            sourceType: "replay_proposal",
-            sourceRef: { replayTaskId, proposalItemId: item.proposalItemId || item.id, evidenceRefs: payload.evidenceRefs || [] }
-          });
-          rules.push(created);
+      if (action === "split_skill_item" || action === "split_rule") {
+        if (!targetSkillCode) continue;
+        await this.registryService.updateItem(targetSkillCode, { status: "deprecated" }, bundleDir);
+        for (const draft of item.newItemDraft?.rules || []) {
+          const created = await this.registryService.createItem(
+            {
+              layer: targetLayer,
+              profileKey: targetProfileKey,
+              kind,
+              title: draft.title,
+              content: draft.content,
+              provenance: {
+                createdFromProposalId: proposalItemId,
+                createdFromCaseIds: item.basedOnCaseIds || [],
+                replayTaskId
+              }
+            },
+            bundleDir
+          );
           changeLogEntries.push({
             id: randomUUID(),
             bundleId,
-            ruleId: created.ruleId,
-            action: "add_rule",
+            skillCode: created.skillCode,
+            action: "add_skill_item",
             replayTaskId,
-            proposalItemId: item.proposalItemId || item.id,
-            at: timestamp
+            proposalItemId,
+            at: now()
           });
         }
         continue;
       }
 
-      if (action === "modify_domain_knowledge") {
-        const patch = payload.editedPayload || payload.domainKnowledgePatch || payload.newRuleDraft?.domainKnowledgePatch || {};
-        domainKnowledge.examples = [...(domainKnowledge.examples || []), ...(patch.examples || [])];
-        domainKnowledge.ruleHints = [...(domainKnowledge.ruleHints || []), ...(patch.ruleHints || [])];
-        domainKnowledge.antiPatterns = [...(domainKnowledge.antiPatterns || []), ...(patch.antiPatterns || [])];
-        changeLogEntries.push({
-          id: randomUUID(),
-          bundleId,
-          ruleId: payload.targetRuleId || "domain-knowledge",
-          action,
-          replayTaskId,
-          proposalItemId: item.proposalItemId || item.id,
-          at: timestamp
-        });
-        continue;
-      }
-
-      const created = createRule({
-        bundleId,
-        targetFile,
-        sectionKey: payload.sectionKey || "Feedback Replay",
-        title: payload.title || payload.newRuleDraft?.title || "Replay Proposal",
-        content: (payload.after || payload.newRuleDraft?.content || "").trim(),
-        ruleId: nextRuleId(targetFile),
-        sourceType: "replay_proposal",
-        sourceRef: { replayTaskId, proposalItemId: item.proposalItemId || item.id, evidenceRefs: payload.evidenceRefs || item.evidenceRefs || [] }
-      });
-      if (!created.content) {
-        continue;
-      }
-      rules.push(created);
+      const created = await this.registryService.createItem(
+        {
+          layer: targetLayer,
+          profileKey: targetProfileKey,
+          kind,
+          title: item.title || item.newItemDraft?.title || "Skill Proposal",
+          content: item.after || item.newItemDraft?.content || "",
+          structuredPayload: item.newItemDraft?.structuredPayload,
+          provenance: {
+            createdFromProposalId: proposalItemId,
+            createdFromCaseIds: item.basedOnCaseIds || [],
+            replayTaskId
+          },
+          review: {
+            reviewer: "system",
+            note: item.rationale || "",
+            updatedAt: now()
+          }
+        },
+        bundleDir
+      );
       changeLogEntries.push({
         id: randomUUID(),
         bundleId,
-        ruleId: created.ruleId,
-        action,
+        skillCode: created.skillCode,
+        action: "add_skill_item",
         replayTaskId,
-        proposalItemId: item.proposalItemId || item.id,
-        at: timestamp
+        proposalItemId,
+        at: now()
       });
     }
 
-    const nextIndex = {
-      bundleId,
-      ruleIndexVersion: `rules-${Date.now()}`,
-      importedAt: index.importedAt,
-      skillDir: bundleDir,
-      rules,
-      domainKnowledge
-    };
-
-    await writeJson(getRuleIndexPath(bundleId), nextIndex);
-    await appendChangeLog(changeLogEntries);
-
-    for (const targetFile of [RULE_FILE_MAP.extraction, RULE_FILE_MAP.writing, RULE_FILE_MAP.validation, RULE_FILE_MAP.examples_good, RULE_FILE_MAP.examples_bad]) {
-      await fs.writeFile(path.join(bundleDir, targetFile), renderMarkdownFile(targetFile, rules), "utf8");
-    }
-    await writeJson(path.join(bundleDir, "domain-knowledge.json"), domainKnowledge);
-
+    const nextIndex = await this.importBundleRules(bundleId, bundleDir, { force: true, ruleIndexVersion: `registry-${Date.now()}` });
+    const existingLog = await readJson(config.skillRuleChangeLogPath, []);
+    await writeJson(config.skillRuleChangeLogPath, [...existingLog, ...changeLogEntries]);
     return nextIndex;
   }
 }

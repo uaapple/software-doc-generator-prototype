@@ -52,30 +52,55 @@
         </div>
       </section>
 
-      <section class="panel skill-management-grid">
-        <aside class="card skill-sidebar-card">
+      <section class="skill-workspace card">
+        <aside class="workspace-pane profile-rail-pane">
           <div class="section-head compact-head">
-            <span class="section-index">列表</span>
+            <span class="section-index">导航</span>
             <div>
-              <h2>技能分类</h2>
-              <p>按类型分组展示，异常项会高亮提示，可直接点击切换详情。</p>
+              <h2>Profile Rail</h2>
+              <p>左侧只负责定位 layer 与 profile，不再把所有 atomic item 一次性摊平。</p>
             </div>
           </div>
-          <div id="skill-groups" class="skill-group-stack"></div>
+          <div class="profile-rail-toolbar">
+            <label>
+              搜索
+              <input id="profile-query" placeholder="按 profile 名称或 key 过滤" />
+            </label>
+            <label>
+              Layer
+              <select id="profile-layer-filter">
+                <option value="all">全部</option>
+                <option value="generic">generic</option>
+                <option value="docType">docType</option>
+                <option value="domain">domain</option>
+                <option value="module">module</option>
+              </select>
+            </label>
+          </div>
+          <div id="profile-rail" class="profile-rail-body"></div>
         </aside>
 
-        <section class="card skill-detail-card">
-          <div class="section-head compact-head">
-            <span class="section-index">详情</span>
-            <div>
-              <h2>结构化编辑</h2>
-              <p>首版聚焦 `domain-knowledge.json` 相关字段；Markdown 文件以只读摘要形式展示。</p>
-            </div>
+        <section class="workspace-pane item-browser-pane">
+          <div id="item-browser-chrome" class="item-browser-chrome"></div>
+          <div class="item-browser-toolbar">
+            <label>
+              当前 Profile 检索
+              <input id="item-query" placeholder="按 skillCode、标题、内容、JSON 搜索当前 profile" />
+            </label>
           </div>
-          <div id="skill-detail" class="skill-detail-body"></div>
+          <div id="item-browser" class="item-browser-body"></div>
         </section>
+
+        <aside class="workspace-pane review-pane-shell">
+          <div id="review-pane" class="review-pane-body"></div>
+        </aside>
       </section>
     </main>
+
+    <div id="editor-backdrop" class="skill-editor-backdrop" hidden></div>
+    <aside id="editor-drawer" class="skill-editor-drawer" aria-hidden="true">
+      <div id="editor-drawer-body" class="skill-editor-drawer-body"></div>
+    </aside>
 
     <script type="module" src="/skill-management.js"></script>
   </body>

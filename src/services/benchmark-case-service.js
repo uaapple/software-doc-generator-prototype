@@ -22,6 +22,7 @@ function buildFileRecord(file, role) {
     role,
     originalName: file.originalname,
     storedName: file.filename,
+    relativePath: file.filename,
     absolutePath: file.path,
     mimeType: file.mimetype,
     size: file.size,
@@ -64,7 +65,10 @@ export class BenchmarkCaseService {
       throw new Error("Missing golden source file");
     }
 
-    const goldenStructured = await this.goldenStructurer.structure(goldenSourceFile);
+    const goldenStructured = await this.goldenStructurer.structure(goldenSourceFile, {
+      baseDir: config.skillRefinementUploadDir,
+      allowStoredNameFallback: true
+    });
     const benchmarkCase = {
       id: caseId,
       name: input.name?.trim() || goldenStructured.title || `Benchmark Case ${caseId.slice(0, 8)}`,
@@ -186,7 +190,13 @@ export class BenchmarkCaseService {
       return benchmarkCase;
     }
 
-    const extractions = await this.extractionService.extractFiles({ files: benchmarkCase.inputFiles });
+    const extractions = await this.extractionService.extractFiles(
+      { files: benchmarkCase.inputFiles },
+      {
+        fileBaseDir: config.skillRefinementUploadDir,
+        allowStoredNameFallback: true
+      }
+    );
     benchmarkCase.alignedExamples = this.caseAlignmentService.align(benchmarkCase.goldenStructured, extractions);
     benchmarkCase.status = "example_aligned";
     const saved = await this.saveCase(benchmarkCase);

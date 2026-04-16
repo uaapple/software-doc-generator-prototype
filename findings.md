@@ -43,3 +43,20 @@
   - `scripts/migrate-legacy-demo.mjs`
 - 当前旧生成页已被接回为真实页面，并依赖 query 参数中的 `projectId` 与 `moduleId`
 - 自动化测试当前通过：`npm test` -> `All 10 tests passed.`
+
+## 软件需求文档类型技能初始化新增发现（2026-04-16）
+- 用户已明确收窄范围：当前只需要填充 `software_requirement` 文档类型层，不需要生成 `detail_design` 或 `hil_test_case` 两层的技能内容。
+- `skills/active/profiles/doc-types/software_requirement/skill-items.json` 当前是空 registry，manifest 已注册该 profile，但尚未物化 `requirement_writing.md`、`requirement_validation.md`、`domain-knowledge.json`。
+- `input/20260404/software-requirement-writing-rules-vcu.md` 提供了可直接抽象为文档类型层规则的写法基准：
+  - 多级章节与对象对称拆分
+  - “当…时…否则…”与“优先级顺序为…”句式
+  - 阈值/边界/状态值显式化
+  - 内部引用与外部系统联动
+  - 可测试性与安全边界显式说明
+- `input/20260404/software-design-requirements-example-esc-torque-intervention.md` 虽然标题是软件设计需求示例，但其中呈现的条目形态、内部引用、优先级、阈值与分支写法，依然可以作为“软件需求条目长相”的样本来源。
+- `input/20260411/AI case_ITK_20260411.docx` 给出了当前人工整理的目标范围：扭矩干预已完成，新增的软件需求相关主题包括高低系统管理、高压安全管理、充电管理、高压能量管理、低压能量管理、V2L、V2IN 以及模板。
+- 当前工程里与本轮最相关的模块 profile 里，已经积累了软件需求风格样例：
+  - `充电管理`：堵转加热模式、充电截止SOC、充电截止SOC记忆
+  - `高低系统管理`：本地KL15上高压请求激活判断、本地KL15上高压建立流程
+  - `高压能量管理`：可用放电功率、单体保护、可用充电功率、峰值放电功率
+- 现有 generic 层已经沉淀了不少“软件需求/设计需求通用写法”，但其中有一部分内容明显偏向扭矩干预与充电管理具体案例；`software_requirement` 文档类型层更适合补一版“面向软件需求文档”的通用规则，再让 module 层保留具体主题偏好。

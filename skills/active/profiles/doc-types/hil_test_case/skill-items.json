@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "layer": "docType",
+  "profileKey": "hil_test_case",
+  "displayName": "HIL Test Case",
+  "documentTypeScope": "hil_test_case",
+  "status": "active",
+  "items": []
+}

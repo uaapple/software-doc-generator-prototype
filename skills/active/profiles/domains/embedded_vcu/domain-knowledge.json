@@ -1,5 +1,9 @@
 {
   "version": 1,
+  "generationPriorities": [],
+  "examples": [],
+  "ruleHints": [],
+  "antiPatterns": [],
   "sourceOfTruthPolicy": {
     "standard": "ISO 26262",
     "singleSourceOfTruth": true,
@@ -102,6 +106,22 @@
         ]
       }
     ],
+    "normalizationRules": [
+      {
+        "pattern": "AEB/CDP/ABS/EBD任一功能",
+        "replacement": "AEB或CDP任一功能"
+      },
+      {
+        "pattern": "主动制动（AEB/CDP/ABS/EBD）",
+        "replacement": "主动制动（AEB/CDP）"
+      },
+      {
+        "pattern": "；4. 前轴CCO/ISA扭矩请求有效"
+      },
+      {
+        "pattern": "；4. 后轴CCO/ISA扭矩请求有效"
+      }
+    ],
     "forbiddenExpansions": {
       "activation_flag_logic": [
         "CCO",
@@ -113,26 +133,9 @@
         "CCO",
         "ISA"
       ]
-    },
-    "normalizationRules": [
-      {
-        "pattern": "AEB/CDP/ABS/EBD任一功能",
-        "replacement": "AEB或CDP任一功能"
-      },
-      {
-        "pattern": "主动制动（AEB/CDP/ABS/EBD）",
-        "replacement": "主动制动（AEB/CDP）"
-      },
-      {
-        "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
-        "replacement": ""
-      },
-      {
-        "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
-        "replacement": ""
-      }
-    ]
+    }
   },
-  "ruleHints": [],
-  "antiPatterns": []
+  "documentBlueprint": {
+    "preferredSubsections": []
+  }
 }

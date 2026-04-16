@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
 import pdfParse from "pdf-parse";
+import { resolveStoredFilePath } from "./storage.js";
 
 export class PdfExtractor {
-  async extract(fileRecord) {
-    const buffer = await readFile(fileRecord.absolutePath);
+  async extract(fileRecord, options = {}) {
+    const sourcePath = resolveStoredFilePath(fileRecord, options);
+    const buffer = await readFile(sourcePath);
 
     try {
       const parsed = await pdfParse(buffer);
