@@ -16,24 +16,37 @@
           <h1 id="module-title">&#21151;&#33021;&#27169;&#22359;</h1>
           <p id="module-description" class="subtitle"></p>
           <div class="module-head-actions">
-            <a id="edit-module-link" class="secondary-link button-link" href="#">编辑模块</a>
-            <button id="open-history-drawer" type="button" class="secondary-button">历史任务</button>
-            <a id="req-generate-link" class="primary-link" href="#">&#36827;&#20837;&#36719;&#20214;&#38656;&#27714;&#29983;&#25104;</a>
-            <a id="detail-generate-link" class="secondary-link button-link" href="#">&#36827;&#20837;&#35814;&#32454;&#35774;&#35745;&#29983;&#25104;</a>
-            <a id="hil-generate-link" class="secondary-link button-link" href="#">&#36827;&#20837; HIL &#29992;&#20363;&#29983;&#25104;</a>
-            <a id="feedback-pool-link" class="secondary-link button-link" href="#">&#36827;&#20837;&#27169;&#22359;&#21453;&#39304;&#27744;</a>
-            <button id="delete-module-button" type="button" class="secondary-button">删除模块</button>
+            <div class="module-primary-actions" role="tablist" aria-label="模块工作区">
+              <button id="accepted-results-link" class="secondary-link button-link module-workspace-tab" type="button" data-workspace-tab="accepted_results">已采纳结果</button>
+              <button id="req-generate-link" class="primary-link module-workspace-tab" type="button" data-workspace-tab="software_requirement">进入软件需求生成</button>
+              <button id="detail-generate-link" class="secondary-link button-link module-workspace-tab" type="button" data-workspace-tab="detail_design">进入详细设计生成</button>
+              <button id="hil-generate-link" class="secondary-link button-link module-workspace-tab" type="button" data-workspace-tab="hil_test_case">进入 HIL 用例生成</button>
+              <button id="feedback-pool-link" class="secondary-link button-link module-workspace-tab" type="button" data-workspace-tab="feedback_pool">进入模块反馈池</button>
+            </div>
+            <div class="module-secondary-actions">
+              <button id="open-history-drawer" type="button" class="secondary-button">历史任务</button>
+              <a id="edit-module-link" class="secondary-link button-link" href="#">编辑模块</a>
+              <button id="delete-module-button" type="button" class="secondary-button">删除模块</button>
+            </div>
           </div>
         </div>
       </header>
 
       <p id="status" class="status"></p>
 
+      <section id="module-workspace-panel" class="panel module-workspace-panel" hidden>
+        <div class="module-workspace-shell">
+          <div class="module-workspace-frame-wrap">
+            <iframe id="module-workspace-frame" class="module-workspace-frame" title="模块工作区"></iframe>
+          </div>
+        </div>
+      </section>
+
       <section class="panel accepted-results-panel">
         <div class="panel-head accepted-results-head">
           <div>
             <h2>&#24050;&#37319;&#32435;&#32467;&#26524;</h2>
-            <p class="muted accepted-results-note">聚焦最终采纳内容。点击卡片可跳转到对应生成结果继续查看原始上下文。</p>
+            <p class="muted accepted-results-note">按软件需求、详细设计、HIL 用例三个域分区查看。点击卡片可跳转到对应生成结果继续查看原始上下文。</p>
           </div>
         </div>
         <div id="accepted-list" class="stack-list accepted-results-list"></div>

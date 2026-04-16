@@ -778,7 +778,7 @@ export class ProjectService {
 
   async listAcceptedItems(projectId, moduleId, documentType) {
     const space = await this.getDocumentSpace(projectId, moduleId, documentType);
-    return [...space.acceptedItems].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return [...space.acceptedItems];
   }
 
   async createAcceptedItem(projectId, moduleId, documentType, input = {}) {
@@ -882,6 +882,28 @@ export class ProjectService {
     touchModule(module, "accepted_item_deleted", `${getDocumentTypeLabel(normalizedDocumentType)}接受结果已删除`);
     await this.saveProject(project);
     return { id: acceptedItemId, deleted: true };
+  }
+
+  async reorderAcceptedItems(projectId, moduleId, documentType, orderedIds = []) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const space = module.documentSpaces[normalizedDocumentType];
+    const currentItems = [...space.acceptedItems];
+    const idSet = new Set(currentItems.map((item) => item.id));
+    const normalizedOrderedIds = Array.isArray(orderedIds) ? orderedIds.map((item) => String(item || "").trim()).filter(Boolean) : [];
+
+    if (normalizedOrderedIds.length !== currentItems.length || normalizedOrderedIds.some((id) => !idSet.has(id))) {
+      const error = new Error("Accepted item order is invalid");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const itemMap = new Map(currentItems.map((item) => [item.id, item]));
+    space.acceptedItems = normalizedOrderedIds.map((id) => itemMap.get(id)).filter(Boolean);
+
+    touchModule(module, "accepted_item_reordered", `${getDocumentTypeLabel(normalizedDocumentType)}接受结果顺序已调整`);
+    await this.saveProject(project);
+    return [...space.acceptedItems];
   }
 
   async getProjectAndModule(projectId, moduleId) {

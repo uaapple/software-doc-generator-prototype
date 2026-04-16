@@ -517,6 +517,23 @@ export async function createApp() {
     }
   );
 
+  app.post(
+    "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/accepted-items/reorder",
+    async (req, res, next) => {
+      try {
+        const items = await projectService.reorderAcceptedItems(
+          req.params.projectId,
+          req.params.moduleId,
+          req.params.documentType,
+          req.body?.orderedIds || []
+        );
+        res.json({ items });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
   app.delete(
     "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/accepted-items/:itemId",
     async (req, res, next) => {

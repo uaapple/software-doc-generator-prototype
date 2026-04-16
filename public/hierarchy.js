@@ -15,13 +15,18 @@ const historyDrawer = document.querySelector("#history-drawer");
 const historyDrawerBackdrop = document.querySelector("#history-drawer-backdrop");
 const openHistoryDrawerButton = document.querySelector("#open-history-drawer");
 const closeHistoryDrawerButton = document.querySelector("#close-history-drawer");
+const workspacePanel = document.querySelector("#module-workspace-panel");
+const workspaceFrame = document.querySelector("#module-workspace-frame");
 const TASK_POLL_INTERVAL_MS = 30000;
 const PENDING_GENERATION_STORAGE_KEY = "pending-module-generations";
 const PENDING_GENERATION_MAX_AGE_MS = 30 * 60 * 1000;
 let taskPollTimer = 0;
 const state = {
   rejectContext: null,
-  acceptedEditContext: null
+  acceptedEditContext: null,
+  activeWorkspaceTab: "",
+  acceptedDragContext: null,
+  suppressAcceptedClickUntil: 0
 };
 
 rejectDialogClose?.addEventListener("click", closeRejectDialog);
@@ -410,6 +415,176 @@ async function deleteModuleAndReturn(projectId, moduleId, moduleName) {
   }
 }
 
+function getModuleWorkspaceConfig(projectId, moduleId) {
+  return {
+    software_requirement: {
+      title: "软件需求生成",
+      subtitle: "在当前模块页内切换软件需求工作页面，保留原有页面能力和排布。",
+      url: `/requirement-generation?projectId=${projectId}&moduleId=${moduleId}`,
+      embeddedKind: "generator"
+    },
+    detail_design: {
+      title: "详细设计生成",
+      subtitle: "在当前模块页内切换详细设计生成页面，保持原工作流不变。",
+      url: `/detail-design-generation?projectId=${projectId}&moduleId=${moduleId}`,
+      embeddedKind: "generator"
+    },
+    hil_test_case: {
+      title: "HIL 用例生成",
+      subtitle: "在当前模块页内切换 HIL 用例生成页面，延续原页面的布局和操作。",
+      url: `/hil-test-case-generation?projectId=${projectId}&moduleId=${moduleId}`,
+      embeddedKind: "generator"
+    },
+    feedback_pool: {
+      title: "模块反馈池",
+      subtitle: "在当前模块页内切换反馈池页面，快速回看和处理模块反馈。",
+      url: `/feedback-pool?projectId=${projectId}&moduleId=${moduleId}`,
+      embeddedKind: "feedback_pool"
+    }
+  };
+}
+
+function updateWorkspaceButtons(activeTab = "") {
+  document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
+    const isActive = button.dataset.workspaceTab === activeTab;
+    button.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
+  document.querySelector(".accepted-results-panel")?.toggleAttribute("hidden", activeTab !== "accepted_results");
+  if (workspacePanel) {
+    workspacePanel.hidden = activeTab === "accepted_results";
+  }
+}
+
+function applyEmbeddedWorkspaceChrome(config) {
+  if (!workspaceFrame?.contentWindow?.document || !config?.embeddedKind) {
+    return;
+  }
+
+  try {
+    const doc = workspaceFrame.contentWindow.document;
+    const styleId = "module-embedded-workspace-style";
+    doc.getElementById(styleId)?.remove();
+    const style = doc.createElement("style");
+    style.id = styleId;
+    style.textContent =
+      config.embeddedKind === "feedback_pool"
+        ? `
+          body { background: #fff !important; }
+          .top-nav, .feedback-strip, #task-drawer, #task-drawer-backdrop { display: none !important; }
+          .layout.feedback-page { width: auto !important; margin: 0 !important; padding: 0 !important; }
+          .panel:first-of-type { margin-top: 0 !important; }
+          .panel { padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+          .card { border-radius: 18px !important; }
+        `
+        : `
+          body { background: #fff !important; }
+          .top-nav, #generator-breadcrumb, .workbench-strip { display: none !important; }
+          .layout { width: auto !important; margin: 0 !important; padding: 0 !important; }
+          .panel:first-of-type { margin-top: 0 !important; }
+          .panel { padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+          .card { border-radius: 18px !important; }
+        `;
+    doc.head.appendChild(style);
+  } catch (error) {
+    console.warn("Failed to trim embedded workspace chrome", error);
+  }
+}
+
+function syncWorkspaceFrameHeight() {
+  if (!workspaceFrame?.contentWindow?.document) {
+    return;
+  }
+
+  try {
+    const doc = workspaceFrame.contentWindow.document;
+    const bodyHeight = Math.max(
+      doc.body?.scrollHeight || 0,
+      doc.documentElement?.scrollHeight || 0,
+      doc.body?.offsetHeight || 0,
+      doc.documentElement?.offsetHeight || 0
+    );
+    workspaceFrame.style.height = `${Math.max(bodyHeight + 4, 420)}px`;
+  } catch (error) {
+    console.warn("Failed to sync workspace frame height", error);
+  }
+}
+
+function scheduleWorkspaceFrameHeightSync() {
+  [0, 80, 240, 600, 1200, 2400].forEach((delay) => {
+    window.setTimeout(() => {
+      syncWorkspaceFrameHeight();
+    }, delay);
+  });
+}
+
+function ensureWorkspaceTabPresence() {
+  const primaryActions = document.querySelector(".module-primary-actions");
+  if (!primaryActions || document.querySelector('[data-workspace-tab="accepted_results"]')) {
+    return;
+  }
+
+  const acceptedButton = document.createElement("button");
+  acceptedButton.id = "accepted-results-link";
+  acceptedButton.type = "button";
+  acceptedButton.className = "secondary-link button-link module-workspace-tab";
+  acceptedButton.dataset.workspaceTab = "accepted_results";
+  acceptedButton.textContent = "已采纳结果";
+
+  const button = document.createElement("button");
+  button.id = "req-generate-link";
+  button.type = "button";
+  button.className = "secondary-link button-link module-workspace-tab";
+  button.dataset.workspaceTab = "software_requirement";
+  button.textContent = "进入软件需求生成";
+  primaryActions.prepend(button);
+  primaryActions.prepend(acceptedButton);
+}
+
+function openWorkspaceTab(tabKey, configMap) {
+  const config = configMap?.[tabKey];
+  if (!config || !workspacePanel || !workspaceFrame) {
+    return;
+  }
+
+  state.activeWorkspaceTab = tabKey;
+  updateWorkspaceButtons(tabKey);
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.set("workspaceTab", tabKey);
+  window.history.replaceState({}, "", nextUrl);
+  workspacePanel.hidden = false;
+  workspaceFrame.onload = () => {
+    applyEmbeddedWorkspaceChrome(config);
+    scheduleWorkspaceFrameHeightSync();
+  };
+  if (workspaceFrame.src !== new URL(config.url, window.location.origin).toString()) {
+    workspaceFrame.src = config.url;
+  } else {
+    syncWorkspaceFrameHeight();
+  }
+}
+
+function openAcceptedResultsTab() {
+  state.activeWorkspaceTab = "accepted_results";
+  const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.delete("workspaceTab");
+  window.history.replaceState({}, "", nextUrl);
+  updateWorkspaceButtons("accepted_results");
+}
+
+async function persistAcceptedOrder(projectId, moduleId, documentType, orderedIds) {
+  await request(`/api/projects/${projectId}/modules/${moduleId}/spaces/${documentType}/accepted-items/reorder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderedIds })
+  });
+}
+
+function clearAcceptedDropMarkers(root) {
+  root
+    ?.querySelectorAll(".is-drop-target-before, .is-drop-target-after")
+    ?.forEach((node) => node.classList.remove("is-drop-target-before", "is-drop-target-after"));
+}
+
 async function renderModuleDetailPage() {
   const projectId = getPathPart(1);
   const moduleId = getPathPart(3);
@@ -426,18 +601,19 @@ async function renderModuleDetailPage() {
 
   document.querySelector("#module-title").textContent = module.name;
   document.querySelector("#module-description").textContent = module.description || "这个功能模块还没有补充说明。";
+  const workspaceConfig = getModuleWorkspaceConfig(project.id, module.id);
+  ensureWorkspaceTabPresence();
   document.querySelector("#edit-module-link").href = `/projects/${project.id}/modules/${module.id}/edit`;
-  document.querySelector("#req-generate-link").href = `/requirement-generation?projectId=${project.id}&moduleId=${module.id}`;
-  document.querySelector("#detail-generate-link").href =
-    `/detail-design-generation?projectId=${project.id}&moduleId=${module.id}`;
-  const hilLink = document.querySelector("#hil-generate-link");
-  if (hilLink) {
-    hilLink.href = `/hil-test-case-generation?projectId=${project.id}&moduleId=${module.id}`;
-  }
-  const feedbackPoolLink = document.querySelector("#feedback-pool-link");
-  if (feedbackPoolLink) {
-    feedbackPoolLink.href = `/feedback-pool?projectId=${project.id}&moduleId=${module.id}`;
-  }
+  document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const tabKey = button.dataset.workspaceTab || "";
+      if (tabKey === "accepted_results") {
+        openAcceptedResultsTab();
+        return;
+      }
+      openWorkspaceTab(tabKey, workspaceConfig);
+    });
+  });
   document.querySelector("#delete-module-button")?.addEventListener("click", () => {
     deleteModuleAndReturn(project.id, module.id, module.name);
   });
@@ -470,57 +646,104 @@ async function renderModuleDetailPage() {
     }
   }
 
+  const initialWorkspaceTab = params.get("workspaceTab");
+  if (initialWorkspaceTab && workspaceConfig[initialWorkspaceTab]) {
+    openWorkspaceTab(initialWorkspaceTab, workspaceConfig);
+  } else {
+    openAcceptedResultsTab();
+  }
+
   ensureTaskPolling(module, pendingGeneration);
 }
 
 function renderAcceptedList(module, projectId) {
   const acceptedList = document.querySelector("#accepted-list");
   const items = collectAcceptedItems(module);
-  if (!items.length) {
-    acceptedList.innerHTML = '<div class="empty-state">当前还没有已采纳结果。</div>';
-    return;
-  }
+  const domainGroups = [
+    {
+      documentType: "software_requirement",
+      title: "软件需求",
+      description: "展示已确认的软件需求条目。"
+    },
+    {
+      documentType: "detail_design",
+      title: "详细设计",
+      description: "展示已确认的详细设计结果。"
+    },
+    {
+      documentType: "hil_test_case",
+      title: "HIL 用例",
+      description: "展示已确认的 HIL 用例结果。"
+    }
+  ];
 
-  acceptedList.innerHTML = items
-    .map(
-      (item) => `
-        <article class="stack-card accepted-result-card clickable" data-open-accepted-source="${item.id}">
-          <div class="accepted-result-topline">
-            <span class="doc-badge">${escapeHtml(documentLabel(item.documentType))}</span>
-            <span class="status-badge accepted">已采纳</span>
-            <span class="accepted-result-code">${escapeHtml(item.currentContent?.requirementId || item.acceptedSnapshot?.requirementId || "未编号")}</span>
-            <span class="accepted-result-code">${escapeHtml(item.currentContent?.type || item.acceptedSnapshot?.type || "functional")}</span>
-            <span class="accepted-result-code">来源任务 ${escapeHtml(shortId(item.sourceTaskId))}</span>
-            <span class="accepted-result-hint">点击查看原生成结果</span>
+  acceptedList.innerHTML = domainGroups
+    .map((group) => {
+      const groupItems = items.filter((item) => item.documentType === group.documentType);
+      return `
+        <section class="accepted-domain-group">
+          <div class="accepted-domain-head">
+            <div>
+              <h3>${escapeHtml(group.title)}</h3>
+              <p class="muted">${escapeHtml(group.description)}</p>
+            </div>
+            <span class="accepted-domain-count">${groupItems.length} 条</span>
           </div>
-          <strong>${escapeHtml(item.currentContent?.title || item.acceptedSnapshot?.title || "已采纳结果")}</strong>
-          <div class="card-meta">
-            <span>更新时间 ${formatDateTime(item.updatedAt)}</span>
-            <span>置信度 ${escapeHtml(String(item.currentContent?.confidence ?? item.acceptedSnapshot?.confidence ?? "--"))}</span>
-          </div>
-          <div class="accepted-result-body accepted-content">${formatReadableRequirementHtml(
-            item.currentContent?.requirementText || item.acceptedSnapshot?.requirementText || ""
-          )}</div>
-          <div class="accepted-result-summary">
-            ${buildAcceptedSummaryChips(module, item)}
-          </div>
-          <div class="inline-actions accepted-result-actions">
-            <button
-              class="secondary-button"
-              type="button"
-              data-edit-accepted-item="${item.id}"
-            >编辑</button>
-            <button
-              class="secondary-button"
-              type="button"
-              data-delete-accepted-item="${item.id}"
-              data-document-type="${item.documentType}"
-              data-item-title="${escapeAttribute(item.currentContent?.title || item.acceptedSnapshot?.title || "已采纳结果")}"
-            >删除</button>
-          </div>
-        </article>
-      `
-    )
+          ${
+            groupItems.length
+              ? groupItems
+                  .map(
+                    (item) => `
+                      <article
+                        class="stack-card accepted-result-card clickable"
+                        data-open-accepted-source="${item.id}"
+                        data-accepted-item-id="${item.id}"
+                        data-accepted-document-type="${item.documentType}"
+                        draggable="true"
+                      >
+                        <div class="accepted-result-topline">
+                          <span class="doc-badge">${escapeHtml(documentLabel(item.documentType))}</span>
+                          <span class="status-badge accepted">已采纳</span>
+                          <span class="accepted-result-code">${escapeHtml(item.currentContent?.requirementId || item.acceptedSnapshot?.requirementId || "未编号")}</span>
+                          <span class="accepted-result-code">${escapeHtml(item.currentContent?.type || item.acceptedSnapshot?.type || "functional")}</span>
+                          <span class="accepted-result-code">来源任务 ${escapeHtml(shortId(item.sourceTaskId))}</span>
+                          <span class="accepted-result-code">拖动排序</span>
+                          <span class="accepted-result-hint">点击查看原生成结果</span>
+                        </div>
+                        <strong>${escapeHtml(item.currentContent?.title || item.acceptedSnapshot?.title || "已采纳结果")}</strong>
+                        <div class="card-meta">
+                          <span>更新时间 ${formatDateTime(item.updatedAt)}</span>
+                          <span>置信度 ${escapeHtml(String(item.currentContent?.confidence ?? item.acceptedSnapshot?.confidence ?? "--"))}</span>
+                        </div>
+                        <div class="accepted-result-body accepted-content">${formatReadableRequirementHtml(
+                          item.currentContent?.requirementText || item.acceptedSnapshot?.requirementText || ""
+                        )}</div>
+                        <div class="accepted-result-summary">
+                          ${buildAcceptedSummaryChips(module, item)}
+                        </div>
+                        <div class="inline-actions accepted-result-actions">
+                          <button
+                            class="secondary-button"
+                            type="button"
+                            data-edit-accepted-item="${item.id}"
+                          >编辑</button>
+                          <button
+                            class="secondary-button"
+                            type="button"
+                            data-delete-accepted-item="${item.id}"
+                            data-document-type="${item.documentType}"
+                            data-item-title="${escapeAttribute(item.currentContent?.title || item.acceptedSnapshot?.title || "已采纳结果")}"
+                          >删除</button>
+                        </div>
+                      </article>
+                    `
+                  )
+                  .join("")
+              : '<div class="empty-state">当前域还没有已采纳结果。</div>'
+          }
+        </section>
+      `;
+    })
     .join("");
 
   acceptedList.querySelectorAll("[data-edit-accepted-item]").forEach((button) => {
@@ -558,6 +781,9 @@ function renderAcceptedList(module, projectId) {
 
   acceptedList.querySelectorAll("[data-open-accepted-source]").forEach((card) => {
     card.addEventListener("click", (event) => {
+      if (Date.now() < state.suppressAcceptedClickUntil) {
+        return;
+      }
       if (event.target.closest("button, a, input, textarea, select, label")) {
         return;
       }
@@ -571,6 +797,108 @@ function renderAcceptedList(module, projectId) {
       window.location.href =
         `/projects/${projectId}/modules/${module.id}/tasks/${acceptedItem.sourceTaskId}` +
         `?documentType=${acceptedItem.documentType}&resultItemId=${acceptedItem.sourceResultItemId}`;
+    });
+  });
+
+  acceptedList.querySelectorAll(".accepted-domain-group").forEach((groupRoot) => {
+    groupRoot.addEventListener("dragover", (event) => {
+      if (!event.target.closest("[data-accepted-item-id]")) {
+        clearAcceptedDropMarkers(groupRoot);
+      }
+    });
+  });
+
+  acceptedList.querySelectorAll("[data-accepted-item-id]").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      state.acceptedDragContext = {
+        itemId: card.dataset.acceptedItemId || "",
+        documentType: card.dataset.acceptedDocumentType || ""
+      };
+      state.suppressAcceptedClickUntil = Date.now() + 400;
+      card.classList.add("is-dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", state.acceptedDragContext.itemId);
+    });
+
+    card.addEventListener("dragend", () => {
+      card.classList.remove("is-dragging");
+      clearAcceptedDropMarkers(acceptedList);
+      state.acceptedDragContext = null;
+      state.suppressAcceptedClickUntil = Date.now() + 250;
+    });
+
+    card.addEventListener("dragover", (event) => {
+      if (!state.acceptedDragContext || state.acceptedDragContext.documentType !== card.dataset.acceptedDocumentType) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      clearAcceptedDropMarkers(acceptedList);
+      const rect = card.getBoundingClientRect();
+      const before = event.clientY < rect.top + rect.height / 2;
+      card.classList.add(before ? "is-drop-target-before" : "is-drop-target-after");
+    });
+
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("is-drop-target-before", "is-drop-target-after");
+    });
+
+    card.addEventListener("drop", async (event) => {
+      if (!state.acceptedDragContext || state.acceptedDragContext.documentType !== card.dataset.acceptedDocumentType) {
+        return;
+      }
+      event.preventDefault();
+      const rect = card.getBoundingClientRect();
+      const dropBefore = event.clientY < rect.top + rect.height / 2;
+      clearAcceptedDropMarkers(acceptedList);
+
+      const draggedId = state.acceptedDragContext.itemId;
+      const targetId = card.dataset.acceptedItemId || "";
+      if (!draggedId || !targetId || draggedId === targetId) {
+        return;
+      }
+
+      const documentType = card.dataset.acceptedDocumentType || "";
+      const orderedIds = Array.from(
+        acceptedList.querySelectorAll(`[data-accepted-document-type="${documentType}"]`)
+      ).map((node) => node.dataset.acceptedItemId || "");
+
+      const fromIndex = orderedIds.indexOf(draggedId);
+      const toIndex = orderedIds.indexOf(targetId);
+      if (fromIndex === -1 || toIndex === -1) {
+        return;
+      }
+
+      orderedIds.splice(fromIndex, 1);
+      const insertIndex = dropBefore ? toIndex : toIndex + (fromIndex < toIndex ? 0 : 1);
+      orderedIds.splice(insertIndex, 0, draggedId);
+
+      const domainCards = Array.from(
+        acceptedList.querySelectorAll(`[data-accepted-document-type="${documentType}"]`)
+      );
+      const draggedCard = domainCards.find((node) => node.dataset.acceptedItemId === draggedId);
+      const targetCard = domainCards.find((node) => node.dataset.acceptedItemId === targetId);
+      if (!draggedCard || !targetCard) {
+        return;
+      }
+
+      if (dropBefore) {
+        targetCard.parentNode.insertBefore(draggedCard, targetCard);
+      } else {
+        targetCard.parentNode.insertBefore(draggedCard, targetCard.nextSibling);
+      }
+
+      draggedCard.classList.remove("is-dragging");
+      state.acceptedDragContext = null;
+      state.suppressAcceptedClickUntil = Date.now() + 300;
+
+      try {
+        await persistAcceptedOrder(projectId, module.id, documentType, orderedIds);
+        setStatus(`已更新${documentLabel(documentType)}已采纳结果顺序。`);
+      } catch (error) {
+        handleError(error);
+        window.location.reload();
+      }
     });
   });
 }
@@ -1121,8 +1449,7 @@ function collectAcceptedItems(module) {
         ...item,
         documentType
       }))
-    )
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    );
 }
 
 function findAcceptedSourceTask(module, item) {
