@@ -22,6 +22,7 @@ export async function ensureStorage() {
     fs.mkdir(config.rejectionStoreDir, { recursive: true }),
     fs.mkdir(path.dirname(config.rejectionGroupStorePath), { recursive: true }),
     fs.mkdir(config.replayTaskStoreDir, { recursive: true }),
+    fs.mkdir(config.skillWorkOrderStoreDir, { recursive: true }),
     fs.mkdir(config.activeSkillDir, { recursive: true }),
     fs.mkdir(config.skillBundleDir, { recursive: true })
   ]);

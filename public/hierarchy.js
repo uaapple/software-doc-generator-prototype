@@ -15,6 +15,11 @@ const historyDrawer = document.querySelector("#history-drawer");
 const historyDrawerBackdrop = document.querySelector("#history-drawer-backdrop");
 const openHistoryDrawerButton = document.querySelector("#open-history-drawer");
 const closeHistoryDrawerButton = document.querySelector("#close-history-drawer");
+const feedbackHistoryDrawer = document.querySelector("#feedback-history-drawer");
+const feedbackHistoryDrawerBackdrop = document.querySelector("#feedback-history-drawer-backdrop");
+const closeFeedbackHistoryDrawerButton = document.querySelector("#close-feedback-history-drawer");
+const feedbackHistoryTaskListRoot = document.querySelector("#feedback-history-task-list");
+const feedbackHistoryTaskDetailRoot = document.querySelector("#feedback-history-task-detail");
 const workspacePanel = document.querySelector("#module-workspace-panel");
 const workspaceFrame = document.querySelector("#module-workspace-frame");
 const TASK_POLL_INTERVAL_MS = 30000;
@@ -26,7 +31,11 @@ const state = {
   acceptedEditContext: null,
   activeWorkspaceTab: "",
   acceptedDragContext: null,
-  suppressAcceptedClickUntil: 0
+  suppressAcceptedClickUntil: 0,
+  feedbackHistory: {
+    tasks: [],
+    selectedTaskId: ""
+  }
 };
 
 rejectDialogClose?.addEventListener("click", closeRejectDialog);
@@ -37,6 +46,10 @@ acceptedEditForm?.addEventListener("submit", handleAcceptedEditSubmit);
 openHistoryDrawerButton?.addEventListener("click", openHistoryDrawer);
 closeHistoryDrawerButton?.addEventListener("click", closeHistoryDrawer);
 historyDrawerBackdrop?.addEventListener("click", closeHistoryDrawer);
+closeFeedbackHistoryDrawerButton?.addEventListener("click", closeFeedbackHistoryDrawer);
+feedbackHistoryDrawerBackdrop?.addEventListener("click", closeFeedbackHistoryDrawer);
+feedbackHistoryTaskListRoot?.addEventListener("click", handleFeedbackHistoryTaskClick);
+window.addEventListener("message", handleWorkspaceMessage);
 rejectDialog?.addEventListener("click", (event) => {
   if (event.target === rejectDialog) {
     closeRejectDialog();
@@ -475,6 +488,15 @@ function applyEmbeddedWorkspaceChrome(config) {
           .panel:first-of-type { margin-top: 0 !important; }
           .panel { padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
           .card { border-radius: 18px !important; }
+          .feedback-overview-card,
+          .compact-overview-card {
+            grid-template-columns: minmax(0, 1.24fr) minmax(420px, 620px) !important;
+            gap: 24px !important;
+          }
+          .feedback-list-card,
+          .feedback-filter-card {
+            padding: 26px !important;
+          }
         `
         : `
           body { background: #fff !important; }
@@ -546,6 +568,7 @@ function openWorkspaceTab(tabKey, configMap) {
     return;
   }
 
+  closeFeedbackHistoryDrawer();
   state.activeWorkspaceTab = tabKey;
   updateWorkspaceButtons(tabKey);
   const nextUrl = new URL(window.location.href);
@@ -564,6 +587,7 @@ function openWorkspaceTab(tabKey, configMap) {
 }
 
 function openAcceptedResultsTab() {
+  closeFeedbackHistoryDrawer();
   state.activeWorkspaceTab = "accepted_results";
   const nextUrl = new URL(window.location.href);
   nextUrl.searchParams.delete("workspaceTab");
@@ -1358,6 +1382,231 @@ function closeHistoryDrawer() {
   }
 }
 
+function openFeedbackHistoryDrawer() {
+  feedbackHistoryDrawer?.classList.add("open");
+  feedbackHistoryDrawer?.setAttribute("aria-hidden", "false");
+  if (feedbackHistoryDrawerBackdrop) {
+    feedbackHistoryDrawerBackdrop.hidden = false;
+  }
+}
+
+function closeFeedbackHistoryDrawer() {
+  feedbackHistoryDrawer?.classList.remove("open");
+  feedbackHistoryDrawer?.setAttribute("aria-hidden", "true");
+  if (feedbackHistoryDrawerBackdrop) {
+    feedbackHistoryDrawerBackdrop.hidden = true;
+  }
+
+  if (workspaceFrame?.contentWindow) {
+    workspaceFrame.contentWindow.postMessage({ type: "feedback_pool:parent_history_drawer_closed" }, window.location.origin);
+  }
+}
+
+function handleWorkspaceMessage(event) {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+
+  const data = event.data || {};
+  if (data.type === "feedback_pool:open_history_drawer") {
+    state.feedbackHistory.tasks = Array.isArray(data.tasks) ? data.tasks : [];
+    state.feedbackHistory.selectedTaskId = data.selectedTaskId || state.feedbackHistory.tasks[0]?.id || "";
+    renderFeedbackHistoryDrawer();
+    openFeedbackHistoryDrawer();
+    return;
+  }
+
+  if (data.type === "feedback_pool:update_history_drawer") {
+    state.feedbackHistory.tasks = Array.isArray(data.tasks) ? data.tasks : [];
+    if (
+      state.feedbackHistory.selectedTaskId &&
+      !state.feedbackHistory.tasks.some((task) => task.id === state.feedbackHistory.selectedTaskId)
+    ) {
+      state.feedbackHistory.selectedTaskId = data.selectedTaskId || state.feedbackHistory.tasks[0]?.id || "";
+    } else if (!state.feedbackHistory.selectedTaskId) {
+      state.feedbackHistory.selectedTaskId = data.selectedTaskId || state.feedbackHistory.tasks[0]?.id || "";
+    }
+    renderFeedbackHistoryDrawer();
+    return;
+  }
+
+  if (data.type === "feedback_pool:close_history_drawer") {
+    closeFeedbackHistoryDrawer();
+  }
+}
+
+function handleFeedbackHistoryTaskClick(event) {
+  const trigger = event.target.closest("[data-feedback-history-task]");
+  if (!trigger) return;
+  state.feedbackHistory.selectedTaskId = trigger.dataset.feedbackHistoryTask || "";
+  renderFeedbackHistoryDrawer();
+}
+
+function renderFeedbackHistoryDrawer() {
+  if (!feedbackHistoryTaskListRoot || !feedbackHistoryTaskDetailRoot) {
+    return;
+  }
+
+  const tasks = state.feedbackHistory.tasks || [];
+  if (!tasks.length) {
+    feedbackHistoryTaskListRoot.innerHTML = '<div class="empty-state">当前模块还没有 Fallback 历史任务。</div>';
+    feedbackHistoryTaskDetailRoot.className = "feedback-history-task-detail empty-state";
+    feedbackHistoryTaskDetailRoot.textContent = "等待反馈池发来任务数据。";
+    return;
+  }
+
+  feedbackHistoryTaskListRoot.innerHTML = tasks.map((task) => renderFeedbackHistoryTaskCard(task)).join("");
+  const selectedTask =
+    tasks.find((task) => task.id === state.feedbackHistory.selectedTaskId) ||
+    tasks[0] ||
+    null;
+
+  state.feedbackHistory.selectedTaskId = selectedTask?.id || "";
+  feedbackHistoryTaskDetailRoot.className = "feedback-history-task-detail";
+  feedbackHistoryTaskDetailRoot.innerHTML = selectedTask
+    ? renderFeedbackHistoryTaskDetail(selectedTask)
+    : "选择一条历史任务查看详情。";
+}
+
+function renderFeedbackHistoryTaskCard(task = {}) {
+  const proposalCount = (task.proposals || []).flatMap((proposal) => proposal.items || []).length;
+  const isSelected = state.feedbackHistory.selectedTaskId === task.id;
+  const isRunning = task.taskStatus === "running";
+  return `
+    <button
+      type="button"
+      class="stack-card feedback-history-task-card ${isSelected ? "is-selected" : ""} ${isRunning ? "is-running" : ""}"
+      data-feedback-history-task="${escapeAttribute(task.id || "")}"
+    >
+      <strong>${escapeHtml(task.summary || "Fallback 历史任务")}</strong>
+      <p>${escapeHtml(task.moduleName || "未指定模块")} · ${escapeHtml(formatDateTime(task.createdAt))}</p>
+      <div class="feedback-history-meta">
+        <span class="feedback-history-badge ${escapeHtml(task.taskStatus || "pending")}">${escapeHtml(translateReplayTaskStatus(task.taskStatus))}</span>
+        <span>${escapeHtml(`${(task.sourceRejectionIds || []).length} 条记录`)}</span>
+        <span>${escapeHtml(`${proposalCount} 条提案`)}</span>
+      </div>
+    </button>
+  `;
+}
+
+function renderFeedbackHistoryTaskDetail(task = {}) {
+  const proposalItems = (task.proposals || []).flatMap((proposal) => proposal.items || []);
+  const referenceAssets = task.materialPack?.referenceAssets || [];
+  const rootCauses = (task.proposals || []).flatMap((proposal) => proposal.rootCauses || []);
+  const pendingStageMessage = task.pendingStageMessage || "系统正在处理这条 Replay / Fallback 任务。";
+
+  return `
+    <div class="feedback-history-detail-head">
+      <div>
+        <p class="eyebrow">Fallback History</p>
+        <h3>${escapeHtml(task.summary || "Fallback 历史任务")}</h3>
+        <p class="muted">${escapeHtml(task.moduleName || "未指定模块")} · ${escapeHtml(formatDateTime(task.createdAt))}</p>
+      </div>
+      <span class="feedback-history-badge ${escapeHtml(task.taskStatus || "pending")}">${escapeHtml(translateReplayTaskStatus(task.taskStatus))}</span>
+    </div>
+
+    <div class="feedback-history-detail-grid">
+      <article class="feedback-history-detail-card">
+        <span>任务编号</span>
+        <strong>${escapeHtml(task.id || "-")}</strong>
+      </article>
+      <article class="feedback-history-detail-card">
+        <span>模型</span>
+        <strong>${escapeHtml(task.llmProfileId || "本地回放 / Fallback")}</strong>
+      </article>
+      <article class="feedback-history-detail-card">
+        <span>驳回记录</span>
+        <strong>${escapeHtml(String((task.sourceRejectionIds || []).length))}</strong>
+      </article>
+      <article class="feedback-history-detail-card">
+        <span>提案数量</span>
+        <strong>${escapeHtml(String(proposalItems.length))}</strong>
+      </article>
+    </div>
+
+    ${
+      task.taskStatus === "running"
+        ? `
+          <section class="feedback-history-detail-section">
+            <h4>当前阶段</h4>
+            <div class="feedback-history-detail-item">
+              <strong>${escapeHtml(task.pendingStageLabel || "处理中")}</strong>
+              <p>${escapeHtml(pendingStageMessage)}</p>
+            </div>
+          </section>
+        `
+        : ""
+    }
+
+    ${
+      rootCauses.length
+        ? `
+          <section class="feedback-history-detail-section">
+            <h4>根因摘要</h4>
+            <div class="feedback-history-detail-list">
+              ${rootCauses
+                .map(
+                  (cause) => `
+                    <article class="feedback-history-detail-item">
+                      <strong>${escapeHtml(cause.title || "根因")}</strong>
+                      <p>${escapeHtml(cause.detail || cause.summary || "")}</p>
+                    </article>
+                  `
+                )
+                .join("")}
+            </div>
+          </section>
+        `
+        : ""
+    }
+
+    <section class="feedback-history-detail-section">
+      <h4>提案条目</h4>
+      ${
+        proposalItems.length
+          ? `
+              <div class="feedback-history-detail-list">
+                ${proposalItems
+                  .map(
+                    (item) => `
+                      <article class="feedback-history-detail-item">
+                        <strong>${escapeHtml(item.title || "未命名提案")}</strong>
+                        <p>${escapeHtml(item.rationale || item.after || item.newRuleDraft?.content || "暂无说明")}</p>
+                        <p class="muted">${escapeHtml(item.action || "proposal")} · ${escapeHtml(item.kind || "-")} · ${escapeHtml(item.targetSkillCode || item.targetProfileKey || "新增规则")}</p>
+                      </article>
+                    `
+                  )
+                  .join("")}
+              </div>
+            `
+          : '<p class="feedback-history-detail-copy">当前还没有提案条目，可能仍在生成中。</p>'
+      }
+    </section>
+
+    <section class="feedback-history-detail-section">
+      <h4>参考资产</h4>
+      ${
+        referenceAssets.length
+          ? `
+              <div class="feedback-history-detail-list">
+                ${referenceAssets
+                  .map(
+                    (asset) => `
+                      <article class="feedback-history-detail-item">
+                        <strong>${escapeHtml(asset.originalName || asset.fileName || asset.id || "未命名资产")}</strong>
+                        <p>${escapeHtml(asset.role || "未标注角色")}</p>
+                      </article>
+                    `
+                  )
+                  .join("")}
+              </div>
+            `
+          : '<p class="feedback-history-detail-copy">这次任务没有额外勾选参考资产。</p>'
+      }
+    </section>
+  `;
+}
+
 async function handleAcceptedEditSubmit(event) {
   event.preventDefault();
   if (!state.acceptedEditContext) {
@@ -1685,6 +1934,13 @@ function translateStatus(status) {
   if (status === "running") return "生成中";
   if (status === "failed") return "已失败";
   if (status === "proposal_review") return "待提案评审";
+  return "待处理";
+}
+
+function translateReplayTaskStatus(status) {
+  if (status === "running") return "处理中";
+  if (status === "done" || status === "completed") return "已完成";
+  if (status === "failed") return "已失败";
   return "待处理";
 }
 

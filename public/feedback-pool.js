@@ -11,6 +11,8 @@ const state = {
   selectedTaskId: "",
   replayRecordIds: [],
   selectedReplayModuleId: "",
+  pendingReplay: null,
+  externalTaskDrawerOpen: false,
   filters: {
     reasonCategory: "",
     replayStatus: ""
@@ -30,6 +32,7 @@ const recordReplayFilter = document.querySelector("#record-replay-filter");
 const recordListRoot = document.querySelector("#record-list");
 const refreshRecordsButton = document.querySelector("#refresh-records");
 const openTaskDrawerButton = document.querySelector("#open-task-drawer");
+const openTaskDrawerSecondaryButton = document.querySelector("#open-task-drawer-secondary");
 const recordDetailDialog = document.querySelector("#record-detail-dialog");
 const recordDetailSubtitle = document.querySelector("#record-detail-subtitle");
 const recordDetailContent = document.querySelector("#record-detail-content");
@@ -46,11 +49,16 @@ const taskDrawerBackdrop = document.querySelector("#task-drawer-backdrop");
 const closeTaskDrawerButton = document.querySelector("#close-task-drawer");
 const taskDrawerListRoot = document.querySelector("#task-drawer-list");
 const taskDrawerDetailRoot = document.querySelector("#task-drawer-detail");
+const feedbackStatusRoot = document.querySelector("#feedback-status");
+
+let pendingReplayTimer = 0;
 
 await bootstrap();
 
 refreshRecordsButton.addEventListener("click", refreshAllData);
 openTaskDrawerButton.addEventListener("click", openTaskDrawer);
+openTaskDrawerSecondaryButton?.addEventListener("click", openTaskDrawer);
+document.addEventListener("click", handleGlobalClick);
 closeTaskDrawerButton.addEventListener("click", closeTaskDrawer);
 if (taskDrawerBackdrop) taskDrawerBackdrop.addEventListener("click", closeTaskDrawer);
 moduleFilterSelect.addEventListener("change", handleFilterChange);
@@ -68,6 +76,7 @@ replayDialog.addEventListener("click", (event) => {
 });
 taskDrawerListRoot.addEventListener("click", handleTaskClick);
 taskDrawerDetailRoot.addEventListener("click", handleTaskDetailAction);
+window.addEventListener("message", handleHostMessage);
 
 async function bootstrap() {
   if (!state.projectId) {
@@ -89,6 +98,8 @@ async function refreshAllData() {
   renderRecords();
   renderReplayProfileOptions();
   renderTaskDrawer();
+  renderFeedbackStatus();
+  renderTaskDrawerButtons();
 }
 
 async function refreshContext() {
@@ -134,6 +145,7 @@ function renderProjectSummary() {
   const projectName = state.project?.name || "未命名工程";
   const currentModule = state.modules.find((item) => item.id === state.moduleFilterId) || null;
   const replayedCount = state.records.filter((record) => record.replayStatus && record.replayStatus !== "not_started").length;
+  const pendingCount = state.pendingReplay ? 1 : 0;
 
   heroTitleRoot.textContent = currentModule
     ? `${projectName} / ${currentModule.name} 驳回记录`
@@ -146,12 +158,24 @@ function renderProjectSummary() {
     { label: "功能模块", value: state.modules.length },
     { label: "驳回记录", value: state.records.length },
     { label: "已 Replay", value: replayedCount },
-    { label: "最近任务", value: state.tasks.length }
+    { label: "最近任务", value: state.tasks.length + pendingCount }
   ];
 
   projectMetricsRoot.innerHTML = metrics
     .map((item) => `<span class="metric"><span>${escapeHtml(item.label)}</span><strong>${item.value}</strong></span>`)
     .join("");
+}
+
+function renderTaskDrawerButtons() {
+  const pendingCount = state.pendingReplay ? 1 : 0;
+  const taskCount = state.tasks.length + pendingCount;
+  const label = taskCount ? `Fallback 历史任务（${taskCount}）` : "查看 Fallback 历史任务";
+  if (openTaskDrawerButton) {
+    openTaskDrawerButton.textContent = label;
+  }
+  if (openTaskDrawerSecondaryButton) {
+    openTaskDrawerSecondaryButton.textContent = label;
+  }
 }
 
 function renderFilters() {
@@ -221,55 +245,80 @@ function renderReplayProfileOptions() {
 }
 
 function renderTaskDrawer() {
-  if (!state.tasks.length) {
+  const visibleTasks = state.pendingReplay ? [buildPendingReplayTaskCardData(), ...state.tasks] : state.tasks;
+
+  if (!visibleTasks.length) {
     taskDrawerListRoot.innerHTML = '<div class="empty-state">当前项目下还没有 Replay 任务。</div>';
     taskDrawerDetailRoot.className = "feedback-task-detail empty-state";
     taskDrawerDetailRoot.textContent = "选择一个任务查看提案详情。";
+    if (isEmbeddedFeedbackPool() && state.externalTaskDrawerOpen) {
+      syncExternalTaskDrawer("feedback_pool:update_history_drawer");
+    }
     return;
   }
 
-  taskDrawerListRoot.innerHTML = state.tasks
+  taskDrawerListRoot.innerHTML = visibleTasks
     .map((task) => {
+      const isPending = task.taskStatus === "running";
       const proposalCount = (task.proposals || []).flatMap((proposal) => proposal.items || []).length;
       return `
-        <button type="button" class="list-card feedback-task-card ${task.id === state.selectedTaskId ? "is-selected" : ""}" data-task-open="${task.id}">
+        <button type="button" class="list-card feedback-task-card ${task.id === state.selectedTaskId ? "is-selected" : ""} ${isPending ? "is-pending" : ""}" data-task-open="${task.id}">
           <strong>${escapeHtml(task.summary || task.id)}</strong>
           <p>${escapeHtml(task.moduleName || "未指定模块")}</p>
           <div class="list-card-meta">
             <span>${task.sourceRejectionIds.length} 条记录</span>
             <span>${proposalCount} 条提案</span>
-            <span>${escapeHtml(task.llmProfileId || "local-fallback")}</span>
+            <span>${escapeHtml(task.llmProfileId || "本地回放")}</span>
           </div>
+          <div class="list-card-meta">
+            <span class="mini-pill ${isPending ? "warning" : "subtle"}">${escapeHtml(replayTaskStatusLabel(task.taskStatus || ""))}</span>
+            <span>${escapeHtml(formatDateTime(task.createdAt))}</span>
+          </div>
+          ${isPending ? `<p class="inline-hint">${escapeHtml(task.pendingStageMessage || "系统正在处理本次回放任务。")}</p>` : ""}
         </button>
       `;
     })
     .join("");
 
-  const selectedTask = state.tasks.find((task) => task.id === state.selectedTaskId) || state.tasks[0] || null;
+  const selectedTask = visibleTasks.find((task) => task.id === state.selectedTaskId) || visibleTasks[0] || null;
   if (!selectedTask) {
     taskDrawerDetailRoot.className = "feedback-task-detail empty-state";
     taskDrawerDetailRoot.textContent = "选择一个任务查看提案详情。";
+    if (isEmbeddedFeedbackPool() && state.externalTaskDrawerOpen) {
+      syncExternalTaskDrawer("feedback_pool:update_history_drawer");
+    }
     return;
   }
 
   state.selectedTaskId = selectedTask.id;
   taskDrawerDetailRoot.className = "feedback-task-detail";
   taskDrawerDetailRoot.innerHTML = buildTaskDetail(selectedTask);
+
+  if (isEmbeddedFeedbackPool() && state.externalTaskDrawerOpen) {
+    syncExternalTaskDrawer("feedback_pool:update_history_drawer");
+  }
 }
 
 function buildTaskDetail(task) {
+  if (task.taskStatus === "running") {
+    return buildPendingTaskDetail(task);
+  }
+
   const proposalItems = (task.proposals || []).flatMap((proposal) => proposal.items || []);
   const referenceAssets = task.materialPack?.referenceAssets || [];
+  const workOrderSummary = task.workOrderSummary || null;
 
   return `
     <div class="detail-card feedback-task-detail-card">
       <h3>${escapeHtml(task.summary || task.id)}</h3>
       <p><strong>模块：</strong>${escapeHtml(task.moduleName || "未指定模块")}</p>
       <p><strong>记录数：</strong>${task.sourceRejectionIds.length}</p>
-      <p><strong>模型：</strong>${escapeHtml(task.llmProfileId || "local-fallback")}</p>
+      <p><strong>模型：</strong>${escapeHtml(task.llmProfileId || "本地回放")}</p>
       <p><strong>参考资产：</strong>${escapeHtml(referenceAssets.map((asset) => asset.originalName || asset.fileName || asset.id).join("，") || "未选择")}</p>
+      ${task.workOrderId ? `<p><strong>技能工单：</strong>${escapeHtml(task.workOrderId)} · ${escapeHtml(workOrderSummary?.status || "pending_review")}</p>` : ""}
       <div class="detail-actions-row">
         <button type="button" data-task-apply="${task.id}">应用已接受提案</button>
+        ${task.workOrderId ? `<button type="button" class="ghost-button" data-open-work-order="${task.workOrderId}">查看技能工单</button>` : ""}
       </div>
       <div class="proposal-list">
         ${proposalItems.length
@@ -279,9 +328,9 @@ function buildTaskDetail(task) {
                   <article class="proposal-card">
                     <div class="proposal-head">
                       <strong>${escapeHtml(item.title)}</strong>
-                      <span class="mini-pill subtle">${escapeHtml(item.action)}</span>
+                      <span class="mini-pill subtle">${escapeHtml(formatProposalActionLabel(item.action))}</span>
                     </div>
-                    <p><strong>目标 Skill：</strong>${escapeHtml(item.targetSkillCode || "新增 skill item")}</p>
+                    <p><strong>目标 Skill：</strong>${escapeHtml(item.targetSkillCode || "新增技能项")}</p>
                     <p><strong>目标层级：</strong>${escapeHtml(item.targetLayer || "-")} / ${escapeHtml(item.targetProfileKey || "-")} / ${escapeHtml(item.kind || "-")}</p>
                     <p><strong>证据：</strong>${escapeHtml((item.evidenceRefs || []).join("，") || "无")}</p>
                     <label>
@@ -294,19 +343,19 @@ function buildTaskDetail(task) {
                       </select>
                     </label>
                     <label>
-                      Target Layer
+                      目标层级
                       <input data-proposal-layer="${item.proposalItemId}" value="${escapeHtml(item.targetLayer || "")}" />
                     </label>
                     <label>
-                      Target Profile
+                      目标 Profile
                       <input data-proposal-profile="${item.proposalItemId}" value="${escapeHtml(item.targetProfileKey || "")}" />
                     </label>
                     <label>
-                      Target Skill Code
+                      目标 Skill 编码
                       <input data-proposal-skill="${item.proposalItemId}" value="${escapeHtml(item.targetSkillCode || "")}" />
                     </label>
                     <label>
-                      Kind
+                      类型
                       <input data-proposal-kind="${item.proposalItemId}" value="${escapeHtml(item.kind || "")}" />
                     </label>
                     <label>
@@ -324,6 +373,49 @@ function buildTaskDetail(task) {
       </div>
     </div>
   `;
+}
+
+function formatProposalActionLabel(action = "") {
+  const map = {
+    add_skill_item: "新增技能项",
+    modify_skill_item: "修改技能项",
+    split_skill_item: "拆分技能项",
+    deprecate_skill_item: "废弃技能项"
+  };
+  return map[action] || action || "未指定动作";
+}
+
+function buildPendingTaskDetail(task) {
+  return `
+    <div class="detail-card feedback-task-detail-card feedback-task-detail-card-pending">
+      <div class="feedback-pending-orbit" aria-hidden="true"></div>
+      <h3>${escapeHtml(task.summary || "Replay / Fallback 正在处理中")}</h3>
+      <p><strong>模块：</strong>${escapeHtml(task.moduleName || "未指定模块")}</p>
+      <p><strong>记录数：</strong>${task.sourceRejectionIds.length}</p>
+      <p><strong>模型：</strong>${escapeHtml(task.llmProfileId || "本地回放")}</p>
+      <p><strong>当前阶段：</strong>${escapeHtml(task.pendingStageLabel || "正在处理中")}</p>
+      <p class="summary">${escapeHtml(task.pendingStageMessage || "系统已接收请求，正在整理驳回记录、参考资产和候选技能规则。")}</p>
+      <div class="feedback-pending-timeline">
+        ${buildPendingTimeline(task)}
+      </div>
+      <div class="empty-state">任务完成后，这里会自动切换成真实的提案详情。</div>
+    </div>
+  `;
+}
+
+function buildPendingTimeline(task) {
+  const phaseIndex = Number(task.pendingPhaseIndex || 0);
+  const phases = replayPendingPhases();
+  return phases
+    .map(
+      (phase, index) => `
+        <article class="feedback-pending-step ${index <= phaseIndex ? "is-active" : ""}">
+          <strong>${escapeHtml(phase.label)}</strong>
+          <p>${escapeHtml(phase.copy)}</p>
+        </article>
+      `
+    )
+    .join("");
 }
 
 function buildRecordDetail(record) {
@@ -412,7 +504,7 @@ function buildRecordDetail(record) {
       </div>
 
       <div class="detail-block">
-        <span class="label">命中的 Proposal Items</span>
+        <span class="label">命中的提议项</span>
         ${proposalHits.length
           ? proposalHits
               .map(
@@ -440,6 +532,11 @@ function openRecordDetail(recordId) {
 }
 
 async function openReplayDialog(recordIds = []) {
+  if (state.pendingReplay) {
+    window.alert("当前已有一条 Replay / Fallback 任务正在处理中，请等待它完成后再发起新的任务。");
+    return;
+  }
+
   const selectedRecords = state.records.filter((record) => recordIds.includes(record.id));
   if (!selectedRecords.length) {
     window.alert("当前没有可用于 Replay 的驳回记录。");
@@ -498,27 +595,61 @@ async function submitReplayTask(event) {
     return;
   }
 
+  const submitButton = replayForm.querySelector('button[type="submit"]');
+  const cancelButton = replayFormCancel;
   const referenceAssetIds = [...replayAssetPickerRoot.querySelectorAll('input[name="referenceAssetIds"]:checked')].map((input) => input.value);
-  const task = await request("/api/replay-tasks", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      rejectionIds: state.replayRecordIds,
-      projectId: state.projectId,
-      moduleId: state.selectedReplayModuleId,
-      llmProfileId: replayLlmProfileSelect.value || "",
-      referenceAssetIds
-    })
+  const selectedRecords = state.records.filter((record) => state.replayRecordIds.includes(record.id));
+  const module = state.modules.find((item) => item.id === state.selectedReplayModuleId) || null;
+  const pendingReplay = createPendingReplayState({
+    records: selectedRecords,
+    module,
+    llmProfileId: replayLlmProfileSelect.value || "",
+    referenceAssetIds
   });
 
-  replayDialog.close();
-  state.selectedTaskId = task.id;
-  await Promise.all([refreshRecords(), refreshTasks()]);
+  setPendingReplay(pendingReplay);
   renderProjectSummary();
-  renderFilters();
-  renderRecords();
   renderTaskDrawer();
+  renderFeedbackStatus();
   openTaskDrawer();
+  replayDialog.close();
+  if (submitButton) submitButton.disabled = true;
+  if (cancelButton) cancelButton.disabled = true;
+
+  await waitForNextPaint();
+
+  try {
+    const task = await request("/api/replay-tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rejectionIds: state.replayRecordIds,
+        projectId: state.projectId,
+        moduleId: state.selectedReplayModuleId,
+        llmProfileId: replayLlmProfileSelect.value || "",
+        referenceAssetIds
+      })
+    });
+
+    clearPendingReplay();
+    state.selectedTaskId = task.id;
+    await Promise.all([refreshRecords(), refreshTasks()]);
+    renderProjectSummary();
+    renderFilters();
+    renderRecords();
+    renderTaskDrawer();
+    renderFeedbackStatus(`Replay 任务已生成完成，最新提案已经出现在最近任务里。`, false);
+    openTaskDrawer();
+  } catch (error) {
+    clearPendingReplay();
+    renderProjectSummary();
+    renderTaskDrawer();
+    renderFeedbackStatus(localizeErrorMessage(error.message || "发起 Replay 失败"), true);
+    console.error(error);
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+    if (cancelButton) cancelButton.disabled = false;
+  }
 }
 
 async function handleFilterChange() {
@@ -530,6 +661,13 @@ async function handleFilterChange() {
   renderFilters();
   renderRecords();
   renderTaskDrawer();
+}
+
+function handleGlobalClick(event) {
+  const trigger = event.target.closest("[data-open-fallback-history]");
+  if (!trigger) return;
+  event.preventDefault();
+  openTaskDrawer();
 }
 
 function handleRecordRowClick(event) {
@@ -552,6 +690,13 @@ function handleTaskClick(event) {
 }
 
 async function handleTaskDetailAction(event) {
+  const openWorkOrderButton = event.target.closest("[data-open-work-order]");
+  if (openWorkOrderButton) {
+    const workOrderId = openWorkOrderButton.dataset.openWorkOrder;
+    window.location.href = `/skill-management?view=work-orders&workOrderId=${encodeURIComponent(workOrderId)}`;
+    return;
+  }
+
   const saveButton = event.target.closest("[data-proposal-save]");
   if (saveButton) {
     const [taskId, proposalItemId] = saveButton.dataset.proposalSave.split(":");
@@ -589,18 +734,29 @@ async function handleTaskDetailAction(event) {
 }
 
 function openTaskDrawer() {
+  if (isEmbeddedFeedbackPool()) {
+    state.externalTaskDrawerOpen = true;
+    syncExternalTaskDrawer("feedback_pool:open_history_drawer");
+    return;
+  }
   taskDrawer.classList.add("is-open");
   taskDrawer.setAttribute("aria-hidden", "false");
   if (taskDrawerBackdrop) taskDrawerBackdrop.hidden = false;
 }
 
 function closeTaskDrawer() {
+  if (isEmbeddedFeedbackPool()) {
+    state.externalTaskDrawerOpen = false;
+    postToHost({ type: "feedback_pool:close_history_drawer" });
+    return;
+  }
   taskDrawer.classList.remove("is-open");
   taskDrawer.setAttribute("aria-hidden", "true");
   if (taskDrawerBackdrop) taskDrawerBackdrop.hidden = true;
 }
 
 function replayStatusLabel(status = "") {
+  if (status === "running") return "处理中";
   if (status === "proposal_ready") return "已产出提案";
   if (status === "replayed") return "已回投";
   if (status === "failed") return "回投失败";
@@ -608,9 +764,17 @@ function replayStatusLabel(status = "") {
 }
 
 function statusTone(status = "") {
+  if (status === "running") return "warning";
   if (["proposal_ready", "accepted", "completed", "replayed"].includes(status)) return "success";
   if (["failed", "rejected"].includes(status)) return "danger";
   return "subtle";
+}
+
+function replayTaskStatusLabel(status = "") {
+  if (status === "running") return "处理中";
+  if (status === "done") return "已完成";
+  if (status === "failed") return "已失败";
+  return "待处理";
 }
 
 function getReasonCategoryLabel(category = "") {
@@ -658,6 +822,159 @@ function escapeHtml(value) {
 async function request(url, options = {}) {
   const response = await fetch(url, options);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Request failed");
+  if (!response.ok) throw new Error(localizeErrorMessage(data.error || "请求失败"));
   return data;
+}
+
+function createPendingReplayState({ records = [], module = null, llmProfileId = "", referenceAssetIds = [] } = {}) {
+  const createdAt = new Date().toISOString();
+  return {
+    id: `pending-replay-${Date.now()}`,
+    projectId: state.projectId,
+    moduleId: module?.id || state.selectedReplayModuleId || "",
+    moduleName: module?.name || records[0]?.moduleName || "未指定模块",
+    sourceRejectionIds: records.map((record) => record.id),
+    referenceAssetIds,
+    llmProfileId,
+    proposals: [],
+    taskStatus: "running",
+    summary: llmProfileId ? "Replay 提案生成中" : "Fallback 提案生成中",
+    createdAt,
+    updatedAt: createdAt,
+    pendingPhaseIndex: 0,
+    pendingStageLabel: replayPendingPhases()[0].label,
+    pendingStageMessage: replayPendingPhases()[0].copy
+  };
+}
+
+function setPendingReplay(pendingReplay) {
+  state.pendingReplay = pendingReplay;
+  state.selectedTaskId = pendingReplay.id;
+  startPendingReplayTimer();
+}
+
+function clearPendingReplay() {
+  state.pendingReplay = null;
+  stopPendingReplayTimer();
+}
+
+function startPendingReplayTimer() {
+  stopPendingReplayTimer();
+  updatePendingReplayPhase();
+  pendingReplayTimer = window.setInterval(() => {
+    updatePendingReplayPhase();
+    renderTaskDrawer();
+    renderFeedbackStatus();
+  }, 1200);
+}
+
+function stopPendingReplayTimer() {
+  if (pendingReplayTimer) {
+    window.clearInterval(pendingReplayTimer);
+    pendingReplayTimer = 0;
+  }
+}
+
+function updatePendingReplayPhase() {
+  if (!state.pendingReplay) return;
+  const phases = replayPendingPhases();
+  const elapsedMs = Date.now() - new Date(state.pendingReplay.createdAt).getTime();
+  let nextIndex = 0;
+  if (elapsedMs >= 24000) {
+    nextIndex = 3;
+  } else if (elapsedMs >= 12000) {
+    nextIndex = 2;
+  } else if (elapsedMs >= 4000) {
+    nextIndex = 1;
+  }
+  const phase = phases[nextIndex] || phases[0];
+  state.pendingReplay = {
+    ...state.pendingReplay,
+    pendingPhaseIndex: nextIndex,
+    pendingStageLabel: phase.label,
+    pendingStageMessage: phase.copy,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function replayPendingPhases() {
+  return [
+    {
+      label: "已发起任务",
+      copy: "系统已经接收本次 Replay / Fallback 请求，正在准备回放材料。"
+    },
+    {
+      label: "整理上下文",
+      copy: "正在汇总驳回记录、参考资产和候选技能规则，准备生成提案。"
+    },
+    {
+      label: "生成提案",
+      copy: "正在产出可审阅的 Replay / Fallback 提案，这一步通常会稍微久一点。"
+    },
+    {
+      label: "写回结果",
+      copy: "正在整理提案、生成技能工单并刷新最近任务列表。"
+    }
+  ];
+}
+
+function buildPendingReplayTaskCardData() {
+  return state.pendingReplay;
+}
+
+function renderFeedbackStatus(message = "", isError = false) {
+  if (!feedbackStatusRoot) return;
+
+  const pending = state.pendingReplay;
+  const text = message || (pending ? `${pending.summary}：${pending.pendingStageMessage}` : "");
+  feedbackStatusRoot.hidden = !text;
+  feedbackStatusRoot.textContent = text;
+  feedbackStatusRoot.classList.toggle("status-busy", Boolean(pending) && !isError);
+  feedbackStatusRoot.classList.toggle("danger", Boolean(isError));
+}
+
+function localizeErrorMessage(message = "") {
+  const normalized = String(message || "").trim();
+  if (!normalized) return "操作失败";
+  if (normalized === "Request failed") return "请求失败";
+  if (normalized === "Replay task not found") return "Replay 任务不存在";
+  if (normalized === "Proposal item not found") return "提案条目不存在";
+  return normalized;
+}
+
+function waitForNextPaint() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+function isEmbeddedFeedbackPool() {
+  return window.parent !== window;
+}
+
+function buildExternalTaskDrawerPayload() {
+  return {
+    tasks: state.pendingReplay ? [buildPendingReplayTaskCardData(), ...state.tasks] : state.tasks,
+    selectedTaskId: state.selectedTaskId || state.pendingReplay?.id || state.tasks[0]?.id || ""
+  };
+}
+
+function syncExternalTaskDrawer(type = "feedback_pool:update_history_drawer") {
+  postToHost({
+    type,
+    ...buildExternalTaskDrawerPayload()
+  });
+}
+
+function postToHost(payload) {
+  if (!isEmbeddedFeedbackPool()) return;
+  window.parent.postMessage(payload, window.location.origin);
+}
+
+function handleHostMessage(event) {
+  if (event.origin !== window.location.origin) return;
+  const data = event.data || {};
+  if (data.type === "feedback_pool:parent_history_drawer_closed") {
+    state.externalTaskDrawerOpen = false;
+  }
 }

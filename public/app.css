@@ -1188,6 +1188,16 @@ button.danger {
   gap: 16px;
 }
 
+.feedback-list-actions {
+  position: relative;
+  z-index: 2;
+  margin-left: auto;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .feedback-task-list,
 .feedback-task-detail {
   min-height: 0;
@@ -1198,10 +1208,80 @@ button.danger {
   text-align: left;
 }
 
+.feedback-task-card.is-pending {
+  position: relative;
+  border-color: rgba(193, 120, 25, 0.28);
+  background:
+    linear-gradient(135deg, rgba(255, 248, 236, 0.98), rgba(255, 252, 245, 0.98)),
+    radial-gradient(circle at top right, rgba(193, 120, 25, 0.1), transparent 36%);
+  box-shadow: 0 10px 24px rgba(193, 120, 25, 0.12);
+}
+
+.feedback-task-card.is-pending::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(193, 120, 25, 0.08);
+}
+
 .feedback-task-detail-card {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.feedback-task-detail-card-pending {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(193, 120, 25, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 252, 246, 0.98), rgba(255, 247, 235, 0.98));
+}
+
+.feedback-pending-orbit {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 3px solid rgba(193, 120, 25, 0.18);
+  border-top-color: rgba(193, 120, 25, 0.78);
+  animation: replay-spin 1s linear infinite;
+}
+
+.feedback-pending-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.feedback-pending-step {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(25, 76, 129, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+  opacity: 0.68;
+  transition: opacity 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+}
+
+.feedback-pending-step.is-active {
+  opacity: 1;
+  transform: translateX(2px);
+  border-color: rgba(193, 120, 25, 0.24);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.feedback-pending-step p {
+  margin-bottom: 0;
+}
+
+@keyframes replay-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .replay-form-grid {
@@ -1258,6 +1338,12 @@ button.danger {
     align-items: flex-start;
   }
 
+  .feedback-list-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .feedback-record-table-head {
     display: none;
   }
@@ -1303,6 +1389,10 @@ button.danger {
 
 .feedback-strip-compact .strip-text {
   margin-top: 6px;
+}
+
+.feedback-strip-compact .status {
+  margin-top: 10px;
 }
 
 .feedback-strip-compact .feedback-strip-actions {

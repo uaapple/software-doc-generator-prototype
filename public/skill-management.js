@@ -46,24 +46,38 @@ const TEXT_TRUTH_KINDS = new Set([
   "rule_hint"
 ])
 
+const pageQuery = new URLSearchParams(window.location.search)
+
 const state = {
   payload: null,
   detailProfile: null,
   detailItem: null,
+  view: pageQuery.get("view") === "work-orders" ? "work-orders" : "registry",
   selectedProfileId: "",
   selectedSkillCode: "",
   selectedKind: "",
   itemQuery: "",
+  workOrders: [],
+  workOrderDetail: null,
+  selectedWorkOrderId: pageQuery.get("workOrderId") || "",
   isEditorOpen: false,
   editorMode: "edit",
   railFilters: {
     query: "",
     layer: "all"
+  },
+  workOrderFilters: {
+    status: "",
+    documentType: ""
   }
 }
 
 const refreshButton = document.querySelector("#refresh-button")
 const pageStatusRoot = document.querySelector("#page-status")
+const registryViewTab = document.querySelector("#registry-view-tab")
+const workOrderViewTab = document.querySelector("#work-order-view-tab")
+const registryViewRoot = document.querySelector("#registry-view")
+const workOrderViewRoot = document.querySelector("#work-order-view")
 const summaryMetricsRoot = document.querySelector("#summary-metrics")
 const sourceMetaRoot = document.querySelector("#source-meta")
 const skillWorkspaceRoot = document.querySelector(".skill-workspace")
@@ -79,6 +93,11 @@ const workspaceReviewResizer = document.querySelector("#workspace-review-resizer
 const editorBackdrop = document.querySelector("#editor-backdrop")
 const editorDrawer = document.querySelector("#editor-drawer")
 const editorDrawerBody = document.querySelector("#editor-drawer-body")
+const workOrderSummaryRoot = document.querySelector("#work-order-summary")
+const workOrderStatusFilter = document.querySelector("#work-order-status-filter")
+const workOrderDocumentFilter = document.querySelector("#work-order-document-filter")
+const workOrderListRoot = document.querySelector("#work-order-list")
+const workOrderDetailRoot = document.querySelector("#work-order-detail")
 const REVIEW_LAYOUT_BREAKPOINT = window.matchMedia("(max-width: 1180px)")
 const REVIEW_WIDTH_STORAGE_KEY = "skill-management:review-width"
 
@@ -92,6 +111,8 @@ initializeWorkspaceResizer()
 await bootstrap()
 
 refreshButton.addEventListener("click", () => refreshAll(true))
+registryViewTab?.addEventListener("click", () => setView("registry"))
+workOrderViewTab?.addEventListener("click", () => setView("work-orders"))
 profileQueryInput.addEventListener("input", handleRailFilterChange)
 profileLayerFilter.addEventListener("change", handleRailFilterChange)
 profileRailRoot.addEventListener("click", handleRailClick)
@@ -99,6 +120,11 @@ itemQueryInput.addEventListener("input", handleItemQueryChange)
 itemBrowserChromeRoot.addEventListener("click", handleBrowserClick)
 itemBrowserRoot.addEventListener("click", handleBrowserClick)
 reviewPaneRoot.addEventListener("click", handleReviewClick)
+workOrderStatusFilter?.addEventListener("change", handleWorkOrderFilterChange)
+workOrderDocumentFilter?.addEventListener("input", handleWorkOrderFilterChange)
+workOrderListRoot?.addEventListener("click", handleWorkOrderListClick)
+workOrderDetailRoot?.addEventListener("click", handleWorkOrderDetailClick)
+workOrderDetailRoot?.addEventListener("submit", handleWorkOrderDetailSubmit)
 editorBackdrop.addEventListener("click", () => closeEditor())
 editorDrawerBody.addEventListener("click", handleDrawerClick)
 editorDrawerBody.addEventListener("submit", handleEditorSubmit)
@@ -305,23 +331,37 @@ function clearStoredReviewWidth() {
 }
 
 async function bootstrap() {
+  syncView()
   await refreshAll(false)
 }
 
 async function refreshAll(showHint = false) {
   try {
-    if (showHint) setPageStatus("正在刷新 skill registry...")
+    if (showHint) {
+      setPageStatus(state.view === "work-orders" ? "正在刷新技能工单..." : "正在刷新 skill registry...")
+    }
     state.payload = await request("/api/skill-management")
+    state.workOrders = await request(buildWorkOrderListUrl()).then((payload) => payload.workOrders || [])
     syncSelection()
+    syncWorkOrderSelection()
     renderSummary()
     renderWorkspace()
-    await loadSelection()
-    if (showHint) setPageStatus("skill registry 已刷新。")
+    renderWorkOrderWorkspace()
+    if (state.view === "registry") {
+      await loadSelection()
+    } else {
+      await loadWorkOrderSelection()
+    }
+    if (showHint) {
+      setPageStatus(state.view === "work-orders" ? "技能工单已刷新。" : "skill registry 已刷新。")
+    }
   } catch (error) {
     setPageStatus(buildLoadFailureMessage(error), true)
     state.detailProfile = null
     state.detailItem = null
+    state.workOrderDetail = null
     renderWorkspace()
+    renderWorkOrderWorkspace()
   }
 }
 
@@ -584,6 +624,86 @@ function handleGlobalKeydown(event) {
   }
 }
 
+async function handleWorkOrderFilterChange() {
+  state.workOrderFilters.status = workOrderStatusFilter?.value || ""
+  state.workOrderFilters.documentType = workOrderDocumentFilter?.value?.trim() || ""
+  syncWorkOrderSelection()
+  renderWorkOrderWorkspace()
+  if (state.view === "work-orders") {
+    await loadWorkOrderSelection()
+  }
+}
+
+async function handleWorkOrderListClick(event) {
+  const button = event.target.closest("[data-work-order-open]")
+  if (!button) return
+  state.selectedWorkOrderId = String(button.dataset.workOrderOpen || "")
+  const nextUrl = new URL(window.location.href)
+  nextUrl.searchParams.set("view", "work-orders")
+  nextUrl.searchParams.set("workOrderId", state.selectedWorkOrderId)
+  window.history.replaceState({}, "", nextUrl)
+  renderWorkOrderWorkspace()
+  await loadWorkOrderSelection()
+}
+
+async function handleWorkOrderDetailClick(event) {
+  const closeButton = event.target.closest("[data-work-order-close]")
+  if (closeButton) {
+    try {
+      await request(`/api/skill-work-orders/${encodeURIComponent(closeButton.dataset.workOrderClose)}/close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ closedBy: "web-ui" })
+      })
+      await refreshAll(false)
+      setPageStatus("技能工单已关闭。")
+    } catch (error) {
+      setPageStatus(`关闭工单失败：${error.message}`, true)
+    }
+    return
+  }
+
+  const jumpSkillButton = event.target.closest("[data-work-order-jump-skill]")
+  if (jumpSkillButton) {
+    await jumpToSkill(jumpSkillButton.dataset.workOrderJumpSkill)
+    return
+  }
+
+  const acceptButton = event.target.closest("[data-work-order-accept]")
+  if (acceptButton) {
+    await submitWorkOrderItemAction(acceptButton.dataset.workOrderAccept, "accepted", false, event.target)
+    return
+  }
+
+  const editApplyButton = event.target.closest("[data-work-order-edit-apply]")
+  if (editApplyButton) {
+    await submitWorkOrderItemAction(editApplyButton.dataset.workOrderEditApply, "edited", true, event.target)
+    return
+  }
+
+  const rejectButton = event.target.closest("[data-work-order-reject]")
+  if (rejectButton) {
+    try {
+      await request(`/api/skill-work-orders/${encodeURIComponent(state.selectedWorkOrderId)}/items/${encodeURIComponent(rejectButton.dataset.workOrderReject)}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reviewStatus: "rejected",
+          reviewComment: "web-ui rejected"
+        })
+      })
+      await refreshAll(false)
+      setPageStatus("修改项已拒绝。")
+    } catch (error) {
+      setPageStatus(`拒绝修改项失败：${error.message}`, true)
+    }
+  }
+}
+
+async function handleWorkOrderDetailSubmit(event) {
+  event.preventDefault()
+}
+
 async function loadSelection() {
   const profile = getSelectedProfileSummary()
   if (!profile) {
@@ -617,6 +737,23 @@ async function loadSelection() {
   }
 
   renderWorkspace()
+}
+
+async function loadWorkOrderSelection() {
+  if (!state.selectedWorkOrderId) {
+    state.workOrderDetail = null
+    renderWorkOrderWorkspace()
+    return
+  }
+
+  try {
+    state.workOrderDetail = await request(`/api/skill-work-orders/${encodeURIComponent(state.selectedWorkOrderId)}`)
+  } catch (error) {
+    state.workOrderDetail = null
+    setPageStatus(`加载技能工单失败：${error.message}`, true)
+  }
+
+  renderWorkOrderWorkspace()
 }
 
 function syncSelection() {
@@ -670,12 +807,72 @@ function syncSelection() {
   }
 }
 
+function syncView() {
+  const isRegistry = state.view !== "work-orders"
+  registryViewRoot.hidden = !isRegistry
+  workOrderViewRoot.hidden = isRegistry
+  registryViewTab?.classList.toggle("is-active", isRegistry)
+  workOrderViewTab?.classList.toggle("is-active", !isRegistry)
+  registryViewTab?.setAttribute("aria-selected", isRegistry ? "true" : "false")
+  workOrderViewTab?.setAttribute("aria-selected", !isRegistry ? "true" : "false")
+}
+
+function setView(nextView) {
+  state.view = nextView === "work-orders" ? "work-orders" : "registry"
+  const nextUrl = new URL(window.location.href)
+  if (state.view === "work-orders") {
+    nextUrl.searchParams.set("view", "work-orders")
+    if (state.selectedWorkOrderId) {
+      nextUrl.searchParams.set("workOrderId", state.selectedWorkOrderId)
+    }
+  } else {
+    nextUrl.searchParams.delete("view")
+    nextUrl.searchParams.delete("workOrderId")
+  }
+  window.history.replaceState({}, "", nextUrl)
+  syncView()
+  renderWorkspace()
+  renderWorkOrderWorkspace()
+  if (state.view === "registry") {
+    loadSelection()
+  } else {
+    loadWorkOrderSelection()
+  }
+}
+
+function syncWorkOrderSelection() {
+  const visible = getVisibleWorkOrders()
+  if (!visible.length) {
+    state.selectedWorkOrderId = ""
+    state.workOrderDetail = null
+    return
+  }
+  if (!visible.some((item) => item.id === state.selectedWorkOrderId)) {
+    state.selectedWorkOrderId = visible[0].id
+    state.workOrderDetail = null
+  }
+}
+
 function renderWorkspace() {
+  syncView()
+  if (state.view !== "registry") {
+    renderEditorDrawer()
+    return
+  }
   renderProfileRail()
   renderItemBrowserChrome()
   renderItemBrowser()
   renderReviewPane()
   renderEditorDrawer()
+}
+
+function renderWorkOrderWorkspace() {
+  if (state.view !== "work-orders") {
+    return
+  }
+  renderWorkOrderSummary()
+  renderWorkOrderList()
+  renderWorkOrderDetail()
 }
 
 function renderSummary() {
@@ -708,6 +905,207 @@ function renderSummary() {
     .join("")
 
   sourceMetaRoot.textContent = `当前来源：${state.payload.activeSource?.skillDir || "-"} · manifest：${state.payload.activeSource?.manifestPath || "-"}`
+}
+
+function renderWorkOrderSummary() {
+  if (!workOrderSummaryRoot) return
+  const visible = getVisibleWorkOrders()
+  const totalItems = visible.reduce((sum, item) => sum + Number(item.itemStats?.total || 0), 0)
+  const appliedItems = visible.reduce((sum, item) => sum + Number(item.itemStats?.applied || 0), 0)
+  const cards = [
+    { label: "工单数", value: visible.length },
+    { label: "待处理工单", value: visible.filter((item) => item.status === "pending_review").length },
+    { label: "修改项总数", value: totalItems },
+    { label: "已应用项", value: appliedItems }
+  ]
+  workOrderSummaryRoot.innerHTML = cards
+    .map(
+      (card) => `
+        <div class="skill-summary-metric">
+          <span>${escapeHtml(card.label)}</span>
+          <strong>${escapeHtml(String(card.value))}</strong>
+        </div>
+      `
+    )
+    .join("")
+}
+
+function renderWorkOrderList() {
+  if (!workOrderListRoot) return
+  const visible = getVisibleWorkOrders()
+  if (!visible.length) {
+    workOrderListRoot.innerHTML = '<div class="empty-state">当前筛选条件下没有技能工单。</div>'
+    return
+  }
+  workOrderListRoot.innerHTML = visible
+    .map(
+      (item) => `
+        <button type="button" class="work-order-list-card ${item.id === state.selectedWorkOrderId ? "is-selected" : ""}" data-work-order-open="${item.id}">
+          <strong>${escapeHtml(item.title || item.id)}</strong>
+          <p>${escapeHtml(item.moduleName || "未指定模块")} · ${escapeHtml(item.documentType || "-")}</p>
+          <div class="inline-meta-row">
+            <span class="mini-pill ${statusTone(item.status)}">${escapeHtml(formatWorkOrderStatus(item.status))}</span>
+            <span class="work-order-code">${escapeHtml(item.sourceTaskId || "-")}</span>
+          </div>
+          <p>${escapeHtml(item.decisionSummary || item.summary || "暂无结论摘要")}</p>
+          <div class="inline-meta-row">
+            <span>${escapeHtml(String(item.itemStats?.total || 0))} 条修改项</span>
+            <span>${escapeHtml(formatDate(item.updatedAt))}</span>
+          </div>
+        </button>
+      `
+    )
+    .join("")
+}
+
+function renderWorkOrderDetail() {
+  if (!workOrderDetailRoot) return
+  const workOrder = state.workOrderDetail
+  if (!workOrder) {
+    workOrderDetailRoot.className = "work-order-detail empty-state"
+    workOrderDetailRoot.textContent = "选择一张工单查看详情。"
+    return
+  }
+
+  workOrderDetailRoot.className = "work-order-detail"
+  workOrderDetailRoot.innerHTML = `
+    <section class="work-order-section">
+      <div class="detail-header-row">
+        <div>
+          <h3>${escapeHtml(workOrder.title || workOrder.id)}</h3>
+          <p class="summary">${escapeHtml(workOrder.decisionSummary || workOrder.summary || "")}</p>
+        </div>
+        <div class="work-order-inline-actions">
+          <span class="mini-pill ${statusTone(workOrder.status)}">${escapeHtml(formatWorkOrderStatus(workOrder.status))}</span>
+          ${workOrder.status !== "closed" ? `<button type="button" class="secondary-button" data-work-order-close="${workOrder.id}">关闭工单</button>` : ""}
+        </div>
+      </div>
+      <div class="work-order-meta-grid">
+        ${renderWorkOrderMetaItem("来源 fallback 任务", workOrder.sourceTaskId || "-")}
+        ${renderWorkOrderMetaItem("模块 / 文档类型", `${workOrder.moduleName || "-"} / ${workOrder.documentType || "-"}`)}
+        ${renderWorkOrderMetaItem("模型", workOrder.llmProfile?.label || workOrder.llmProfile?.id || "本地回放")}
+        ${renderWorkOrderMetaItem("skill snapshot", workOrder.effectiveSkillSnapshot?.hash || "-")}
+      </div>
+    </section>
+
+    <section class="work-order-section">
+      <h4>任务背景</h4>
+      <div class="work-order-meta-grid">
+        ${renderWorkOrderMetaItem("工单摘要", workOrder.summary || "-")}
+        ${renderWorkOrderMetaItem("命中 profile", (workOrder.effectiveSkillSnapshot?.selectedProfiles || []).map((item) => `${item.kind}:${item.key}`).join(" -> ") || "-")}
+      </div>
+    </section>
+
+    <section class="work-order-section">
+      <h4>问题上下文</h4>
+      <div class="work-order-evidence-list">
+        ${(workOrder.items || []).flatMap((item) => item.evidenceRefs || []).slice(0, 6).map(renderWorkOrderEvidenceItem).join("") || '<div class="empty-state">当前没有附带证据片段。</div>'}
+      </div>
+    </section>
+
+    <section class="work-order-section">
+      <h4>修改项列表</h4>
+      <div class="work-order-items">
+        ${(workOrder.items || []).map(renderWorkOrderItemCard).join("")}
+      </div>
+    </section>
+
+    ${(workOrder.validatorSuggestions || []).length ? `
+      <section class="work-order-section">
+        <h4>校验建议</h4>
+        <div class="work-order-items">
+          ${(workOrder.validatorSuggestions || []).map((item) => `
+            <article class="work-order-item-card">
+              <strong>${escapeHtml(item.title || "校验建议")}</strong>
+              <p>${escapeHtml(item.ruleText || "")}</p>
+              <p class="summary">${escapeHtml(item.why || "")}</p>
+            </article>
+          `).join("")}
+        </div>
+      </section>
+    ` : ""}
+  `
+}
+
+function renderWorkOrderMetaItem(label, value) {
+  return `
+    <article class="work-order-meta-item">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value || "-")}</strong>
+    </article>
+  `
+}
+
+function renderWorkOrderEvidenceItem(item = {}) {
+  const excerpt = item.outputSnapshot?.requirementText || item.reasonText || item.expectedNote || ""
+  return `
+    <article class="work-order-evidence-item">
+      <div class="inline-meta-row">
+        <strong>${escapeHtml(item.requirementCode || item.refId || "证据")}</strong>
+        <span class="mini-pill subtle">${escapeHtml(item.reasonCategory || "rejection")}</span>
+      </div>
+      <p>${escapeHtml(item.reasonText || "")}</p>
+      <p class="summary">${escapeHtml(excerpt || "无附加片段")}</p>
+    </article>
+  `
+}
+
+function renderWorkOrderItemCard(item = {}) {
+  const edited = item.editedPayload || {}
+  const draftContent = edited.afterContent || edited.recommendedSkillText || item.afterContent || item.recommendedSkillText || ""
+  return `
+    <article class="work-order-item-card">
+      <div class="detail-header-row">
+        <div>
+          <strong>${escapeHtml(item.title || item.itemId)}</strong>
+          <p class="summary">${escapeHtml(item.fallbackReason || item.whyChange || "")}</p>
+        </div>
+        <span class="mini-pill ${statusTone(item.reviewStatus)}">${escapeHtml(formatWorkOrderItemStatus(item.reviewStatus))}</span>
+      </div>
+      <div class="work-order-meta-grid">
+        ${renderWorkOrderMetaItem("结论类型", item.conclusionType === "create_new" ? "新增 atomic skill" : "修改已有 atomic skill")}
+        ${renderWorkOrderMetaItem("命中的 skill", item.targetSkillCode || "新增")}
+        ${renderWorkOrderMetaItem("层级 / profile / kind", `${item.targetLayer || "-"} / ${item.targetProfileKey || "-"} / ${item.targetKind || "-"}`)}
+        ${renderWorkOrderMetaItem("原文为什么", item.whyCurrent || "-")}
+      </div>
+      <div class="work-order-meta-grid">
+        ${renderWorkOrderMetaItem("修改后为什么", item.whyChange || "-")}
+        ${renderWorkOrderMetaItem("插入提示", item.targetInsertionHint || "-")}
+      </div>
+      <div class="work-order-meta-grid">
+        ${renderWorkOrderMetaItem("层级判断", formatScopeDecision(item.scopeDecision || ""))}
+        ${renderWorkOrderMetaItem("层级原因", item.scopeReason || "-")}
+        ${renderWorkOrderMetaItem("抽象度", item.abstractionScore ? `${item.abstractionScore.toFixed(2)} / 1.00` : "-")}
+        ${renderWorkOrderMetaItem("复用判断", formatReuseJudgement(item.reuseJudgement || ""))}
+        ${renderWorkOrderMetaItem("是否像驳回改写", item.isParaphraseOfRejection ? "是" : "否")}
+        ${renderWorkOrderMetaItem("可应用性", formatReviewReadiness(item.reviewReadiness || ""))}
+      </div>
+      ${item.ruleIntent ? `
+        <div class="work-order-section">
+          <strong>规则目的</strong>
+          <p class="summary">${escapeHtml(item.ruleIntent)}</p>
+        </div>
+      ` : ""}
+      <label>
+        修改后内容
+        <textarea rows="6" name="afterContent">${escapeHtml(draftContent)}</textarea>
+      </label>
+      <div class="work-order-section">
+        <strong>修改前内容</strong>
+        <pre>${escapeHtml(item.beforeContent || "无")}</pre>
+      </div>
+      <div class="work-order-inline-actions">
+        ${item.targetSkillCode ? `<button type="button" class="secondary-button" data-work-order-jump-skill="${escapeHtml(item.targetSkillCode)}">查看命中技能</button>` : ""}
+        ${item.reviewStatus !== "applied" ? `
+          <button type="button" data-work-order-accept="${item.itemId}">接受并应用</button>
+          <button type="button" class="secondary-button" data-work-order-edit-apply="${item.itemId}">编辑后应用</button>
+          <button type="button" class="ghost-button" data-work-order-reject="${item.itemId}">拒绝</button>
+        ` : `
+          <span class="summary">已于 ${escapeHtml(formatDate(item.appliedAt))} 由 ${escapeHtml(item.appliedBy || "system")} 应用。</span>
+        `}
+      </div>
+    </article>
+  `
 }
 
 function renderProfileRail() {
@@ -1449,6 +1847,17 @@ function getSelectedProfileItems() {
   return sortItems(profile?.items || [])
 }
 
+function getVisibleWorkOrders() {
+  return (state.workOrders || []).filter((item) => {
+    if (state.workOrderFilters.status && item.status !== state.workOrderFilters.status) return false
+    if (state.workOrderFilters.documentType) {
+      const haystack = `${item.documentType || ""}`.toLowerCase()
+      if (!haystack.includes(state.workOrderFilters.documentType.toLowerCase())) return false
+    }
+    return true
+  })
+}
+
 function getOrderedKinds(items) {
   const kinds = [...new Set(items.map((item) => item.kind).filter(Boolean))]
   return kinds.sort((left, right) => {
@@ -1854,6 +2263,115 @@ function formatDate(value = "") {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString("zh-CN")
+}
+
+function formatWorkOrderStatus(status = "") {
+  const labels = {
+    pending_review: "待审阅",
+    partially_reviewed: "部分已审阅",
+    partially_applied: "部分已应用",
+    applied: "已应用",
+    closed: "已关闭"
+  }
+  return labels[status] || status || "未知"
+}
+
+function formatWorkOrderItemStatus(status = "") {
+  const labels = {
+    pending: "待处理",
+    accepted: "待应用",
+    edited: "编辑后待应用",
+    rejected: "已拒绝",
+    applied: "已应用"
+  }
+  return labels[status] || status || "未知"
+}
+
+function formatScopeDecision(scope = "") {
+  const labels = {
+    generic: "generic / 通用层",
+    docType: "docType / 文档类型层",
+    domain: "domain / 领域层",
+    module: "module / 模块层"
+  }
+  return labels[scope] || scope || "未判定"
+}
+
+function formatReviewReadiness(value = "") {
+  const labels = {
+    ready_to_apply: "可直接应用",
+    needs_human_refine: "建议人工再提升"
+  }
+  return labels[value] || value || "未判定"
+}
+
+function formatReuseJudgement(value = "") {
+  const labels = {
+    generic_general: "通用可复用",
+    doc_type_general: "文档类型可复用",
+    domain_general: "领域内可复用",
+    module_specific: "模块特定"
+  }
+  return labels[value] || value || "未判定"
+}
+
+function statusTone(status = "") {
+  if (["applied", "accepted", "closed"].includes(status)) return "success"
+  if (["rejected"].includes(status)) return "danger"
+  if (["edited", "partially_applied", "partially_reviewed"].includes(status)) return "warning"
+  return "subtle"
+}
+
+function buildWorkOrderListUrl() {
+  const params = new URLSearchParams()
+  if (state.workOrderFilters.status) params.set("status", state.workOrderFilters.status)
+  if (state.workOrderFilters.documentType) params.set("documentType", state.workOrderFilters.documentType)
+  return `/api/skill-work-orders?${params.toString()}`
+}
+
+async function submitWorkOrderItemAction(itemId, reviewStatus, useEditedContent, sourceNode) {
+  const card = sourceNode?.closest(".work-order-item-card")
+  const afterContent = card?.querySelector('textarea[name="afterContent"]')?.value || ""
+  try {
+    await request(`/api/skill-work-orders/${encodeURIComponent(state.selectedWorkOrderId)}/items/${encodeURIComponent(itemId)}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        useEditedContent
+          ? {
+              reviewStatus,
+              editedPayload: { afterContent }
+            }
+          : {
+              reviewStatus
+            }
+      )
+    })
+    await request(`/api/skill-work-orders/${encodeURIComponent(state.selectedWorkOrderId)}/items/${encodeURIComponent(itemId)}/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appliedBy: "web-ui" })
+    })
+    await refreshAll(false)
+    setPageStatus("修改项已应用到 active atomic skill。")
+  } catch (error) {
+    setPageStatus(`应用技能工单失败：${error.message}`, true)
+  }
+}
+
+async function jumpToSkill(skillCode = "") {
+  if (!skillCode) return
+  try {
+    const detail = await request(`/api/skill-items/${encodeURIComponent(skillCode)}`)
+    state.selectedProfileId = `${detail.item.layer}:${detail.item.profileKey}`
+    state.selectedSkillCode = detail.item.skillCode
+    state.selectedKind = detail.item.kind
+    setView("registry")
+    await loadSelection()
+    setPageStatus(`已定位到 ${skillCode}。`)
+  } catch (error) {
+    setPageStatus(`跳转到技能详情失败：${error.message}`, true)
+  }
 }
 
 function setPageStatus(message, isError = false) {

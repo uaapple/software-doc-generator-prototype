@@ -1256,3 +1256,167 @@ button[disabled] {
     border-radius: 0;
   }
 }
+
+.view-tabs {
+  display: inline-flex;
+  gap: 10px;
+  margin-right: 12px;
+}
+
+.view-tab {
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--ink-soft);
+  font-weight: 700;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.view-tab.is-active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.work-order-view {
+  display: grid;
+  gap: 20px;
+}
+
+.work-order-workspace {
+  display: grid;
+  gap: 0;
+  grid-template-columns: 360px minmax(0, 1fr);
+  min-height: 680px;
+  overflow: hidden;
+}
+
+.work-order-list-pane,
+.work-order-detail {
+  padding: 22px;
+}
+
+.work-order-list-pane {
+  border-right: 1px solid var(--pane-line);
+  background: rgba(245, 249, 255, 0.7);
+}
+
+.work-order-filters {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.work-order-filters label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.work-order-list {
+  display: grid;
+  gap: 12px;
+  max-height: 560px;
+  overflow: auto;
+}
+
+.work-order-list-card {
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  padding: 16px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.work-order-list-card strong {
+  color: var(--ink);
+}
+
+.work-order-list-card p,
+.work-order-list-card .work-order-code {
+  color: var(--ink-soft);
+}
+
+.work-order-list-card.is-selected {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 1px rgba(12, 105, 197, 0.18);
+}
+
+.work-order-detail {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.work-order-section {
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.work-order-meta-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.work-order-meta-item,
+.work-order-evidence-item,
+.work-order-item-card {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgba(247, 250, 255, 0.88);
+  padding: 12px 14px;
+}
+
+.work-order-items {
+  display: grid;
+  gap: 12px;
+}
+
+.work-order-item-card textarea,
+.work-order-item-card input {
+  width: 100%;
+}
+
+.work-order-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.work-order-inline-actions > * {
+  flex: 0 0 auto;
+}
+
+.work-order-evidence-list {
+  display: grid;
+  gap: 10px;
+}
+
+.work-order-code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+@media (max-width: 960px) {
+  .work-order-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .work-order-list-pane {
+    border-right: 0;
+    border-bottom: 1px solid var(--pane-line);
+  }
+
+  .work-order-meta-grid {
+    grid-template-columns: 1fr;
+  }
+}

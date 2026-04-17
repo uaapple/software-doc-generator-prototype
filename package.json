@@ -4,9 +4,9 @@
   "description": "Phase-one prototype for generating software requirements from system PDFs and model artifacts.",
   "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "test": "node tests/run-tests.js",
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning tests/run-tests.js",
     "check:encoding": "node scripts/check-text-encoding.mjs",
     "fix:encoding": "node scripts/fix-text-encoding.mjs"
   },

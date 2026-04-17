@@ -14,6 +14,7 @@ import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
 import { ModuleSkillService } from "./services/module-skill-service.js";
 import { SkillManagementService } from "./services/skill-management-service.js";
+import { SkillWorkOrderService } from "./services/skill-work-order-service.js";
 import { SkillLoader } from "./services/skill-loader.js";
 
 function toClientProject(project) {
@@ -69,6 +70,7 @@ export async function createApp() {
   const replayTaskService = new ReplayTaskService();
   const moduleSkillService = new ModuleSkillService();
   const skillManagementService = new SkillManagementService();
+  const skillWorkOrderService = new SkillWorkOrderService();
   const skillLoader = new SkillLoader();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
@@ -113,6 +115,9 @@ export async function createApp() {
   });
 
   app.use(express.json({ limit: "2mb" }));
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, timestamp: new Date().toISOString() });
+  });
   app.get("/", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "index.html"));
   });
@@ -679,7 +684,7 @@ export async function createApp() {
 
   app.get("/api/replay-tasks", async (req, res, next) => {
     try {
-      const tasks = await replayTaskService.listTasks();
+      const tasks = await replayTaskService.listTasks(req.query || {});
       res.json({ tasks });
     } catch (error) {
       next(error);
@@ -715,6 +720,54 @@ export async function createApp() {
     try {
       const result = await replayTaskService.applyTask(req.params.taskId);
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/skill-work-orders", async (req, res, next) => {
+    try {
+      const workOrders = await skillWorkOrderService.listWorkOrders(req.query || {});
+      res.json({ workOrders });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/skill-work-orders/:workOrderId", async (req, res, next) => {
+    try {
+      const workOrder = await skillWorkOrderService.getWorkOrder(req.params.workOrderId);
+      if (!workOrder) {
+        return res.status(404).json({ error: "Skill work order not found" });
+      }
+      res.json(workOrder);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-work-orders/:workOrderId/items/:itemId/review", async (req, res, next) => {
+    try {
+      const item = await skillWorkOrderService.reviewItem(req.params.workOrderId, req.params.itemId, req.body || {});
+      res.json(item);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-work-orders/:workOrderId/items/:itemId/apply", async (req, res, next) => {
+    try {
+      const result = await skillWorkOrderService.applyItem(req.params.workOrderId, req.params.itemId, req.body || {});
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-work-orders/:workOrderId/close", async (req, res, next) => {
+    try {
+      const workOrder = await skillWorkOrderService.closeWorkOrder(req.params.workOrderId, req.body || {});
+      res.json(workOrder);
     } catch (error) {
       next(error);
     }

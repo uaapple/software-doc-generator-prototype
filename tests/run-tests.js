@@ -19,6 +19,7 @@ import { PipelineService } from "../src/services/pipeline-service.js";
 import { ModuleSkillService } from "../src/services/module-skill-service.js";
 import { SkillManagementService } from "../src/services/skill-management-service.js";
 import { SkillDatabaseService } from "../src/services/skill-database-service.js";
+import { SkillWorkOrderService } from "../src/services/skill-work-order-service.js";
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -61,6 +62,7 @@ async function withTempConfig(run) {
     rejectionStoreDir: path.join(tempDir, "data", "rejections"),
     rejectionGroupStorePath: path.join(tempDir, "data", "rejections", "groups.json"),
     replayTaskStoreDir: path.join(tempDir, "data", "replay-tasks"),
+    skillWorkOrderStoreDir: path.join(tempDir, "data", "skill-work-orders"),
     templateDir: path.join(tempDir, "templates"),
     templatePath: path.join(tempDir, "templates", "software-requirement-template.json"),
     skillDir: path.join(tempDir, "skills", "active")
@@ -1141,6 +1143,302 @@ const tests = [
         const updatedRecord = await rejectionService.getRecord(records[0].id);
         assert.equal(updatedRecord.replayCount, 1);
         assert.equal(updatedRecord.replayStatus, "proposal_ready");
+      });
+    }
+  },
+  {
+    name: "Replay task automatically creates a skill work order",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+        const workOrderService = new SkillWorkOrderService();
+
+        const project = await projectService.createProject({ name: "Work Order Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          description: "负责回投工单测试",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-work-order-1",
+              requirementId: "SWR-501",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.74,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: [],
+          llmProfile: { id: "profile-work-order", name: "Replay Mock" }
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-work-order-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonTags: ["实现细节混入"],
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          expectedNote: "请回到人工范例边界，只保留记忆和刷新要求。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+
+        assert.ok(replayTask.workOrderId);
+        assert.ok(replayTask.workOrderSummary);
+        assert.ok(replayTask.materialPack.effectiveSkillSnapshot.hash);
+        assert.ok(replayTask.materialPack.effectiveSkillSnapshot.files["requirement_validation.md"] !== undefined);
+
+        const workOrder = await workOrderService.getWorkOrder(replayTask.workOrderId);
+        assert.equal(workOrder.sourceTaskId, replayTask.id);
+        assert.equal(workOrder.moduleName, "充电管理");
+        assert.equal(workOrder.status, "pending_review");
+        assert.ok(workOrder.items.length >= 1);
+        assert.ok(Array.isArray(workOrder.validatorSuggestions));
+      });
+    }
+  },
+  {
+    name: "Skill work order falls back to replay proposal items when generated items are empty",
+    run: async () => {
+      await withTempConfig(async () => {
+        const workOrderService = new SkillWorkOrderService();
+        const task = {
+          id: "replay-task-fallback-items",
+          projectId: "project-1",
+          projectName: "Replay Project",
+          moduleId: "module-1",
+          moduleName: "充电管理",
+          llmProfileId: "profile-1",
+          sourceRejectionIds: ["rej-1"],
+          materialPack: {
+            moduleContext: {
+              documentType: "software_requirement"
+            },
+            rejectionSnapshots: [
+              {
+                id: "rej-1",
+                requirementCode: "CheryVCU-12147",
+                reasonCategory: "coverage_gap",
+                reasonText: "生成结果引入了人工范例中没有的回退逻辑",
+                expectedNote: "请仅保留记忆与更新要求"
+              }
+            ]
+          },
+          proposals: [
+            {
+              id: "proposal-1",
+              items: [
+                {
+                  proposalItemId: "proposal-item-1",
+                  action: "add_skill_item",
+                  targetSkillCode: "",
+                  targetLayer: "docType",
+                  targetProfileKey: "software_requirement",
+                  kind: "validation_rule",
+                  title: "coverage_gap补充规则",
+                  rationale: "需要增加边界约束",
+                  before: "",
+                  after: "不要把代码推断的兜底逻辑写入记忆类需求。",
+                  evidenceRefs: ["rej-1"]
+                }
+              ]
+            }
+          ],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+
+        const workOrder = await workOrderService.createFromReplayTask(task, {
+          summary: "仅生成校验建议",
+          decisionSummary: "",
+          items: [],
+          validatorSuggestions: [
+            {
+              title: "需求边界校验",
+              ruleText: "补充需求边界校验",
+              why: "避免过度推断"
+            }
+          ]
+        });
+
+        assert.equal(workOrder.items.length, 1);
+        assert.equal(workOrder.items[0].conclusionType, "create_new");
+        assert.equal(workOrder.items[0].targetLayer, "docType");
+        assert.equal(workOrder.items[0].targetProfileKey, "software_requirement");
+        assert.equal(workOrder.items[0].targetKind, "validation_rule");
+        assert.equal(workOrder.itemStats.total, 1);
+        assert.equal(workOrder.itemStats.validatorOnly, 1);
+      });
+    }
+  },
+  {
+    name: "Skill work order preserves prompt-generated scope and abstraction metadata",
+    run: async () => {
+      await withTempConfig(async () => {
+        const workOrderService = new SkillWorkOrderService();
+        const task = {
+          id: "replay-task-scope-metadata",
+          projectId: "project-1",
+          projectName: "Replay Project",
+          moduleId: "module-1",
+          moduleName: "充电管理",
+          llmProfileId: "profile-1",
+          sourceRejectionIds: ["rej-1"],
+          materialPack: {
+            moduleContext: {
+              documentType: "software_requirement",
+              moduleName: "充电管理",
+              moduleSkillKey: "charging_management"
+            },
+            rejectionSnapshots: [
+              {
+                id: "rej-1",
+                requirementCode: "CheryVCU-12147",
+                reasonCategory: "coverage_gap",
+                reasonText: "生成结果混入了不属于记忆条目的控制逻辑",
+                expectedNote: "请沉淀为模块级边界约束"
+              }
+            ]
+          }
+        };
+
+        const workOrder = await workOrderService.createFromReplayTask(task, {
+          summary: "模型已生成模块级技能建议",
+          decisionSummary: "建议沉淀为充电管理模块级 validation_rule。",
+          items: [
+            {
+              conclusionType: "create_new",
+              action: "add_skill_item",
+              targetLayer: "module",
+              targetProfileKey: "charging_management",
+              targetKind: "validation_rule",
+              kind: "validation_rule",
+              title: "充电截止SOC记忆类需求边界约束",
+              whyCurrent: "当前规则缺少对记忆类需求边界的限制。",
+              whyChange: "补充模块级边界约束后，可避免把控制/保护逻辑混入记忆条目。",
+              afterContent:
+                "对于充电管理模块中与充电截止SOC相关的记忆类需求，若人工范例仅描述“下电记忆、设置更新生效、下次下电继续记忆”这类行为，则不得补写无效值处理、默认值回退、范围兜底或重新插枪判断等控制/保护逻辑。此类逻辑应保留在截止SOC控制条目中，除非系统需求或人工范例中存在明确独立表述。",
+              evidenceRefs: ["rej-1"],
+              scopeDecision: "module",
+              scopeReason: "当前建议依赖具体模块语义，应沉淀到模块层。",
+              scopeConfidence: 0.88,
+              abstractionScore: 0.91,
+              isParaphraseOfRejection: false,
+              reviewReadiness: "ready_to_apply",
+              reuseJudgement: "module_specific",
+              ruleIntent: "约束充电管理模块内记忆类需求的表达边界。"
+            }
+          ],
+          validatorSuggestions: []
+        });
+
+        assert.equal(workOrder.items.length, 1);
+        assert.equal(workOrder.items[0].targetLayer, "module");
+        assert.equal(workOrder.items[0].targetProfileKey, "charging_management");
+        assert.equal(workOrder.items[0].scopeDecision, "module");
+        assert.equal(workOrder.items[0].reviewReadiness, "ready_to_apply");
+        assert.equal(workOrder.items[0].isParaphraseOfRejection, false);
+        assert.match(workOrder.items[0].afterContent, /充电截止SOC相关的记忆类需求/);
+      });
+    }
+  },
+  {
+    name: "Skill work order review and apply updates active atomic skill",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+        const workOrderService = new SkillWorkOrderService();
+        const skillManagementService = new SkillManagementService();
+
+        const project = await projectService.createProject({ name: "Apply Work Order Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          description: "负责工单应用测试",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-apply-1",
+              requirementId: "SWR-601",
+              title: "充电截止控制",
+              requirementText: "软件应控制充电截止逻辑。",
+              type: "functional",
+              confidence: 0.7,
+              verificationHint: "检查截止条件",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: [],
+          llmProfile: { id: "profile-apply", name: "Replay Mock" }
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-apply-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "validation_gap",
+          reasonTags: ["边界条件"],
+          reasonText: "缺少对人工范例边界的约束",
+          expectedNote: "请增加边界约束，避免额外发挥。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+        const workOrder = await workOrderService.getWorkOrder(replayTask.workOrderId);
+        const item = workOrder.items[0];
+        assert.ok(item);
+
+        await workOrderService.reviewItem(workOrder.id, item.itemId, {
+          reviewStatus: "accepted",
+          reviewComment: "确认应用到 active skill"
+        });
+
+        const applied = await workOrderService.applyItem(workOrder.id, item.itemId, {
+          appliedBy: "tester"
+        });
+        assert.equal(applied.item.reviewStatus, "applied");
+        assert.ok(applied.item.appliedChange.afterSnapshot);
+
+        const targetSkillCode = applied.item.appliedChange.skillCode;
+        const refreshedSkill = await skillManagementService.getSkillItem(targetSkillCode);
+        assert.ok(refreshedSkill.item.content.includes("补充约束") || refreshedSkill.item.content.includes("避免"));
+        assert.equal(refreshedSkill.item.provenance.sourceTaskId, replayTask.id);
+
+        const refreshedWorkOrder = await workOrderService.getWorkOrder(workOrder.id);
+        assert.equal(refreshedWorkOrder.status, "applied");
       });
     }
   },  {

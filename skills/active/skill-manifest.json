@@ -108,9 +108,6 @@
         "status": "active",
         "registry": "profiles/modules/高低系统管理/skill-items.json",
         "files": {
-          "examples/good_examples.md": [
-            "profiles/modules/高低系统管理/examples/good_examples.md"
-          ],
           "domain-knowledge.json": [
             "profiles/modules/高低系统管理/domain-knowledge.json"
           ]

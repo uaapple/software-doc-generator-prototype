@@ -127,3 +127,50 @@
 - **补充说明：**
   - 当前方向不是恢复 `detail_design` / `hil_test_case`，而是为 `software_requirement` 文档类型层补齐第一版可用技能文件。
   - 静态校验已通过：相关 JSON 文件均可解析，`git diff --check` 通过，registry 与 markdown / domain knowledge 的条目数量一致。
+
+## 会话：2026-04-17
+
+### 阶段：Fallback 技能工单链路收口与 prompt-first 回调
+- **状态：** complete（实现已落地，真实案例质量仍待继续验证）
+- **执行的操作：**
+  - 完成 fallback -> skill work order 的主链路接通，新增工单列表、详情、item 级审阅与应用。
+  - 修复 replay 结果可见但工单未生成的问题，支持从 replay proposal items 回填工单项。
+  - 将 replay / work order 面向用户的默认标题、摘要和标签统一为中文。
+  - 修复本地启动脚本、健康检查与 SQLite 锁等待问题，补充 `restart-local.cmd` 便于重启后端。
+  - 修复技能工单列表卡片文字颜色错误，保证工单内容默认可见。
+  - 在工单详情中展示 `scopeDecision / scopeReason / abstractionScore / reviewReadiness / reuseJudgement` 等质量信号。
+  - 按用户要求放弃“后端对单案例做硬约束纠偏”的思路，切回 prompt-first：通过优化 replay prompt，让 LLM 自主输出正确层级和可复用规则正文；后端只保留轻量质量元数据。
+- **创建/修改的文件：**
+  - `src/services/llm-service.js`
+  - `src/services/replay-task-service.js`
+  - `src/services/skill-work-order-service.js`
+  - `src/services/skill-database-service.js`
+  - `src/services/storage.js`
+  - `src/app.js`
+  - `src/config.js`
+  - `public/skill-management.html`
+  - `public/skill-management.js`
+  - `public/skill-management.css`
+  - `public/feedback-pool.js`
+  - `scripts/start-local.ps1`
+  - `scripts/restart-local.ps1`
+  - `restart-local.cmd`
+  - `tests/run-tests.js`
+- **验证结果：**
+  - `node .\\tests\\run-tests.js` -> `All 29 tests passed.`
+  - `node --check .\\src\\services\\llm-service.js`
+  - `node --check .\\public\\skill-management.js`
+- **遇到的问题：**
+  - `planning-with-files` 推荐的 `session-catchup.py` 在本机无法直接运行：`python` 命令不存在。
+  - 因为 Windows 终端编码与项目中文内容混合，部分 PowerShell 输出存在视觉乱码风险；后续编辑继续优先使用 `apply_patch`。
+- **补充说明：**
+  - 当前最重要的不是再补更多后端修正规则，而是用真实 fallback 案例验证：LLM 是否已经会把模块特定建议正确沉淀到 `module` 层，并输出可复用的原子技能正文。
+  - 旧的 replay/task/工单记录不会自动变成新 prompt 风格，后续验证应以新跑出的样本为准。
+
+## 下一步建议验证方向
+- 重跑 `充电管理 / software_requirement` 的真实 fallback，重点观察：
+  - 是否自主选择 `module` 而不是错误落到 `docType`
+  - 推荐正文是否已经抽象成“某类需求在什么条件下不得补写什么内容”的规则文本
+  - `isParaphraseOfRejection` 与 `reviewReadiness` 是否和人工直觉一致
+- 再选一条真正通用的 `software_requirement` 驳回样本做对照，确认 prompt 不会把本来应该上提到文档类型层的规则误沉到模块层。
+- 如果验证后仍然发现“只是改写驳回意见”的问题，下一轮优先增强 prompt 与 few-shot，而不是回头加入 case-specific backend override。

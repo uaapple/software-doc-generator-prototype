@@ -48,7 +48,7 @@ function loadDotEnv(filePath, options = {}) {
 }
 
 export const config = {
-  host: process.env.HOST || "127.0.0.1",
+  host: process.env.HOST || "::",
   port: Number(process.env.PORT || 3000),
   rootDir,
   publicDir: path.join(rootDir, "public"),
@@ -73,6 +73,7 @@ export const config = {
   rejectionStoreDir: path.join(rootDir, "data", "rejections"),
   rejectionGroupStorePath: path.join(rootDir, "data", "rejections", "groups.json"),
   replayTaskStoreDir: path.join(rootDir, "data", "replay-tasks"),
+  skillWorkOrderStoreDir: path.join(rootDir, "data", "skill-work-orders"),
   templateDir: path.join(rootDir, "templates"),
   templatePath: path.join(rootDir, "templates", "software-requirement-template.json"),
   skillDir: path.join(rootDir, "skills", "active"),

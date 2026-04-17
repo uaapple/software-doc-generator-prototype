@@ -45,41 +45,6 @@
       ]
     },
     {
-      "requirementId": "CheryVCU-8102",
-      "topic": "充电截止SOC",
-      "sectionTitle": "充电过程",
-      "requirementType": "charge_soc_limit_control",
-      "preferredTitle": "充电过程 - 充电截止SOC",
-      "requirementText": "当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
-      "signals": [
-        "ICM_Chg_SOC_LimitPointSet",
-        "TCP_Chg_SOC_LimitPointSet",
-        "VCU_Chg_SOC_LimitSts",
-        "VCU1_St_ChrStopRequest",
-        "BMS2_N_SOC",
-        "OBC1_St_ChargerConnection",
-        "BMS3_St_DCChargePlugin",
-        "Chrg_bChrgStopBySOCLim"
-      ],
-      "references": [
-        "CheryVCU-10935"
-      ],
-      "canonicalBranches": [
-        "设置值更新",
-        "112无效值过滤",
-        "达到截止点发送Stop",
-        "低于截止点1%恢复",
-        "插枪上升沿恢复"
-      ],
-      "keywords": [
-        "充电截止SOC",
-        "设置记忆",
-        "Stop请求",
-        "恢复滞回",
-        "重新插枪"
-      ]
-    },
-    {
       "requirementId": "CheryVCU-12147",
       "topic": "充电截止SOC记忆",
       "sectionTitle": "充电过程",

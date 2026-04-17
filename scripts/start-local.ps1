@@ -11,7 +11,9 @@ $nodeCmd = Join-Path $env:ProgramFiles "nodejs\node.exe"
 $nodeModulesPath = Join-Path $projectRoot "node_modules"
 $runtimeDir = Join-Path $projectRoot ".local"
 $pidFile = Join-Path $runtimeDir "server.pid"
-$url = "http://127.0.0.1:$Port"
+$url = "http://localhost:$Port"
+$probeUrls = @("http://127.0.0.1:$Port", "http://localhost:$Port")
+$serverArguments = @("--disable-warning=ExperimentalWarning", "src/server.js")
 
 if (-not (Test-Path $npmCmd)) {
   throw "npm was not found. Please install Node.js 22+ first. Expected path: $npmCmd"
@@ -43,7 +45,7 @@ if ($existingConnection) {
 Write-Host "Starting local service from $projectRoot" -ForegroundColor Cyan
 $serverProcess = Start-Process `
   -FilePath $nodeCmd `
-  -ArgumentList "src/server.js" `
+  -ArgumentList $serverArguments `
   -WorkingDirectory $projectRoot `
   -PassThru
 
@@ -59,12 +61,18 @@ for ($index = 0; $index -lt 30; $index += 1) {
   }
 
   try {
-    $response = Invoke-WebRequest -UseBasicParsing "$url/api/meta" -TimeoutSec 2
-    if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
-      $ready = $true
-      break
+    foreach ($probeUrl in $probeUrls) {
+      $response = Invoke-WebRequest -UseBasicParsing "$probeUrl/api/health" -TimeoutSec 2
+      if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+        $ready = $true
+        break
+      }
     }
   } catch {
+  }
+
+  if ($ready) {
+    break
   }
 }
 

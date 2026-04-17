@@ -4,99 +4,12 @@
     "本地KL15上高压请求激活判断",
     "本地KL15上高压建立流程",
     "高压状态机主流程",
-    "故障下高压与紧急关断",
-    "补充逻辑（如V2L、防盗、诊断）不应抢占主线"
+    "故障下高压与紧急关断"
   ],
-  "examples": [
-    {
-      "requirementId": "CheryVCU-1123",
-      "topic": "本地KL15上高压请求激活判断",
-      "sectionNumber": "5.1.1.1",
-      "sectionTitle": "本地KL15上高压",
-      "requirementType": "Functional",
-      "preferredTitle": "本地KL15上高压请求激活判断",
-      "requirementText": "HCU应根据VCCM控制器的KL15上拉状态或ZCU发送的Powerup信号标志位，判断本地KL15上高压请求是否被激活。",
-      "signals": [
-        "idi_bKeyOn",
-        "HvCoorn_bKeyOnPwrUp"
-      ],
-      "references": [
-        "CheryVCU-1123"
-      ],
-      "canonicalBranches": [
-        "HighVoltagePowerOn"
-      ],
-      "keywords": [
-        "KL15",
-        "Powerup",
-        "高压请求"
-      ]
-    },
-    {
-      "requirementId": "CheryVCU-1120",
-      "topic": "本地KL15上高压建立流程",
-      "sectionNumber": "5.1.1.1",
-      "sectionTitle": "本地KL15上高压",
-      "requirementType": "Functional",
-      "preferredTitle": "本地KL15上高压建立流程",
-      "requirementText": "当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。",
-      "signals": [
-        "HvCoorn_stBMSModeReq",
-        "icbms_stMainPosRly",
-        "icbms_stMainNegRly",
-        "icdc_stMode",
-        "HvCoorn_bHvReady"
-      ],
-      "references": [
-        "CheryVCU-1120"
-      ],
-      "canonicalBranches": [
-        "HighVoltagePowerOn"
-      ],
-      "keywords": [
-        "高压连通",
-        "预充",
-        "DCDC",
-        "高压Ready"
-      ]
-    }
-  ],
-  "ruleHints": [
-    {
-      "domain": "embedded_vcu",
-      "documentType": "-",
-      "subdomain": "高低系统管理",
-      "writingPattern": "基于状态机的功能需求描述",
-      "targetStyle": "软件需求条目"
-    }
-  ],
-  "antiPatterns": [
-    "不要将整个模型状态机作为一个主题，应拆解为具体功能条目",
-    "不要忽略人工范例中的具体需求ID（如CheryVCU-1123）",
-    "不要将诊断、配置等支撑逻辑提升为核心主题",
-    "不要使用代码变量名直接作为章节标题",
-    "不要将整段原文直接贴入examples，应压缩为规范需求表达",
-    "不要写成“步骤如下”或“a) b) c)”这种说明文风格"
-  ],
+  "examples": [],
+  "ruleHints": [],
+  "antiPatterns": [],
   "documentBlueprint": {
-    "preferredFunctionSection": {
-      "title": "本地KL15上高压",
-      "sectionNumber": "5.1.1.1"
-    },
-    "preferredSubsections": [
-      {
-        "sectionNumber": "5.1.1.1",
-        "title": "本地KL15上高压",
-        "coreRequirementTypes": [
-          "Functional"
-        ]
-      }
-    ],
-    "targetOutputPolicy": {
-      "coreFirst": true,
-      "preferSymmetricExpansion": true,
-      "preferObjectSpecificRequirements": true,
-      "discourageGenericScatterRequirements": true
-    }
+    "preferredSubsections": []
   }
 }

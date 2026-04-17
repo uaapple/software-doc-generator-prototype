@@ -1,0 +1,4025 @@
+{
+  "id": "574ebc77-423e-4367-8a8b-f8af4ee6ec51",
+  "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
+  "projectName": "VCU",
+  "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
+  "moduleName": "充电管理",
+  "sourceRejectionIds": [
+    "76a2bc6a-b4c8-404a-9163-3c3196c42d0e"
+  ],
+  "groupIds": [],
+  "targetBundleId": "bundle-base",
+  "llmProfileId": "20b11d97-48b6-4c36-b474-3ad13115d53f",
+  "referenceAssetIds": [
+    "15b41741-8c4d-4000-8ad7-a18cdc2eda1d",
+    "4a5de7f7-c1f7-4aa9-abb4-75cb25da4644"
+  ],
+  "taskStatus": "done",
+  "materialPack": {
+    "summary": "1 rejection records selected for replay",
+    "targetBundleId": "bundle-base",
+    "targetAreas": [
+      "validation"
+    ],
+    "allowedKindsByArea": {
+      "writing": [
+        "writing_rule",
+        "good_example",
+        "rule_hint",
+        "generation_priority"
+      ],
+      "extraction": [
+        "extraction_rule",
+        "rule_hint",
+        "generation_priority"
+      ],
+      "validation": [
+        "validation_rule",
+        "anti_pattern",
+        "rule_hint"
+      ],
+      "examples": [
+        "good_example",
+        "bad_example",
+        "anti_pattern"
+      ],
+      "domain_knowledge": [
+        "source_alias",
+        "normalization_rule",
+        "forbidden_expansion",
+        "source_policy_setting",
+        "document_blueprint_section",
+        "document_blueprint_policy",
+        "code_style_prefix",
+        "rule_hint",
+        "generation_priority",
+        "anti_pattern"
+      ]
+    },
+    "layerDefinitions": {
+      "generic": "跨模块和跨文档通用的基础规则，只有在确实具有全局适用性时才放这里。",
+      "docType": "只对某种文档类型生效的规则，例如 software_requirement / detail_design / hil_test_case。",
+      "domain": "在某个领域内广泛适用但不局限于单一模块的规则。",
+      "module": "只对单个功能模块或单个 moduleSkillKey 生效的规则。"
+    },
+    "ruleIndexVersion": "import-1775980215892",
+    "moduleContext": {
+      "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
+      "projectName": "VCU",
+      "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
+      "moduleName": "充电管理",
+      "moduleSkillKey": "充电管理",
+      "domain": "embedded_vcu",
+      "documentType": "software_requirement"
+    },
+    "effectiveSkillSnapshot": {
+      "hash": "d79489a7e175c97caa65c20fe4317ae04aac75e5",
+      "selectedProfiles": [
+        {
+          "key": "generic",
+          "kind": "generic"
+        },
+        {
+          "key": "software_requirement",
+          "kind": "docType"
+        },
+        {
+          "key": "embedded_vcu",
+          "kind": "domain"
+        },
+        {
+          "key": "充电管理",
+          "kind": "module"
+        }
+      ],
+      "compiledPrompt": "你正在使用一份针对当前任务动态编译出的技能包。\n任务类型：software_requirement\n命中 profile：generic:generic -> docType:software_requirement -> domain:embedded_vcu -> module:充电管理\n\n写作规则\n1. 输出应采用软件需求条目风格，重点描述触发条件、输出行为、约束和引用关系，不要写成详细设计实现说明、HIL 操作步骤或自然语言摘要。\n2. 当输入同时包含人工软件需求样例、系统需求和代码证据时，优先对齐人工样例已经稳定下来的主题边界、主题顺序和句式，再用其余证据补齐缺失条件。\n3. 每条软件需求优先只承载一个稳定控制主题，例如激活判断、主控制逻辑、记忆逻辑、保护逻辑应分别成条，不要混写成综合描述。\n4. 文档应保留父功能与子功能的层级关系；若输出 schema 只能平铺列表，也要在标题中保留“父功能 - 子主题”的归属关系。\n5. 对前轴/后轴、充电/放电、请求建立/退出恢复等物理对象或流程状态对称的需求，应拆为独立条目，保持结构对称。\n6. 对同一功能中的进入请求、主控制、停止条件、恢复条件、记忆逻辑、保护限幅等不同阶段，优先拆成多条需求，而不是写成一段步骤说明。\n7. 激活或判断类需求优先采用“当满足以下任一条件时…，否则…”的句式；条件分点列出，并显式写清与/或关系。\n8. 多源请求仲裁、多功能冲突或多模式切换时，应直接写出“优先级顺序为：X > Y > Z”，不得把优先级隐藏在叙述性文字里。\n9. 计算、控制或状态切换类需求应使用“当…时，输出/动作=…”的句式覆盖主要分支、默认路径和退出/恢复路径。\n10. 涉及阈值、枚举值、状态位、定时器或滞回条件时，应显式写出比较方向、边界包含关系、超时值和状态编码，不要只写“满足条件后”。\n11. 正文中应优先保留工程中可追溯的输入输出信号名、模式名、内部变量名和需求编号引用，避免改写成无法回溯的自然语言概念。\n12. 每条需求都应让测试人员能从输入条件推导出可判定的输出预期；若存在最大/最小限制、超时撤销或故障降级，也应显式写出。\n\n抽取规则\n1. 从系统需求 PDF、模型 PDF、生成 C 文件中抽取能支撑软件设计需求编写的结构化事实。\n2. 重点抽取条件、状态、优先级、阈值、边界、内部变量、仲裁路径和内部引用线索。\n3. 不直接生成需求正文；先把证据整理成后续写作可消费的事实。\n4. 对需遵守 ISO 26262 的输出，优先保障命名精度和来源一致性，确保需求条目能够充当单一真实来源（Single Source of Truth）。\n5. 优先抽取带编号的系统需求条目及其章节上下文。\n6. 对每条系统需求优先拆出：主题、触发条件、期望行为、优先级顺序、默认行为、适用对象。\n7. 若系统需求中出现“当...时”“否则”“任一条件”“优先级顺序为”等表达，应保留其结构。\n8. 对前轴/后轴、前后轮、左右侧等对称对象，应标记为对称候选事实。\n9. 若系统需求和样例都指向“扭矩干预”领域，应进一步标记以下四类候选条目：\n10. 前轴激活标志位判断\n11. 前轴扭矩计算\n12. 后轴激活标志位判断\n\n校验规则\n1. 检查输出是否保持软件需求风格；若正文主要由实现步骤、状态机内部变量解释或测试操作说明构成，应判为风格偏移。\n2. 检查每条需求是否只承载一个稳定主题；若把控制逻辑、记忆逻辑和保护逻辑混写在一条正文中，应标记为主题混写风险。\n3. 检查父功能、子功能和需求条目的层级是否清晰；若样例明显存在父子结构而输出完全平铺且无归属提示，应标记为结构退化。\n4. 对前后轴、充放电、请求与恢复等对称对象，若只生成一侧或只保留单条总纲需求，应标记为结构不完整。\n5. 对激活判断、模式进入、停止控制类需求，若缺少“否则”路径、恢复条件、重新进入条件或超时撤销条件，应标记为内容不完整。\n6. 对仲裁、计算、功率限制类需求，若缺少优先级顺序、兜底分支或默认输出路径，应标记为高风险缺失。\n7. 检查是否保留关键阈值、状态枚举、时间参数、边界包含关系和滞回条件；若只保留模糊表述，应降低置信度。\n8. 检查信号命名、模式名和需求编号是否可追溯；若编造编号、误改信号名或把代码内部别名当成正式需求名，应标记为高风险。\n9. 检查正文是否能够直接导出测试场景：输入条件、触发动作、输出行为和保护边界应可判定。\n10. 若当前证据只支持核心主题，而输出擅自扩写到新的模块主题、支撑逻辑或实现细节，应标记为越界扩写。\n\n正向示例\n1. 当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。\n2. VCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。\n3. 当满足以下任一条件时，ESC干预前轴激活标志位置为 active：ESC_TqDecReqAct_F = 0x1 且前电机降扭请求标志位激活，或 ESC_EHB_RBS_F_Active = 0x1 且前轴制动再生扭矩请求标志位激活，或 ESC_TrqIncReqActv_F = 0x1 且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对升扭、降扭和制动再生请求还应结合低/高阈值进行有效性判断。\n4. 当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。\n5. 当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。\n6. VCU 内部对动力电池可用放电功率应优先采用 BMS 10s 可用放电功率（BMS4_N_SOF10D），并在此基础上结合 SOC 保护、预留功率及低 SOC 限制进行修正；在怠速发电和行车发电场景下，当动力电池 SOC 大于默认 6% 时，应按 BMS 10s 可用放电功率减去默认 3kW 预留功率计算；当 SOC 低于默认 6% 时，应随 SOC 下降逐步降低，并在 3% 以下限制为 3kW。\n\n结构化知识：生成优先级 9 条，反模式 5 条，规则提示 5 条，包含 source-of-truth 约束，包含文档蓝图约束",
+      "compiledSkillPack": {
+        "context": {
+          "documentType": "software_requirement",
+          "domain": "embedded_vcu",
+          "moduleSkillKey": "充电管理"
+        },
+        "selectedProfiles": [
+          {
+            "key": "generic",
+            "kind": "generic"
+          },
+          {
+            "key": "software_requirement",
+            "kind": "docType"
+          },
+          {
+            "key": "embedded_vcu",
+            "kind": "domain"
+          },
+          {
+            "key": "充电管理",
+            "kind": "module"
+          }
+        ],
+        "rules": {
+          "extraction": [
+            {
+              "skillCode": "GEN-generic-extraction_rule-001",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "任务目标 1",
+              "content": "从系统需求 PDF、模型 PDF、生成 C 文件中抽取能支撑软件设计需求编写的结构化事实。",
+              "status": "active",
+              "order": 1,
+              "sectionKey": "任务目标",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.649Z",
+              "updatedAt": "2026-04-16T07:26:49.649Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-002",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "任务目标 2",
+              "content": "重点抽取条件、状态、优先级、阈值、边界、内部变量、仲裁路径和内部引用线索。",
+              "status": "active",
+              "order": 2,
+              "sectionKey": "任务目标",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-003",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "任务目标 3",
+              "content": "不直接生成需求正文；先把证据整理成后续写作可消费的事实。",
+              "status": "active",
+              "order": 3,
+              "sectionKey": "任务目标",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-004",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "任务目标 4",
+              "content": "对需遵守 ISO 26262 的输出，优先保障命名精度和来源一致性，确保需求条目能够充当单一真实来源（Single Source of Truth）。",
+              "status": "active",
+              "order": 4,
+              "sectionKey": "任务目标",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-005",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "系统需求侧抽取规则 1",
+              "content": "优先抽取带编号的系统需求条目及其章节上下文。",
+              "status": "active",
+              "order": 5,
+              "sectionKey": "系统需求侧抽取规则",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-006",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "系统需求侧抽取规则 2",
+              "content": "对每条系统需求优先拆出：主题、触发条件、期望行为、优先级顺序、默认行为、适用对象。",
+              "status": "active",
+              "order": 6,
+              "sectionKey": "系统需求侧抽取规则",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-007",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "系统需求侧抽取规则 3",
+              "content": "若系统需求中出现“当...时”“否则”“任一条件”“优先级顺序为”等表达，应保留其结构。",
+              "status": "active",
+              "order": 7,
+              "sectionKey": "系统需求侧抽取规则",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-008",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "系统需求侧抽取规则 4",
+              "content": "对前轴/后轴、前后轮、左右侧等对称对象，应标记为对称候选事实。",
+              "status": "active",
+              "order": 8,
+              "sectionKey": "系统需求侧抽取规则",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-009",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "系统需求侧抽取规则 5",
+              "content": "若系统需求和样例都指向“扭矩干预”领域，应进一步标记以下四类候选条目：",
+              "status": "active",
+              "order": 9,
+              "sectionKey": "系统需求侧抽取规则",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-010",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "系统需求侧抽取规则 6",
+              "content": "前轴激活标志位判断",
+              "status": "active",
+              "order": 10,
+              "sectionKey": "系统需求侧抽取规则",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-011",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "系统需求侧抽取规则 7",
+              "content": "前轴扭矩计算",
+              "status": "active",
+              "order": 11,
+              "sectionKey": "系统需求侧抽取规则",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            },
+            {
+              "skillCode": "GEN-generic-extraction_rule-012",
+              "layer": "generic",
+              "profileKey": "generic",
+              "kind": "extraction_rule",
+              "title": "系统需求侧抽取规则 8",
+              "content": "后轴激活标志位判断",
+              "status": "active",
+              "order": 12,
+              "sectionKey": "系统需求侧抽取规则",
+              "provenance": {
+                "legacySource": "requirement_extraction.md",
+                "migrationBatchId": "2026-04-16T07:26:49.649Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T07:26:49.650Z",
+              "updatedAt": "2026-04-16T07:26:49.650Z"
+            }
+          ],
+          "writing": [
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-001",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "软件需求输出定位",
+              "content": "输出应采用软件需求条目风格，重点描述触发条件、输出行为、约束和引用关系，不要写成详细设计实现说明、HIL 操作步骤或自然语言摘要。",
+              "status": "active",
+              "order": 1,
+              "sectionKey": "写作定位",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.444Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-002",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "人工样例对齐优先",
+              "content": "当输入同时包含人工软件需求样例、系统需求和代码证据时，优先对齐人工样例已经稳定下来的主题边界、主题顺序和句式，再用其余证据补齐缺失条件。",
+              "status": "active",
+              "order": 2,
+              "sectionKey": "写作定位",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-003",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "单条需求单主题",
+              "content": "每条软件需求优先只承载一个稳定控制主题，例如激活判断、主控制逻辑、记忆逻辑、保护逻辑应分别成条，不要混写成综合描述。",
+              "status": "active",
+              "order": 3,
+              "sectionKey": "写作定位",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-004",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "父子章节保留",
+              "content": "文档应保留父功能与子功能的层级关系；若输出 schema 只能平铺列表，也要在标题中保留“父功能 - 子主题”的归属关系。",
+              "status": "active",
+              "order": 4,
+              "sectionKey": "结构组织",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-005",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "对象对称拆分",
+              "content": "对前轴/后轴、充电/放电、请求建立/退出恢复等物理对象或流程状态对称的需求，应拆为独立条目，保持结构对称。",
+              "status": "active",
+              "order": 5,
+              "sectionKey": "结构组织",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-006",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "流程阶段拆条",
+              "content": "对同一功能中的进入请求、主控制、停止条件、恢复条件、记忆逻辑、保护限幅等不同阶段，优先拆成多条需求，而不是写成一段步骤说明。",
+              "status": "active",
+              "order": 6,
+              "sectionKey": "结构组织",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-007",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "激活判断标准句式",
+              "content": "激活或判断类需求优先采用“当满足以下任一条件时…，否则…”的句式；条件分点列出，并显式写清与/或关系。",
+              "status": "active",
+              "order": 7,
+              "sectionKey": "句式与逻辑",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-008",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "优先级显式声明",
+              "content": "多源请求仲裁、多功能冲突或多模式切换时，应直接写出“优先级顺序为：X > Y > Z”，不得把优先级隐藏在叙述性文字里。",
+              "status": "active",
+              "order": 8,
+              "sectionKey": "句式与逻辑",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-009",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "分支与默认路径完整",
+              "content": "计算、控制或状态切换类需求应使用“当…时，输出/动作=…”的句式覆盖主要分支、默认路径和退出/恢复路径。",
+              "status": "active",
+              "order": 9,
+              "sectionKey": "句式与逻辑",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-010",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "阈值状态值显式化",
+              "content": "涉及阈值、枚举值、状态位、定时器或滞回条件时，应显式写出比较方向、边界包含关系、超时值和状态编码，不要只写“满足条件后”。",
+              "status": "active",
+              "order": 10,
+              "sectionKey": "句式与逻辑",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-011",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "信号命名与内部引用保留",
+              "content": "正文中应优先保留工程中可追溯的输入输出信号名、模式名、内部变量名和需求编号引用，避免改写成无法回溯的自然语言概念。",
+              "status": "active",
+              "order": 11,
+              "sectionKey": "追溯与验证",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-writing_rule-012",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "writing_rule",
+              "title": "可测试与安全边界并存",
+              "content": "每条需求都应让测试人员能从输入条件推导出可判定的输出预期；若存在最大/最小限制、超时撤销或故障降级，也应显式写出。",
+              "status": "active",
+              "order": 12,
+              "sectionKey": "追溯与验证",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            }
+          ],
+          "validation": [
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-001",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "文档风格校验",
+              "content": "检查输出是否保持软件需求风格；若正文主要由实现步骤、状态机内部变量解释或测试操作说明构成，应判为风格偏移。",
+              "status": "active",
+              "order": 13,
+              "sectionKey": "校验目标",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-002",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "主题粒度校验",
+              "content": "检查每条需求是否只承载一个稳定主题；若把控制逻辑、记忆逻辑和保护逻辑混写在一条正文中，应标记为主题混写风险。",
+              "status": "active",
+              "order": 14,
+              "sectionKey": "校验目标",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-003",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "层级结构校验",
+              "content": "检查父功能、子功能和需求条目的层级是否清晰；若样例明显存在父子结构而输出完全平铺且无归属提示，应标记为结构退化。",
+              "status": "active",
+              "order": 15,
+              "sectionKey": "结构校验",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-004",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "对象对称性校验",
+              "content": "对前后轴、充放电、请求与恢复等对称对象，若只生成一侧或只保留单条总纲需求，应标记为结构不完整。",
+              "status": "active",
+              "order": 16,
+              "sectionKey": "结构校验",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-005",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "激活与恢复分支校验",
+              "content": "对激活判断、模式进入、停止控制类需求，若缺少“否则”路径、恢复条件、重新进入条件或超时撤销条件，应标记为内容不完整。",
+              "status": "active",
+              "order": 17,
+              "sectionKey": "结构校验",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-006",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "优先级与默认路径校验",
+              "content": "对仲裁、计算、功率限制类需求，若缺少优先级顺序、兜底分支或默认输出路径，应标记为高风险缺失。",
+              "status": "active",
+              "order": 18,
+              "sectionKey": "内容校验",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-007",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "阈值与状态值校验",
+              "content": "检查是否保留关键阈值、状态枚举、时间参数、边界包含关系和滞回条件；若只保留模糊表述，应降低置信度。",
+              "status": "active",
+              "order": 19,
+              "sectionKey": "内容校验",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-008",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "命名与引用校验",
+              "content": "检查信号命名、模式名和需求编号是否可追溯；若编造编号、误改信号名或把代码内部别名当成正式需求名，应标记为高风险。",
+              "status": "active",
+              "order": 20,
+              "sectionKey": "内容校验",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-009",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "可测试性校验",
+              "content": "检查正文是否能够直接导出测试场景：输入条件、触发动作、输出行为和保护边界应可判定。",
+              "status": "active",
+              "order": 21,
+              "sectionKey": "输出风险",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-validation_rule-010",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "validation_rule",
+              "title": "无依据扩写校验",
+              "content": "若当前证据只支持核心主题，而输出擅自扩写到新的模块主题、支撑逻辑或实现细节，应标记为越界扩写。",
+              "status": "active",
+              "order": 22,
+              "sectionKey": "输出风险",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": null,
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            }
+          ]
+        },
+        "examples": {
+          "good": [
+            {
+              "skillCode": "MOD-充电管理-good_example-001",
+              "layer": "module",
+              "profileKey": "充电管理",
+              "kind": "good_example",
+              "title": "充电过程堵转加热模式",
+              "content": "当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。",
+              "status": "active",
+              "order": 4,
+              "sectionKey": "default",
+              "provenance": {
+                "legacySource": "profiles/modules/充电管理/domain-knowledge.json#examples",
+                "migrationBatchId": "2026-04-16T07:26:49.703Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": {
+                "requirementId": "CheryVCU-3015",
+                "topic": "充电过程堵转加热模式",
+                "sectionTitle": "充电过程",
+                "requirementType": "charge_mode_request_logic",
+                "preferredTitle": "充电过程 - 堵转加热模式",
+                "requirementText": "当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。",
+                "signals": [
+                  "ECC_StallHeatingReq",
+                  "VCU2_St_StallHeatingReq",
+                  "VCU82_St_RModeReq",
+                  "BMS3_St_DCChargePlugin",
+                  "VCU1_N_ActualGear",
+                  "ESC_VehiclESCspeed",
+                  "BMS1_St_BatteryMode",
+                  "RMCU2_St_StallHeating"
+                ],
+                "references": [
+                  "CheryVCU-1088",
+                  "CheryVCU-1077"
+                ],
+                "canonicalBranches": [
+                  "ECC请求成立",
+                  "DC充电连接成立",
+                  "P挡且低车速成立",
+                  "电池DC充电模式成立",
+                  "RMCU状态允许",
+                  "发送请求与模式",
+                  "2s超时撤销"
+                ],
+                "keywords": [
+                  "充电过程",
+                  "堵转加热",
+                  "DC充电",
+                  "TrqCtl",
+                  "超时保护"
+                ]
+              },
+              "createdAt": "2026-04-16T07:26:49.703Z",
+              "updatedAt": "2026-04-16T07:26:49.703Z"
+            },
+            {
+              "skillCode": "MOD-充电管理-good_example-003",
+              "layer": "module",
+              "profileKey": "充电管理",
+              "kind": "good_example",
+              "title": "充电截止SOC记忆",
+              "content": "VCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。",
+              "status": "active",
+              "order": 5,
+              "sectionKey": "default",
+              "provenance": {
+                "legacySource": "profiles/modules/充电管理/domain-knowledge.json#examples",
+                "migrationBatchId": "2026-04-16T07:26:49.703Z"
+              },
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": {
+                "requirementId": "CheryVCU-12147",
+                "topic": "充电截止SOC记忆",
+                "sectionTitle": "充电过程",
+                "requirementType": "charge_soc_memory",
+                "preferredTitle": "充电过程 - 充电截止SOC记忆",
+                "requirementText": "VCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。",
+                "signals": [
+                  "ICM_Chg_SOC_LimitPointSet",
+                  "TCP_Chg_SOC_LimitPointSet",
+                  "Chrg_pctBookChrgSocSetEEW",
+                  "Chrg_pctBookChrgSocSetEER"
+                ],
+                "references": [
+                  "CheryVCU-12147"
+                ],
+                "canonicalBranches": [
+                  "设置值更新",
+                  "下电记忆",
+                  "上电读取",
+                  "50%-100%范围校验",
+                  "无效值默认回退"
+                ],
+                "keywords": [
+                  "充电截止SOC记忆",
+                  "下电记忆",
+                  "EEW",
+                  "EER",
+                  "默认回退"
+                ]
+              },
+              "createdAt": "2026-04-16T07:26:49.703Z",
+              "updatedAt": "2026-04-16T07:26:49.703Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-good_example-001",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "good_example",
+              "title": "ESC干预前轴激活标志位判断",
+              "content": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：ESC_TqDecReqAct_F = 0x1 且前电机降扭请求标志位激活，或 ESC_EHB_RBS_F_Active = 0x1 且前轴制动再生扭矩请求标志位激活，或 ESC_TrqIncReqActv_F = 0x1 且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对升扭、降扭和制动再生请求还应结合低/高阈值进行有效性判断。",
+              "status": "active",
+              "order": 29,
+              "sectionKey": "扭矩干预",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": {
+                "requirementId": "SMiVCU-10160",
+                "topic": "ESC干预前轴激活标志位判断",
+                "sectionTitle": "ESC前轴扭矩干预",
+                "requirementType": "activation_flag_logic",
+                "preferredTitle": "ESC前轴扭矩干预 - 激活标志位判断",
+                "requirementText": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：ESC_TqDecReqAct_F = 0x1 且前电机降扭请求标志位激活，或 ESC_EHB_RBS_F_Active = 0x1 且前轴制动再生扭矩请求标志位激活，或 ESC_TrqIncReqActv_F = 0x1 且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对升扭、降扭和制动再生请求还应结合低/高阈值进行有效性判断。",
+                "signals": [
+                  "ESC_TqDecReqAct_F",
+                  "ESC_EHB_RBS_F_Active",
+                  "ESC_TrqIncReqActv_F",
+                  "ESC_TrqIncReq_F",
+                  "ESC_EHB_RBS_F_TargetRegenTrq"
+                ]
+              },
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-good_example-002",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "good_example",
+              "title": "充电过程 - 充电截止SOC",
+              "content": "当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
+              "status": "active",
+              "order": 30,
+              "sectionKey": "充电管理",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": {
+                "requirementId": "CheryVCU-8102",
+                "topic": "充电截止SOC",
+                "sectionTitle": "充电过程",
+                "requirementType": "charge_soc_limit_control",
+                "preferredTitle": "充电过程 - 充电截止SOC",
+                "requirementText": "当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
+                "signals": [
+                  "ICM_Chg_SOC_LimitPointSet",
+                  "TCP_Chg_SOC_LimitPointSet",
+                  "VCU_Chg_SOC_LimitSts",
+                  "VCU1_St_ChrStopRequest",
+                  "BMS2_N_SOC"
+                ],
+                "references": [
+                  "CheryVCU-10935"
+                ]
+              },
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-good_example-003",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "good_example",
+              "title": "本地KL15上高压建立流程",
+              "content": "当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。",
+              "status": "active",
+              "order": 31,
+              "sectionKey": "高低系统管理",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": {
+                "requirementId": "CheryVCU-1120",
+                "topic": "本地KL15上高压建立流程",
+                "sectionTitle": "本地KL15上高压",
+                "requirementType": "high_voltage_power_on_sequence",
+                "preferredTitle": "本地KL15上高压建立流程",
+                "requirementText": "当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。",
+                "signals": [
+                  "HvCoorn_stBMSModeReq",
+                  "icbms_stMainPosRly",
+                  "icbms_stMainNegRly",
+                  "icdc_stMode",
+                  "HvCoorn_bHvReady"
+                ],
+                "references": [
+                  "CheryVCU-1120"
+                ]
+              },
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            },
+            {
+              "skillCode": "DOC-software_requirement-good_example-004",
+              "layer": "docType",
+              "profileKey": "software_requirement",
+              "kind": "good_example",
+              "title": "动力电池可用放电功率计算",
+              "content": "VCU 内部对动力电池可用放电功率应优先采用 BMS 10s 可用放电功率（BMS4_N_SOF10D），并在此基础上结合 SOC 保护、预留功率及低 SOC 限制进行修正；在怠速发电和行车发电场景下，当动力电池 SOC 大于默认 6% 时，应按 BMS 10s 可用放电功率减去默认 3kW 预留功率计算；当 SOC 低于默认 6% 时，应随 SOC 下降逐步降低，并在 3% 以下限制为 3kW。",
+              "status": "active",
+              "order": 32,
+              "sectionKey": "高压能量管理",
+              "provenance": {},
+              "review": {
+                "reviewer": "",
+                "note": "",
+                "updatedAt": ""
+              },
+              "structuredPayload": {
+                "requirementId": "CheryVCU-4098",
+                "topic": "动力电池可用放电功率计算",
+                "sectionTitle": "电池可用充放功率计算",
+                "requirementType": "charge_discharge_power_calculation",
+                "preferredTitle": "动力电池可用放电功率计算",
+                "requirementText": "VCU 内部对动力电池可用放电功率应优先采用 BMS 10s 可用放电功率（BMS4_N_SOF10D），并在此基础上结合 SOC 保护、预留功率及低 SOC 限制进行修正；在怠速发电和行车发电场景下，当动力电池 SOC 大于默认 6% 时，应按 BMS 10s 可用放电功率减去默认 3kW 预留功率计算；当 SOC 低于默认 6% 时，应随 SOC 下降逐步降低，并在 3% 以下限制为 3kW。",
+                "signals": [
+                  "BMS2_N_SOC",
+                  "BMS4_N_SOF10D"
+                ],
+                "references": [
+                  "CheryVCU-7532",
+                  "CheryVCU-7549"
+                ]
+              },
+              "createdAt": "2026-04-16T19:26:07.445Z",
+              "updatedAt": "2026-04-16T19:26:07.445Z"
+            }
+          ],
+          "bad": []
+        },
+        "knowledge": {
+          "generationPriorities": [
+            "若输入明显属于充电管理，优先生成堵转加热模式、充电截止SOC、充电截止SOC记忆，再考虑充满跳转标志位等补充条目。",
+            "若当前输入同时提供人工软件设计需求样例，优先复现样例中的核心条目数、主题顺序和章节归属，不要把代码还能支持的补充逻辑提前写成新的主条目。",
+            "若输出 schema 只能承载列表，也要在标题或正文中保留层级关系和对象归属，但不要输出具体章节数字。",
+            "优先输出符合人工软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
+            "对已经有人工样例锚点的主题，优先复现样例中的主条目边界、顺序和对象拆分，再补充阈值、引用和恢复路径。",
+            "在充电管理、高低系统管理、高压能量管理等主题中，先输出核心主线条目，再决定是否追加补充主题。",
+            "优先保留输入中的正式信号名、需求编号、状态值和模式名，不要为了顺口改写成模糊概念。",
+            "当没有完全同构的人工样例时，优先复用最接近样本的章节骨架与句式，而不是重新发明新的写法。",
+            "若系统需求、软件需求样例与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。"
+          ],
+          "antiPatterns": [
+            "不要把堵转加热、截止SOC、记忆、充满跳转标志位、电流计算等充电主题揉成一条综合需求。",
+            "不要在人工样例已经拆分“截止SOC控制”和“截止SOC记忆”时，再把两者混写成一条增强版需求。",
+            "不要把代码侧补充条目如 ChargingFull 状态跳转，提前写成与人工样例并列的核心主输出。",
+            "不要把激活判断、主控制逻辑、恢复逻辑、记忆逻辑和保护逻辑揉成一条综合需求。",
+            "不要把软件需求写成详细设计实现说明、状态机代码解说或 HIL 测试步骤。"
+          ],
+          "ruleHints": [
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "充电管理",
+              "writingPattern": "优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。",
+              "targetStyle": "输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。"
+            },
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "扭矩干预",
+              "writingPattern": "优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。",
+              "targetStyle": "输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。"
+            },
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "充电管理",
+              "writingPattern": "优先按充电过程下的控制主题拆条；先写进入请求与撤销，再写截止停止，再写记忆与恢复。",
+              "targetStyle": "输出应显式写出输入条件、动作、停止条件和恢复路径，但不要把内部实现细节抬升为新的主条目。"
+            },
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "高低系统管理",
+              "writingPattern": "围绕高压请求激活、主回路建立、附件使能和Ready判定组织软件需求，不要把整个状态机直接摊平成实现步骤。",
+              "targetStyle": "输出应体现请求条件、执行动作、完成判据和退出条件，保持功能需求语气。"
+            },
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "高压能量管理",
+              "writingPattern": "优先保持五条核心主线：可用放电功率、放电单体保护、可用充电功率、充电单体保护、峰值可用放电功率。",
+              "targetStyle": "输出应保留功率源、阈值、预留功率、查表限制和前序需求引用，不要泛化成总纲说明。"
+            }
+          ],
+          "sourceOfTruthPolicy": {
+            "standard": "ISO 26262",
+            "singleSourceOfTruth": true,
+            "forbidCodeStyleSignals": true,
+            "codeStylePrefixes": [
+              "icesc_",
+              "icadas_",
+              "ACCtl_",
+              "ParkCtrl_"
+            ],
+            "canonicalSignalAliases": [
+              {
+                "canonical": "ESC_TqDecReqAct_F",
+                "aliases": [
+                  "icesc_bFrntAxleTqDecActv"
+                ]
+              },
+              {
+                "canonical": "ESC_EHB_RBS_F_Active",
+                "aliases": [
+                  "icesc_bFrntAxleRBSTqActv"
+                ]
+              },
+              {
+                "canonical": "ESC_TrqIncReqActv_F",
+                "aliases": [
+                  "icesc_bFrntAxleTqIncActv"
+                ]
+              },
+              {
+                "canonical": "ESC_TrqIncReq_F",
+                "aliases": [
+                  "icesc_tqReqFrntAxleInc"
+                ]
+              },
+              {
+                "canonical": "ESC_TqDecReq_F",
+                "aliases": [
+                  "icesc_tqReqFrntAxleDec"
+                ]
+              },
+              {
+                "canonical": "ESC_EHB_RBS_F_TargetRegenTrq",
+                "aliases": [
+                  "icesc_tqRBSReqFrntAxle"
+                ]
+              },
+              {
+                "canonical": "ESC_TqDecReqAct_R",
+                "aliases": [
+                  "icesc_bReAxleTqDecActv"
+                ]
+              },
+              {
+                "canonical": "ESC_EHB_RBS_R_Active",
+                "aliases": [
+                  "icesc_bReAxleRBSTqActv"
+                ]
+              },
+              {
+                "canonical": "ESC_TrqIncReqActv_R",
+                "aliases": [
+                  "icesc_bReAxleTqIncActv"
+                ]
+              },
+              {
+                "canonical": "ESC_TrqIncReq_R",
+                "aliases": [
+                  "icesc_tqReqReAxleInc"
+                ]
+              },
+              {
+                "canonical": "ESC_TqDecReq_R",
+                "aliases": [
+                  "icesc_tqReqReAxleDec"
+                ]
+              },
+              {
+                "canonical": "ESC_EHB_RBS_R_TargetRegenTrq",
+                "aliases": [
+                  "icesc_tqRBSReqReAxle"
+                ]
+              },
+              {
+                "canonical": "ESC_AEB_Active",
+                "aliases": [
+                  "icadas_bAEBActv"
+                ]
+              },
+              {
+                "canonical": "ESC_CDP_Active",
+                "aliases": [
+                  "icesc_bCDPActv"
+                ]
+              },
+              {
+                "canonical": "ESC_VLC_TorqCtrlActive",
+                "aliases": [
+                  "icadas_bTqVLCTrgtReqVld"
+                ]
+              }
+            ],
+            "normalizationRules": [
+              {
+                "pattern": "AEB/CDP/ABS/EBD任一功能",
+                "replacement": "AEB或CDP任一功能"
+              },
+              {
+                "pattern": "主动制动（AEB/CDP/ABS/EBD）",
+                "replacement": "主动制动（AEB/CDP）"
+              },
+              {
+                "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
+                "replacement": "-"
+              },
+              {
+                "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
+                "replacement": "-"
+              }
+            ],
+            "forbiddenExpansions": {
+              "activation_flag_logic": [
+                "CCO",
+                "ISA"
+              ],
+              "torque_calculation_logic": [
+                "ABS",
+                "EBD",
+                "CCO",
+                "ISA"
+              ]
+            }
+          },
+          "documentBlueprint": {
+            "preferredSubsections": []
+          }
+        },
+        "flatItems": [
+          {
+            "skillCode": "GEN-generic-extraction_rule-001",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "任务目标 1",
+            "content": "从系统需求 PDF、模型 PDF、生成 C 文件中抽取能支撑软件设计需求编写的结构化事实。",
+            "status": "active",
+            "order": 1,
+            "sectionKey": "任务目标",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.649Z",
+            "updatedAt": "2026-04-16T07:26:49.649Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-001",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "软件需求输出定位",
+            "content": "输出应采用软件需求条目风格，重点描述触发条件、输出行为、约束和引用关系，不要写成详细设计实现说明、HIL 操作步骤或自然语言摘要。",
+            "status": "active",
+            "order": 1,
+            "sectionKey": "写作定位",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.444Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_policy_setting-001",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_policy_setting",
+            "title": "source policy standard",
+            "content": "当前技能库参考的标准是 ISO 26262。",
+            "status": "active",
+            "order": 1,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.standard",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "key": "standard",
+              "value": "ISO 26262"
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-generation_priority-001",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "generation_priority",
+            "title": "generation priority 1",
+            "content": "若输入明显属于充电管理，优先生成堵转加热模式、充电截止SOC、充电截止SOC记忆，再考虑充满跳转标志位等补充条目。",
+            "status": "active",
+            "order": 1,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-002",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "任务目标 2",
+            "content": "重点抽取条件、状态、优先级、阈值、边界、内部变量、仲裁路径和内部引用线索。",
+            "status": "active",
+            "order": 2,
+            "sectionKey": "任务目标",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-002",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "人工样例对齐优先",
+            "content": "当输入同时包含人工软件需求样例、系统需求和代码证据时，优先对齐人工样例已经稳定下来的主题边界、主题顺序和句式，再用其余证据补齐缺失条件。",
+            "status": "active",
+            "order": 2,
+            "sectionKey": "写作定位",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_policy_setting-002",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_policy_setting",
+            "title": "single source of truth",
+            "content": "启用单一事实来源约束，存在冲突时优先回到指定事实来源。",
+            "status": "active",
+            "order": 2,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.singleSourceOfTruth",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "key": "singleSourceOfTruth",
+              "value": true
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-generation_priority-002",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "generation_priority",
+            "title": "generation priority 2",
+            "content": "若当前输入同时提供人工软件设计需求样例，优先复现样例中的核心条目数、主题顺序和章节归属，不要把代码还能支持的补充逻辑提前写成新的主条目。",
+            "status": "active",
+            "order": 2,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-003",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "任务目标 3",
+            "content": "不直接生成需求正文；先把证据整理成后续写作可消费的事实。",
+            "status": "active",
+            "order": 3,
+            "sectionKey": "任务目标",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-003",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "单条需求单主题",
+            "content": "每条软件需求优先只承载一个稳定控制主题，例如激活判断、主控制逻辑、记忆逻辑、保护逻辑应分别成条，不要混写成综合描述。",
+            "status": "active",
+            "order": 3,
+            "sectionKey": "写作定位",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_policy_setting-003",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_policy_setting",
+            "title": "forbid code style signals",
+            "content": "正文不允许直接沿用代码风格信号名，应优先回到规范术语。",
+            "status": "active",
+            "order": 3,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.forbidCodeStyleSignals",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "key": "forbidCodeStyleSignals",
+              "value": true
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-generation_priority-003",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "generation_priority",
+            "title": "generation priority 3",
+            "content": "若输出 schema 只能承载列表，也要在标题或正文中保留层级关系和对象归属，但不要输出具体章节数字。",
+            "status": "active",
+            "order": 3,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-004",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "任务目标 4",
+            "content": "对需遵守 ISO 26262 的输出，优先保障命名精度和来源一致性，确保需求条目能够充当单一真实来源（Single Source of Truth）。",
+            "status": "active",
+            "order": 4,
+            "sectionKey": "任务目标",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-004",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "父子章节保留",
+            "content": "文档应保留父功能与子功能的层级关系；若输出 schema 只能平铺列表，也要在标题中保留“父功能 - 子主题”的归属关系。",
+            "status": "active",
+            "order": 4,
+            "sectionKey": "结构组织",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-code_style_prefix-001",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "code_style_prefix",
+            "title": "code style prefix 1",
+            "content": "icesc_",
+            "status": "active",
+            "order": 4,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-good_example-001",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "good_example",
+            "title": "充电过程堵转加热模式",
+            "content": "当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。",
+            "status": "active",
+            "order": 4,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json#examples",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "requirementId": "CheryVCU-3015",
+              "topic": "充电过程堵转加热模式",
+              "sectionTitle": "充电过程",
+              "requirementType": "charge_mode_request_logic",
+              "preferredTitle": "充电过程 - 堵转加热模式",
+              "requirementText": "当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。",
+              "signals": [
+                "ECC_StallHeatingReq",
+                "VCU2_St_StallHeatingReq",
+                "VCU82_St_RModeReq",
+                "BMS3_St_DCChargePlugin",
+                "VCU1_N_ActualGear",
+                "ESC_VehiclESCspeed",
+                "BMS1_St_BatteryMode",
+                "RMCU2_St_StallHeating"
+              ],
+              "references": [
+                "CheryVCU-1088",
+                "CheryVCU-1077"
+              ],
+              "canonicalBranches": [
+                "ECC请求成立",
+                "DC充电连接成立",
+                "P挡且低车速成立",
+                "电池DC充电模式成立",
+                "RMCU状态允许",
+                "发送请求与模式",
+                "2s超时撤销"
+              ],
+              "keywords": [
+                "充电过程",
+                "堵转加热",
+                "DC充电",
+                "TrqCtl",
+                "超时保护"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-005",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "系统需求侧抽取规则 1",
+            "content": "优先抽取带编号的系统需求条目及其章节上下文。",
+            "status": "active",
+            "order": 5,
+            "sectionKey": "系统需求侧抽取规则",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-005",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "对象对称拆分",
+            "content": "对前轴/后轴、充电/放电、请求建立/退出恢复等物理对象或流程状态对称的需求，应拆为独立条目，保持结构对称。",
+            "status": "active",
+            "order": 5,
+            "sectionKey": "结构组织",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-code_style_prefix-002",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "code_style_prefix",
+            "title": "code style prefix 2",
+            "content": "icadas_",
+            "status": "active",
+            "order": 5,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-good_example-003",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "good_example",
+            "title": "充电截止SOC记忆",
+            "content": "VCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。",
+            "status": "active",
+            "order": 5,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json#examples",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "requirementId": "CheryVCU-12147",
+              "topic": "充电截止SOC记忆",
+              "sectionTitle": "充电过程",
+              "requirementType": "charge_soc_memory",
+              "preferredTitle": "充电过程 - 充电截止SOC记忆",
+              "requirementText": "VCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。",
+              "signals": [
+                "ICM_Chg_SOC_LimitPointSet",
+                "TCP_Chg_SOC_LimitPointSet",
+                "Chrg_pctBookChrgSocSetEEW",
+                "Chrg_pctBookChrgSocSetEER"
+              ],
+              "references": [
+                "CheryVCU-12147"
+              ],
+              "canonicalBranches": [
+                "设置值更新",
+                "下电记忆",
+                "上电读取",
+                "50%-100%范围校验",
+                "无效值默认回退"
+              ],
+              "keywords": [
+                "充电截止SOC记忆",
+                "下电记忆",
+                "EEW",
+                "EER",
+                "默认回退"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-006",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "系统需求侧抽取规则 2",
+            "content": "对每条系统需求优先拆出：主题、触发条件、期望行为、优先级顺序、默认行为、适用对象。",
+            "status": "active",
+            "order": 6,
+            "sectionKey": "系统需求侧抽取规则",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-006",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "流程阶段拆条",
+            "content": "对同一功能中的进入请求、主控制、停止条件、恢复条件、记忆逻辑、保护限幅等不同阶段，优先拆成多条需求，而不是写成一段步骤说明。",
+            "status": "active",
+            "order": 6,
+            "sectionKey": "结构组织",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-code_style_prefix-003",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "code_style_prefix",
+            "title": "code style prefix 3",
+            "content": "ACCtl_",
+            "status": "active",
+            "order": 6,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-rule_hint-001",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "rule_hint",
+            "title": "充电管理 rule hint",
+            "content": "在 embedded_vcu / 充电管理 范围内，优先关注 充电管理、充电过程、堵转加热模式、充电截止SOC、充电截止SOC记忆。写作时采用 优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。。目标风格保持 输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。。可以优先参考 input/20260411/充电管理/system-requirements-example-charging-management.md、input/20260411/充电管理/software-design-requirements-example-charging-management.md、input/20260411/Chrg.c。",
+            "status": "active",
+            "order": 6,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json#ruleHints",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "充电管理",
+              "writingPattern": "优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。",
+              "targetStyle": "输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。"
+            },
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-007",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "系统需求侧抽取规则 3",
+            "content": "若系统需求中出现“当...时”“否则”“任一条件”“优先级顺序为”等表达，应保留其结构。",
+            "status": "active",
+            "order": 7,
+            "sectionKey": "系统需求侧抽取规则",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-007",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "激活判断标准句式",
+            "content": "激活或判断类需求优先采用“当满足以下任一条件时…，否则…”的句式；条件分点列出，并显式写清与/或关系。",
+            "status": "active",
+            "order": 7,
+            "sectionKey": "句式与逻辑",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-code_style_prefix-004",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "code_style_prefix",
+            "title": "code style prefix 4",
+            "content": "ParkCtrl_",
+            "status": "active",
+            "order": 7,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-anti_pattern-001",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "anti_pattern",
+            "title": "anti pattern 1",
+            "content": "不要把堵转加热、截止SOC、记忆、充满跳转标志位、电流计算等充电主题揉成一条综合需求。",
+            "status": "active",
+            "order": 7,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json#antiPatterns",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-008",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "系统需求侧抽取规则 4",
+            "content": "对前轴/后轴、前后轮、左右侧等对称对象，应标记为对称候选事实。",
+            "status": "active",
+            "order": 8,
+            "sectionKey": "系统需求侧抽取规则",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-008",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "优先级显式声明",
+            "content": "多源请求仲裁、多功能冲突或多模式切换时，应直接写出“优先级顺序为：X > Y > Z”，不得把优先级隐藏在叙述性文字里。",
+            "status": "active",
+            "order": 8,
+            "sectionKey": "句式与逻辑",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-001",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_TqDecReqAct_F",
+            "content": "生成、抽取和审核时，统一将 icesc_bFrntAxleTqDecActv 视为标准名称 ESC_TqDecReqAct_F。",
+            "status": "active",
+            "order": 8,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_TqDecReqAct_F",
+              "aliases": [
+                "icesc_bFrntAxleTqDecActv"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-anti_pattern-002",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "anti_pattern",
+            "title": "anti pattern 2",
+            "content": "不要在人工样例已经拆分“截止SOC控制”和“截止SOC记忆”时，再把两者混写成一条增强版需求。",
+            "status": "active",
+            "order": 8,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json#antiPatterns",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-009",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "系统需求侧抽取规则 5",
+            "content": "若系统需求和样例都指向“扭矩干预”领域，应进一步标记以下四类候选条目：",
+            "status": "active",
+            "order": 9,
+            "sectionKey": "系统需求侧抽取规则",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-009",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "分支与默认路径完整",
+            "content": "计算、控制或状态切换类需求应使用“当…时，输出/动作=…”的句式覆盖主要分支、默认路径和退出/恢复路径。",
+            "status": "active",
+            "order": 9,
+            "sectionKey": "句式与逻辑",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-002",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_EHB_RBS_F_Active",
+            "content": "生成、抽取和审核时，统一将 icesc_bFrntAxleRBSTqActv 视为标准名称 ESC_EHB_RBS_F_Active。",
+            "status": "active",
+            "order": 9,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_EHB_RBS_F_Active",
+              "aliases": [
+                "icesc_bFrntAxleRBSTqActv"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "MOD-充电管理-anti_pattern-003",
+            "layer": "module",
+            "profileKey": "充电管理",
+            "kind": "anti_pattern",
+            "title": "anti pattern 3",
+            "content": "不要把代码侧补充条目如 ChargingFull 状态跳转，提前写成与人工样例并列的核心主输出。",
+            "status": "active",
+            "order": 9,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/modules/充电管理/domain-knowledge.json#antiPatterns",
+              "migrationBatchId": "2026-04-16T07:26:49.703Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.703Z",
+            "updatedAt": "2026-04-16T07:26:49.703Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-010",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "系统需求侧抽取规则 6",
+            "content": "前轴激活标志位判断",
+            "status": "active",
+            "order": 10,
+            "sectionKey": "系统需求侧抽取规则",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-010",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "阈值状态值显式化",
+            "content": "涉及阈值、枚举值、状态位、定时器或滞回条件时，应显式写出比较方向、边界包含关系、超时值和状态编码，不要只写“满足条件后”。",
+            "status": "active",
+            "order": 10,
+            "sectionKey": "句式与逻辑",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-003",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_TrqIncReqActv_F",
+            "content": "生成、抽取和审核时，统一将 icesc_bFrntAxleTqIncActv 视为标准名称 ESC_TrqIncReqActv_F。",
+            "status": "active",
+            "order": 10,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_TrqIncReqActv_F",
+              "aliases": [
+                "icesc_bFrntAxleTqIncActv"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-011",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "系统需求侧抽取规则 7",
+            "content": "前轴扭矩计算",
+            "status": "active",
+            "order": 11,
+            "sectionKey": "系统需求侧抽取规则",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-011",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "信号命名与内部引用保留",
+            "content": "正文中应优先保留工程中可追溯的输入输出信号名、模式名、内部变量名和需求编号引用，避免改写成无法回溯的自然语言概念。",
+            "status": "active",
+            "order": 11,
+            "sectionKey": "追溯与验证",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-004",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_TrqIncReq_F",
+            "content": "生成、抽取和审核时，统一将 icesc_tqReqFrntAxleInc 视为标准名称 ESC_TrqIncReq_F。",
+            "status": "active",
+            "order": 11,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_TrqIncReq_F",
+              "aliases": [
+                "icesc_tqReqFrntAxleInc"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "GEN-generic-extraction_rule-012",
+            "layer": "generic",
+            "profileKey": "generic",
+            "kind": "extraction_rule",
+            "title": "系统需求侧抽取规则 8",
+            "content": "后轴激活标志位判断",
+            "status": "active",
+            "order": 12,
+            "sectionKey": "系统需求侧抽取规则",
+            "provenance": {
+              "legacySource": "requirement_extraction.md",
+              "migrationBatchId": "2026-04-16T07:26:49.649Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T07:26:49.650Z",
+            "updatedAt": "2026-04-16T07:26:49.650Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-writing_rule-012",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "writing_rule",
+            "title": "可测试与安全边界并存",
+            "content": "每条需求都应让测试人员能从输入条件推导出可判定的输出预期；若存在最大/最小限制、超时撤销或故障降级，也应显式写出。",
+            "status": "active",
+            "order": 12,
+            "sectionKey": "追溯与验证",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-005",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_TqDecReq_F",
+            "content": "生成、抽取和审核时，统一将 icesc_tqReqFrntAxleDec 视为标准名称 ESC_TqDecReq_F。",
+            "status": "active",
+            "order": 12,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_TqDecReq_F",
+              "aliases": [
+                "icesc_tqReqFrntAxleDec"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-001",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "文档风格校验",
+            "content": "检查输出是否保持软件需求风格；若正文主要由实现步骤、状态机内部变量解释或测试操作说明构成，应判为风格偏移。",
+            "status": "active",
+            "order": 13,
+            "sectionKey": "校验目标",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-006",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_EHB_RBS_F_TargetRegenTrq",
+            "content": "生成、抽取和审核时，统一将 icesc_tqRBSReqFrntAxle 视为标准名称 ESC_EHB_RBS_F_TargetRegenTrq。",
+            "status": "active",
+            "order": 13,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_EHB_RBS_F_TargetRegenTrq",
+              "aliases": [
+                "icesc_tqRBSReqFrntAxle"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-002",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "主题粒度校验",
+            "content": "检查每条需求是否只承载一个稳定主题；若把控制逻辑、记忆逻辑和保护逻辑混写在一条正文中，应标记为主题混写风险。",
+            "status": "active",
+            "order": 14,
+            "sectionKey": "校验目标",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-007",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_TqDecReqAct_R",
+            "content": "生成、抽取和审核时，统一将 icesc_bReAxleTqDecActv 视为标准名称 ESC_TqDecReqAct_R。",
+            "status": "active",
+            "order": 14,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_TqDecReqAct_R",
+              "aliases": [
+                "icesc_bReAxleTqDecActv"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-003",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "层级结构校验",
+            "content": "检查父功能、子功能和需求条目的层级是否清晰；若样例明显存在父子结构而输出完全平铺且无归属提示，应标记为结构退化。",
+            "status": "active",
+            "order": 15,
+            "sectionKey": "结构校验",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-008",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_EHB_RBS_R_Active",
+            "content": "生成、抽取和审核时，统一将 icesc_bReAxleRBSTqActv 视为标准名称 ESC_EHB_RBS_R_Active。",
+            "status": "active",
+            "order": 15,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_EHB_RBS_R_Active",
+              "aliases": [
+                "icesc_bReAxleRBSTqActv"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-004",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "对象对称性校验",
+            "content": "对前后轴、充放电、请求与恢复等对称对象，若只生成一侧或只保留单条总纲需求，应标记为结构不完整。",
+            "status": "active",
+            "order": 16,
+            "sectionKey": "结构校验",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-009",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_TrqIncReqActv_R",
+            "content": "生成、抽取和审核时，统一将 icesc_bReAxleTqIncActv 视为标准名称 ESC_TrqIncReqActv_R。",
+            "status": "active",
+            "order": 16,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_TrqIncReqActv_R",
+              "aliases": [
+                "icesc_bReAxleTqIncActv"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-005",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "激活与恢复分支校验",
+            "content": "对激活判断、模式进入、停止控制类需求，若缺少“否则”路径、恢复条件、重新进入条件或超时撤销条件，应标记为内容不完整。",
+            "status": "active",
+            "order": 17,
+            "sectionKey": "结构校验",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-010",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_TrqIncReq_R",
+            "content": "生成、抽取和审核时，统一将 icesc_tqReqReAxleInc 视为标准名称 ESC_TrqIncReq_R。",
+            "status": "active",
+            "order": 17,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_TrqIncReq_R",
+              "aliases": [
+                "icesc_tqReqReAxleInc"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-006",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "优先级与默认路径校验",
+            "content": "对仲裁、计算、功率限制类需求，若缺少优先级顺序、兜底分支或默认输出路径，应标记为高风险缺失。",
+            "status": "active",
+            "order": 18,
+            "sectionKey": "内容校验",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-011",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_TqDecReq_R",
+            "content": "生成、抽取和审核时，统一将 icesc_tqReqReAxleDec 视为标准名称 ESC_TqDecReq_R。",
+            "status": "active",
+            "order": 18,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_TqDecReq_R",
+              "aliases": [
+                "icesc_tqReqReAxleDec"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-007",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "阈值与状态值校验",
+            "content": "检查是否保留关键阈值、状态枚举、时间参数、边界包含关系和滞回条件；若只保留模糊表述，应降低置信度。",
+            "status": "active",
+            "order": 19,
+            "sectionKey": "内容校验",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-012",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_EHB_RBS_R_TargetRegenTrq",
+            "content": "生成、抽取和审核时，统一将 icesc_tqRBSReqReAxle 视为标准名称 ESC_EHB_RBS_R_TargetRegenTrq。",
+            "status": "active",
+            "order": 19,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_EHB_RBS_R_TargetRegenTrq",
+              "aliases": [
+                "icesc_tqRBSReqReAxle"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-008",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "命名与引用校验",
+            "content": "检查信号命名、模式名和需求编号是否可追溯；若编造编号、误改信号名或把代码内部别名当成正式需求名，应标记为高风险。",
+            "status": "active",
+            "order": 20,
+            "sectionKey": "内容校验",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-013",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_AEB_Active",
+            "content": "生成、抽取和审核时，统一将 icadas_bAEBActv 视为标准名称 ESC_AEB_Active。",
+            "status": "active",
+            "order": 20,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_AEB_Active",
+              "aliases": [
+                "icadas_bAEBActv"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-009",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "可测试性校验",
+            "content": "检查正文是否能够直接导出测试场景：输入条件、触发动作、输出行为和保护边界应可判定。",
+            "status": "active",
+            "order": 21,
+            "sectionKey": "输出风险",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-014",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_CDP_Active",
+            "content": "生成、抽取和审核时，统一将 icesc_bCDPActv 视为标准名称 ESC_CDP_Active。",
+            "status": "active",
+            "order": 21,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_CDP_Active",
+              "aliases": [
+                "icesc_bCDPActv"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-validation_rule-010",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "validation_rule",
+            "title": "无依据扩写校验",
+            "content": "若当前证据只支持核心主题，而输出擅自扩写到新的模块主题、支撑逻辑或实现细节，应标记为越界扩写。",
+            "status": "active",
+            "order": 22,
+            "sectionKey": "输出风险",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-source_alias-015",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "source_alias",
+            "title": "source alias ESC_VLC_TorqCtrlActive",
+            "content": "生成、抽取和审核时，统一将 icadas_bTqVLCTrgtReqVld 视为标准名称 ESC_VLC_TorqCtrlActive。",
+            "status": "active",
+            "order": 22,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "canonical": "ESC_VLC_TorqCtrlActive",
+              "aliases": [
+                "icadas_bTqVLCTrgtReqVld"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-generation_priority-001",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "generation_priority",
+            "title": "软件需求优先级 1",
+            "content": "优先输出符合人工软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
+            "status": "active",
+            "order": 23,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-normalization_rule-001",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "normalization_rule",
+            "title": "normalization rule 1",
+            "content": "出现“AEB/CDP/ABS/EBD任一功能”时，统一写作“AEB或CDP任一功能”。",
+            "status": "active",
+            "order": 23,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "pattern": "AEB/CDP/ABS/EBD任一功能",
+              "replacement": "AEB或CDP任一功能"
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-generation_priority-002",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "generation_priority",
+            "title": "软件需求优先级 2",
+            "content": "对已经有人工样例锚点的主题，优先复现样例中的主条目边界、顺序和对象拆分，再补充阈值、引用和恢复路径。",
+            "status": "active",
+            "order": 24,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-normalization_rule-002",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "normalization_rule",
+            "title": "normalization rule 2",
+            "content": "出现“主动制动（AEB/CDP/ABS/EBD）”时，统一写作“主动制动（AEB/CDP）”。",
+            "status": "active",
+            "order": 24,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "pattern": "主动制动（AEB/CDP/ABS/EBD）",
+              "replacement": "主动制动（AEB/CDP）"
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-generation_priority-003",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "generation_priority",
+            "title": "软件需求优先级 3",
+            "content": "在充电管理、高低系统管理、高压能量管理等主题中，先输出核心主线条目，再决定是否追加补充主题。",
+            "status": "active",
+            "order": 25,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-normalization_rule-003",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "normalization_rule",
+            "title": "normalization rule 3",
+            "content": "出现“；4. 前轴CCO/ISA扭矩请求有效”时，统一写作“-”。",
+            "status": "active",
+            "order": 25,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
+              "replacement": "-"
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-generation_priority-004",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "generation_priority",
+            "title": "软件需求优先级 4",
+            "content": "优先保留输入中的正式信号名、需求编号、状态值和模式名，不要为了顺口改写成模糊概念。",
+            "status": "active",
+            "order": 26,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-normalization_rule-004",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "normalization_rule",
+            "title": "normalization rule 4",
+            "content": "出现“；4. 后轴CCO/ISA扭矩请求有效”时，统一写作“-”。",
+            "status": "active",
+            "order": 26,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
+              "replacement": "-"
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-generation_priority-005",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "generation_priority",
+            "title": "软件需求优先级 5",
+            "content": "当没有完全同构的人工样例时，优先复用最接近样本的章节骨架与句式，而不是重新发明新的写法。",
+            "status": "active",
+            "order": 27,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-forbidden_expansion-001",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "forbidden_expansion",
+            "title": "forbidden expansion activation_flag_logic",
+            "content": "涉及 activation_flag_logic 时，不要额外扩写 CCO、ISA。",
+            "status": "active",
+            "order": 27,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.forbiddenExpansions",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "topic": "activation_flag_logic",
+              "entries": [
+                "CCO",
+                "ISA"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-generation_priority-006",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "generation_priority",
+            "title": "软件需求优先级 6",
+            "content": "若系统需求、软件需求样例与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。",
+            "status": "active",
+            "order": 28,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOM-embedded_vcu-forbidden_expansion-002",
+            "layer": "domain",
+            "profileKey": "embedded_vcu",
+            "kind": "forbidden_expansion",
+            "title": "forbidden expansion torque_calculation_logic",
+            "content": "涉及 torque_calculation_logic 时，不要额外扩写 ABS、EBD、CCO、ISA。",
+            "status": "active",
+            "order": 28,
+            "sectionKey": "default",
+            "provenance": {
+              "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.forbiddenExpansions",
+              "migrationBatchId": "2026-04-16T07:26:49.694Z"
+            },
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "topic": "torque_calculation_logic",
+              "entries": [
+                "ABS",
+                "EBD",
+                "CCO",
+                "ISA"
+              ]
+            },
+            "createdAt": "2026-04-16T07:26:49.694Z",
+            "updatedAt": "2026-04-16T07:26:49.694Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-good_example-001",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "good_example",
+            "title": "ESC干预前轴激活标志位判断",
+            "content": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：ESC_TqDecReqAct_F = 0x1 且前电机降扭请求标志位激活，或 ESC_EHB_RBS_F_Active = 0x1 且前轴制动再生扭矩请求标志位激活，或 ESC_TrqIncReqActv_F = 0x1 且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对升扭、降扭和制动再生请求还应结合低/高阈值进行有效性判断。",
+            "status": "active",
+            "order": 29,
+            "sectionKey": "扭矩干预",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "requirementId": "SMiVCU-10160",
+              "topic": "ESC干预前轴激活标志位判断",
+              "sectionTitle": "ESC前轴扭矩干预",
+              "requirementType": "activation_flag_logic",
+              "preferredTitle": "ESC前轴扭矩干预 - 激活标志位判断",
+              "requirementText": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：ESC_TqDecReqAct_F = 0x1 且前电机降扭请求标志位激活，或 ESC_EHB_RBS_F_Active = 0x1 且前轴制动再生扭矩请求标志位激活，或 ESC_TrqIncReqActv_F = 0x1 且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对升扭、降扭和制动再生请求还应结合低/高阈值进行有效性判断。",
+              "signals": [
+                "ESC_TqDecReqAct_F",
+                "ESC_EHB_RBS_F_Active",
+                "ESC_TrqIncReqActv_F",
+                "ESC_TrqIncReq_F",
+                "ESC_EHB_RBS_F_TargetRegenTrq"
+              ]
+            },
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-good_example-002",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "good_example",
+            "title": "充电过程 - 充电截止SOC",
+            "content": "当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
+            "status": "active",
+            "order": 30,
+            "sectionKey": "充电管理",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "requirementId": "CheryVCU-8102",
+              "topic": "充电截止SOC",
+              "sectionTitle": "充电过程",
+              "requirementType": "charge_soc_limit_control",
+              "preferredTitle": "充电过程 - 充电截止SOC",
+              "requirementText": "当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
+              "signals": [
+                "ICM_Chg_SOC_LimitPointSet",
+                "TCP_Chg_SOC_LimitPointSet",
+                "VCU_Chg_SOC_LimitSts",
+                "VCU1_St_ChrStopRequest",
+                "BMS2_N_SOC"
+              ],
+              "references": [
+                "CheryVCU-10935"
+              ]
+            },
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-good_example-003",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "good_example",
+            "title": "本地KL15上高压建立流程",
+            "content": "当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。",
+            "status": "active",
+            "order": 31,
+            "sectionKey": "高低系统管理",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "requirementId": "CheryVCU-1120",
+              "topic": "本地KL15上高压建立流程",
+              "sectionTitle": "本地KL15上高压",
+              "requirementType": "high_voltage_power_on_sequence",
+              "preferredTitle": "本地KL15上高压建立流程",
+              "requirementText": "当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。",
+              "signals": [
+                "HvCoorn_stBMSModeReq",
+                "icbms_stMainPosRly",
+                "icbms_stMainNegRly",
+                "icdc_stMode",
+                "HvCoorn_bHvReady"
+              ],
+              "references": [
+                "CheryVCU-1120"
+              ]
+            },
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-good_example-004",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "good_example",
+            "title": "动力电池可用放电功率计算",
+            "content": "VCU 内部对动力电池可用放电功率应优先采用 BMS 10s 可用放电功率（BMS4_N_SOF10D），并在此基础上结合 SOC 保护、预留功率及低 SOC 限制进行修正；在怠速发电和行车发电场景下，当动力电池 SOC 大于默认 6% 时，应按 BMS 10s 可用放电功率减去默认 3kW 预留功率计算；当 SOC 低于默认 6% 时，应随 SOC 下降逐步降低，并在 3% 以下限制为 3kW。",
+            "status": "active",
+            "order": 32,
+            "sectionKey": "高压能量管理",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "requirementId": "CheryVCU-4098",
+              "topic": "动力电池可用放电功率计算",
+              "sectionTitle": "电池可用充放功率计算",
+              "requirementType": "charge_discharge_power_calculation",
+              "preferredTitle": "动力电池可用放电功率计算",
+              "requirementText": "VCU 内部对动力电池可用放电功率应优先采用 BMS 10s 可用放电功率（BMS4_N_SOF10D），并在此基础上结合 SOC 保护、预留功率及低 SOC 限制进行修正；在怠速发电和行车发电场景下，当动力电池 SOC 大于默认 6% 时，应按 BMS 10s 可用放电功率减去默认 3kW 预留功率计算；当 SOC 低于默认 6% 时，应随 SOC 下降逐步降低，并在 3% 以下限制为 3kW。",
+              "signals": [
+                "BMS2_N_SOC",
+                "BMS4_N_SOF10D"
+              ],
+              "references": [
+                "CheryVCU-7532",
+                "CheryVCU-7549"
+              ]
+            },
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-rule_hint-001",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "rule_hint",
+            "title": "扭矩干预 rule hint",
+            "content": "在 embedded_vcu / 扭矩干预 范围内，优先关注 扭矩干预功能、ESC前轴扭矩干预、ESC后轴扭矩干预。写作时采用 优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。。目标风格保持 输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。。可以优先参考 input/20260404/software-requirement-writing-rules-vcu.md、input/20260404/system-requirements-example-torque-intervention.md、input/20260404/software-design-requirements-example-esc-torque-intervention.md。",
+            "status": "active",
+            "order": 33,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "扭矩干预",
+              "writingPattern": "优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。",
+              "targetStyle": "输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。"
+            },
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-rule_hint-002",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "rule_hint",
+            "title": "充电管理 rule hint",
+            "content": "在 embedded_vcu / 充电管理 范围内，优先关注 充电管理、充电过程、堵转加热模式、充电截止SOC、充电截止SOC记忆。写作时采用 优先按充电过程下的控制主题拆条；先写进入请求与撤销，再写截止停止，再写记忆与恢复。。目标风格保持 输出应显式写出输入条件、动作、停止条件和恢复路径，但不要把内部实现细节抬升为新的主条目。。可以优先参考 input/20260411/AI case_ITK_20260411.docx、skills/active/profiles/modules/充电管理/domain-knowledge.json、skills/active/profiles/modules/充电管理/examples/good_examples.md。",
+            "status": "active",
+            "order": 34,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "充电管理",
+              "writingPattern": "优先按充电过程下的控制主题拆条；先写进入请求与撤销，再写截止停止，再写记忆与恢复。",
+              "targetStyle": "输出应显式写出输入条件、动作、停止条件和恢复路径，但不要把内部实现细节抬升为新的主条目。"
+            },
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-rule_hint-003",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "rule_hint",
+            "title": "高低系统管理 rule hint",
+            "content": "在 embedded_vcu / 高低系统管理 范围内，优先关注 高低系统管理、本地KL15上高压、高压建立流程、高压Ready判定。写作时采用 围绕高压请求激活、主回路建立、附件使能和Ready判定组织软件需求，不要把整个状态机直接摊平成实现步骤。。目标风格保持 输出应体现请求条件、执行动作、完成判据和退出条件，保持功能需求语气。。可以优先参考 input/20260411/AI case_ITK_20260411.docx、skills/active/profiles/modules/高低系统管理/domain-knowledge.json、input/20260411/HvCoorn.pdf。",
+            "status": "active",
+            "order": 35,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "高低系统管理",
+              "writingPattern": "围绕高压请求激活、主回路建立、附件使能和Ready判定组织软件需求，不要把整个状态机直接摊平成实现步骤。",
+              "targetStyle": "输出应体现请求条件、执行动作、完成判据和退出条件，保持功能需求语气。"
+            },
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-rule_hint-004",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "rule_hint",
+            "title": "高压能量管理 rule hint",
+            "content": "在 embedded_vcu / 高压能量管理 范围内，优先关注 高压能量管理、电池可用充放功率计算、单体保护、峰值功率。写作时采用 优先保持五条核心主线：可用放电功率、放电单体保护、可用充电功率、充电单体保护、峰值可用放电功率。。目标风格保持 输出应保留功率源、阈值、预留功率、查表限制和前序需求引用，不要泛化成总纲说明。。可以优先参考 input/20260411/AI case_ITK_20260411.docx、skills/active/profiles/modules/高压能量管理/domain-knowledge.json、input/20260411/PwrLimBatt.pdf。",
+            "status": "active",
+            "order": 36,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "高压能量管理",
+              "writingPattern": "优先保持五条核心主线：可用放电功率、放电单体保护、可用充电功率、充电单体保护、峰值可用放电功率。",
+              "targetStyle": "输出应保留功率源、阈值、预留功率、查表限制和前序需求引用，不要泛化成总纲说明。"
+            },
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-anti_pattern-001",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "anti_pattern",
+            "title": "反模式 1",
+            "content": "不要把激活判断、主控制逻辑、恢复逻辑、记忆逻辑和保护逻辑揉成一条综合需求。",
+            "status": "active",
+            "order": 37,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          },
+          {
+            "skillCode": "DOC-software_requirement-anti_pattern-002",
+            "layer": "docType",
+            "profileKey": "software_requirement",
+            "kind": "anti_pattern",
+            "title": "反模式 2",
+            "content": "不要把软件需求写成详细设计实现说明、状态机代码解说或 HIL 测试步骤。",
+            "status": "active",
+            "order": 38,
+            "sectionKey": "default",
+            "provenance": {},
+            "review": {
+              "reviewer": "",
+              "note": "",
+              "updatedAt": ""
+            },
+            "structuredPayload": null,
+            "createdAt": "2026-04-16T19:26:07.445Z",
+            "updatedAt": "2026-04-16T19:26:07.445Z"
+          }
+        ]
+      },
+      "files": {
+        "requirement_extraction.md": "# Requirement Extraction Rules\n\n## 任务目标\n\n### GEN-generic-extraction_rule-001 任务目标 1\n从系统需求 PDF、模型 PDF、生成 C 文件中抽取能支撑软件设计需求编写的结构化事实。\n\n\n### GEN-generic-extraction_rule-002 任务目标 2\n重点抽取条件、状态、优先级、阈值、边界、内部变量、仲裁路径和内部引用线索。\n\n\n### GEN-generic-extraction_rule-003 任务目标 3\n不直接生成需求正文；先把证据整理成后续写作可消费的事实。\n\n\n### GEN-generic-extraction_rule-004 任务目标 4\n对需遵守 ISO 26262 的输出，优先保障命名精度和来源一致性，确保需求条目能够充当单一真实来源（Single Source of Truth）。\n\n\n## 系统需求侧抽取规则\n\n### GEN-generic-extraction_rule-005 系统需求侧抽取规则 1\n优先抽取带编号的系统需求条目及其章节上下文。\n\n\n### GEN-generic-extraction_rule-006 系统需求侧抽取规则 2\n对每条系统需求优先拆出：主题、触发条件、期望行为、优先级顺序、默认行为、适用对象。\n\n\n### GEN-generic-extraction_rule-007 系统需求侧抽取规则 3\n若系统需求中出现“当...时”“否则”“任一条件”“优先级顺序为”等表达，应保留其结构。\n\n\n### GEN-generic-extraction_rule-008 系统需求侧抽取规则 4\n对前轴/后轴、前后轮、左右侧等对称对象，应标记为对称候选事实。\n\n\n### GEN-generic-extraction_rule-009 系统需求侧抽取规则 5\n若系统需求和样例都指向“扭矩干预”领域，应进一步标记以下四类候选条目：\n\n\n### GEN-generic-extraction_rule-010 系统需求侧抽取规则 6\n前轴激活标志位判断\n\n\n### GEN-generic-extraction_rule-011 系统需求侧抽取规则 7\n前轴扭矩计算\n\n\n### GEN-generic-extraction_rule-012 系统需求侧抽取规则 8\n后轴激活标志位判断\n",
+        "requirement_writing.md": "# Requirement Writing Rules\n\n## 写作定位\n\n### DOC-software_requirement-writing_rule-001 软件需求输出定位\n输出应采用软件需求条目风格，重点描述触发条件、输出行为、约束和引用关系，不要写成详细设计实现说明、HIL 操作步骤或自然语言摘要。\n\n\n### DOC-software_requirement-writing_rule-002 人工样例对齐优先\n当输入同时包含人工软件需求样例、系统需求和代码证据时，优先对齐人工样例已经稳定下来的主题边界、主题顺序和句式，再用其余证据补齐缺失条件。\n\n\n### DOC-software_requirement-writing_rule-003 单条需求单主题\n每条软件需求优先只承载一个稳定控制主题，例如激活判断、主控制逻辑、记忆逻辑、保护逻辑应分别成条，不要混写成综合描述。\n\n\n## 结构组织\n\n### DOC-software_requirement-writing_rule-004 父子章节保留\n文档应保留父功能与子功能的层级关系；若输出 schema 只能平铺列表，也要在标题中保留“父功能 - 子主题”的归属关系。\n\n\n### DOC-software_requirement-writing_rule-005 对象对称拆分\n对前轴/后轴、充电/放电、请求建立/退出恢复等物理对象或流程状态对称的需求，应拆为独立条目，保持结构对称。\n\n\n### DOC-software_requirement-writing_rule-006 流程阶段拆条\n对同一功能中的进入请求、主控制、停止条件、恢复条件、记忆逻辑、保护限幅等不同阶段，优先拆成多条需求，而不是写成一段步骤说明。\n\n\n## 句式与逻辑\n\n### DOC-software_requirement-writing_rule-007 激活判断标准句式\n激活或判断类需求优先采用“当满足以下任一条件时…，否则…”的句式；条件分点列出，并显式写清与/或关系。\n\n\n### DOC-software_requirement-writing_rule-008 优先级显式声明\n多源请求仲裁、多功能冲突或多模式切换时，应直接写出“优先级顺序为：X > Y > Z”，不得把优先级隐藏在叙述性文字里。\n\n\n### DOC-software_requirement-writing_rule-009 分支与默认路径完整\n计算、控制或状态切换类需求应使用“当…时，输出/动作=…”的句式覆盖主要分支、默认路径和退出/恢复路径。\n\n\n### DOC-software_requirement-writing_rule-010 阈值状态值显式化\n涉及阈值、枚举值、状态位、定时器或滞回条件时，应显式写出比较方向、边界包含关系、超时值和状态编码，不要只写“满足条件后”。\n\n\n## 追溯与验证\n\n### DOC-software_requirement-writing_rule-011 信号命名与内部引用保留\n正文中应优先保留工程中可追溯的输入输出信号名、模式名、内部变量名和需求编号引用，避免改写成无法回溯的自然语言概念。\n\n\n### DOC-software_requirement-writing_rule-012 可测试与安全边界并存\n每条需求都应让测试人员能从输入条件推导出可判定的输出预期；若存在最大/最小限制、超时撤销或故障降级，也应显式写出。\n",
+        "requirement_validation.md": "# Requirement Validation Rules\n\n## 校验目标\n\n### DOC-software_requirement-validation_rule-001 文档风格校验\n检查输出是否保持软件需求风格；若正文主要由实现步骤、状态机内部变量解释或测试操作说明构成，应判为风格偏移。\n\n\n### DOC-software_requirement-validation_rule-002 主题粒度校验\n检查每条需求是否只承载一个稳定主题；若把控制逻辑、记忆逻辑和保护逻辑混写在一条正文中，应标记为主题混写风险。\n\n\n## 结构校验\n\n### DOC-software_requirement-validation_rule-003 层级结构校验\n检查父功能、子功能和需求条目的层级是否清晰；若样例明显存在父子结构而输出完全平铺且无归属提示，应标记为结构退化。\n\n\n### DOC-software_requirement-validation_rule-004 对象对称性校验\n对前后轴、充放电、请求与恢复等对称对象，若只生成一侧或只保留单条总纲需求，应标记为结构不完整。\n\n\n### DOC-software_requirement-validation_rule-005 激活与恢复分支校验\n对激活判断、模式进入、停止控制类需求，若缺少“否则”路径、恢复条件、重新进入条件或超时撤销条件，应标记为内容不完整。\n\n\n## 内容校验\n\n### DOC-software_requirement-validation_rule-006 优先级与默认路径校验\n对仲裁、计算、功率限制类需求，若缺少优先级顺序、兜底分支或默认输出路径，应标记为高风险缺失。\n\n\n### DOC-software_requirement-validation_rule-007 阈值与状态值校验\n检查是否保留关键阈值、状态枚举、时间参数、边界包含关系和滞回条件；若只保留模糊表述，应降低置信度。\n\n\n### DOC-software_requirement-validation_rule-008 命名与引用校验\n检查信号命名、模式名和需求编号是否可追溯；若编造编号、误改信号名或把代码内部别名当成正式需求名，应标记为高风险。\n\n\n## 输出风险\n\n### DOC-software_requirement-validation_rule-009 可测试性校验\n检查正文是否能够直接导出测试场景：输入条件、触发动作、输出行为和保护边界应可判定。\n\n\n### DOC-software_requirement-validation_rule-010 无依据扩写校验\n若当前证据只支持核心主题，而输出擅自扩写到新的模块主题、支撑逻辑或实现细节，应标记为越界扩写。\n",
+        "examples/good_examples.md": "# Good Examples\n\n### MOD-充电管理-good_example-001 充电过程堵转加热模式\n当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。\n\n\n### MOD-充电管理-good_example-003 充电截止SOC记忆\nVCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。\n\n\n## 扭矩干预\n\n### DOC-software_requirement-good_example-001 ESC干预前轴激活标志位判断\n当满足以下任一条件时，ESC干预前轴激活标志位置为 active：ESC_TqDecReqAct_F = 0x1 且前电机降扭请求标志位激活，或 ESC_EHB_RBS_F_Active = 0x1 且前轴制动再生扭矩请求标志位激活，或 ESC_TrqIncReqActv_F = 0x1 且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对升扭、降扭和制动再生请求还应结合低/高阈值进行有效性判断。\n\n\n## 充电管理\n\n### DOC-software_requirement-good_example-002 充电过程 - 充电截止SOC\n当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。\n\n\n## 高低系统管理\n\n### DOC-software_requirement-good_example-003 本地KL15上高压建立流程\n当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。\n\n\n## 高压能量管理\n\n### DOC-software_requirement-good_example-004 动力电池可用放电功率计算\nVCU 内部对动力电池可用放电功率应优先采用 BMS 10s 可用放电功率（BMS4_N_SOF10D），并在此基础上结合 SOC 保护、预留功率及低 SOC 限制进行修正；在怠速发电和行车发电场景下，当动力电池 SOC 大于默认 6% 时，应按 BMS 10s 可用放电功率减去默认 3kW 预留功率计算；当 SOC 低于默认 6% 时，应随 SOC 下降逐步降低，并在 3% 以下限制为 3kW。\n",
+        "examples/bad_examples.md": "# Bad Examples\n",
+        "domain-knowledge.json": {
+          "version": 1,
+          "generationPriorities": [
+            "若输入明显属于充电管理，优先生成堵转加热模式、充电截止SOC、充电截止SOC记忆，再考虑充满跳转标志位等补充条目。",
+            "若当前输入同时提供人工软件设计需求样例，优先复现样例中的核心条目数、主题顺序和章节归属，不要把代码还能支持的补充逻辑提前写成新的主条目。",
+            "若输出 schema 只能承载列表，也要在标题或正文中保留层级关系和对象归属，但不要输出具体章节数字。",
+            "优先输出符合人工软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
+            "对已经有人工样例锚点的主题，优先复现样例中的主条目边界、顺序和对象拆分，再补充阈值、引用和恢复路径。",
+            "在充电管理、高低系统管理、高压能量管理等主题中，先输出核心主线条目，再决定是否追加补充主题。",
+            "优先保留输入中的正式信号名、需求编号、状态值和模式名，不要为了顺口改写成模糊概念。",
+            "当没有完全同构的人工样例时，优先复用最接近样本的章节骨架与句式，而不是重新发明新的写法。",
+            "若系统需求、软件需求样例与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。"
+          ],
+          "examples": [
+            {
+              "requirementId": "CheryVCU-3015",
+              "topic": "充电过程堵转加热模式",
+              "sectionTitle": "充电过程",
+              "requirementType": "charge_mode_request_logic",
+              "preferredTitle": "充电过程 - 堵转加热模式",
+              "requirementText": "当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。",
+              "signals": [
+                "ECC_StallHeatingReq",
+                "VCU2_St_StallHeatingReq",
+                "VCU82_St_RModeReq",
+                "BMS3_St_DCChargePlugin",
+                "VCU1_N_ActualGear",
+                "ESC_VehiclESCspeed",
+                "BMS1_St_BatteryMode",
+                "RMCU2_St_StallHeating"
+              ],
+              "references": [
+                "CheryVCU-1088",
+                "CheryVCU-1077"
+              ],
+              "canonicalBranches": [
+                "ECC请求成立",
+                "DC充电连接成立",
+                "P挡且低车速成立",
+                "电池DC充电模式成立",
+                "RMCU状态允许",
+                "发送请求与模式",
+                "2s超时撤销"
+              ],
+              "keywords": [
+                "充电过程",
+                "堵转加热",
+                "DC充电",
+                "TrqCtl",
+                "超时保护"
+              ]
+            },
+            {
+              "requirementId": "CheryVCU-12147",
+              "topic": "充电截止SOC记忆",
+              "sectionTitle": "充电过程",
+              "requirementType": "charge_soc_memory",
+              "preferredTitle": "充电过程 - 充电截止SOC记忆",
+              "requirementText": "VCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。",
+              "signals": [
+                "ICM_Chg_SOC_LimitPointSet",
+                "TCP_Chg_SOC_LimitPointSet",
+                "Chrg_pctBookChrgSocSetEEW",
+                "Chrg_pctBookChrgSocSetEER"
+              ],
+              "references": [
+                "CheryVCU-12147"
+              ],
+              "canonicalBranches": [
+                "设置值更新",
+                "下电记忆",
+                "上电读取",
+                "50%-100%范围校验",
+                "无效值默认回退"
+              ],
+              "keywords": [
+                "充电截止SOC记忆",
+                "下电记忆",
+                "EEW",
+                "EER",
+                "默认回退"
+              ]
+            },
+            {
+              "requirementId": "SMiVCU-10160",
+              "topic": "ESC干预前轴激活标志位判断",
+              "sectionTitle": "ESC前轴扭矩干预",
+              "requirementType": "activation_flag_logic",
+              "preferredTitle": "ESC前轴扭矩干预 - 激活标志位判断",
+              "requirementText": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：ESC_TqDecReqAct_F = 0x1 且前电机降扭请求标志位激活，或 ESC_EHB_RBS_F_Active = 0x1 且前轴制动再生扭矩请求标志位激活，或 ESC_TrqIncReqActv_F = 0x1 且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对升扭、降扭和制动再生请求还应结合低/高阈值进行有效性判断。",
+              "signals": [
+                "ESC_TqDecReqAct_F",
+                "ESC_EHB_RBS_F_Active",
+                "ESC_TrqIncReqActv_F",
+                "ESC_TrqIncReq_F",
+                "ESC_EHB_RBS_F_TargetRegenTrq"
+              ]
+            },
+            {
+              "requirementId": "CheryVCU-8102",
+              "topic": "充电截止SOC",
+              "sectionTitle": "充电过程",
+              "requirementType": "charge_soc_limit_control",
+              "preferredTitle": "充电过程 - 充电截止SOC",
+              "requirementText": "当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
+              "signals": [
+                "ICM_Chg_SOC_LimitPointSet",
+                "TCP_Chg_SOC_LimitPointSet",
+                "VCU_Chg_SOC_LimitSts",
+                "VCU1_St_ChrStopRequest",
+                "BMS2_N_SOC"
+              ],
+              "references": [
+                "CheryVCU-10935"
+              ]
+            },
+            {
+              "requirementId": "CheryVCU-1120",
+              "topic": "本地KL15上高压建立流程",
+              "sectionTitle": "本地KL15上高压",
+              "requirementType": "high_voltage_power_on_sequence",
+              "preferredTitle": "本地KL15上高压建立流程",
+              "requirementText": "当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。",
+              "signals": [
+                "HvCoorn_stBMSModeReq",
+                "icbms_stMainPosRly",
+                "icbms_stMainNegRly",
+                "icdc_stMode",
+                "HvCoorn_bHvReady"
+              ],
+              "references": [
+                "CheryVCU-1120"
+              ]
+            },
+            {
+              "requirementId": "CheryVCU-4098",
+              "topic": "动力电池可用放电功率计算",
+              "sectionTitle": "电池可用充放功率计算",
+              "requirementType": "charge_discharge_power_calculation",
+              "preferredTitle": "动力电池可用放电功率计算",
+              "requirementText": "VCU 内部对动力电池可用放电功率应优先采用 BMS 10s 可用放电功率（BMS4_N_SOF10D），并在此基础上结合 SOC 保护、预留功率及低 SOC 限制进行修正；在怠速发电和行车发电场景下，当动力电池 SOC 大于默认 6% 时，应按 BMS 10s 可用放电功率减去默认 3kW 预留功率计算；当 SOC 低于默认 6% 时，应随 SOC 下降逐步降低，并在 3% 以下限制为 3kW。",
+              "signals": [
+                "BMS2_N_SOC",
+                "BMS4_N_SOF10D"
+              ],
+              "references": [
+                "CheryVCU-7532",
+                "CheryVCU-7549"
+              ]
+            }
+          ],
+          "ruleHints": [
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "充电管理",
+              "writingPattern": "优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。",
+              "targetStyle": "输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。"
+            },
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "扭矩干预",
+              "writingPattern": "优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。",
+              "targetStyle": "输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。"
+            },
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "充电管理",
+              "writingPattern": "优先按充电过程下的控制主题拆条；先写进入请求与撤销，再写截止停止，再写记忆与恢复。",
+              "targetStyle": "输出应显式写出输入条件、动作、停止条件和恢复路径，但不要把内部实现细节抬升为新的主条目。"
+            },
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "高低系统管理",
+              "writingPattern": "围绕高压请求激活、主回路建立、附件使能和Ready判定组织软件需求，不要把整个状态机直接摊平成实现步骤。",
+              "targetStyle": "输出应体现请求条件、执行动作、完成判据和退出条件，保持功能需求语气。"
+            },
+            {
+              "domain": "embedded_vcu",
+              "documentType": "-",
+              "subdomain": "高压能量管理",
+              "writingPattern": "优先保持五条核心主线：可用放电功率、放电单体保护、可用充电功率、充电单体保护、峰值可用放电功率。",
+              "targetStyle": "输出应保留功率源、阈值、预留功率、查表限制和前序需求引用，不要泛化成总纲说明。"
+            }
+          ],
+          "antiPatterns": [
+            "不要把堵转加热、截止SOC、记忆、充满跳转标志位、电流计算等充电主题揉成一条综合需求。",
+            "不要在人工样例已经拆分“截止SOC控制”和“截止SOC记忆”时，再把两者混写成一条增强版需求。",
+            "不要把代码侧补充条目如 ChargingFull 状态跳转，提前写成与人工样例并列的核心主输出。",
+            "不要把激活判断、主控制逻辑、恢复逻辑、记忆逻辑和保护逻辑揉成一条综合需求。",
+            "不要把软件需求写成详细设计实现说明、状态机代码解说或 HIL 测试步骤。"
+          ],
+          "sourceOfTruthPolicy": {
+            "standard": "ISO 26262",
+            "singleSourceOfTruth": true,
+            "forbidCodeStyleSignals": true,
+            "codeStylePrefixes": [
+              "icesc_",
+              "icadas_",
+              "ACCtl_",
+              "ParkCtrl_"
+            ],
+            "canonicalSignalAliases": [
+              {
+                "canonical": "ESC_TqDecReqAct_F",
+                "aliases": [
+                  "icesc_bFrntAxleTqDecActv"
+                ]
+              },
+              {
+                "canonical": "ESC_EHB_RBS_F_Active",
+                "aliases": [
+                  "icesc_bFrntAxleRBSTqActv"
+                ]
+              },
+              {
+                "canonical": "ESC_TrqIncReqActv_F",
+                "aliases": [
+                  "icesc_bFrntAxleTqIncActv"
+                ]
+              },
+              {
+                "canonical": "ESC_TrqIncReq_F",
+                "aliases": [
+                  "icesc_tqReqFrntAxleInc"
+                ]
+              },
+              {
+                "canonical": "ESC_TqDecReq_F",
+                "aliases": [
+                  "icesc_tqReqFrntAxleDec"
+                ]
+              },
+              {
+                "canonical": "ESC_EHB_RBS_F_TargetRegenTrq",
+                "aliases": [
+                  "icesc_tqRBSReqFrntAxle"
+                ]
+              },
+              {
+                "canonical": "ESC_TqDecReqAct_R",
+                "aliases": [
+                  "icesc_bReAxleTqDecActv"
+                ]
+              },
+              {
+                "canonical": "ESC_EHB_RBS_R_Active",
+                "aliases": [
+                  "icesc_bReAxleRBSTqActv"
+                ]
+              },
+              {
+                "canonical": "ESC_TrqIncReqActv_R",
+                "aliases": [
+                  "icesc_bReAxleTqIncActv"
+                ]
+              },
+              {
+                "canonical": "ESC_TrqIncReq_R",
+                "aliases": [
+                  "icesc_tqReqReAxleInc"
+                ]
+              },
+              {
+                "canonical": "ESC_TqDecReq_R",
+                "aliases": [
+                  "icesc_tqReqReAxleDec"
+                ]
+              },
+              {
+                "canonical": "ESC_EHB_RBS_R_TargetRegenTrq",
+                "aliases": [
+                  "icesc_tqRBSReqReAxle"
+                ]
+              },
+              {
+                "canonical": "ESC_AEB_Active",
+                "aliases": [
+                  "icadas_bAEBActv"
+                ]
+              },
+              {
+                "canonical": "ESC_CDP_Active",
+                "aliases": [
+                  "icesc_bCDPActv"
+                ]
+              },
+              {
+                "canonical": "ESC_VLC_TorqCtrlActive",
+                "aliases": [
+                  "icadas_bTqVLCTrgtReqVld"
+                ]
+              }
+            ],
+            "normalizationRules": [
+              {
+                "pattern": "AEB/CDP/ABS/EBD任一功能",
+                "replacement": "AEB或CDP任一功能"
+              },
+              {
+                "pattern": "主动制动（AEB/CDP/ABS/EBD）",
+                "replacement": "主动制动（AEB/CDP）"
+              },
+              {
+                "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
+                "replacement": "-"
+              },
+              {
+                "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
+                "replacement": "-"
+              }
+            ],
+            "forbiddenExpansions": {
+              "activation_flag_logic": [
+                "CCO",
+                "ISA"
+              ],
+              "torque_calculation_logic": [
+                "ABS",
+                "EBD",
+                "CCO",
+                "ISA"
+              ]
+            }
+          },
+          "documentBlueprint": {
+            "preferredSubsections": []
+          }
+        }
+      }
+    },
+    "candidateSkillItems": [],
+    "referenceAssets": [
+      {
+        "id": "15b41741-8c4d-4000-8ad7-a18cdc2eda1d",
+        "originalName": "system-requirements-example-charging-management.md",
+        "role": "system_pdf",
+        "mimeType": "text/markdown",
+        "uploadedAt": "2026-04-15T05:49:32.787Z",
+        "preview": "# 系统需求示例：充电管理\n\n## 文档信息\n\n- 文档类型：系统需求示例\n- 领域：嵌入式 VCU\n- 语言：中文\n- 版本：v1\n- 来源：`AI case_ITK_20260411.docx` 中 `充电管理(20260410新增) -> 输入：系统需求` 图片，人工提取整理\n- 整理日期：2026-04-14\n\n## 章节信息\n\n- 章节编号：`5.1.3.2`\n- 章节标题：`电池充电堵转加热`\n- 章节编号：`5.1.3.3`\n- 章节标题：`充电截止SOC控制`\n\n## 需求条目\n\n### CheryVCU-1088\n\n- 主题：DC充电场景下的堵转加热请求转发\n- 原文：\n  当车辆处于 DC 充电，HCU 在接收到 ECC 的堵转加热需求后，且 MCU 反馈状态允许进行堵转加热时，HCU 应将堵转加热请求发送给 MCU。\n- 条件：\n  - 车辆处于 DC 充电\n  - ECC 发出堵转加热需求\n  - MCU 反馈状态允许进行堵转加热\n- 期望行为：\n  - HCU 应将堵转加热请求发送给 MCU\n\n### CheryVCU-1077\n\n- 主题：堵转加热请求超时撤销\n- 原文：\n  HCU 请求堵转加热 2s 后，如 MCU 反馈仍未正常进入 Trq 模式进行堵转加热，HCU 停止请求堵转加热。\n- 条件：\n  - HCU 已发起堵转加热请求\n  - 持续时间达到 2s\n  - MCU 反馈未正常进入 Trq 模式进行堵转加热\n- 期望行为：\n  - HCU 应停止堵转加热请求\n- 时序约束：\n  - 请求超时阈值为 2s\n\n### CheryVCU-10935\n\n- 主题：充电截止SOC控制与恢复\n- 原文：\n  当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆），当仪表显示 SOC 大于等于截止 SOC 时，HCU 通过向 BMS 发送充电 Stop 指令临时停止充电，当表显 SOC 小于截止 SOC 1% 时，Stop 指令停止发送，OBC 重新恢复充电，直到再次等于截止 SOC。\n- 条件：\n  - AC 或 DC 充电功能激活\n  - 用户通过大屏或手机 APP 设置充电 SOC 截止点\n  - ICM 或 TCP 向 HCU 发送充电 SOC 截止点设置信号\n- 参数约束：\n  - 充电 SOC 截止点设置范围为 50% - 100%\n  - HCU 需要对充电截止点进行下电记忆\n- 期望行为：\n  - HCU 应接收并记忆充电 SOC 截止点\n  - 当表显 SOC 大于等于截止 SOC 时，HCU 应向 BMS 发送充电 Stop 指令以临时停止充电\n  - 当表显 SOC 小于截止 SOC 1% 时，HCU 应停止发送 Stop 指令\n  - OBC 应恢复充电，直到再次达到截止 SOC\n\n## 提炼摘要\n\n- 主主题：充电管理在 DC 充电堵转加热和充电截止 SOC 控制场景下的请求下发、超时保护、截止停止与恢复\n- 关键概念：\n  - DC 充电\n  - 堵转加热请求\n  - Trq 模式\n  - 充电截止 SOC\n  - 下电记忆\n  - Stop 指令\n  - 充电恢复滞回"
+      },
+      {
+        "id": "4a5de7f7-c1f7-4aa9-abb4-75cb25da4644",
+        "originalName": "software-design-requirements-example-charging-management.md",
+        "role": "reference_requirement_example",
+        "mimeType": "text/markdown",
+        "uploadedAt": "2026-04-15T05:49:32.790Z",
+        "preview": "# 软件设计需求示例：充电管理\n\n## 文档信息\n\n- 文档类型：软件设计需求示例\n- 领域：嵌入式 VCU\n- 语言：中文\n- 版本：v1\n- 来源：`AI case_ITK_20260411.docx` 中 `充电管理(20260410新增) -> 输出：软件需求` 图片，人工提取整理\n- 整理日期：2026-04-14\n\n## 章节结构\n\n- `5.3.2` 充电过程\n\n## 需求条目\n\n### CheryVCU-3015\n\n- 状态：`released`\n- 所属章节：`5.3.2`\n- 主题：充电过程堵转加热模式\n- 原文：\n  若 ECC 有堵转加热请求（`ECC_StallHeatingReq=0x1: ON`），VCU 满足以下条件则发送堵转加热请求（`VCU2_St_StallHeatingReq=0x1: Request`）和 Trq 模式（`VCU82_St_RModeReq=0x1: TrqCtl`）给 RMCU：\n  1. DC 充电枪已连接（`BMS3_St_DCChargePlugin = 0x1: Connected`）；\n  2. 当前挡位为 `P` 挡（`VCU1_N_ActualGear=0x1: P`）且车辆处于停车状态（`ESC_VehiclESCspeed < 3km/h`）；\n  3. 电池处于 DC 充电状态（`BMS1_St_BatteryMode = 0x4: DC Charge`）；\n  4. ECC 有堵转加热需求（`ECC_StallHeatingReq=0x1: ON`）；\n  5. RMCU 反馈的堵转加热状态正常（`RMCU2_St_StallHeating` 状态不为 `0x3: Heating Failed` 且 `0x2: Heating Over`）。\n  MCU 收到请求后进入 Torque 模式启动堵转加热并反馈状态（`RMCU2_St_StallHeating`，`RMCU1_St_RMCUMode`），开始加热电池。\n  若 2s 后 MCU 无法正常进入堵转加热（`RMCU2_St_StallHeating ≠ 0x1: Heating`），VCU 收回信号停止堵转加热请求（`VCU2_St_StallHeatingReq = 0x0: No Request`）。\n\n### CheryVCU-8102\n\n- 状态：`released`\n- 所属章节：`5.3.2`\n- 主题：充电截止SOC\n- 原文：\n  VCU 接受大屏（`ICM_Chg_SOC_LimitPointSet`）或远程（`TCP_Chg_SOC_LimitPointSet`）的充电 SOC 截止点并记忆，当大屏（`ICM_Chg_SOC_LimitPointSet`）或远程（`TCP_Chg_SOC_LimitPointSet`）发来得 SOC 限值有变化并且不是 `112`（Invalid 值）时，VCU 应当将此值更新为充电 SOC 上限值，并将此 SOC 值重新反馈大屏（`VCU_Chg_SOC_LimitSts`）；\n  在 AC/DC 充电过程中，若表显 SOC（`BMS2_N_SOC`）不小于充电截止 SOC，则 VCU 发送充电截至信号（`VCU1_St_ChrStopRequest`），否则当表显 SOC 值小于充电截至 SOC 减去 `1%`（可标定）或重新插枪（`OBC1_St_ChargerConnection=0x1: Connected` 上升沿或 `BMS3_St_DCChargePlugin=0x1: Connected` 上升沿）时，将重新判断。\n\n### CheryVCU-12147\n\n- 状态：`released`\n- 所属章节：`5.3.2`\n- 主题：充电截止SOC记忆\n- 原文：\n  VCU 应当每次下电时记忆当前设置得充电截止 SOC 值，若 ICM 或 TCP 有设置值更新时，应及时进行更新，更新值在本次驾驶循环使用，并在下次下电记忆。\n\n## 提炼摘要\n\n- 主主题：充电管理的输出软件需求围绕堵转加热模式、充电截止SOC和截止值记忆展开\n- 结构特征：\n  - 统一归属在 `5.3.2 充电过程`\n  - 每条需求直接保留原图中的信号名、状态值和阈值描述\n  - 以图片原文为准，不引入代码侧补充解释"
+      }
+    ],
+    "rejectionSnapshots": [
+      {
+        "id": "76a2bc6a-b4c8-404a-9163-3c3196c42d0e",
+        "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
+        "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
+        "documentType": "software_requirement",
+        "requirementCode": "CheryVCU-12147",
+        "reasonCategory": "coverage_gap",
+        "reasonText": "该结果与人工软件需求范例不一致。人工范例中的 CheryVCU-12147 仅描述“下电记忆当前充电截止SOC，设置更新时及时更新，并在下次下电记忆”，未包含“记忆值无效或超出50%-100%范围时回退默认值”的要求。当前生成结果把代码侧推断出的保护/回退逻辑写进了需求正文，导致需求边界超出人工范例，也与人工范例中“以图片原文为准，不过度引入代码补充解释”的风格不一致。",
+        "expectedNote": "请按人工范例对齐 CheryVCU-12147 的表达边界，仅保留下电记忆、更新生效、下次下电记忆这三个核心行为；不要把“无效值处理/默认值回退/范围兜底”写入该条需求，除非系统需求或人工输出范例中有明确独立表述。涉及“50%-100%范围”“112无效值”“重新插枪后重新判断”等内容，应保留在充电截止SOC控制条目中，不要混入记忆条目。优先保持与人工范例相同的条目粒度",
+        "targetArea": "validation",
+        "outputSnapshot": {
+          "title": "充电过程 - 充电截止SOC记忆",
+          "requirementText": "VCU应对当前充电截止SOC值进行下电记忆；若ICM或TCP设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出50%-100%范围，则应回退为默认有效值。",
+          "type": "functional",
+          "confidence": 0.85,
+          "verificationHint": "通过实车测试验证：设置充电截止SOC后下电，再次上电检查是否恢复设置值；测试超出范围设置时的回退行为。",
+          "conflictNote": "无冲突",
+          "documentType": "software_requirement",
+          "conflicts": [],
+          "traces": [
+            {
+              "fileName": "system-requirements-example-charging-management.md",
+              "location": "page:1",
+              "excerpt": "当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆）",
+              "requirementCode": "CheryVCU-12147"
+            }
+          ]
+        },
+        "sourceRefsSnapshot": [
+          {
+            "fileName": "system-requirements-example-charging-management.md",
+            "location": "page:1",
+            "excerpt": "当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆）"
+          }
+        ],
+        "projectEvidenceSnapshot": [
+          {
+            "fileName": "system-requirements-example-charging-management.md",
+            "fileRole": "system_pdf",
+            "location": "page:1",
+            "excerpt": "# 系统需求示例：充电管理\n\n## 文档信息\n\n- 文档类型：系统需求示例\n- 领域：嵌入式 VCU\n- 语言：中文\n- 版本：v1\n- 来源：`AI case_ITK_20260411.docx` 中 `充电管理(20260410新增) -> 输入：系统需求` 图片，人工提取整理\n- 整理日期：2026-04-14\n\n## 章节信息\n\n- 章节编号：`5.1.3.2`\n- 章节标题：`电池充电堵转加热`\n- 章节编号：`5.1.3.3`\n- 章节标题：`充电截止SOC控制`\n\n## 需求条目\n\n### CheryVCU-1088\n\n- 主题：DC充电场景下的堵转加热请求转发\n- 原文：\n  当车辆处于 DC 充电，HCU 在接收到 ECC 的堵转加热需求后，且 MCU 反馈状态允许进行堵转加热时，HCU 应将堵转加热请求发送给 MCU。\n- 条件：\n  - 车辆处于 DC 充电\n  - ECC 发出堵转加热需求\n  - MCU 反馈状态允许进行堵转加热\n- 期望行为：\n  - HCU 应将堵转加热请求发送给 MCU\n\n### CheryVCU-1077\n\n- 主题：堵转加热请求超时撤销\n- 原文：\n  HCU 请求堵转加热 2s 后，如 MCU 反馈仍未正常进入 Trq 模式进行堵转加热，HCU 停止请求堵转加热。\n- 条件：\n  - HCU 已发起堵转加热请求\n  - 持续时间达到 2s\n  - MCU 反馈未正常进入 Trq 模式进行堵转加热\n- 期望行为：\n  - HCU 应停止堵转加热请求\n- 时序约束：\n  - 请求超时阈值为 2s\n\n### CheryVCU-10935\n\n- 主题：充电截止SOC控制与恢复\n- 原文：\n  当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆），当仪表显示 SOC 大于等于截止 SOC 时，HCU 通过向 BMS 发送充电 Stop 指令临时停止充电，当表显 SOC 小于截止 SOC 1% 时，Stop 指令停止发送，OBC 重新恢复充电，直到再次等于截止 SOC。\n- 条件：\n  - AC 或 DC 充电功能激活\n  - 用户通过大屏或手机 APP 设置充电 SOC 截止点\n  - ICM 或 TCP 向 HCU 发送充电 SOC 截止点设置信号\n- 参数约束：\n  - 充电 SOC 截止点设置范围为 50% - 100%\n  - HCU 需要对充电截止点进行下电记忆\n- 期望行为：\n  - HCU 应接收并记忆充电 SOC 截止点\n  - 当表显 SOC 大于等于截止 SOC 时，HCU 应向 BMS 发送充电 Stop 指令以临时停止充电\n  - 当表显 SOC 小于截止 SOC 1% 时，HCU 应停止发送 Stop 指令\n  - OBC 应恢复充电，直到再次达到截止 SOC\n\n## 提炼摘要\n\n- 主主题：充电管理在 DC 充电堵转加热和充电截止 SOC 控制场景下的请求下发、超时保护、截止停止与恢复\n- 关键概念：\n  - DC 充电\n  - 堵转加热请求\n  - Trq 模式\n  - 充电截止 SOC\n  - 下电记忆\n  - Stop 指令\n  - 充电恢复滞回",
+            "tags": [
+              "system-source",
+              "state",
+              "timing",
+              "threshold",
+              "requirement-like"
+            ]
+          },
+          {
+            "fileName": "Chrg.c",
+            "fileRole": "generated_c",
+            "location": "function",
+            "excerpt": "函数 if(rtb_Delay_k)",
+            "tags": [
+              "function"
+            ]
+          },
+          {
+            "fileName": "Chrg.c",
+            "fileRole": "generated_c",
+            "location": "function",
+            "excerpt": "函数 if(Chrg_stChrgModSet == 3)",
+            "tags": [
+              "function"
+            ]
+          },
+          {
+            "fileName": "Chrg.c",
+            "fileRole": "generated_c",
+            "location": "function",
+            "excerpt": "函数 if(!rtb_AND1_n)",
+            "tags": [
+              "function"
+            ]
+          },
+          {
+            "fileName": "Chrg.c",
+            "fileRole": "generated_c",
+            "location": "function",
+            "excerpt": "函数 if(rtb_TmpSignalConversionAtictc_c != Chrg_noSngBookStrtMthEEW)",
+            "tags": [
+              "function"
+            ]
+          },
+          {
+            "fileName": "Chrg.c",
+            "fileRole": "generated_c",
+            "location": "function",
+            "excerpt": "函数 if(rtb_TmpSignalConversionAtict_br != Chrg_noSngBookStrtDayEEW)",
+            "tags": [
+              "function"
+            ]
+          },
+          {
+            "fileName": "Chrg.c",
+            "fileRole": "generated_c",
+            "location": "function",
+            "excerpt": "函数 if(rtb_TmpSignalConversionAtictc_c != Chrg_noSngBookStopMthEEW)",
+            "tags": [
+              "function"
+            ]
+          },
+          {
+            "fileName": "Chrg.c",
+            "fileRole": "generated_c",
+            "location": "function",
+            "excerpt": "函数 if(rtb_TmpSignalConversionAtict_br != Chrg_noSngBookStopDayEEW)",
+            "tags": [
+              "function"
+            ]
+          }
+        ],
+        "relevantRules": []
+      }
+    ]
+  },
+  "proposalIds": [
+    "cd7b51c8-55e5-462c-99c7-39ad39448318"
+  ],
+  "proposals": [
+    {
+      "id": "cd7b51c8-55e5-462c-99c7-39ad39448318",
+      "replayTaskId": "",
+      "summary": "针对充电截止SOC记忆需求条目(CheryVCU-12147)的边界调整，移除代码推断的保护逻辑，使其与人工范例保持一致。",
+      "rootCauses": [
+        "未严格遵循人工样例对齐优先原则，过度引入代码侧推断的保护逻辑",
+        "未区分'截止SOC控制'和'截止SOC记忆'两个独立需求条目的边界",
+        "未遵守'以图片原文为准，不过度引入代码补充解释'的写作风格"
+      ],
+      "decisionSummary": "根据驳回记录分析，生成结果将代码侧推断的保护/回退逻辑混入需求正文，导致需求边界超出人工范例。需要严格对齐人工样例的表达边界，仅保留核心记忆功能，移除额外推断的保护逻辑。",
+      "validatorSuggestions": [
+        {
+          "title": "需求边界校验",
+          "ruleText": "检查每条需求是否只承载一个稳定主题，未将控制逻辑与记忆逻辑混写",
+          "why": "确保充电截止SOC记忆条目仅包含记忆功能，不包含范围校验和默认值回退等控制逻辑"
+        },
+        {
+          "title": "人工样例一致性校验",
+          "ruleText": "验证修改后的需求是否与人工范例在主题边界、表达方式和内容范围上保持一致",
+          "why": "确保修改后的需求严格遵循人工范例的表达，不添加额外推断内容"
+        }
+      ],
+      "status": "proposal_review",
+      "items": [
+        {
+          "proposalItemId": "748a56bd-b25c-4b4e-9410-9a3d02a715d4",
+          "proposalId": "cd7b51c8-55e5-462c-99c7-39ad39448318",
+          "action": "add_skill_item",
+          "targetSkillCode": "",
+          "targetLayer": "docType",
+          "targetProfileKey": "software_requirement",
+          "kind": "validation_rule",
+          "targetFile": "requirement_validation.md",
+          "newRuleDraft": {
+            "title": "coverage_gap补充规则",
+            "content": "建议补充以下约束：请按人工范例对齐 CheryVCU-12147 的表达边界，仅保留下电记忆、更新生效、下次下电记忆这三个核心行为；不要把“无效值处理/默认值回退/范围兜底”写入该条需求，除非系统需求或人工输出范例中有明确独立表述。涉及“50%-100%范围”“112无效值”“重新插枪后重新判断”等内容，应保留在充电截止SOC控制条目中，不要混入记忆条目。优先保持与人工范例相同的条目粒度",
+            "structuredPayload": null,
+            "rules": []
+          },
+          "before": "",
+          "after": "建议补充以下约束：请按人工范例对齐 CheryVCU-12147 的表达边界，仅保留下电记忆、更新生效、下次下电记忆这三个核心行为；不要把“无效值处理/默认值回退/范围兜底”写入该条需求，除非系统需求或人工输出范例中有明确独立表述。涉及“50%-100%范围”“112无效值”“重新插枪后重新判断”等内容，应保留在充电截止SOC控制条目中，不要混入记忆条目。优先保持与人工范例相同的条目粒度",
+          "title": "coverage_gap补充规则",
+          "rationale": "该结果与人工软件需求范例不一致。人工范例中的 CheryVCU-12147 仅描述“下电记忆当前充电截止SOC，设置更新时及时更新，并在下次下电记忆”，未包含“记忆值无效或超出50%-100%范围时回退默认值”的要求。当前生成结果把代码侧推断出的保护/回退逻辑写进了需求正文，导致需求边界超出人工范例，也与人工范例中“以图片原文为准，不过度引入代码补充解释”的风格不一致。",
+          "evidenceRefs": [
+            "76a2bc6a-b4c8-404a-9163-3c3196c42d0e"
+          ],
+          "status": "pending",
+          "editedPayload": null,
+          "createdAt": "2026-04-17T02:42:36.542Z",
+          "updatedAt": "2026-04-17T02:42:36.542Z"
+        }
+      ]
+    }
+  ],
+  "summary": "针对充电截止SOC记忆需求条目(CheryVCU-12147)的边界调整，移除代码推断的保护逻辑，使其与人工范例保持一致。",
+  "decisionSummary": "根据驳回记录分析，生成结果将代码侧推断的保护/回退逻辑混入需求正文，导致需求边界超出人工范例。需要严格对齐人工样例的表达边界，仅保留核心记忆功能，移除额外推断的保护逻辑。",
+  "validatorSuggestions": [
+    {
+      "title": "需求边界校验",
+      "ruleText": "检查每条需求是否只承载一个稳定主题，未将控制逻辑与记忆逻辑混写",
+      "why": "确保充电截止SOC记忆条目仅包含记忆功能，不包含范围校验和默认值回退等控制逻辑"
+    },
+    {
+      "title": "人工样例一致性校验",
+      "ruleText": "验证修改后的需求是否与人工范例在主题边界、表达方式和内容范围上保持一致",
+      "why": "确保修改后的需求严格遵循人工范例的表达，不添加额外推断内容"
+    }
+  ],
+  "applyResult": null,
+  "createdAt": "2026-04-17T02:42:36.542Z",
+  "updatedAt": "2026-04-17T02:42:36.550Z",
+  "workOrderId": "30f15d00-0906-40ef-b717-a9a78989caa5",
+  "workOrderSummary": {
+    "id": "30f15d00-0906-40ef-b717-a9a78989caa5",
+    "status": "pending_review",
+    "itemStats": {
+      "total": 1,
+      "modifyExisting": 0,
+      "createNew": 1,
+      "validatorOnly": 2,
+      "accepted": 0,
+      "rejected": 0,
+      "applied": 0
+    },
+    "decisionSummary": "根据驳回记录分析，生成结果将代码侧推断的保护/回退逻辑混入需求正文，导致需求边界超出人工范例。需要严格对齐人工样例的表达边界，仅保留核心记忆功能，移除额外推断的保护逻辑。"
+  }
+}

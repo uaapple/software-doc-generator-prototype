@@ -29,9 +29,10 @@
           <p class="strip-label">Feedback Loop</p>
           <h1 id="hero-title">反馈池</h1>
           <p id="project-summary" class="strip-text">正在加载当前项目的驳回记录。</p>
+          <p id="feedback-status" class="status" hidden></p>
         </div>
         <div class="strip-actions feedback-strip-actions">
-          <button id="open-task-drawer" type="button" class="secondary">查看最近任务</button>
+          <button id="open-task-drawer" type="button" class="secondary" data-open-fallback-history="true">查看 Fallback 历史任务</button>
           <button id="refresh-records" type="button" class="secondary">刷新列表</button>
         </div>
       </section>
@@ -82,6 +83,9 @@
             <div>
               <h2>驳回记录</h2>
               <p>一条记录一行展示，点击可查看详情，也可单条发起 Replay。</p>
+            </div>
+            <div class="feedback-list-actions">
+              <button id="open-task-drawer-secondary" type="button" class="secondary-button" data-open-fallback-history="true">查看 Fallback 历史任务</button>
             </div>
           </div>
 
@@ -146,8 +150,9 @@
     <aside id="task-drawer" class="feedback-task-drawer" aria-hidden="true">
       <div class="feedback-task-drawer-head">
         <div>
-          <p class="strip-label">Replay Tasks</p>
-          <h2>最近任务</h2>
+          <p class="strip-label">Fallback History</p>
+          <h2>Fallback 历史任务</h2>
+          <p class="summary">这里会显示运行中和已完成的 Replay / Fallback 任务。</p>
         </div>
         <button id="close-task-drawer" type="button" class="secondary-button">关闭</button>
       </div>

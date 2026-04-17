@@ -32,78 +32,133 @@
           <p class="strip-text">集中查看 Generic、Doc Type、Domain、Module 四类技能，支持结构化编辑与按项删除。</p>
         </div>
         <div class="strip-actions">
+          <div class="view-tabs" role="tablist" aria-label="技能管理视图">
+            <button id="registry-view-tab" type="button" class="view-tab is-active" role="tab" aria-selected="true">Atomic Skill</button>
+            <button id="work-order-view-tab" type="button" class="view-tab" role="tab" aria-selected="false">技能工单</button>
+          </div>
           <button id="refresh-button" type="button" class="secondary-button">刷新列表</button>
         </div>
       </section>
 
       <p id="page-status" class="status"></p>
 
-      <section class="panel">
-        <div class="card skill-overview-card">
-          <div class="section-head compact-head">
-            <span class="section-index">概览</span>
-            <div>
-              <h2>技能全景</h2>
-              <p>当前只管理 `skills/active` 下的 manifest 与 profile 文件，不涉及历史 candidate bundle。</p>
+      <section id="registry-view">
+        <section class="panel">
+          <div class="card skill-overview-card">
+            <div class="section-head compact-head">
+              <span class="section-index">概览</span>
+              <div>
+                <h2>技能全景</h2>
+                <p>当前只管理 `skills/active` 下的 manifest 与 profile 文件，不涉及历史 candidate bundle。</p>
+              </div>
             </div>
+            <div id="summary-metrics" class="skill-summary-grid"></div>
+            <div id="source-meta" class="summary"></div>
           </div>
-          <div id="summary-metrics" class="skill-summary-grid"></div>
-          <div id="source-meta" class="summary"></div>
-        </div>
-      </section>
-
-      <section class="skill-workspace card">
-        <aside class="workspace-pane profile-rail-pane">
-          <div class="section-head compact-head">
-            <span class="section-index">导航</span>
-            <div>
-              <h2>Profile Rail</h2>
-              <p>左侧只负责定位 layer 与 profile，不再把所有 atomic item 一次性摊平。</p>
-            </div>
-          </div>
-          <div class="profile-rail-toolbar">
-            <label>
-              搜索
-              <input id="profile-query" placeholder="按 profile 名称或 key 过滤" />
-            </label>
-            <label>
-              Layer
-              <select id="profile-layer-filter">
-                <option value="all">全部</option>
-                <option value="generic">generic</option>
-                <option value="docType">docType</option>
-                <option value="domain">domain</option>
-                <option value="module">module</option>
-              </select>
-            </label>
-          </div>
-          <div id="profile-rail" class="profile-rail-body"></div>
-        </aside>
-
-        <section class="workspace-pane item-browser-pane">
-          <div id="item-browser-chrome" class="item-browser-chrome"></div>
-          <div class="item-browser-toolbar">
-            <label>
-              当前 Profile 检索
-              <input id="item-query" placeholder="按 skillCode、标题、正文内容搜索当前 profile" />
-            </label>
-          </div>
-          <div id="item-browser" class="item-browser-body"></div>
         </section>
 
-        <button
-          id="workspace-review-resizer"
-          class="workspace-resizer"
-          type="button"
-          aria-label="调整右侧审阅区宽度"
-          aria-controls="review-pane"
-          aria-orientation="vertical"
-          title="拖拽调整右侧审阅区宽度，双击恢复默认"
-        ></button>
+        <section class="skill-workspace card">
+          <aside class="workspace-pane profile-rail-pane">
+            <div class="section-head compact-head">
+              <span class="section-index">导航</span>
+              <div>
+                <h2>Profile Rail</h2>
+                <p>左侧只负责定位 layer 与 profile，不再把所有 atomic item 一次性摊平。</p>
+              </div>
+            </div>
+            <div class="profile-rail-toolbar">
+              <label>
+                搜索
+                <input id="profile-query" placeholder="按 profile 名称或 key 过滤" />
+              </label>
+              <label>
+                Layer
+                <select id="profile-layer-filter">
+                  <option value="all">全部</option>
+                  <option value="generic">generic</option>
+                  <option value="docType">docType</option>
+                  <option value="domain">domain</option>
+                  <option value="module">module</option>
+                </select>
+              </label>
+            </div>
+            <div id="profile-rail" class="profile-rail-body"></div>
+          </aside>
 
-        <aside class="workspace-pane review-pane-shell">
-          <div id="review-pane" class="review-pane-body"></div>
-        </aside>
+          <section class="workspace-pane item-browser-pane">
+            <div id="item-browser-chrome" class="item-browser-chrome"></div>
+            <div class="item-browser-toolbar">
+              <label>
+                当前 Profile 检索
+                <input id="item-query" placeholder="按 skillCode、标题、正文内容搜索当前 profile" />
+              </label>
+            </div>
+            <div id="item-browser" class="item-browser-body"></div>
+          </section>
+
+          <button
+            id="workspace-review-resizer"
+            class="workspace-resizer"
+            type="button"
+            aria-label="调整右侧审阅区宽度"
+            aria-controls="review-pane"
+            aria-orientation="vertical"
+            title="拖拽调整右侧审阅区宽度，双击恢复默认"
+          ></button>
+
+          <aside class="workspace-pane review-pane-shell">
+            <div id="review-pane" class="review-pane-body"></div>
+          </aside>
+        </section>
+      </section>
+
+      <section id="work-order-view" class="work-order-view" hidden>
+        <section class="panel">
+          <div class="card skill-overview-card">
+            <div class="section-head compact-head">
+              <span class="section-index">工单</span>
+              <div>
+                <h2>Fallback 技能工单</h2>
+                <p>每次 fallback/replay 任务会生成一张技能工单，在这里逐条确认并直接写入 active atomic skill。</p>
+              </div>
+            </div>
+            <div id="work-order-summary" class="skill-summary-grid"></div>
+          </div>
+        </section>
+
+        <section class="card work-order-workspace">
+          <aside class="work-order-list-pane">
+            <div class="section-head compact-head">
+              <span class="section-index">列表</span>
+              <div>
+                <h2>工单列表</h2>
+                <p>按 fallback 任务聚合，一单内可包含多条 atomic skill 修改项。</p>
+              </div>
+            </div>
+            <div class="work-order-filters">
+              <label>
+                状态
+                <select id="work-order-status-filter">
+                  <option value="">全部</option>
+                  <option value="pending_review">待审阅</option>
+                  <option value="partially_reviewed">部分已审阅</option>
+                  <option value="partially_applied">部分已应用</option>
+                  <option value="applied">已应用</option>
+                  <option value="closed">已关闭</option>
+                </select>
+              </label>
+              <label>
+                文档类型
+                <input id="work-order-document-filter" placeholder="如 software_requirement" />
+              </label>
+            </div>
+            <div id="work-order-list" class="work-order-list"></div>
+          </aside>
+
+          <section id="work-order-detail" class="work-order-detail empty-state">
+            选择一张工单查看详情。
+          </section>
+        </section>
       </section>
     </main>
 

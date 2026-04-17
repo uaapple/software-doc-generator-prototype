@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
@@ -8,6 +8,8 @@ import { RejectionService } from "./rejection-service.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { SkillRuleService } from "./skill-rule-service.js";
 import { LlmService } from "./llm-service.js";
+import { SkillLoader } from "./skill-loader.js";
+import { SkillWorkOrderService } from "./skill-work-order-service.js";
 
 function now() {
   return new Date().toISOString();
@@ -84,7 +86,7 @@ function validateProposalTargets(proposalItems = [], targetAreas = []) {
 
 function collectRootCauses(records = []) {
   return [...new Set(records.map((item) => item.reasonCategory).filter(Boolean))].map(
-    (category) => `Multiple rejections point to ${category} issues.`
+    (category) => `多条驳回记录共同指向“${category}”相关问题。`
   );
 }
 
@@ -147,6 +149,8 @@ export class ReplayTaskService {
     this.skillBundleService = new SkillBundleService();
     this.skillRuleService = new SkillRuleService();
     this.llmService = new LlmService();
+    this.skillLoader = new SkillLoader();
+    this.skillWorkOrderService = new SkillWorkOrderService();
   }
 
   async listTasks(filters = {}) {
@@ -256,6 +260,41 @@ export class ReplayTaskService {
       domain: domainKey,
       moduleSkillKey
     });
+    const effectiveSkills = await this.skillLoader.loadForContext(
+      {
+        documentType,
+        domain: domainKey,
+        moduleSkillKey
+      },
+      skillDir
+    );
+    const effectiveSkillSnapshot = {
+      hash: createHash("sha1")
+        .update(
+          JSON.stringify({
+            bundleId,
+            ruleIndexVersion: ruleIndex.ruleIndexVersion,
+            profiles: effectiveSkills.__profiles || [],
+            candidateSkillCodes: candidateSkillItems.map((item) => item.skillCode || item.ruleId),
+            writing: effectiveSkills["requirement_writing.md"] || "",
+            extraction: effectiveSkills["requirement_extraction.md"] || "",
+            validation: effectiveSkills["requirement_validation.md"] || "",
+            knowledge: effectiveSkills["domain-knowledge.json"] || {}
+          })
+        )
+        .digest("hex"),
+      selectedProfiles: effectiveSkills.__profiles || [],
+      compiledPrompt: truncate(effectiveSkills.__compiledPrompt || "", 6000),
+      compiledSkillPack: effectiveSkills.__compiledSkillPack || null,
+      files: {
+        "requirement_extraction.md": effectiveSkills["requirement_extraction.md"] || "",
+        "requirement_writing.md": effectiveSkills["requirement_writing.md"] || "",
+        "requirement_validation.md": effectiveSkills["requirement_validation.md"] || "",
+        "examples/good_examples.md": effectiveSkills["examples/good_examples.md"] || "",
+        "examples/bad_examples.md": effectiveSkills["examples/bad_examples.md"] || "",
+        "domain-knowledge.json": effectiveSkills["domain-knowledge.json"] || {}
+      }
+    };
 
     const materialPack = {
       summary: `${records.length} rejection records selected for replay`,
@@ -273,6 +312,7 @@ export class ReplayTaskService {
         domain: domainKey,
         documentType
       },
+      effectiveSkillSnapshot,
       candidateSkillItems: candidateSkillItems.map((item) => ({
         skillCode: item.skillCode || item.ruleId,
         layer: item.layer,
@@ -303,7 +343,13 @@ export class ReplayTaskService {
       }))
     };
 
-    const proposal = await this.buildProposal({ records, bundleId, targetAreas: effectiveAreas, materialPack, llmProfileId });
+    const { proposal, replayAnalysis } = await this.buildProposal({
+      records,
+      bundleId,
+      targetAreas: effectiveAreas,
+      materialPack,
+      llmProfileId
+    });
     const task = {
       id: randomUUID(),
       projectId: inferredProjectId,
@@ -320,11 +366,23 @@ export class ReplayTaskService {
       proposalIds: [proposal.id],
       proposals: [proposal],
       summary: proposal.summary,
+      decisionSummary: proposal.decisionSummary || replayAnalysis?.decisionSummary || "",
+      validatorSuggestions: proposal.validatorSuggestions || replayAnalysis?.validatorSuggestions || [],
       applyResult: null,
       createdAt: now(),
       updatedAt: now()
     };
 
+    await writeJson(getTaskPath(task.id), task);
+    const workOrder = await this.skillWorkOrderService.createFromReplayTask(task, replayAnalysis || proposal || {});
+    task.workOrderId = workOrder.id;
+    task.workOrderSummary = {
+      id: workOrder.id,
+      status: workOrder.status,
+      itemStats: workOrder.itemStats,
+      decisionSummary: workOrder.decisionSummary
+    };
+    task.updatedAt = now();
     await writeJson(getTaskPath(task.id), task);
     const proposalReady = (proposal.items || []).length > 0;
     for (const record of records) {
@@ -357,8 +415,10 @@ export class ReplayTaskService {
     const proposal = {
       id: randomUUID(),
       replayTaskId: "",
-      summary: generated.summary || `Generated ${grouped.size} grouped replay proposals from ${records.length} rejection records.`,
+      summary: generated.summary || `已基于 ${records.length} 条驳回记录生成 ${grouped.size} 组回投提议。`,
       rootCauses: generated.rootCauses?.length ? generated.rootCauses : collectRootCauses(records),
+      decisionSummary: generated.decisionSummary || "",
+      validatorSuggestions: Array.isArray(generated.validatorSuggestions) ? generated.validatorSuggestions : [],
       status: "proposal_review",
       items: []
     };
@@ -375,7 +435,18 @@ export class ReplayTaskService {
           targetLayer: item.targetLayer,
           targetProfileKey: item.targetProfileKey,
           kind: item.kind,
+          targetKind: item.targetKind || item.kind,
           targetFile: item.targetFile,
+          scopeDecision: item.scopeDecision || "",
+          scopeReason: item.scopeReason || "",
+          scopeConfidence: Number(item.scopeConfidence ?? 0) || 0,
+          abstractionScore: Number(item.abstractionScore ?? 0) || 0,
+          isParaphraseOfRejection: Boolean(item.isParaphraseOfRejection),
+          reviewReadiness: item.reviewReadiness || "",
+          reuseJudgement: item.reuseJudgement || "",
+          ruleIntent: item.ruleIntent || "",
+          recommendedSkillText: item.recommendedSkillText || "",
+          targetInsertionHint: item.targetInsertionHint || "",
           newRuleDraft: item.newRuleDraft || null,
           before: item.before || "",
           after: item.after || "",
@@ -388,7 +459,7 @@ export class ReplayTaskService {
           updatedAt: now()
         });
       }
-      return proposal;
+      return { proposal, replayAnalysis: generated };
     }
 
     for (const [targetArea, areaRecords] of grouped.entries()) {
@@ -412,8 +483,8 @@ export class ReplayTaskService {
           targetFile,
           newRuleDraft: null,
           before: targetRule.content,
-          after: `${targetRule.content.trim()}\nAdd constraint: ${patchSentence}`,
-          title: `${targetRule.title} (supplement)`,
+          after: `${targetRule.content.trim()}\n补充约束：${patchSentence}`,
+          title: `${targetRule.title}（补充修订）`,
           rationale,
           evidenceRefs,
           status: "pending",
@@ -422,8 +493,8 @@ export class ReplayTaskService {
           updatedAt: now()
         });
       } else {
-        const title = `${areaRecords[0]?.reasonCategory || "feedback"} supplemental rule`;
-        const content = `The system should avoid the following issue: ${patchSentence}`;
+        const title = `${areaRecords[0]?.reasonCategory || "反馈"}补充规则`;
+        const content = `建议补充以下约束：${patchSentence}`;
         proposal.items.push({
           proposalItemId: randomUUID(),
           proposalId: proposal.id,
@@ -462,7 +533,7 @@ export class ReplayTaskService {
       }
     }
 
-    return proposal;
+    return { proposal, replayAnalysis: generated };
   }
 
   async reviewProposalItem(taskId, proposalItemId, payload = {}) {

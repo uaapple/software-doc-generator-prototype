@@ -60,3 +60,26 @@
   - `高低系统管理`：本地KL15上高压请求激活判断、本地KL15上高压建立流程
   - `高压能量管理`：可用放电功率、单体保护、可用充电功率、峰值放电功率
 - 现有 generic 层已经沉淀了不少“软件需求/设计需求通用写法”，但其中有一部分内容明显偏向扭矩干预与充电管理具体案例；`software_requirement` 文档类型层更适合补一版“面向软件需求文档”的通用规则，再让 module 层保留具体主题偏好。
+
+## Fallback 技能工单质量收敛新增发现（2026-04-17）
+- 用户已经明确给出一条原则：不要通过后端针对单个案例增加“如果是 `CheryVCU-12147` 就强制判成 module 并写入推荐正文”这类硬性条件约束；更希望通过优化 prompt，让 LLM 自主输出正确层级和规则内容。
+- 因此当前 replay/work order 链路的正确收敛方向是：
+  - prompt 负责层级判断与规则抽象
+  - 后端只保留轻量的质量信号与审阅辅助信息
+  - 人工通过工单确认是否应用，而不是让后端把单案例结论直接写死
+- 当前代码已经具备把以下元数据从 replay proposal 传到技能工单详情页的能力：
+  - `scopeDecision`
+  - `scopeReason`
+  - `scopeConfidence`
+  - `abstractionScore`
+  - `isParaphraseOfRejection`
+  - `reviewReadiness`
+  - `ruleIntent`
+  - `recommendedSkillText`
+- 这些元数据更适合作为“审阅辅助信号”，而不是“强制覆盖输出”的依据。
+- 目前最值得验证的不是“后端能不能把这条工单修正成对的”，而是“真实 fallback 重跑后，LLM 会不会自己把这类强模块特征的建议落到 `module`，并输出可以复用的原子技能正文”。
+- 当前仍有一个实现层风险需要后续清理：`src/services/llm-service.js` 里还残留旧版 replay quality 逻辑和不可达的旧分支。虽然现在已切到 prompt-first 路线，但这些遗留代码会增加维护噪音，容易让后续接手的人误以为系统仍在走 case-specific backend override。
+- 对这条链路的下一步验证，至少要覆盖两类样本：
+  - 模块特定型案例：应更倾向 `module`
+  - 文档类型通用型案例：应仍然保留在 `docType/software_requirement`
+- 如果新 replay 输出仍然只是把驳回说明换个语气重写，那优先应该继续优化 prompt、schema 和 few-shot，而不是再往后端堆规则。

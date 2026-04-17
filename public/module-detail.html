@@ -66,6 +66,22 @@
       <div id="task-list" class="stack-list history-drawer-list"></div>
     </aside>
 
+    <div id="feedback-history-drawer-backdrop" class="history-drawer-backdrop feedback-history-drawer-backdrop" hidden></div>
+    <aside id="feedback-history-drawer" class="history-drawer feedback-history-drawer" aria-hidden="true">
+      <div class="history-drawer-head feedback-history-drawer-head">
+        <div>
+          <p class="eyebrow">Fallback History</p>
+          <h2>Fallback 历史任务</h2>
+          <p class="muted">从整个模块页右侧查看运行中和已完成的 Replay / Fallback 任务。</p>
+        </div>
+        <button id="close-feedback-history-drawer" type="button" class="secondary-button">关闭</button>
+      </div>
+      <div class="feedback-history-drawer-shell">
+        <div id="feedback-history-task-list" class="stack-list feedback-history-task-list"></div>
+        <div id="feedback-history-task-detail" class="feedback-history-task-detail empty-state">选择一条历史任务查看详情。</div>
+      </div>
+    </aside>
+
     <dialog id="accepted-edit-dialog" class="files-dialog accepted-edit-dialog">
       <div class="files-dialog-head">
         <h3>编辑已采纳结果</h3>

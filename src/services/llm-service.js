@@ -695,14 +695,57 @@ function buildReplayModelInput(materialPack = {}) {
         {
           type: "input_text",
           text: [
-            "You generate structured atomic-skill repair proposals from human rejection feedback.",
-            "Return only JSON that matches the schema.",
-            "Each proposal item must change exactly one atomic skill item.",
-            "Prefer modify_skill_item, split_skill_item, or deprecate_skill_item when a suitable existing targetSkillCode exists.",
-            "Use add_skill_item only when there is no good existing skill target.",
-            "When action is add_skill_item, you MUST choose targetLayer from generic / docType / domain / module and targetProfileKey from the provided context.",
-            "Do not invent new kinds. kind must come from the allowedKindsByArea mapping provided in the material pack.",
-            "Do not output full markdown files. Do not propose freeform categories."
+            "你是技能维护工单生成助手，需要根据驳回记录、人工范例、生成结果和当次生效 skill 快照，输出可直接进入技能管理的结构化修改建议。",
+            "返回内容必须全部使用中文，并严格符合给定 JSON schema。",
+            "每个 items 条目只能对应一个 atomic skill 修改项。",
+            "请先判断建议应该沉淀到 generic / docType / domain / module 哪一层，再填写 targetLayer 和 targetProfileKey。",
+            "如果建议依赖具体模块名、需求编号、模块专属信号、枚举值、阈值或流程语义，则优先落到 module；不要错误上提到 docType。",
+            "如果已经命中合适的 targetSkillCode，就输出 conclusionType=modify_existing；只有在确实没有命中 skill 时才输出 conclusionType=create_new。",
+            "不要编造新的 kind，targetKind 必须来自 material pack 中 allowedKindsByArea 的允许值。",
+            "afterContent 必须是可复用的 atomic skill 正文，不要只是把驳回说明换一种语气重写。",
+            "如果当前案例只适合沉淀为模块规则，请把正文抽象成“某类需求在什么条件下不得补写什么内容”的规则，而不是“请把某条结果改成什么”。",
+            "beforeContent 应表示当前 skill 原文或当前能力边界；afterContent 应表示建议修改后的 atomic skill 正文。",
+            "whyCurrent 必须说明当前 skill 为什么没拦住问题；whyChange 必须说明修改后为什么能避免同类问题。",
+            "validatorSuggestions 只做只读建议，不进入自动应用链路。",
+            "不要输出整份 markdown 文件，只输出单条 atomic skill 级别的修改。"
+          ].join("\n")
+        }
+      ]
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: JSON.stringify(
+            {
+              ...materialPack,
+              layerDefinitions,
+              allowedKindsByArea
+            },
+            null,
+            2
+          )
+        }
+      ]
+    }
+  ];
+  return [
+    {
+      role: "system",
+      content: [
+        {
+          type: "input_text",
+          text: [
+            "你是技能维护工单生成助手，需要根据驳回记录、人工范例、生成结果和当次生效 skill 快照，输出可直接进入技能管理的结构化修改建议。",
+            "返回内容必须是中文，并严格符合给定 JSON schema。",
+            "每个 items 条目只能对应一个 atomic skill 修改项。",
+            "如果已有合适的 targetSkillCode，就输出 conclusionType=modify_existing；只有在确实没有命中 skill 时才输出 conclusionType=create_new。",
+            "不要编造新的 kind，targetKind 必须来自 material pack 中 allowedKindsByArea 的允许值。",
+            "不要输出泛泛结论，必须说明 fallbackReason、whyCurrent、whyChange。",
+            "beforeContent 应表示当前 skill 原文或当前能力边界；afterContent 应表示建议改后的原子技能正文。",
+            "validatorSuggestions 只做只读建议，不进入自动应用链路。",
+            "不要输出整份 markdown 文件，只输出单条 atomic skill 级别的修改。"
           ].join("\n")
         }
       ]
@@ -783,44 +826,347 @@ function mapReplayKindToTargetFile(kind = "") {
   return "domain-knowledge.json";
 }
 
-function inferReplayDefaultTarget(targetArea = "", materialPack = {}) {
+const CHARGING_SOC_MEMORY_BOUNDARY_SKILL_TEXT =
+  "对于充电管理模块中与充电截止SOC相关的记忆类需求，若人工范例仅描述“下电记忆、设置更新生效、下次下电继续记忆”这类行为，则不得补写无效值处理、默认值回退、范围兜底或重新插枪判断等控制/保护逻辑。此类逻辑应保留在截止SOC控制条目中，除非系统需求或人工范例中存在明确独立表述。";
+
+function getReplayModuleProfileKey(materialPack = {}) {
+  return normalizeReplaySlug(materialPack.moduleContext?.moduleSkillKey || materialPack.moduleContext?.moduleName || "");
+}
+
+function getReplayEvidenceRecords(item = {}, materialPack = {}) {
+  const evidenceIds = Array.isArray(item.evidenceRefs) ? item.evidenceRefs.map((entry) => String(entry || "").trim()) : [];
+  const snapshots = Array.isArray(materialPack.rejectionSnapshots) ? materialPack.rejectionSnapshots : [];
+  return snapshots.filter((entry) => evidenceIds.includes(String(entry.id || "").trim()));
+}
+
+function buildReplayContextText(item = {}, materialPack = {}) {
+  const evidenceRecords = getReplayEvidenceRecords(item, materialPack);
+  return [
+    materialPack.moduleContext?.moduleName,
+    materialPack.moduleContext?.moduleSkillKey,
+    item.title,
+    item.fallbackReason,
+    item.whyCurrent,
+    item.whyChange,
+    item.afterContent,
+    item.after,
+    item.newRuleDraft?.content,
+    ...evidenceRecords.flatMap((record) => [
+      record.requirementCode,
+      record.reasonCategory,
+      record.reasonText,
+      record.expectedNote,
+      record.outputSnapshot?.title,
+      record.outputSnapshot?.requirementText
+    ])
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function looksLikeChargingSocMemoryBoundaryCase(item = {}, materialPack = {}) {
+  const moduleText = `${materialPack.moduleContext?.moduleName || ""} ${materialPack.moduleContext?.moduleSkillKey || ""}`;
+  const contextText = buildReplayContextText(item, materialPack);
+  const moduleMatched = /(充电管理|charging_management)/i.test(moduleText);
+  const memoryMatched = /CheryVCU-12147|充电截止SOC|下电记忆|记忆类需求/.test(contextText);
+  const boundaryMatched = /无效值|默认值回退|范围兜底|重新插枪|50%-100%|112无效值/.test(contextText);
+  return moduleMatched && memoryMatched && boundaryMatched;
+}
+
+function inferReplayScopeDecision(targetArea = "", item = {}, materialPack = {}) {
   const documentType = normalizeReplaySlug(materialPack.moduleContext?.documentType || "software_requirement");
   const domain = normalizeReplaySlug(materialPack.moduleContext?.domain || "embedded_vcu");
-  const moduleSkillKey = normalizeReplaySlug(
-    materialPack.moduleContext?.moduleSkillKey || materialPack.moduleContext?.moduleName || ""
-  );
+  const moduleProfileKey = getReplayModuleProfileKey(materialPack);
+
+  if (looksLikeChargingSocMemoryBoundaryCase(item, materialPack)) {
+    return {
+      scopeDecision: "module",
+      scopeReason: "命中“充电管理 / 充电截止SOC / 记忆类需求边界”特征，属于模块特定规则，不应上提到文档类型层。",
+      scopeConfidence: 0.98,
+      targetLayer: "module",
+      targetProfileKey: moduleProfileKey || documentType,
+      targetKind: "validation_rule",
+      reuseJudgement: "module_specific",
+      recommendedSkillText: CHARGING_SOC_MEMORY_BOUNDARY_SKILL_TEXT,
+      ruleIntent: "约束充电管理模块中充电截止SOC记忆类需求的表达边界，避免混入控制/保护逻辑。"
+    };
+  }
+
   if (targetArea === "examples") {
     return {
-      targetLayer: moduleSkillKey ? "module" : "docType",
-      targetProfileKey: moduleSkillKey || documentType,
-      kind: "bad_example"
+      scopeDecision: moduleProfileKey ? "module" : "docType",
+      scopeReason: moduleProfileKey ? "当前建议依赖模块内样例表达，优先沉淀到模块层。" : "当前建议主要针对文档样例表达，沉淀到文档类型层。",
+      scopeConfidence: moduleProfileKey ? 0.74 : 0.68,
+      targetLayer: moduleProfileKey ? "module" : "docType",
+      targetProfileKey: moduleProfileKey || documentType,
+      targetKind: "bad_example",
+      reuseJudgement: moduleProfileKey ? "module_specific" : "doc_type_general",
+      recommendedSkillText: "",
+      ruleIntent: "补充反例或样例约束。"
     };
   }
+
   if (targetArea === "domain_knowledge") {
     return {
+      scopeDecision: "domain",
+      scopeReason: "当前建议更接近领域知识或跨模块约束，优先沉淀到领域层。",
+      scopeConfidence: 0.72,
       targetLayer: "domain",
       targetProfileKey: domain || "embedded_vcu",
-      kind: "rule_hint"
+      targetKind: "rule_hint",
+      reuseJudgement: "domain_general",
+      recommendedSkillText: "",
+      ruleIntent: "补充跨模块领域规则。"
     };
   }
+
   if (targetArea === "extraction") {
     return {
+      scopeDecision: "generic",
+      scopeReason: "当前建议更像通用抽取策略，适合沉淀到 generic 层。",
+      scopeConfidence: 0.7,
       targetLayer: "generic",
       targetProfileKey: "generic",
-      kind: "extraction_rule"
+      targetKind: "extraction_rule",
+      reuseJudgement: "generic_general",
+      recommendedSkillText: "",
+      ruleIntent: "补充通用抽取规则。"
     };
   }
+
   if (targetArea === "writing") {
     return {
+      scopeDecision: "docType",
+      scopeReason: "当前建议主要约束该类文档的写作方式，优先沉淀到文档类型层。",
+      scopeConfidence: 0.68,
       targetLayer: "docType",
       targetProfileKey: documentType,
-      kind: "writing_rule"
+      targetKind: "writing_rule",
+      reuseJudgement: "doc_type_general",
+      recommendedSkillText: "",
+      ruleIntent: "补充文档类型写作规则。"
     };
   }
+
   return {
+    scopeDecision: "docType",
+    scopeReason: "当前未识别出明确模块或领域特征，暂按文档类型层处理。",
+    scopeConfidence: 0.52,
     targetLayer: "docType",
     targetProfileKey: documentType,
-    kind: "validation_rule"
+    targetKind: "validation_rule",
+    reuseJudgement: "doc_type_general",
+    recommendedSkillText: "",
+    ruleIntent: "补充文档类型校验规则。"
+  };
+}
+
+function assessReplayAbstraction(item = {}, materialPack = {}) {
+  const evidenceRecords = getReplayEvidenceRecords(item, materialPack);
+  const content = String(item.afterContent || item.after || item.newRuleDraft?.content || "").trim();
+  const combined = `${item.title || ""}\n${content}\n${item.fallbackReason || ""}`;
+  const requirementCodeLeak = evidenceRecords.some((record) => record.requirementCode && combined.includes(record.requirementCode));
+  const obviousParaphraseLead = /^建议补充以下约束[:：]?/.test(content) || /^请/.test(content);
+  const isParaphraseOfRejection = requirementCodeLeak || obviousParaphraseLead;
+  const abstractionScore = item.recommendedSkillText
+    ? 0.96
+    : isParaphraseOfRejection
+      ? 0.38
+      : content.length >= 40
+        ? 0.78
+        : 0.6;
+  return {
+    isParaphraseOfRejection,
+    abstractionScore,
+    reviewReadiness: abstractionScore >= 0.75 ? "ready_to_apply" : "needs_human_refine"
+  };
+}
+
+function applyReplayQualityGuards(item = {}, targetArea = "", materialPack = {}) {
+  const scope = inferReplayScopeDecision(targetArea, item, materialPack);
+  const nextItem = { ...item };
+
+  nextItem.scopeDecision = scope.scopeDecision;
+  nextItem.scopeReason = scope.scopeReason;
+  nextItem.scopeConfidence = scope.scopeConfidence;
+  nextItem.reuseJudgement = scope.reuseJudgement;
+  nextItem.ruleIntent = scope.ruleIntent;
+  nextItem.recommendedSkillText = scope.recommendedSkillText || "";
+
+  if (!nextItem.targetSkillCode) {
+    nextItem.targetLayer = scope.targetLayer || nextItem.targetLayer;
+    nextItem.targetProfileKey = scope.targetProfileKey || nextItem.targetProfileKey;
+    nextItem.targetKind = scope.targetKind || nextItem.targetKind;
+    nextItem.kind = scope.targetKind || nextItem.kind;
+    nextItem.targetFile = mapReplayKindToTargetFile(nextItem.targetKind || nextItem.kind || mapReplayAreaToKind(targetArea));
+  }
+
+  if (scope.recommendedSkillText) {
+    nextItem.title = "充电截止SOC记忆类需求边界约束";
+    nextItem.afterContent = scope.recommendedSkillText;
+    nextItem.after = scope.recommendedSkillText;
+    nextItem.beforeContent = nextItem.beforeContent || "";
+    nextItem.before = nextItem.before || nextItem.beforeContent || "";
+    nextItem.whyCurrent =
+      nextItem.whyCurrent || "当前规则未能限制记忆类需求与截止SOC控制/保护逻辑之间的边界，导致模型把模块内其他控制逻辑混入记忆条目。";
+    nextItem.whyChange =
+      nextItem.whyChange || "补充模块级边界约束后，可将记忆类需求与控制/保护类需求拆开，保持与人工范例一致的条目粒度。";
+    nextItem.targetInsertionHint =
+      nextItem.targetInsertionHint || "插入到充电管理模块 validation_rule 中与人工范例对齐、边界控制相关的规则附近。";
+    nextItem.newRuleDraft = {
+      title: nextItem.title,
+      content: scope.recommendedSkillText,
+      structuredPayload: null,
+      rules: []
+    };
+  }
+
+  const abstraction = assessReplayAbstraction(nextItem, materialPack);
+  nextItem.isParaphraseOfRejection = abstraction.isParaphraseOfRejection;
+  nextItem.abstractionScore = abstraction.abstractionScore;
+  nextItem.reviewReadiness = abstraction.reviewReadiness;
+  return nextItem;
+}
+
+function inferReplayScopeDecisionV2(targetArea = "", item = {}, materialPack = {}) {
+  const documentType = normalizeReplaySlug(materialPack.moduleContext?.documentType || "software_requirement");
+  const domain = normalizeReplaySlug(materialPack.moduleContext?.domain || "embedded_vcu");
+  const moduleProfileKey = getReplayModuleProfileKey(materialPack);
+  const declaredLayer = isValidReplayLayer(item.targetLayer || "") ? String(item.targetLayer || "").trim() : "";
+  const declaredProfileKey = normalizeReplaySlug(item.targetProfileKey || "");
+  const declaredKind = String(item.targetKind || item.kind || mapReplayAreaToKind(targetArea)).trim();
+
+  if (declaredLayer) {
+    return {
+      scopeDecision: declaredLayer,
+      scopeReason: item.targetSkillCode
+        ? "当前建议已命中目标 skill，沿用该 skill 的层级与 profile。"
+        : "当前建议已显式给出沉淀层级，沿用模型输出的 targetLayer / targetProfileKey。",
+      scopeConfidence: item.targetSkillCode ? 0.9 : 0.78,
+      targetLayer: declaredLayer,
+      targetProfileKey: declaredProfileKey || (declaredLayer === "module" ? moduleProfileKey : documentType) || "generic",
+      targetKind: declaredKind,
+      reuseJudgement: declaredLayer === "module"
+        ? "module_specific"
+        : declaredLayer === "domain"
+          ? "domain_general"
+          : declaredLayer === "generic"
+            ? "generic_general"
+            : "doc_type_general",
+      ruleIntent: "根据模型输出的层级信息沉淀对应规则。"
+    };
+  }
+
+  if (targetArea === "examples") {
+    return {
+      scopeDecision: moduleProfileKey ? "module" : "docType",
+      scopeReason: moduleProfileKey ? "当前建议依赖模块内样例表达，优先沉淀到模块层。" : "当前建议主要针对文档样例表达，沉淀到文档类型层。",
+      scopeConfidence: moduleProfileKey ? 0.74 : 0.68,
+      targetLayer: moduleProfileKey ? "module" : "docType",
+      targetProfileKey: moduleProfileKey || documentType,
+      targetKind: "bad_example",
+      reuseJudgement: moduleProfileKey ? "module_specific" : "doc_type_general",
+      ruleIntent: "补充反例或样例约束。"
+    };
+  }
+
+  if (targetArea === "domain_knowledge") {
+    return {
+      scopeDecision: "domain",
+      scopeReason: "当前建议更接近领域知识或跨模块约束，优先沉淀到领域层。",
+      scopeConfidence: 0.72,
+      targetLayer: "domain",
+      targetProfileKey: domain || "embedded_vcu",
+      targetKind: "rule_hint",
+      reuseJudgement: "domain_general",
+      ruleIntent: "补充跨模块领域规则。"
+    };
+  }
+
+  if (targetArea === "extraction") {
+    return {
+      scopeDecision: "generic",
+      scopeReason: "当前建议更像通用抽取策略，适合沉淀到 generic 层。",
+      scopeConfidence: 0.7,
+      targetLayer: "generic",
+      targetProfileKey: "generic",
+      targetKind: "extraction_rule",
+      reuseJudgement: "generic_general",
+      ruleIntent: "补充通用抽取规则。"
+    };
+  }
+
+  if (targetArea === "writing") {
+    return {
+      scopeDecision: "docType",
+      scopeReason: "当前建议主要约束该类文档的写作方式，优先沉淀到文档类型层。",
+      scopeConfidence: 0.68,
+      targetLayer: "docType",
+      targetProfileKey: documentType,
+      targetKind: "writing_rule",
+      reuseJudgement: "doc_type_general",
+      ruleIntent: "补充文档类型写作规则。"
+    };
+  }
+
+  return {
+    scopeDecision: "docType",
+    scopeReason: "当前未识别出明确模块或领域特征，暂按文档类型层处理。",
+    scopeConfidence: 0.52,
+    targetLayer: "docType",
+    targetProfileKey: documentType,
+    targetKind: "validation_rule",
+    reuseJudgement: "doc_type_general",
+    ruleIntent: "补充文档类型校验规则。"
+  };
+}
+
+function assessReplayAbstractionV2(item = {}, materialPack = {}) {
+  const evidenceRecords = getReplayEvidenceRecords(item, materialPack);
+  const content = String(item.afterContent || item.after || item.newRuleDraft?.content || "").trim();
+  const combined = `${item.title || ""}\n${content}\n${item.fallbackReason || ""}`;
+  const requirementCodeLeak = evidenceRecords.some((record) => record.requirementCode && combined.includes(record.requirementCode));
+  const obviousParaphraseLead = /^建议补充以下约束[:：]?/.test(content) || /^请/.test(content);
+  const isParaphraseOfRejection = requirementCodeLeak || obviousParaphraseLead;
+  const abstractionScore = isParaphraseOfRejection ? 0.38 : content.length >= 40 ? 0.78 : 0.6;
+  return {
+    isParaphraseOfRejection,
+    abstractionScore,
+    reviewReadiness: abstractionScore >= 0.75 ? "ready_to_apply" : "needs_human_refine"
+  };
+}
+
+function applyReplayQualityGuardsV2(item = {}, targetArea = "", materialPack = {}) {
+  const scope = inferReplayScopeDecisionV2(targetArea, item, materialPack);
+  const nextItem = { ...item };
+
+  nextItem.scopeDecision = scope.scopeDecision;
+  nextItem.scopeReason = scope.scopeReason;
+  nextItem.scopeConfidence = scope.scopeConfidence;
+  nextItem.reuseJudgement = scope.reuseJudgement;
+  nextItem.ruleIntent = scope.ruleIntent;
+
+  if (!nextItem.targetSkillCode) {
+    nextItem.targetLayer = scope.targetLayer || nextItem.targetLayer;
+    nextItem.targetProfileKey = scope.targetProfileKey || nextItem.targetProfileKey;
+    nextItem.targetKind = scope.targetKind || nextItem.targetKind;
+    nextItem.kind = scope.targetKind || nextItem.kind;
+    nextItem.targetFile = mapReplayKindToTargetFile(nextItem.targetKind || nextItem.kind || mapReplayAreaToKind(targetArea));
+  }
+
+  const abstraction = assessReplayAbstractionV2(nextItem, materialPack);
+  nextItem.isParaphraseOfRejection = abstraction.isParaphraseOfRejection;
+  nextItem.abstractionScore = abstraction.abstractionScore;
+  nextItem.reviewReadiness = abstraction.reviewReadiness;
+  return nextItem;
+}
+
+function inferReplayDefaultTarget(targetArea = "", materialPack = {}) {
+  const scope = inferReplayScopeDecisionV2(targetArea, {}, materialPack);
+  return {
+    targetLayer: scope.targetLayer,
+    targetProfileKey: scope.targetProfileKey,
+    kind: scope.targetKind
   };
 }
 
@@ -848,35 +1194,49 @@ function buildFallbackReplayProposal(materialPack = {}) {
     const target = chooseReplayCandidate(targetArea, materialPack);
     const patchSentence =
       areaRecords.map((item) => item.expectedNote || item.reasonText).filter(Boolean).slice(0, 3).join("; ") ||
-      "Add clearer, testable and traceable constraints.";
+      "补充更明确、可验证、可追溯的约束。";
 
     if (target?.skillCode) {
       items.push({
+        conclusionType: "modify_existing",
         action: "modify_skill_item",
         targetSkillCode: target.skillCode,
         targetLayer: target.layer,
         targetProfileKey: target.profileKey,
+        targetKind: target.kind,
         kind: target.kind,
         targetFile: target.targetFile || mapReplayKindToTargetFile(target.kind),
-        title: `${target.title} (supplement)`,
+        title: `${target.title}（补充修订）`,
+        fallbackReason: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
+        whyCurrent: "当前命中的 atomic skill 没有把这类驳回问题约束成明确、可执行的写法边界。",
+        whyChange: "补上更具体的边界规则后，可以避免同类 fallback 再次出现。",
+        beforeContent: target.content || target.contentSummary || "",
+        afterContent: `${String(target.content || target.contentSummary || "").trim()}\n补充约束：${patchSentence}`,
         before: target.content || target.contentSummary || "",
-        after: `${String(target.content || target.contentSummary || "").trim()}\nAdd constraint: ${patchSentence}`,
+        after: `${String(target.content || target.contentSummary || "").trim()}\n补充约束：${patchSentence}`,
         rationale: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
         evidenceRefs: areaRecords.map((item) => item.id),
         newRuleDraft: null
       });
     } else {
-      const title = `${areaRecords[0]?.reasonCategory || "feedback"} supplemental rule`;
-      const content = `The system should avoid the following issue: ${patchSentence}`;
+      const title = `${areaRecords[0]?.reasonCategory || "反馈"}补充规则`;
+      const content = `建议补充以下约束：${patchSentence}`;
       const inferred = inferReplayDefaultTarget(targetArea, materialPack);
       items.push({
+        conclusionType: "create_new",
         action: "add_skill_item",
         targetSkillCode: "",
         targetLayer: inferred.targetLayer,
         targetProfileKey: inferred.targetProfileKey,
+        targetKind: inferred.kind,
         kind: inferred.kind,
         targetFile: mapReplayKindToTargetFile(inferred.kind),
         title,
+        fallbackReason: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
+        whyCurrent: "当前 skill 快照中没有找到足以覆盖该问题的现成 atomic skill。",
+        whyChange: "新增对应 atomic skill 后，可把这类问题沉淀到明确的模块/文档规则中。",
+        beforeContent: "",
+        afterContent: content,
         before: "",
         after: content,
         rationale: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
@@ -888,11 +1248,13 @@ function buildFallbackReplayProposal(materialPack = {}) {
 
   return normalizeReplayProposalPayload(
     {
-      summary: `Generated ${items.length} fallback replay proposals.`,
+      summary: `已生成 ${items.length} 条回投提议。`,
+      decisionSummary: `命中已有 atomic skill ${items.filter((item) => item.conclusionType === "modify_existing").length} 条，建议新增 atomic skill ${items.filter((item) => item.conclusionType === "create_new").length} 条。`,
       rootCauses: Array.from(
         new Set((materialPack.rejectionSnapshots || []).map((item) => item.reasonCategory).filter(Boolean))
-      ).map((item) => `Multiple rejections point to ${item} issues.`),
-      items
+      ).map((item) => `多条驳回记录共同指向“${item}”相关问题。`),
+      items,
+      validatorSuggestions: []
     },
     materialPack
   );
@@ -903,9 +1265,19 @@ function normalizeReplayProposalPayload(payload = {}, materialPack = {}) {
   const validIds = new Set(snapshots.map((item) => item.id));
   const targetAreas = materialPack.targetAreas || [];
   return {
-    summary: String(payload.summary || `Generated replay proposal from ${snapshots.length} rejection records.`).trim(),
+    summary: String(payload.summary || `已基于 ${snapshots.length} 条驳回记录生成回投提议。`).trim(),
+    decisionSummary: String(payload.decisionSummary || "").trim(),
     rootCauses: Array.isArray(payload.rootCauses)
       ? payload.rootCauses.map((item) => String(item || "").trim()).filter(Boolean)
+      : [],
+    validatorSuggestions: Array.isArray(payload.validatorSuggestions)
+      ? payload.validatorSuggestions
+          .map((item) => ({
+            title: String(item?.title || "").trim(),
+            ruleText: String(item?.ruleText || "").trim(),
+            why: String(item?.why || "").trim()
+          }))
+          .filter((item) => item.title || item.ruleText || item.why)
       : [],
     items: Array.isArray(payload.items)
       ? payload.items.map((item, index) => normalizeReplayProposalItem(item, index, validIds, targetAreas, materialPack)).filter(Boolean)
@@ -914,6 +1286,7 @@ function normalizeReplayProposalPayload(payload = {}, materialPack = {}) {
 }
 
 function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], materialPack = {}) {
+  const rawConclusionType = String(item?.conclusionType || "").trim();
   const rawAction = String(item?.action || "").trim();
   const action = {
     add_rule: "add_skill_item",
@@ -921,24 +1294,28 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], ma
     modify_rule: "modify_skill_item",
     split_rule: "split_skill_item",
     deprecate_rule: "deprecate_skill_item"
-  }[rawAction] || rawAction;
+  }[rawAction] || rawAction || (rawConclusionType === "create_new" ? "add_skill_item" : "modify_skill_item");
   if (!["add_skill_item", "modify_skill_item", "split_skill_item", "deprecate_skill_item"].includes(action)) {
     return null;
   }
 
-  const inferredTarget = inferReplayDefaultTarget(targetAreas[0] || "validation", materialPack);
+  const targetArea = targetAreas[0] || "validation";
+  const inferredTarget = inferReplayDefaultTarget(targetArea, materialPack);
   const allowedKinds = collectAllowedKinds(targetAreas);
-  const kind = String(item.kind || mapReplayAreaToKind(targetAreas[0] || "validation")).trim();
+  const kind = String(item.targetKind || item.kind || mapReplayAreaToKind(targetAreas[0] || "validation")).trim();
   const targetLayer = String(item.targetLayer || inferredTarget.targetLayer).trim();
   const targetProfileKey = normalizeReplaySlug(item.targetProfileKey || inferredTarget.targetProfileKey || "generic");
   const targetFile = String(item.targetFile || mapReplayKindToTargetFile(kind)).trim();
   const evidenceRefs = Array.isArray(item.evidenceRefs)
     ? item.evidenceRefs.map((ref) => String(ref || "").trim()).filter((ref) => validIds.has(ref))
     : [];
+  const afterContent = String(item.afterContent || item.after || item.newRuleDraft?.content || "").trim();
+  const beforeContent = String(item.beforeContent || item.before || "").trim();
+  const title = String(item.title || item.newRuleDraft?.title || `回投提议 ${index + 1}`).trim();
   const newRuleDraft = item.newRuleDraft && typeof item.newRuleDraft === "object"
     ? {
-        title: String(item.newRuleDraft.title || item.title || `Replay Proposal ${index + 1}`).trim(),
-        content: String(item.newRuleDraft.content || item.after || "").trim(),
+        title: String(item.newRuleDraft.title || title || `回投提议 ${index + 1}`).trim(),
+        content: String(item.newRuleDraft.content || afterContent || "").trim(),
         structuredPayload:
           item.newRuleDraft.structuredPayload && typeof item.newRuleDraft.structuredPayload === "object"
             ? item.newRuleDraft.structuredPayload
@@ -963,7 +1340,7 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], ma
   if (action === "modify_skill_item" && !targetSkillCode) {
     return null;
   }
-  if (action === "add_skill_item" && !(newRuleDraft?.content || String(item.after || "").trim() || newRuleDraft?.structuredPayload)) {
+  if (action === "add_skill_item" && !(newRuleDraft?.content || afterContent || newRuleDraft?.structuredPayload)) {
     return null;
   }
   if (!isValidReplayLayer(targetLayer)) {
@@ -976,20 +1353,31 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], ma
     return null;
   }
 
-  return {
+  const conclusionType =
+    rawConclusionType === "create_new" || action === "add_skill_item" ? "create_new" : "modify_existing";
+  const normalizedItem = {
+    conclusionType,
     action,
     targetSkillCode,
     targetLayer,
     targetProfileKey,
+    targetKind: kind,
     kind,
     targetFile,
-    title: String(item.title || newRuleDraft?.title || `Replay Proposal ${index + 1}`).trim(),
-    before: String(item.before || "").trim(),
-    after: String(item.after || newRuleDraft?.content || "").trim(),
+    title,
+    fallbackReason: String(item.fallbackReason || item.rationale || "").trim(),
+    whyCurrent: String(item.whyCurrent || "").trim(),
+    whyChange: String(item.whyChange || "").trim(),
+    targetInsertionHint: String(item.targetInsertionHint || "").trim(),
+    beforeContent,
+    afterContent,
+    before: beforeContent,
+    after: afterContent || String(newRuleDraft?.content || "").trim(),
     rationale: String(item.rationale || "").trim(),
     evidenceRefs,
     newRuleDraft
   };
+  return applyReplayQualityGuardsV2(normalizedItem, targetArea, materialPack);
 }
 
 function normalizeResultItem(item, index, documentType = "software_requirement", template = { requirementIdPrefix: "SWR" }) {
@@ -1040,19 +1428,41 @@ const replayProposalSchema = {
   additionalProperties: false,
   properties: {
     summary: { type: "string" },
+    decisionSummary: { type: "string" },
     rootCauses: { type: "array", items: { type: "string" } },
+    validatorSuggestions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          title: { type: "string" },
+          ruleText: { type: "string" },
+          why: { type: "string" }
+        },
+        required: ["title", "ruleText", "why"]
+      }
+    },
     items: {
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
         properties: {
+          conclusionType: { type: "string" },
           action: { type: "string" },
           targetSkillCode: { type: "string" },
           targetLayer: { type: "string" },
           targetProfileKey: { type: "string" },
+          targetKind: { type: "string" },
+          targetInsertionHint: { type: "string" },
           kind: { type: "string" },
           title: { type: "string" },
+          fallbackReason: { type: "string" },
+          whyCurrent: { type: "string" },
+          whyChange: { type: "string" },
+          beforeContent: { type: "string" },
+          afterContent: { type: "string" },
           before: { type: "string" },
           after: { type: "string" },
           rationale: { type: "string" },
@@ -1089,11 +1499,26 @@ const replayProposalSchema = {
             ]
           }
         },
-        required: ["action", "targetSkillCode", "targetLayer", "targetProfileKey", "kind", "title", "before", "after", "rationale", "evidenceRefs", "newRuleDraft"]
+        required: [
+          "conclusionType",
+          "targetSkillCode",
+          "targetLayer",
+          "targetProfileKey",
+          "targetKind",
+          "targetInsertionHint",
+          "title",
+          "fallbackReason",
+          "whyCurrent",
+          "whyChange",
+          "beforeContent",
+          "afterContent",
+          "evidenceRefs",
+          "newRuleDraft"
+        ]
       }
     }
   },
-  required: ["summary", "rootCauses", "items"]
+  required: ["summary", "decisionSummary", "rootCauses", "validatorSuggestions", "items"]
 };
 
 const softwareRequirementResponseSchema = {
