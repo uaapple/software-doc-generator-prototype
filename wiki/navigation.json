@@ -1,0 +1,157 @@
+{
+  "site": {
+    "title": "软件文档平台用户 Wiki",
+    "summary": "给第一次接触系统的使用者准备的操作与原理说明，帮助你理解页面、流程和结果含义。",
+    "homePageSlug": "home",
+    "featuredPageSlugs": [
+      "quick-start",
+      "project-module-workspace",
+      "requirement-generation",
+      "skill-management-fallback"
+    ]
+  },
+  "groups": [
+    {
+      "title": "开始使用",
+      "pages": [
+        {
+          "slug": "home",
+          "title": "首页",
+          "summary": "先理解平台能做什么，再决定从哪条阅读路径开始。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "quick-start",
+            "implementation-principles"
+          ]
+        },
+        {
+          "slug": "quick-start",
+          "title": "快速开始",
+          "summary": "认识工程、模块、资产、生成任务和已采纳结果这些核心概念。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "project-module-workspace",
+            "faq-current-limits"
+          ]
+        },
+        {
+          "slug": "project-module-workspace",
+          "title": "工程与模块工作区",
+          "summary": "说明如何创建工程、维护功能模块，以及如何理解模块资产和文档空间。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "requirement-generation",
+            "detail-design-generation",
+            "hil-test-case-generation"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "核心流程",
+      "pages": [
+        {
+          "slug": "requirement-generation",
+          "title": "软件需求生成",
+          "summary": "介绍如何为当前模块发起软件需求生成，并理解结果页中的关键字段。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "project-module-workspace",
+            "implementation-principles"
+          ]
+        },
+        {
+          "slug": "detail-design-generation",
+          "title": "软件详细设计生成",
+          "summary": "介绍如何使用同一套模块资产发起详细设计生成任务。",
+          "audience": "系统使用者",
+          "status": "beta",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "project-module-workspace",
+            "implementation-principles"
+          ]
+        },
+        {
+          "slug": "hil-test-case-generation",
+          "title": "HIL 测试用例生成",
+          "summary": "说明 HIL 用例生成页面的准备方式、结果期望和与前两类文档的关系。",
+          "audience": "系统使用者",
+          "status": "beta",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "project-module-workspace",
+            "implementation-principles"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "高级能力",
+      "pages": [
+        {
+          "slug": "skill-management-fallback",
+          "title": "技能管理与 Fallback",
+          "summary": "解释 Active Skill、技能工单和 fallback 修复的定位与常见操作。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "feedback-pool-replay",
+            "implementation-principles"
+          ]
+        },
+        {
+          "slug": "feedback-pool-replay",
+          "title": "反馈池与 Replay",
+          "summary": "介绍驳回记录、回投任务、Fallback 历史任务和后续修正链路。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "skill-management-fallback",
+            "implementation-principles"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "了解系统",
+      "pages": [
+        {
+          "slug": "implementation-principles",
+          "title": "实现原理",
+          "summary": "浅讲文件接入、抽取、编排、校验、审核与回放之间的关系。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "requirement-generation",
+            "skill-management-fallback",
+            "feedback-pool-replay"
+          ]
+        },
+        {
+          "slug": "faq-current-limits",
+          "title": "FAQ 与当前限制",
+          "summary": "统一说明端口、输入要求、当前边界和遇到问题时的排查方向。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-17",
+          "relatedPages": [
+            "quick-start",
+            "implementation-principles"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -27,10 +27,12 @@
 ## 代码入口
 
 - 服务入口: `src/server.js`
+- Wiki 服务入口: `src/wiki-server.js`
 - 应用与 API: `src/app.js`
 - 流水线编排: `src/services/pipeline-service.js`
 - LLM 编排: `src/services/llm-service.js`
 - 前端页面: `public/index.html`
+- Wiki 内容源: `wiki/navigation.json` 与 `wiki/content/*.md`
 
 ## 运行方式
 
@@ -39,6 +41,24 @@
 3. 如需覆盖默认配置，可在仓库根目录创建 `.env`
 4. 启动服务: `npm start`
 5. 打开 `http://localhost:3000`
+
+## 用户 Wiki
+
+- 独立用户 Wiki 默认通过 `3001` 端口访问
+- 启动命令: `npm run wiki:start`
+- 开发时可执行: `npm run wiki:dev`
+- 内容源位于 `wiki/` 目录，页面正文使用 Markdown，导航顺序由 `wiki/navigation.json` 控制
+- 开发期检查命令: `npm run check:wiki`
+
+如需一键启动 Wiki，可执行：
+
+- `./start-wiki.sh`
+- `./restart-wiki.sh`
+- 停止时执行 `./stop-wiki.sh`
+- macOS 下也可以直接双击：
+- `启动Wiki.command`
+- `终止Wiki.command`
+- `重启Wiki.command`
 
 ## 一键启动
 
@@ -59,6 +79,7 @@
 - 仓库会先加载 `.env.defaults`，再加载 `.env`
 - 优先级: 系统环境变量 > `.env` > `.env.defaults`
 - `PORT`: 服务端口，默认 `3000`
+- `WIKI_PORT`: Wiki 服务端口，默认 `3001`
 - `OPENAI_API_KEY`: 大模型 API Key
 - `OPENAI_MODEL`: 模型名，默认 `gpt-4.1-mini`
 - `OPENAI_BASE_URL`: 可选，自定义兼容 API 地址

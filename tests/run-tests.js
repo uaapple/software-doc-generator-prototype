@@ -130,6 +130,184 @@ async function seedFixtureFiles(tempDir) {
   await fs.writeFile(path.join(tempDir, "templates", "hil-test-case-template.json"), JSON.stringify({ name: "hil-test-case-template", language: "zh-CN", requirementIdPrefix: "HIL", sections: [{ title: "HIL ????", type: "functional", maxItems: 3, verificationHint: "????????????????????" }] }, null, 2), "utf8");
 }
 
+async function seedWikiFixture(rootDir, overrides = {}) {
+  const wikiDir = path.join(rootDir, "wiki");
+  const contentDir = path.join(wikiDir, "content");
+  const assetsDir = path.join(wikiDir, "assets");
+  await fs.mkdir(contentDir, { recursive: true });
+  await fs.mkdir(assetsDir, { recursive: true });
+
+  const navigation = {
+    site: {
+      title: "软件文档平台 Wiki",
+      summary: "帮助第一次接触系统的使用者快速理解能力、流程和常见问题。",
+      homePageSlug: "home",
+      featuredPageSlugs: ["quick-start", "requirement-generation", "skill-management-fallback"]
+    },
+    groups: [
+      {
+        title: "开始使用",
+        pages: [
+          {
+            slug: "home",
+            title: "首页",
+            summary: "认识这套系统的能力与推荐阅读路径。",
+            audience: "系统使用者",
+            status: "stable",
+            lastReviewed: "2026-04-17",
+            relatedPages: ["quick-start", "implementation-principles"]
+          },
+          {
+            slug: "quick-start",
+            title: "快速开始",
+            summary: "先理解工程、模块、资产和生成任务，再开始第一次操作。",
+            audience: "系统使用者",
+            status: "stable",
+            lastReviewed: "2026-04-17",
+            relatedPages: ["requirement-generation", "faq"]
+          }
+        ]
+      },
+      {
+        title: "核心流程",
+        pages: [
+          {
+            slug: "requirement-generation",
+            title: "软件需求生成",
+            summary: "说明如何准备模块资产并发起软件需求生成。",
+            audience: "系统使用者",
+            status: "stable",
+            lastReviewed: "2026-04-17",
+            relatedPages: ["quick-start", "implementation-principles"]
+          }
+        ]
+      },
+      {
+        title: "高级能力",
+        pages: [
+          {
+            slug: "skill-management-fallback",
+            title: "技能管理与 Fallback",
+            summary: "解释技能管理、工单与 fallback 修复的作用和处理路径。",
+            audience: "系统使用者",
+            status: "stable",
+            lastReviewed: "2026-04-17",
+            relatedPages: ["implementation-principles", "faq"]
+          }
+        ]
+      },
+      {
+        title: "了解系统",
+        pages: [
+          {
+            slug: "implementation-principles",
+            title: "实现原理",
+            summary: "浅讲输入、抽取、编排、校验和审核回写的关系。",
+            audience: "系统使用者",
+            status: "stable",
+            lastReviewed: "2026-04-17",
+            relatedPages: ["requirement-generation", "skill-management-fallback"]
+          },
+          {
+            slug: "faq",
+            title: "FAQ 与当前限制",
+            summary: "统一收口端口、输入约束、失败排查和当前边界。",
+            audience: "系统使用者",
+            status: "stable",
+            lastReviewed: "2026-04-17",
+            relatedPages: ["quick-start", "requirement-generation"]
+          }
+        ]
+      }
+    ]
+  };
+
+  if (overrides.navigation) {
+    Object.assign(navigation, overrides.navigation);
+  }
+
+  const pages = {
+    "home.md": [
+      "# 软件文档平台 Wiki",
+      "",
+      "## 你可以在这里获得什么",
+      "",
+      "- 快速理解系统能做什么",
+      "- 找到第一次上手的推荐路径",
+      "- 在遇到问题时知道去哪里看",
+      "",
+      "## 推荐阅读路径",
+      "",
+      "先看 [快速开始](/pages/quick-start)，再进入 [软件需求生成](/pages/requirement-generation)。"
+    ].join("\n"),
+    "quick-start.md": [
+      "# 快速开始",
+      "",
+      "## 适用场景",
+      "",
+      "适合第一次使用系统、还不清楚工程和模块关系的同学。",
+      "",
+      "## 操作步骤",
+      "",
+      "1. 创建工程。",
+      "2. 在工程中创建功能模块。",
+      "3. 为模块上传系统需求、模型资料和代码。",
+      "4. 选择要发起的生成类型。"
+    ].join("\n"),
+    "requirement-generation.md": [
+      "# 软件需求生成",
+      "",
+      "## 这页讲什么",
+      "",
+      "介绍如何为当前模块准备资产并发起软件需求生成。",
+      "",
+      "## 背后原理",
+      "",
+      "系统会先抽取输入证据，再由后端编排层组织输出，并补充追溯与校验结果。"
+    ].join("\n"),
+    "skill-management-fallback.md": [
+      "# 技能管理与 Fallback",
+      "",
+      "## 为什么会看到 fallback",
+      "",
+      "当现有技能无法稳定覆盖某类写法时，系统会把问题沉淀为可审阅的工单。",
+      "",
+      "## 处理后看哪里",
+      "",
+      "可以回到生成结果、工单详情和相关技能条目继续确认变化。"
+    ].join("\n"),
+    "implementation-principles.md": [
+      "# 实现原理",
+      "",
+      "## 总体链路",
+      "",
+      "文件接入、信息抽取、LLM 编排、规则校验和人工审核共同组成主要处理流程。"
+    ].join("\n"),
+    "faq.md": [
+      "# FAQ 与当前限制",
+      "",
+      "## 端口说明",
+      "",
+      "- 业务系统通过 `3000` 访问。",
+      "- 独立 wiki 通过 `3001` 访问。",
+      "",
+      "## 当前限制",
+      "",
+      "- 第一版不提供全文搜索。",
+      "- 第一版不提供站内编辑。"
+    ].join("\n")
+  };
+
+  if (overrides.pages) {
+    Object.assign(pages, overrides.pages);
+  }
+
+  await fs.writeFile(path.join(wikiDir, "navigation.json"), JSON.stringify(navigation, null, 2), "utf8");
+  for (const [fileName, content] of Object.entries(pages)) {
+    await fs.writeFile(path.join(contentDir, fileName), content, "utf8");
+  }
+}
+
 const tests = [
   {
     name: "C extractor finds macros, functions, conditions, and assignments",
@@ -1584,6 +1762,118 @@ const tests = [
         assert.equal(created.content, "当前技能库参考的标准是 ISO 26262。");
         assert.equal(created.structuredPayload.key, "standard");
         assert.equal(created.structuredPayload.value, "ISO 26262");
+      });
+    }
+  },
+  {
+    name: "Wiki site loads navigation metadata and markdown pages for user-facing docs",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        await seedWikiFixture(tempDir);
+        const { loadWikiSite } = await import("../src/wiki/site-service.js");
+
+        const site = await loadWikiSite();
+
+        assert.equal(site.site.title, "软件文档平台 Wiki");
+        assert.equal(site.site.homePage.slug, "home");
+        assert.deepEqual(
+          site.site.featuredPages.map((page) => page.slug),
+          ["quick-start", "requirement-generation", "skill-management-fallback"]
+        );
+        assert.equal(site.pagesBySlug.get("faq").relatedPages[0].slug, "quick-start");
+        assert.ok(site.pagesBySlug.get("quick-start").html.includes("<ol>"));
+      });
+    }
+  },
+  {
+    name: "Wiki service has dedicated double-click start stop restart command scripts",
+    run: async () => {
+      const rootFiles = [
+        "启动Wiki.command",
+        "终止Wiki.command",
+        "重启Wiki.command",
+        "restart-wiki.sh"
+      ];
+
+      for (const fileName of rootFiles) {
+        const filePath = path.join(config.rootDir, fileName);
+        const content = await fs.readFile(filePath, "utf8");
+        assert.ok(content.length > 0, `${fileName} should not be empty`);
+      }
+
+      const commandStart = await fs.readFile(path.join(config.rootDir, "启动Wiki.command"), "utf8");
+      const commandStop = await fs.readFile(path.join(config.rootDir, "终止Wiki.command"), "utf8");
+      const commandRestart = await fs.readFile(path.join(config.rootDir, "重启Wiki.command"), "utf8");
+      const restartWrapper = await fs.readFile(path.join(config.rootDir, "restart-wiki.sh"), "utf8");
+      const restartScript = await fs.readFile(path.join(config.rootDir, "scripts", "restart-wiki.sh"), "utf8");
+
+      assert.ok(commandStart.includes("scripts/start-wiki.sh"));
+      assert.ok(commandStop.includes("scripts/stop-wiki.sh"));
+      assert.ok(commandRestart.includes("scripts/restart-wiki.sh"));
+      assert.ok(commandStart.includes("wait_for_key_and_close"));
+      assert.ok(commandStop.includes("wait_for_key_and_close"));
+      assert.ok(commandRestart.includes("wait_for_key_and_close"));
+      assert.ok(restartWrapper.includes("scripts/restart-wiki.sh"));
+      assert.ok(restartScript.includes("stop-wiki.sh"));
+      assert.ok(restartScript.includes("start-wiki.sh"));
+    }
+  },
+  {
+    name: "Wiki site validation reports missing pages and broken related references",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        await seedWikiFixture(tempDir, {
+          navigation: {
+            groups: [
+              {
+                title: "开始使用",
+                pages: [
+                  {
+                    slug: "home",
+                    title: "首页",
+                    summary: "broken",
+                    audience: "系统使用者",
+                    status: "stable",
+                    lastReviewed: "2026-04-17",
+                    relatedPages: ["missing-page"]
+                  }
+                ]
+              }
+            ]
+          },
+          pages: {
+            "home.md": "# 首页\n\n请查看 [不存在的页面](/pages/missing-page)。\n"
+          }
+        });
+
+        const { validateWikiSite } = await import("../src/wiki/site-service.js");
+
+        const result = await validateWikiSite();
+        assert.equal(result.ok, false);
+        assert.ok(result.errors.some((item) => item.includes("missing-page")));
+        assert.ok(result.errors.some((item) => item.includes("/pages/missing-page")));
+      });
+    }
+  },
+  {
+    name: "Wiki app renders home page, content page, breadcrumbs, and related links",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        await seedWikiFixture(tempDir);
+        const { renderWikiPage } = await import("../src/wiki/app.js");
+        const { loadWikiSite } = await import("../src/wiki/site-service.js");
+        const site = await loadWikiSite();
+
+        const homeHtml = renderWikiPage(site, site.site.homePage);
+        assert.ok(homeHtml.includes("软件文档平台 Wiki"));
+        assert.ok(homeHtml.includes("推荐阅读路径"));
+        assert.ok(homeHtml.includes("/pages/quick-start"));
+
+        const detailHtml = renderWikiPage(site, site.pagesBySlug.get("skill-management-fallback"));
+        assert.ok(detailHtml.includes("技能管理与 Fallback"));
+        assert.ok(detailHtml.includes("了解系统"));
+        assert.ok(detailHtml.includes("相关页面"));
+        assert.ok(detailHtml.includes("breadcrumb"));
       });
     }
   }

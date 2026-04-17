@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "wiki:start": "node --disable-warning=ExperimentalWarning src/wiki-server.js",
+    "wiki:dev": "node --disable-warning=ExperimentalWarning --watch src/wiki-server.js",
     "test": "node --disable-warning=ExperimentalWarning tests/run-tests.js",
+    "check:wiki": "node scripts/check-wiki.mjs",
     "check:encoding": "node scripts/check-text-encoding.mjs",
     "fix:encoding": "node scripts/fix-text-encoding.mjs"
   },
@@ -20,4 +23,3 @@
     "pdf-parse": "^1.1.1"
   }
 }
-
