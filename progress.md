@@ -238,3 +238,14 @@
     - 状态：`待审阅`
     - 修改项：`1`
     - 当前展示正文：`VCU应对当前充电截止SOC值进行下电记忆；若ICM或TCP设置值更新，应在本次循环生效，并在下次下电时继续保存该值。`
+
+## 会话：2026-04-19（跨机器续开发数据快照）
+
+### 阶段：运行态调试现场保留
+- **状态：** in_progress
+- **执行的操作：**
+  - 按用户要求，将本地 `data/rejections`、`data/replay-tasks` 以及对应 `data/skill-work-orders` 的调试现场纳入版本控制，便于切换到 Windows 机器后继续沿同一条真实样本调试。
+  - 保留当前真实 replay / work order 样本：
+    - replay task `7aa27011-6f01-4890-8a04-7b8d242f7545`
+    - work order `fee6a306-f5fb-4295-9d28-0b34a55238d4`
+  - 同步当前 rejection/group 状态与旧 replay task 删除结果，使新环境看到的现场与本机一致。

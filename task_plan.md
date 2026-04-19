@@ -151,7 +151,7 @@
 
 ## 备注
 - 当前最新开发分支：`codex-layered-navigation-workflow`
-- 当前最新提交：`f0ed15c feat: add standalone wiki service`
+- 当前最新提交：请以 `git log -1 --oneline` 为准；当前除了源码主线外，还需要保留一份可跨机器继续调试的 replay / work order 运行态数据快照
 - 当前仍保留迁移演示工程，可用于换环境后的页面联调与人工走查
 - 当前工作树干净：`git status --short` 无输出
 - 自动化测试当前通过：`npm test` -> `All 33 tests passed.`

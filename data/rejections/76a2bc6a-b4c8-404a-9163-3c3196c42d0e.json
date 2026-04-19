@@ -146,15 +146,17 @@
     "relevantRules": []
   },
   "poolStatus": "new",
-  "groupId": "2322c695-1f7f-4e3f-bd79-d342ebaf5f55",
+  "groupId": "cb532598-a111-45c1-9cfc-a40072eec31b",
   "replayStatus": "proposal_ready",
-  "replayCount": 3,
+  "replayCount": 5,
   "replayTaskIds": [
     "24af4963-b827-41e3-b045-489243365ba2",
     "1195f58a-ff06-4265-a610-59a39e353a96",
-    "574ebc77-423e-4367-8a8b-f8af4ee6ec51"
+    "574ebc77-423e-4367-8a8b-f8af4ee6ec51",
+    "40f52cf7-5c44-4a85-b846-ef8e1469180e",
+    "7aa27011-6f01-4890-8a04-7b8d242f7545"
   ],
-  "lastReplayAt": "2026-04-17T02:42:36.542Z",
+  "lastReplayAt": "2026-04-17T12:25:38.409Z",
   "createdAt": "2026-04-16T20:46:37.642Z",
-  "updatedAt": "2026-04-17T02:42:36.560Z"
+  "updatedAt": "2026-04-17T12:25:38.417Z"
 }
