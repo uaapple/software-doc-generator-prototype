@@ -245,6 +245,7 @@
 - **状态：** in_progress
 - **执行的操作：**
   - 按用户要求，将本地 `data/rejections`、`data/replay-tasks` 以及对应 `data/skill-work-orders` 的调试现场纳入版本控制，便于切换到 Windows 机器后继续沿同一条真实样本调试。
+  - 继续补充 `data/skills.sqlite`，把当前技能数据库状态一并带到新环境，避免新环境只拿到 skill 文件而缺失最新数据库状态。
   - 保留当前真实 replay / work order 样本：
     - replay task `7aa27011-6f01-4890-8a04-7b8d242f7545`
     - work order `fee6a306-f5fb-4295-9d28-0b34a55238d4`
