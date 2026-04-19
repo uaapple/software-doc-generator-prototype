@@ -14,7 +14,6 @@ data/*
 !data/replay-tasks/
 !data/replay-tasks/**
 .local/
-output/
 docs/generated-requirements-overview.html
 docs/skill-overview.html
 .env
