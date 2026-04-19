@@ -83,3 +83,45 @@
   - 模块特定型案例：应更倾向 `module`
   - 文档类型通用型案例：应仍然保留在 `docType/software_requirement`
 - 如果新 replay 输出仍然只是把驳回说明换个语气重写，那优先应该继续优化 prompt、schema 和 few-shot，而不是再往后端堆规则。
+
+## 当前进度审计新增发现（2026-04-17）
+- 规划文件里的“最新提交”已经落后于仓库实际状态：当前分支仍是 `codex-layered-navigation-workflow`，但最新提交已经前进到 `f0ed15c feat: add standalone wiki service`。
+- 工作树当前干净，说明最近这轮 wiki / 文档能力已经提交落盘，不是停留在未提交草稿状态。
+- `npm test` 当前已通过 33 个测试，`npm run check:wiki` 也已通过，说明代码主线和独立 Wiki 主线都处于健康状态。
+- 仓库现在不是单一主线：至少同时存在两条活跃工作流：
+  - 主线 1：阶段 9 的 fallback / replay / skill work order 质量验证与 prompt 收敛
+  - 主线 2：独立用户 Wiki 与使用说明沉淀
+- 新增的独立 Wiki 已经覆盖快速开始、工程/模块工作区、反馈池/Replay、技能管理等首批页面，因此“最终使用说明与交付说明”这件事已经开始落地，不再是纯待办。
+- `STATUS.md` 仍停留在更早的原型阶段，和当前真实进度不一致；后续恢复上下文时，应优先信任 `task_plan.md`、`progress.md`、`findings.md` 与 `git log`，不要单独依赖 `STATUS.md`。
+- 尽管自动化测试健康，阶段 6 中要求的真实浏览器全链路走查依然没有被替代；它仍然是后续需要补上的人工验证项。
+- 结合已做决策与当前健康度，下一步最该优先做的不是继续写功能，而是重跑真实 `充电管理 / software_requirement` fallback 样本，验证 prompt-first 路线是否真的把建议落到正确层级并输出可复用规则正文。
+
+## 充电管理最新 fallback 审计新增发现（2026-04-17）
+- 当前“最新一次已落盘 replay task”是 `data/replay-tasks/574ebc77-423e-4367-8a8b-f8af4ee6ec51.json`（`createdAt = 2026-04-17T02:42:36.542Z`，上海时间 2026-04-17 10:42:36），对应同一条 rejection `CheryVCU-12147`。
+- 这条最新 replay task 的 proposal item 仍然把建议落到 `docType/software_requirement`，而不是预期中的 `module/charging_management`。
+- proposal 正文仍然是“建议补充以下约束：请按人工范例对齐 CheryVCU-12147 ...”这类 rejection 改写，直接带着 requirement code 与具体案例细节，没有抽象成可复用的模块级规则正文。
+- 用当前代码重新对该 replay task 的 `materialPack` 执行本地 fallback 生成后，结果仍是：
+  - `scopeDecision = docType`
+  - `abstractionScore = 0.38`
+  - `isParaphraseOfRejection = true`
+  - `reviewReadiness = needs_human_refine`
+  说明“当前 fallback 逻辑本身”也还没有达到预期，不只是旧记录没迁移。
+- 代码层原因很明确：当前 fallback 归一化走的是 `inferReplayScopeDecisionV2/applyReplayQualityGuardsV2`，它会优先沿用模型或默认的 `targetLayer`，但不再包含旧版 `looksLikeChargingSocMemoryBoundaryCase` 那套充电管理记忆边界特征判定，因此 validation 类新建项会自然回落到 `docType`。
+- 另外，技能工单从 replay task 水合时，`SkillWorkOrderService.createFromReplayTask()` 只是把 replay proposal item 直接规范化为 work order item，并不会重新跑一次 replay quality guard；因此现有 work order 里 `scopeDecision/recommendedSkillText/reviewReadiness` 等字段仍可能为空，不能把“最新工单详情”直接当成 prompt-first 已生效的证据。
+- 结论：截至本次审计，充电管理最新一次 fallback 仍不满足阶段 9 的预期，需要继续依赖真实重跑样本验证 prompt 输出，不能把当前已落盘样本视为通过。
+
+## 真实远端 replay 与浏览器工单验证新增发现（2026-04-18）
+- 真实远端 `充电管理 / software_requirement / CheryVCU-12147` replay 在精简 prompt、补强 schema 和归一化逻辑后，已经能返回可执行 proposal，而不再是空 `items`。
+- 这条真实远端结果会给出 `create_new + add_skill_item`，层级为 `module / 充电管理 / validation_rule`，说明 prompt-first 路线已经能把该样本自主下沉到模块层。
+- 真实返回里的 `evidenceRefs` 已经能回填为 rejection record id，说明模型现在可以输出后端可消费的证据引用，而不是只吐 requirement code。
+- 真实返回同时包含两份“正文”：
+  - `afterContent`：更像“修正后的需求句子”
+  - `newRuleDraft.content`：更像真正可复用的 skill 规则正文
+- 浏览器中打开这张由真实结果模拟生成的技能工单后，可以确认页面当前展示在“修改后内容”里的仍是 `afterContent`，不是 `newRuleDraft.content`。
+- 这意味着阶段 9 的主阻塞已经从“LLM 会不会给出 module 级提案”转移为“工单展示/应用链路是否该优先使用抽象后的规则正文”。
+- 真实浏览器中当前可见的工单状态为：
+  - 标题：`充电管理 / software_requirement / fallback 技能修改工单`
+  - 状态：`待审阅`
+  - 来源任务：`7aa27011-6f01-4890-8a04-7b8d242f7545`
+  - 修改项数：`1`
+  - 当前展示正文：`VCU应对当前充电截止SOC值进行下电记忆；若ICM或TCP设置值更新，应在本次循环生效，并在下次下电时继续保存该值。`

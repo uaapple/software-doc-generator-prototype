@@ -137,9 +137,19 @@ function truncate(value, limit = 4000) {
   return `${text.slice(0, limit - 1)}…`;
 }
 
-function buildReplayStatus(taskCount = 0, hasProposal = false) {
+function buildReplayStatus(taskCount = 0, taskStatus = "", hasProposal = false) {
   if (!taskCount) return "not_started";
+  if (taskStatus === "failed") return "failed";
   return hasProposal ? "proposal_ready" : "replayed";
+}
+
+function extractReplayErrorMessage(error) {
+  const candidates = [
+    error?.cause?.message,
+    error?.response?.data?.error?.message,
+    error?.message
+  ];
+  return candidates.map((item) => String(item || "").trim()).find(Boolean) || "Replay 提案生成失败";
 }
 
 export class ReplayTaskService {
@@ -343,15 +353,60 @@ export class ReplayTaskService {
       }))
     };
 
-    const { proposal, replayAnalysis } = await this.buildProposal({
-      records,
-      bundleId,
-      targetAreas: effectiveAreas,
-      materialPack,
-      llmProfileId
-    });
+    let proposal = null;
+    let replayAnalysis = null;
+    const taskId = randomUUID();
+    const createdAt = now();
+    try {
+      ({ proposal, replayAnalysis } = await this.buildProposal({
+        records,
+        bundleId,
+        targetAreas: effectiveAreas,
+        materialPack,
+        llmProfileId
+      }));
+    } catch (error) {
+      const failedTask = {
+        id: taskId,
+        projectId: inferredProjectId,
+        projectName: project?.name || records[0]?.projectName || "",
+        moduleId: inferredModuleId,
+        moduleName: module?.name || records[0]?.moduleName || "",
+        sourceRejectionIds: selectedIds,
+        groupIds: group ? [group.id] : [],
+        targetBundleId: bundleId,
+        llmProfileId,
+        referenceAssetIds: normalizedReferenceAssetIds,
+        taskStatus: "failed",
+        materialPack,
+        proposalIds: [],
+        proposals: [],
+        summary: llmProfileId ? "Replay 提案生成失败" : "Fallback 提案生成失败",
+        decisionSummary: "",
+        validatorSuggestions: [],
+        applyResult: null,
+        errorMessage: extractReplayErrorMessage(error),
+        errorStage: error?.debugStage || "replay_proposal_generation",
+        createdAt,
+        updatedAt: createdAt
+      };
+
+      await writeJson(getTaskPath(failedTask.id), failedTask);
+      for (const record of records) {
+        const replayTaskIds = [...new Set([...(record.replayTaskIds || []), failedTask.id])];
+        await this.rejectionService.updateRecord(record.id, {
+          replayStatus: buildReplayStatus(replayTaskIds.length, failedTask.taskStatus, false),
+          replayCount: replayTaskIds.length,
+          replayTaskIds,
+          lastReplayAt: failedTask.createdAt
+        });
+      }
+      await this.rejectionService.rebuildGroups();
+      return failedTask;
+    }
+
     const task = {
-      id: randomUUID(),
+      id: taskId,
       projectId: inferredProjectId,
       projectName: project?.name || records[0]?.projectName || "",
       moduleId: inferredModuleId,
@@ -369,8 +424,8 @@ export class ReplayTaskService {
       decisionSummary: proposal.decisionSummary || replayAnalysis?.decisionSummary || "",
       validatorSuggestions: proposal.validatorSuggestions || replayAnalysis?.validatorSuggestions || [],
       applyResult: null,
-      createdAt: now(),
-      updatedAt: now()
+      createdAt,
+      updatedAt: createdAt
     };
 
     await writeJson(getTaskPath(task.id), task);
@@ -388,7 +443,7 @@ export class ReplayTaskService {
     for (const record of records) {
       const replayTaskIds = [...new Set([...(record.replayTaskIds || []), task.id])];
       await this.rejectionService.updateRecord(record.id, {
-        replayStatus: buildReplayStatus(replayTaskIds.length, proposalReady),
+        replayStatus: buildReplayStatus(replayTaskIds.length, task.taskStatus, proposalReady),
         replayCount: replayTaskIds.length,
         replayTaskIds,
         lastReplayAt: task.createdAt

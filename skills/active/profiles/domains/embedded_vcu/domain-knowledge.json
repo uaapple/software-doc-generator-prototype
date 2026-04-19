@@ -116,12 +116,10 @@
         "replacement": "主动制动（AEB/CDP）"
       },
       {
-        "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
-        "replacement": "-"
+        "pattern": "；4. 前轴CCO/ISA扭矩请求有效"
       },
       {
-        "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
-        "replacement": "-"
+        "pattern": "；4. 后轴CCO/ISA扭矩请求有效"
       }
     ],
     "forbiddenExpansions": {

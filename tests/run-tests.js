@@ -5,7 +5,7 @@ import os from "node:os";
 import { config } from "../src/config.js";
 import { CExtractor } from "../src/services/c-extractor.js";
 import { ValidationService } from "../src/services/validation-service.js";
-import { LlmService } from "../src/services/llm-service.js";
+import { LlmService, buildReplayModelInput } from "../src/services/llm-service.js";
 import { SkillLoader } from "../src/services/skill-loader.js";
 import { TemplateService } from "../src/services/template-service.js";
 import { ensureStorage } from "../src/services/storage.js";
@@ -459,6 +459,371 @@ const tests = [
         assert.ok(requirements.length >= 1);
         assert.ok(requirements[0].requirementId.startsWith("SMiVCU-") || requirements[0].requirementId.startsWith("SWR-"));
         assert.ok(Array.isArray(requirements[0].sourceRefs));
+      });
+    }
+  },
+  {
+    name: "Replay prompt only includes original generation skill context and explained reference assets",
+    run: async () => {
+      const materialPack = {
+        targetAreas: ["validation"],
+        allowedKindsByArea: {
+          validation: ["validation_rule", "anti_pattern", "rule_hint"]
+        },
+        moduleContext: {
+          projectName: "VCU",
+          moduleName: "充电管理",
+          documentType: "software_requirement"
+        },
+        rejectionSnapshots: [
+          {
+            id: "rej-1",
+            reasonCategory: "coverage_gap",
+            reasonText: "生成结果混入了人工范例中没有的回退逻辑。",
+            expectedNote: "请仅保留记忆和刷新要求。",
+            outputSnapshot: {
+              title: "充电过程 - 充电截止SOC记忆",
+              requirementText: "VCU 应记忆 SOC，并在无效值时回退默认值。",
+              verificationHint: "检查记忆与回退行为。",
+              confidence: 0.82
+            },
+            sourceRefsSnapshot: [
+              {
+                fileName: "system.md",
+                location: "page:1",
+                excerpt: "系统需求只提到下电记忆。"
+              }
+            ],
+            projectEvidenceSnapshot: [
+              {
+                fileName: "Chrg.c",
+                fileRole: "generated_c",
+                location: "function",
+                excerpt: "函数 if(rtb_Delay_k)",
+                tags: ["function"]
+              }
+            ]
+          }
+        ],
+        effectiveSkillSnapshot: {
+          compiledPrompt: "这是原始生成时的 compiledPrompt",
+          selectedProfiles: [
+            { key: "generic", kind: "generic" },
+            { key: "software_requirement", kind: "docType" },
+            { key: "embedded_vcu", kind: "domain" },
+            { key: "charging_management", kind: "module" }
+          ],
+          compiledSkillPack: {
+            context: {
+              documentType: "software_requirement",
+              domain: "embedded_vcu",
+              moduleSkillKey: "charging_management"
+            },
+            selectedProfiles: [
+              { key: "generic", kind: "generic" },
+              { key: "software_requirement", kind: "docType" }
+            ],
+            rules: {
+              extraction: [{ skillCode: "ext-1", kind: "extraction_rule", title: "抽取规则", content: "先抽取事实。" }],
+              writing: [{ skillCode: "wr-1", kind: "writing_rule", title: "写作规则", content: "保持软件需求风格。" }],
+              validation: [{ skillCode: "val-1", kind: "validation_rule", title: "校验规则", content: "避免越界扩写。" }]
+            },
+            examples: {
+              good: [{ skillCode: "good-1", kind: "good_example", title: "好例子", content: "只写记忆行为。" }],
+              bad: []
+            },
+            knowledge: {
+              generationPriorities: [],
+              antiPatterns: [],
+              ruleHints: []
+            },
+            flatItems: []
+          },
+          files: {
+            "requirement_extraction.md": "# 抽取\n- 抽取事实",
+            "requirement_writing.md": "# 写作\n- 保持需求风格",
+            "requirement_validation.md": "# 校验\n- 禁止越界扩写",
+            "examples/good_examples.md": "# 正例\n- 只写记忆行为",
+            "examples/bad_examples.md": "# 反例\n- 混入回退逻辑",
+            "domain-knowledge.json": {
+              version: 1,
+              ruleHints: [{ domain: "embedded_vcu", sectionHints: ["VCU"] }]
+            }
+          }
+        },
+        referenceAssets: [
+          {
+            originalName: "system-requirements-example-charging-management.md",
+            role: "system_pdf",
+            preview: "系统需求：设置范围 50%-100%，HCU 需要下电记忆。"
+          },
+          {
+            originalName: "software-design-requirements-example-charging-management.md",
+            role: "reference_requirement_example",
+            preview: "优质范例：CheryVCU-12147 仅保留记忆和刷新。"
+          },
+          {
+            originalName: "Chrg.c",
+            role: "generated_c",
+            preview: "if (limitInvalid) { fallbackDefault(); }"
+          }
+        ],
+        candidateSkillItems: [
+          {
+            skillCode: "should-not-appear",
+            layer: "docType",
+            profileKey: "software_requirement",
+            kind: "validation_rule",
+            title: "应以精简 inventory 形式出现在 replay prompt 中",
+            targetFile: "requirement_validation.md",
+            contentSummary: "精简后的候选 skill 摘要"
+          }
+        ]
+      };
+
+      const messages = buildReplayModelInput(materialPack);
+      assert.equal(messages.length, 2);
+      assert.equal(messages[0].role, "system");
+      assert.equal(messages[1].role, "user");
+
+      const systemText = messages[0].content[0].text;
+      assert.match(systemText, /generic/);
+      assert.match(systemText, /docType/);
+      assert.match(systemText, /domain/);
+      assert.match(systemText, /module/);
+      assert.match(systemText, /先分析驳回意见、期望写法和被驳回输出/);
+      assert.match(systemText, /优先在原始生成时已提供给模型的 skill/);
+      assert.match(systemText, /一次 replay 可以输出多个 items/i);
+
+      const payload = JSON.parse(messages[1].content[0].text);
+      assert.deepEqual(Object.keys(payload), [
+        "taskContext",
+        "rejectionContext",
+        "originalGenerationSkillContext",
+        "candidateSkillInventory",
+        "referenceAssets"
+      ]);
+
+      assert.equal(payload.taskContext.projectName, "VCU");
+      assert.equal(payload.taskContext.moduleName, "充电管理");
+      assert.equal(payload.taskContext.documentType, "software_requirement");
+      assert.deepEqual(payload.taskContext.targetAreas, ["validation"]);
+      assert.equal(payload.taskContext.candidateSkillCount, 1);
+
+      assert.equal(payload.rejectionContext.records.length, 1);
+      assert.equal(payload.rejectionContext.records[0].id, "rej-1");
+      assert.equal(payload.rejectionContext.records[0].reasonCategory, "coverage_gap");
+      assert.equal(payload.rejectionContext.records[0].expectedNote, "请仅保留记忆和刷新要求。");
+      assert.equal(payload.rejectionContext.records[0].rejectedOutput.title, "充电过程 - 充电截止SOC记忆");
+
+      assert.deepEqual(Object.keys(payload.originalGenerationSkillContext), [
+        "requirementExtraction",
+        "requirementWriting",
+        "requirementValidation",
+        "goodExamples",
+        "badExamples",
+        "domainKnowledge",
+        "selectedProfiles"
+      ]);
+      assert.equal(payload.originalGenerationSkillContext.requirementExtraction, "# 抽取\n- 抽取事实");
+      assert.equal(payload.originalGenerationSkillContext.requirementWriting, "# 写作\n- 保持需求风格");
+      assert.equal(payload.originalGenerationSkillContext.requirementValidation, "# 校验\n- 禁止越界扩写");
+      assert.equal(payload.originalGenerationSkillContext.goodExamples, "# 正例\n- 只写记忆行为");
+      assert.equal(payload.originalGenerationSkillContext.badExamples, "# 反例\n- 混入回退逻辑");
+      assert.deepEqual(payload.originalGenerationSkillContext.domainKnowledge, {
+        version: 1,
+        ruleHints: [{ domain: "embedded_vcu", sectionHints: ["VCU"] }]
+      });
+
+      assert.equal(payload.candidateSkillInventory.length, 1);
+      assert.equal(payload.candidateSkillInventory[0].skillCode, "should-not-appear");
+      assert.equal(payload.candidateSkillInventory[0].targetLayer, "docType");
+      assert.equal(payload.candidateSkillInventory[0].targetProfileKey, "software_requirement");
+      assert.equal(payload.candidateSkillInventory[0].targetKind, "validation_rule");
+
+      assert.equal(payload.referenceAssets.length, 3);
+      assert.equal(payload.referenceAssets[0].fileName, "system-requirements-example-charging-management.md");
+      assert.match(payload.referenceAssets[0].typeDescription, /系统需求来源/);
+      assert.match(payload.referenceAssets[1].typeDescription, /人工软件需求优质范例/);
+      assert.match(payload.referenceAssets[1].whyRelevant, /直接相关|重点参考/);
+      assert.match(payload.referenceAssets[2].typeDescription, /实现\/代码证据/);
+
+      const payloadText = messages[1].content[0].text;
+      assert.ok(!payloadText.includes("candidateSkillItems"));
+      assert.ok(payloadText.includes("candidateSkillInventory"));
+      assert.ok(payloadText.includes("should-not-appear"));
+      assert.ok(!payloadText.includes("compiledPrompt"));
+      assert.ok(!payloadText.includes("compiledSkillPack"));
+    }
+  },
+  {
+    name: "Replay proposal normalization keeps actionable items from descriptive remote payload",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new LlmService();
+        const originalFetch = globalThis.fetch;
+        const originalResolveProfile = service.profileService.resolveProfile.bind(service.profileService);
+        service.profileService.resolveProfile = async () => ({
+          id: "remote-profile",
+          provider: "zhipu",
+          name: "Remote Replay Model",
+          model: "glm-test",
+          apiKey: "fake-key",
+          baseURL: "https://example.invalid/v1"
+        });
+
+        globalThis.fetch = async () =>
+          new Response(
+            JSON.stringify({
+              id: "chatcmpl-replay-test",
+              object: "chat.completion",
+              created: 0,
+              model: "glm-test",
+              choices: [
+                {
+                  index: 0,
+                  finish_reason: "stop",
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify({
+                      summary: "需要补齐可落地的技能修改提案。",
+                      decisionSummary: "远端已经识别出一条修改现有规则和一条新增规则建议。",
+                      rootCauses: ["人工范例边界约束不足"],
+                      validatorSuggestions: [],
+                      items: [
+                        {
+                          conclusionType: "modify_existing",
+                          action: "修改充电截止SOC记忆的写作规则，强化人工范例边界约束",
+                          targetSkillCode: "DOC-software_requirement-writing_rule-002",
+                          targetLayer: "docType",
+                          targetProfileKey: "software_requirement",
+                          targetKind: "validation_rule",
+                          targetInsertionHint: "在人工样例对齐优先规则后添加补充说明",
+                          title: "充电截止SOC记忆需求边界校验",
+                          fallbackReason: "需强化现有规则对人工范例边界的严格遵循",
+                          whyCurrent: "当前规则未明确禁止代码侧推断逻辑混入需求正文。",
+                          whyChange: "补充边界校验后可避免再度越界扩写。",
+                          beforeContent: "当输入同时包含人工软件需求样例、系统需求和代码证据时，优先对齐人工样例已经稳定下来的主题边界、主题顺序和句式。",
+                          afterContent: "当输入同时包含人工软件需求样例、系统需求和代码证据时，优先对齐人工样例已经稳定下来的主题边界、主题顺序和句式。对于充电截止SOC记忆等需求条目，不得将代码侧推断的保护/回退逻辑混入需求正文。",
+                          before: "旧规则",
+                          after: "新规则",
+                          rationale: "强化边界约束。",
+                          evidenceRefs: ["CheryVCU-12147"],
+                          newRuleDraft: null
+                        },
+                        {
+                          conclusionType: "create_new",
+                          action: "新增充电管理领域特定规则，明确禁止代码细节混入需求正文",
+                          targetSkillCode: "MOD-充电管理-validation_rule-001",
+                          targetLayer: "module",
+                          targetProfileKey: "充电管理",
+                          targetKind: "validation_rule",
+                          targetInsertionHint: "作为充电管理模块的专属验证规则",
+                          title: "充电管理需求正文边界校验",
+                          fallbackReason: "需要针对充电管理领域新增特定规则，防止代码细节混入需求正文",
+                          whyCurrent: "现有通用规则未能充分约束充电管理领域中代码细节混入需求正文的问题。",
+                          whyChange: "新增模块级规则后可直接沉淀为模块工单。",
+                          beforeContent: "无对应现有规则",
+                          afterContent: "在充电管理领域，需求正文应严格遵循人工范例的边界和风格，不得将代码侧推断的保护/回退逻辑混入需求正文。",
+                          before: "",
+                          after: "新增规则正文",
+                          rationale: "需要新增模块规则。",
+                          evidenceRefs: ["CheryVCU-12147"],
+                          newRuleDraft: null
+                        }
+                      ]
+                    })
+                  }
+                }
+              ]
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" }
+            }
+          );
+
+        try {
+          const proposal = await service.generateReplayProposal(
+            {
+              targetAreas: ["validation"],
+              allowedKindsByArea: {
+                validation: ["validation_rule", "anti_pattern", "rule_hint"]
+              },
+              moduleContext: {
+                projectName: "VCU",
+                moduleName: "充电管理",
+                moduleSkillKey: "charging_management",
+                domain: "embedded_vcu",
+                documentType: "software_requirement"
+              },
+              rejectionSnapshots: [
+                {
+                  id: "rej-1",
+                  requirementCode: "CheryVCU-12147",
+                  reasonCategory: "coverage_gap",
+                  reasonText: "生成结果混入了人工范例中没有的回退逻辑。",
+                  expectedNote: "请仅保留记忆和刷新要求。",
+                  outputSnapshot: {
+                    title: "充电过程 - 充电截止SOC记忆",
+                    requirementText: "VCU 应记忆 SOC，并在无效值时回退默认值。",
+                    verificationHint: "检查记忆与回退行为。",
+                    confidence: 0.82
+                  },
+                  sourceRefsSnapshot: [],
+                  projectEvidenceSnapshot: []
+                }
+              ],
+              effectiveSkillSnapshot: {
+                selectedProfiles: [
+                  { key: "generic", kind: "generic" },
+                  { key: "software_requirement", kind: "docType" }
+                ],
+                files: {
+                  "requirement_extraction.md": "# 抽取\n- 抽取事实",
+                  "requirement_writing.md": "# 写作\n- 保持需求风格",
+                  "requirement_validation.md": "# 校验\n- 禁止越界扩写",
+                  "examples/good_examples.md": "# 正例\n- 只写记忆行为",
+                  "examples/bad_examples.md": "# 反例\n- 混入回退逻辑",
+                  "domain-knowledge.json": {
+                    version: 1,
+                    ruleHints: [{ domain: "embedded_vcu", sectionHints: ["VCU"] }]
+                  }
+                }
+              },
+              candidateSkillItems: [
+                {
+                  skillCode: "DOC-software_requirement-writing_rule-002",
+                  layer: "docType",
+                  profileKey: "software_requirement",
+                  kind: "validation_rule",
+                  title: "人工样例对齐优先",
+                  contentSummary: "优先对齐人工样例边界。",
+                  targetFile: "requirement_validation.md"
+                }
+              ],
+              referenceAssets: []
+            },
+            { llmProfileId: "remote-profile" }
+          );
+
+          assert.equal(proposal.items.length, 2);
+          assert.equal(proposal.items[0].action, "modify_skill_item");
+          assert.equal(proposal.items[0].targetSkillCode, "DOC-software_requirement-writing_rule-002");
+          assert.deepEqual(proposal.items[0].evidenceRefs, ["rej-1"]);
+
+          assert.equal(proposal.items[1].action, "add_skill_item");
+          assert.equal(proposal.items[1].conclusionType, "create_new");
+          assert.equal(proposal.items[1].targetSkillCode, "");
+          assert.equal(proposal.items[1].targetLayer, "module");
+          assert.equal(proposal.items[1].targetProfileKey, "charging_management");
+          assert.deepEqual(proposal.items[1].evidenceRefs, ["rej-1"]);
+          assert.equal(proposal.items[1].newRuleDraft.title, "充电管理需求正文边界校验");
+          assert.match(proposal.items[1].newRuleDraft.content, /不得将代码侧推断的保护\/回退逻辑混入需求正文/);
+        } finally {
+          globalThis.fetch = originalFetch;
+          service.profileService.resolveProfile = originalResolveProfile;
+        }
       });
     }
   },
@@ -1395,6 +1760,97 @@ const tests = [
     }
   },
   {
+    name: "Replay task persists failed record when selected replay LLM request fails",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay LLM Fallback Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-llm-fallback-1",
+              requirementId: "SWR-551",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.74,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-replay-llm-fallback-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          expectedNote: "请严格回到人工范例边界。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async () => {
+          throw new Error("simulated network down");
+        };
+
+        const originalResolveProfile = replayTaskService.llmService.profileService.resolveProfile.bind(replayTaskService.llmService.profileService);
+        replayTaskService.llmService.profileService.resolveProfile = async () => ({
+          id: "remote-profile",
+          provider: "zhipu",
+          name: "Remote Replay Model",
+          model: "glm-test",
+          apiKey: "fake-key",
+          baseURL: "https://example.invalid/v1"
+        });
+
+        try {
+          const replayTask = await replayTaskService.createTask({
+            rejectionIds: [records[0].id],
+            projectId: project.id,
+            moduleId: module.id,
+            llmProfileId: "remote-profile"
+          });
+
+          assert.equal(replayTask.llmProfileId, "remote-profile");
+          assert.equal(replayTask.taskStatus, "failed");
+          assert.equal(replayTask.summary, "Replay 提案生成失败");
+          assert.equal(replayTask.errorMessage, "simulated network down");
+          assert.deepEqual(replayTask.proposals, []);
+          assert.equal(replayTask.workOrderId, undefined);
+
+          const persistedTask = await replayTaskService.getTask(replayTask.id);
+          assert.equal(persistedTask.taskStatus, "failed");
+          assert.equal(persistedTask.errorMessage, "simulated network down");
+
+          const persistedRecord = await rejectionService.getRecord(records[0].id);
+          assert.equal(persistedRecord.replayStatus, "failed");
+          assert.equal(persistedRecord.replayCount, 1);
+          assert.deepEqual(persistedRecord.replayTaskIds, [replayTask.id]);
+        } finally {
+          globalThis.fetch = originalFetch;
+          replayTaskService.llmService.profileService.resolveProfile = originalResolveProfile;
+        }
+      });
+    }
+  },
+  {
     name: "Skill work order falls back to replay proposal items when generated items are empty",
     run: async () => {
       await withTempConfig(async () => {
@@ -1540,6 +1996,78 @@ const tests = [
     }
   },
   {
+    name: "Skill work order accepts multiple replay proposal items",
+    run: async () => {
+      await withTempConfig(async () => {
+        const workOrderService = new SkillWorkOrderService();
+        const task = {
+          id: "replay-task-multi-items",
+          projectId: "project-1",
+          projectName: "Replay Project",
+          moduleId: "module-1",
+          moduleName: "充电管理",
+          llmProfileId: "profile-1",
+          sourceRejectionIds: ["rej-1"],
+          materialPack: {
+            moduleContext: {
+              documentType: "software_requirement"
+            },
+            rejectionSnapshots: [
+              {
+                id: "rej-1",
+                requirementCode: "CheryVCU-12147",
+                reasonCategory: "coverage_gap",
+                reasonText: "生成结果同时混入边界漂移和写法偏移。",
+                expectedNote: "请拆成独立 skill 修改项处理。"
+              }
+            ]
+          }
+        };
+
+        const workOrder = await workOrderService.createFromReplayTask(task, {
+          summary: "模型返回多个技能修改项",
+          decisionSummary: "建议分别修改 existing skill 和新增模块边界规则。",
+          items: [
+            {
+              conclusionType: "modify_existing",
+              action: "modify_skill_item",
+              targetSkillCode: "DOC-software_requirement-validation_rule-010",
+              targetLayer: "docType",
+              targetProfileKey: "software_requirement",
+              targetKind: "validation_rule",
+              kind: "validation_rule",
+              title: "无依据扩写校验（补充修订）",
+              whyCurrent: "当前校验规则没有明确约束记忆类需求边界。",
+              whyChange: "补充边界限制后，可以避免把控制逻辑混入记忆条目。",
+              beforeContent: "若当前证据只支持核心主题，应避免越界扩写。",
+              afterContent: "若当前证据只支持核心主题，应避免越界扩写，尤其不要把控制/保护逻辑混入记忆类需求。",
+              evidenceRefs: ["rej-1"]
+            },
+            {
+              conclusionType: "create_new",
+              action: "add_skill_item",
+              targetLayer: "module",
+              targetProfileKey: "charging_management",
+              targetKind: "validation_rule",
+              kind: "validation_rule",
+              title: "充电截止SOC记忆类需求边界约束",
+              whyCurrent: "当前模块缺少充电截止SOC记忆类需求的专属边界规则。",
+              whyChange: "新增模块级边界规则后，可以稳定约束记忆条目的表达范围。",
+              afterContent: "对于充电管理模块中与充电截止SOC相关的记忆类需求，不得补写控制或保护逻辑。",
+              evidenceRefs: ["rej-1"]
+            }
+          ],
+          validatorSuggestions: []
+        });
+
+        assert.equal(workOrder.items.length, 2);
+        assert.equal(workOrder.items[0].conclusionType, "modify_existing");
+        assert.equal(workOrder.items[1].conclusionType, "create_new");
+        assert.equal(workOrder.itemStats.total, 2);
+      });
+    }
+  },
+  {
     name: "Skill work order review and apply updates active atomic skill",
     run: async () => {
       await withTempConfig(async () => {
@@ -1619,7 +2147,152 @@ const tests = [
         assert.equal(refreshedWorkOrder.status, "applied");
       });
     }
-  },  {
+  },
+  {
+    name: "Skill work order list rebuilds missing work order files from replay tasks",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+        const workOrderService = new SkillWorkOrderService();
+
+        const project = await projectService.createProject({ name: "Recovered Work Order Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-rebuild-work-order-1",
+              requirementId: "SWR-601",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.81,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-rebuild-work-order-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          expectedNote: "请严格回到人工范例边界。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+
+        await fs.rm(path.join(config.skillWorkOrderStoreDir, `${replayTask.workOrderId}.json`), { force: true });
+
+        const workOrders = await workOrderService.listWorkOrders({});
+
+        assert.equal(workOrders.length, 1);
+        assert.equal(workOrders[0].id, replayTask.workOrderId);
+
+        const rebuilt = await workOrderService.getWorkOrder(replayTask.workOrderId);
+        assert.equal(rebuilt.sourceTaskId, replayTask.id);
+
+        const restoredFile = await fs
+          .access(path.join(config.skillWorkOrderStoreDir, `${replayTask.workOrderId}.json`))
+          .then(() => true)
+          .catch(() => false);
+        assert.equal(restoredFile, true);
+      });
+    }
+  },
+  {
+    name: "Skill work order list synthesizes missing work orders for legacy replay tasks without workOrderId",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+        const workOrderService = new SkillWorkOrderService();
+
+        const project = await projectService.createProject({ name: "Legacy Replay Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-legacy-work-order-1",
+              requirementId: "SWR-701",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.79,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-legacy-work-order-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          expectedNote: "请严格回到人工范例边界。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+
+        await fs.rm(path.join(config.skillWorkOrderStoreDir, `${replayTask.workOrderId}.json`), { force: true });
+        replayTask.workOrderId = "";
+        replayTask.workOrderSummary = null;
+        await fs.writeFile(path.join(config.replayTaskStoreDir, `${replayTask.id}.json`), JSON.stringify(replayTask, null, 2), "utf8");
+
+        const workOrders = await workOrderService.listWorkOrders({});
+
+        assert.equal(workOrders.length, 1);
+        assert.ok(workOrders[0].id);
+
+        const repairedTask = JSON.parse(await fs.readFile(path.join(config.replayTaskStoreDir, `${replayTask.id}.json`), "utf8"));
+        assert.equal(repairedTask.id, replayTask.id);
+        assert.ok(repairedTask.workOrderId);
+        assert.ok(repairedTask.workOrderSummary);
+
+        const rebuilt = await workOrderService.getWorkOrder(repairedTask.workOrderId);
+        assert.equal(rebuilt.sourceTaskId, replayTask.id);
+      });
+    }
+  },
+  {
     name: "Skill bundle initialization preserves and restores domain knowledge",
     run: async () => {
       await withTempConfig(async () => {
@@ -1875,6 +2548,22 @@ const tests = [
         assert.ok(detailHtml.includes("相关页面"));
         assert.ok(detailHtml.includes("breadcrumb"));
       });
+    }
+  },
+  {
+    name: "Feedback pool replay dialog exposes larger viewport and manual height controls",
+    run: async () => {
+      const html = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.html"), "utf8");
+      const script = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.js"), "utf8");
+      const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "app.css"), "utf8");
+
+      assert.ok(html.includes('id="replay-dialog-resizer"'));
+      assert.ok(script.includes("handleReplayDialogResizePointerDown"));
+      assert.ok(script.includes("applyReplayDialogHeight"));
+      assert.ok(script.includes("function syncReplayDialogHeight"));
+      assert.ok(stylesheet.includes(".replay-dialog[open]"));
+      assert.ok(stylesheet.includes("resize: vertical"));
+      assert.ok(stylesheet.includes(".dialog-resize-handle"));
     }
   }
 ];

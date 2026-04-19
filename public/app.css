@@ -1105,6 +1105,71 @@ button.danger {
   box-shadow: 0 20px 48px rgba(11, 35, 65, 0.24);
 }
 
+.replay-dialog {
+  width: min(1180px, calc(100vw - 32px));
+  min-height: min(680px, calc(100vh - 24px));
+  max-height: calc(100vh - 24px);
+  height: var(--replay-dialog-height, min(88vh, 920px));
+  overflow: hidden;
+  resize: vertical;
+}
+
+.replay-dialog[open] {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.replay-dialog.is-resizing {
+  user-select: none;
+}
+
+.dialog-resize-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 22px 0;
+}
+
+.dialog-resize-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 124px;
+  min-width: 124px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: ns-resize;
+}
+
+.dialog-resize-handle::before {
+  content: "";
+  width: 100%;
+  height: 6px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d9e5f1, #b6cae0);
+  box-shadow: inset 0 0 0 1px rgba(31, 74, 121, 0.08);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.dialog-resize-handle:hover::before,
+.dialog-resize-handle:focus-visible::before {
+  transform: scaleY(1.15);
+  background: linear-gradient(90deg, #c7d9ec, #94b4d4);
+  box-shadow:
+    inset 0 0 0 1px rgba(31, 74, 121, 0.12),
+    0 0 0 4px rgba(19, 81, 151, 0.08);
+}
+
+.dialog-resize-hint {
+  font-size: 12px;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+}
+
 .feedback-detail-card {
   display: flex;
   flex-direction: column;
@@ -1288,6 +1353,41 @@ button.danger {
   display: grid;
   grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
   gap: 18px;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.replay-dialog .stack-form {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 16px;
+  min-height: 0;
+  height: 100%;
+  padding-top: 16px;
+  overflow: hidden;
+}
+
+.replay-dialog .form-actions {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.replay-form-grid > div,
+.replay-form-grid .detail-block {
+  min-height: 0;
+}
+
+.replay-form-grid > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.replay-form-grid .detail-block {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
 }
 
 .replay-selected-list,
@@ -1295,7 +1395,8 @@ button.danger {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 420px;
+  flex: 1 1 auto;
+  min-height: clamp(320px, 46vh, 620px);
   overflow: auto;
 }
 
@@ -1377,6 +1478,22 @@ button.danger {
   .feedback-task-drawer {
     width: 100vw;
     padding: 18px 16px 16px;
+  }
+
+  .dialog-resize-bar {
+    gap: 8px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .dialog-resize-hint {
+    font-size: 11px;
+  }
+
+  .replay-dialog {
+    width: calc(100vw - 16px);
+    min-height: min(560px, calc(100vh - 16px));
+    max-height: calc(100vh - 16px);
   }
 
   .feedback-record-button {

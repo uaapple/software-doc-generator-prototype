@@ -4,7 +4,7 @@
 在保留现有软件需求/详细设计生成能力可用的前提下，把系统改造成清晰的“工程 -> 功能模块 -> 任务”分层导航结构，并让功能模块页成为主浏览入口、旧生成页回归为纯生成工具页、单次任务详情页承担审阅与采纳动作。
 
 ## 当前阶段
-阶段 9
+阶段 9（主线验证） / 阶段 10（用户 Wiki 与使用说明）
 
 ## 各阶段
 
@@ -90,12 +90,22 @@
 - [x] 将 replay/work order 的面向用户文案统一收敛为中文
 - [x] 把 scope / abstraction / review readiness 等元数据写入工单详情，便于人工判断建议质量
 - [x] 将“后端按单案例硬判层级并强塞推荐正文”的方案废弃，明确切回 prompt-first 路线
-- [ ] 使用真实 `充电管理 / software_requirement` fallback 案例重新验证：LLM 是否会自主产出 `module` 层建议，而不是错误落到 `docType`
+- [x] 审计当前最新一条 `充电管理 / software_requirement` 已落盘 fallback 样本，确认结果仍未满足预期：最新 replay task 仍把建议落到 `docType`，正文仍偏向驳回意见改写
+- [x] 使用真实 `充电管理 / software_requirement` fallback 案例重新验证：远端 LLM 已能自主产出 `module / 充电管理 / validation_rule` 的新增提案
 - [ ] 检查新生成工单中的 `afterContent / recommendedSkillText` 是否已经抽象成“可复用规则”，而不是驳回意见改写
 - [ ] 选一条真正通用的 `software_requirement` 写作/校验案例做对照，验证 prompt 不会把通用规则过度下沉到 `module`
 - [ ] 汇总 3~5 条真实 replay 输出样本，对比层级选择、抽象度、复述风险，整理下一轮 prompt 微调依据
 - [ ] 在 prompt 稳定后，清理 `llm-service.js` 中遗留的旧版/不可达 replay quality 逻辑，避免后续维护混淆
 - [ ] 评估是否需要把“层级原因 / 抽象度 / 可应用性”进一步前置到工单列表，而不只放详情页
+- **状态：** in_progress
+
+### 阶段 10：独立用户 Wiki 与使用说明
+- [x] 新增独立 Wiki 服务，支持按导航配置加载 Markdown 页面
+- [x] 补充快速开始、工程/模块工作区、反馈池与 Replay、技能管理等首批用户说明页
+- [x] 补充 Wiki 的启动 / 停止 / 重启脚本与 README 说明
+- [x] 自动化验证通过：`npm test`、`npm run check:wiki`
+- [ ] 补齐与最新 fallback / skill work order 实际审阅路径完全对齐的操作说明
+- [ ] 评估是否需要把人工浏览器走查中发现的高频问题直接沉淀回 Wiki FAQ
 - **状态：** in_progress
 
 ## 关键问题
@@ -107,6 +117,7 @@
 6. 如何把 `20260404` 的人工软件需求样例与 `20260411` 涉及的充电管理 / 高低系统管理 / 高压能量管理范围，提炼成 `software_requirement` 文档类型层的初版通用技能？
 7. 如何让 fallback 生成的技能修改建议优先依靠 prompt 自主给出正确层级与可复用规则，而不是靠后端针对单个案例打补丁？
 8. 如何验证 replay/work order 输出已经具备“可沉淀为 atomic skill”的抽象度，而不是只把驳回说明换个说法重新填写？
+9. 如何让新建 skill 工单在展示和应用时优先使用真正抽象后的规则正文，而不是把修正后的需求句子直接当成 skill 内容？
 
 ## 已做决策
 | 决策 | 理由 |
@@ -126,6 +137,7 @@
 | `20260404` 作为软件需求写法基准，`20260411` 作为模块范围和主题补充 | 当前输入里只有软件需求人工例子，适合先沉淀文档类型层规则而不是继续扩展详细设计/HIL 层 |
 | fallback 技能建议的收敛方向以 prompt-first 为主 | 用户明确不接受在后端加入针对 `CheryVCU-12147` 一类案例的条件性硬约束，希望模型自己学会输出正确层级与规则正文 |
 | scope / abstraction / readiness 只作为质量信号，不作为单案例硬改写器 | 可以帮助审阅与排序，但不应替代 LLM 的层级判断与规则抽象 |
+| 当前阶段优先相信真实远端 replay 输出，而不是继续从旧落盘 fallback 样本反推 prompt 效果 | 真实重跑已证明模型可以给出 `module` 层建议，后续重点转为“工单展示/应用是否使用了正确正文” |
 
 ## 遇到的错误
 | 错误 | 尝试次数 | 解决方案 |
@@ -135,11 +147,14 @@
 | 旧生成页被改成首页跳转页后，不再满足用户对旧审阅信息完整性的要求 | 1 | 回退思路，恢复旧生成页为真实工具页，并新增独立任务详情页承担审阅 |
 | 新生成工具页缺少 breadcrumb 和多选资产样式 | 1 | 在 `public/app.css` 做最小量增补，不改旧内容区主体结构 |
 | `planning-with-files` 的 `session-catchup.py` 在本机无法运行 | 1 | `python` 命令不可用，改为直接读取现有 `task_plan.md` / `findings.md` / `progress.md` 恢复上下文 |
+| 浏览器里技能工单页面一开始打开 `127.0.0.1` 报 `ERR_CONNECTION_REFUSED` | 1 | 用前台常驻方式运行 `node src/server.js`，再刷新浏览器确认工单已正常渲染 |
 
 ## 备注
 - 当前最新开发分支：`codex-layered-navigation-workflow`
-- 当前最新提交：`8bfcd66 Implement layered project module task navigation`
+- 当前最新提交：`f0ed15c feat: add standalone wiki service`
 - 当前仍保留迁移演示工程，可用于换环境后的页面联调与人工走查
-- 自动化测试当前通过：`npm test` -> `All 10 tests passed.`
+- 当前工作树干净：`git status --short` 无输出
+- 自动化测试当前通过：`npm test` -> `All 33 tests passed.`
+- Wiki 校验当前通过：`npm run check:wiki` -> `Wiki validation passed.`
 - 下一次接手开发前，优先读取 `task_plan.md`、`findings.md`、`progress.md`，再看 `git status` 与当前分支/最近提交
-- 阶段 9 的重点不是继续“补更多规则”，而是验证：真实 fallback 输出是否已经能把模块特定建议放到对的层级，并把正文抽象成可复用 atomic skill
+- 阶段 9 的重点已从“LLM 会不会判成 module”转向“技能工单是否把抽象后的规则正文正确展示和应用出去”

@@ -165,17 +165,24 @@ export class LlmService {
       return buildFallbackReplayProposal(materialPack);
     }
     if (!profile?.apiKey) {
-      throw new Error("Selected replay LLM profile is not usable");
+      const error = new Error("Replay model profile is not configured");
+      error.debugStage = "replay_profile_invalid";
+      throw error;
     }
 
     const client = new OpenAI({ apiKey: profile.apiKey, baseURL: profile.baseURL });
-    const payload = await createJsonChatCompletion(client, {
-      model: profile.model,
-      messages: buildReplayModelInput(materialPack),
-      schemaName: "skill_replay_proposal_response",
-      schema: replayProposalSchema
-    });
-    return normalizeReplayProposalPayload(payload, materialPack);
+    try {
+      const payload = await createJsonChatCompletion(client, {
+        model: profile.model,
+        messages: buildReplayModelInput(materialPack),
+        schemaName: "skill_replay_proposal_response",
+        schema: replayProposalSchema
+      });
+      return normalizeReplayProposalPayload(payload, materialPack);
+    } catch (error) {
+      error.debugStage ||= "replay_remote_generation";
+      throw error;
+    }
   }
 }
 
@@ -685,68 +692,180 @@ function getResponseSchema(documentType) {
   if (documentType === "hil_test_case") return hilTestCaseResponseSchema;
   return softwareRequirementResponseSchema;
 }
-function buildReplayModelInput(materialPack = {}) {
-  const allowedKindsByArea = materialPack.allowedKindsByArea || {};
-  const layerDefinitions = materialPack.layerDefinitions || {};
+function collapseWhitespace(value = "") {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function buildReplaySystemPrompt() {
   return [
-    {
-      role: "system",
-      content: [
-        {
-          type: "input_text",
-          text: [
-            "你是技能维护工单生成助手，需要根据驳回记录、人工范例、生成结果和当次生效 skill 快照，输出可直接进入技能管理的结构化修改建议。",
-            "返回内容必须全部使用中文，并严格符合给定 JSON schema。",
-            "每个 items 条目只能对应一个 atomic skill 修改项。",
-            "请先判断建议应该沉淀到 generic / docType / domain / module 哪一层，再填写 targetLayer 和 targetProfileKey。",
-            "如果建议依赖具体模块名、需求编号、模块专属信号、枚举值、阈值或流程语义，则优先落到 module；不要错误上提到 docType。",
-            "如果已经命中合适的 targetSkillCode，就输出 conclusionType=modify_existing；只有在确实没有命中 skill 时才输出 conclusionType=create_new。",
-            "不要编造新的 kind，targetKind 必须来自 material pack 中 allowedKindsByArea 的允许值。",
-            "afterContent 必须是可复用的 atomic skill 正文，不要只是把驳回说明换一种语气重写。",
-            "如果当前案例只适合沉淀为模块规则，请把正文抽象成“某类需求在什么条件下不得补写什么内容”的规则，而不是“请把某条结果改成什么”。",
-            "beforeContent 应表示当前 skill 原文或当前能力边界；afterContent 应表示建议修改后的 atomic skill 正文。",
-            "whyCurrent 必须说明当前 skill 为什么没拦住问题；whyChange 必须说明修改后为什么能避免同类问题。",
-            "validatorSuggestions 只做只读建议，不进入自动应用链路。",
-            "不要输出整份 markdown 文件，只输出单条 atomic skill 级别的修改。"
-          ].join("\n")
-        }
-      ]
-    },
-    {
-      role: "user",
-      content: [
-        {
-          type: "input_text",
-          text: JSON.stringify(
-            {
-              ...materialPack,
-              layerDefinitions,
-              allowedKindsByArea
-            },
-            null,
-            2
-          )
-        }
-      ]
+    "你是技能维护工单生成助手，需要根据驳回记录、期望写法、被驳回输出、原始生成时实际提供过的 skill 上下文，以及用户手动勾选的参考资产，输出可直接进入技能管理的结构化修改建议。",
+    "返回内容必须全部使用中文，并严格符合给定 JSON schema。",
+    "每个 items 条目只能对应一个 atomic skill 修改项。",
+    "层级说明：generic 表示跨模块和跨文档通用的基础规则；docType 表示仅对某一类文档类型生效的规则；domain 表示在某个领域内广泛适用但不局限于单一模块的规则；module 表示仅对当前模块生效的规则。",
+    "请先分析驳回意见、期望写法和被驳回输出，再判断建议应该沉淀到 generic / docType / domain / module 哪一层。",
+    "如果建议依赖具体模块名、模块专属流程语义、局部边界、模块专属信号、枚举值或阈值，则优先落到 module；不要错误上提到 docType。",
+    "优先在原始生成时已提供给模型的 skill 上下文中寻找可以修改的 existing atomic skill；只有在 existing atomic skill 无法覆盖某个独立问题时，才允许输出 conclusionType=create_new。",
+    "action 只能填写 add_skill_item、modify_skill_item、split_skill_item、deprecate_skill_item 之一，不要输出自然语言句子。",
+    "evidenceRefs 只能填写 rejectionContext.records 中给出的 id，不要填写 requirementCode、标题或自然语言。",
+    "modify_existing 时 targetSkillCode 必须来自 candidateSkillInventory 里的 skillCode；不要编造 skillCode。",
+    "如果 candidateSkillInventory 为空，或没有任何 skillCode 能精确承接本次修改，就必须输出 create_new + add_skill_item，并把 targetSkillCode 设为空字符串。",
+    "不要编造新的 kind，targetKind 必须来自 taskContext.allowedKindsByArea 的允许值。",
+    "afterContent 必须是可复用的 atomic skill 正文，不要只是把驳回说明换一种语气重写。",
+    "如果当前案例只适合沉淀为模块规则，请把正文抽象成“某类需求在什么条件下不得补写什么内容”的规则，而不是“请把某条结果改成什么”。",
+    "beforeContent 应表示当前 skill 原文或当前能力边界；afterContent 应表示建议修改后的 atomic skill 正文。",
+    "whyCurrent 必须说明当前 skill 为什么没拦住问题；whyChange 必须说明修改后为什么能避免同类问题。",
+    "validatorSuggestions 只做只读建议，不进入自动应用链路。",
+    "一次 replay 可以输出多个 items，但每个 item 只能对应一个 atomic skill 修改项。",
+    "只要存在驳回记录，items 至少输出 1 条可执行提案；不要返回空数组。",
+    "参考资产是案例证据和写法参考，不是 skill；如果人工优质范例与代码证据冲突，应优先对齐人工范例界定的边界和粒度。",
+    "不要输出整份 markdown 文件，只输出单条 atomic skill 级别的修改。"
+  ].join("\n");
+}
+
+function buildReplayTaskContext(materialPack = {}) {
+  const moduleContext = materialPack.moduleContext || {};
+  return {
+    projectName: String(moduleContext.projectName || "").trim(),
+    moduleName: String(moduleContext.moduleName || "").trim(),
+    documentType: String(moduleContext.documentType || "software_requirement").trim() || "software_requirement",
+    targetAreas: Array.isArray(materialPack.targetAreas) ? materialPack.targetAreas : [],
+    allowedKindsByArea: materialPack.allowedKindsByArea || {},
+    candidateSkillCount: Array.isArray(materialPack.candidateSkillItems) ? materialPack.candidateSkillItems.length : 0
+  };
+}
+
+function buildReplayRejectedOutput(outputSnapshot = {}) {
+  if (!outputSnapshot || typeof outputSnapshot !== "object") {
+    return {
+      title: "",
+      requirementText: "",
+      verificationHint: "",
+      confidence: 0
+    };
+  }
+  return {
+    title: String(outputSnapshot.title || "").trim(),
+    requirementText: String(outputSnapshot.requirementText || "").trim(),
+    verificationHint: String(outputSnapshot.verificationHint || "").trim(),
+    confidence: Number(outputSnapshot.confidence ?? 0) || 0
+  };
+}
+
+function buildReplayRejectionContext(materialPack = {}) {
+  const snapshots = Array.isArray(materialPack.rejectionSnapshots) ? materialPack.rejectionSnapshots : [];
+  return {
+    records: snapshots.map((snapshot) => ({
+      id: String(snapshot.id || "").trim(),
+      requirementCode: String(snapshot.requirementCode || "").trim(),
+      reasonCategory: String(snapshot.reasonCategory || "").trim(),
+      reasonText: String(snapshot.reasonText || "").trim(),
+      expectedNote: String(snapshot.expectedNote || "").trim(),
+      rejectedOutput: buildReplayRejectedOutput(snapshot.outputSnapshot || {}),
+      sourceRefsSnapshot: Array.isArray(snapshot.sourceRefsSnapshot) ? snapshot.sourceRefsSnapshot : [],
+      projectEvidenceSnapshot: Array.isArray(snapshot.projectEvidenceSnapshot) ? snapshot.projectEvidenceSnapshot : []
+    }))
+  };
+}
+
+function buildReplayCandidateSkillInventory(materialPack = {}) {
+  const candidates = Array.isArray(materialPack.candidateSkillItems) ? materialPack.candidateSkillItems : [];
+  return candidates.slice(0, 20).map((item) => ({
+    skillCode: String(item.skillCode || item.ruleId || "").trim(),
+    title: String(item.title || "").trim(),
+    targetLayer: String(item.layer || "").trim(),
+    targetProfileKey: normalizeReplaySlug(item.profileKey || ""),
+    targetKind: String(item.kind || "").trim(),
+    targetFile: String(item.targetFile || "").trim(),
+    contentSummary: String(item.contentSummary || item.content || "").trim()
+  }));
+}
+
+function buildReplayOriginalGenerationSkillContext(materialPack = {}) {
+  const snapshot = materialPack.effectiveSkillSnapshot || {};
+  const files = snapshot.files || {};
+  return {
+    requirementExtraction: String(files["requirement_extraction.md"] || "").trim(),
+    requirementWriting: String(files["requirement_writing.md"] || "").trim(),
+    requirementValidation: String(files["requirement_validation.md"] || "").trim(),
+    goodExamples: String(files["examples/good_examples.md"] || "").trim(),
+    badExamples: String(files["examples/bad_examples.md"] || "").trim(),
+    domainKnowledge: files["domain-knowledge.json"] || {},
+    selectedProfiles: Array.isArray(snapshot.selectedProfiles) ? snapshot.selectedProfiles : []
+  };
+}
+
+function describeReplayReferenceAssetRole(role = "") {
+  if (role === "system_pdf") {
+    return "系统需求来源，用于确认上游约束、边界、条件、阈值和主题范围。";
+  }
+  if (role === "reference_requirement_example") {
+    return "人工软件需求优质范例，用于确认期望写法、粒度、边界和表达风格。";
+  }
+  if (role === "generated_c") {
+    return "实现/代码证据，用于解释模型为何可能扩写，但不能直接覆盖人工范例定义的需求边界。";
+  }
+  return "参考证据，用于辅助判断本次驳回涉及的边界、写法和来源。";
+}
+
+function summarizeReplayReferenceAsset(asset = {}) {
+  return truncate(collapseWhitespace(asset.preview || ""), 180);
+}
+
+function explainReplayReferenceAssetRelevance(asset = {}, materialPack = {}) {
+  const role = String(asset.role || "").trim();
+  const text = collapseWhitespace(
+    [
+      ...(Array.isArray(materialPack.rejectionSnapshots) ? materialPack.rejectionSnapshots.flatMap((snapshot) => [snapshot.reasonText, snapshot.expectedNote]) : []),
+      asset.preview
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+  if (role === "reference_requirement_example") {
+    if (/人工范例|优质范例|期望写法|对齐范例/.test(text)) {
+      return "该资产与本次驳回直接相关，定义了应重点对齐的人工范例写法、粒度和边界。";
     }
-  ];
+    return "该资产是人工软件需求优质范例，应重点参考其条目粒度、表达边界和写法风格。";
+  }
+  if (role === "system_pdf") {
+    return "该资产用于确认上游系统需求约束、边界条件和阈值，帮助判断当前输出是否越界扩写。";
+  }
+  if (role === "generated_c") {
+    return "该资产可解释模型为何引入实现侧逻辑，但不能直接覆盖人工范例和系统需求定义的需求边界。";
+  }
+  return "该资产是本次回放的补充证据，可用于辅助判断问题来源和期望写法。";
+}
+
+function buildReplayReferenceAssets(materialPack = {}) {
+  const assets = Array.isArray(materialPack.referenceAssets) ? materialPack.referenceAssets : [];
+  return assets.map((asset) => ({
+    fileName: String(asset.originalName || asset.fileName || asset.storedName || "").trim(),
+    role: String(asset.role || "").trim(),
+    typeDescription: describeReplayReferenceAssetRole(asset.role),
+    contentSummary: summarizeReplayReferenceAsset(asset),
+    whyRelevant: explainReplayReferenceAssetRelevance(asset, materialPack),
+    preview: String(asset.preview || "").trim()
+  }));
+}
+
+function buildReplayPromptContext(materialPack = {}) {
+  return {
+    taskContext: buildReplayTaskContext(materialPack),
+    rejectionContext: buildReplayRejectionContext(materialPack),
+    originalGenerationSkillContext: buildReplayOriginalGenerationSkillContext(materialPack),
+    candidateSkillInventory: buildReplayCandidateSkillInventory(materialPack),
+    referenceAssets: buildReplayReferenceAssets(materialPack)
+  };
+}
+
+export function buildReplayModelInput(materialPack = {}) {
   return [
     {
       role: "system",
       content: [
         {
           type: "input_text",
-          text: [
-            "你是技能维护工单生成助手，需要根据驳回记录、人工范例、生成结果和当次生效 skill 快照，输出可直接进入技能管理的结构化修改建议。",
-            "返回内容必须是中文，并严格符合给定 JSON schema。",
-            "每个 items 条目只能对应一个 atomic skill 修改项。",
-            "如果已有合适的 targetSkillCode，就输出 conclusionType=modify_existing；只有在确实没有命中 skill 时才输出 conclusionType=create_new。",
-            "不要编造新的 kind，targetKind 必须来自 material pack 中 allowedKindsByArea 的允许值。",
-            "不要输出泛泛结论，必须说明 fallbackReason、whyCurrent、whyChange。",
-            "beforeContent 应表示当前 skill 原文或当前能力边界；afterContent 应表示建议改后的原子技能正文。",
-            "validatorSuggestions 只做只读建议，不进入自动应用链路。",
-            "不要输出整份 markdown 文件，只输出单条 atomic skill 级别的修改。"
-          ].join("\n")
+          text: buildReplaySystemPrompt()
         }
       ]
     },
@@ -755,15 +874,7 @@ function buildReplayModelInput(materialPack = {}) {
       content: [
         {
           type: "input_text",
-          text: JSON.stringify(
-            {
-              ...materialPack,
-              layerDefinitions,
-              allowedKindsByArea
-            },
-            null,
-            2
-          )
+          text: JSON.stringify(buildReplayPromptContext(materialPack), null, 2)
         }
       ]
     }
@@ -1263,7 +1374,19 @@ function buildFallbackReplayProposal(materialPack = {}) {
 function normalizeReplayProposalPayload(payload = {}, materialPack = {}) {
   const snapshots = materialPack.rejectionSnapshots || [];
   const validIds = new Set(snapshots.map((item) => item.id));
+  const refAliasMap = new Map();
+  for (const snapshot of snapshots) {
+    const recordId = String(snapshot.id || "").trim();
+    const requirementCode = String(snapshot.requirementCode || "").trim();
+    if (recordId) refAliasMap.set(recordId, recordId);
+    if (requirementCode) refAliasMap.set(requirementCode, recordId);
+  }
   const targetAreas = materialPack.targetAreas || [];
+  const candidateSkillMap = new Map(
+    (Array.isArray(materialPack.candidateSkillItems) ? materialPack.candidateSkillItems : [])
+      .map((item) => [String(item.skillCode || "").trim(), item])
+      .filter(([skillCode]) => skillCode)
+  );
   return {
     summary: String(payload.summary || `已基于 ${snapshots.length} 条驳回记录生成回投提议。`).trim(),
     decisionSummary: String(payload.decisionSummary || "").trim(),
@@ -1280,41 +1403,53 @@ function normalizeReplayProposalPayload(payload = {}, materialPack = {}) {
           .filter((item) => item.title || item.ruleText || item.why)
       : [],
     items: Array.isArray(payload.items)
-      ? payload.items.map((item, index) => normalizeReplayProposalItem(item, index, validIds, targetAreas, materialPack)).filter(Boolean)
+      ? payload.items
+          .map((item, index) =>
+            normalizeReplayProposalItem(item, index, validIds, refAliasMap, candidateSkillMap, targetAreas, materialPack)
+          )
+          .filter(Boolean)
       : []
   };
 }
 
-function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], materialPack = {}) {
-  const rawConclusionType = String(item?.conclusionType || "").trim();
-  const rawAction = String(item?.action || "").trim();
-  const action = {
+function normalizeReplayAction(rawAction = "", rawConclusionType = "") {
+  const trimmed = String(rawAction || "").trim();
+  const mapped = {
     add_rule: "add_skill_item",
     add_example: "add_skill_item",
     modify_rule: "modify_skill_item",
     split_rule: "split_skill_item",
-    deprecate_rule: "deprecate_skill_item"
-  }[rawAction] || rawAction || (rawConclusionType === "create_new" ? "add_skill_item" : "modify_skill_item");
-  if (!["add_skill_item", "modify_skill_item", "split_skill_item", "deprecate_skill_item"].includes(action)) {
-    return null;
+    deprecate_rule: "deprecate_skill_item",
+    add_skill_item: "add_skill_item",
+    modify_skill_item: "modify_skill_item",
+    split_skill_item: "split_skill_item",
+    deprecate_skill_item: "deprecate_skill_item"
+  }[trimmed];
+  if (mapped) return mapped;
+  if (/拆分/.test(trimmed)) return "split_skill_item";
+  if (/(废弃|弃用|删除)/.test(trimmed)) return "deprecate_skill_item";
+  if (/(新增|新建|创建)/.test(trimmed)) return "add_skill_item";
+  if (/(修改|修订|更新|补充)/.test(trimmed)) {
+    return rawConclusionType === "create_new" ? "add_skill_item" : "modify_skill_item";
   }
+  return rawConclusionType === "create_new" ? "add_skill_item" : "modify_skill_item";
+}
 
-  const targetArea = targetAreas[0] || "validation";
-  const inferredTarget = inferReplayDefaultTarget(targetArea, materialPack);
-  const allowedKinds = collectAllowedKinds(targetAreas);
-  const kind = String(item.targetKind || item.kind || mapReplayAreaToKind(targetAreas[0] || "validation")).trim();
-  const targetLayer = String(item.targetLayer || inferredTarget.targetLayer).trim();
-  const targetProfileKey = normalizeReplaySlug(item.targetProfileKey || inferredTarget.targetProfileKey || "generic");
-  const targetFile = String(item.targetFile || mapReplayKindToTargetFile(kind)).trim();
-  const evidenceRefs = Array.isArray(item.evidenceRefs)
-    ? item.evidenceRefs.map((ref) => String(ref || "").trim()).filter((ref) => validIds.has(ref))
-    : [];
-  const afterContent = String(item.afterContent || item.after || item.newRuleDraft?.content || "").trim();
-  const beforeContent = String(item.beforeContent || item.before || "").trim();
-  const title = String(item.title || item.newRuleDraft?.title || `回投提议 ${index + 1}`).trim();
-  const newRuleDraft = item.newRuleDraft && typeof item.newRuleDraft === "object"
+function normalizeReplayEvidenceRefs(rawRefs = [], validIds = new Set(), refAliasMap = new Map()) {
+  if (!Array.isArray(rawRefs)) return [];
+  const normalized = [];
+  for (const ref of rawRefs) {
+    const trimmed = String(ref || "").trim();
+    const mappedRef = validIds.has(trimmed) ? trimmed : refAliasMap.get(trimmed) || "";
+    if (mappedRef) normalized.push(mappedRef);
+  }
+  return [...new Set(normalized)];
+}
+
+function synthesizeReplayNewRuleDraft(item = {}, title = "", afterContent = "") {
+  const draft = item.newRuleDraft && typeof item.newRuleDraft === "object"
     ? {
-        title: String(item.newRuleDraft.title || title || `回投提议 ${index + 1}`).trim(),
+        title: String(item.newRuleDraft.title || title || "").trim(),
         content: String(item.newRuleDraft.content || afterContent || "").trim(),
         structuredPayload:
           item.newRuleDraft.structuredPayload && typeof item.newRuleDraft.structuredPayload === "object"
@@ -1332,13 +1467,55 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], ma
           : []
       }
     : null;
+  if (draft?.content) {
+    return draft;
+  }
+  if (!afterContent) {
+    return draft;
+  }
+  return {
+    title: title || "回投提议",
+    content: afterContent,
+    structuredPayload: null,
+    rules: []
+  };
+}
 
-  const targetSkillCode = String(item.targetSkillCode || item.targetRuleId || "").trim();
-  const candidate = Array.isArray(materialPack.candidateSkillItems)
-    ? materialPack.candidateSkillItems.find((entry) => entry.skillCode === targetSkillCode)
-    : null;
-  if (action === "modify_skill_item" && !targetSkillCode) {
-    return null;
+function normalizeReplayProposalItem(item, index, validIds, refAliasMap, candidateSkillMap, targetAreas = [], materialPack = {}) {
+  const rawConclusionType = String(item?.conclusionType || "").trim();
+  let action = normalizeReplayAction(item?.action || "", rawConclusionType);
+
+  const targetArea = targetAreas[0] || "validation";
+  const inferredTarget = inferReplayDefaultTarget(targetArea, materialPack);
+  const allowedKinds = collectAllowedKinds(targetAreas);
+  let kind = String(item.targetKind || item.kind || mapReplayAreaToKind(targetAreas[0] || "validation")).trim();
+  let targetLayer = String(item.targetLayer || inferredTarget.targetLayer).trim();
+  let targetProfileKey = normalizeReplaySlug(item.targetProfileKey || inferredTarget.targetProfileKey || "generic");
+  let targetFile = String(item.targetFile || mapReplayKindToTargetFile(kind)).trim();
+  const evidenceRefs = normalizeReplayEvidenceRefs(item.evidenceRefs, validIds, refAliasMap);
+  const afterContent = String(item.afterContent || item.after || item.newRuleDraft?.content || "").trim();
+  const beforeContent = String(item.beforeContent || item.before || "").trim();
+  const title = String(item.title || item.newRuleDraft?.title || `回投提议 ${index + 1}`).trim();
+  let newRuleDraft = synthesizeReplayNewRuleDraft(item, title || `回投提议 ${index + 1}`, afterContent);
+
+  let targetSkillCode = String(item.targetSkillCode || item.targetRuleId || "").trim();
+  const candidate = candidateSkillMap.get(targetSkillCode) || null;
+  if (candidate) {
+    targetLayer = String(candidate.layer || targetLayer).trim();
+    targetProfileKey = normalizeReplaySlug(candidate.profileKey || targetProfileKey);
+    kind = String(candidate.kind || kind).trim();
+    targetFile = String(candidate.targetFile || targetFile || mapReplayKindToTargetFile(kind)).trim();
+  } else if (action === "modify_skill_item") {
+    if (!(afterContent || newRuleDraft?.content)) {
+      return null;
+    }
+    action = "add_skill_item";
+    targetSkillCode = "";
+    newRuleDraft = synthesizeReplayNewRuleDraft(item, title || `回投提议 ${index + 1}`, afterContent);
+  }
+
+  if (action === "add_skill_item") {
+    targetSkillCode = "";
   }
   if (action === "add_skill_item" && !(newRuleDraft?.content || afterContent || newRuleDraft?.structuredPayload)) {
     return null;
@@ -1346,15 +1523,20 @@ function normalizeReplayProposalItem(item, index, validIds, targetAreas = [], ma
   if (!isValidReplayLayer(targetLayer)) {
     return null;
   }
+  if (targetLayer === "module") {
+    targetProfileKey = getReplayModuleProfileKey(materialPack) || targetProfileKey;
+  } else if (targetLayer === "docType") {
+    targetProfileKey = normalizeReplaySlug(materialPack.moduleContext?.documentType || targetProfileKey || "software_requirement");
+  } else if (targetLayer === "domain") {
+    targetProfileKey = normalizeReplaySlug(materialPack.moduleContext?.domain || targetProfileKey || "embedded_vcu");
+  } else {
+    targetProfileKey = "generic";
+  }
   if (!allowedKinds.has(kind)) {
     return null;
   }
-  if (candidate && (candidate.layer !== targetLayer || normalizeReplaySlug(candidate.profileKey) !== targetProfileKey || candidate.kind !== kind)) {
-    return null;
-  }
 
-  const conclusionType =
-    rawConclusionType === "create_new" || action === "add_skill_item" ? "create_new" : "modify_existing";
+  const conclusionType = action === "add_skill_item" || rawConclusionType === "create_new" ? "create_new" : "modify_existing";
   const normalizedItem = {
     conclusionType,
     action,
@@ -1449,12 +1631,31 @@ const replayProposalSchema = {
         type: "object",
         additionalProperties: false,
         properties: {
-          conclusionType: { type: "string" },
-          action: { type: "string" },
+          conclusionType: { type: "string", enum: ["create_new", "modify_existing"] },
+          action: { type: "string", enum: ["add_skill_item", "modify_skill_item", "split_skill_item", "deprecate_skill_item"] },
           targetSkillCode: { type: "string" },
-          targetLayer: { type: "string" },
+          targetLayer: { type: "string", enum: ["generic", "docType", "domain", "module"] },
           targetProfileKey: { type: "string" },
-          targetKind: { type: "string" },
+          targetKind: {
+            type: "string",
+            enum: [
+              "writing_rule",
+              "good_example",
+              "rule_hint",
+              "generation_priority",
+              "extraction_rule",
+              "validation_rule",
+              "anti_pattern",
+              "bad_example",
+              "source_alias",
+              "normalization_rule",
+              "forbidden_expansion",
+              "source_policy_setting",
+              "document_blueprint_section",
+              "document_blueprint_policy",
+              "code_style_prefix"
+            ]
+          },
           targetInsertionHint: { type: "string" },
           kind: { type: "string" },
           title: { type: "string" },
@@ -1555,6 +1756,7 @@ const detailDesignResponseSchema = {
   properties: {
     items: {
       type: "array",
+      minItems: 1,
       items: {
         type: "object",
         additionalProperties: false,

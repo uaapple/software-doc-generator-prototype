@@ -25,6 +25,10 @@ function normalizeDocumentType(value = "") {
   return String(value || "software_requirement").trim() || "software_requirement";
 }
 
+function getReplayTaskPath(taskId) {
+  return path.join(config.replayTaskStoreDir, `${taskId}.json`);
+}
+
 function getWorkOrderPath(workOrderId) {
   return path.join(config.skillWorkOrderStoreDir, `${workOrderId}.json`);
 }
@@ -197,6 +201,36 @@ function summarizeListItem(workOrder = {}) {
   };
 }
 
+function buildGeneratedPayloadFromReplayTask(task = {}) {
+  return {
+    items: collectRawWorkOrderItems(task),
+    summary: String(task.summary || "").trim(),
+    decisionSummary: String(task.decisionSummary || "").trim(),
+    validatorSuggestions: cloneJson(task.validatorSuggestions || [])
+  };
+}
+
+function buildReplayTaskWorkOrderSummary(workOrder = {}) {
+  return {
+    id: workOrder.id,
+    status: workOrder.status,
+    itemStats: cloneJson(workOrder.itemStats || null),
+    decisionSummary: workOrder.decisionSummary || ""
+  };
+}
+
+function shouldHydrateReplayTask(task = {}) {
+  return Boolean(
+    task?.id &&
+      (
+        (Array.isArray(task.sourceRejectionIds) && task.sourceRejectionIds.length) ||
+        (Array.isArray(task.proposals) && task.proposals.length) ||
+        (Array.isArray(task.validatorSuggestions) && task.validatorSuggestions.length) ||
+        String(task.decisionSummary || "").trim()
+      )
+  );
+}
+
 function mergeAppliedProvenance(base = {}, extra = {}) {
   return {
     ...(cloneJson(base) || {}),
@@ -209,9 +243,18 @@ export class SkillWorkOrderService {
     this.skillManagementService = new SkillManagementService();
   }
 
+  async listReplayTasks() {
+    const names = await fs.readdir(config.replayTaskStoreDir).catch(() => []);
+    return Promise.all(
+      names
+        .filter((name) => name.endsWith(".json"))
+        .map((name) => readJson(path.join(config.replayTaskStoreDir, name)))
+    );
+  }
+
   async listWorkOrders(filters = {}) {
     const names = await fs.readdir(config.skillWorkOrderStoreDir).catch(() => []);
-    const workOrders = await Promise.all(
+    const persistedWorkOrders = await Promise.all(
       names
         .filter((name) => name.endsWith(".json"))
         .map(async (name) => {
@@ -220,7 +263,20 @@ export class SkillWorkOrderService {
         })
     );
 
-    let visible = workOrders.filter(Boolean);
+    const workOrdersById = new Map();
+    for (const workOrder of persistedWorkOrders.filter(Boolean)) {
+      workOrdersById.set(workOrder.id, workOrder);
+    }
+
+    const replayTasks = await this.listReplayTasks();
+    for (const task of replayTasks.filter(shouldHydrateReplayTask)) {
+      const workOrder = await this.ensureWorkOrderForReplayTask(task, workOrdersById);
+      if (workOrder) {
+        workOrdersById.set(workOrder.id, workOrder);
+      }
+    }
+
+    let visible = [...workOrdersById.values()].filter(Boolean);
     if (filters.status) visible = visible.filter((item) => item.status === filters.status);
     if (filters.moduleId) visible = visible.filter((item) => item.moduleId === filters.moduleId);
     if (filters.documentType) visible = visible.filter((item) => item.documentType === filters.documentType);
@@ -232,7 +288,17 @@ export class SkillWorkOrderService {
 
   async getWorkOrder(workOrderId) {
     const workOrder = await readJson(getWorkOrderPath(workOrderId));
-    return this.repairWorkOrderIfNeeded(workOrder);
+    if (workOrder) {
+      return this.repairWorkOrderIfNeeded(workOrder);
+    }
+
+    const replayTasks = await this.listReplayTasks();
+    const matchedTask = replayTasks.find((task) => String(task?.workOrderId || "").trim() === String(workOrderId || "").trim());
+    if (!matchedTask) {
+      return null;
+    }
+
+    return this.ensureWorkOrderForReplayTask(matchedTask);
   }
 
   async repairWorkOrderIfNeeded(workOrder = null) {
@@ -240,7 +306,7 @@ export class SkillWorkOrderService {
       return workOrder;
     }
 
-    const task = await readJson(path.join(config.replayTaskStoreDir, `${workOrder.sourceTaskId}.json`));
+    const task = await readJson(getReplayTaskPath(workOrder.sourceTaskId));
     if (!task) {
       return workOrder;
     }
@@ -261,7 +327,48 @@ export class SkillWorkOrderService {
     return workOrder;
   }
 
-  async createFromReplayTask(task = {}, generated = {}) {
+  async ensureWorkOrderForReplayTask(task = {}, existingWorkOrdersById = new Map()) {
+    if (!shouldHydrateReplayTask(task)) {
+      return null;
+    }
+
+    let nextWorkOrderId = String(task.workOrderId || "").trim();
+    let workOrder = null;
+
+    if (nextWorkOrderId) {
+      workOrder = await readJson(getWorkOrderPath(nextWorkOrderId));
+    }
+
+    if (!workOrder) {
+      workOrder = [...existingWorkOrdersById.values()].find((entry) => entry?.sourceTaskId === task.id) || null;
+      if (workOrder) {
+        nextWorkOrderId = workOrder.id;
+      }
+    }
+
+    if (workOrder) {
+      workOrder = await this.repairWorkOrderIfNeeded(workOrder);
+    } else {
+      workOrder = await this.createFromReplayTask(task, buildGeneratedPayloadFromReplayTask(task), {
+        workOrderId: nextWorkOrderId || undefined
+      });
+      nextWorkOrderId = workOrder.id;
+    }
+
+    const nextSummary = buildReplayTaskWorkOrderSummary(workOrder);
+    const previousSummaryJson = JSON.stringify(task.workOrderSummary || null);
+    const nextSummaryJson = JSON.stringify(nextSummary);
+    if (task.workOrderId !== nextWorkOrderId || previousSummaryJson !== nextSummaryJson) {
+      task.workOrderId = nextWorkOrderId;
+      task.workOrderSummary = nextSummary;
+      task.updatedAt = now();
+      await writeJson(getReplayTaskPath(task.id), task);
+    }
+
+    return workOrder;
+  }
+
+  async createFromReplayTask(task = {}, generated = {}, options = {}) {
     if (!task?.id) {
       throw createManagedError("Creating a skill work order requires a replay task", 400, "missing_replay_task");
     }
@@ -278,7 +385,7 @@ export class SkillWorkOrderService {
       : [];
     const status = computeWorkOrderStatus(items);
     const workOrder = {
-      id: randomUUID(),
+      id: String(options.workOrderId || "").trim() || randomUUID(),
       title: buildWorkOrderTitle(task),
       sourceType: "fallback",
       sourceTaskId: task.id,

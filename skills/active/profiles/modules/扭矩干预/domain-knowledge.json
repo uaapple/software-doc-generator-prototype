@@ -169,7 +169,6 @@
   "ruleHints": [
     {
       "domain": "embedded_vcu",
-      "documentType": "-",
       "subdomain": "torque_intervention",
       "writingPattern": "优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。",
       "targetStyle": "输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。"
@@ -296,12 +295,10 @@
         "replacement": "主动制动（AEB/CDP）"
       },
       {
-        "pattern": "；4. 前轴CCO/ISA扭矩请求有效",
-        "replacement": "-"
+        "pattern": "；4. 前轴CCO/ISA扭矩请求有效"
       },
       {
-        "pattern": "；4. 后轴CCO/ISA扭矩请求有效",
-        "replacement": "-"
+        "pattern": "；4. 后轴CCO/ISA扭矩请求有效"
       }
     ],
     "forbiddenExpansions": {
@@ -319,12 +316,10 @@
   },
   "documentBlueprint": {
     "preferredFunctionSection": {
-      "title": "扭矩干预功能",
-      "sectionNumber": "-"
+      "title": "扭矩干预功能"
     },
     "preferredSubsections": [
       {
-        "sectionNumber": "-",
         "title": "ESC前轴扭矩干预",
         "coreRequirementTypes": [
           "activation_flag_logic",
@@ -332,7 +327,6 @@
         ]
       },
       {
-        "sectionNumber": "-",
         "title": "ESC后轴扭矩干预",
         "coreRequirementTypes": [
           "activation_flag_logic",

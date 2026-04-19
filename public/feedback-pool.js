@@ -39,6 +39,7 @@ const recordDetailContent = document.querySelector("#record-detail-content");
 const recordDetailClose = document.querySelector("#record-detail-close");
 const replayDialog = document.querySelector("#replay-dialog");
 const replayDialogSubtitle = document.querySelector("#replay-dialog-subtitle");
+const replayDialogResizer = document.querySelector("#replay-dialog-resizer");
 const replayForm = document.querySelector("#replay-form");
 const replayFormCancel = document.querySelector("#replay-form-cancel");
 const replayLlmProfileSelect = document.querySelector("#replay-llm-profile-select");
@@ -52,6 +53,16 @@ const taskDrawerDetailRoot = document.querySelector("#task-drawer-detail");
 const feedbackStatusRoot = document.querySelector("#feedback-status");
 
 let pendingReplayTimer = 0;
+const REPLAY_DIALOG_HEIGHT_STORAGE_KEY = "feedback-pool:replay-dialog-height";
+const replayDialogResizeState = {
+  active: false,
+  pointerId: null,
+  startY: 0,
+  startHeight: 0,
+  height: 0
+};
+
+syncReplayDialogHeight();
 
 await bootstrap();
 
@@ -74,9 +85,16 @@ replayFormCancel.addEventListener("click", () => replayDialog.close());
 replayDialog.addEventListener("click", (event) => {
   if (event.target === replayDialog) replayDialog.close();
 });
+replayDialog.addEventListener("close", cleanupReplayDialogResizeSession);
+replayDialog.addEventListener("cancel", cleanupReplayDialogResizeSession);
+if (replayDialogResizer) {
+  replayDialogResizer.addEventListener("pointerdown", handleReplayDialogResizePointerDown);
+  replayDialogResizer.addEventListener("keydown", handleReplayDialogResizeKeyDown);
+}
 taskDrawerListRoot.addEventListener("click", handleTaskClick);
 taskDrawerDetailRoot.addEventListener("click", handleTaskDetailAction);
 window.addEventListener("message", handleHostMessage);
+window.addEventListener("resize", syncReplayDialogHeight);
 
 async function bootstrap() {
   if (!state.projectId) {
@@ -260,6 +278,7 @@ function renderTaskDrawer() {
   taskDrawerListRoot.innerHTML = visibleTasks
     .map((task) => {
       const isPending = task.taskStatus === "running";
+      const isFailed = task.taskStatus === "failed";
       const proposalCount = (task.proposals || []).flatMap((proposal) => proposal.items || []).length;
       return `
         <button type="button" class="list-card feedback-task-card ${task.id === state.selectedTaskId ? "is-selected" : ""} ${isPending ? "is-pending" : ""}" data-task-open="${task.id}">
@@ -271,10 +290,11 @@ function renderTaskDrawer() {
             <span>${escapeHtml(task.llmProfileId || "本地回放")}</span>
           </div>
           <div class="list-card-meta">
-            <span class="mini-pill ${isPending ? "warning" : "subtle"}">${escapeHtml(replayTaskStatusLabel(task.taskStatus || ""))}</span>
+            <span class="mini-pill ${escapeHtml(replayTaskStatusTone(task.taskStatus || ""))}">${escapeHtml(replayTaskStatusLabel(task.taskStatus || ""))}</span>
             <span>${escapeHtml(formatDateTime(task.createdAt))}</span>
           </div>
           ${isPending ? `<p class="inline-hint">${escapeHtml(task.pendingStageMessage || "系统正在处理本次回放任务。")}</p>` : ""}
+          ${isFailed ? `<p class="inline-hint">${escapeHtml(task.errorMessage || "任务执行失败，请查看详情。")}</p>` : ""}
         </button>
       `;
     })
@@ -302,6 +322,9 @@ function renderTaskDrawer() {
 function buildTaskDetail(task) {
   if (task.taskStatus === "running") {
     return buildPendingTaskDetail(task);
+  }
+  if (task.taskStatus === "failed") {
+    return buildFailedTaskDetail(task);
   }
 
   const proposalItems = (task.proposals || []).flatMap((proposal) => proposal.items || []);
@@ -399,6 +422,40 @@ function buildPendingTaskDetail(task) {
         ${buildPendingTimeline(task)}
       </div>
       <div class="empty-state">任务完成后，这里会自动切换成真实的提案详情。</div>
+    </div>
+  `;
+}
+
+function buildFailedTaskDetail(task) {
+  const referenceAssets = task.materialPack?.referenceAssets || [];
+  return `
+    <div class="detail-card feedback-task-detail-card">
+      <div class="detail-header-row">
+        <div>
+          <h3>${escapeHtml(task.summary || task.id)}</h3>
+          <p class="summary">${escapeHtml(task.moduleName || "未指定模块")} · ${escapeHtml(formatDateTime(task.createdAt))}</p>
+        </div>
+        <span class="mini-pill danger">${escapeHtml(replayTaskStatusLabel(task.taskStatus || ""))}</span>
+      </div>
+      <div class="detail-block-grid">
+        <div class="detail-block">
+          <span class="label">模型</span>
+          <pre>${escapeHtml(task.llmProfileId || "本地回放")}</pre>
+        </div>
+        <div class="detail-block">
+          <span class="label">记录数</span>
+          <pre>${String(task.sourceRejectionIds.length || 0)}</pre>
+        </div>
+      </div>
+      <div class="detail-block">
+        <span class="label">失败原因</span>
+        <pre>${escapeHtml(task.errorMessage || "任务执行失败")}</pre>
+      </div>
+      <div class="detail-block">
+        <span class="label">参考资产</span>
+        <pre>${escapeHtml(referenceAssets.map((asset) => asset.originalName || asset.fileName || asset.id).join("，") || "未选择")}</pre>
+      </div>
+      <div class="empty-state">这次远端任务已经按失败状态保留在历史里，没有生成提案和技能工单。</div>
     </div>
   `;
 }
@@ -531,6 +588,160 @@ function openRecordDetail(recordId) {
   recordDetailDialog.showModal();
 }
 
+function syncReplayDialogHeight() {
+  const storedHeight = readStoredReplayDialogHeight();
+  const nextHeight = storedHeight ?? getReplayDialogDefaultHeight();
+  applyReplayDialogHeight(nextHeight, { persist: storedHeight !== null });
+}
+
+function getReplayDialogHeightBounds() {
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 900;
+  const max = Math.max(520, viewportHeight - 24);
+  const preferredMin = window.innerWidth <= 640 ? 460 : 640;
+  return {
+    min: Math.min(preferredMin, max),
+    max
+  };
+}
+
+function getReplayDialogDefaultHeight() {
+  const { min, max } = getReplayDialogHeightBounds();
+  const target = Math.round((window.innerHeight || max) * 0.88);
+  return Math.min(Math.max(target, min), Math.min(max, 960));
+}
+
+function readStoredReplayDialogHeight() {
+  try {
+    const rawValue = window.localStorage.getItem(REPLAY_DIALOG_HEIGHT_STORAGE_KEY);
+    const height = Number.parseFloat(rawValue || "");
+    return Number.isFinite(height) ? height : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredReplayDialogHeight(height) {
+  try {
+    window.localStorage.setItem(REPLAY_DIALOG_HEIGHT_STORAGE_KEY, String(height));
+  } catch {
+    // Ignore storage failures and keep the session interactive.
+  }
+}
+
+function clampReplayDialogHeight(height) {
+  const { min, max } = getReplayDialogHeightBounds();
+  const value = Number(height);
+  if (!Number.isFinite(value)) return getReplayDialogDefaultHeight();
+  return Math.min(Math.max(value, min), max);
+}
+
+function getCurrentReplayDialogHeight() {
+  const inlineHeight = Number.parseFloat(replayDialog?.style.getPropertyValue("--replay-dialog-height") || "");
+  if (Number.isFinite(inlineHeight)) return inlineHeight;
+
+  const measuredHeight = replayDialog?.getBoundingClientRect().height || 0;
+  if (Number.isFinite(measuredHeight) && measuredHeight > 0) return measuredHeight;
+
+  return readStoredReplayDialogHeight() ?? getReplayDialogDefaultHeight();
+}
+
+function applyReplayDialogHeight(height, { persist = true } = {}) {
+  if (!replayDialog) return;
+
+  const nextHeight = Math.round(clampReplayDialogHeight(height));
+  replayDialog.style.setProperty("--replay-dialog-height", `${nextHeight}px`);
+
+  if (replayDialogResizer) {
+    const { min, max } = getReplayDialogHeightBounds();
+    replayDialogResizer.setAttribute("role", "separator");
+    replayDialogResizer.setAttribute("aria-orientation", "horizontal");
+    replayDialogResizer.setAttribute("aria-valuemin", String(Math.round(min)));
+    replayDialogResizer.setAttribute("aria-valuemax", String(Math.round(max)));
+    replayDialogResizer.setAttribute("aria-valuenow", String(nextHeight));
+  }
+
+  if (persist) {
+    writeStoredReplayDialogHeight(nextHeight);
+  }
+}
+
+function handleReplayDialogResizePointerDown(event) {
+  if (!replayDialogResizer || event.button !== 0) return;
+
+  replayDialogResizeState.active = true;
+  replayDialogResizeState.pointerId = event.pointerId;
+  replayDialogResizeState.startY = event.clientY;
+  replayDialogResizeState.startHeight = getCurrentReplayDialogHeight();
+  replayDialogResizeState.height = replayDialogResizeState.startHeight;
+
+  replayDialog.classList.add("is-resizing");
+  replayDialogResizer.setPointerCapture(event.pointerId);
+  replayDialogResizer.addEventListener("pointermove", handleReplayDialogResizePointerMove);
+  replayDialogResizer.addEventListener("pointerup", handleReplayDialogResizePointerUp);
+  replayDialogResizer.addEventListener("pointercancel", handleReplayDialogResizePointerUp);
+  event.preventDefault();
+}
+
+function handleReplayDialogResizePointerMove(event) {
+  if (!replayDialogResizeState.active) return;
+
+  replayDialogResizeState.height = replayDialogResizeState.startHeight + (event.clientY - replayDialogResizeState.startY);
+  applyReplayDialogHeight(replayDialogResizeState.height, { persist: false });
+}
+
+function handleReplayDialogResizePointerUp(event) {
+  if (!replayDialogResizeState.active) return;
+
+  const fallbackHeight = replayDialogResizeState.startHeight + (event.clientY - replayDialogResizeState.startY);
+  const nextHeight = replayDialogResizeState.height || fallbackHeight;
+  cleanupReplayDialogResizeSession();
+  applyReplayDialogHeight(nextHeight);
+}
+
+function cleanupReplayDialogResizeSession() {
+  if (!replayDialogResizer || !replayDialogResizeState.active) {
+    replayDialog?.classList.remove("is-resizing");
+    return;
+  }
+
+  if (replayDialogResizer.hasPointerCapture(replayDialogResizeState.pointerId)) {
+    replayDialogResizer.releasePointerCapture(replayDialogResizeState.pointerId);
+  }
+
+  replayDialogResizer.removeEventListener("pointermove", handleReplayDialogResizePointerMove);
+  replayDialogResizer.removeEventListener("pointerup", handleReplayDialogResizePointerUp);
+  replayDialogResizer.removeEventListener("pointercancel", handleReplayDialogResizePointerUp);
+  replayDialog.classList.remove("is-resizing");
+
+  replayDialogResizeState.active = false;
+  replayDialogResizeState.pointerId = null;
+  replayDialogResizeState.startY = 0;
+  replayDialogResizeState.startHeight = 0;
+  replayDialogResizeState.height = 0;
+}
+
+function handleReplayDialogResizeKeyDown(event) {
+  const step = event.shiftKey ? 80 : 40;
+
+  if (event.key === "ArrowUp") {
+    applyReplayDialogHeight(getCurrentReplayDialogHeight() - step);
+  } else if (event.key === "ArrowDown") {
+    applyReplayDialogHeight(getCurrentReplayDialogHeight() + step);
+  } else if (event.key === "PageUp") {
+    applyReplayDialogHeight(getCurrentReplayDialogHeight() - step * 2);
+  } else if (event.key === "PageDown") {
+    applyReplayDialogHeight(getCurrentReplayDialogHeight() + step * 2);
+  } else if (event.key === "Home") {
+    applyReplayDialogHeight(getReplayDialogHeightBounds().min);
+  } else if (event.key === "End") {
+    applyReplayDialogHeight(getReplayDialogHeightBounds().max);
+  } else {
+    return;
+  }
+
+  event.preventDefault();
+}
+
 async function openReplayDialog(recordIds = []) {
   if (state.pendingReplay) {
     window.alert("当前已有一条 Replay / Fallback 任务正在处理中，请等待它完成后再发起新的任务。");
@@ -585,6 +796,7 @@ async function openReplayDialog(recordIds = []) {
         .join("")
     : '<p class="empty-state">当前模块没有可选参考资产。</p>';
 
+  applyReplayDialogHeight(readStoredReplayDialogHeight() ?? getReplayDialogDefaultHeight(), { persist: false });
   replayDialog.showModal();
 }
 
@@ -638,7 +850,11 @@ async function submitReplayTask(event) {
     renderFilters();
     renderRecords();
     renderTaskDrawer();
-    renderFeedbackStatus(`Replay 任务已生成完成，最新提案已经出现在最近任务里。`, false);
+    if (task.taskStatus === "failed") {
+      renderFeedbackStatus(localizeErrorMessage(task.errorMessage || task.summary || "Replay 任务失败"), true);
+    } else {
+      renderFeedbackStatus(`Replay 任务已生成完成，最新提案已经出现在最近任务里。`, false);
+    }
     openTaskDrawer();
   } catch (error) {
     clearPendingReplay();
@@ -775,6 +991,13 @@ function replayTaskStatusLabel(status = "") {
   if (status === "done") return "已完成";
   if (status === "failed") return "已失败";
   return "待处理";
+}
+
+function replayTaskStatusTone(status = "") {
+  if (status === "running") return "warning";
+  if (status === "done") return "success";
+  if (status === "failed") return "danger";
+  return "subtle";
 }
 
 function getReasonCategoryLabel(category = "") {
