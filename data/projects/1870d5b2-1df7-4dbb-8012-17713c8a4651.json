@@ -1443,6 +1443,28 @@
                 "generatedItemCount": 4,
                 "conflictCount": 0
               },
+              "debug": {
+                "updatedAt": "",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "lastError": null,
+                "events": []
+              },
               "errorMessage": ""
             },
             {
@@ -3944,6 +3966,28 @@
                 "generatedItemCount": 0,
                 "conflictCount": 0
               },
+              "debug": {
+                "updatedAt": "",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "lastError": null,
+                "events": []
+              },
               "errorMessage": ""
             }
           ],
@@ -4333,7 +4377,7 @@
               "documentType": "software_requirement",
               "status": "completed",
               "createdAt": "2026-04-16T20:32:02.952Z",
-              "updatedAt": "2026-04-16T20:46:37.657Z",
+              "updatedAt": "2026-04-19T16:05:11.122Z",
               "inputAssetIds": [
                 "15b41741-8c4d-4000-8ad7-a18cdc2eda1d",
                 "43782dd8-2d44-479d-8206-1b08d2f9f340",
@@ -4360,10 +4404,21 @@
                   "conflictNote": "无冲突",
                   "documentType": "software_requirement",
                   "review": {
-                    "status": "pending",
-                    "reviewer": "",
-                    "comment": "",
-                    "updatedAt": ""
+                    "status": "rejected",
+                    "reviewer": "当前用户",
+                    "comment": "在任务详情页中人工驳回",
+                    "updatedAt": "2026-04-19T16:05:11.045Z",
+                    "reasonCategory": "coverage_gap",
+                    "reasonTags": [
+                      "代码约束提取不足",
+                      "前置条件缺失",
+                      "来源利用不充分"
+                    ],
+                    "reasonText": "该条结果虽然与系统需求CheryVCU-1088的表层语义基本一致，但未充分利用生成阶段可依赖的代码文件信息，导致软件级前置条件提取不足。当前生成内容仅保留了“车辆处于DC充电 / ECC发出堵转加热需求 / MCU反馈状态允许”这几个系统需求层的粗条件，未进一步从对应代码中逆推出更细的使能约束。\n\n从对应代码文件Chrg.c看，至少可以明确看到堵转加热请求信号、DC充电使能、车速、驻车/停车充电状态以及档位检查相关逻辑已参与控制判断，说明该主题在软件实现层并不只有系统需求中的3个条件。当前结果没有把这些代码侧约束提炼进需求正文，导致输出粒度仍停留在系统需求转写，软件需求完整性不足，因此不建议直接接受。",
+                    "severity": "medium",
+                    "expectedNote": "请基于系统需求和对应代码文件联合生成该条软件需求，不仅复述系统需求中的DC充电、ECC请求和MCU状态允许条件，还应结合Chrg.c中的相关判断逻辑，补充可稳定提炼出的软件级前置条件，例如DC充电使能、车速/停车约束、驻车充电状态及其他与堵转加热请求成立直接相关的使能条件。\n\n若代码中部分条件已被封装为聚合状态或中间量，也应尽量沿代码判断链逆推出其可表达的软件约束，避免仅停留在系统需求改写层。输出目标应是“系统需求+代码证据支撑”的软件需求，而不是系统需求的同义转述。",
+                    "includeInPool": true,
+                    "rejectionId": "36835839-531d-4a87-8101-0489ea1e8aa1"
                   },
                   "passCriteria": ""
                 },
@@ -5584,6 +5639,28 @@
                 "llmDurationMs": 48941,
                 "generatedItemCount": 4,
                 "conflictCount": 0
+              },
+              "debug": {
+                "updatedAt": "",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "lastError": null,
+                "events": []
               },
               "errorMessage": ""
             },
@@ -6819,6 +6896,28 @@
                 "generatedItemCount": 0,
                 "conflictCount": 0
               },
+              "debug": {
+                "updatedAt": "",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "lastError": null,
+                "events": []
+              },
               "errorMessage": ""
             }
           ],
@@ -6935,10 +7034,20 @@
           "at": "2026-04-16T20:53:56.002Z",
           "action": "task_deleted",
           "detail": "软件需求任务已删除（任务在运行中被手动删除）"
+        },
+        {
+          "at": "2026-04-19T16:04:46.344Z",
+          "action": "task_result_reviewed",
+          "detail": "软件需求结果已审核"
+        },
+        {
+          "at": "2026-04-19T16:05:11.122Z",
+          "action": "task_result_reviewed",
+          "detail": "软件需求结果已审核"
         }
       ],
       "createdAt": "2026-04-15T05:48:37.246Z",
-      "updatedAt": "2026-04-16T20:53:56.002Z"
+      "updatedAt": "2026-04-19T16:05:11.122Z"
     },
     {
       "id": "674dc382-77e4-42d4-b0ba-4234b74f8fcf",
@@ -8315,6 +8424,28 @@
                 "generatedItemCount": 0,
                 "conflictCount": 0
               },
+              "debug": {
+                "updatedAt": "",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "lastError": null,
+                "events": []
+              },
               "errorMessage": ""
             },
             {
@@ -9591,6 +9722,28 @@
                 "llmDurationMs": 0,
                 "generatedItemCount": 0,
                 "conflictCount": 0
+              },
+              "debug": {
+                "updatedAt": "",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "lastError": null,
+                "events": []
               },
               "errorMessage": ""
             }
@@ -10974,6 +11127,28 @@
                 "generatedItemCount": 0,
                 "conflictCount": 0
               },
+              "debug": {
+                "updatedAt": "",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "lastError": null,
+                "events": []
+              },
               "errorMessage": ""
             }
           ],
@@ -11199,7 +11374,7 @@
     }
   ],
   "createdAt": "2026-04-14T06:39:33.852Z",
-  "updatedAt": "2026-04-16T20:53:56.002Z",
+  "updatedAt": "2026-04-19T16:05:11.122Z",
   "migrationMeta": {
     "kind": "legacy-workspace-demo",
     "migratedAt": "2026-04-14T06:39:33.853Z",

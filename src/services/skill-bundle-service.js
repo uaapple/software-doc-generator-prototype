@@ -64,65 +64,84 @@ export class SkillBundleService {
     this.skillRuleService = new SkillRuleService();
     this.skillLoader = new SkillLoader();
     this.registryService = new SkillRegistryService();
+    this.initialized = false;
+    this.initializationPromise = null;
   }
 
   async ensureInitialized() {
-    await this.registryService.materializeAll(config.activeSkillDir).catch(() => {});
-    const activePointer = await readJson(config.activeSkillBundlePointerPath);
-    const activeWritingFile = path.join(config.activeSkillDir, "requirement_writing.md");
-    if (activePointer?.bundleId && (await pathExists(activeWritingFile))) {
-      const activeBundleDir = this.getBundleSkillDir(activePointer.bundleId);
-      await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
-        seedDirs: [config.legacySkillDir, activeBundleDir]
-      });
-      if (await pathExists(activeBundleDir)) {
-        await this.ensureDomainKnowledgeFile(activeBundleDir, {
-          seedDirs: [config.activeSkillDir, config.legacySkillDir]
-        });
-      }
-      await this.skillRuleService.ensureBundleRuleIndex(activePointer.bundleId, config.activeSkillDir);
+    if (this.initialized) {
       return;
     }
 
-    const bundleId = "bundle-base";
-    const bundleDir = this.getBundleSkillDir(bundleId);
-    const useExistingActiveSkills = await hasStructuredProfiles(config.activeSkillDir);
-    if (useExistingActiveSkills) {
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+      return;
+    }
+
+    this.initializationPromise = (async () => {
+      const activePointer = await readJson(config.activeSkillBundlePointerPath);
+      if (activePointer?.bundleId) {
+        const activeBundleDir = this.getBundleSkillDir(activePointer.bundleId);
+        await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
+          seedDirs: [config.legacySkillDir, activeBundleDir]
+        });
+        if (await pathExists(activeBundleDir)) {
+          await this.ensureDomainKnowledgeFile(activeBundleDir, {
+            seedDirs: [config.activeSkillDir, config.legacySkillDir]
+          });
+        }
+        await this.skillRuleService.ensureBundleRuleIndex(activePointer.bundleId, config.activeSkillDir);
+        this.initialized = true;
+        return;
+      }
+
+      const bundleId = "bundle-base";
+      const bundleDir = this.getBundleSkillDir(bundleId);
+      const useExistingActiveSkills = await hasStructuredProfiles(config.activeSkillDir);
+      if (useExistingActiveSkills) {
+        await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
+          seedDirs: [config.legacySkillDir]
+        });
+      } else {
+        await this.seedFromLegacy(config.activeSkillDir);
+      }
+      await copyDirectory(config.activeSkillDir, bundleDir);
       await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
         seedDirs: [config.legacySkillDir]
       });
-    } else {
-      await this.seedFromLegacy(config.activeSkillDir);
+      await this.ensureDomainKnowledgeFile(bundleDir, {
+        seedDirs: [config.activeSkillDir, config.legacySkillDir]
+      });
+
+      const metadata = {
+        id: bundleId,
+        version: "1.0.0",
+        baseBundleId: "",
+        status: "active",
+        files: [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
+        changeSummary: useExistingActiveSkills
+          ? "Seeded from existing active skills directory."
+          : "Seeded from legacy skills directory.",
+        createdFromCaseIds: [],
+        evaluationSummary: null,
+        createdAt: now(),
+        updatedAt: now()
+      };
+
+      const ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, bundleDir);
+      metadata.ruleIndexVersion = ruleIndex.ruleIndexVersion;
+      metadata.appliedProposalItemIds = [];
+      metadata.appliedReplayTaskIds = [];
+      await writeJson(getBundleMetaPath(bundleId), metadata);
+      await writeJson(config.activeSkillBundlePointerPath, { bundleId });
+      this.initialized = true;
+    })();
+
+    try {
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
     }
-    await copyDirectory(config.activeSkillDir, bundleDir);
-    await this.ensureDomainKnowledgeFile(config.activeSkillDir, {
-      seedDirs: [config.legacySkillDir]
-    });
-    await this.ensureDomainKnowledgeFile(bundleDir, {
-      seedDirs: [config.activeSkillDir, config.legacySkillDir]
-    });
-
-    const metadata = {
-      id: bundleId,
-      version: "1.0.0",
-      baseBundleId: "",
-      status: "active",
-      files: [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
-      changeSummary: useExistingActiveSkills
-        ? "Seeded from existing active skills directory."
-        : "Seeded from legacy skills directory.",
-      createdFromCaseIds: [],
-      evaluationSummary: null,
-      createdAt: now(),
-      updatedAt: now()
-    };
-
-    const ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, bundleDir);
-    metadata.ruleIndexVersion = ruleIndex.ruleIndexVersion;
-    metadata.appliedProposalItemIds = [];
-    metadata.appliedReplayTaskIds = [];
-    await writeJson(getBundleMetaPath(bundleId), metadata);
-    await writeJson(config.activeSkillBundlePointerPath, { bundleId });
   }
 
   async seedFromLegacy(targetDir) {

@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
 import { pathExists, readJson, writeJson } from "./storage.js";
 import { SkillDatabaseService } from "./skill-database-service.js";
+import {
+  ALLOWED_KINDS_BY_AREA,
+  isKindAllowedForLayer
+} from "../../public/skill-kind-matrix.js";
 
 const PROFILE_META = {
   generic: {
@@ -89,6 +93,52 @@ function createManagedError(message, statusCode = 400, code = "skill_registry_er
   return error;
 }
 
+async function collectRegistryFileMetadata(skillDir, relativeDir = path.join("profiles")) {
+  const baseDir = path.join(skillDir, relativeDir);
+  const entries = await fs.readdir(baseDir, { withFileTypes: true }).catch(() => []);
+  const files = [];
+
+  for (const entry of entries) {
+    const entryRelativePath = path.join(relativeDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await collectRegistryFileMetadata(skillDir, entryRelativePath)));
+      continue;
+    }
+
+    if (!entry.isFile() || entry.name !== "skill-items.json") {
+      continue;
+    }
+
+    const absolutePath = path.join(skillDir, entryRelativePath);
+    const stat = await fs.stat(absolutePath).catch(() => null);
+    if (!stat) continue;
+    files.push({
+      relativePath: entryRelativePath.replaceAll("\\", "/"),
+      size: stat.size,
+      mtimeMs: Math.floor(stat.mtimeMs)
+    });
+  }
+
+  return files;
+}
+
+async function buildRegistrySourceSignature(skillDir = config.activeSkillDir) {
+  const trackedFiles = [];
+  const manifestPath = path.join(skillDir, "skill-manifest.json");
+  const manifestStat = await fs.stat(manifestPath).catch(() => null);
+  if (manifestStat) {
+    trackedFiles.push({
+      relativePath: "skill-manifest.json",
+      size: manifestStat.size,
+      mtimeMs: Math.floor(manifestStat.mtimeMs)
+    });
+  }
+
+  trackedFiles.push(...(await collectRegistryFileMetadata(skillDir)));
+  trackedFiles.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return JSON.stringify(trackedFiles);
+}
+
 function normalizeLayer(layer = "") {
   if (layer === "doc-type") return "docType";
   if (layer === "doctype") return "docType";
@@ -115,6 +165,16 @@ function normalizeKind(kind = "") {
     throw createManagedError("Unsupported skill item kind", 400, "unsupported_skill_item_kind", { kind });
   }
   return normalized;
+}
+
+function assertKindAllowedInLayer(layer = "", kind = "") {
+  if (isKindAllowedForLayer(layer, kind)) {
+    return;
+  }
+  throw createManagedError("Skill item kind is not allowed in target layer", 400, "skill_kind_not_allowed_for_layer", {
+    layer,
+    kind
+  });
 }
 
 function normalizeItemStatus(status = "") {
@@ -148,6 +208,30 @@ function trimObject(value) {
   const next = {};
   for (const [key, entry] of Object.entries(value)) {
     const normalized = trimObject(entry);
+    if (normalized !== undefined) {
+      next[key] = normalized;
+    }
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
+function trimSnapshotValue(value) {
+  if (Array.isArray(value)) {
+    const next = value
+      .map((item) => trimSnapshotValue(item))
+      .filter((item) => item !== undefined);
+    return next.length ? next : undefined;
+  }
+  if (!value || typeof value !== "object") {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed ? trimmed : undefined;
+    }
+    return value;
+  }
+  const next = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const normalized = trimSnapshotValue(entry);
     if (normalized !== undefined) {
       next[key] = normalized;
     }
@@ -645,8 +729,9 @@ function getDefaultProfileFiles(layer, profileKey, activeKinds = []) {
   for (const kind of activeKinds) {
     const targetFile = MARKDOWN_KIND_TO_FILE[kind];
     if (!targetFile) continue;
-    const relativePath = layer === "generic" ? targetFile : `${relativeDir}/${targetFile.replaceAll("\\", "/")}`;
-    files[targetFile.replaceAll("\\", "/")] = [relativePath];
+    const normalizedTargetFile = targetFile.replaceAll("\\", "/");
+    const relativePath = layer === "generic" ? normalizedTargetFile : `${relativeDir}/${normalizedTargetFile}`;
+    files[normalizedTargetFile] = [relativePath];
   }
 
   if (layer === "generic" || activeKinds.some((kind) => KNOWLEDGE_ITEM_KINDS.has(kind) || kind === "good_example")) {
@@ -1382,7 +1467,7 @@ export class SkillRegistryService {
           status: item.status || "active",
           order: Number(item.order || 0) || 0,
           sectionKey: item.sectionKey || "default",
-          structuredPayload: trimObject(cloneJson(item.structuredPayload || null)) || null
+          structuredPayload: trimSnapshotValue(cloneJson(item.structuredPayload || null)) || null
         }))
         .sort((left, right) => left.order - right.order)
     };
@@ -1455,16 +1540,23 @@ export class SkillRegistryService {
   }
 
   async ensureDatabaseImported(skillDir = config.activeSkillDir) {
-    if (!this.isDatabaseBacked(skillDir) || this.databaseService.isImported()) {
-      if (this.isDatabaseBacked(skillDir)) {
-        this.normalizeDatabaseTextTruth();
-      }
+    if (!this.isDatabaseBacked(skillDir)) {
+      return;
+    }
+
+    const currentSignature = await buildRegistrySourceSignature(skillDir);
+    const storedSignature = this.databaseService.getMeta("active_registry_source_signature", "");
+    const sourceDirty = this.databaseService.getMeta("active_registry_source_dirty", "") === "true";
+    if (this.databaseService.isImported() && (sourceDirty || storedSignature === currentSignature)) {
+      this.normalizeDatabaseTextTruth();
       return;
     }
 
     const registries = await this.importActiveRegistriesFromFiles(skillDir);
     this.databaseService.importRegistries(registries);
     this.validateImportedRegistries(registries);
+    this.databaseService.setMeta("active_registry_source_signature", await buildRegistrySourceSignature(skillDir));
+    this.databaseService.setMeta("active_registry_source_dirty", "false");
     this.normalizeDatabaseTextTruth();
   }
 
@@ -1699,6 +1791,7 @@ export class SkillRegistryService {
     if (this.isDatabaseBacked(skillDir)) {
       await this.ensureDatabaseImported(skillDir);
       this.databaseService.saveProfileRegistry(nextRegistry);
+      this.databaseService.setMeta("active_registry_source_dirty", "true");
       return nextRegistry;
     }
 
@@ -1764,6 +1857,10 @@ export class SkillRegistryService {
     for (const profile of profiles) {
       const registry = await this.loadProfileRegistry(profile.layer, profile.profileKey, skillDir);
       await this.materializeProfileToFiles(profile.layer, profile.profileKey, registry, skillDir, manifest);
+    }
+    if (this.isDatabaseBacked(skillDir)) {
+      this.databaseService.setMeta("active_registry_source_signature", await buildRegistrySourceSignature(skillDir));
+      this.databaseService.setMeta("active_registry_source_dirty", "false");
     }
     return this.getRegistryIndex(skillDir);
   }
@@ -1940,6 +2037,7 @@ export class SkillRegistryService {
     const profileKey = layer === "generic" ? "generic" : normalizeProfileKey(payload.profileKey);
     const registry = await this.loadProfileRegistry(layer, profileKey, skillDir);
     const kind = normalizeKind(payload.kind);
+    assertKindAllowedInLayer(layer, kind);
     const item = sanitizeItem(
       {
         ...payload,
@@ -1970,6 +2068,8 @@ export class SkillRegistryService {
     const current = await this.getItem(skillCode, skillDir);
     const nextLayer = normalizeLayer(payload.layer || current.layer);
     const nextProfileKey = nextLayer === "generic" ? "generic" : normalizeProfileKey(payload.profileKey || current.profileKey);
+    const nextKind = normalizeKind(payload.kind || current.kind);
+    assertKindAllowedInLayer(nextLayer, nextKind);
     const currentRegistry = await this.loadProfileRegistry(current.layer, current.profileKey, skillDir);
     const targetRegistry =
       nextLayer === current.layer && nextProfileKey === current.profileKey
@@ -1988,7 +2088,7 @@ export class SkillRegistryService {
         skillCode: current.skillCode,
         layer: nextLayer,
         profileKey: nextProfileKey,
-        kind: payload.kind || current.kind,
+        kind: nextKind,
         updatedAt: now()
       },
       current
@@ -2102,7 +2202,10 @@ export class SkillRegistryService {
     return registry;
   }
 
-  async listRelevantItems({ documentType = "software_requirement", domain = "", moduleSkillKey = "", targetAreas = [], limit = 20 } = {}, skillDir = config.activeSkillDir) {
+  async listRelevantItems(
+    { documentType = "software_requirement", domain = "", moduleSkillKey = "", targetAreas = [], limit = 20, layerConstraint = "", profileKeyConstraint = "" } = {},
+    skillDir = config.activeSkillDir
+  ) {
     const index = await this.getRegistryIndex(skillDir, { includeDeprecated: false });
     const normalizedDocumentType = normalizeProfileKey(documentType || "software_requirement");
     const normalizedDomain = normalizeProfileKey(domain || "");
@@ -2110,36 +2213,19 @@ export class SkillRegistryService {
     const allowedKinds = new Set();
 
     for (const area of ensureArray(targetAreas)) {
-      if (area === "writing") {
-        ["writing_rule", "good_example", "rule_hint", "generation_priority"].forEach((kind) => allowedKinds.add(kind));
-      } else if (area === "extraction") {
-        ["extraction_rule", "rule_hint", "generation_priority"].forEach((kind) => allowedKinds.add(kind));
-      } else if (area === "examples") {
-        ["good_example", "bad_example", "anti_pattern"].forEach((kind) => allowedKinds.add(kind));
-      } else if (area === "domain_knowledge") {
-        [
-          "generation_priority",
-          "rule_hint",
-          "anti_pattern",
-          "source_alias",
-          "code_style_prefix",
-          "forbidden_expansion",
-          "normalization_rule",
-          "source_policy_setting",
-          "document_blueprint_section",
-          "document_blueprint_policy"
-        ].forEach((kind) => allowedKinds.add(kind));
-      } else {
-        ["validation_rule", "anti_pattern", "rule_hint"].forEach((kind) => allowedKinds.add(kind));
-      }
+      const allowedForArea = ALLOWED_KINDS_BY_AREA[String(area || "").trim()] || ALLOWED_KINDS_BY_AREA.validation;
+      allowedForArea.forEach((kind) => allowedKinds.add(kind));
     }
 
     const selected = index.items
+      .filter((item) => isKindAllowedForLayer(item.layer, item.kind))
       .filter((item) => {
         if (!allowedKinds.size) return true;
         return allowedKinds.has(item.kind);
       })
       .filter((item) => {
+        if (layerConstraint && item.layer !== String(layerConstraint || "").trim()) return false;
+        if (profileKeyConstraint && String(item.profileKey || "").trim() !== String(profileKeyConstraint || "").trim()) return false;
         if (item.layer === "docType") return item.profileKey === normalizedDocumentType;
         if (item.layer === "domain") return !normalizedDomain || item.profileKey === normalizedDomain;
         if (item.layer === "module") return !normalizedModule || item.profileKey === normalizedModule;
@@ -2223,6 +2309,7 @@ export class SkillRegistryService {
       await this.ensureDatabaseImported(skillDir);
       const normalizedKey = normalizeProfileKey(profileKey);
       this.databaseService.removeProfile(normalizedLayer, normalizedKey);
+      this.databaseService.setMeta("active_registry_source_dirty", "true");
       await fs.rm(path.join(skillDir, getProfileRelativeDir(normalizedLayer, normalizedKey)), {
         recursive: true,
         force: true

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Replay Lab</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/replay-lab.css" />
+  </head>
+  <body>
+    <main class="layout replay-lab-page">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>Replay Lab</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">生成门户</a>
+          <a class="nav-link" href="/feedback-pool">反馈池</a>
+          <a class="nav-link" href="/skill-management">技能管理</a>
+          <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
+          <a class="nav-link active" href="/replay-lab">Replay Lab</a>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card replay-lab-hero">
+        <div>
+          <p class="strip-label">Replay Mirror</p>
+          <h1>当前 Replay 行为实验台</h1>
+          <p class="strip-text">以历史任务为模板，用最新 fallback/replay 规则、active skill 和参考资产重跑一遍，再在同页完成工单审阅和生成验证。</p>
+        </div>
+        <div class="strip-actions">
+          <button id="refresh-page" type="button" class="secondary-button">刷新数据</button>
+        </div>
+      </section>
+
+      <p id="page-status" class="status"></p>
+
+      <section class="replay-lab-shell">
+        <aside class="replay-lab-sidebar card">
+          <section class="lab-section">
+            <div class="section-head compact-head">
+              <span class="section-index">模板</span>
+              <div>
+                <h2>历史任务模板</h2>
+                <p>默认加载指定 replay 任务，也可以切换到其他历史任务。</p>
+              </div>
+            </div>
+            <label>
+              模板任务
+              <select id="template-task-select"></select>
+            </label>
+            <div id="template-summary" class="lab-meta-list"></div>
+          </section>
+
+          <section class="lab-section">
+            <div class="section-head compact-head">
+              <span class="section-index">重跑</span>
+              <div>
+                <h2>按当前规则重跑</h2>
+                <p>真正按当前系统规则重建 material pack 与 replay prompt，不复用旧候选池。</p>
+              </div>
+            </div>
+            <label>
+              Replay 模型
+              <select id="rerun-llm-profile-select"></select>
+            </label>
+            <button id="rerun-button" type="button">基于当前规则重跑</button>
+            <div id="current-preview-metrics" class="lab-metric-grid"></div>
+          </section>
+
+          <section class="lab-section">
+            <div class="section-head compact-head">
+              <span class="section-index">验证</span>
+              <div>
+                <h2>生成验证</h2>
+                <p>应用 skill 后，直接发起一次软件需求生成验证。</p>
+              </div>
+            </div>
+            <label>
+              验证模型
+              <select id="validation-llm-profile-select"></select>
+            </label>
+            <div id="validation-context" class="lab-meta-list"></div>
+            <div id="validation-assets" class="lab-checkbox-list"></div>
+            <button id="start-validation-button" type="button" class="secondary-button">发起软件需求生成验证</button>
+            <div id="validation-run" class="lab-meta-list"></div>
+          </section>
+        </aside>
+
+        <section class="replay-lab-workspace">
+          <section class="card lab-section">
+            <div class="section-head compact-head">
+              <span class="section-index">对比</span>
+              <div>
+                <h2>原始任务 vs 最新重跑</h2>
+                <p>首屏默认直接比较历史任务与当前规则下的最新 replay 结果。</p>
+              </div>
+            </div>
+            <div id="compare-overview" class="compare-grid"></div>
+          </section>
+
+          <section class="card lab-section">
+            <div class="section-head compact-head">
+              <span class="section-index">当前输入</span>
+              <div>
+                <h2>最新重建输入与规则诊断</h2>
+                <p>显示当前 active skill / rule index 摘要、候选 skill 数量，以及最新 prompt 输入。</p>
+              </div>
+            </div>
+            <div id="rule-diagnostics" class="diagnostic-stack"></div>
+            <div id="prompt-preview" class="prompt-preview-grid"></div>
+          </section>
+
+          <section class="card lab-section">
+            <div class="section-head compact-head">
+              <span class="section-index">结果</span>
+              <div>
+                <h2>Replay 返回结果</h2>
+                <p>展示 proposal、validator suggestions 和最新工单状态。</p>
+              </div>
+            </div>
+            <div id="result-overview" class="compare-grid"></div>
+          </section>
+
+          <section class="card lab-section">
+            <div class="section-head compact-head">
+              <span class="section-index">工单</span>
+              <div>
+                <h2>最新工单审阅</h2>
+                <p>页内直接完成接受、拒绝、编辑后应用，并确认变更落到具体 atomic skill。</p>
+              </div>
+            </div>
+            <div id="work-order-review" class="work-order-review"></div>
+          </section>
+
+          <section class="card lab-section">
+            <div class="section-head compact-head">
+              <span class="section-index">原文</span>
+              <div>
+                <h2>原始内容与 JSON</h2>
+                <p>保留查看历史 task / 最新 run / material pack / prompt 原文的入口，便于排查。</p>
+              </div>
+            </div>
+            <div id="raw-panels" class="raw-panels"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/replay-lab.js"></script>
+  </body>
+</html>

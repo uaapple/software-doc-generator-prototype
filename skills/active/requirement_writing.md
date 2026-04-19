@@ -37,55 +37,11 @@
 
 
 ### GEN-generic-writing_rule-009 本轮对齐优先级 4
-若当前输入明显对应“扭矩干预功能”，优先输出以下骨架：
-
-
-### GEN-generic-writing_rule-010 本轮对齐优先级 5
-`ESC前轴扭矩干预`
-
-
-### GEN-generic-writing_rule-011 本轮对齐优先级 6
-前轴激活标志位判断
-
-
-### GEN-generic-writing_rule-012 本轮对齐优先级 7
-前轴扭矩计算
-
-
-### GEN-generic-writing_rule-013 本轮对齐优先级 8
-`ESC后轴扭矩干预`
-
-
-### GEN-generic-writing_rule-014 本轮对齐优先级 9
-后轴激活标志位判断
-
-
-### GEN-generic-writing_rule-015 本轮对齐优先级 10
-后轴扭矩计算
+若当前输入明显对应“扭矩干预功能”，优先输出以下骨架：`ESC前轴扭矩干预 -> 前轴激活标志位判断 / 前轴扭矩计算`，`ESC后轴扭矩干预 -> 后轴激活标志位判断 / 后轴扭矩计算`。
 
 
 ### GEN-generic-writing_rule-016 本轮对齐优先级 11
-若当前输入明显对应“充电管理”，优先输出以下骨架：
-
-
-### GEN-generic-writing_rule-017 本轮对齐优先级 12
-`充电过程`
-
-
-### GEN-generic-writing_rule-018 本轮对齐优先级 13
-堵转加热模式
-
-
-### GEN-generic-writing_rule-019 本轮对齐优先级 14
-充电截止SOC
-
-
-### GEN-generic-writing_rule-020 本轮对齐优先级 15
-充电截止SOC记忆
-
-
-### GEN-generic-writing_rule-021 本轮对齐优先级 16
-若证据足够，再追加 AC充电跳转至充满标志位 / DC充电跳转至充满标志位
+若当前输入明显对应“充电管理”，优先输出以下骨架：`充电过程 -> 堵转加热模式 / 充电截止SOC / 充电截止SOC记忆`；若证据足够，再追加 `AC充电跳转至充满标志位 / DC充电跳转至充满标志位` 作为补充条目。
 
 
 ### GEN-generic-writing_rule-022 本轮对齐优先级 17
@@ -157,55 +113,11 @@
 
 
 ### GEN-generic-writing_rule-038 句式与逻辑规则 7
-对充电管理类需求，应尽量显式写出以下分支：
-
-
-### GEN-generic-writing_rule-039 句式与逻辑规则 8
-进入请求条件
-
-
-### GEN-generic-writing_rule-040 句式与逻辑规则 9
-超时或故障撤销条件
-
-
-### GEN-generic-writing_rule-041 句式与逻辑规则 10
-截止触发条件
-
-
-### GEN-generic-writing_rule-042 句式与逻辑规则 11
-恢复充电条件
-
-
-### GEN-generic-writing_rule-043 句式与逻辑规则 12
-记忆更新与默认回退
+对充电管理类需求，应尽量显式写出以下分支：进入请求条件、超时或故障撤销条件、截止触发条件、恢复充电条件、记忆更新与默认回退。
 
 
 ### GEN-generic-writing_rule-044 句式与逻辑规则 13
-对扭矩计算类需求，应尽量显式写出以下分支：
-
-
-### GEN-generic-writing_rule-045 句式与逻辑规则 14
-升扭请求分支
-
-
-### GEN-generic-writing_rule-046 句式与逻辑规则 15
-降扭请求分支
-
-
-### GEN-generic-writing_rule-047 句式与逻辑规则 16
-AEB/CDP 等置零分支
-
-
-### GEN-generic-writing_rule-048 句式与逻辑规则 17
-VLC 分支
-
-
-### GEN-generic-writing_rule-049 句式与逻辑规则 18
-RBS 分支
-
-
-### GEN-generic-writing_rule-050 句式与逻辑规则 19
-默认分支
+对扭矩计算类需求，应尽量显式写出以下分支：升扭请求分支、降扭请求分支、AEB/CDP 等置零分支、VLC 分支、RBS 分支、默认分支。
 
 
 ### GEN-generic-writing_rule-051 句式与逻辑规则 20

@@ -1,14 +1,14 @@
 {
-  "id": "76a2bc6a-b4c8-404a-9163-3c3196c42d0e",
+  "id": "968a5bc5-ac32-4b12-8244-24e34ffe0033",
   "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
   "projectName": "VCU",
   "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
   "moduleName": "充电管理",
   "documentType": "software_requirement",
-  "requirementId": "SWR-004",
-  "requirementCode": "CheryVCU-12147",
+  "requirementId": "SWR-001",
+  "requirementCode": "CheryVCU-1088",
   "sourceTaskId": "436dc886-8158-4790-bf81-208f79786a1e",
-  "sourceResultItemId": "SWR-004",
+  "sourceResultItemId": "SWR-001",
   "generationContext": {
     "generatedAt": "436dc886-8158-4790-bf81-208f79786a1e",
     "llmProfile": {
@@ -22,19 +22,19 @@
   "reviewStatus": "rejected",
   "reasonCategory": "coverage_gap",
   "reasonTags": [
-    "来源不足",
-    "需求边界漂移",
-    "过度推断"
+    "代码约束提取不足",
+    "前置条件缺失",
+    "来源利用不充分"
   ],
-  "reasonText": "该结果与人工软件需求范例不一致。人工范例中的 CheryVCU-12147 仅描述“下电记忆当前充电截止SOC，设置更新时及时更新，并在下次下电记忆”，未包含“记忆值无效或超出50%-100%范围时回退默认值”的要求。当前生成结果把代码侧推断出的保护/回退逻辑写进了需求正文，导致需求边界超出人工范例，也与人工范例中“以图片原文为准，不过度引入代码补充解释”的风格不一致。",
+  "reasonText": "该条结果虽然与系统需求CheryVCU-1088的表层语义基本一致，但未充分利用生成阶段可依赖的代码文件信息，导致软件级前置条件提取不足。当前生成内容仅保留了“车辆处于DC充电 / ECC发出堵转加热需求 / MCU反馈状态允许”这几个系统需求层的粗条件，未进一步从对应代码中逆推出更细的使能约束。\n\n从对应代码文件Chrg.c看，至少可以明确看到堵转加热请求信号、DC充电使能、车速、驻车/停车充电状态以及档位检查相关逻辑已参与控制判断，说明该主题在软件实现层并不只有系统需求中的3个条件。当前结果没有把这些代码侧约束提炼进需求正文，导致输出粒度仍停留在系统需求转写，软件需求完整性不足，因此不建议直接接受。",
   "severity": "medium",
-  "expectedNote": "请按人工范例对齐 CheryVCU-12147 的表达边界，仅保留下电记忆、更新生效、下次下电记忆这三个核心行为；不要把“无效值处理/默认值回退/范围兜底”写入该条需求，除非系统需求或人工输出范例中有明确独立表述。涉及“50%-100%范围”“112无效值”“重新插枪后重新判断”等内容，应保留在充电截止SOC控制条目中，不要混入记忆条目。优先保持与人工范例相同的条目粒度",
+  "expectedNote": "请基于系统需求和对应代码文件联合生成该条软件需求，不仅复述系统需求中的DC充电、ECC请求和MCU状态允许条件，还应结合Chrg.c中的相关判断逻辑，补充可稳定提炼出的软件级前置条件，例如DC充电使能、车速/停车约束、驻车充电状态及其他与堵转加热请求成立直接相关的使能条件。\n\n若代码中部分条件已被封装为聚合状态或中间量，也应尽量沿代码判断链逆推出其可表达的软件约束，避免仅停留在系统需求改写层。输出目标应是“系统需求+代码证据支撑”的软件需求，而不是系统需求的同义转述。",
   "outputSnapshot": {
-    "title": "充电过程 - 充电截止SOC记忆",
-    "requirementText": "VCU应对当前充电截止SOC值进行下电记忆；若ICM或TCP设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出50%-100%范围，则应回退为默认有效值。",
+    "title": "充电过程 - 堵转加热模式请求转发",
+    "requirementText": "当车辆处于DC充电状态、ECC发出堵转加热需求(ECC_StallHeatingReq = ON)、且MCU反馈状态允许进行堵转加热(RMCU2_St_StallHeating不处于Heating Failed/Heating Over)时，VCU应将堵转加热请求发送给MCU(VCU2_St_StallHeatingReq = Request)，并发送后驱模式请求(VCU82_St_RModeReq = TrqCtl)。",
     "type": "functional",
-    "confidence": 0.85,
-    "verificationHint": "通过实车测试验证：设置充电截止SOC后下电，再次上电检查是否恢复设置值；测试超出范围设置时的回退行为。",
+    "confidence": 0.95,
+    "verificationHint": "通过HIL测试验证：在DC充电状态下，模拟ECC发送堵转加热请求，检查VCU是否正确发送请求给MCU并切换到后驱模式。",
     "conflictNote": "无冲突",
     "documentType": "software_requirement",
     "conflicts": [],
@@ -42,8 +42,8 @@
       {
         "fileName": "system-requirements-example-charging-management.md",
         "location": "page:1",
-        "excerpt": "当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆）",
-        "requirementCode": "CheryVCU-12147"
+        "excerpt": "当车辆处于 DC 充电，HCU 在接收到 ECC 的堵转加热需求后，且 MCU 反馈状态允许进行堵转加热时，HCU 应将堵转加热请求发送给 MCU。",
+        "requirementCode": "CheryVCU-1088"
       }
     ]
   },
@@ -51,7 +51,7 @@
     {
       "fileName": "system-requirements-example-charging-management.md",
       "location": "page:1",
-      "excerpt": "当 AC 或 DC 充电功能激活时，用户通过大屏或手机 APP 上设置充电 SOC 截止点后，ICM/TCP 向 HCU 发送充电 SOC 截止点设置信号，设置范围 50% - 100%（HCU 需要下电记忆）"
+      "excerpt": "当车辆处于 DC 充电，HCU 在接收到 ECC 的堵转加热需求后，且 MCU 反馈状态允许进行堵转加热时，HCU 应将堵转加热请求发送给 MCU。"
     }
   ],
   "projectEvidenceSnapshot": [
@@ -143,20 +143,19 @@
     "activeBundleId": "bundle-base",
     "ruleIndexVersion": "import-1775980215892",
     "targetArea": "validation",
-    "relevantRules": []
+    "relevantRules": [],
+    "targetLayerConstraint": "module",
+    "targetProfileKeyConstraint": "充电管理"
   },
   "poolStatus": "new",
-  "groupId": "046e7f29-06cb-42ff-b69c-e42fb40f8b20",
+  "groupId": "b163dc36-e182-4f3a-877d-bb01156e0884",
   "replayStatus": "proposal_ready",
-  "replayCount": 5,
+  "replayCount": 1,
   "replayTaskIds": [
-    "24af4963-b827-41e3-b045-489243365ba2",
-    "1195f58a-ff06-4265-a610-59a39e353a96",
-    "574ebc77-423e-4367-8a8b-f8af4ee6ec51",
-    "40f52cf7-5c44-4a85-b846-ef8e1469180e",
-    "7aa27011-6f01-4890-8a04-7b8d242f7545"
+    "d26e2449-847d-435f-bbd4-c8aab1dc8e88"
   ],
-  "lastReplayAt": "2026-04-17T12:25:38.409Z",
-  "createdAt": "2026-04-16T20:46:37.642Z",
-  "updatedAt": "2026-04-19T16:25:13.204Z"
+  "lastReplayAt": "2026-04-19T16:24:28.170Z",
+  "createdAt": "2026-04-19T16:04:30.574Z",
+  "updatedAt": "2026-04-20T00:00:00.000Z",
+  "targetLayerConstraint": "module"
 }

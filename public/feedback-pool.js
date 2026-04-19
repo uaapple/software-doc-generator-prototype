@@ -1,3 +1,5 @@
+import { PROFILE_LAYER_ORDER, getAllowedKindsForAreasAndLayer } from "/skill-kind-matrix.js";
+
 const query = new URLSearchParams(window.location.search);
 
 const state = {
@@ -93,6 +95,7 @@ if (replayDialogResizer) {
 }
 taskDrawerListRoot.addEventListener("click", handleTaskClick);
 taskDrawerDetailRoot.addEventListener("click", handleTaskDetailAction);
+taskDrawerDetailRoot.addEventListener("change", handleTaskDetailChange);
 window.addEventListener("message", handleHostMessage);
 window.addEventListener("resize", syncReplayDialogHeight);
 
@@ -330,6 +333,9 @@ function buildTaskDetail(task) {
   const proposalItems = (task.proposals || []).flatMap((proposal) => proposal.items || []);
   const referenceAssets = task.materialPack?.referenceAssets || [];
   const workOrderSummary = task.workOrderSummary || null;
+  const targetAreas = Array.isArray(task.materialPack?.targetAreas) && task.materialPack.targetAreas.length
+    ? task.materialPack.targetAreas
+    : ["validation"];
 
   return `
     <div class="detail-card feedback-task-detail-card">
@@ -367,7 +373,9 @@ function buildTaskDetail(task) {
                     </label>
                     <label>
                       目标层级
-                      <input data-proposal-layer="${item.proposalItemId}" value="${escapeHtml(item.targetLayer || "")}" />
+                      <select data-proposal-layer="${item.proposalItemId}">
+                        ${proposalLayerOptions(item.targetLayer || "")}
+                      </select>
                     </label>
                     <label>
                       目标 Profile
@@ -379,8 +387,11 @@ function buildTaskDetail(task) {
                     </label>
                     <label>
                       类型
-                      <input data-proposal-kind="${item.proposalItemId}" value="${escapeHtml(item.kind || "")}" />
+                      <select data-proposal-kind="${item.proposalItemId}">
+                        ${proposalKindOptions(targetAreas, item.targetLayer || "", item.kind || "")}
+                      </select>
                     </label>
+                    <p class="summary" data-proposal-kind-hint="${item.proposalItemId}">${escapeHtml(proposalKindHint(targetAreas, item.targetLayer || ""))}</p>
                     <label>
                       改后内容
                       <textarea data-proposal-after="${item.proposalItemId}" rows="4">${escapeHtml(item.editedPayload?.after || item.after || item.newRuleDraft?.content || "")}</textarea>
@@ -396,6 +407,23 @@ function buildTaskDetail(task) {
       </div>
     </div>
   `;
+}
+
+function proposalLayerOptions(selected = "") {
+  const effectiveSelected = PROFILE_LAYER_ORDER.includes(selected) ? selected : PROFILE_LAYER_ORDER[0];
+  return PROFILE_LAYER_ORDER.map((layer) => `<option value="${layer}" ${layer === effectiveSelected ? "selected" : ""}>${layer}</option>`).join("");
+}
+
+function proposalKindOptions(targetAreas = [], targetLayer = "", selectedKind = "") {
+  const allowedKinds = getAllowedKindsForAreasAndLayer(targetAreas, targetLayer);
+  const fallbackKind = allowedKinds[0] || "";
+  const effectiveSelected = allowedKinds.includes(selectedKind) ? selectedKind : fallbackKind;
+  return allowedKinds.map((kind) => `<option value="${kind}" ${kind === effectiveSelected ? "selected" : ""}>${kind}</option>`).join("");
+}
+
+function proposalKindHint(targetAreas = [], targetLayer = "") {
+  const allowedKinds = getAllowedKindsForAreasAndLayer(targetAreas, targetLayer);
+  return allowedKinds.length ? `当前层允许：${allowedKinds.join(" / ")}` : "当前层没有可选 kind。";
 }
 
 function formatProposalActionLabel(action = "") {
@@ -760,6 +788,18 @@ async function openReplayDialog(recordIds = []) {
     return;
   }
 
+  const targetLayerConstraints = [
+    ...new Set(
+      selectedRecords
+        .map((record) => String(record.skillContext?.targetLayerConstraint || record.targetLayerConstraint || "docType").trim())
+        .filter(Boolean)
+    )
+  ];
+  if (targetLayerConstraints.length > 1) {
+    window.alert("One replay run can only include rejections with the same target layer constraint.");
+    return;
+  }
+
   state.replayRecordIds = recordIds;
   state.selectedReplayModuleId = moduleIds[0] || "";
   const module = state.modules.find((item) => item.id === state.selectedReplayModuleId) || null;
@@ -772,6 +812,7 @@ async function openReplayDialog(recordIds = []) {
         <div class="inline-rule">
           <strong>${escapeHtml(record.requirementCode || record.requirementId || "未编号")}</strong>
           <p>${escapeHtml(record.reasonText || "")}</p>
+          <p>Layer: ${escapeHtml(getTargetLayerConstraintLabel(record.skillContext?.targetLayerConstraint || record.targetLayerConstraint || "docType"))}</p>
         </div>
       `
     )
@@ -811,6 +852,17 @@ async function submitReplayTask(event) {
   const cancelButton = replayFormCancel;
   const referenceAssetIds = [...replayAssetPickerRoot.querySelectorAll('input[name="referenceAssetIds"]:checked')].map((input) => input.value);
   const selectedRecords = state.records.filter((record) => state.replayRecordIds.includes(record.id));
+  const targetLayerConstraints = [
+    ...new Set(
+      selectedRecords
+        .map((record) => String(record.skillContext?.targetLayerConstraint || record.targetLayerConstraint || "docType").trim())
+        .filter(Boolean)
+    )
+  ];
+  if (targetLayerConstraints.length > 1) {
+    window.alert("One replay run can only include rejections with the same target layer constraint.");
+    return;
+  }
   const module = state.modules.find((item) => item.id === state.selectedReplayModuleId) || null;
   const pendingReplay = createPendingReplayState({
     records: selectedRecords,
@@ -949,6 +1001,33 @@ async function handleTaskDetailAction(event) {
   }
 }
 
+function handleTaskDetailChange(event) {
+  const layerSelect = event.target.closest("[data-proposal-layer]");
+  if (!layerSelect) return;
+
+  const proposalItemId = layerSelect.dataset.proposalLayer;
+  const selectedTask = state.tasks.find((task) => task.id === state.selectedTaskId);
+  if (!proposalItemId || !selectedTask) return;
+
+  const targetAreas =
+    Array.isArray(selectedTask.materialPack?.targetAreas) && selectedTask.materialPack.targetAreas.length
+      ? selectedTask.materialPack.targetAreas
+      : ["validation"];
+  const kindSelect = taskDrawerDetailRoot.querySelector(`[data-proposal-kind="${proposalItemId}"]`);
+  const hint = taskDrawerDetailRoot.querySelector(`[data-proposal-kind-hint="${proposalItemId}"]`);
+  if (!(kindSelect instanceof HTMLSelectElement)) return;
+
+  const allowedKinds = getAllowedKindsForAreasAndLayer(targetAreas, layerSelect.value || "");
+  const currentKind = kindSelect.value || "";
+  kindSelect.innerHTML = proposalKindOptions(targetAreas, layerSelect.value || "", currentKind);
+  if (!allowedKinds.includes(currentKind)) {
+    kindSelect.value = allowedKinds[0] || "";
+  }
+  if (hint) {
+    hint.textContent = proposalKindHint(targetAreas, layerSelect.value || "");
+  }
+}
+
 function openTaskDrawer() {
   if (isEmbeddedFeedbackPool()) {
     state.externalTaskDrawerOpen = true;
@@ -998,6 +1077,16 @@ function replayTaskStatusTone(status = "") {
   if (status === "done") return "success";
   if (status === "failed") return "danger";
   return "subtle";
+}
+
+function getTargetLayerConstraintLabel(layer = "") {
+  const map = {
+    generic: "Generic",
+    docType: "DocType",
+    domain: "Domain",
+    module: "Module"
+  };
+  return map[layer] || layer || "DocType";
 }
 
 function getReasonCategoryLabel(category = "") {

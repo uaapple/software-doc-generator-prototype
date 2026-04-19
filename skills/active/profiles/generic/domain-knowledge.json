@@ -29,8 +29,10 @@
     {
       "domain": "embedded_vcu",
       "subdomain": "generic",
+      "sectionHints": [],
       "writingPattern": "优先采用“条件/触发 + 输出动作 + 否则或恢复路径”的句式；若存在多分支或仲裁关系，应显式写出优先级和边界条件。",
-      "targetStyle": "输出应接近工程设计需求条目，而不是摘要式说明或自然语言概括。"
+      "targetStyle": "输出应接近工程设计需求条目，而不是摘要式说明或自然语言概括。",
+      "sourceBasis": []
     }
   ],
   "antiPatterns": [

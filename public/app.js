@@ -260,6 +260,7 @@ async function handleRejectSubmit(event) {
       severity: String(formData.get("severity") || "medium"),
       reasonText: String(formData.get("reasonText") || "").trim(),
       expectedNote: String(formData.get("expectedNote") || "").trim(),
+      targetLayerConstraint: String(formData.get("targetLayerConstraint") || "docType").trim(),
       includeInPool: formData.get("includeInPool") === "on"
     };
 

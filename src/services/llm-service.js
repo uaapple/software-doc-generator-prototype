@@ -6,6 +6,11 @@ import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
 import { LlmProfileService } from "./llm-profile-service.js";
 import { createJsonChatCompletion } from "./openai-compatible-chat.js";
+import {
+  ALLOWED_KINDS_BY_AREA,
+  getAllowedKindsForAreasAndLayer,
+  isKindAllowedForLayer
+} from "../../public/skill-kind-matrix.js";
 
 const SOURCE_REF_SCHEMA = {
   type: "array",
@@ -702,15 +707,16 @@ function buildReplaySystemPrompt() {
     "返回内容必须全部使用中文，并严格符合给定 JSON schema。",
     "每个 items 条目只能对应一个 atomic skill 修改项。",
     "层级说明：generic 表示跨模块和跨文档通用的基础规则；docType 表示仅对某一类文档类型生效的规则；domain 表示在某个领域内广泛适用但不局限于单一模块的规则；module 表示仅对当前模块生效的规则。",
-    "请先分析驳回意见、期望写法和被驳回输出，再判断建议应该沉淀到 generic / docType / domain / module 哪一层。",
-    "如果建议依赖具体模块名、模块专属流程语义、局部边界、模块专属信号、枚举值或阈值，则优先落到 module；不要错误上提到 docType。",
+    "请先分析驳回意见、期望写法和被驳回输出，但不要重新选择层级；必须严格遵守 taskContext.targetLayerConstraint 与 taskContext.targetProfileKeyConstraint，只能在该约束层内判断应该 modify_existing 还是 create_new。",
+    "若 taskContext.targetLayerConstraint = module，则说明本次修改只能落在当前模块层；不要把 module 级问题上提到 docType / domain / generic，其余层同理。",
     "优先在原始生成时已提供给模型的 skill 上下文中寻找可以修改的 existing atomic skill；只有在 existing atomic skill 无法覆盖某个独立问题时，才允许输出 conclusionType=create_new。",
     "action 只能填写 add_skill_item、modify_skill_item、split_skill_item、deprecate_skill_item 之一，不要输出自然语言句子。",
     "evidenceRefs 只能填写 rejectionContext.records 中给出的 id，不要填写 requirementCode、标题或自然语言。",
-    "modify_existing 时 targetSkillCode 必须来自 candidateSkillInventory 里的 skillCode；不要编造 skillCode。",
-    "如果 candidateSkillInventory 为空，或没有任何 skillCode 能精确承接本次修改，就必须输出 create_new + add_skill_item，并把 targetSkillCode 设为空字符串。",
-    "不要编造新的 kind，targetKind 必须来自 taskContext.allowedKindsByArea 的允许值。",
+    "modify_existing 时 targetSkillCode 必须来自 layerSkillInventory 里的 skillCode；candidateSkillInventory 只是兼容别名，不要编造 skillCode。",
+    "如果 layerSkillInventory 为空，或该约束层内没有任何 skillCode 能精确承接本次修改，就必须输出 create_new + add_skill_item；新建项的 targetLayer 必须等于 taskContext.targetLayerConstraint，targetProfileKey 必须等于 taskContext.targetProfileKeyConstraint，并把 targetSkillCode 设为空字符串。",
+    "不要编造新的 kind，targetKind 必须同时满足 taskContext.allowedKindsByLayer 与 taskContext.allowedKindsForReplay 的约束；如果当前层与当前 targetArea 没有交集，不要强行输出非法 kind。",
     "afterContent 必须是可复用的 atomic skill 正文，不要只是把驳回说明换一种语气重写。",
+    "skill 修改建议正文应使用可复用、与具体上传文件名无关的表达；不要在 afterContent 中引用具体参考资产文件名（例如 Chrg.c），应改写为“代码证据”“实现证据”“参考资产”等抽象说法。",
     "如果当前案例只适合沉淀为模块规则，请把正文抽象成“某类需求在什么条件下不得补写什么内容”的规则，而不是“请把某条结果改成什么”。",
     "beforeContent 应表示当前 skill 原文或当前能力边界；afterContent 应表示建议修改后的 atomic skill 正文。",
     "whyCurrent 必须说明当前 skill 为什么没拦住问题；whyChange 必须说明修改后为什么能避免同类问题。",
@@ -729,8 +735,16 @@ function buildReplayTaskContext(materialPack = {}) {
     moduleName: String(moduleContext.moduleName || "").trim(),
     documentType: String(moduleContext.documentType || "software_requirement").trim() || "software_requirement",
     targetAreas: Array.isArray(materialPack.targetAreas) ? materialPack.targetAreas : [],
+    targetLayerConstraint: String(materialPack.targetLayerConstraint || "").trim(),
+    targetProfileKeyConstraint: String(materialPack.targetProfileKeyConstraint || "").trim(),
     allowedKindsByArea: materialPack.allowedKindsByArea || {},
-    candidateSkillCount: Array.isArray(materialPack.candidateSkillItems) ? materialPack.candidateSkillItems.length : 0
+    allowedKindsByLayer: materialPack.allowedKindsByLayer || {},
+    allowedKindsForReplay: Array.isArray(materialPack.allowedKindsForReplay) ? materialPack.allowedKindsForReplay : [],
+    layerSkillCount: Array.isArray(materialPack.layerSkillItems)
+      ? materialPack.layerSkillItems.length
+      : Array.isArray(materialPack.candidateSkillItems)
+        ? materialPack.candidateSkillItems.length
+        : 0
   };
 }
 
@@ -760,6 +774,7 @@ function buildReplayRejectionContext(materialPack = {}) {
       reasonCategory: String(snapshot.reasonCategory || "").trim(),
       reasonText: String(snapshot.reasonText || "").trim(),
       expectedNote: String(snapshot.expectedNote || "").trim(),
+      targetLayerConstraint: String(snapshot.targetLayerConstraint || "").trim(),
       rejectedOutput: buildReplayRejectedOutput(snapshot.outputSnapshot || {}),
       sourceRefsSnapshot: Array.isArray(snapshot.sourceRefsSnapshot) ? snapshot.sourceRefsSnapshot : [],
       projectEvidenceSnapshot: Array.isArray(snapshot.projectEvidenceSnapshot) ? snapshot.projectEvidenceSnapshot : []
@@ -768,8 +783,12 @@ function buildReplayRejectionContext(materialPack = {}) {
 }
 
 function buildReplayCandidateSkillInventory(materialPack = {}) {
-  const candidates = Array.isArray(materialPack.candidateSkillItems) ? materialPack.candidateSkillItems : [];
-  return candidates.slice(0, 20).map((item) => ({
+  const candidates = Array.isArray(materialPack.layerSkillItems)
+    ? materialPack.layerSkillItems
+    : Array.isArray(materialPack.candidateSkillItems)
+      ? materialPack.candidateSkillItems
+      : [];
+  return candidates.map((item) => ({
     skillCode: String(item.skillCode || item.ruleId || "").trim(),
     title: String(item.title || "").trim(),
     targetLayer: String(item.layer || "").trim(),
@@ -849,11 +868,13 @@ function buildReplayReferenceAssets(materialPack = {}) {
 }
 
 function buildReplayPromptContext(materialPack = {}) {
+  const layerSkillInventory = buildReplayCandidateSkillInventory(materialPack);
   return {
     taskContext: buildReplayTaskContext(materialPack),
     rejectionContext: buildReplayRejectionContext(materialPack),
     originalGenerationSkillContext: buildReplayOriginalGenerationSkillContext(materialPack),
-    candidateSkillInventory: buildReplayCandidateSkillInventory(materialPack),
+    layerSkillInventory,
+    candidateSkillInventory: layerSkillInventory,
     referenceAssets: buildReplayReferenceAssets(materialPack)
   };
 }
@@ -882,30 +903,29 @@ export function buildReplayModelInput(materialPack = {}) {
 }
 
 function getAllowedKindsByArea() {
-  return {
-    writing: ["writing_rule", "good_example", "rule_hint", "generation_priority"],
-    extraction: ["extraction_rule", "rule_hint", "generation_priority"],
-    validation: ["validation_rule", "anti_pattern", "rule_hint"],
-    examples: ["good_example", "bad_example", "anti_pattern"],
-    domain_knowledge: [
-      "source_alias",
-      "normalization_rule",
-      "forbidden_expansion",
-      "source_policy_setting",
-      "document_blueprint_section",
-      "document_blueprint_policy",
-      "code_style_prefix",
-      "rule_hint",
-      "generation_priority",
-      "anti_pattern"
-    ]
-  };
+  return ALLOWED_KINDS_BY_AREA;
 }
 
 function collectAllowedKinds(targetAreas = []) {
-  const mapping = getAllowedKindsByArea();
   const resolvedAreas = Array.isArray(targetAreas) && targetAreas.length ? targetAreas : ["validation"];
-  return new Set(resolvedAreas.flatMap((area) => mapping[area] || mapping.validation));
+  return new Set(resolvedAreas.flatMap((area) => ALLOWED_KINDS_BY_AREA[area] || ALLOWED_KINDS_BY_AREA.validation));
+}
+
+function collectAllowedReplayKinds(targetAreas = [], materialPack = {}) {
+  const constrainedLayer = isValidReplayLayer(materialPack.targetLayerConstraint || "")
+    ? String(materialPack.targetLayerConstraint || "").trim()
+    : "";
+  if (constrainedLayer) {
+    return new Set(getAllowedKindsForAreasAndLayer(targetAreas, constrainedLayer));
+  }
+  return collectAllowedKinds(targetAreas);
+}
+
+function pickPreferredAllowedKind(preferredKind = "", allowedKinds = new Set()) {
+  if (preferredKind && allowedKinds.has(preferredKind)) {
+    return preferredKind;
+  }
+  return [...allowedKinds][0] || "";
 }
 
 function isValidReplayLayer(layer = "") {
@@ -1143,11 +1163,48 @@ function inferReplayScopeDecisionV2(targetArea = "", item = {}, materialPack = {
   const documentType = normalizeReplaySlug(materialPack.moduleContext?.documentType || "software_requirement");
   const domain = normalizeReplaySlug(materialPack.moduleContext?.domain || "embedded_vcu");
   const moduleProfileKey = getReplayModuleProfileKey(materialPack);
+  const constrainedLayer = isValidReplayLayer(materialPack.targetLayerConstraint || "")
+    ? String(materialPack.targetLayerConstraint || "").trim()
+    : "";
+  const constrainedProfileKey = normalizeReplaySlug(
+    materialPack.targetProfileKeyConstraint ||
+      (constrainedLayer === "module"
+        ? moduleProfileKey
+        : constrainedLayer === "domain"
+          ? domain || "embedded_vcu"
+          : constrainedLayer === "docType"
+            ? documentType
+            : "generic")
+  );
   const declaredLayer = isValidReplayLayer(item.targetLayer || "") ? String(item.targetLayer || "").trim() : "";
   const declaredProfileKey = normalizeReplaySlug(item.targetProfileKey || "");
   const declaredKind = String(item.targetKind || item.kind || mapReplayAreaToKind(targetArea)).trim();
+  const constrainedAllowedKinds = new Set(getAllowedKindsForAreasAndLayer([targetArea], constrainedLayer || declaredLayer || "docType"));
+
+  if (constrainedLayer) {
+    const resolvedKind = pickPreferredAllowedKind(declaredKind, constrainedAllowedKinds);
+    return {
+      scopeDecision: constrainedLayer,
+      scopeReason: "本次 Replay 已由人工明确指定沉淀层级，必须严格保持在该层内。",
+      scopeConfidence: 0.99,
+      targetLayer: constrainedLayer,
+      targetProfileKey: constrainedProfileKey || "generic",
+      targetKind: resolvedKind,
+      reuseJudgement:
+        constrainedLayer === "module"
+          ? "module_specific"
+          : constrainedLayer === "domain"
+            ? "domain_general"
+            : constrainedLayer === "generic"
+              ? "generic_general"
+              : "doc_type_general",
+      ruleIntent: "在人工指定层级内寻找可复用的 atomic skill，无法命中时也只能在该层新增。"
+    };
+  }
 
   if (declaredLayer) {
+    const declaredAllowedKinds = new Set(getAllowedKindsForAreasAndLayer([targetArea], declaredLayer));
+    const resolvedKind = pickPreferredAllowedKind(declaredKind, declaredAllowedKinds);
     return {
       scopeDecision: declaredLayer,
       scopeReason: item.targetSkillCode
@@ -1156,7 +1213,7 @@ function inferReplayScopeDecisionV2(targetArea = "", item = {}, materialPack = {
       scopeConfidence: item.targetSkillCode ? 0.9 : 0.78,
       targetLayer: declaredLayer,
       targetProfileKey: declaredProfileKey || (declaredLayer === "module" ? moduleProfileKey : documentType) || "generic",
-      targetKind: declaredKind,
+      targetKind: resolvedKind,
       reuseJudgement: declaredLayer === "module"
         ? "module_specific"
         : declaredLayer === "domain"
@@ -1175,7 +1232,7 @@ function inferReplayScopeDecisionV2(targetArea = "", item = {}, materialPack = {
       scopeConfidence: moduleProfileKey ? 0.74 : 0.68,
       targetLayer: moduleProfileKey ? "module" : "docType",
       targetProfileKey: moduleProfileKey || documentType,
-      targetKind: "bad_example",
+      targetKind: pickPreferredAllowedKind("bad_example", new Set(getAllowedKindsForAreasAndLayer([targetArea], moduleProfileKey ? "module" : "docType"))),
       reuseJudgement: moduleProfileKey ? "module_specific" : "doc_type_general",
       ruleIntent: "补充反例或样例约束。"
     };
@@ -1188,7 +1245,7 @@ function inferReplayScopeDecisionV2(targetArea = "", item = {}, materialPack = {
       scopeConfidence: 0.72,
       targetLayer: "domain",
       targetProfileKey: domain || "embedded_vcu",
-      targetKind: "rule_hint",
+      targetKind: pickPreferredAllowedKind("rule_hint", new Set(getAllowedKindsForAreasAndLayer([targetArea], "domain"))),
       reuseJudgement: "domain_general",
       ruleIntent: "补充跨模块领域规则。"
     };
@@ -1201,7 +1258,7 @@ function inferReplayScopeDecisionV2(targetArea = "", item = {}, materialPack = {
       scopeConfidence: 0.7,
       targetLayer: "generic",
       targetProfileKey: "generic",
-      targetKind: "extraction_rule",
+      targetKind: pickPreferredAllowedKind("extraction_rule", new Set(getAllowedKindsForAreasAndLayer([targetArea], "generic"))),
       reuseJudgement: "generic_general",
       ruleIntent: "补充通用抽取规则。"
     };
@@ -1214,7 +1271,7 @@ function inferReplayScopeDecisionV2(targetArea = "", item = {}, materialPack = {
       scopeConfidence: 0.68,
       targetLayer: "docType",
       targetProfileKey: documentType,
-      targetKind: "writing_rule",
+      targetKind: pickPreferredAllowedKind("writing_rule", new Set(getAllowedKindsForAreasAndLayer([targetArea], "docType"))),
       reuseJudgement: "doc_type_general",
       ruleIntent: "补充文档类型写作规则。"
     };
@@ -1226,7 +1283,7 @@ function inferReplayScopeDecisionV2(targetArea = "", item = {}, materialPack = {
     scopeConfidence: 0.52,
     targetLayer: "docType",
     targetProfileKey: documentType,
-    targetKind: "validation_rule",
+    targetKind: pickPreferredAllowedKind("validation_rule", new Set(getAllowedKindsForAreasAndLayer([targetArea], "docType"))),
     reuseJudgement: "doc_type_general",
     ruleIntent: "补充文档类型校验规则。"
   };
@@ -1282,12 +1339,24 @@ function inferReplayDefaultTarget(targetArea = "", materialPack = {}) {
 }
 
 function chooseReplayCandidate(targetArea = "", materialPack = {}) {
-  const candidates = Array.isArray(materialPack.candidateSkillItems) ? materialPack.candidateSkillItems : [];
-  const preferredKind = mapReplayAreaToKind(targetArea);
+  const candidates = Array.isArray(materialPack.layerSkillItems)
+    ? materialPack.layerSkillItems
+    : Array.isArray(materialPack.candidateSkillItems)
+      ? materialPack.candidateSkillItems
+      : [];
+  const filteredCandidates = candidates.filter((item) => isKindAllowedForLayer(item.layer, item.kind));
+  const preferredKind = pickPreferredAllowedKind(
+    mapReplayAreaToKind(targetArea),
+    new Set(
+      Array.isArray(materialPack.allowedKindsForReplay) && materialPack.allowedKindsForReplay.length
+        ? materialPack.allowedKindsForReplay
+        : getAllowedKindsForAreasAndLayer([targetArea], materialPack.targetLayerConstraint || "")
+    )
+  );
   return (
-    candidates.find((item) => item.kind === preferredKind) ||
-    candidates.find((item) => (item.targetAreas || []).includes(targetArea)) ||
-    candidates[0] ||
+    filteredCandidates.find((item) => item.kind === preferredKind) ||
+    filteredCandidates.find((item) => (item.targetAreas || []).includes(targetArea)) ||
+    filteredCandidates[0] ||
     null
   );
 }
@@ -1383,8 +1452,12 @@ function normalizeReplayProposalPayload(payload = {}, materialPack = {}) {
   }
   const targetAreas = materialPack.targetAreas || [];
   const candidateSkillMap = new Map(
-    (Array.isArray(materialPack.candidateSkillItems) ? materialPack.candidateSkillItems : [])
-      .map((item) => [String(item.skillCode || "").trim(), item])
+    (Array.isArray(materialPack.layerSkillItems)
+      ? materialPack.layerSkillItems
+      : Array.isArray(materialPack.candidateSkillItems)
+        ? materialPack.candidateSkillItems
+        : [])
+      .map((item) => [String(item.skillCode || item.ruleId || "").trim(), item])
       .filter(([skillCode]) => skillCode)
   );
   return {
@@ -1487,7 +1560,7 @@ function normalizeReplayProposalItem(item, index, validIds, refAliasMap, candida
 
   const targetArea = targetAreas[0] || "validation";
   const inferredTarget = inferReplayDefaultTarget(targetArea, materialPack);
-  const allowedKinds = collectAllowedKinds(targetAreas);
+  const allowedKinds = collectAllowedReplayKinds(targetAreas, materialPack);
   let kind = String(item.targetKind || item.kind || mapReplayAreaToKind(targetAreas[0] || "validation")).trim();
   let targetLayer = String(item.targetLayer || inferredTarget.targetLayer).trim();
   let targetProfileKey = normalizeReplaySlug(item.targetProfileKey || inferredTarget.targetProfileKey || "generic");
@@ -1531,6 +1604,9 @@ function normalizeReplayProposalItem(item, index, validIds, refAliasMap, candida
     targetProfileKey = normalizeReplaySlug(materialPack.moduleContext?.domain || targetProfileKey || "embedded_vcu");
   } else {
     targetProfileKey = "generic";
+  }
+  if (!isKindAllowedForLayer(targetLayer, kind)) {
+    return null;
   }
   if (!allowedKinds.has(kind)) {
     return null;

@@ -886,6 +886,17 @@ select {
   margin-bottom: 0;
 }
 
+.dialog-status {
+  min-height: 20px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.dialog-status.error {
+  color: var(--danger);
+}
+
 .files-list {
   display: grid;
   gap: 12px;
@@ -1013,6 +1024,14 @@ select {
   background: #fff;
   border: 1px solid var(--line);
   color: var(--ink);
+}
+
+button[disabled],
+input[disabled],
+textarea[disabled],
+select[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .secondary-button[data-delete-project],

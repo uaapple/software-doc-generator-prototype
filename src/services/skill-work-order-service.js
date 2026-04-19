@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { readJson, writeJson } from "./storage.js";
 import { SkillManagementService } from "./skill-management-service.js";
+import { isKindAllowedForLayer } from "../../public/skill-kind-matrix.js";
 
 function now() {
   return new Date().toISOString();
@@ -449,6 +450,15 @@ export class SkillWorkOrderService {
         item.reviewStatus = "edited";
       }
     }
+    const targetLayer = String(item.editedPayload?.targetLayer || item.targetLayer || "").trim();
+    const targetKind = String(item.editedPayload?.targetKind || item.targetKind || "").trim();
+    if (targetLayer && targetKind && !isKindAllowedForLayer(targetLayer, targetKind)) {
+      throw createManagedError("Target kind is not allowed in target layer", 400, "skill_kind_not_allowed_for_layer", {
+        itemId,
+        targetLayer,
+        targetKind
+      });
+    }
     item.updatedAt = now();
 
     workOrder.itemStats = computeItemStats(workOrder.items || [], workOrder.validatorSuggestions || []);
@@ -486,6 +496,13 @@ export class SkillWorkOrderService {
     if (!afterContent) {
       throw createManagedError("Applying a skill work order item requires non-empty after content", 400, "empty_after_content", {
         itemId
+      });
+    }
+    if (!isKindAllowedForLayer(targetLayer, targetKind)) {
+      throw createManagedError("Target kind is not allowed in target layer", 400, "skill_kind_not_allowed_for_layer", {
+        itemId,
+        targetLayer,
+        targetKind
       });
     }
 

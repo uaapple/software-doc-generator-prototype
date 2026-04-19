@@ -247,6 +247,44 @@
   - 按用户要求，将本地 `data/rejections`、`data/replay-tasks` 以及对应 `data/skill-work-orders` 的调试现场纳入版本控制，便于切换到 Windows 机器后继续沿同一条真实样本调试。
   - 继续补充 `data/skills.sqlite`，把当前技能数据库状态一并带到新环境，避免新环境只拿到 skill 文件而缺失最新数据库状态。
   - 保留当前真实 replay / work order 样本：
-    - replay task `7aa27011-6f01-4890-8a04-7b8d242f7545`
-    - work order `fee6a306-f5fb-4295-9d28-0b34a55238d4`
+  - replay task `7aa27011-6f01-4890-8a04-7b8d242f7545`
+  - work order `fee6a306-f5fb-4295-9d28-0b34a55238d4`
   - 同步当前 rejection/group 状态与旧 replay task 删除结果，使新环境看到的现场与本机一致。
+
+## 会话：2026-04-20（培训材料整理）
+
+### 阶段：新人培训 slides 提纲输出
+- **状态：** complete
+- **执行的操作：**
+  - 读取 `README.md`、`ARCHITECTURE.md`、独立 Wiki 页面、前端入口页与关键后端接口，按“新人培训”视角梳理系统定位、名词概念、主功能、业务流与审核闭环。
+  - 新增两份可直接交给制 slides AI 的 Markdown 提纲，分别覆盖：
+    - 培训一：从零认识系统并跑通主流程
+    - 培训二：审核闭环、修正机制与高级能力
+  - 根据用户追加要求，补充了一页关于 `Skill` 的介绍，并进一步收敛为“Skill 是团队经验沉淀为数字化资产、会随着使用持续迭代完善”的表达。
+- **创建/修改的文件：**
+  - `output/培训一_从零认识系统并跑通主流程_slides提纲.md`
+  - `output/培训二_审核闭环修正机制与高级能力_slides提纲.md`
+- **补充说明：**
+  - `Skill` 的补充页提纲按用户要求仅在对话中给出，未写入文件。
+  - 本次没有修改业务源码或测试文件，主要产出为培训材料整理与落盘。
+
+## 会话：2026-04-20（仓库未提交修改盘点）
+
+### 阶段：按 planning-with-files 整理当前工作树改动
+- **状态：** complete
+- **执行的操作：**
+  - 运行 `git status --short`、`git diff --stat`、`git diff --name-only`，按主题盘点当前工作树未提交修改。
+  - 交叉读取关键代码与页面文件，确认这批改动主要覆盖：
+    - Replay / Fallback 主链收口
+    - Replay Lab 新实验台
+    - `layer × kind` 规则矩阵固化
+    - 结构化驳回、反馈池、技能管理、Skill Refinement 交互补强
+    - active skill / rule index / SQLite 数据刷新
+    - Wiki、prompt handover 与 Windows Wiki 启停脚本补齐
+    - 真实 rejection / replay task / project review 运行态快照保留
+  - 将上述盘点结果同步回 `task_plan.md` 与 `findings.md`，避免后续只看旧规划文件时遗漏当前未提交工作面。
+- **关键结论：**
+  - 当前工作树不是单点修改，而是一轮围绕 fallback / replay 验证体系的系统性收口。
+  - Replay 已切换到“人工指定 targetArea + targetLayerConstraint，模型只能在该层内处理”的约束模式。
+  - 新增 Replay Lab 后，当前最适合的验证路径已经从“读旧 replay 记录”变成“用历史 task 做模板，在当前规则下重跑并直接验证”。
+  - 当前还带着真实运行态调试数据与一个疑似临时文件，后续提交前需要再次判断哪些应保留、哪些应清理。

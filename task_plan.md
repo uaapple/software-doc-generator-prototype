@@ -92,6 +92,11 @@
 - [x] 将“后端按单案例硬判层级并强塞推荐正文”的方案废弃，明确切回 prompt-first 路线
 - [x] 审计当前最新一条 `充电管理 / software_requirement` 已落盘 fallback 样本，确认结果仍未满足预期：最新 replay task 仍把建议落到 `docType`，正文仍偏向驳回意见改写
 - [x] 使用真实 `充电管理 / software_requirement` fallback 案例重新验证：远端 LLM 已能自主产出 `module / 充电管理 / validation_rule` 的新增提案
+- [x] 将结构化驳回升级为人工显式指定 `targetArea + targetLayerConstraint`，并要求 Replay 在该层内处理
+- [x] 固化 `layer × kind` 允许矩阵，并在 Replay proposal、技能工单、技能编辑器中统一校验
+- [x] 将 Replay 候选池收敛为同层 `layerSkillInventory`，不再只依赖宽泛的 candidate inventory
+- [x] 为 Replay 增加 rule diagnostics、prompt preview、active skill summary 等诊断信息
+- [x] 新增 Replay Lab 工作台，用历史 replay task 为模板重跑当前规则、查看最新工单并发起生成验证
 - [ ] 检查新生成工单中的 `afterContent / recommendedSkillText` 是否已经抽象成“可复用规则”，而不是驳回意见改写
 - [ ] 选一条真正通用的 `software_requirement` 写作/校验案例做对照，验证 prompt 不会把通用规则过度下沉到 `module`
 - [ ] 汇总 3~5 条真实 replay 输出样本，对比层级选择、抽象度、复述风险，整理下一轮 prompt 微调依据
@@ -104,6 +109,8 @@
 - [x] 补充快速开始、工程/模块工作区、反馈池与 Replay、技能管理等首批用户说明页
 - [x] 补充 Wiki 的启动 / 停止 / 重启脚本与 README 说明
 - [x] 自动化验证通过：`npm test`、`npm run check:wiki`
+- [x] 补充 Windows 平台的 `start/stop/restart wiki` 启动脚本
+- [x] 将 Wiki 文案更新到最新 Replay 约束模型：`targetArea`、`targetLayerConstraint`、`layer × kind`
 - [ ] 补齐与最新 fallback / skill work order 实际审阅路径完全对齐的操作说明
 - [ ] 评估是否需要把人工浏览器走查中发现的高频问题直接沉淀回 Wiki FAQ
 - **状态：** in_progress
@@ -138,6 +145,10 @@
 | fallback 技能建议的收敛方向以 prompt-first 为主 | 用户明确不接受在后端加入针对 `CheryVCU-12147` 一类案例的条件性硬约束，希望模型自己学会输出正确层级与规则正文 |
 | scope / abstraction / readiness 只作为质量信号，不作为单案例硬改写器 | 可以帮助审阅与排序，但不应替代 LLM 的层级判断与规则抽象 |
 | 当前阶段优先相信真实远端 replay 输出，而不是继续从旧落盘 fallback 样本反推 prompt 效果 | 真实重跑已证明模型可以给出 `module` 层建议，后续重点转为“工单展示/应用是否使用了正确正文” |
+| 结构化驳回中的 `targetArea` 与 `targetLayerConstraint` 改为人工显式指定 | 避免系统自动猜测修正方向，确保 Replay 只能在用户选定层级内处理 |
+| `kind` 的合法性必须同时满足 `targetArea` 与 `layer` 约束 | 防止 proposal / 工单 / 技能编辑器写入实际上无法落盘或不符合模型的组合 |
+| Replay 的主候选池改为同层 `layerSkillInventory` | 让模型优先在目标层内命中 existing skill，减少无约束地 `create_new` |
+| 将 Replay Lab 作为当前 fallback / replay 行为验证的主实验台 | 需要用同一历史样本在“当前 active skill + 当前规则”下重复重跑和验证，而不是只看旧落盘结果 |
 
 ## 遇到的错误
 | 错误 | 尝试次数 | 解决方案 |
@@ -153,7 +164,7 @@
 - 当前最新开发分支：`codex-layered-navigation-workflow`
 - 当前最新提交：请以 `git log -1 --oneline` 为准；当前除了源码主线外，还需要保留一份可跨机器继续调试的 replay / work order 运行态数据快照
 - 当前仍保留迁移演示工程，可用于换环境后的页面联调与人工走查
-- 当前工作树干净：`git status --short` 无输出
+- 当前工作树不干净：除培训材料外，还存在 Replay Lab、层级约束、skill/rule 数据刷新、Wiki 脚本与运行态数据快照等一批未提交修改
 - 自动化测试当前通过：`npm test` -> `All 33 tests passed.`
 - Wiki 校验当前通过：`npm run check:wiki` -> `Wiki validation passed.`
 - 下一次接手开发前，优先读取 `task_plan.md`、`findings.md`、`progress.md`，再看 `git status` 与当前分支/最近提交

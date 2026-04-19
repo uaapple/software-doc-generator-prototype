@@ -1586,9 +1586,12 @@ button.danger {
 .feedback-record-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.feedback-record-actions .ghost-button {
+.feedback-record-actions .ghost-button,
+.feedback-record-actions .danger {
   min-width: 112px;
 }
 

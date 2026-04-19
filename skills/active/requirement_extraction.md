@@ -37,47 +37,11 @@
 
 
 ### GEN-generic-extraction_rule-009 系统需求侧抽取规则 5
-若系统需求和样例都指向“扭矩干预”领域，应进一步标记以下四类候选条目：
-
-
-### GEN-generic-extraction_rule-010 系统需求侧抽取规则 6
-前轴激活标志位判断
-
-
-### GEN-generic-extraction_rule-011 系统需求侧抽取规则 7
-前轴扭矩计算
-
-
-### GEN-generic-extraction_rule-012 系统需求侧抽取规则 8
-后轴激活标志位判断
-
-
-### GEN-generic-extraction_rule-013 系统需求侧抽取规则 9
-后轴扭矩计算
+若系统需求和样例都指向“扭矩干预”领域，应进一步标记四类候选条目：前轴激活标志位判断、前轴扭矩计算、后轴激活标志位判断、后轴扭矩计算。
 
 
 ### GEN-generic-extraction_rule-014 系统需求侧抽取规则 10
-若系统需求和样例指向“充电管理”领域，应优先标记以下候选条目：
-
-
-### GEN-generic-extraction_rule-015 系统需求侧抽取规则 11
-堵转加热请求或模式控制
-
-
-### GEN-generic-extraction_rule-016 系统需求侧抽取规则 12
-充电截止SOC设置与有效值过滤
-
-
-### GEN-generic-extraction_rule-017 系统需求侧抽取规则 13
-充电截止停止与恢复滞回
-
-
-### GEN-generic-extraction_rule-018 系统需求侧抽取规则 14
-截止SOC下电记忆
-
-
-### GEN-generic-extraction_rule-019 系统需求侧抽取规则 15
-AC/DC充电跳转至充满标志位
+若系统需求和样例指向“充电管理”领域，应优先标记五类候选条目：堵转加热请求或模式控制、充电截止SOC设置与有效值过滤、充电截止停止与恢复滞回、截止SOC下电记忆、AC/DC 充电跳转至充满标志位。
 
 
 ### GEN-generic-extraction_rule-020 系统需求侧抽取规则 16
@@ -103,59 +67,11 @@ AC/DC充电跳转至充满标志位
 
 
 ### GEN-generic-extraction_rule-025 模型代码与模型文档侧抽取规则 5
-对扭矩干预领域，优先把代码事实归并到以下设计主题中，而不是只做零散抽取：
-
-
-### GEN-generic-extraction_rule-026 模型代码与模型文档侧抽取规则 6
-激活标志位赋值表达式
-
-
-### GEN-generic-extraction_rule-027 模型代码与模型文档侧抽取规则 7
-升扭/降扭/RBS/ISA/CCO 触发条件
-
-
-### GEN-generic-extraction_rule-028 模型代码与模型文档侧抽取规则 8
-AEB/CDP 等置零条件
-
-
-### GEN-generic-extraction_rule-029 模型代码与模型文档侧抽取规则 9
-`VehCfg_stRBCCtrlModeSel` 等模式分支
-
-
-### GEN-generic-extraction_rule-030 模型代码与模型文档侧抽取规则 10
-`TqSpltArbt_tqTarFrntAxle / TqSpltArbt_tqTarReAxle` 目标扭矩承接逻辑
-
-
-### GEN-generic-extraction_rule-031 模型代码与模型文档侧抽取规则 11
-`min/max/fminf/fmaxf` 类边界限制
+对扭矩干预领域，优先把代码事实归并到六类设计主题中，而不是只做零散抽取：激活标志位赋值表达式、升扭/降扭/RBS/ISA/CCO 触发条件、AEB/CDP 等置零条件、`VehCfg_stRBCCtrlModeSel` 等模式分支、`TqSpltArbt_tqTarFrntAxle / TqSpltArbt_tqTarReAxle` 目标扭矩承接逻辑、`min/max/fminf/fmaxf` 类边界限制。
 
 
 ### GEN-generic-extraction_rule-032 模型代码与模型文档侧抽取规则 12
-对充电管理领域，优先把代码事实归并到以下设计主题中：
-
-
-### GEN-generic-extraction_rule-033 模型代码与模型文档侧抽取规则 13
-`Chrg_bACChrgReq / Chrg_bDCChrgReq` 等充电请求使能条件
-
-
-### GEN-generic-extraction_rule-034 模型代码与模型文档侧抽取规则 14
-`StallHeatingReq / RModeReq / RMCU2_St_StallHeating` 等堵转加热请求、反馈和超时保护
-
-
-### GEN-generic-extraction_rule-035 模型代码与模型文档侧抽取规则 15
-`ICM/TCP` 截止SOC设置、`112` 无效值过滤、`50%-100%` 合法范围
-
-
-### GEN-generic-extraction_rule-036 模型代码与模型文档侧抽取规则 16
-`Chrg_bChrgStopBySOCLim` 等截止停止判定与 `1%` 恢复滞回
-
-
-### GEN-generic-extraction_rule-037 模型代码与模型文档侧抽取规则 17
-`EEW / EER` 类下电记忆变量
-
-
-### GEN-generic-extraction_rule-038 模型代码与模型文档侧抽取规则 18
-`ChargingFull`、AC/DC 跳转至充满标志位、充电状态机枚举
+对充电管理领域，优先把代码事实归并到六类设计主题中：`Chrg_bACChrgReq / Chrg_bDCChrgReq` 等充电请求使能条件、`StallHeatingReq / RModeReq / RMCU2_St_StallHeating` 等堵转加热请求/反馈/超时保护、`ICM/TCP` 截止 SOC 设置与无效值过滤及合法范围、`Chrg_bChrgStopBySOCLim` 等截止停止判定与恢复滞回、`EEW / EER` 类下电记忆变量、`ChargingFull` 与 AC/DC 跳转至充满标志位及充电状态机枚举。
 
 
 ### GEN-generic-extraction_rule-039 模型代码与模型文档侧抽取规则 19

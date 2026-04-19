@@ -1,22 +1,4 @@
-const PROFILE_LAYER_ORDER = ["generic", "docType", "domain", "module"]
-
-const KIND_ORDER = [
-  "writing_rule",
-  "extraction_rule",
-  "validation_rule",
-  "good_example",
-  "bad_example",
-  "generation_priority",
-  "rule_hint",
-  "anti_pattern",
-  "source_alias",
-  "code_style_prefix",
-  "forbidden_expansion",
-  "normalization_rule",
-  "source_policy_setting",
-  "document_blueprint_section",
-  "document_blueprint_policy"
-]
+import { PROFILE_LAYER_ORDER, KIND_ORDER, getAllowedKindsByLayer, isKindAllowedForLayer } from "/skill-kind-matrix.js"
 
 const KIND_LABELS = {
   writing_rule: "写作规则",
@@ -127,6 +109,7 @@ workOrderDetailRoot?.addEventListener("click", handleWorkOrderDetailClick)
 workOrderDetailRoot?.addEventListener("submit", handleWorkOrderDetailSubmit)
 editorBackdrop.addEventListener("click", () => closeEditor())
 editorDrawerBody.addEventListener("click", handleDrawerClick)
+editorDrawerBody.addEventListener("change", handleDrawerChange)
 editorDrawerBody.addEventListener("submit", handleEditorSubmit)
 document.addEventListener("keydown", handleGlobalKeydown)
 
@@ -566,6 +549,37 @@ async function handleReviewClick(event) {
 function handleDrawerClick(event) {
   if (event.target.closest("[data-close-editor]")) {
     closeEditor()
+  }
+}
+
+function handleDrawerChange(event) {
+  if (!(event.target instanceof HTMLSelectElement)) return
+  if (event.target.name !== "layer") return
+
+  syncEditorKindSelection(event.target.form)
+}
+
+function syncEditorKindSelection(form) {
+  if (!form) return
+  const layerSelect = form.elements.namedItem("layer")
+  const kindSelect = form.elements.namedItem("kind")
+  const kindHint = form.querySelector("[data-kind-hint]")
+  if (!(layerSelect instanceof HTMLSelectElement) || !(kindSelect instanceof HTMLSelectElement)) return
+
+  const nextLayer = layerSelect.value || "module"
+  const currentKind = kindSelect.value || ""
+  const nextKinds = getAllowedKindsByLayer(nextLayer)
+  const fallbackKind = nextKinds[0] || ""
+
+  kindSelect.innerHTML = kindOptions(nextLayer, currentKind)
+  if (!isKindAllowedForLayer(nextLayer, currentKind)) {
+    kindSelect.value = fallbackKind
+  }
+
+  if (kindHint) {
+    kindHint.textContent = nextKinds.length
+      ? `当前 ${nextLayer} 层允许：${nextKinds.join(" / ")}`
+      : "当前层没有可用 kind。"
   }
 }
 
@@ -1394,6 +1408,9 @@ function renderEditorDrawer() {
     content: item?.content || "",
     structuredPayload: item?.structuredPayload ? stringifyJson(item.structuredPayload) : ""
   }
+  if (!isKindAllowedForLayer(draft.layer, draft.kind)) {
+    draft.kind = getAllowedKindsByLayer(draft.layer)[0] || "writing_rule"
+  }
   const hideStructuredEditor = isTextTruthKind(draft.kind)
 
   editorBackdrop.hidden = false
@@ -1428,9 +1445,10 @@ function renderEditorDrawer() {
             </label>
             <label>
               Kind
-              <select name="kind">${kindOptions(draft.kind)}</select>
+              <select name="kind">${kindOptions(draft.layer, draft.kind)}</select>
             </label>
           </div>
+          <p class="summary" data-kind-hint>当前 ${escapeHtml(draft.layer)} 层允许：${escapeHtml(getAllowedKindsByLayer(draft.layer).join(" / ") || "无")}</p>
           <div class="form-grid-two">
             <label>
               Title
@@ -1530,6 +1548,7 @@ function renderEditorDrawer() {
       </div>
     </form>
   `
+  syncEditorKindSelection(editorDrawerBody.querySelector("#skill-editor-form"))
 }
 
 function renderProfileRailCard(profile) {
@@ -2203,8 +2222,10 @@ function formatBooleanPolicy(value, trueLabel = "是", falseLabel = "否") {
   return value ? trueLabel : falseLabel
 }
 
-function kindOptions(selected = "") {
-  return KIND_ORDER.map((kind) => `<option value="${kind}" ${selected === kind ? "selected" : ""}>${kind}</option>`).join("")
+function kindOptions(layer = "module", selected = "") {
+  const allowedKinds = getAllowedKindsByLayer(layer)
+  const effectiveSelected = isKindAllowedForLayer(layer, selected) ? selected : allowedKinds[0] || ""
+  return allowedKinds.map((kind) => `<option value="${kind}" ${effectiveSelected === kind ? "selected" : ""}>${kind}</option>`).join("")
 }
 
 function layerLabel(layer = "") {

@@ -20,6 +20,7 @@ import { ModuleSkillService } from "../src/services/module-skill-service.js";
 import { SkillManagementService } from "../src/services/skill-management-service.js";
 import { SkillDatabaseService } from "../src/services/skill-database-service.js";
 import { SkillWorkOrderService } from "../src/services/skill-work-order-service.js";
+import { ReplayLabService } from "../src/services/replay-lab-service.js";
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -111,6 +112,7 @@ async function seedFixtureFiles(tempDir) {
   await fs.writeFile(path.join(tempDir, "skills", "active", "requirement_extraction.md"), "# ????\n\n- ?????????????????\n", "utf8");
   await fs.writeFile(path.join(tempDir, "skills", "active", "requirement_writing.md"), "# ????\n\n- ???????????\n", "utf8");
   await fs.writeFile(path.join(tempDir, "skills", "active", "requirement_validation.md"), "# ????\n\n- ?????????????\n", "utf8");
+  await fs.writeFile(path.join(tempDir, "skills", "active", "domain-knowledge.json"), JSON.stringify(genericKnowledge, null, 2), "utf8");
   await fs.mkdir(path.join(tempDir, "skills", "active", "examples"), { recursive: true });
   await fs.writeFile(path.join(tempDir, "skills", "active", "examples", "good_examples.md"), "# ??\n", "utf8");
   await fs.writeFile(path.join(tempDir, "skills", "active", "examples", "bad_examples.md"), "# ??\n", "utf8");
@@ -271,6 +273,10 @@ async function seedWikiFixture(rootDir, overrides = {}) {
       "## 为什么会看到 fallback",
       "",
       "当现有技能无法稳定覆盖某类写法时，系统会把问题沉淀为可审阅的工单。",
+      "",
+      "## layer × kind",
+      "",
+      "系统现在会同时校验 layer 和 kind 的组合是否合法。",
       "",
       "## 处理后看哪里",
       "",
@@ -470,6 +476,10 @@ const tests = [
         allowedKindsByArea: {
           validation: ["validation_rule", "anti_pattern", "rule_hint"]
         },
+        allowedKindsByLayer: {
+          module: ["validation_rule", "anti_pattern", "rule_hint"]
+        },
+        allowedKindsForReplay: ["validation_rule", "anti_pattern", "rule_hint"],
         moduleContext: {
           projectName: "VCU",
           moduleName: "充电管理",
@@ -600,6 +610,7 @@ const tests = [
         "taskContext",
         "rejectionContext",
         "originalGenerationSkillContext",
+        "layerSkillInventory",
         "candidateSkillInventory",
         "referenceAssets"
       ]);
@@ -608,7 +619,11 @@ const tests = [
       assert.equal(payload.taskContext.moduleName, "充电管理");
       assert.equal(payload.taskContext.documentType, "software_requirement");
       assert.deepEqual(payload.taskContext.targetAreas, ["validation"]);
-      assert.equal(payload.taskContext.candidateSkillCount, 1);
+      assert.equal(payload.taskContext.layerSkillCount, 1);
+      assert.deepEqual(payload.taskContext.allowedKindsByLayer, {
+        module: ["validation_rule", "anti_pattern", "rule_hint"]
+      });
+      assert.deepEqual(payload.taskContext.allowedKindsForReplay, ["validation_rule", "anti_pattern", "rule_hint"]);
 
       assert.equal(payload.rejectionContext.records.length, 1);
       assert.equal(payload.rejectionContext.records[0].id, "rej-1");
@@ -1046,7 +1061,8 @@ const tests = [
     run: async () => {
       await withTempConfig(async () => {
         const bundleService = new SkillBundleService();
-        await bundleService.ensureInitialized();
+        const restartedBundleService = new SkillBundleService();
+        await restartedBundleService.ensureInitialized();
         const projectService = new ProjectService();
         const rejectionService = new RejectionService();
 
@@ -1078,6 +1094,7 @@ const tests = [
           reasonCategory: "missing_info",
           reasonTags: ["acceptance-criteria"],
           reasonText: "Missing measurable acceptance criteria",
+          targetArea: "validation",
           expectedNote: "Describe trigger, behavior and verification.",
           includeInPool: true
         });
@@ -1159,6 +1176,7 @@ const tests = [
             reasonCategory: "missing_info",
             reasonTags: ["acceptance-criteria"],
             reasonText: "Missing measurable acceptance criteria",
+            targetArea: "validation",
             expectedNote: "Describe trigger, behavior and verification.",
             includeInPool: true,
             comment: "在任务详情页中人工驳回"
@@ -1492,6 +1510,7 @@ const tests = [
           reasonCategory: "too_vague",
           reasonTags: ["validation", "traceability"],
           reasonText: "No trigger or verification details",
+          targetArea: "validation",
           expectedNote: "Explicitly include trigger, behavior and traceability.",
           includeInPool: true
         });
@@ -1591,6 +1610,7 @@ const tests = [
           reasonCategory: "wording_issue",
           reasonTags: ["案例对齐"],
           reasonText: "表达方式没有对齐人工样例",
+          targetArea: "writing",
           expectedNote: "按人工样例补充完整行为链路",
           includeInPool: true,
           comment: "任务详情页驳回"
@@ -1665,6 +1685,7 @@ const tests = [
           reasonCategory: "wording_issue",
           reasonTags: ["实现细节混入"],
           reasonText: "正文混入了实现化表达",
+          targetArea: "writing",
           expectedNote: "请参考模型代码但保持软件需求写法",
           includeInPool: true,
           comment: "任务详情页驳回"
@@ -1734,6 +1755,7 @@ const tests = [
           reasonCategory: "wording_issue",
           reasonTags: ["实现细节混入"],
           reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "writing",
           expectedNote: "请回到人工范例边界，只保留记忆和刷新要求。",
           includeInPool: true
         });
@@ -1800,6 +1822,7 @@ const tests = [
           reviewer: "tester",
           reasonCategory: "wording_issue",
           reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "writing",
           expectedNote: "请严格回到人工范例边界。",
           includeInPool: true
         });
@@ -2113,6 +2136,7 @@ const tests = [
           reasonCategory: "validation_gap",
           reasonTags: ["边界条件"],
           reasonText: "缺少对人工范例边界的约束",
+          targetArea: "validation",
           expectedNote: "请增加边界约束，避免额外发挥。",
           includeInPool: true
         });
@@ -2190,6 +2214,7 @@ const tests = [
           reviewer: "tester",
           reasonCategory: "wording_issue",
           reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "writing",
           expectedNote: "请严格回到人工范例边界。",
           includeInPool: true
         });
@@ -2261,6 +2286,7 @@ const tests = [
           reviewer: "tester",
           reasonCategory: "wording_issue",
           reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "writing",
           expectedNote: "请严格回到人工范例边界。",
           includeInPool: true
         });
@@ -2316,7 +2342,8 @@ const tests = [
         await fs.writeFile(activePath, JSON.stringify(emptyKnowledge, null, 2), "utf8");
         await fs.writeFile(bundlePath, JSON.stringify(emptyKnowledge, null, 2), "utf8");
 
-        await bundleService.ensureInitialized();
+        const restartedBundleService = new SkillBundleService();
+        await restartedBundleService.ensureInitialized();
 
         assert.deepEqual(JSON.parse(await fs.readFile(activePath, "utf8")), legacyKnowledge);
         assert.deepEqual(JSON.parse(await fs.readFile(bundlePath, "utf8")), legacyKnowledge);
@@ -2387,13 +2414,47 @@ const tests = [
     }
   },
   {
+    name: "Skill management service refreshes SQLite after external registry edits",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new SkillManagementService();
+
+        const initial = await service.getSkillDetail("module", "charging_management");
+        assert.equal(initial.skillItems.length, 1);
+
+        const registryPath = path.join(
+          config.activeSkillDir,
+          "profiles",
+          "modules",
+          "charging_management",
+          "skill-items.json"
+        );
+        const registry = JSON.parse(await fs.readFile(registryPath, "utf8"));
+        registry.items.push({
+          kind: "validation_rule",
+          title: "充电管理边界校验",
+          content: "当充电限值条件不满足时，软件应保持原状态并给出明确边界。",
+          status: "active",
+          order: registry.items.length + 1
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        await fs.writeFile(registryPath, JSON.stringify(registry, null, 2), "utf8");
+
+        const refreshed = await service.getSkillDetail("module", "charging_management");
+        assert.equal(refreshed.skillItems.length, 2);
+        assert.ok(refreshed.skillItems.some((item) => item.kind === "validation_rule"));
+      });
+    }
+  },
+  {
     name: "Structured policy skills can be stored as plain readable text without raw JSON input",
     run: async () => {
       await withTempConfig(async () => {
         const service = new SkillManagementService();
         const created = await service.createSkillItem({
-          layer: "module",
-          profileKey: "charging_management",
+          layer: "docType",
+          profileKey: "software_requirement",
           kind: "document_blueprint_policy",
           title: "document blueprint policy preferSymmetricExpansion",
           content: [
@@ -2439,6 +2500,215 @@ const tests = [
     }
   },
   {
+    name: "Skill management service rejects invalid layer and kind combinations on create and update",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new SkillManagementService();
+
+        await assert.rejects(
+          () =>
+            service.createSkillItem({
+              layer: "generic",
+              profileKey: "generic",
+              kind: "good_example",
+              title: "非法 generic 正例",
+              content: "这条组合不应该被允许。"
+            }),
+          (error) => error?.code === "skill_kind_not_allowed_for_layer"
+        );
+
+        const created = await service.createSkillItem({
+          layer: "module",
+          profileKey: "charging_management",
+          kind: "validation_rule",
+          title: "合法模块校验规则",
+          content: "先创建一条合法规则。"
+        });
+
+        await assert.rejects(
+          () =>
+            service.updateSkillItem(created.skillCode, {
+              layer: "module",
+              kind: "document_blueprint_policy"
+            }),
+          (error) => error?.code === "skill_kind_not_allowed_for_layer"
+        );
+      });
+    }
+  },
+  {
+    name: "Replay proposal review rejects kinds outside current layer matrix",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay Matrix Guard Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-matrix-guard-1",
+              requirementId: "SWR-801",
+              title: "充电管理前置条件",
+              requirementText: "软件应满足充电前置条件。",
+              type: "functional",
+              confidence: 0.84,
+              verificationHint: "检查模块级前置条件",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-matrix-guard-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "coverage_gap",
+          reasonText: "缺少模块级前置条件。",
+          targetArea: "validation",
+          targetLayerConstraint: "module",
+          expectedNote: "请补充模块层校验约束。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+
+        const proposalItem = replayTask.proposals[0].items[0];
+        await assert.rejects(
+          () =>
+            replayTaskService.reviewProposalItem(replayTask.id, proposalItem.proposalItemId, {
+              status: "edited",
+              editedPayload: {
+                targetLayer: "module",
+                targetProfileKey: "charging_management",
+                kind: "document_blueprint_policy",
+                after: "非法 layer-kind 组合"
+              }
+            }),
+          /Unsupported proposal kind for target layer|Unsupported proposal kind for current target area and target layer/
+        );
+      });
+    }
+  },
+  {
+    name: "Skill work order review and apply reject invalid layer and kind combinations",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+        const workOrderService = new SkillWorkOrderService();
+
+        const project = await projectService.createProject({ name: "Work Order Matrix Guard Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-work-order-matrix-1",
+              requirementId: "SWR-901",
+              title: "充电管理正文边界",
+              requirementText: "软件应遵循充电管理模块边界。",
+              type: "functional",
+              confidence: 0.82,
+              verificationHint: "检查模块边界",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-work-order-matrix-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "coverage_gap",
+          reasonText: "模块边界缺少约束。",
+          targetArea: "validation",
+          targetLayerConstraint: "module",
+          expectedNote: "请新增模块级校验规则。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+        const workOrder = await workOrderService.getWorkOrder(replayTask.workOrderId);
+        const item = workOrder.items[0];
+
+        await assert.rejects(
+          () =>
+            workOrderService.reviewItem(workOrder.id, item.itemId, {
+              reviewStatus: "accepted",
+              editedPayload: {
+                targetLayer: "module",
+                targetProfileKey: "charging_management",
+                targetKind: "document_blueprint_policy",
+                afterContent: "非法工单编辑"
+              }
+            }),
+          (error) => error?.code === "skill_kind_not_allowed_for_layer"
+        );
+
+        await workOrderService.reviewItem(workOrder.id, item.itemId, {
+          reviewStatus: "accepted",
+          reviewComment: "先接受原始合法项"
+        });
+
+        await workOrderService.reviewItem(workOrder.id, item.itemId, {
+          reviewStatus: "edited",
+          editedPayload: {
+            targetLayer: item.targetLayer,
+            targetProfileKey: item.targetProfileKey,
+            targetKind: item.targetKind,
+            afterContent: item.afterContent || item.recommendedSkillText || "合法内容"
+          }
+        });
+
+        const stored = await workOrderService.getWorkOrder(workOrder.id);
+        const storedItem = stored.items.find((entry) => entry.itemId === item.itemId);
+        storedItem.editedPayload.targetKind = "document_blueprint_policy";
+        await fs.writeFile(path.join(config.skillWorkOrderStoreDir, `${workOrder.id}.json`), JSON.stringify(stored, null, 2), "utf8");
+
+        await assert.rejects(
+          () =>
+            workOrderService.applyItem(workOrder.id, item.itemId, {
+              appliedBy: "tester"
+            }),
+          (error) => error?.code === "skill_kind_not_allowed_for_layer"
+        );
+      });
+    }
+  },
+  {
     name: "Wiki site loads navigation metadata and markdown pages for user-facing docs",
     run: async () => {
       await withTempConfig(async (tempDir) => {
@@ -2459,9 +2729,12 @@ const tests = [
     }
   },
   {
-    name: "Wiki service has dedicated double-click start stop restart command scripts",
+    name: "Wiki service has dedicated start stop restart scripts for shell and Windows",
     run: async () => {
       const rootFiles = [
+        "start-wiki.cmd",
+        "stop-wiki.cmd",
+        "restart-wiki.cmd",
         "启动Wiki.command",
         "终止Wiki.command",
         "重启Wiki.command",
@@ -2474,12 +2747,21 @@ const tests = [
         assert.ok(content.length > 0, `${fileName} should not be empty`);
       }
 
+      const commandStartWindows = await fs.readFile(path.join(config.rootDir, "start-wiki.cmd"), "utf8");
+      const commandStopWindows = await fs.readFile(path.join(config.rootDir, "stop-wiki.cmd"), "utf8");
+      const commandRestartWindows = await fs.readFile(path.join(config.rootDir, "restart-wiki.cmd"), "utf8");
       const commandStart = await fs.readFile(path.join(config.rootDir, "启动Wiki.command"), "utf8");
       const commandStop = await fs.readFile(path.join(config.rootDir, "终止Wiki.command"), "utf8");
       const commandRestart = await fs.readFile(path.join(config.rootDir, "重启Wiki.command"), "utf8");
       const restartWrapper = await fs.readFile(path.join(config.rootDir, "restart-wiki.sh"), "utf8");
+      const startScriptWindows = await fs.readFile(path.join(config.rootDir, "scripts", "start-wiki.ps1"), "utf8");
+      const stopScriptWindows = await fs.readFile(path.join(config.rootDir, "scripts", "stop-wiki.ps1"), "utf8");
+      const restartScriptWindows = await fs.readFile(path.join(config.rootDir, "scripts", "restart-wiki.ps1"), "utf8");
       const restartScript = await fs.readFile(path.join(config.rootDir, "scripts", "restart-wiki.sh"), "utf8");
 
+      assert.ok(commandStartWindows.includes("scripts\\start-wiki.ps1"));
+      assert.ok(commandStopWindows.includes("scripts\\stop-wiki.ps1"));
+      assert.ok(commandRestartWindows.includes("scripts\\restart-wiki.ps1"));
       assert.ok(commandStart.includes("scripts/start-wiki.sh"));
       assert.ok(commandStop.includes("scripts/stop-wiki.sh"));
       assert.ok(commandRestart.includes("scripts/restart-wiki.sh"));
@@ -2487,6 +2769,12 @@ const tests = [
       assert.ok(commandStop.includes("wait_for_key_and_close"));
       assert.ok(commandRestart.includes("wait_for_key_and_close"));
       assert.ok(restartWrapper.includes("scripts/restart-wiki.sh"));
+      assert.ok(startScriptWindows.includes("src/wiki-server.js"));
+      assert.ok(startScriptWindows.includes("/health"));
+      assert.ok(startScriptWindows.includes("wiki.pid"));
+      assert.ok(stopScriptWindows.includes("wiki.pid"));
+      assert.ok(restartScriptWindows.includes("stop-wiki.ps1"));
+      assert.ok(restartScriptWindows.includes("start-wiki.ps1"));
       assert.ok(restartScript.includes("stop-wiki.sh"));
       assert.ok(restartScript.includes("start-wiki.sh"));
     }
@@ -2529,6 +2817,366 @@ const tests = [
     }
   },
   {
+    name: "Replay Lab loads template with current preview and validation context",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+        const replayLabService = new ReplayLabService();
+
+        const project = await projectService.createProject({ name: "Replay Lab Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          importedSkillKey: "charging_management"
+        });
+
+        await projectService.attachModuleAssets(
+          project.id,
+          module.id,
+          {
+            referenceExample: [
+              {
+                originalname: "charging-example.md",
+                mimetype: "text/markdown",
+                size: 42,
+                filename: "charging-example.md"
+              }
+            ]
+          },
+          { documentType: "software_requirement" }
+        );
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-lab-1",
+              requirementId: "SWR-801",
+              title: "Charging request handling",
+              requirementText: "Software shall process charging requests.",
+              type: "functional",
+              confidence: 0.81,
+              verificationHint: "Check the request path.",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-replay-lab-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "coverage_gap",
+          reasonTags: ["missing_preconditions"],
+          reasonText: "Missing code-derived preconditions.",
+          targetArea: "validation",
+          expectedNote: "Extract stable software-level preconditions.",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id,
+          referenceAssetIds: module.assets.map((asset) => asset.id)
+        });
+
+        const payload = await replayLabService.getTemplate(replayTask.id);
+        assert.equal(payload.templateTask.id, replayTask.id);
+        assert.equal(payload.templateTaskSummary.id, replayTask.id);
+        assert.ok(payload.templateWorkOrder);
+        assert.ok(payload.templatePromptPreview.userPrompt.includes("taskContext"));
+        assert.ok(payload.currentPreview.materialPack);
+        assert.ok(payload.currentPreview.promptPreview.userPrompt.includes("layerSkillInventory"));
+        assert.ok(payload.currentPreview.ruleDiagnostics.after.counts.registry.total > 0);
+        assert.equal(payload.validationContext.projectId, project.id);
+        assert.equal(payload.validationContext.moduleId, module.id);
+        assert.ok(Array.isArray(payload.validationContext.assets));
+      });
+    }
+  },
+  {
+    name: "Replay Lab rerun refreshes stale rule index and creates a new replay task",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+        const replayLabService = new ReplayLabService();
+
+        const project = await projectService.createProject({ name: "Replay Lab Rerun Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-lab-rerun-1",
+              requirementId: "SWR-901",
+              title: "Charging request handling",
+              requirementText: "Software shall process charging requests.",
+              type: "functional",
+              confidence: 0.81,
+              verificationHint: "Check control logic.",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-replay-lab-rerun-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "coverage_gap",
+          reasonTags: ["missing_preconditions"],
+          reasonText: "Missing code-side preconditions.",
+          targetArea: "validation",
+          expectedNote: "Add stable software preconditions.",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+
+        await fs.writeFile(
+          path.join(config.skillRuleDir, "bundle-base.json"),
+          JSON.stringify(
+            {
+              bundleId: "bundle-base",
+              ruleIndexVersion: "stale-index",
+              importedAt: new Date().toISOString(),
+              skillDir: config.activeSkillDir,
+              rules: []
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        const rerun = await replayLabService.rerunTemplate(replayTask.id);
+        assert.notEqual(rerun.task.id, replayTask.id);
+        assert.equal(rerun.templateTaskId, replayTask.id);
+        assert.ok(rerun.currentPreview.ruleDiagnostics.before);
+        assert.ok(rerun.currentPreview.ruleDiagnostics.after);
+        assert.ok(rerun.currentPreview.ruleDiagnostics.after.counts.ruleIndex.total > 0);
+        assert.equal(rerun.task.materialPack.targetLayerConstraint, "docType");
+        assert.ok(Array.isArray(rerun.task.materialPack.layerSkillItems));
+        assert.ok(rerun.workOrder);
+      });
+    }
+  },
+  {
+    name: "Replay Lab run detail returns prompt preview and validation context",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+        const replayLabService = new ReplayLabService();
+
+        const project = await projectService.createProject({ name: "Replay Lab Run Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-lab-run-1",
+              requirementId: "SWR-1001",
+              title: "Charging request handling",
+              requirementText: "Software shall process charging requests.",
+              type: "functional",
+              confidence: 0.82,
+              verificationHint: "Check functional output.",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-replay-lab-run-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "validation_gap",
+          reasonText: "Missing boundary constraints.",
+          targetArea: "validation",
+          expectedNote: "Add boundary constraints.",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+
+        const payload = await replayLabService.getRun(replayTask.id);
+        assert.equal(payload.task.id, replayTask.id);
+        assert.ok(payload.workOrder);
+        assert.ok(payload.promptPreview.systemPrompt.includes("JSON schema"));
+        assert.equal(payload.validationContext.projectId, project.id);
+        assert.equal(payload.validationContext.moduleId, module.id);
+      });
+    }
+  },
+  {
+    name: "Structured rejection stores hard target layer constraint and replay keeps same-layer inventory",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Layer Constraint Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-layer-constraint-1",
+              requirementId: "SWR-1101",
+              title: "Charging precondition coverage",
+              requirementText: "Software shall handle charging-related requests.",
+              type: "functional",
+              confidence: 0.8,
+              verificationHint: "Check that preconditions are expressed.",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-layer-constraint-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "coverage_gap",
+          reasonText: "Missing module-specific preconditions.",
+          targetArea: "domain_knowledge",
+          expectedNote: "Add a stable module-layer rule for these preconditions.",
+          targetLayerConstraint: "module",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        assert.equal(records.length, 1);
+        assert.equal(records[0].skillContext?.targetLayerConstraint, "module");
+        assert.equal(records[0].skillContext?.targetProfileKeyConstraint, "charging_management");
+
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id
+        });
+
+        assert.equal(replayTask.materialPack.targetLayerConstraint, "module");
+        assert.equal(replayTask.materialPack.targetProfileKeyConstraint, "charging_management");
+        assert.ok(Array.isArray(replayTask.materialPack.layerSkillItems));
+        assert.ok(replayTask.materialPack.layerSkillItems.every((item) => item.layer === "module"));
+
+        const replayMessages = buildReplayModelInput(replayTask.materialPack);
+        const userPrompt = replayMessages?.[1]?.content?.[0]?.text || "";
+        assert.ok(userPrompt.includes('"targetLayerConstraint": "module"'));
+        assert.ok(userPrompt.includes('"layerSkillInventory"'));
+      });
+    }
+  },
+  {
+    name: "Skill rule snapshot does not truncate same-layer inventory at 20 items",
+    run: async () => {
+      await withTempConfig(async () => {
+        const ruleService = new SkillRuleService();
+
+        const syntheticRules = Array.from({ length: 24 }, (_item, index) => ({
+          ruleId: `rule-module-${index + 1}`,
+          skillCode: `rule-module-${index + 1}`,
+          layer: "module",
+          profileKey: "charging_management",
+          kind: "validation_rule",
+          targetArea: "validation",
+          title: `Module Rule ${index + 1}`,
+          content: `Rule content ${index + 1}`,
+          targetFile: "requirement_validation.md",
+          sourcePath: "",
+          provenance: {},
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }));
+
+        await fs.writeFile(
+          path.join(config.skillRuleDir, "bundle-base.json"),
+          JSON.stringify(
+            {
+              bundleId: "bundle-base",
+              ruleIndexVersion: "synthetic-layer-inventory",
+              importedAt: new Date().toISOString(),
+              skillDir: config.activeSkillDir,
+              rules: syntheticRules,
+              domainKnowledge: { version: 1, examples: [], ruleHints: [], antiPatterns: [] }
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        const snapshot = await ruleService.getRelevantRuleSnapshot(
+          "bundle-base",
+          ["validation"],
+          {
+            documentType: "software_requirement",
+            domain: "embedded_vcu",
+            moduleSkillKey: "charging_management"
+          },
+          {
+            layerConstraint: "module",
+            profileKeyConstraint: "charging_management"
+          }
+        );
+
+        assert.equal(snapshot.length, 24);
+        assert.ok(snapshot.every((item) => item.layer === "module"));
+      });
+    }
+  },
+  {
     name: "Wiki app renders home page, content page, breadcrumbs, and related links",
     run: async () => {
       await withTempConfig(async (tempDir) => {
@@ -2544,6 +3192,7 @@ const tests = [
 
         const detailHtml = renderWikiPage(site, site.pagesBySlug.get("skill-management-fallback"));
         assert.ok(detailHtml.includes("技能管理与 Fallback"));
+        assert.ok(detailHtml.includes("layer × kind"));
         assert.ok(detailHtml.includes("了解系统"));
         assert.ok(detailHtml.includes("相关页面"));
         assert.ok(detailHtml.includes("breadcrumb"));

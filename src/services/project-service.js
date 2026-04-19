@@ -53,6 +53,11 @@ function normalizeReasonTags(reasonTags) {
   return [];
 }
 
+function normalizeTargetArea(value = "") {
+  const normalized = String(value || "").trim();
+  return ["writing", "extraction", "validation", "examples", "domain_knowledge"].includes(normalized) ? normalized : "";
+}
+
 function createEmptyDocumentSpace(documentType) {
   return {
     documentType: normalizeDocumentType(documentType),
@@ -824,8 +829,12 @@ export class ProjectService {
     }
 
     const nextStatus = review.status || resultItem.review?.status || "pending";
-    if (nextStatus === "rejected" && (!review.reasonCategory || !String(review.reasonText || "").trim())) {
-      const error = new Error("Rejected review requires reasonCategory and reasonText");
+    const effectiveTargetArea = normalizeTargetArea(review.targetArea) || normalizeTargetArea(resultItem.review?.targetArea);
+    if (
+      nextStatus === "rejected" &&
+      (!review.reasonCategory || !String(review.reasonText || "").trim() || !effectiveTargetArea)
+    ) {
+      const error = new Error("Rejected review requires reasonCategory, reasonText, and targetArea");
       error.statusCode = 400;
       throw error;
     }
@@ -838,8 +847,10 @@ export class ProjectService {
       reasonCategory: review.reasonCategory || resultItem.review?.reasonCategory || "",
       reasonTags: normalizeReasonTags(review.reasonTags),
       reasonText: review.reasonText?.trim() || "",
+      targetArea: effectiveTargetArea || "",
       severity: review.severity || resultItem.review?.severity || "medium",
       expectedNote: review.expectedNote?.trim() || "",
+      targetLayerConstraint: review.targetLayerConstraint || resultItem.review?.targetLayerConstraint || "docType",
       includeInPool: review.includeInPool !== false,
       rejectionId: resultItem.review?.rejectionId || "",
       updatedAt: now()
@@ -882,6 +893,8 @@ export class ProjectService {
             ...review,
             status: nextStatus,
             reasonTags: resultItem.review.reasonTags,
+            targetArea: resultItem.review.targetArea,
+            targetLayerConstraint: resultItem.review.targetLayerConstraint,
             generationId: task.id,
             resultItemId: resultItem.id,
             documentType: normalizedDocumentType,
@@ -1177,8 +1190,12 @@ export class ProjectService {
     }
 
     const nextStatus = review.status || requirement.review?.status || "pending";
-    if (nextStatus === "rejected" && (!review.reasonCategory || !String(review.reasonText || "").trim())) {
-      const error = new Error("Rejected review requires reasonCategory and reasonText");
+    const effectiveTargetArea = normalizeTargetArea(review.targetArea) || normalizeTargetArea(requirement.review?.targetArea);
+    if (
+      nextStatus === "rejected" &&
+      (!review.reasonCategory || !String(review.reasonText || "").trim() || !effectiveTargetArea)
+    ) {
+      const error = new Error("Rejected review requires reasonCategory, reasonText, and targetArea");
       error.statusCode = 400;
       throw error;
     }
@@ -1190,8 +1207,10 @@ export class ProjectService {
       reasonCategory: review.reasonCategory || requirement.review?.reasonCategory || "",
       reasonTags: normalizeReasonTags(review.reasonTags),
       reasonText: review.reasonText?.trim() || "",
+      targetArea: effectiveTargetArea || "",
       severity: review.severity || requirement.review?.severity || "medium",
       expectedNote: review.expectedNote?.trim() || "",
+      targetLayerConstraint: review.targetLayerConstraint || requirement.review?.targetLayerConstraint || "docType",
       includeInPool: review.includeInPool !== false,
       rejectionId: requirement.review?.rejectionId || "",
       updatedAt: now()
@@ -1204,7 +1223,9 @@ export class ProjectService {
         review: {
           ...review,
           status: nextStatus,
-          reasonTags: requirement.review.reasonTags
+          reasonTags: requirement.review.reasonTags,
+          targetArea: requirement.review.targetArea,
+          targetLayerConstraint: requirement.review.targetLayerConstraint
         }
       });
       requirement.review.rejectionId = rejection.id;

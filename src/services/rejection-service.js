@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { readJson, writeJson } from "./storage.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
@@ -62,6 +63,37 @@ function compactTraces(traces = []) {
   }));
 }
 
+function normalizeSkillKey(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w\u4e00-\u9fa5-]/g, "_");
+}
+
+function normalizeTargetLayerConstraint(value = "") {
+  const normalized = String(value || "").trim();
+  return ["generic", "docType", "domain", "module"].includes(normalized) ? normalized : "";
+}
+
+function normalizeTargetArea(value = "") {
+  const normalized = String(value || "").trim();
+  return ["writing", "extraction", "validation", "examples", "domain_knowledge"].includes(normalized) ? normalized : "";
+}
+
+function resolveTargetProfileKeyConstraint(targetLayerConstraint, context = {}) {
+  if (targetLayerConstraint === "module") {
+    return normalizeSkillKey(context.moduleSkillKey || context.moduleName || "");
+  }
+  if (targetLayerConstraint === "domain") {
+    return normalizeSkillKey(context.domain || "embedded_vcu");
+  }
+  if (targetLayerConstraint === "docType") {
+    return normalizeSkillKey(context.documentType || "software_requirement");
+  }
+  return "generic";
+}
+
 function inferTargetArea(reasonCategory, reasonTags = [], reasonText = "") {
   const tags = reasonTags.join(" ");
   const text = `${reasonCategory} ${tags} ${reasonText}`.toLowerCase();
@@ -95,6 +127,23 @@ function toReadableTargetArea(targetArea = "") {
   return labels[targetArea] || targetArea || "写作规则";
 }
 
+function toReadableTargetLayer(targetLayerConstraint = "") {
+  const labels = {
+    generic: "Generic",
+    docType: "DocType",
+    domain: "Domain",
+    module: "Module"
+  };
+  return labels[targetLayerConstraint] || targetLayerConstraint || "DocType";
+}
+
+function resolveRecordTargetArea(record = {}) {
+  return (
+    normalizeTargetArea(record.skillContext?.targetArea || "") ||
+    inferTargetArea(record.reasonCategory, normalizeTags(record.reasonTags), record.reasonText)
+  );
+}
+
 export class RejectionService {
   constructor() {
     this.skillBundleService = new SkillBundleService();
@@ -102,8 +151,8 @@ export class RejectionService {
   }
 
   async createRecord({ project, module = null, task = null, requirement, review, documentType = "", conflicts = [], traces = [] }) {
-    if (!review.reasonCategory || !String(review.reasonText || "").trim()) {
-      throw createHttpError("Rejected review requires reasonCategory and reasonText");
+    if (!review.reasonCategory || !String(review.reasonText || "").trim() || !normalizeTargetArea(review.targetArea)) {
+      throw createHttpError("Rejected review requires reasonCategory, reasonText, and targetArea");
     }
 
     const activeBundle = await this.skillBundleService.getActiveBundle();
@@ -111,9 +160,28 @@ export class RejectionService {
     const skillDir = await this.skillBundleService.getSkillDir(bundleId);
     const ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, skillDir);
     const reasonTags = normalizeTags(review.reasonTags);
-    const targetArea = inferTargetArea(review.reasonCategory, reasonTags, review.reasonText || review.comment || "");
-    const relevantRules = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, [targetArea]);
+    const targetArea = normalizeTargetArea(review.targetArea);
     const normalizedDocumentType = documentType || review.documentType || "software_requirement";
+    const targetLayerConstraint = normalizeTargetLayerConstraint(review.targetLayerConstraint) || "docType";
+    const targetProfileKeyConstraint = resolveTargetProfileKeyConstraint(targetLayerConstraint, {
+      documentType: normalizedDocumentType,
+      domain: normalizeSkillKey(module?.domain || project?.domain || review.domain || "embedded_vcu"),
+      moduleSkillKey: module?.moduleSkillKey || module?.name || review.moduleName || "",
+      moduleName: module?.name || review.moduleName || ""
+    });
+    const relevantRules = await this.skillRuleService.getRelevantRuleSnapshot(
+      bundleId,
+      [targetArea],
+      {
+        documentType: normalizedDocumentType,
+        domain: normalizeSkillKey(module?.domain || project?.domain || review.domain || "embedded_vcu"),
+        moduleSkillKey: normalizeSkillKey(module?.moduleSkillKey || module?.name || review.moduleName || "")
+      },
+      {
+        layerConstraint: targetLayerConstraint,
+        profileKeyConstraint: targetProfileKeyConstraint
+      }
+    );
 
     const record = {
       id: randomUUID(),
@@ -136,6 +204,7 @@ export class RejectionService {
       reasonText: String(review.reasonText || "").trim(),
       severity: review.severity || "medium",
       expectedNote: String(review.expectedNote || "").trim(),
+      targetLayerConstraint,
       outputSnapshot: {
         title: requirement.title,
         requirementText: requirement.requirementText,
@@ -154,6 +223,8 @@ export class RejectionService {
         activeBundleId: bundleId,
         ruleIndexVersion: ruleIndex.ruleIndexVersion,
         targetArea,
+        targetLayerConstraint,
+        targetProfileKeyConstraint,
         relevantRules: relevantRules.map((rule) => ({
           ruleId: rule.ruleId,
           title: rule.title,
@@ -191,7 +262,7 @@ export class RejectionService {
     if (filters.reasonCategory) records = records.filter((item) => item.reasonCategory === filters.reasonCategory);
     if (filters.poolStatus) records = records.filter((item) => item.poolStatus === filters.poolStatus);
     if (filters.replayStatus) records = records.filter((item) => item.replayStatus === filters.replayStatus);
-    if (filters.targetArea) records = records.filter((item) => item.skillContext?.targetArea === filters.targetArea);
+    if (filters.targetArea) records = records.filter((item) => resolveRecordTargetArea(item) === filters.targetArea);
     if (filters.hasReplay === "true") records = records.filter((item) => Number(item.replayCount || 0) > 0);
     if (filters.hasReplay === "false") records = records.filter((item) => Number(item.replayCount || 0) === 0);
     if (filters.skillBundleId) records = records.filter((item) => item.skillContext?.activeBundleId === filters.skillBundleId);
@@ -217,28 +288,42 @@ export class RejectionService {
     return next;
   }
 
+  async deleteRecord(id) {
+    const record = await this.getRecord(id);
+    if (!record) {
+      throw createHttpError("Rejection record not found", 404);
+    }
+
+    await fs.rm(getRejectionPath(id), { force: true });
+    await this.rebuildGroups();
+    return { deleted: true, id };
+  }
+
   async rebuildGroups() {
     const records = await this.listRecords();
     const groupMap = new Map();
 
     for (const record of records.filter((item) => item.poolStatus !== "archived")) {
       const reasonTags = [...(record.reasonTags || [])].sort();
+      const resolvedTargetArea = resolveRecordTargetArea(record);
       const groupKey = [
         record.projectId || "",
         record.moduleId || "",
         record.reasonCategory,
         reasonTags.join("|"),
-        record.skillContext?.targetArea || inferTargetArea(record.reasonCategory, reasonTags, record.reasonText),
+        resolvedTargetArea,
+        record.skillContext?.targetLayerConstraint || "docType",
         record.skillContext?.activeBundleId || ""
       ].join("::");
       if (!groupMap.has(groupKey)) {
         groupMap.set(groupKey, {
           id: randomUUID(),
           groupKey,
-          title: `${toReadableReasonCategory(record.reasonCategory)} / ${toReadableTargetArea(record.skillContext?.targetArea || "writing")}`,
+          title: `${toReadableReasonCategory(record.reasonCategory)} / ${toReadableTargetArea(resolvedTargetArea)} / ${toReadableTargetLayer(record.skillContext?.targetLayerConstraint || "docType")}`,
           reasonCategory: record.reasonCategory,
           reasonTags,
-          targetArea: record.skillContext?.targetArea || inferTargetArea(record.reasonCategory, reasonTags, record.reasonText),
+          targetArea: resolvedTargetArea,
+          targetLayerConstraint: record.skillContext?.targetLayerConstraint || "docType",
           projectId: record.projectId || "",
           projectName: record.projectName || "",
           moduleId: record.moduleId || "",
@@ -262,12 +347,14 @@ export class RejectionService {
     const idByKey = new Map(groups.map((group) => [group.groupKey, group.id]));
     for (const record of records) {
       const reasonTags = [...(record.reasonTags || [])].sort();
+      const resolvedTargetArea = resolveRecordTargetArea(record);
       const key = [
         record.projectId || "",
         record.moduleId || "",
         record.reasonCategory,
         reasonTags.join("|"),
-        record.skillContext?.targetArea || inferTargetArea(record.reasonCategory, reasonTags, record.reasonText),
+        resolvedTargetArea,
+        record.skillContext?.targetLayerConstraint || "docType",
         record.skillContext?.activeBundleId || ""
       ].join("::");
       const groupId = idByKey.get(key) || "";

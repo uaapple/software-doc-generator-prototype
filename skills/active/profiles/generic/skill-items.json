@@ -13,6 +13,7 @@
       "kind": "extraction_rule",
       "title": "任务目标 1",
       "content": "从系统需求 PDF、模型 PDF、生成 C 文件中抽取能支撑软件设计需求编写的结构化事实。",
+      "structuredPayload": null,
       "order": 1,
       "status": "active",
       "sectionKey": "任务目标",
@@ -35,6 +36,7 @@
       "kind": "extraction_rule",
       "title": "任务目标 2",
       "content": "重点抽取条件、状态、优先级、阈值、边界、内部变量、仲裁路径和内部引用线索。",
+      "structuredPayload": null,
       "order": 2,
       "status": "active",
       "sectionKey": "任务目标",
@@ -57,6 +59,7 @@
       "kind": "extraction_rule",
       "title": "任务目标 3",
       "content": "不直接生成需求正文；先把证据整理成后续写作可消费的事实。",
+      "structuredPayload": null,
       "order": 3,
       "status": "active",
       "sectionKey": "任务目标",
@@ -79,6 +82,7 @@
       "kind": "extraction_rule",
       "title": "任务目标 4",
       "content": "对需遵守 ISO 26262 的输出，优先保障命名精度和来源一致性，确保需求条目能够充当单一真实来源（Single Source of Truth）。",
+      "structuredPayload": null,
       "order": 4,
       "status": "active",
       "sectionKey": "任务目标",
@@ -101,6 +105,7 @@
       "kind": "extraction_rule",
       "title": "系统需求侧抽取规则 1",
       "content": "优先抽取带编号的系统需求条目及其章节上下文。",
+      "structuredPayload": null,
       "order": 5,
       "status": "active",
       "sectionKey": "系统需求侧抽取规则",
@@ -123,6 +128,7 @@
       "kind": "extraction_rule",
       "title": "系统需求侧抽取规则 2",
       "content": "对每条系统需求优先拆出：主题、触发条件、期望行为、优先级顺序、默认行为、适用对象。",
+      "structuredPayload": null,
       "order": 6,
       "status": "active",
       "sectionKey": "系统需求侧抽取规则",
@@ -145,6 +151,7 @@
       "kind": "extraction_rule",
       "title": "系统需求侧抽取规则 3",
       "content": "若系统需求中出现“当...时”“否则”“任一条件”“优先级顺序为”等表达，应保留其结构。",
+      "structuredPayload": null,
       "order": 7,
       "status": "active",
       "sectionKey": "系统需求侧抽取规则",
@@ -167,6 +174,7 @@
       "kind": "extraction_rule",
       "title": "系统需求侧抽取规则 4",
       "content": "对前轴/后轴、前后轮、左右侧等对称对象，应标记为对称候选事实。",
+      "structuredPayload": null,
       "order": 8,
       "status": "active",
       "sectionKey": "系统需求侧抽取规则",
@@ -188,7 +196,8 @@
       "profileKey": "generic",
       "kind": "extraction_rule",
       "title": "系统需求侧抽取规则 5",
-      "content": "若系统需求和样例都指向“扭矩干预”领域，应进一步标记以下四类候选条目：",
+      "content": "若系统需求和样例都指向“扭矩干预”领域，应进一步标记四类候选条目：前轴激活标志位判断、前轴扭矩计算、后轴激活标志位判断、后轴扭矩计算。",
+      "structuredPayload": null,
       "order": 9,
       "status": "active",
       "sectionKey": "系统需求侧抽取规则",
@@ -202,15 +211,16 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
+      "updatedAt": "2026-04-19T18:52:08.905Z"
     },
     {
-      "skillCode": "GEN-generic-extraction_rule-010",
+      "skillCode": "GEN-generic-extraction_rule-014",
       "layer": "generic",
       "profileKey": "generic",
       "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 6",
-      "content": "前轴激活标志位判断",
+      "title": "系统需求侧抽取规则 10",
+      "content": "若系统需求和样例指向“充电管理”领域，应优先标记五类候选条目：堵转加热请求或模式控制、充电截止SOC设置与有效值过滤、充电截止停止与恢复滞回、截止SOC下电记忆、AC/DC 充电跳转至充满标志位。",
+      "structuredPayload": null,
       "order": 10,
       "status": "active",
       "sectionKey": "系统需求侧抽取规则",
@@ -224,205 +234,7 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-011",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 7",
-      "content": "前轴扭矩计算",
-      "order": 11,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-012",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 8",
-      "content": "后轴激活标志位判断",
-      "order": 12,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-013",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 9",
-      "content": "后轴扭矩计算",
-      "order": 13,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-014",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 10",
-      "content": "若系统需求和样例指向“充电管理”领域，应优先标记以下候选条目：",
-      "order": 14,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-015",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 11",
-      "content": "堵转加热请求或模式控制",
-      "order": 15,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-016",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 12",
-      "content": "充电截止SOC设置与有效值过滤",
-      "order": 16,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-017",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 13",
-      "content": "充电截止停止与恢复滞回",
-      "order": 17,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-018",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 14",
-      "content": "截止SOC下电记忆",
-      "order": 18,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-019",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "系统需求侧抽取规则 15",
-      "content": "AC/DC充电跳转至充满标志位",
-      "order": 19,
-      "status": "active",
-      "sectionKey": "系统需求侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
+      "updatedAt": "2026-04-19T18:52:13.821Z"
     },
     {
       "skillCode": "GEN-generic-extraction_rule-020",
@@ -431,7 +243,8 @@
       "kind": "extraction_rule",
       "title": "系统需求侧抽取规则 16",
       "content": "对“无主动安全功能激活”“否则”“不再满足时”等默认或退出条件，应单独抽取，避免后续写作时丢失兜底路径。",
-      "order": 20,
+      "structuredPayload": null,
+      "order": 11,
       "status": "active",
       "sectionKey": "系统需求侧抽取规则",
       "provenance": {
@@ -453,7 +266,8 @@
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 1",
       "content": "从 C 文件中优先抽取函数、条件分支、赋值关系、宏定义、限幅逻辑和模式判断。",
-      "order": 21,
+      "structuredPayload": null,
+      "order": 12,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -475,7 +289,8 @@
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 2",
       "content": "优先识别布尔标志位、扭矩请求、制动再生请求、阈值上下限、模式枚举值和目标扭矩输出变量。",
-      "order": 22,
+      "structuredPayload": null,
+      "order": 13,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -497,7 +312,8 @@
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 3",
       "content": "若同一逻辑同时在 PDF 和 C 文件中出现，PDF 更适合作为结构提示，C 更适合作为实现细节证据。",
-      "order": 23,
+      "structuredPayload": null,
+      "order": 14,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -519,7 +335,8 @@
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 4",
       "content": "从模型产物中抽取的事实只能补充和细化系统需求，不能覆盖系统需求的优先级和边界。",
-      "order": 24,
+      "structuredPayload": null,
+      "order": 15,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -540,8 +357,9 @@
       "profileKey": "generic",
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 5",
-      "content": "对扭矩干预领域，优先把代码事实归并到以下设计主题中，而不是只做零散抽取：",
-      "order": 25,
+      "content": "对扭矩干预领域，优先把代码事实归并到六类设计主题中，而不是只做零散抽取：激活标志位赋值表达式、升扭/降扭/RBS/ISA/CCO 触发条件、AEB/CDP 等置零条件、`VehCfg_stRBCCtrlModeSel` 等模式分支、`TqSpltArbt_tqTarFrntAxle / TqSpltArbt_tqTarReAxle` 目标扭矩承接逻辑、`min/max/fminf/fmaxf` 类边界限制。",
+      "structuredPayload": null,
+      "order": 16,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -554,139 +372,7 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-026",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 6",
-      "content": "激活标志位赋值表达式",
-      "order": 26,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-027",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 7",
-      "content": "升扭/降扭/RBS/ISA/CCO 触发条件",
-      "order": 27,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-028",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 8",
-      "content": "AEB/CDP 等置零条件",
-      "order": 28,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-029",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 9",
-      "content": "`VehCfg_stRBCCtrlModeSel` 等模式分支",
-      "order": 29,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-030",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 10",
-      "content": "`TqSpltArbt_tqTarFrntAxle / TqSpltArbt_tqTarReAxle` 目标扭矩承接逻辑",
-      "order": 30,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-031",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 11",
-      "content": "`min/max/fminf/fmaxf` 类边界限制",
-      "order": 31,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
+      "updatedAt": "2026-04-19T18:52:18.693Z"
     },
     {
       "skillCode": "GEN-generic-extraction_rule-032",
@@ -694,8 +380,9 @@
       "profileKey": "generic",
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 12",
-      "content": "对充电管理领域，优先把代码事实归并到以下设计主题中：",
-      "order": 32,
+      "content": "对充电管理领域，优先把代码事实归并到六类设计主题中：`Chrg_bACChrgReq / Chrg_bDCChrgReq` 等充电请求使能条件、`StallHeatingReq / RModeReq / RMCU2_St_StallHeating` 等堵转加热请求/反馈/超时保护、`ICM/TCP` 截止 SOC 设置与无效值过滤及合法范围、`Chrg_bChrgStopBySOCLim` 等截止停止判定与恢复滞回、`EEW / EER` 类下电记忆变量、`ChargingFull` 与 AC/DC 跳转至充满标志位及充电状态机枚举。",
+      "structuredPayload": null,
+      "order": 17,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -708,139 +395,7 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-033",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 13",
-      "content": "`Chrg_bACChrgReq / Chrg_bDCChrgReq` 等充电请求使能条件",
-      "order": 33,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-034",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 14",
-      "content": "`StallHeatingReq / RModeReq / RMCU2_St_StallHeating` 等堵转加热请求、反馈和超时保护",
-      "order": 34,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-035",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 15",
-      "content": "`ICM/TCP` 截止SOC设置、`112` 无效值过滤、`50%-100%` 合法范围",
-      "order": 35,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-036",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 16",
-      "content": "`Chrg_bChrgStopBySOCLim` 等截止停止判定与 `1%` 恢复滞回",
-      "order": 36,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-037",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 17",
-      "content": "`EEW / EER` 类下电记忆变量",
-      "order": 37,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-extraction_rule-038",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "extraction_rule",
-      "title": "模型代码与模型文档侧抽取规则 18",
-      "content": "`ChargingFull`、AC/DC 跳转至充满标志位、充电状态机枚举",
-      "order": 38,
-      "status": "active",
-      "sectionKey": "模型代码与模型文档侧抽取规则",
-      "provenance": {
-        "legacySource": "requirement_extraction.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
+      "updatedAt": "2026-04-19T18:52:23.477Z"
     },
     {
       "skillCode": "GEN-generic-extraction_rule-039",
@@ -849,7 +404,8 @@
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 19",
       "content": "对 `Frnt/Front/F` 和 `Re/Rear/R` 的对象信号，分别建立前轴和后轴事实集合，避免写作时被合并。",
-      "order": 39,
+      "structuredPayload": null,
+      "order": 18,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -871,7 +427,8 @@
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 20",
       "content": "若样例库或信号字典中已存在工程侧标准命名，应将代码变量名仅作为别名或实现证据保留，不能直接替代标准工程命名进入最终需求正文。",
-      "order": 40,
+      "structuredPayload": null,
+      "order": 19,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -893,7 +450,8 @@
       "kind": "extraction_rule",
       "title": "模型代码与模型文档侧抽取规则 21",
       "content": "若代码侧变量与样例中的标准工程命名不一致，应优先记录“标准名 + 代码别名”的映射，而不是让写作阶段自行联想。",
-      "order": 41,
+      "structuredPayload": null,
+      "order": 20,
       "status": "active",
       "sectionKey": "模型代码与模型文档侧抽取规则",
       "provenance": {
@@ -915,7 +473,8 @@
       "kind": "extraction_rule",
       "title": "证据归并规则 1",
       "content": "对同一事实的多来源证据应保留文件名、位置、原文片段和标签。",
-      "order": 42,
+      "structuredPayload": null,
+      "order": 21,
       "status": "active",
       "sectionKey": "证据归并规则",
       "provenance": {
@@ -937,7 +496,8 @@
       "kind": "extraction_rule",
       "title": "证据归并规则 2",
       "content": "对存在冲突的事实保留差异，不在抽取阶段裁决。",
-      "order": 43,
+      "structuredPayload": null,
+      "order": 22,
       "status": "active",
       "sectionKey": "证据归并规则",
       "provenance": {
@@ -959,7 +519,8 @@
       "kind": "extraction_rule",
       "title": "证据归并规则 3",
       "content": "对内部引用编号、信号名、变量名、控制模式名优先原样保留。",
-      "order": 44,
+      "structuredPayload": null,
+      "order": 23,
       "status": "active",
       "sectionKey": "证据归并规则",
       "provenance": {
@@ -981,7 +542,8 @@
       "kind": "extraction_rule",
       "title": "证据归并规则 4",
       "content": "当事实明显对应激活标志位判断、扭矩计算、仲裁逻辑或边界限制时，应标注对应类别，供写作阶段使用。",
-      "order": 45,
+      "structuredPayload": null,
+      "order": 24,
       "status": "active",
       "sectionKey": "证据归并规则",
       "provenance": {
@@ -1003,7 +565,8 @@
       "kind": "extraction_rule",
       "title": "证据归并规则 5",
       "content": "若证据只支持某个章节的共性说明，不要据此生成跨前轴/后轴的合并条目；应优先等待或寻找对象级证据。",
-      "order": 46,
+      "structuredPayload": null,
+      "order": 25,
       "status": "active",
       "sectionKey": "证据归并规则",
       "provenance": {
@@ -1025,7 +588,8 @@
       "kind": "extraction_rule",
       "title": "证据归并规则 6",
       "content": "若存在样例库中的标准章节骨架，应在抽取结果中显式保留该骨架的命中情况，供写作阶段决定“先写哪四条”。",
-      "order": 47,
+      "structuredPayload": null,
+      "order": 26,
       "status": "active",
       "sectionKey": "证据归并规则",
       "provenance": {
@@ -1047,7 +611,8 @@
       "kind": "extraction_rule",
       "title": "证据归并规则 7",
       "content": "若存在“充电过程 -> 堵转加热模式 / 充电截止SOC / 充电截止SOC记忆”这类骨架，应在抽取结果中显式保留命中情况，并把输入设置、停止条件、恢复条件、记忆变量分开归档。",
-      "order": 48,
+      "structuredPayload": null,
+      "order": 27,
       "status": "active",
       "sectionKey": "证据归并规则",
       "provenance": {
@@ -1069,7 +634,8 @@
       "kind": "extraction_rule",
       "title": "证据归并规则 8",
       "content": "若某一安全功能、模式或信号没有在系统需求、参考样例或信号字典中被明确要求，不要因为代码中出现相关变量就自动扩写进设计需求正文。",
-      "order": 49,
+      "structuredPayload": null,
+      "order": 28,
       "status": "active",
       "sectionKey": "证据归并规则",
       "provenance": {
@@ -1091,7 +657,8 @@
       "kind": "writing_rule",
       "title": "写作目标 1",
       "content": "输出中文、可审核、可追溯、可验证的软件设计需求。",
-      "order": 50,
+      "structuredPayload": null,
+      "order": 29,
       "status": "active",
       "sectionKey": "写作目标",
       "provenance": {
@@ -1113,7 +680,8 @@
       "kind": "writing_rule",
       "title": "写作目标 2",
       "content": "优先生成贴近工程师现有写法的结构化设计需求，而不是松散的说明性文字。",
-      "order": 51,
+      "structuredPayload": null,
+      "order": 30,
       "status": "active",
       "sectionKey": "写作目标",
       "provenance": {
@@ -1135,7 +703,8 @@
       "kind": "writing_rule",
       "title": "写作目标 3",
       "content": "需求要能承接系统需求和模型代码证据，并可用于后续评审、测试和导出。",
-      "order": 52,
+      "structuredPayload": null,
+      "order": 31,
       "status": "active",
       "sectionKey": "写作目标",
       "provenance": {
@@ -1157,7 +726,8 @@
       "kind": "writing_rule",
       "title": "写作目标 4",
       "content": "当输入与已知领域样例高度匹配时，优先复现目标样例的章节骨架、拆分粒度和句式风格，而不是扩散生成更多“看起来也合理”的泛化条目。",
-      "order": 53,
+      "structuredPayload": null,
+      "order": 32,
       "status": "active",
       "sectionKey": "写作目标",
       "provenance": {
@@ -1179,7 +749,8 @@
       "kind": "writing_rule",
       "title": "写作目标 5",
       "content": "在需遵守 ISO 26262 的场景下，命名必须优先服从参考样例或信号字典，避免破坏单一真实来源。",
-      "order": 54,
+      "structuredPayload": null,
+      "order": 33,
       "status": "active",
       "sectionKey": "写作目标",
       "provenance": {
@@ -1201,7 +772,8 @@
       "kind": "writing_rule",
       "title": "本轮对齐优先级 1",
       "content": "对“扭矩干预功能”领域，首选对齐目标不是“尽量多写需求”，而是“先把人工样例里的核心四条设计需求写准”。",
-      "order": 55,
+      "structuredPayload": null,
+      "order": 34,
       "status": "active",
       "sectionKey": "本轮对齐优先级",
       "provenance": {
@@ -1223,7 +795,8 @@
       "kind": "writing_rule",
       "title": "本轮对齐优先级 2",
       "content": "若证据同时支持“核心设计条目”和“泛化补充条目”，优先输出核心设计条目，补充条目只有在不破坏主结构时才追加。",
-      "order": 56,
+      "structuredPayload": null,
+      "order": 35,
       "status": "active",
       "sectionKey": "本轮对齐优先级",
       "provenance": {
@@ -1245,7 +818,8 @@
       "kind": "writing_rule",
       "title": "本轮对齐优先级 3",
       "content": "若当前任务已提供人工软件设计需求样例，最终输出应优先复现该样例的主条目数量、主题顺序和章节归属；除非用户明确要求扩写，否则不要主动增加新的主条目。",
-      "order": 57,
+      "structuredPayload": null,
+      "order": 36,
       "status": "active",
       "sectionKey": "本轮对齐优先级",
       "provenance": {
@@ -1266,8 +840,9 @@
       "profileKey": "generic",
       "kind": "writing_rule",
       "title": "本轮对齐优先级 4",
-      "content": "若当前输入明显对应“扭矩干预功能”，优先输出以下骨架：",
-      "order": 58,
+      "content": "若当前输入明显对应“扭矩干预功能”，优先输出以下骨架：`ESC前轴扭矩干预 -> 前轴激活标志位判断 / 前轴扭矩计算`，`ESC后轴扭矩干预 -> 后轴激活标志位判断 / 后轴扭矩计算`。",
+      "structuredPayload": null,
+      "order": 37,
       "status": "active",
       "sectionKey": "本轮对齐优先级",
       "provenance": {
@@ -1280,139 +855,7 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-010",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 5",
-      "content": "`ESC前轴扭矩干预`",
-      "order": 59,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-011",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 6",
-      "content": "前轴激活标志位判断",
-      "order": 60,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-012",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 7",
-      "content": "前轴扭矩计算",
-      "order": 61,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-013",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 8",
-      "content": "`ESC后轴扭矩干预`",
-      "order": 62,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-014",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 9",
-      "content": "后轴激活标志位判断",
-      "order": 63,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-015",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 10",
-      "content": "后轴扭矩计算",
-      "order": 64,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
+      "updatedAt": "2026-04-19T18:56:04.056Z"
     },
     {
       "skillCode": "GEN-generic-writing_rule-016",
@@ -1420,8 +863,9 @@
       "profileKey": "generic",
       "kind": "writing_rule",
       "title": "本轮对齐优先级 11",
-      "content": "若当前输入明显对应“充电管理”，优先输出以下骨架：",
-      "order": 65,
+      "content": "若当前输入明显对应“充电管理”，优先输出以下骨架：`充电过程 -> 堵转加热模式 / 充电截止SOC / 充电截止SOC记忆`；若证据足够，再追加 `AC充电跳转至充满标志位 / DC充电跳转至充满标志位` 作为补充条目。",
+      "structuredPayload": null,
+      "order": 38,
       "status": "active",
       "sectionKey": "本轮对齐优先级",
       "provenance": {
@@ -1434,117 +878,7 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-017",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 12",
-      "content": "`充电过程`",
-      "order": 66,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-018",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 13",
-      "content": "堵转加热模式",
-      "order": 67,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-019",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 14",
-      "content": "充电截止SOC",
-      "order": 68,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-020",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 15",
-      "content": "充电截止SOC记忆",
-      "order": 69,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-021",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "本轮对齐优先级 16",
-      "content": "若证据足够，再追加 AC充电跳转至充满标志位 / DC充电跳转至充满标志位",
-      "order": 70,
-      "status": "active",
-      "sectionKey": "本轮对齐优先级",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
+      "updatedAt": "2026-04-19T18:56:09.038Z"
     },
     {
       "skillCode": "GEN-generic-writing_rule-022",
@@ -1553,7 +887,8 @@
       "kind": "writing_rule",
       "title": "本轮对齐优先级 17",
       "content": "若当前输入同时提供“充电管理”人工样例，则默认只输出上述三条核心主线；`AC充电跳转至充满标志位 / DC充电跳转至充满标志位` 仅可作为 supplement 追加，不能抢占核心输出位。",
-      "order": 71,
+      "structuredPayload": null,
+      "order": 39,
       "status": "active",
       "sectionKey": "本轮对齐优先级",
       "provenance": {
@@ -1575,7 +910,8 @@
       "kind": "writing_rule",
       "title": "本轮对齐优先级 18",
       "content": "对应关系不清晰时，也应尽量维持“对象拆分优先于主题汇总”的写法，不要把前轴/后轴揉成一条。",
-      "order": 72,
+      "structuredPayload": null,
+      "order": 40,
       "status": "active",
       "sectionKey": "本轮对齐优先级",
       "provenance": {
@@ -1597,7 +933,8 @@
       "kind": "writing_rule",
       "title": "本轮对齐优先级 19",
       "content": "章节层级结构要保留，但章节数字编号只是样例背景，不是当前输出的必需内容。除非用户明确要求，否则不要在输出标题里带 `3.31`、`3.31.1`、`3.31.2` 这类具体编号。",
-      "order": 73,
+      "structuredPayload": null,
+      "order": 41,
       "status": "active",
       "sectionKey": "本轮对齐优先级",
       "provenance": {
@@ -1619,7 +956,8 @@
       "kind": "writing_rule",
       "title": "结构组织规则 1",
       "content": "优先使用多级章节组织需求，明确父功能与子功能的从属关系，例如“扭矩干预功能 -> ESC前轴扭矩干预 -> 前轴激活标志位判断”。",
-      "order": 74,
+      "structuredPayload": null,
+      "order": 42,
       "status": "active",
       "sectionKey": "结构组织规则",
       "provenance": {
@@ -1641,7 +979,8 @@
       "kind": "writing_rule",
       "title": "结构组织规则 2",
       "content": "对物理对象不同但逻辑对称的需求，优先拆分为对称子章节，例如前轴/后轴、左侧/右侧。",
-      "order": 75,
+      "structuredPayload": null,
+      "order": 43,
       "status": "active",
       "sectionKey": "结构组织规则",
       "provenance": {
@@ -1663,7 +1002,8 @@
       "kind": "writing_rule",
       "title": "结构组织规则 3",
       "content": "在同一子章节内，优先按照“激活标志位判断 -> 计算/仲裁逻辑 -> 边界限制说明”的顺序展开。",
-      "order": 76,
+      "structuredPayload": null,
+      "order": 44,
       "status": "active",
       "sectionKey": "结构组织规则",
       "provenance": {
@@ -1685,7 +1025,8 @@
       "kind": "writing_rule",
       "title": "结构组织规则 4",
       "content": "对充电管理领域，优先按照“请求/模式进入 -> 截止停止 -> 记忆与恢复 -> 充满跳转标志位”的顺序展开。",
-      "order": 77,
+      "structuredPayload": null,
+      "order": 45,
       "status": "active",
       "sectionKey": "结构组织规则",
       "provenance": {
@@ -1707,7 +1048,8 @@
       "kind": "writing_rule",
       "title": "结构组织规则 5",
       "content": "标题和章节名要直接体现功能主题和对象，避免笼统命名。",
-      "order": 78,
+      "structuredPayload": null,
+      "order": 46,
       "status": "active",
       "sectionKey": "结构组织规则",
       "provenance": {
@@ -1729,7 +1071,8 @@
       "kind": "writing_rule",
       "title": "结构组织规则 6",
       "content": "若输出 schema 只能承载平铺需求列表，也要通过 `title`、顺序或正文中的结构描述保留层级归属，例如 `ESC前轴扭矩干预 - 激活标志位判断`。",
-      "order": 79,
+      "structuredPayload": null,
+      "order": 47,
       "status": "active",
       "sectionKey": "结构组织规则",
       "provenance": {
@@ -1751,7 +1094,8 @@
       "kind": "writing_rule",
       "title": "结构组织规则 7",
       "content": "每条需求只承载一个设计主题。前轴激活判断、后轴激活判断、前轴扭矩计算、后轴扭矩计算应视为四条独立主题。",
-      "order": 80,
+      "structuredPayload": null,
+      "order": 48,
       "status": "active",
       "sectionKey": "结构组织规则",
       "provenance": {
@@ -1773,7 +1117,8 @@
       "kind": "writing_rule",
       "title": "句式与逻辑规则 1",
       "content": "激活或判断逻辑优先采用“当满足以下任一条件时...，否则...”的句式。",
-      "order": 81,
+      "structuredPayload": null,
+      "order": 49,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -1795,7 +1140,8 @@
       "kind": "writing_rule",
       "title": "句式与逻辑规则 2",
       "content": "条件应分点列出，并明确逻辑关系是“与”还是“或”。",
-      "order": 82,
+      "structuredPayload": null,
+      "order": 50,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -1817,7 +1163,8 @@
       "kind": "writing_rule",
       "title": "句式与逻辑规则 3",
       "content": "计算或仲裁逻辑优先显式声明优先级顺序，使用“优先级顺序为：X > Y > Z”。",
-      "order": 83,
+      "structuredPayload": null,
+      "order": 51,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -1839,7 +1186,8 @@
       "kind": "writing_rule",
       "title": "句式与逻辑规则 4",
       "content": "分支逻辑优先采用“当...时，输出=...”的句式，覆盖主要路径、兜底路径和退出条件。",
-      "order": 84,
+      "structuredPayload": null,
+      "order": 52,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -1861,7 +1209,8 @@
       "kind": "writing_rule",
       "title": "句式与逻辑规则 5",
       "content": "对状态、区间、阈值、比较关系写明边界，例如“大于低阈值且小于等于高阈值”。",
-      "order": 85,
+      "structuredPayload": null,
+      "order": 53,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -1883,7 +1232,8 @@
       "kind": "writing_rule",
       "title": "句式与逻辑规则 6",
       "content": "对激活标志位类需求，正文中应显式出现 `active` 和 `inactive` 两个输出状态。",
-      "order": 86,
+      "structuredPayload": null,
+      "order": 54,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -1904,8 +1254,9 @@
       "profileKey": "generic",
       "kind": "writing_rule",
       "title": "句式与逻辑规则 7",
-      "content": "对充电管理类需求，应尽量显式写出以下分支：",
-      "order": 87,
+      "content": "对充电管理类需求，应尽量显式写出以下分支：进入请求条件、超时或故障撤销条件、截止触发条件、恢复充电条件、记忆更新与默认回退。",
+      "structuredPayload": null,
+      "order": 55,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -1918,117 +1269,7 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-039",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 8",
-      "content": "进入请求条件",
-      "order": 88,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-040",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 9",
-      "content": "超时或故障撤销条件",
-      "order": 89,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-041",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 10",
-      "content": "截止触发条件",
-      "order": 90,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-042",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 11",
-      "content": "恢复充电条件",
-      "order": 91,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-043",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 12",
-      "content": "记忆更新与默认回退",
-      "order": 92,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
+      "updatedAt": "2026-04-19T18:56:13.792Z"
     },
     {
       "skillCode": "GEN-generic-writing_rule-044",
@@ -2036,8 +1277,9 @@
       "profileKey": "generic",
       "kind": "writing_rule",
       "title": "句式与逻辑规则 13",
-      "content": "对扭矩计算类需求，应尽量显式写出以下分支：",
-      "order": 93,
+      "content": "对扭矩计算类需求，应尽量显式写出以下分支：升扭请求分支、降扭请求分支、AEB/CDP 等置零分支、VLC 分支、RBS 分支、默认分支。",
+      "structuredPayload": null,
+      "order": 56,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -2050,139 +1292,7 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-045",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 14",
-      "content": "升扭请求分支",
-      "order": 94,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-046",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 15",
-      "content": "降扭请求分支",
-      "order": 95,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-047",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 16",
-      "content": "AEB/CDP 等置零分支",
-      "order": 96,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-048",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 17",
-      "content": "VLC 分支",
-      "order": 97,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-049",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 18",
-      "content": "RBS 分支",
-      "order": 98,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
-    },
-    {
-      "skillCode": "GEN-generic-writing_rule-050",
-      "layer": "generic",
-      "profileKey": "generic",
-      "kind": "writing_rule",
-      "title": "句式与逻辑规则 19",
-      "content": "默认分支",
-      "order": 99,
-      "status": "active",
-      "sectionKey": "句式与逻辑规则",
-      "provenance": {
-        "legacySource": "requirement_writing.md",
-        "migrationBatchId": "2026-04-16T07:26:49.649Z"
-      },
-      "review": {
-        "reviewer": "",
-        "note": "",
-        "updatedAt": ""
-      },
-      "createdAt": "2026-04-16T07:26:49.650Z",
-      "updatedAt": "2026-04-16T07:26:49.650Z"
+      "updatedAt": "2026-04-19T18:56:18.355Z"
     },
     {
       "skillCode": "GEN-generic-writing_rule-051",
@@ -2191,7 +1301,8 @@
       "kind": "writing_rule",
       "title": "句式与逻辑规则 20",
       "content": "对边界限制，优先使用“注：...”单独写出，而不是埋在长句里。",
-      "order": 100,
+      "structuredPayload": null,
+      "order": 57,
       "status": "active",
       "sectionKey": "句式与逻辑规则",
       "provenance": {
@@ -2213,7 +1324,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 1",
       "content": "保留输入信号、输出信号、内部变量和控制模式的原始命名，避免将工程信号泛化成自然语言概念。",
-      "order": 101,
+      "structuredPayload": null,
+      "order": 58,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2235,7 +1347,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 2",
       "content": "输入信号优先保留来源前缀，例如 `ESC_`、`EHB_`、`ADAS_`。",
-      "order": 102,
+      "structuredPayload": null,
+      "order": 59,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2257,7 +1370,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 3",
       "content": "内部变量或内部使用量应在正文中显式出现，必要时补充“内部使用”说明。",
-      "order": 103,
+      "structuredPayload": null,
+      "order": 60,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2279,7 +1393,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 4",
       "content": "如果设计需求依赖其他需求项，应显式保留内部引用编号，例如 `SMiVCU-10160`、`SMiVCU-9477`。",
-      "order": 104,
+      "structuredPayload": null,
+      "order": 61,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2301,7 +1416,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 5",
       "content": "需求自身编号通常由外部需求管理系统生成，不作为当前写作质量的核心目标；没有明确要求时，不要为对齐样例而额外追求编号复现。",
-      "order": 105,
+      "structuredPayload": null,
+      "order": 62,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2323,7 +1439,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 6",
       "content": "不得编造内部引用编号；没有证据时宁可留空并标注证据不足。",
-      "order": 106,
+      "structuredPayload": null,
+      "order": 63,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2345,7 +1462,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 7",
       "content": "若样例库中已经给出领域内标准写法，应优先沿用其信号命名和引用习惯。",
-      "order": 107,
+      "structuredPayload": null,
+      "order": 64,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2367,7 +1485,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 8",
       "content": "若当前输入能明确区分前轴与后轴，应分别保留 `_F / _R`、`Frnt / Re` 等对象后缀，不可统一改写为“对应轴”。",
-      "order": 108,
+      "structuredPayload": null,
+      "order": 65,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2389,7 +1508,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 9",
       "content": "若参考样例中已经给出标准工程命名，如 `ESC_TqDecReqAct_F`、`ESC_EHB_RBS_F_Active`、`ESC_TrqIncReqActv_F`，则最终正文优先使用这些标准名，不要退化成 `icesc_*` 等代码变量名。",
-      "order": 109,
+      "structuredPayload": null,
+      "order": 66,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2411,7 +1531,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 10",
       "content": "若代码变量和标准工程命名并存，正文中优先写标准工程命名；代码变量只可作为追溯证据，不应主导需求正文表达。",
-      "order": 110,
+      "structuredPayload": null,
+      "order": 67,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2433,7 +1554,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 11",
       "content": "若充电管理样例中同时出现工程需求名和代码变量名，正文优先使用需求侧名称如 `充电截止SOC`、`VCU1_St_ChrStopRequest`、`VCU2_St_StallHeatingReq`；`Chrg_*EEW/EER` 等代码变量更适合放在追溯或证据位。",
-      "order": 111,
+      "structuredPayload": null,
+      "order": 68,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2455,7 +1577,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 12",
       "content": "若代码证据仅补充了实现细节，如 `EEW/EER` 持久化变量、默认回退值、状态机内部枚举、延时计数器等，而人工样例正文未将其写成主要求，则这些内容优先放入来源追溯、依据说明或校验注记，不要直接抬升为正文主句。",
-      "order": 112,
+      "structuredPayload": null,
+      "order": 69,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2477,7 +1600,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 13",
       "content": "对信号枚举值、挡位值、状态值和比较阈值，若人工样例已经明确给出，应优先保持与样例完全一致，不要在改写过程中替换为不同字面值。",
-      "order": 113,
+      "structuredPayload": null,
+      "order": 70,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2499,7 +1623,8 @@
       "kind": "writing_rule",
       "title": "信号与引用规则 14",
       "content": "不要因为代码中出现相关变量，就自动把未在参考样例中出现的逻辑写入需求，例如 `ABS/EBD/CCO/ISA` 等；除非系统需求、样例或信号字典明确要求。",
-      "order": 114,
+      "structuredPayload": null,
+      "order": 71,
       "status": "active",
       "sectionKey": "信号与引用规则",
       "provenance": {
@@ -2521,7 +1646,8 @@
       "kind": "writing_rule",
       "title": "测试与边界规则 1",
       "content": "每条需求应具备明确的可验证预期，便于测试人员构造输入组合验证输出行为。",
-      "order": 115,
+      "structuredPayload": null,
+      "order": 72,
       "status": "active",
       "sectionKey": "测试与边界规则",
       "provenance": {
@@ -2543,7 +1669,8 @@
       "kind": "writing_rule",
       "title": "测试与边界规则 2",
       "content": "对激活标志位类需求，应能通过输入条件切换验证输出状态。",
-      "order": 116,
+      "structuredPayload": null,
+      "order": 73,
       "status": "active",
       "sectionKey": "测试与边界规则",
       "provenance": {
@@ -2565,7 +1692,8 @@
       "kind": "writing_rule",
       "title": "测试与边界规则 3",
       "content": "对仲裁和计算类需求，应能基于优先级分支和边界条件设计测试用例。",
-      "order": 117,
+      "structuredPayload": null,
+      "order": 74,
       "status": "active",
       "sectionKey": "测试与边界规则",
       "provenance": {
@@ -2587,7 +1715,8 @@
       "kind": "writing_rule",
       "title": "测试与边界规则 4",
       "content": "对最大值、最小值、限幅、保护逻辑等安全边界，优先在“注”或边界说明中显式写出。",
-      "order": 118,
+      "structuredPayload": null,
+      "order": 75,
       "status": "active",
       "sectionKey": "测试与边界规则",
       "provenance": {
@@ -2609,7 +1738,8 @@
       "kind": "writing_rule",
       "title": "取舍规则 1",
       "content": "若目标样例没有把某些接口、时序、诊断条目作为主输出，就不要为了“覆盖更全”而优先输出这类泛化条目。",
-      "order": 119,
+      "structuredPayload": null,
+      "order": 76,
       "status": "active",
       "sectionKey": "取舍规则",
       "provenance": {
@@ -2631,7 +1761,8 @@
       "kind": "writing_rule",
       "title": "取舍规则 2",
       "content": "若必须在“多写几条泛化需求”和“少写但贴近人工样例的设计条目”之间取舍，优先后者。",
-      "order": 120,
+      "structuredPayload": null,
+      "order": 77,
       "status": "active",
       "sectionKey": "取舍规则",
       "provenance": {
@@ -2653,7 +1784,8 @@
       "kind": "writing_rule",
       "title": "取舍规则 3",
       "content": "不要先写总括性条目，再用一句“前后轴类似”带过；应优先分别落成前轴和后轴条目。",
-      "order": 121,
+      "structuredPayload": null,
+      "order": 78,
       "status": "active",
       "sectionKey": "取舍规则",
       "provenance": {
@@ -2675,7 +1807,8 @@
       "kind": "writing_rule",
       "title": "取舍规则 4",
       "content": "在充电管理场景下，不要先写泛化的“充电状态机总述”或“充电电流计算总表”；优先把系统需求已经给出的堵转加热、截止SOC和记忆条目写实。",
-      "order": 122,
+      "structuredPayload": null,
+      "order": 79,
       "status": "active",
       "sectionKey": "取舍规则",
       "provenance": {
@@ -2697,7 +1830,8 @@
       "kind": "writing_rule",
       "title": "取舍规则 5",
       "content": "若人工样例已经把某一逻辑拆成两条，例如“截止SOC控制”与“截止SOC记忆”，不要为了看起来更完整而把它们重新揉成一条。",
-      "order": 123,
+      "structuredPayload": null,
+      "order": 80,
       "status": "active",
       "sectionKey": "取舍规则",
       "provenance": {
@@ -2719,7 +1853,8 @@
       "kind": "writing_rule",
       "title": "取舍规则 6",
       "content": "若代码还能支撑额外条目，但人工样例本轮未将其列为核心输出，应先保证核心条目逐条对齐，再决定是否追加补充条目。",
-      "order": 124,
+      "structuredPayload": null,
+      "order": 81,
       "status": "active",
       "sectionKey": "取舍规则",
       "provenance": {
@@ -2741,7 +1876,8 @@
       "kind": "writing_rule",
       "title": "禁止事项 1",
       "content": "避免“适当”“尽量”“必要时”“合理”“优化”“可能”等模糊措辞。",
-      "order": 125,
+      "structuredPayload": null,
+      "order": 82,
       "status": "active",
       "sectionKey": "禁止事项",
       "provenance": {
@@ -2763,7 +1899,8 @@
       "kind": "writing_rule",
       "title": "禁止事项 2",
       "content": "不要把系统需求未明确、模型证据也未支持的推测写成设计需求。",
-      "order": 126,
+      "structuredPayload": null,
+      "order": 83,
       "status": "active",
       "sectionKey": "禁止事项",
       "provenance": {
@@ -2785,7 +1922,8 @@
       "kind": "writing_rule",
       "title": "禁止事项 3",
       "content": "不要把多个独立逻辑主题挤在同一条需求里，除非样例明确采用该组织方式。",
-      "order": 127,
+      "structuredPayload": null,
+      "order": 84,
       "status": "active",
       "sectionKey": "禁止事项",
       "provenance": {
@@ -2807,7 +1945,8 @@
       "kind": "writing_rule",
       "title": "禁止事项 4",
       "content": "不要把人工样例中的主条目和代码侧补充条目混写成“增强版综合需求”。",
-      "order": 128,
+      "structuredPayload": null,
+      "order": 85,
       "status": "active",
       "sectionKey": "禁止事项",
       "provenance": {
@@ -2829,7 +1968,8 @@
       "kind": "writing_rule",
       "title": "禁止事项 5",
       "content": "不要把前轴/后轴合并成“对应轴”后统一描述。",
-      "order": 129,
+      "structuredPayload": null,
+      "order": 86,
       "status": "active",
       "sectionKey": "禁止事项",
       "provenance": {
@@ -2851,7 +1991,8 @@
       "kind": "writing_rule",
       "title": "禁止事项 6",
       "content": "不要在扭矩干预样例中优先生成“接口总表”“执行周期”“越野 TCS”等偏离目标样例核心结构的条目，除非用户明确要求或证据强制要求。",
-      "order": 130,
+      "structuredPayload": null,
+      "order": 87,
       "status": "active",
       "sectionKey": "禁止事项",
       "provenance": {
@@ -2873,7 +2014,8 @@
       "kind": "writing_rule",
       "title": "禁止事项 7",
       "content": "不要把 `ChargingFull`、预约充电、截止SOC、堵转加热、充电电流计算等多个主题揉成一条“充电管理综合需求”。",
-      "order": 131,
+      "structuredPayload": null,
+      "order": 88,
       "status": "active",
       "sectionKey": "禁止事项",
       "provenance": {
@@ -2895,7 +2037,8 @@
       "kind": "validation_rule",
       "title": "校验目标 1",
       "content": "检查每条需求是否有正文、来源、验证建议和置信度。",
-      "order": 132,
+      "structuredPayload": null,
+      "order": 89,
       "status": "active",
       "sectionKey": "校验目标",
       "provenance": {
@@ -2917,7 +2060,8 @@
       "kind": "validation_rule",
       "title": "校验目标 2",
       "content": "检查需求是否遵循目标样例的章节层级和对称展开方式。",
-      "order": 133,
+      "structuredPayload": null,
+      "order": 90,
       "status": "active",
       "sectionKey": "校验目标",
       "provenance": {
@@ -2939,7 +2083,8 @@
       "kind": "validation_rule",
       "title": "校验目标 3",
       "content": "检查是否保留了关键信号、内部变量、优先级、边界说明和内部引用。",
-      "order": 134,
+      "structuredPayload": null,
+      "order": 91,
       "status": "active",
       "sectionKey": "校验目标",
       "provenance": {
@@ -2961,7 +2106,8 @@
       "kind": "validation_rule",
       "title": "校验目标 4",
       "content": "检查是否存在重复、模糊措辞、臆造事实和明显冲突。",
-      "order": 135,
+      "structuredPayload": null,
+      "order": 92,
       "status": "active",
       "sectionKey": "校验目标",
       "provenance": {
@@ -2983,7 +2129,8 @@
       "kind": "validation_rule",
       "title": "校验目标 5",
       "content": "对需满足 ISO 26262 的文档，检查信号命名是否来自参考样例或信号字典，避免破坏单一真实来源。",
-      "order": 136,
+      "structuredPayload": null,
+      "order": 93,
       "status": "active",
       "sectionKey": "校验目标",
       "provenance": {
@@ -3005,7 +2152,8 @@
       "kind": "validation_rule",
       "title": "结构校验 1",
       "content": "若输出应为章节化设计需求，需校验章节层级是否合理。",
-      "order": 137,
+      "structuredPayload": null,
+      "order": 94,
       "status": "active",
       "sectionKey": "结构校验",
       "provenance": {
@@ -3027,7 +2175,8 @@
       "kind": "validation_rule",
       "title": "结构校验 2",
       "content": "对前轴/后轴等对称对象，若只生成单侧需求，应标记为结构缺失风险。",
-      "order": 138,
+      "structuredPayload": null,
+      "order": 95,
       "status": "active",
       "sectionKey": "结构校验",
       "provenance": {
@@ -3049,7 +2198,8 @@
       "kind": "validation_rule",
       "title": "结构校验 3",
       "content": "若需求主题属于激活标志位判断或扭矩计算，应检查是否落在正确的功能子章节内。",
-      "order": 139,
+      "structuredPayload": null,
+      "order": 96,
       "status": "active",
       "sectionKey": "结构校验",
       "provenance": {
@@ -3071,7 +2221,8 @@
       "kind": "validation_rule",
       "title": "结构校验 4",
       "content": "若输入明显命中“扭矩干预功能”样例，而输出未形成“前轴激活 / 前轴计算 / 后轴激活 / 后轴计算”四个核心主题，应标记为高风险结构偏差。",
-      "order": 140,
+      "structuredPayload": null,
+      "order": 97,
       "status": "active",
       "sectionKey": "结构校验",
       "provenance": {
@@ -3093,7 +2244,8 @@
       "kind": "validation_rule",
       "title": "结构校验 5",
       "content": "若输出主要由泛化条目组成，而缺少核心设计条目，应标记为“与目标样例风格不一致”。",
-      "order": 141,
+      "structuredPayload": null,
+      "order": 98,
       "status": "active",
       "sectionKey": "结构校验",
       "provenance": {
@@ -3115,7 +2267,8 @@
       "kind": "validation_rule",
       "title": "结构校验 6",
       "content": "若用户未要求具体章节编号，而输出仍带 `3.31`、`3.31.1` 等字面数字编号，应标记为格式偏差。",
-      "order": 142,
+      "structuredPayload": null,
+      "order": 99,
       "status": "active",
       "sectionKey": "结构校验",
       "provenance": {
@@ -3137,7 +2290,8 @@
       "kind": "validation_rule",
       "title": "结构校验 7",
       "content": "若当前任务提供人工样例，而生成结果的主条目数量明显多于样例核心条目数量，应标记为“主输出越界”风险。",
-      "order": 143,
+      "structuredPayload": null,
+      "order": 100,
       "status": "active",
       "sectionKey": "结构校验",
       "provenance": {
@@ -3159,7 +2313,8 @@
       "kind": "validation_rule",
       "title": "结构校验 8",
       "content": "若当前任务提供人工样例，而样例中的核心主题未全部命中，却先输出了补充条目，应标记为高风险结构偏差。",
-      "order": 144,
+      "structuredPayload": null,
+      "order": 101,
       "status": "active",
       "sectionKey": "结构校验",
       "provenance": {
@@ -3181,7 +2336,8 @@
       "kind": "validation_rule",
       "title": "内容校验 1",
       "content": "若系统需求给出优先级顺序，设计需求中应显式保留。",
-      "order": 145,
+      "structuredPayload": null,
+      "order": 102,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3203,7 +2359,8 @@
       "kind": "validation_rule",
       "title": "内容校验 2",
       "content": "若模型代码提供阈值、限幅、模式状态或内部变量，设计需求中应尽量保留关键命名。",
-      "order": 146,
+      "structuredPayload": null,
+      "order": 103,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3225,7 +2382,8 @@
       "kind": "validation_rule",
       "title": "内容校验 3",
       "content": "若正文中引用其他需求编号，应检查这些内部引用是否存在、格式是否合理。",
-      "order": 147,
+      "structuredPayload": null,
+      "order": 104,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3247,7 +2405,8 @@
       "kind": "validation_rule",
       "title": "内容校验 4",
       "content": "若发现来源不足、逻辑分支缺失、默认路径缺失或边界限制缺失，应保留问题说明。",
-      "order": 148,
+      "structuredPayload": null,
+      "order": 105,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3269,7 +2428,8 @@
       "kind": "validation_rule",
       "title": "内容校验 5",
       "content": "对激活标志位类需求，若缺少 `active/inactive` 或缺少“否则”路径，应标记为内容不完整。",
-      "order": 149,
+      "structuredPayload": null,
+      "order": 106,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3291,7 +2451,8 @@
       "kind": "validation_rule",
       "title": "内容校验 6",
       "content": "对扭矩计算类需求，若缺少优先级、置零分支、模式分支或限幅说明，应标记为内容不完整。",
-      "order": 150,
+      "structuredPayload": null,
+      "order": 107,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3313,7 +2474,8 @@
       "kind": "validation_rule",
       "title": "内容校验 7",
       "content": "若输出把前轴/后轴统一写成“对应轴”，应标记为对象粒度退化。",
-      "order": 151,
+      "structuredPayload": null,
+      "order": 108,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3335,7 +2497,8 @@
       "kind": "validation_rule",
       "title": "内容校验 8",
       "content": "若输出使用 `icesc_*`、`icadas_*`、`ACCtl_*` 等代码化输入信号命名，而参考样例中存在对应的标准工程命名，应标记为高风险命名偏差。",
-      "order": 152,
+      "structuredPayload": null,
+      "order": 109,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3357,7 +2520,8 @@
       "kind": "validation_rule",
       "title": "内容校验 9",
       "content": "若输出把人工样例中未要求的逻辑擅自扩写进正文，例如把 `AEB/CDP` 扩成 `AEB/CDP/ABS/EBD`，或加入 `CCO/ISA` 等未在目标样例中的分支，应标记为高风险泛化扩写。",
-      "order": 153,
+      "structuredPayload": null,
+      "order": 110,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3379,7 +2543,8 @@
       "kind": "validation_rule",
       "title": "内容校验 10",
       "content": "若人工样例将“控制逻辑”和“记忆逻辑”拆为独立条目，而输出把两者混写进同一条正文，应标记为主题混写风险。",
-      "order": 154,
+      "structuredPayload": null,
+      "order": 111,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3401,7 +2566,8 @@
       "kind": "validation_rule",
       "title": "内容校验 11",
       "content": "若人工样例已明确给出信号枚举值、挡位值、状态值或阈值，而输出改写为不同字面值，应标记为高风险事实漂移。",
-      "order": 155,
+      "structuredPayload": null,
+      "order": 112,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3423,7 +2589,8 @@
       "kind": "validation_rule",
       "title": "内容校验 12",
       "content": "若代码证据支持的只是内部实现细节，而输出把这些细节直接提升为主要求正文，应标记为“实现细节越位”风险。",
-      "order": 156,
+      "structuredPayload": null,
+      "order": 113,
       "status": "active",
       "sectionKey": "内容校验",
       "provenance": {
@@ -3445,7 +2612,8 @@
       "kind": "validation_rule",
       "title": "输出要求 1",
       "content": "若发现问题，保留问题说明并降低置信度。",
-      "order": 157,
+      "structuredPayload": null,
+      "order": 114,
       "status": "active",
       "sectionKey": "输出要求",
       "provenance": {
@@ -3467,7 +2635,8 @@
       "kind": "validation_rule",
       "title": "输出要求 2",
       "content": "若发现多来源冲突，不自动消解，保留冲突说明给审核人员。",
-      "order": 158,
+      "structuredPayload": null,
+      "order": 115,
       "status": "active",
       "sectionKey": "输出要求",
       "provenance": {
@@ -3489,7 +2658,8 @@
       "kind": "validation_rule",
       "title": "输出要求 3",
       "content": "对模糊措辞、无来源结论和臆造内部引用编号优先标记为高风险。",
-      "order": 159,
+      "structuredPayload": null,
+      "order": 116,
       "status": "active",
       "sectionKey": "输出要求",
       "provenance": {
@@ -3511,7 +2681,8 @@
       "kind": "validation_rule",
       "title": "输出要求 4",
       "content": "若输出比目标样例“更全”但“更散”，应优先判定为结构退化，而不是加分。",
-      "order": 160,
+      "structuredPayload": null,
+      "order": 117,
       "status": "active",
       "sectionKey": "输出要求",
       "provenance": {
@@ -3533,7 +2704,8 @@
       "kind": "validation_rule",
       "title": "输出要求 5",
       "content": "对违反命名精度或单一真实来源约束的问题，应按高风险处理，因为这类问题会直接影响 ISO 26262 合规性审查。",
-      "order": 161,
+      "structuredPayload": null,
+      "order": 118,
       "status": "active",
       "sectionKey": "输出要求",
       "provenance": {
@@ -3555,7 +2727,8 @@
       "kind": "good_example",
       "title": "good example 1",
       "content": "当输入条件满足且保护条件未触发时，软件应输出明确的控制动作；否则应输出默认动作或恢复状态。",
-      "order": 162,
+      "structuredPayload": null,
+      "order": 119,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3577,7 +2750,8 @@
       "kind": "good_example",
       "title": "good example 2",
       "content": "若同一主题存在多个分支，应显式写出优先级顺序或分支条件，不要把仲裁逻辑隐藏在“按情况处理”这类模糊表达里。",
-      "order": 163,
+      "structuredPayload": null,
+      "order": 120,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3599,7 +2773,8 @@
       "kind": "good_example",
       "title": "good example 3",
       "content": "当需求涉及阈值、超时、上升沿或状态切换时，应直接写出边界和触发方式，而不是只写“满足条件后处理”。",
-      "order": 164,
+      "structuredPayload": null,
+      "order": 121,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3621,7 +2796,8 @@
       "kind": "good_example",
       "title": "good example 4",
       "content": "若某条需求依赖其他信号、模式或内部引用，应在正文或注记中显式保留名称和关联关系。",
-      "order": 165,
+      "structuredPayload": null,
+      "order": 122,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3643,7 +2819,8 @@
       "kind": "bad_example",
       "title": "bad example 1",
       "content": "软件应合理处理相关功能。",
-      "order": 166,
+      "structuredPayload": null,
+      "order": 123,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3665,7 +2842,8 @@
       "kind": "bad_example",
       "title": "bad example 2",
       "content": "系统按情况执行对应逻辑。",
-      "order": 167,
+      "structuredPayload": null,
+      "order": 124,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3687,7 +2865,8 @@
       "kind": "bad_example",
       "title": "bad example 3",
       "content": "当功能激活时，输出相应结果。",
-      "order": 168,
+      "structuredPayload": null,
+      "order": 125,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3709,7 +2888,8 @@
       "kind": "bad_example",
       "title": "bad example 4",
       "content": "参考已有需求实现即可。",
-      "order": 169,
+      "structuredPayload": null,
+      "order": 126,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3731,7 +2911,8 @@
       "kind": "generation_priority",
       "title": "generation priority 1",
       "content": "优先保证输出可审核、可追溯、可验证，再追求覆盖面扩张。",
-      "order": 170,
+      "structuredPayload": null,
+      "order": 127,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3753,7 +2934,8 @@
       "kind": "generation_priority",
       "title": "generation priority 2",
       "content": "若输入同时包含人工优质样例，应优先对齐样例的主题顺序、粒度和写法风格。",
-      "order": 171,
+      "structuredPayload": null,
+      "order": 128,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3775,7 +2957,8 @@
       "kind": "generation_priority",
       "title": "generation priority 3",
       "content": "每条需求优先只承载一个设计主题，不要把多个独立控制逻辑揉成一条综合描述。",
-      "order": 172,
+      "structuredPayload": null,
+      "order": 129,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3797,7 +2980,8 @@
       "kind": "generation_priority",
       "title": "generation priority 4",
       "content": "若输出 schema 只能承载平铺列表，也要在标题或正文中保留功能层级和对象归属。",
-      "order": 173,
+      "structuredPayload": null,
+      "order": 130,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3819,7 +3003,8 @@
       "kind": "generation_priority",
       "title": "generation priority 5",
       "content": "在模型代码、系统需求和人工样例同时存在时，正文命名优先服从样例或信号字典，不要让代码变量名主导最终表达。",
-      "order": 174,
+      "structuredPayload": null,
+      "order": 131,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3840,22 +3025,16 @@
       "profileKey": "generic",
       "kind": "rule_hint",
       "title": "generic rule hint",
-      "content": "",
+      "content": "在 embedded_vcu / generic 范围内，优先关注 父功能、子功能、设计主题。写作时采用 优先采用“条件/触发 + 输出动作 + 否则或恢复路径”的句式；若存在多分支或仲裁关系，应显式写出优先级和边界条件。。目标风格保持 输出应接近工程设计需求条目，而不是摘要式说明或自然语言概括。。可以优先参考 generic_skill_rules。",
       "structuredPayload": {
         "domain": "embedded_vcu",
         "subdomain": "generic",
-        "sectionHints": [
-          "父功能",
-          "子功能",
-          "设计主题"
-        ],
+        "sectionHints": [],
         "writingPattern": "优先采用“条件/触发 + 输出动作 + 否则或恢复路径”的句式；若存在多分支或仲裁关系，应显式写出优先级和边界条件。",
         "targetStyle": "输出应接近工程设计需求条目，而不是摘要式说明或自然语言概括。",
-        "sourceBasis": [
-          "generic_skill_rules"
-        ]
+        "sourceBasis": []
       },
-      "order": 175,
+      "order": 132,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3877,7 +3056,8 @@
       "kind": "anti_pattern",
       "title": "anti pattern 1",
       "content": "不要使用“合理”“按情况”“必要时”“适当”等模糊措辞。",
-      "order": 176,
+      "structuredPayload": null,
+      "order": 133,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3899,7 +3079,8 @@
       "kind": "anti_pattern",
       "title": "anti pattern 2",
       "content": "不要只复述系统需求主题，不落到具体输入、条件、动作和输出。",
-      "order": 177,
+      "structuredPayload": null,
+      "order": 134,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3921,7 +3102,8 @@
       "kind": "anti_pattern",
       "title": "anti pattern 3",
       "content": "不要把多个独立控制主题混成一条综合需求。",
-      "order": 178,
+      "structuredPayload": null,
+      "order": 135,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3943,7 +3125,8 @@
       "kind": "anti_pattern",
       "title": "anti pattern 4",
       "content": "不要省略否则路径、恢复路径、边界条件或超时条件。",
-      "order": 179,
+      "structuredPayload": null,
+      "order": 136,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3965,7 +3148,8 @@
       "kind": "anti_pattern",
       "title": "anti pattern 5",
       "content": "不要写没有来源依据的内部引用编号。",
-      "order": 180,
+      "structuredPayload": null,
+      "order": 137,
       "status": "active",
       "sectionKey": "default",
       "provenance": {
@@ -3987,7 +3171,8 @@
       "kind": "anti_pattern",
       "title": "anti pattern 6",
       "content": "不要让实现代码变量名直接替代需求侧标准命名。",
-      "order": 181,
+      "structuredPayload": null,
+      "order": 138,
       "status": "active",
       "sectionKey": "default",
       "provenance": {

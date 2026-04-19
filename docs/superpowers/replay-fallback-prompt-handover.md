@@ -85,13 +85,13 @@
 返回内容必须全部使用中文，并严格符合给定 JSON schema。
 每个 items 条目只能对应一个 atomic skill 修改项。
 层级说明：generic 表示跨模块和跨文档通用的基础规则；docType 表示仅对某一类文档类型生效的规则；domain 表示在某个领域内广泛适用但不局限于单一模块的规则；module 表示仅对当前模块生效的规则。
-请先分析驳回意见、期望写法和被驳回输出，再判断建议应该沉淀到 generic / docType / domain / module 哪一层。
+请先分析驳回意见、期望写法和被驳回输出，但不要重新选择层级；必须严格遵守 `taskContext.targetLayerConstraint` 与 `taskContext.targetProfileKeyConstraint`，只能在该约束层内判断应该 `modify_existing` 还是 `create_new`。
 如果建议依赖具体模块名、模块专属流程语义、局部边界、模块专属信号、枚举值或阈值，则优先落到 module；不要错误上提到 docType。
 优先在原始生成时已提供给模型的 skill 上下文中寻找可以修改的 existing atomic skill；只有在 existing atomic skill 无法覆盖某个独立问题时，才允许输出 conclusionType=create_new。
 action 只能填写 add_skill_item、modify_skill_item、split_skill_item、deprecate_skill_item 之一，不要输出自然语言句子。
 evidenceRefs 只能填写 rejectionContext.records 中给出的 id，不要填写 requirementCode、标题或自然语言。
-modify_existing 时 targetSkillCode 必须来自 candidateSkillInventory 里的 skillCode；不要编造 skillCode。
-如果 candidateSkillInventory 为空，或没有任何 skillCode 能精确承接本次修改，就必须输出 create_new + add_skill_item，并把 targetSkillCode 设为空字符串。
+modify_existing 时 targetSkillCode 必须来自 `layerSkillInventory` 里的 skillCode；`candidateSkillInventory` 只是兼容别名，不要编造 skillCode。
+如果 `layerSkillInventory` 为空，或该约束层内没有任何 skillCode 能精确承接本次修改，就必须输出 `create_new + add_skill_item`；新建项的 `targetLayer` 必须等于 `taskContext.targetLayerConstraint`，`targetProfileKey` 必须等于 `taskContext.targetProfileKeyConstraint`，并把 `targetSkillCode` 设为空字符串。
 不要编造新的 kind，targetKind 必须来自 taskContext.allowedKindsByArea 的允许值。
 afterContent 必须是可复用的 atomic skill 正文，不要只是把驳回说明换一种语气重写。
 如果当前案例只适合沉淀为模块规则，请把正文抽象成“某类需求在什么条件下不得补写什么内容”的规则，而不是“请把某条结果改成什么”。
@@ -111,7 +111,8 @@ validatorSuggestions 只做只读建议，不进入自动应用链路。
 - `taskContext`
 - `rejectionContext`
 - `originalGenerationSkillContext`
-- `candidateSkillInventory`
+- `layerSkillInventory`
+- `candidateSkillInventory`（兼容别名，内容与 `layerSkillInventory` 相同）
 - `referenceAssets`
 
 也就是说，当前实现已经引入了一个“精简版候选 skill inventory”。
@@ -125,7 +126,9 @@ validatorSuggestions 只做只读建议，不进入自动应用链路。
 - `documentType`
 - `targetAreas`
 - `allowedKindsByArea`
-- `candidateSkillCount`
+- `targetLayerConstraint`
+- `targetProfileKeyConstraint`
+- `layerSkillCount`
 
 ### 5.4 当前 rejectionContext 的真实内容
 
@@ -168,9 +171,9 @@ validatorSuggestions 只做只读建议，不进入自动应用链路。
 
 这一点和最早讨论过的理想方案不一致。
 
-### 5.6 当前 candidateSkillInventory 的真实内容
+### 5.6 当前 layerSkillInventory 的真实内容
 
-当前实现额外构造了 `candidateSkillInventory`，每项会提供：
+当前实现主用 `layerSkillInventory`，并额外保留 `candidateSkillInventory` 作为兼容别名；每项会提供：
 
 - `skillCode`
 - `title`
@@ -217,7 +220,7 @@ validatorSuggestions 只做只读建议，不进入自动应用链路。
 
 当前测试验证的是“当前真实实现”，而不是“最早理想设计”。也就是说，测试已经确认：
 
-- 顶层存在 `candidateSkillInventory`
+- 顶层存在 `layerSkillInventory`，同时保留 `candidateSkillInventory` 兼容别名
 - `originalGenerationSkillContext` 不包含 `compiledPrompt`
 - `originalGenerationSkillContext` 不包含 `compiledSkillPack`
 
@@ -259,7 +262,7 @@ validatorSuggestions 只做只读建议，不进入自动应用链路。
 所以问题更像是：
 
 - prompt 还不足以让模型稳定优先命中 existing skill
-- 或 candidateSkillInventory 的构造和约束方式仍然不够理想
+- 或 layerSkillInventory 的构造和约束方式仍然不够理想
 - 或当前只给 `selectedProfiles + 渲染文件`，却拿掉了 `compiledPrompt / compiledSkillPack` 后，模型失去了对已有 skill 整体结构的把握
 
 ## 9. 当前历史样本状态
@@ -282,13 +285,13 @@ validatorSuggestions 只做只读建议，不进入自动应用链路。
 
 一句话总结当前进展：
 
-我们已经把 replay fallback prompt 从“整包 materialPack 原样发给模型”，收敛成了“结构化 task/rejection/skill/reference 输入”，并补上了四层说明、existing skill 优先、reference asset 类型说明、多 item 兼容等约束；但当前真实实现已经演化成“5 段 payload + candidateSkillInventory + 去掉 compiledPrompt/compiledSkillPack”，而且从真实效果看，模型仍然容易产出 `docType + create_new + 驳回意见改写型 afterContent`，说明这套 prompt 还没有把“精准命中 existing skill / 正确分层 / 输出真正可复用 atomic rule”这件事完全做稳。
+我们已经把 replay fallback prompt 从“整包 materialPack 原样发给模型”，收敛成了“结构化 task/rejection/skill/reference 输入”，并补上了四层说明、existing skill 优先、reference asset 类型说明、多 item 兼容等约束；当前真实实现已经进一步演化成“5 段 payload + layerSkillInventory（含 candidateSkillInventory 兼容别名）+ 去掉 compiledPrompt/compiledSkillPack”，而且现在又新增了 `targetLayerConstraint` / `targetProfileKeyConstraint` 的硬约束；如果模型仍然产出 `docType + create_new + 驳回意见改写型 afterContent`，更可能说明 prompt 没把“同层命中 existing skill / 同层 create_new / 输出真正可复用 atomic rule”做稳。
 
 ## 11. 新 Codex 接手时最值得优先核对的点
 
 建议新 Codex 重点检查以下问题：
 
-1. `candidateSkillInventory` 是否真的提高了 existing skill 命中率，还是反而把模型推向了更机械的 `create_new`。
+1. `layerSkillInventory` 是否真的提高了同层 existing skill 命中率，还是反而把模型推向了更机械的 `create_new`。
 2. 去掉 `compiledPrompt` 和 `compiledSkillPack` 后，是否损失了模型对“当前 skill 全貌”的理解。
 3. 对明显依赖模块边界的驳回场景，`module` 优先的约束是否还不够强。
 4. 是否需要在后处理阶段对“驳回意见改写型 afterContent”增加识别和拦截。
@@ -303,4 +306,3 @@ validatorSuggestions 只做只读建议，不进入自动应用链路。
   - `tests/run-tests.js:466`
 - multi-item 兼容测试
   - `tests/run-tests.js:1725`
-

@@ -125,3 +125,30 @@
   - 来源任务：`7aa27011-6f01-4890-8a04-7b8d242f7545`
   - 修改项数：`1`
   - 当前展示正文：`VCU应对当前充电截止SOC值进行下电记忆；若ICM或TCP设置值更新，应在本次循环生效，并在下次下电时继续保存该值。`
+
+## 仓库未提交修改盘点新增发现（2026-04-20）
+- 当前工作树的未提交修改不是零散小修，而是围绕 7 个主题成组推进：
+  - Replay / Fallback 主链继续收口
+  - 新增 Replay Lab 实验台
+  - 固化 `layer × kind` 规则矩阵并在前后端共用
+  - 工作台交互补强
+  - Skill 资产与规则数据重排
+  - Wiki / prompt 文档 / Windows 脚本补齐
+  - 真实运行态数据快照保留
+- `src/services/replay-task-service.js`、`src/services/llm-service.js`、`src/services/rejection-service.js`、`src/services/project-service.js` 这组改动共同表明：Replay 已从“模型自由判断层级”切换为“人工先给硬约束层级，再让模型在该层内 modify/create”。
+- `targetArea` 和 `targetLayerConstraint` 已经不是 UI 上的附属字段，而是驱动 replay candidate inventory、proposal kind 合法性和工单应用校验的硬约束输入。
+- 新增的 `public/skill-kind-matrix.js` 实际上把“layer 允许哪些 kind、targetArea 允许哪些 kind”抽成了统一真源；`feedback-pool`、`skill-management`、`skill-refinement`、Replay 后端都开始依赖它。
+- Replay 的候选池已从宽泛的 `candidateSkillInventory` 收敛为同层 `layerSkillInventory`，这意味着当前验证重点更偏“同层命中 existing skill 的能力”而不是“能否随便创建一条新 skill”。
+- Replay Lab 已经成为一条新的显式工作流：给定历史 replay task，重建当前 material pack、查看 prompt 预览、诊断 rule index、审阅最新 work order，并直接发起一次软件需求生成验证。
+- `public/task-detail.html` 与 `public/hierarchy.js` 的结构化驳回交互已经更新到和后端约束一致：驳回时必须手动选择 `targetArea` 与 `targetLayerConstraint`，并加入了提交流程状态控制。
+- `data/skill-rules/bundle-base.json`、`data/skills.sqlite`、`skills/active/profiles/generic/skill-items.json`、`skills/active/requirement_writing.md`、`skills/active/requirement_extraction.md` 的大幅改动说明：当前不仅在改 replay 链路，也在同步刷新 active skill / rule index / sqlite 三套技能表示。
+- generic skill 的内容不只是修格式，还在做内容层重排：将原来碎片化的骨架、抽取主题和领域条目合并为更完整的可复用条目，并补齐 `structuredPayload` 一致性。
+- Wiki 与 handover 文档已经跟上新模型，明确引入了：
+  - `targetArea`
+  - `targetLayerConstraint`
+  - `layer × kind`
+  - `layerSkillInventory`
+  - “Replay 只能在约束层内 modify 或 create”的原则
+- Windows 平台的 Wiki 启停脚本现在已经补齐，说明独立 Wiki 已经不只面向类 Unix 环境。
+- 运行态数据也被显式保留进仓库：当前存在新的 rejection record、group、replay task 和 project review 状态快照，说明团队希望跨机器继续沿真实 `充电管理` 样本调试，而不是每次从空白状态重建现场。
+- 当前存在一个明显的临时残留文件：`skills/active/skill-manifest.json.tmp-3696-1776614708939-50e5911f-ec20-491a-88fd-43502de12381`，后续提交前应确认是否需要清理。

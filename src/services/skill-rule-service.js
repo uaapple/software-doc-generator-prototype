@@ -1,8 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { config } from "../config.js";
 import { readJson, writeJson } from "./storage.js";
 import { SkillRegistryService } from "./skill-registry-service.js";
+import {
+  ALLOWED_KINDS_BY_AREA,
+  isKindAllowedForLayer
+} from "../../public/skill-kind-matrix.js";
 
 function now() {
   return new Date().toISOString();
@@ -26,24 +31,43 @@ function mapKindToTargetFile(kind = "") {
 }
 
 function mapTargetAreaToKinds(area = "") {
-  if (area === "writing") return ["writing_rule", "good_example", "rule_hint", "generation_priority"];
-  if (area === "extraction") return ["extraction_rule", "rule_hint", "generation_priority"];
-  if (area === "examples") return ["good_example", "bad_example", "anti_pattern"];
-  if (area === "domain_knowledge") {
-    return [
-      "generation_priority",
-      "rule_hint",
-      "anti_pattern",
-      "source_alias",
-      "code_style_prefix",
-      "forbidden_expansion",
-      "normalization_rule",
-      "source_policy_setting",
-      "document_blueprint_section",
-      "document_blueprint_policy"
-    ];
+  return [...(ALLOWED_KINDS_BY_AREA[String(area || "").trim()] || ALLOWED_KINDS_BY_AREA.validation)];
+}
+
+function normalizeFilesystemPath(value = "") {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
   }
-  return ["validation_rule", "anti_pattern", "rule_hint"];
+  try {
+    return path.resolve(text).replaceAll("\\", "/").toLowerCase();
+  } catch {
+    return text.replaceAll("\\", "/").toLowerCase();
+  }
+}
+
+function buildRuleIndexSourceFingerprint(registryIndex = {}) {
+  const payload = {
+    profiles: (registryIndex.profiles || []).map((profile) => ({
+      layer: profile.layer,
+      profileKey: profile.profileKey,
+      itemCount: profile.itemCount || 0,
+      status: profile.status || "active"
+    })),
+    items: (registryIndex.items || []).map((item) => ({
+      skillCode: item.skillCode,
+      layer: item.layer,
+      profileKey: item.profileKey,
+      kind: item.kind,
+      status: item.status,
+      order: item.order || 0,
+      updatedAt: item.updatedAt || "",
+      content: item.content || "",
+      structuredPayload: item.structuredPayload || null
+    }))
+  };
+
+  return createHash("sha1").update(JSON.stringify(payload)).digest("hex");
 }
 
 function flattenKnowledgePatch(patch = {}, targetLayer, targetProfileKey, evidenceRefs = []) {
@@ -127,13 +151,22 @@ export class SkillRuleService {
   async ensureBundleRuleIndex(bundleId, skillDir, options = {}) {
     const existing = await this.getRuleIndex(bundleId);
     if (existing && !options.force) {
-      return existing;
+      const registryIndex = await this.registryService.getRegistryIndex(skillDir, { includeDeprecated: true });
+      const nextFingerprint = buildRuleIndexSourceFingerprint(registryIndex);
+      const sameSkillDir =
+        normalizeFilesystemPath(existing.skillDir) === normalizeFilesystemPath(skillDir);
+      const sameFingerprint = String(existing.sourceFingerprint || "").trim() === nextFingerprint;
+
+      if (sameSkillDir && sameFingerprint) {
+        return existing;
+      }
     }
     return this.importBundleRules(bundleId, skillDir, options);
   }
 
   async importBundleRules(bundleId, skillDir, options = {}) {
-    const registryIndex = await this.registryService.getRegistryIndex(skillDir, { includeDeprecated: true });
+    const registryIndex = options.registryIndex || (await this.registryService.getRegistryIndex(skillDir, { includeDeprecated: true }));
+    const sourceFingerprint = options.sourceFingerprint || buildRuleIndexSourceFingerprint(registryIndex);
     const rules = registryIndex.items.map((item) => ({
       id: item.skillCode,
       ruleId: item.skillCode,
@@ -168,6 +201,7 @@ export class SkillRuleService {
       ruleIndexVersion: options.ruleIndexVersion || `registry-${Date.now()}`,
       importedAt: now(),
       skillDir,
+      sourceFingerprint,
       rules,
       domainKnowledge: await readJson(path.join(skillDir, "domain-knowledge.json"), {
         version: 1,
@@ -182,22 +216,30 @@ export class SkillRuleService {
     return ruleIndex;
   }
 
-  async getRelevantRuleSnapshot(bundleId, targetAreas = [], context = {}) {
+  async getRelevantRuleSnapshot(bundleId, targetAreas = [], context = {}, options = {}) {
     const index = await this.getRuleIndex(bundleId);
     const baseRules = index?.rules || [];
     if (!baseRules.length) return [];
 
     const kinds = new Set(targetAreas.flatMap((area) => mapTargetAreaToKinds(area)));
+    const layerConstraint = String(options.layerConstraint || context.layerConstraint || "").trim();
+    const profileKeyConstraint = String(options.profileKeyConstraint || context.profileKeyConstraint || "").trim();
     const selected = baseRules
+      .filter((rule) => isKindAllowedForLayer(rule.layer, rule.kind))
       .filter((rule) => (!kinds.size ? true : kinds.has(rule.kind)))
+      .filter((rule) => {
+        if (!layerConstraint) return true;
+        if (rule.layer !== layerConstraint) return false;
+        if (!profileKeyConstraint) return true;
+        return String(rule.profileKey || "").trim() === profileKeyConstraint;
+      })
       .filter((rule) => {
         if (rule.layer === "docType" && context.documentType) return rule.profileKey === context.documentType;
         if (rule.layer === "domain" && context.domain) return rule.profileKey === context.domain;
         if (rule.layer === "module" && context.moduleSkillKey) return rule.profileKey === context.moduleSkillKey;
         return true;
       })
-      .sort((left, right) => this.scoreRule(right, targetAreas, context) - this.scoreRule(left, targetAreas, context))
-      .slice(0, 20);
+      .sort((left, right) => this.scoreRule(right, targetAreas, context) - this.scoreRule(left, targetAreas, context));
 
     return selected;
   }

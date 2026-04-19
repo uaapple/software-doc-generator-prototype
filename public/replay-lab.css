@@ -1,0 +1,231 @@
+.replay-lab-page {
+  gap: 24px;
+}
+
+.replay-lab-hero {
+  align-items: flex-start;
+}
+
+.replay-lab-shell {
+  display: grid;
+  grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.replay-lab-sidebar,
+.replay-lab-workspace {
+  display: grid;
+  gap: 20px;
+}
+
+.replay-lab-sidebar {
+  position: sticky;
+  top: 24px;
+  padding: 20px;
+}
+
+.replay-lab-workspace {
+  min-width: 0;
+}
+
+.lab-section {
+  display: grid;
+  gap: 16px;
+}
+
+.lab-meta-list,
+.lab-metric-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.lab-meta-list {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.lab-meta-item,
+.lab-metric-card {
+  border: 1px solid rgba(18, 32, 56, 0.08);
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(244, 247, 251, 0.92));
+}
+
+.lab-meta-item span,
+.lab-metric-card span,
+.compare-kicker {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(27, 54, 93, 0.58);
+}
+
+.lab-meta-item strong,
+.lab-metric-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #163154;
+  white-space: pre-wrap;
+}
+
+.lab-metric-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lab-checkbox-list,
+.work-order-item-stack,
+.validator-suggestion-stack,
+.mini-preview-stack,
+.diagnostic-stack,
+.raw-panels {
+  display: grid;
+  gap: 12px;
+}
+
+.lab-checkbox-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(247, 250, 253, 0.92);
+  border: 1px solid rgba(18, 32, 56, 0.08);
+}
+
+.lab-checkbox-item p,
+.mini-preview-card p,
+.compare-card p,
+.prompt-card p,
+.diagnostic-card p,
+.work-order-item-card p {
+  margin: 0;
+}
+
+.compare-grid,
+.prompt-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.compare-card,
+.prompt-card,
+.diagnostic-card,
+.work-order-block,
+.work-order-item-card,
+.mini-preview-card,
+.raw-panel {
+  border: 1px solid rgba(18, 32, 56, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 45px rgba(20, 48, 87, 0.08);
+}
+
+.compare-card,
+.prompt-card,
+.diagnostic-card,
+.work-order-block,
+.work-order-item-card,
+.mini-preview-card {
+  padding: 18px 20px;
+}
+
+.compare-card h3,
+.work-order-block h3 {
+  margin: 8px 0 0;
+}
+
+.diagnostic-card.is-warning {
+  border-color: rgba(173, 99, 20, 0.28);
+  background: linear-gradient(180deg, rgba(255, 252, 245, 0.98), rgba(255, 246, 225, 0.92));
+}
+
+.prompt-card details,
+.work-order-item-card details,
+.raw-panel summary {
+  margin-top: 12px;
+}
+
+.prompt-card pre,
+.work-order-item-card pre,
+.raw-panel pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #0f1726;
+  color: #ebf2ff;
+  border-radius: 16px;
+  padding: 14px 16px;
+  overflow: auto;
+}
+
+.raw-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.raw-panel summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 16px 18px;
+  font-weight: 700;
+  background: rgba(247, 250, 253, 0.96);
+}
+
+.raw-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.raw-panel pre {
+  margin: 0;
+  border-radius: 0;
+}
+
+.work-order-review {
+  display: grid;
+  gap: 16px;
+}
+
+.inline-action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.lab-issue-list {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #7c4d13;
+}
+
+.mini-preview-card {
+  background: linear-gradient(180deg, rgba(246, 249, 252, 0.98), rgba(238, 244, 249, 0.96));
+}
+
+.replay-lab-sidebar select,
+.replay-lab-sidebar input,
+.replay-lab-sidebar textarea,
+.replay-lab-workspace textarea {
+  width: 100%;
+}
+
+@media (max-width: 1180px) {
+  .replay-lab-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .replay-lab-sidebar {
+    position: static;
+  }
+
+  .compare-grid,
+  .prompt-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}

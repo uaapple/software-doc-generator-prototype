@@ -1,3 +1,5 @@
+import { PROFILE_LAYER_ORDER, getAllowedKindsForAreasAndLayer } from "/skill-kind-matrix.js";
+
 const state = {
   bundles: [],
   activeBundle: null,
@@ -28,6 +30,7 @@ await bootstrap();
 feedingForm.addEventListener("submit", handleFeedSubmit);
 caseListRoot.addEventListener("click", handleCaseAction);
 proposalGroupsRoot.addEventListener("click", handleProposalAction);
+proposalGroupsRoot.addEventListener("change", handleProposalFieldChange);
 buildCandidateButton.addEventListener("click", handleBuildCandidate);
 decisionActionsRoot.addEventListener("click", handleDecisionAction);
 
@@ -203,6 +206,29 @@ async function handleProposalAction(event) {
     await loadRun(state.runDetail.run.id);
   } catch (error) {
     setFeedStatus(`改进建议审核失败：${error.message}`);
+  }
+}
+
+function handleProposalFieldChange(event) {
+  const layerSelect = event.target.closest("[data-proposal-target-layer]");
+  if (!layerSelect || !state.runDetail) return;
+
+  const proposalId = layerSelect.dataset.proposalTargetLayer;
+  const item = (state.runDetail.proposalItems || []).find((entry) => entry.id === proposalId);
+  if (!item) return;
+
+  const kindSelect = proposalGroupsRoot.querySelector(`[data-proposal-kind="${proposalId}"]`);
+  const hint = proposalGroupsRoot.querySelector(`[data-proposal-kind-hint="${proposalId}"]`);
+  if (!(kindSelect instanceof HTMLSelectElement)) return;
+
+  const allowedKinds = getAllowedKindsForAreasAndLayer([normalizeProposalArea(item.category)], layerSelect.value || "");
+  const currentKind = kindSelect.value || "";
+  kindSelect.innerHTML = proposalKindOptions(item.category, layerSelect.value || "", currentKind);
+  if (!allowedKinds.includes(currentKind)) {
+    kindSelect.value = allowedKinds[0] || "";
+  }
+  if (hint) {
+    hint.textContent = proposalKindHint(item.category, layerSelect.value || "");
   }
 }
 
@@ -562,11 +588,12 @@ function renderProposalGroups() {
                     </div>
                     <p class="mini-meta">${escapeHtml(item.reason || "无原因说明")}</p>
                     <div class="definition-grid">
-                      <div><span>Layer</span><p><input data-proposal-target-layer="${item.id}" value="${escapeHtml(item.targetLayer || "")}" ${reviewLocked ? "disabled" : ""} /></p></div>
+                      <div><span>Layer</span><p><select data-proposal-target-layer="${item.id}" ${reviewLocked ? "disabled" : ""}>${proposalLayerOptions(item.targetLayer || "")}</select></p></div>
                       <div><span>Profile</span><p><input data-proposal-target-profile="${item.id}" value="${escapeHtml(item.targetProfileKey || "")}" ${reviewLocked ? "disabled" : ""} /></p></div>
                       <div><span>Skill Code</span><p><input data-proposal-target-skill="${item.id}" value="${escapeHtml(item.targetSkillCode || "")}" ${reviewLocked ? "disabled" : ""} /></p></div>
-                      <div><span>Kind</span><p><input data-proposal-kind="${item.id}" value="${escapeHtml(item.kind || "")}" ${reviewLocked ? "disabled" : ""} /></p></div>
+                      <div><span>Kind</span><p><select data-proposal-kind="${item.id}" ${reviewLocked ? "disabled" : ""}>${proposalKindOptions(item.category, item.targetLayer || "", item.kind || "")}</select></p></div>
                     </div>
+                    <p class="mini-meta" data-proposal-kind-hint="${item.id}">${escapeHtml(proposalKindHint(item.category, item.targetLayer || ""))}</p>
                     <label>
                       标题
                       <input data-proposal-title="${item.id}" value="${escapeHtml(item.title || "")}" ${reviewLocked ? "disabled" : ""} />
@@ -589,6 +616,26 @@ function renderProposalGroups() {
       `;
     })
     .join("");
+}
+
+function normalizeProposalArea(category = "") {
+  return category === "good_example" ? "examples" : category || "validation";
+}
+
+function proposalLayerOptions(selected = "") {
+  const effectiveSelected = PROFILE_LAYER_ORDER.includes(selected) ? selected : PROFILE_LAYER_ORDER[0];
+  return PROFILE_LAYER_ORDER.map((layer) => `<option value="${layer}" ${layer === effectiveSelected ? "selected" : ""}>${layer}</option>`).join("");
+}
+
+function proposalKindOptions(category = "", targetLayer = "", selectedKind = "") {
+  const allowedKinds = getAllowedKindsForAreasAndLayer([normalizeProposalArea(category)], targetLayer);
+  const effectiveSelected = allowedKinds.includes(selectedKind) ? selectedKind : allowedKinds[0] || "";
+  return allowedKinds.map((kind) => `<option value="${kind}" ${kind === effectiveSelected ? "selected" : ""}>${kind}</option>`).join("");
+}
+
+function proposalKindHint(category = "", targetLayer = "") {
+  const allowedKinds = getAllowedKindsForAreasAndLayer([normalizeProposalArea(category)], targetLayer);
+  return allowedKinds.length ? `当前层允许：${allowedKinds.join(" / ")}` : "当前层没有可选 kind。";
 }
 
 function renderBenchmarkReport() {

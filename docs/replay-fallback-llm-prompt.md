@@ -15,13 +15,13 @@
 返回内容必须全部使用中文，并严格符合给定 JSON schema。
 每个 items 条目只能对应一个 atomic skill 修改项。
 层级说明：generic 表示跨模块和跨文档通用的基础规则；docType 表示仅对某一类文档类型生效的规则；domain 表示在某个领域内广泛适用但不局限于单一模块的规则；module 表示仅对当前模块生效的规则。
-请先分析驳回意见、期望写法和被驳回输出，再判断建议应该沉淀到 generic / docType / domain / module 哪一层。
+请先分析驳回意见、期望写法和被驳回输出，但不要重新选择层级；必须严格遵守 taskContext.targetLayerConstraint 与 taskContext.targetProfileKeyConstraint，只能在该约束层内判断应该 modify_existing 还是 create_new。
 如果建议依赖具体模块名、模块专属流程语义、局部边界、模块专属信号、枚举值或阈值，则优先落到 module；不要错误上提到 docType。
 优先在原始生成时已提供给模型的 skill 上下文中寻找可以修改的 existing atomic skill；只有在 existing atomic skill 无法覆盖某个独立问题时，才允许输出 conclusionType=create_new。
 action 只能填写 add_skill_item、modify_skill_item、split_skill_item、deprecate_skill_item 之一，不要输出自然语言句子。
 evidenceRefs 只能填写 rejectionContext.records 中给出的 id，不要填写 requirementCode、标题或自然语言。
-modify_existing 时 targetSkillCode 必须来自 candidateSkillInventory 里的 skillCode；不要编造 skillCode。
-如果 candidateSkillInventory 为空，或没有任何 skillCode 能精确承接本次修改，就必须输出 create_new + add_skill_item，并把 targetSkillCode 设为空字符串。
+modify_existing 时 targetSkillCode 必须来自 layerSkillInventory 里的 skillCode；candidateSkillInventory 只是兼容别名，不要编造 skillCode。
+如果 layerSkillInventory 为空，或该约束层内没有任何 skillCode 能精确承接本次修改，就必须输出 create_new + add_skill_item；新建项的 targetLayer 必须等于 taskContext.targetLayerConstraint，targetProfileKey 必须等于 taskContext.targetProfileKeyConstraint，并把 targetSkillCode 设为空字符串。
 不要编造新的 kind，targetKind 必须来自 taskContext.allowedKindsByArea 的允许值。
 afterContent 必须是可复用的 atomic skill 正文，不要只是把驳回说明换一种语气重写。
 如果当前案例只适合沉淀为模块规则，请把正文抽象成“某类需求在什么条件下不得补写什么内容”的规则，而不是“请把某条结果改成什么”。
@@ -80,7 +80,9 @@ validatorSuggestions 只做只读建议，不进入自动应用链路。
         "anti_pattern"
       ]
     },
-    "candidateSkillCount": 0
+    "targetLayerConstraint": "module",
+    "targetProfileKeyConstraint": "充电管理",
+    "layerSkillCount": 0
   },
   "rejectionContext": {
     "records": [

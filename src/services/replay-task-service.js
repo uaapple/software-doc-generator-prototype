@@ -7,9 +7,15 @@ import { ProjectService } from "./project-service.js";
 import { RejectionService } from "./rejection-service.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { SkillRuleService } from "./skill-rule-service.js";
-import { LlmService } from "./llm-service.js";
+import { LlmService, buildReplayModelInput } from "./llm-service.js";
 import { SkillLoader } from "./skill-loader.js";
 import { SkillWorkOrderService } from "./skill-work-order-service.js";
+import {
+  ALLOWED_KINDS_BY_AREA,
+  ALLOWED_KINDS_BY_LAYER,
+  getAllowedKindsForAreasAndLayer,
+  isKindAllowedForLayer
+} from "../../public/skill-kind-matrix.js";
 
 function now() {
   return new Date().toISOString();
@@ -37,25 +43,30 @@ function normalizeSkillKey(value = "") {
     .replace(/[^\w\u4e00-\u9fa5-]/g, "_");
 }
 
+function normalizeLayerConstraint(value = "") {
+  const normalized = String(value || "").trim();
+  return ["generic", "docType", "domain", "module"].includes(normalized) ? normalized : "";
+}
+
+function resolveLayerProfileKey(layerConstraint = "", context = {}) {
+  if (layerConstraint === "module") {
+    return normalizeSkillKey(context.moduleSkillKey || context.moduleName || "");
+  }
+  if (layerConstraint === "domain") {
+    return normalizeSkillKey(context.domain || "embedded_vcu");
+  }
+  if (layerConstraint === "docType") {
+    return normalizeSkillKey(context.documentType || "software_requirement");
+  }
+  return "generic";
+}
+
 function buildAllowedKindsByArea() {
-  return {
-    writing: ["writing_rule", "good_example", "rule_hint", "generation_priority"],
-    extraction: ["extraction_rule", "rule_hint", "generation_priority"],
-    validation: ["validation_rule", "anti_pattern", "rule_hint"],
-    examples: ["good_example", "bad_example", "anti_pattern"],
-    domain_knowledge: [
-      "source_alias",
-      "normalization_rule",
-      "forbidden_expansion",
-      "source_policy_setting",
-      "document_blueprint_section",
-      "document_blueprint_policy",
-      "code_style_prefix",
-      "rule_hint",
-      "generation_priority",
-      "anti_pattern"
-    ]
-  };
+  return ALLOWED_KINDS_BY_AREA;
+}
+
+function buildAllowedKindsByLayer() {
+  return ALLOWED_KINDS_BY_LAYER;
 }
 
 function buildLayerDefinitions() {
@@ -67,19 +78,35 @@ function buildLayerDefinitions() {
   };
 }
 
-function validateProposalTargets(proposalItems = [], targetAreas = []) {
-  const allowedKindsByArea = buildAllowedKindsByArea();
-  const allowedKinds = new Set((targetAreas.length ? targetAreas : ["validation"]).flatMap((area) => allowedKindsByArea[area] || allowedKindsByArea.validation));
+function validateProposalTargets(proposalItems = [], targetAreas = [], options = {}) {
+  const targetLayerConstraint = normalizeLayerConstraint(options.targetLayerConstraint || "");
+  const targetProfileKeyConstraint = normalizeSkillKey(options.targetProfileKeyConstraint || "");
+  const allowedSkillCodes = new Set((options.allowedSkillCodes || []).map((item) => String(item || "").trim()).filter(Boolean));
   for (const item of proposalItems) {
     const layer = String(item.targetLayer || "").trim();
     if (!["generic", "docType", "domain", "module"].includes(layer)) {
       throw createHttpError(`Unsupported proposal targetLayer: ${layer}`);
     }
+    if (!isKindAllowedForLayer(layer, item.kind)) {
+      throw createHttpError(`Unsupported proposal kind for target layer: ${item.kind}`, 400);
+    }
+    const allowedKinds = new Set(getAllowedKindsForAreasAndLayer(targetAreas, layer));
     if (!allowedKinds.has(item.kind)) {
-      throw createHttpError(`Unsupported proposal kind for current target area: ${item.kind}`);
+      throw createHttpError(`Unsupported proposal kind for current target area and target layer: ${item.kind}`, 400);
     }
     if (!String(item.targetProfileKey || "").trim()) {
       throw createHttpError("Proposal targetProfileKey is required");
+    }
+    if (targetLayerConstraint && layer !== targetLayerConstraint) {
+      throw createHttpError(`Proposal targetLayer must stay within ${targetLayerConstraint}`);
+    }
+    if (targetProfileKeyConstraint && normalizeSkillKey(item.targetProfileKey || "") !== targetProfileKeyConstraint) {
+      throw createHttpError(`Proposal targetProfileKey must stay within ${targetProfileKeyConstraint}`);
+    }
+    if ((item.action === "modify_skill_item" || item.conclusionType === "modify_existing") && allowedSkillCodes.size) {
+      if (!allowedSkillCodes.has(String(item.targetSkillCode || "").trim())) {
+        throw createHttpError("modify_existing must target a skill from the constrained layer inventory");
+      }
     }
   }
 }
@@ -179,6 +206,332 @@ export class ReplayTaskService {
     return readJson(getTaskPath(taskId));
   }
 
+  extractPromptPreview(materialPack = {}) {
+    const messages = buildReplayModelInput(materialPack);
+    return {
+      systemPrompt: messages?.[0]?.content?.[0]?.text || "",
+      userPrompt: messages?.[1]?.content?.[0]?.text || ""
+    };
+  }
+
+  summarizeRuleIndex(ruleIndex = {}, registryIndex = {}, relevantRules = [], relevantRegistryItems = [], context = {}) {
+    const rules = Array.isArray(ruleIndex?.rules) ? ruleIndex.rules : [];
+    const registryItems = Array.isArray(registryIndex?.items) ? registryIndex.items : [];
+    const documentType = String(context.documentType || "").trim();
+    const domain = String(context.domain || "").trim();
+    const moduleSkillKey = String(context.moduleSkillKey || "").trim();
+    const ruleCounts = {
+      total: rules.length,
+      docType: rules.filter((item) => item.layer === "docType" && item.profileKey === documentType).length,
+      domain: rules.filter((item) => item.layer === "domain" && item.profileKey === domain).length,
+      module: rules.filter((item) => item.layer === "module" && item.profileKey === moduleSkillKey).length
+    };
+    const registryCounts = {
+      total: registryItems.length,
+      docType: registryItems.filter((item) => item.layer === "docType" && item.profileKey === documentType).length,
+      domain: registryItems.filter((item) => item.layer === "domain" && item.profileKey === domain).length,
+      module: registryItems.filter((item) => item.layer === "module" && item.profileKey === moduleSkillKey).length
+    };
+    const issues = [];
+    if (registryCounts.total && ruleCounts.total !== registryCounts.total) {
+      issues.push(`rule index 总量 ${ruleCounts.total} 与 active registry 总量 ${registryCounts.total} 不一致`);
+    }
+    if (registryCounts.docType && !ruleCounts.docType) {
+      issues.push(`rule index 缺少当前 docType=${documentType} 的条目`);
+    }
+    if (registryCounts.domain && !ruleCounts.domain) {
+      issues.push(`rule index 缺少当前 domain=${domain} 的条目`);
+    }
+    if (registryCounts.module && !ruleCounts.module) {
+      issues.push(`rule index 缺少当前 module=${moduleSkillKey} 的条目`);
+    }
+    if (relevantRegistryItems.length && !relevantRules.length) {
+      issues.push(`当前上下文在 active registry 中可找到 ${relevantRegistryItems.length} 条候选 skill，但 rule index 返回 0 条`);
+    }
+    return {
+      ruleIndexVersion: ruleIndex?.ruleIndexVersion || "",
+      counts: {
+        ruleIndex: ruleCounts,
+        registry: registryCounts,
+        relevantRuleCount: relevantRules.length,
+        relevantRegistryCount: relevantRegistryItems.length
+      },
+      relevantSkillCodes: {
+        ruleIndex: relevantRules.map((item) => item.skillCode || item.ruleId).filter(Boolean),
+        registry: relevantRegistryItems.map((item) => item.skillCode).filter(Boolean)
+      },
+      hasMismatch: issues.length > 0,
+      issues
+    };
+  }
+
+  async buildRuleDiagnostics(bundleId, skillDir, targetAreas = [], context = {}, ruleIndex = null) {
+    const effectiveRuleIndex = ruleIndex || (await this.skillRuleService.ensureBundleRuleIndex(bundleId, skillDir));
+    const relevantRules = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, targetAreas, context);
+    const registryIndex = await this.skillRuleService.registryService.getRegistryIndex(skillDir, { includeDeprecated: true });
+    const relevantRegistryItems = await this.skillRuleService.registryService.listRelevantItems(
+      {
+        documentType: context.documentType || "software_requirement",
+        domain: context.domain || "",
+        moduleSkillKey: context.moduleSkillKey || "",
+        targetAreas,
+        layerConstraint: context.layerConstraint || "",
+        profileKeyConstraint: context.profileKeyConstraint || "",
+        limit: 200
+      },
+      skillDir
+    );
+
+    return this.summarizeRuleIndex(effectiveRuleIndex, registryIndex, relevantRules, relevantRegistryItems, context);
+  }
+
+  async resolveTaskContext({
+    rejectionIds = [],
+    groupId = "",
+    targetBundleId = "",
+    targetAreas = [],
+    projectId = "",
+    moduleId = "",
+    referenceAssetIds = []
+  }) {
+    const group = groupId ? await this.rejectionService.getGroup(groupId) : null;
+    const selectedIds = rejectionIds.length ? rejectionIds : group?.memberIds || [];
+    if (!selectedIds.length) {
+      throw createHttpError("Replay task requires rejectionIds or groupId");
+    }
+
+    const records = [];
+    for (const rejectionId of selectedIds) {
+      const record = await this.rejectionService.getRecord(rejectionId);
+      if (record) records.push(record);
+    }
+    if (!records.length) {
+      throw createHttpError("No rejection records found");
+    }
+
+    const inferredProjectId = projectId || records[0]?.projectId || group?.projectId || "";
+    const inferredModuleId = moduleId || records[0]?.moduleId || group?.moduleId || "";
+    if (records.some((record) => (record.projectId || inferredProjectId) !== inferredProjectId)) {
+      throw createHttpError("Replay task only supports records from the same project");
+    }
+    if (records.some((record) => String(record.moduleId || "") !== String(inferredModuleId || ""))) {
+      throw createHttpError("Replay task only supports records from the same module");
+    }
+
+    const activeBundle = targetBundleId
+      ? await this.skillBundleService.getBundle(targetBundleId)
+      : await this.skillBundleService.getActiveBundle();
+    const bundleId = activeBundle?.id || targetBundleId || "bundle-base";
+    const skillDir = await this.skillBundleService.getSkillDir(bundleId);
+    const effectiveAreas = targetAreas.length ? targetAreas : [...new Set(records.map((item) => normalizeArea(item.skillContext?.targetArea)))];
+    const normalizedReferenceAssetIds = normalizeReferenceAssetIds(referenceAssetIds);
+
+    let project = null;
+    let module = null;
+    if (inferredProjectId) {
+      project = await this.projectService.getProject(inferredProjectId);
+    }
+    if (inferredProjectId && inferredModuleId) {
+      module = await this.projectService.getModule(inferredProjectId, inferredModuleId);
+    }
+
+    const moduleSkillKey = normalizeSkillKey(module?.moduleSkillKey || module?.name || records[0]?.moduleName || "");
+    const domainKey = normalizeSkillKey(module?.domain || project?.domain || records[0]?.domain || "embedded_vcu");
+    const documentType = records[0]?.documentType || "software_requirement";
+    const layerConstraints = [...new Set(records.map((item) => normalizeLayerConstraint(item.skillContext?.targetLayerConstraint || item.targetLayerConstraint || "docType")).filter(Boolean))];
+    if (layerConstraints.length > 1) {
+      throw createHttpError("Replay task only supports rejection records with the same targetLayerConstraint");
+    }
+    const targetLayerConstraint = layerConstraints[0] || "docType";
+    const targetProfileKeyConstraint = resolveLayerProfileKey(targetLayerConstraint, {
+      documentType,
+      domain: domainKey,
+      moduleSkillKey,
+      moduleName: module?.name || records[0]?.moduleName || ""
+    });
+
+    return {
+      group,
+      selectedIds,
+      records,
+      inferredProjectId,
+      inferredModuleId,
+      bundleId,
+      skillDir,
+      effectiveAreas,
+      normalizedReferenceAssetIds,
+      project,
+      module,
+      moduleSkillKey,
+      domainKey,
+      documentType,
+      targetLayerConstraint,
+      targetProfileKeyConstraint
+    };
+  }
+
+  async buildTaskPreview(context = {}, options = {}) {
+    const {
+      bundleId,
+      skillDir,
+      effectiveAreas,
+      normalizedReferenceAssetIds,
+      inferredProjectId,
+      inferredModuleId,
+      project,
+      module,
+      moduleSkillKey,
+      domainKey,
+      documentType,
+      targetLayerConstraint,
+      targetProfileKeyConstraint,
+      records
+    } = context;
+    const forceRuleIndexRefresh = Boolean(options.forceRuleIndexRefresh);
+    const ruleContext = {
+      documentType,
+      domain: domainKey,
+      moduleSkillKey,
+      layerConstraint: targetLayerConstraint,
+      profileKeyConstraint: targetProfileKeyConstraint
+    };
+
+    let ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, skillDir);
+    const diagnosticsBefore = await this.buildRuleDiagnostics(bundleId, skillDir, effectiveAreas, ruleContext, ruleIndex);
+    if (forceRuleIndexRefresh) {
+      ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, skillDir, { force: true });
+    }
+    const diagnosticsAfter = await this.buildRuleDiagnostics(bundleId, skillDir, effectiveAreas, ruleContext, ruleIndex);
+
+    const referenceAssets = await this.buildReferenceAssets(inferredProjectId, inferredModuleId, normalizedReferenceAssetIds);
+    const layerSkillItems = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, effectiveAreas, ruleContext, {
+      layerConstraint: targetLayerConstraint,
+      profileKeyConstraint: targetProfileKeyConstraint
+    });
+    const effectiveSkills = await this.skillLoader.loadForContext(
+      {
+        documentType,
+        domain: domainKey,
+        moduleSkillKey
+      },
+      skillDir
+    );
+
+    const effectiveSkillSnapshot = {
+      hash: createHash("sha1")
+        .update(
+          JSON.stringify({
+            bundleId,
+            ruleIndexVersion: ruleIndex.ruleIndexVersion,
+            profiles: effectiveSkills.__profiles || [],
+            layerSkillCodes: layerSkillItems.map((item) => item.skillCode || item.ruleId),
+            writing: effectiveSkills["requirement_writing.md"] || "",
+            extraction: effectiveSkills["requirement_extraction.md"] || "",
+            validation: effectiveSkills["requirement_validation.md"] || "",
+            knowledge: effectiveSkills["domain-knowledge.json"] || {}
+          })
+        )
+        .digest("hex"),
+      selectedProfiles: effectiveSkills.__profiles || [],
+      compiledPrompt: truncate(effectiveSkills.__compiledPrompt || "", 6000),
+      compiledSkillPack: effectiveSkills.__compiledSkillPack || null,
+      files: {
+        "requirement_extraction.md": effectiveSkills["requirement_extraction.md"] || "",
+        "requirement_writing.md": effectiveSkills["requirement_writing.md"] || "",
+        "requirement_validation.md": effectiveSkills["requirement_validation.md"] || "",
+        "examples/good_examples.md": effectiveSkills["examples/good_examples.md"] || "",
+        "examples/bad_examples.md": effectiveSkills["examples/bad_examples.md"] || "",
+        "domain-knowledge.json": effectiveSkills["domain-knowledge.json"] || {}
+      }
+    };
+
+    const materialPack = {
+      summary: `${records.length} rejection records selected for replay`,
+      targetBundleId: bundleId,
+      targetAreas: effectiveAreas,
+      targetLayerConstraint,
+      targetProfileKeyConstraint,
+      allowedKindsByArea: buildAllowedKindsByArea(),
+      allowedKindsByLayer: buildAllowedKindsByLayer(),
+      allowedKindsForReplay: getAllowedKindsForAreasAndLayer(effectiveAreas, targetLayerConstraint),
+      layerDefinitions: buildLayerDefinitions(),
+      ruleIndexVersion: ruleIndex.ruleIndexVersion,
+      moduleContext: {
+        projectId: inferredProjectId,
+        projectName: project?.name || records[0]?.projectName || "",
+        moduleId: inferredModuleId,
+        moduleName: module?.name || records[0]?.moduleName || "",
+        moduleSkillKey,
+        domain: domainKey,
+        documentType
+      },
+      effectiveSkillSnapshot,
+      layerSkillItems: layerSkillItems.map((item) => ({
+        skillCode: item.skillCode || item.ruleId,
+        layer: item.layer,
+        profileKey: item.profileKey,
+        kind: item.kind,
+        title: item.title,
+        content: item.content,
+        contentSummary: truncate(item.content || "", 220),
+        targetAreas: [item.targetArea],
+        targetFile: item.targetFile,
+        whyRelevant: `${item.layer}/${item.profileKey}`
+      })),
+      candidateSkillItems: layerSkillItems.map((item) => ({
+        skillCode: item.skillCode || item.ruleId,
+        layer: item.layer,
+        profileKey: item.profileKey,
+        kind: item.kind,
+        title: item.title,
+        content: item.content,
+        contentSummary: truncate(item.content || "", 220),
+        targetAreas: [item.targetArea],
+        targetFile: item.targetFile,
+        whyRelevant: `${item.layer}/${item.profileKey}`
+      })),
+      referenceAssets,
+      rejectionSnapshots: records.map((record) => ({
+        id: record.id,
+        projectId: record.projectId,
+        moduleId: record.moduleId,
+        documentType: record.documentType,
+        requirementCode: record.requirementCode,
+        reasonCategory: record.reasonCategory,
+        reasonText: record.reasonText,
+        expectedNote: record.expectedNote,
+        targetLayerConstraint: record.skillContext?.targetLayerConstraint || record.targetLayerConstraint || targetLayerConstraint,
+        targetArea: record.skillContext?.targetArea,
+        outputSnapshot: record.outputSnapshot,
+        sourceRefsSnapshot: record.sourceRefsSnapshot || [],
+        projectEvidenceSnapshot: record.projectEvidenceSnapshot || [],
+        relevantRules: record.skillContext?.relevantRules || []
+      }))
+    };
+
+    return {
+      ruleIndex,
+      materialPack,
+      promptPreview: this.extractPromptPreview(materialPack),
+      ruleDiagnostics: {
+        forceRuleIndexRefresh,
+        refreshed: forceRuleIndexRefresh,
+        before: diagnosticsBefore,
+        after: diagnosticsAfter
+      },
+      activeSkillSummary: {
+        bundleId,
+        skillDir,
+        targetLayerConstraint,
+        targetProfileKeyConstraint,
+        selectedProfiles: effectiveSkillSnapshot.selectedProfiles || [],
+        layerSkillCount: materialPack.layerSkillItems.length,
+        candidateSkillCount: materialPack.layerSkillItems.length,
+        referenceAssetCount: materialPack.referenceAssets.length
+      }
+    };
+  }
+
   async buildReferenceAssets(projectId, moduleId, referenceAssetIds = []) {
     if (!projectId || !moduleId || !referenceAssetIds.length) {
       return [];
@@ -218,139 +571,33 @@ export class ReplayTaskService {
     llmProfileId = "",
     projectId = "",
     moduleId = "",
-    referenceAssetIds = []
+    referenceAssetIds = [],
+    forceRuleIndexRefresh = false
   }) {
-    const group = groupId ? await this.rejectionService.getGroup(groupId) : null;
-    const selectedIds = rejectionIds.length ? rejectionIds : group?.memberIds || [];
-    if (!selectedIds.length) {
-      throw createHttpError("Replay task requires rejectionIds or groupId");
-    }
-
-    const records = [];
-    for (const rejectionId of selectedIds) {
-      const record = await this.rejectionService.getRecord(rejectionId);
-      if (record) records.push(record);
-    }
-    if (!records.length) {
-      throw createHttpError("No rejection records found");
-    }
-
-    const inferredProjectId = projectId || records[0]?.projectId || group?.projectId || "";
-    const inferredModuleId = moduleId || records[0]?.moduleId || group?.moduleId || "";
-    if (records.some((record) => (record.projectId || inferredProjectId) !== inferredProjectId)) {
-      throw createHttpError("Replay task only supports records from the same project");
-    }
-    if (records.some((record) => String(record.moduleId || "") !== String(inferredModuleId || ""))) {
-      throw createHttpError("Replay task only supports records from the same module");
-    }
-
-    const activeBundle = targetBundleId
-      ? await this.skillBundleService.getBundle(targetBundleId)
-      : await this.skillBundleService.getActiveBundle();
-    const bundleId = activeBundle?.id || targetBundleId || "bundle-base";
-    const skillDir = await this.skillBundleService.getSkillDir(bundleId);
-    const ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, skillDir);
-    const effectiveAreas = targetAreas.length ? targetAreas : [...new Set(records.map((item) => normalizeArea(item.skillContext?.targetArea)))];
-    const normalizedReferenceAssetIds = normalizeReferenceAssetIds(referenceAssetIds);
-
-    let project = null;
-    let module = null;
-    if (inferredProjectId) {
-      project = await this.projectService.getProject(inferredProjectId);
-    }
-    if (inferredProjectId && inferredModuleId) {
-      module = await this.projectService.getModule(inferredProjectId, inferredModuleId);
-    }
-    const referenceAssets = await this.buildReferenceAssets(inferredProjectId, inferredModuleId, normalizedReferenceAssetIds);
-    const moduleSkillKey = normalizeSkillKey(module?.moduleSkillKey || module?.name || records[0]?.moduleName || "");
-    const domainKey = normalizeSkillKey(module?.domain || project?.domain || records[0]?.domain || "embedded_vcu");
-    const documentType = records[0]?.documentType || "software_requirement";
-    const candidateSkillItems = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, effectiveAreas, {
-      documentType,
-      domain: domainKey,
-      moduleSkillKey
+    const context = await this.resolveTaskContext({
+      rejectionIds,
+      groupId,
+      targetBundleId,
+      targetAreas,
+      projectId,
+      moduleId,
+      referenceAssetIds
     });
-    const effectiveSkills = await this.skillLoader.loadForContext(
-      {
-        documentType,
-        domain: domainKey,
-        moduleSkillKey
-      },
-      skillDir
-    );
-    const effectiveSkillSnapshot = {
-      hash: createHash("sha1")
-        .update(
-          JSON.stringify({
-            bundleId,
-            ruleIndexVersion: ruleIndex.ruleIndexVersion,
-            profiles: effectiveSkills.__profiles || [],
-            candidateSkillCodes: candidateSkillItems.map((item) => item.skillCode || item.ruleId),
-            writing: effectiveSkills["requirement_writing.md"] || "",
-            extraction: effectiveSkills["requirement_extraction.md"] || "",
-            validation: effectiveSkills["requirement_validation.md"] || "",
-            knowledge: effectiveSkills["domain-knowledge.json"] || {}
-          })
-        )
-        .digest("hex"),
-      selectedProfiles: effectiveSkills.__profiles || [],
-      compiledPrompt: truncate(effectiveSkills.__compiledPrompt || "", 6000),
-      compiledSkillPack: effectiveSkills.__compiledSkillPack || null,
-      files: {
-        "requirement_extraction.md": effectiveSkills["requirement_extraction.md"] || "",
-        "requirement_writing.md": effectiveSkills["requirement_writing.md"] || "",
-        "requirement_validation.md": effectiveSkills["requirement_validation.md"] || "",
-        "examples/good_examples.md": effectiveSkills["examples/good_examples.md"] || "",
-        "examples/bad_examples.md": effectiveSkills["examples/bad_examples.md"] || "",
-        "domain-knowledge.json": effectiveSkills["domain-knowledge.json"] || {}
-      }
-    };
-
-    const materialPack = {
-      summary: `${records.length} rejection records selected for replay`,
-      targetBundleId: bundleId,
-      targetAreas: effectiveAreas,
-      allowedKindsByArea: buildAllowedKindsByArea(),
-      layerDefinitions: buildLayerDefinitions(),
-      ruleIndexVersion: ruleIndex.ruleIndexVersion,
-      moduleContext: {
-        projectId: inferredProjectId,
-        projectName: project?.name || records[0]?.projectName || "",
-        moduleId: inferredModuleId,
-        moduleName: module?.name || records[0]?.moduleName || "",
-        moduleSkillKey,
-        domain: domainKey,
-        documentType
-      },
-      effectiveSkillSnapshot,
-      candidateSkillItems: candidateSkillItems.map((item) => ({
-        skillCode: item.skillCode || item.ruleId,
-        layer: item.layer,
-        profileKey: item.profileKey,
-        kind: item.kind,
-        title: item.title,
-        content: item.content,
-        contentSummary: truncate(item.content || "", 220),
-        targetAreas: [item.targetArea],
-        targetFile: item.targetFile,
-        whyRelevant: `${item.layer}/${item.profileKey}`
-      })),
-      referenceAssets,
-      rejectionSnapshots: records.map((record) => ({
-        id: record.id,
-        projectId: record.projectId,
-        moduleId: record.moduleId,
-        documentType: record.documentType,
-        requirementCode: record.requirementCode,
-        reasonCategory: record.reasonCategory,
-        reasonText: record.reasonText,
-        expectedNote: record.expectedNote,
-        targetArea: record.skillContext?.targetArea,
-        outputSnapshot: record.outputSnapshot,
-        sourceRefsSnapshot: record.sourceRefsSnapshot || [],
-        projectEvidenceSnapshot: record.projectEvidenceSnapshot || [],
-        relevantRules: record.skillContext?.relevantRules || []
-      }))
+    const {
+      group,
+      selectedIds,
+      records,
+      inferredProjectId,
+      inferredModuleId,
+      bundleId,
+      effectiveAreas,
+      normalizedReferenceAssetIds,
+      project,
+      module,
+      materialPack
+    } = {
+      ...context,
+      ...(await this.buildTaskPreview(context, { forceRuleIndexRefresh }))
     };
 
     let proposal = null;
@@ -457,7 +704,12 @@ export class ReplayTaskService {
     const relevantRules = await this.skillRuleService.getRelevantRuleSnapshot(bundleId, targetAreas, {
       documentType: materialPack.moduleContext?.documentType || "software_requirement",
       domain: materialPack.moduleContext?.domain || "",
-      moduleSkillKey: materialPack.moduleContext?.moduleSkillKey || ""
+      moduleSkillKey: materialPack.moduleContext?.moduleSkillKey || "",
+      layerConstraint: materialPack.targetLayerConstraint || "",
+      profileKeyConstraint: materialPack.targetProfileKeyConstraint || ""
+    }, {
+      layerConstraint: materialPack.targetLayerConstraint || "",
+      profileKeyConstraint: materialPack.targetProfileKeyConstraint || ""
     });
     const grouped = new Map();
     for (const record of records) {
@@ -480,7 +732,11 @@ export class ReplayTaskService {
 
     const normalizedItems = Array.isArray(generated.items) ? generated.items : [];
     if (normalizedItems.length) {
-      validateProposalTargets(normalizedItems, targetAreas);
+      validateProposalTargets(normalizedItems, targetAreas, {
+        targetLayerConstraint: materialPack.targetLayerConstraint || "",
+        targetProfileKeyConstraint: materialPack.targetProfileKeyConstraint || "",
+        allowedSkillCodes: (materialPack.layerSkillItems || materialPack.candidateSkillItems || []).map((item) => item.skillCode || item.ruleId)
+      });
       for (const item of normalizedItems) {
         proposal.items.push({
           proposalItemId: randomUUID(),
@@ -555,11 +811,8 @@ export class ReplayTaskService {
           proposalId: proposal.id,
           action: "add_skill_item",
           targetSkillCode: "",
-          targetLayer: targetArea === "examples" ? "module" : "docType",
-          targetProfileKey:
-            targetArea === "examples"
-              ? materialPack.moduleContext?.moduleSkillKey || normalizeSkillKey(materialPack.moduleContext?.moduleName || "")
-              : materialPack.moduleContext?.documentType || "software_requirement",
+          targetLayer: materialPack.targetLayerConstraint || (targetArea === "examples" ? "module" : "docType"),
+          targetProfileKey: materialPack.targetProfileKeyConstraint || materialPack.moduleContext?.documentType || "software_requirement",
           kind:
             targetArea === "examples"
               ? "bad_example"
@@ -606,6 +859,14 @@ export class ReplayTaskService {
         ...payload
       };
     }
+    const validationCandidate = { ...item, ...(item.editedPayload || {}) };
+    validateProposalTargets([validationCandidate], task.materialPack?.targetAreas || [], {
+      targetLayerConstraint: task.materialPack?.targetLayerConstraint || "",
+      targetProfileKeyConstraint: task.materialPack?.targetProfileKeyConstraint || "",
+      allowedSkillCodes: (task.materialPack?.layerSkillItems || task.materialPack?.candidateSkillItems || []).map(
+        (entry) => entry.skillCode || entry.ruleId
+      )
+    });
     item.updatedAt = now();
     task.updatedAt = now();
     await writeJson(getTaskPath(taskId), task);
@@ -624,7 +885,13 @@ export class ReplayTaskService {
     if (!acceptedItems.length) {
       throw createHttpError("No accepted proposal items to apply");
     }
-    validateProposalTargets(acceptedItems, task.materialPack?.targetAreas || []);
+    validateProposalTargets(acceptedItems, task.materialPack?.targetAreas || [], {
+      targetLayerConstraint: task.materialPack?.targetLayerConstraint || "",
+      targetProfileKeyConstraint: task.materialPack?.targetProfileKeyConstraint || "",
+      allowedSkillCodes: (task.materialPack?.layerSkillItems || task.materialPack?.candidateSkillItems || []).map(
+        (item) => item.skillCode || item.ruleId
+      )
+    });
 
     const candidateBundle = await this.skillBundleService.createCandidateBundle({
       baseBundleId: activeBundle?.id || task.targetBundleId,

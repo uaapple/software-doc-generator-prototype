@@ -103,7 +103,7 @@
           "summary": "解释 Active Skill、技能工单和 fallback 修复的定位与常见操作。",
           "audience": "系统使用者",
           "status": "stable",
-          "lastReviewed": "2026-04-17",
+          "lastReviewed": "2026-04-20",
           "relatedPages": [
             "feedback-pool-replay",
             "implementation-principles"
@@ -115,7 +115,7 @@
           "summary": "介绍驳回记录、回投任务、Fallback 历史任务和后续修正链路。",
           "audience": "系统使用者",
           "status": "stable",
-          "lastReviewed": "2026-04-17",
+          "lastReviewed": "2026-04-20",
           "relatedPages": [
             "skill-management-fallback",
             "implementation-principles"

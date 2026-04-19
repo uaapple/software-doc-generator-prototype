@@ -16,6 +16,7 @@ import { ModuleSkillService } from "./services/module-skill-service.js";
 import { SkillManagementService } from "./services/skill-management-service.js";
 import { SkillWorkOrderService } from "./services/skill-work-order-service.js";
 import { SkillLoader } from "./services/skill-loader.js";
+import { ReplayLabService, DEFAULT_REPLAY_LAB_TEMPLATE_TASK_ID } from "./services/replay-lab-service.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -72,6 +73,7 @@ export async function createApp() {
   const skillManagementService = new SkillManagementService();
   const skillWorkOrderService = new SkillWorkOrderService();
   const skillLoader = new SkillLoader();
+  const replayLabService = new ReplayLabService();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
 
@@ -159,6 +161,9 @@ export async function createApp() {
   });
   app.get("/feedback-pool", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "feedback-pool.html"));
+  });
+  app.get("/replay-lab", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "replay-lab.html"));
   });
   app.use(express.static(config.publicDir));
 
@@ -655,6 +660,15 @@ export async function createApp() {
     }
   });
 
+  app.delete("/api/rejections/:rejectionId", async (req, res, next) => {
+    try {
+      const result = await rejectionService.deleteRecord(req.params.rejectionId);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/rejection-groups/rebuild", async (_req, res, next) => {
     try {
       const groups = await rejectionService.rebuildGroups();
@@ -698,6 +712,34 @@ export async function createApp() {
         return res.status(404).json({ error: "Replay task not found" });
       }
       res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/replay-lab/default-template", (_req, res) => {
+    res.json({ taskId: DEFAULT_REPLAY_LAB_TEMPLATE_TASK_ID });
+  });
+
+  app.get("/api/replay-lab/templates/:taskId", async (req, res, next) => {
+    try {
+      res.json(await replayLabService.getTemplate(req.params.taskId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/replay-lab/templates/:taskId/rerun", async (req, res, next) => {
+    try {
+      res.status(201).json(await replayLabService.rerunTemplate(req.params.taskId, req.body || {}));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/replay-lab/runs/:taskId", async (req, res, next) => {
+    try {
+      res.json(await replayLabService.getRun(req.params.taskId));
     } catch (error) {
       next(error);
     }

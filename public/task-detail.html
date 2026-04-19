@@ -46,6 +46,7 @@
       <div class="files-dialog-head">
         <h2>结构化驳回</h2>
         <p id="reject-dialog-subtitle" class="subtitle">请填写这条生成结果的驳回原因。</p>
+        <p id="reject-dialog-status" class="dialog-status" aria-live="polite"></p>
       </div>
       <form id="reject-form" class="files-list stack-form" method="dialog">
         <label>
@@ -79,12 +80,31 @@
           期望修正
           <textarea name="expectedNote" rows="4" placeholder="可选：描述你期望模型后续如何修正。"></textarea>
         </label>
+        <label>
+          修正规则类型
+          <select name="targetArea" required>
+            <option value="validation" selected>Validation / 校验规则</option>
+            <option value="writing">Writing / 写作规则</option>
+            <option value="extraction">Extraction / 抽取规则</option>
+            <option value="examples">Examples / 示例规则</option>
+            <option value="domain_knowledge">Domain Knowledge / 领域知识</option>
+          </select>
+        </label>
+        <label>
+          修正层级
+          <select name="targetLayerConstraint" required>
+            <option value="module">Module</option>
+            <option value="domain">Domain</option>
+            <option value="docType" selected>DocType</option>
+            <option value="generic">Generic</option>
+          </select>
+        </label>
         <label class="checkbox-item">
           <input name="includeInPool" type="checkbox" checked />
           <span>加入驳回池，供后续反馈聚类与回投修正使用</span>
         </label>
         <div class="form-actions">
-          <button type="submit">确认驳回</button>
+          <button id="reject-form-submit" type="submit">确认驳回</button>
           <button id="reject-form-cancel" type="button" class="secondary-button">取消</button>
           <button id="reject-dialog-close" type="button" class="secondary-button">关闭</button>
         </div>

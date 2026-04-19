@@ -3,7 +3,9 @@ const statusRoot = document.querySelector("#status");
 const rejectDialog = document.querySelector("#reject-dialog");
 const rejectDialogClose = document.querySelector("#reject-dialog-close");
 const rejectDialogSubtitle = document.querySelector("#reject-dialog-subtitle");
+const rejectDialogStatus = document.querySelector("#reject-dialog-status");
 const rejectForm = document.querySelector("#reject-form");
+const rejectFormSubmit = document.querySelector("#reject-form-submit");
 const rejectFormCancel = document.querySelector("#reject-form-cancel");
 const acceptedEditDialog = document.querySelector("#accepted-edit-dialog");
 const acceptedEditSubtitle = document.querySelector("#accepted-edit-subtitle");
@@ -28,6 +30,7 @@ const PENDING_GENERATION_MAX_AGE_MS = 30 * 60 * 1000;
 let taskPollTimer = 0;
 const state = {
   rejectContext: null,
+  rejectSubmitting: false,
   acceptedEditContext: null,
   activeWorkspaceTab: "",
   acceptedDragContext: null,
@@ -51,9 +54,20 @@ feedbackHistoryDrawerBackdrop?.addEventListener("click", closeFeedbackHistoryDra
 feedbackHistoryTaskListRoot?.addEventListener("click", handleFeedbackHistoryTaskClick);
 window.addEventListener("message", handleWorkspaceMessage);
 rejectDialog?.addEventListener("click", (event) => {
+  if (state.rejectSubmitting) {
+    return;
+  }
   if (event.target === rejectDialog) {
     closeRejectDialog();
   }
+});
+rejectDialog?.addEventListener("cancel", (event) => {
+  if (state.rejectSubmitting) {
+    event.preventDefault();
+    return;
+  }
+  event.preventDefault();
+  closeRejectDialog();
 });
 acceptedEditDialog?.addEventListener("click", (event) => {
   if (event.target === acceptedEditDialog) {
@@ -1341,9 +1355,12 @@ function openRejectDialog(context) {
     return;
   }
   state.rejectContext = context;
+  state.rejectSubmitting = false;
   rejectForm.reset();
   rejectForm.elements.namedItem("severity").value = "medium";
   rejectDialogSubtitle.textContent = `你正在驳回 ${context.requirementCode}，请填写结构化原因。`;
+  setRejectDialogStatus("");
+  setRejectSubmitting(false);
   rejectDialog.showModal();
 }
 
@@ -1633,19 +1650,26 @@ async function handleAcceptedEditSubmit(event) {
   }
 }
 
-function closeRejectDialog() {
+function closeRejectDialog(force = false) {
+  if (state.rejectSubmitting && !force) {
+    return;
+  }
   state.rejectContext = null;
+  setRejectDialogStatus("");
+  setRejectSubmitting(false);
   rejectForm?.reset();
   rejectDialog?.close();
 }
 
 async function handleRejectSubmit(event) {
   event.preventDefault();
-  if (!state.rejectContext?.root) {
+  if (!state.rejectContext?.root || state.rejectSubmitting) {
     return;
   }
 
   try {
+    setRejectSubmitting(true);
+    setRejectDialogStatus("正在提交驳回，请稍候...");
     const formData = new FormData(rejectForm);
     const payload = {
       status: "rejected",
@@ -1658,6 +1682,8 @@ async function handleRejectSubmit(event) {
       severity: String(formData.get("severity") || "medium"),
       reasonText: String(formData.get("reasonText") || "").trim(),
       expectedNote: String(formData.get("expectedNote") || "").trim(),
+      targetArea: String(formData.get("targetArea") || "validation").trim(),
+      targetLayerConstraint: String(formData.get("targetLayerConstraint") || "docType").trim(),
       includeInPool: formData.get("includeInPool") === "on",
       comment: "在任务详情页中人工驳回"
     };
@@ -1670,13 +1696,37 @@ async function handleRejectSubmit(event) {
         body: JSON.stringify(payload)
       }
     );
-    closeRejectDialog();
+    setRejectDialogStatus("驳回已提交，正在刷新页面...");
+    closeRejectDialog(true);
     setStatus(payload.includeInPool ? "结果已驳回并沉淀到反馈池。" : "结果已驳回，未加入反馈池。");
     window.location.reload();
   } catch (error) {
+    setRejectSubmitting(false);
+    setRejectDialogStatus(localizeErrorMessage(error.message || "驳回提交失败"), true);
     handleError(error);
   }
 }
+
+function setRejectSubmitting(isSubmitting) {
+  state.rejectSubmitting = isSubmitting;
+  if (rejectFormSubmit) {
+    rejectFormSubmit.textContent = isSubmitting ? "提交中..." : "确认驳回";
+  }
+  rejectForm
+    ?.querySelectorAll("input, textarea, select, button")
+    .forEach((element) => {
+      element.disabled = isSubmitting;
+    });
+}
+
+function setRejectDialogStatus(message = "", isError = false) {
+  if (!rejectDialogStatus) {
+    return;
+  }
+  rejectDialogStatus.textContent = message;
+  rejectDialogStatus.classList.toggle("error", isError);
+}
+
 function renderBreadcrumb(items) {
   const root = document.querySelector("#breadcrumb");
   if (!root) {
