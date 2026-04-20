@@ -17,6 +17,37 @@ function getRuleIndexPath(bundleId) {
   return path.join(config.skillRuleDir, `${bundleId}.json`);
 }
 
+function isWindowsAbsolutePath(value = "") {
+  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
+}
+
+function resolveRuntimePath(value = "") {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  if (path.isAbsolute(text) || isWindowsAbsolutePath(text)) {
+    return text;
+  }
+
+  return path.resolve(config.rootDir, text);
+}
+
+function serializeRuntimePath(value = "") {
+  const resolved = resolveRuntimePath(value);
+  if (!resolved) {
+    return "";
+  }
+
+  const relativePath = path.relative(config.rootDir, resolved);
+  if (relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
+    return relativePath.replaceAll("\\", "/");
+  }
+
+  return resolved.replaceAll("\\", "/");
+}
+
 function normalizeTargetArea(area = "") {
   return area || "validation";
 }
@@ -35,15 +66,12 @@ function mapTargetAreaToKinds(area = "") {
 }
 
 function normalizeFilesystemPath(value = "") {
-  const text = String(value || "").trim();
+  const text = resolveRuntimePath(value);
   if (!text) {
     return "";
   }
-  try {
-    return path.resolve(text).replaceAll("\\", "/").toLowerCase();
-  } catch {
-    return text.replaceAll("\\", "/").toLowerCase();
-  }
+
+  return text.replaceAll("\\", "/").toLowerCase();
 }
 
 function buildRuleIndexSourceFingerprint(registryIndex = {}) {
@@ -200,7 +228,7 @@ export class SkillRuleService {
       bundleId,
       ruleIndexVersion: options.ruleIndexVersion || `registry-${Date.now()}`,
       importedAt: now(),
-      skillDir,
+      skillDir: serializeRuntimePath(skillDir),
       sourceFingerprint,
       rules,
       domainKnowledge: await readJson(path.join(skillDir, "domain-knowledge.json"), {

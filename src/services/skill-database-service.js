@@ -42,6 +42,24 @@ function sortByOrder(items = []) {
   return [...items].sort((left, right) => Number(left.order || 0) - Number(right.order || 0));
 }
 
+const RESET_TABLES = [
+  "skill_blueprint_section_requirement_types",
+  "skill_blueprint_sections",
+  "skill_blueprint_policies",
+  "skill_source_policy_settings",
+  "skill_normalization_rules",
+  "skill_forbidden_expansion_entries",
+  "skill_forbidden_expansions",
+  "skill_source_alias_values",
+  "skill_source_aliases",
+  "skill_rule_hint_source_basis",
+  "skill_rule_hint_section_hints",
+  "skill_rule_hints",
+  "skill_items",
+  "profiles",
+  "skill_meta"
+];
+
 export class SkillDatabaseService {
   constructor(dbPath = config.skillDatabasePath) {
     const cached = INSTANCES.get(dbPath);
@@ -230,7 +248,21 @@ export class SkillDatabaseService {
     `);
   }
 
-  importRegistries(registries = []) {
+  hasForeignKeyViolations() {
+    return this.db.prepare("PRAGMA foreign_key_check").all().length > 0;
+  }
+
+  resetSchema() {
+    this.db.exec("PRAGMA foreign_keys = OFF");
+    try {
+      this.db.exec(RESET_TABLES.map((tableName) => `DROP TABLE IF EXISTS ${tableName};`).join("\n"));
+      this.initializeSchema();
+    } finally {
+      this.db.exec("PRAGMA foreign_keys = ON");
+    }
+  }
+
+  importRegistriesOnce(registries = []) {
     this.db.exec("BEGIN");
     try {
       this.clearAll();
@@ -238,10 +270,38 @@ export class SkillDatabaseService {
         this.saveProfileRegistry(registry);
       }
       this.markImported();
+      const fkViolations = this.db.prepare("PRAGMA foreign_key_check").all();
+      if (fkViolations.length) {
+        const error = new Error("Foreign key check failed after importing registries");
+        error.code = "skill_database_foreign_key_check_failed";
+        error.details = fkViolations;
+        throw error;
+      }
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    }
+  }
+
+  importRegistries(registries = []) {
+    const requiresReset = this.hasForeignKeyViolations();
+    if (requiresReset) {
+      this.resetSchema();
+    }
+
+    try {
+      this.importRegistriesOnce(registries);
+    } catch (error) {
+      const isRecoverableConstraint =
+        error?.code === "ERR_SQLITE_ERROR" ||
+        error?.code === "skill_database_foreign_key_check_failed";
+      if (!isRecoverableConstraint) {
+        throw error;
+      }
+
+      this.resetSchema();
+      this.importRegistriesOnce(registries);
     }
   }
 

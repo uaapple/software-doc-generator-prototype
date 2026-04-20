@@ -3726,11 +3726,11 @@
   ],
   "applyResult": null,
   "createdAt": "2026-04-19T16:24:28.170Z",
-  "updatedAt": "2026-04-19T16:25:13.193Z",
+  "updatedAt": "2026-04-20T03:03:59.092Z",
   "workOrderId": "10780c51-0a8a-4daf-a64a-250e25fec915",
   "workOrderSummary": {
     "id": "10780c51-0a8a-4daf-a64a-250e25fec915",
-    "status": "pending_review",
+    "status": "applied",
     "itemStats": {
       "total": 1,
       "modifyExisting": 0,
@@ -3738,7 +3738,7 @@
       "validatorOnly": 2,
       "accepted": 0,
       "rejected": 0,
-      "applied": 0
+      "applied": 1
     },
     "decisionSummary": "需要创建一个新的技能，指导在生成软件需求时如何结合系统需求和代码文件，补充代码侧的软件级前置条件，避免仅停留在系统需求改写层。"
   }

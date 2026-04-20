@@ -1,9 +1,9 @@
 {
   "bundleId": "bundle-base",
-  "ruleIndexVersion": "registry-1776630928547",
-  "importedAt": "2026-04-19T20:35:28.547Z",
-  "skillDir": "C:\\Codex\\软件文档生成\\skills\\active",
-  "sourceFingerprint": "8cd3accea9985d0547971abb47400c05686b7a76",
+  "ruleIndexVersion": "registry-1776648885748",
+  "importedAt": "2026-04-20T01:34:45.748Z",
+  "skillDir": "skills/active",
+  "sourceFingerprint": "3acfea187a3270b37edf80552088b263719510b5",
   "rules": [
     {
       "id": "GEN-generic-extraction_rule-001",
@@ -3894,8 +3894,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.256Z",
-      "updatedAt": "2026-04-19T18:58:39.256Z"
+      "createdAt": "2026-04-20T01:34:45.586Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-002",
@@ -3922,8 +3922,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.256Z",
-      "updatedAt": "2026-04-19T18:58:39.256Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-003",
@@ -3950,8 +3950,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.256Z",
-      "updatedAt": "2026-04-19T18:58:39.256Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-004",
@@ -3978,8 +3978,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-005",
@@ -4006,8 +4006,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-006",
@@ -4034,8 +4034,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-007",
@@ -4062,8 +4062,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-008",
@@ -4090,8 +4090,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-009",
@@ -4118,8 +4118,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-010",
@@ -4146,8 +4146,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-011",
@@ -4174,8 +4174,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-012",
@@ -4202,8 +4202,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-001",
@@ -4230,8 +4230,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-002",
@@ -4258,8 +4258,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-003",
@@ -4286,8 +4286,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-004",
@@ -4314,8 +4314,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-005",
@@ -4342,8 +4342,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-006",
@@ -4370,8 +4370,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-007",
@@ -4398,8 +4398,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-008",
@@ -4426,8 +4426,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-009",
@@ -4454,8 +4454,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-010",
@@ -4482,8 +4482,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-001",
@@ -4510,8 +4510,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-002",
@@ -4538,8 +4538,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-003",
@@ -4566,8 +4566,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-004",
@@ -4594,8 +4594,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-005",
@@ -4622,8 +4622,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-006",
@@ -4650,8 +4650,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-good_example-001",
@@ -4678,8 +4678,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-good_example-002",
@@ -4706,8 +4706,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-good_example-003",
@@ -4734,8 +4734,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-good_example-004",
@@ -4762,8 +4762,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-001",
@@ -4790,8 +4790,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-002",
@@ -4818,8 +4818,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-003",
@@ -4846,8 +4846,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-004",
@@ -4874,8 +4874,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-001",
@@ -4902,8 +4902,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-002",
@@ -4930,8 +4930,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-003",
@@ -4958,8 +4958,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-004",
@@ -4986,8 +4986,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-005",
@@ -5014,8 +5014,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-006",
@@ -5042,8 +5042,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-19T18:58:39.257Z",
-      "updatedAt": "2026-04-19T18:58:39.257Z"
+      "createdAt": "2026-04-20T01:34:45.590Z",
+      "updatedAt": "2026-04-20T01:34:45.590Z"
     },
     {
       "id": "DOM-embedded_vcu-source_policy_setting-001",

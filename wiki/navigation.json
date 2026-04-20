@@ -98,6 +98,18 @@
       "title": "高级能力",
       "pages": [
         {
+          "slug": "skill-overview",
+          "title": "Skill 概览",
+          "summary": "集中解释什么是工程里的 skill、它和 LLM 如何配合，以及当前 skill 的主要类目。",
+          "audience": "系统使用者",
+          "status": "stable",
+          "lastReviewed": "2026-04-20",
+          "relatedPages": [
+            "implementation-principles",
+            "skill-management-fallback"
+          ]
+        },
+        {
           "slug": "skill-management-fallback",
           "title": "技能管理与 Fallback",
           "summary": "解释 Active Skill、技能工单和 fallback 修复的定位与常见操作。",
@@ -105,6 +117,7 @@
           "status": "stable",
           "lastReviewed": "2026-04-20",
           "relatedPages": [
+            "skill-overview",
             "feedback-pool-replay",
             "implementation-principles"
           ]
@@ -135,6 +148,7 @@
           "lastReviewed": "2026-04-17",
           "relatedPages": [
             "requirement-generation",
+            "skill-overview",
             "skill-management-fallback",
             "feedback-pool-replay"
           ]

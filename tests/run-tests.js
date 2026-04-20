@@ -2448,6 +2448,50 @@ const tests = [
     }
   },
   {
+    name: "Skill registry rebuild recovers from orphaned SQLite rows",
+    run: async () => {
+      await withTempConfig(async () => {
+        const databaseService = new SkillDatabaseService();
+        const registryService = new SkillManagementService().registryService;
+
+        const initialRegistries = await registryService.importActiveRegistriesFromFiles(config.activeSkillDir);
+        databaseService.importRegistries(initialRegistries);
+
+        databaseService.db.exec("PRAGMA foreign_keys = OFF");
+        const orphanProfile = databaseService.db
+          .prepare(
+            `
+              INSERT INTO profiles(version, layer, profile_key, display_name, document_type_scope, status, created_at, updated_at)
+              VALUES(1, 'module', 'orphan_module', 'Orphan Module', '', 'active', ?, ?)
+              RETURNING id
+            `
+          )
+          .get(new Date().toISOString(), new Date().toISOString());
+        databaseService.db
+          .prepare(
+            `
+              INSERT INTO skill_items(
+                profile_id, skill_code, kind, title, content, status, order_index, section_key,
+                provenance_json, review_json, structured_payload_json, created_at, updated_at
+              )
+              VALUES(?, 'MOD-orphan_module-validation_rule-001', 'validation_rule', 'orphan', 'orphan', 'active', 1, 'default', '{}', '{}', NULL, ?, ?)
+            `
+          )
+          .run(orphanProfile.id, new Date().toISOString(), new Date().toISOString());
+        databaseService.db.prepare("DELETE FROM profiles WHERE id = ?").run(orphanProfile.id);
+        databaseService.db.exec("PRAGMA foreign_keys = ON");
+
+        await assert.doesNotReject(async () => {
+          await registryService.rebuildDatabaseFromFiles(config.activeSkillDir);
+        });
+
+        const fkViolations = databaseService.db.prepare("PRAGMA foreign_key_check").all();
+        assert.equal(fkViolations.length, 0);
+        assert.equal(databaseService.getItem("MOD-orphan_module-validation_rule-001"), null);
+      });
+    }
+  },
+  {
     name: "Structured policy skills can be stored as plain readable text without raw JSON input",
     run: async () => {
       await withTempConfig(async () => {
@@ -3177,6 +3221,21 @@ const tests = [
     }
   },
   {
+    name: "Skill rule index stores repository-relative skillDir without cross-platform path churn",
+    run: async () => {
+      await withTempConfig(async () => {
+        const ruleService = new SkillRuleService();
+
+        const imported = await ruleService.importBundleRules("bundle-base", config.activeSkillDir);
+        assert.equal(imported.skillDir, "skills/active");
+
+        const ensured = await ruleService.ensureBundleRuleIndex("bundle-base", config.activeSkillDir);
+        assert.equal(ensured.importedAt, imported.importedAt);
+        assert.equal(ensured.skillDir, "skills/active");
+      });
+    }
+  },
+  {
     name: "Wiki app renders home page, content page, breadcrumbs, and related links",
     run: async () => {
       await withTempConfig(async (tempDir) => {
@@ -3197,6 +3256,22 @@ const tests = [
         assert.ok(detailHtml.includes("相关页面"));
         assert.ok(detailHtml.includes("breadcrumb"));
       });
+    }
+  },
+  {
+    name: "Repository wiki includes a dedicated skill overview page",
+    run: async () => {
+      const { loadWikiSite } = await import("../src/wiki/site-service.js");
+      const site = await loadWikiSite();
+
+      const overview = site.pagesBySlug.get("skill-overview");
+      assert.ok(overview);
+      assert.equal(overview.groupTitle, "高级能力");
+      assert.ok(overview.markdown.includes("什么是 skill"));
+      assert.ok(overview.markdown.includes("skill 和 LLM"));
+      assert.ok(overview.markdown.includes("skill 类目"));
+      assert.ok(overview.relatedPages.some((page) => page.slug === "implementation-principles"));
+      assert.ok(overview.relatedPages.some((page) => page.slug === "skill-management-fallback"));
     }
   },
   {
