@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import os from "node:os";
 import { config } from "../src/config.js";
+import { createApp } from "../src/app.js";
 import { CExtractor } from "../src/services/c-extractor.js";
 import { ValidationService } from "../src/services/validation-service.js";
 import { LlmService, buildReplayModelInput } from "../src/services/llm-service.js";
@@ -21,6 +23,7 @@ import { SkillManagementService } from "../src/services/skill-management-service
 import { SkillDatabaseService } from "../src/services/skill-database-service.js";
 import { SkillWorkOrderService } from "../src/services/skill-work-order-service.js";
 import { ReplayLabService } from "../src/services/replay-lab-service.js";
+import { FeedbackTicketService } from "../src/services/feedback-ticket-service.js";
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -64,6 +67,8 @@ async function withTempConfig(run) {
     rejectionGroupStorePath: path.join(tempDir, "data", "rejections", "groups.json"),
     replayTaskStoreDir: path.join(tempDir, "data", "replay-tasks"),
     skillWorkOrderStoreDir: path.join(tempDir, "data", "skill-work-orders"),
+    feedbackTicketStoreDir: path.join(tempDir, "data", "feedback-tickets"),
+    feedbackTicketUploadDir: path.join(tempDir, "data", "uploads", "feedback-tickets"),
     templateDir: path.join(tempDir, "templates"),
     templatePath: path.join(tempDir, "templates", "software-requirement-template.json"),
     skillDir: path.join(tempDir, "skills", "active")
@@ -130,6 +135,28 @@ async function seedFixtureFiles(tempDir) {
   await fs.writeFile(path.join(tempDir, "templates", "software-requirement-template.json"), JSON.stringify({ name: "default-template", language: "zh-CN", requirementIdPrefix: "SWR", sections: [{ title: "????", type: "functional", maxItems: 4, verificationHint: "??????????????????" }] }, null, 2), "utf8");
   await fs.writeFile(path.join(tempDir, "templates", "detail-design-template.json"), JSON.stringify({ name: "detail-design-template", language: "zh-CN", requirementIdPrefix: "SDD", sections: [{ title: "????", type: "functional", maxItems: 3, verificationHint: "?????????????" }] }, null, 2), "utf8");
   await fs.writeFile(path.join(tempDir, "templates", "hil-test-case-template.json"), JSON.stringify({ name: "hil-test-case-template", language: "zh-CN", requirementIdPrefix: "HIL", sections: [{ title: "HIL ????", type: "functional", maxItems: 3, verificationHint: "????????????????????" }] }, null, 2), "utf8");
+}
+
+async function withTestServer(run) {
+  const app = await createApp();
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    return await run({ baseUrl });
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
 }
 
 async function seedWikiFixture(rootDir, overrides = {}) {
@@ -2492,6 +2519,112 @@ const tests = [
     }
   },
   {
+    name: "Feedback ticket service stores issue detail and uploaded image metadata",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new FeedbackTicketService();
+
+        const created = await service.createTicket(
+          {
+            title: "结果页按钮状态不清晰",
+            detail: "在任务详情页里，接受和驳回按钮的状态切换不够直观，建议增强反馈。",
+            pagePath: "/projects/demo/modules/demo/tasks/task-1",
+            pageTitle: "任务详情"
+          },
+          [
+            {
+              originalname: "issue-shot.png",
+              filename: "1710000000000-issue-shot.png",
+              mimetype: "image/png",
+              size: 2048,
+              path: path.join(config.feedbackTicketUploadDir, "1710000000000-issue-shot.png")
+            }
+          ]
+        );
+
+        assert.equal(created.title, "结果页按钮状态不清晰");
+        assert.equal(created.pagePath, "/projects/demo/modules/demo/tasks/task-1");
+        assert.equal(created.attachments.length, 1);
+        assert.equal(created.attachments[0].mimeType, "image/png");
+        assert.equal(created.attachments[0].relativePath, "feedback-tickets/1710000000000-issue-shot.png");
+
+        const listed = await service.listTickets();
+        assert.equal(listed.length, 1);
+        assert.equal(listed[0].id, created.id);
+      });
+    }
+  },
+  {
+    name: "Feedback ticket API exposes read-only ticket list and attachment preview urls",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new FeedbackTicketService();
+
+        const firstFileName = "1710000000000-issue-shot.png";
+        const secondFileName = "1710000000001-issue-shot.png";
+
+        await fs.writeFile(path.join(config.feedbackTicketUploadDir, firstFileName), "first-image", "utf8");
+        const first = await service.createTicket(
+          {
+            title: "任务详情页需要更清晰的状态提示",
+            detail: "驳回和接受后的反馈提示不够明显。",
+            pagePath: "/projects/demo/modules/demo/tasks/task-1",
+            pageTitle: "任务详情"
+          },
+          [
+            {
+              originalname: "issue-shot.png",
+              filename: firstFileName,
+              mimetype: "image/png",
+              size: 2048,
+              path: path.join(config.feedbackTicketUploadDir, firstFileName)
+            }
+          ]
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 12));
+
+        await fs.writeFile(path.join(config.feedbackTicketUploadDir, secondFileName), "second-image", "utf8");
+        const second = await service.createTicket(
+          {
+            title: "模块页操作区层级有点乱",
+            detail: "希望把入口信息再收束一点，避免操作按钮太散。",
+            pagePath: "/projects/demo/modules/demo",
+            pageTitle: "模块详情"
+          },
+          [
+            {
+              originalname: "module-shot.png",
+              filename: secondFileName,
+              mimetype: "image/png",
+              size: 1024,
+              path: path.join(config.feedbackTicketUploadDir, secondFileName)
+            }
+          ]
+        );
+
+        await withTestServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/api/feedback-tickets`);
+          assert.equal(response.status, 200);
+          const tickets = await response.json();
+
+          assert.equal(tickets.length, 2);
+          assert.equal(tickets[0].id, second.id);
+          assert.equal(tickets[1].id, first.id);
+          assert.equal(tickets[0].attachments[0].url, `/feedback-ticket-assets/${secondFileName}`);
+
+          const assetResponse = await fetch(`${baseUrl}${tickets[0].attachments[0].url}`);
+          assert.equal(assetResponse.status, 200);
+          assert.equal(await assetResponse.text(), "second-image");
+
+          await fs.writeFile(path.join(config.uploadDir, "outside.txt"), "outside", "utf8");
+          const hiddenResponse = await fetch(`${baseUrl}/feedback-ticket-assets/outside.txt`);
+          assert.equal(hiddenResponse.status, 404);
+        });
+      });
+    }
+  },
+  {
     name: "Structured policy skills can be stored as plain readable text without raw JSON input",
     run: async () => {
       await withTempConfig(async () => {
@@ -3272,6 +3405,62 @@ const tests = [
       assert.ok(overview.markdown.includes("skill 类目"));
       assert.ok(overview.relatedPages.some((page) => page.slug === "implementation-principles"));
       assert.ok(overview.relatedPages.some((page) => page.slug === "skill-management-fallback"));
+    }
+  },
+  {
+    name: "Primary app pages include the global feedback widget assets",
+    run: async () => {
+      const htmlPages = [
+        "index.html",
+        "project-create.html",
+        "project-detail.html",
+        "module-create.html",
+        "module-detail.html",
+        "task-detail.html",
+        "requirement-generation.html",
+        "detail-design-generation.html",
+        "hil-test-case-generation.html",
+        "feedback-tickets.html",
+        "feedback-pool.html",
+        "skill-management.html",
+        "skill-refinement.html",
+        "replay-lab.html"
+      ];
+
+      for (const fileName of htmlPages) {
+        const html = await fs.readFile(path.join(config.rootDir, "public", fileName), "utf8");
+        assert.ok(html.includes('/feedback-widget.css'), `${fileName} should include feedback-widget.css`);
+        assert.ok(html.includes('/feedback-widget.js'), `${fileName} should include feedback-widget.js`);
+      }
+    }
+  },
+  {
+    name: "Feedback widget exposes create and view ticket actions",
+    run: async () => {
+      const script = await fs.readFile(path.join(config.rootDir, "public", "feedback-widget.js"), "utf8");
+      const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "feedback-widget.css"), "utf8");
+
+      assert.ok(script.includes("新建反馈工单"));
+      assert.ok(script.includes("查看已有工单"));
+      assert.ok(script.includes('window.location.href = "/feedback-tickets"'));
+      assert.ok(script.includes("去查看工单"));
+      assert.ok(script.includes("?ticket="));
+      assert.match(stylesheet, /\.feedback-widget-dialog\s*\{[^}]*pointer-events:\s*auto/s);
+    }
+  },
+  {
+    name: "Feedback ticket page route serves the new console shell",
+    run: async () => {
+      await withTestServer(async ({ baseUrl }) => {
+        const response = await fetch(`${baseUrl}/feedback-tickets`);
+        assert.equal(response.status, 200);
+        const html = await response.text();
+
+        assert.ok(html.includes("反馈工单台"));
+        assert.ok(html.includes('id="ticket-search"'));
+        assert.ok(html.includes('id="ticket-list"'));
+        assert.ok(html.includes('id="ticket-detail"'));
+      });
     }
   },
   {

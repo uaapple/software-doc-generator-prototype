@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>反馈工单台</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/feedback-tickets.css" />
+    <link rel="stylesheet" href="/feedback-widget.css" />
+  </head>
+  <body>
+    <main class="layout feedback-ticket-page">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>反馈工单台</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">生成门户</a>
+          <a class="nav-link" href="/feedback-pool">反馈池</a>
+          <a class="nav-link" href="/skill-management">技能管理</a>
+          <a class="nav-link" href="/skill-refinement">Skill Refinement 工作台</a>
+          <a class="nav-link" href="/replay-lab">Replay Lab</a>
+          <span class="nav-link active nav-link-static" aria-current="page">反馈工单台</span>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card ticket-hero">
+        <div class="ticket-hero-copy">
+          <p class="strip-label">Issue Desk</p>
+          <h1>把现场反馈收进一个调度台</h1>
+          <p class="strip-text">从这里统一查看页面现场提报的问题、来源上下文和截图附件。第一页先聚焦查阅，方便快速回看与定位。</p>
+        </div>
+        <div class="ticket-hero-callout">
+          <span>入口位置</span>
+          <strong>右下角“问题反馈”按钮</strong>
+          <p>现在它同时负责新建工单和进入这个工单台。</p>
+        </div>
+      </section>
+
+      <p id="page-status" class="status" hidden></p>
+
+      <section class="ticket-metric-grid">
+        <article class="card ticket-metric-card">
+          <span>总工单</span>
+          <strong id="metric-total">0</strong>
+          <p>按最近更新时间统一排队，优先看到新问题。</p>
+        </article>
+        <article class="card ticket-metric-card">
+          <span>今日新增</span>
+          <strong id="metric-today">0</strong>
+          <p>以本地日期为准，快速判断今天反馈的活跃度。</p>
+        </article>
+        <article class="card ticket-metric-card">
+          <span>带图片工单</span>
+          <strong id="metric-images">0</strong>
+          <p>优先打开有现场截图的问题，更容易直接复盘。</p>
+        </article>
+      </section>
+
+      <section class="ticket-shell">
+        <aside class="card ticket-sidebar">
+          <div class="section-head compact-head">
+            <span class="section-index">筛选</span>
+            <div>
+              <h2>工单列表</h2>
+              <p>支持按标题、详情、来源页面搜索，也可以只看带图片的工单。</p>
+            </div>
+          </div>
+
+          <label class="ticket-search-field">
+            <span>搜索关键字</span>
+            <input id="ticket-search" type="search" placeholder="例如：任务详情、按钮状态、模块页" />
+          </label>
+
+          <label class="ticket-toggle">
+            <input id="ticket-images-only" type="checkbox" />
+            <span>仅看带图片工单</span>
+          </label>
+
+          <div class="ticket-sidebar-meta">
+            <span id="ticket-result-count">0 条结果</span>
+            <button id="ticket-refresh" type="button" class="secondary-button">刷新列表</button>
+          </div>
+
+          <div id="ticket-list" class="ticket-list"></div>
+        </aside>
+
+        <section class="card ticket-detail-panel">
+          <div class="section-head compact-head">
+            <span class="section-index">详情</span>
+            <div>
+              <h2>反馈内容</h2>
+              <p>选中左侧工单后，这里会展示来源页面、正文内容和现场截图。</p>
+            </div>
+          </div>
+
+          <div id="ticket-detail" class="ticket-detail"></div>
+        </section>
+      </section>
+    </main>
+
+    <dialog id="image-preview-dialog" class="ticket-image-dialog">
+      <div class="ticket-image-shell">
+        <div class="ticket-image-head">
+          <div>
+            <p class="strip-label">Image Preview</p>
+            <h2 id="image-preview-title">截图预览</h2>
+          </div>
+          <button id="image-preview-close" type="button" class="secondary-button">关闭</button>
+        </div>
+        <img id="image-preview-target" alt="" />
+      </div>
+    </dialog>
+
+    <script type="module" src="/feedback-tickets.js"></script>
+    <script type="module" src="/feedback-widget.js"></script>
+  </body>
+</html>

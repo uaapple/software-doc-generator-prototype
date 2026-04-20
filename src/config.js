@@ -74,6 +74,8 @@ export const config = {
   rejectionGroupStorePath: path.join(rootDir, "data", "rejections", "groups.json"),
   replayTaskStoreDir: path.join(rootDir, "data", "replay-tasks"),
   skillWorkOrderStoreDir: path.join(rootDir, "data", "skill-work-orders"),
+  feedbackTicketStoreDir: path.join(rootDir, "data", "feedback-tickets"),
+  feedbackTicketUploadDir: path.join(rootDir, "data", "uploads", "feedback-tickets"),
   templateDir: path.join(rootDir, "templates"),
   templatePath: path.join(rootDir, "templates", "software-requirement-template.json"),
   skillDir: path.join(rootDir, "skills", "active"),

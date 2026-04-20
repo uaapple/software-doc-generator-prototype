@@ -17,6 +17,7 @@ import { SkillManagementService } from "./services/skill-management-service.js";
 import { SkillWorkOrderService } from "./services/skill-work-order-service.js";
 import { SkillLoader } from "./services/skill-loader.js";
 import { ReplayLabService, DEFAULT_REPLAY_LAB_TEMPLATE_TASK_ID } from "./services/replay-lab-service.js";
+import { FeedbackTicketService } from "./services/feedback-ticket-service.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -74,6 +75,7 @@ export async function createApp() {
   const skillWorkOrderService = new SkillWorkOrderService();
   const skillLoader = new SkillLoader();
   const replayLabService = new ReplayLabService();
+  const feedbackTicketService = new FeedbackTicketService();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
 
@@ -116,10 +118,49 @@ export async function createApp() {
     })
   });
 
+  const feedbackUpload = multer({
+    storage: multer.diskStorage({
+      destination: async (_req, _file, cb) => {
+        try {
+          await fs.mkdir(config.feedbackTicketUploadDir, { recursive: true });
+          cb(null, config.feedbackTicketUploadDir);
+        } catch (error) {
+          cb(error);
+        }
+      },
+      filename: (_req, file, cb) => {
+        const safeName = `${Date.now()}-${file.originalname.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_")}`;
+        cb(null, safeName);
+      }
+    }),
+    limits: {
+      fileSize: 8 * 1024 * 1024,
+      files: 6
+    }
+  });
+
   app.use(express.json({ limit: "2mb" }));
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
+
+  app.post("/api/feedback-tickets", feedbackUpload.array("images", 6), async (req, res, next) => {
+    try {
+      const ticket = await feedbackTicketService.createTicket(req.body || {}, req.files || []);
+      res.status(201).json(ticket);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/feedback-tickets", async (_req, res, next) => {
+    try {
+      res.json(await feedbackTicketService.listTicketsForClient());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "index.html"));
   });
@@ -162,9 +203,13 @@ export async function createApp() {
   app.get("/feedback-pool", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "feedback-pool.html"));
   });
+  app.get("/feedback-tickets", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "feedback-tickets.html"));
+  });
   app.get("/replay-lab", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "replay-lab.html"));
   });
+  app.use("/feedback-ticket-assets", express.static(config.feedbackTicketUploadDir));
   app.use(express.static(config.publicDir));
 
   app.get("/api/meta", async (_req, res) => {
