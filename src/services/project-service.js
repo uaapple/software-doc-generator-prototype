@@ -190,13 +190,24 @@ function normalizeTaskDebugEvent(event = {}) {
     stage: String(event?.stage || "").trim(),
     label: String(event?.label || "").trim(),
     message: String(event?.message || "").trim(),
-    level: String(event?.level || "info").trim() || "info"
+    level: String(event?.level || "info").trim() || "info",
+    type: String(event?.type || "").trim(),
+    status: String(event?.status || "").trim(),
+    transport: String(event?.transport || "").trim(),
+    stepType: String(event?.stepType || "").trim(),
+    sessionId: String(event?.sessionId || "").trim(),
+    startedAt: String(event?.startedAt || "").trim(),
+    heartbeatAt: String(event?.heartbeatAt || "").trim(),
+    elapsedMs: Math.max(0, Number(event?.elapsedMs || 0) || 0),
+    stdoutExcerpt: normalizeDebugText(event?.stdoutExcerpt || "", 4000),
+    stderrExcerpt: normalizeDebugText(event?.stderrExcerpt || "", 4000)
   };
 }
 
 function normalizeTaskDebug(debug = {}) {
   const llm = debug?.llm || {};
   const postProcess = debug?.postProcess || {};
+  const agent = debug?.agent || {};
   const lastError = debug?.lastError && typeof debug.lastError === "object"
     ? {
         at: debug.lastError.at || "",
@@ -227,6 +238,18 @@ function normalizeTaskDebug(debug = {}) {
       saveMs: Math.max(0, Number(postProcess.saveMs || 0) || 0),
       totalAfterModelMs: Math.max(0, Number(postProcess.totalAfterModelMs || 0) || 0)
     },
+    agent: {
+      transport: String(agent.transport || "").trim(),
+      currentStep: String(agent.currentStep || "").trim(),
+      status: String(agent.status || "").trim(),
+      startedAt: String(agent.startedAt || "").trim(),
+      lastHeartbeatAt: String(agent.lastHeartbeatAt || "").trim(),
+      lastEventAt: String(agent.lastEventAt || "").trim(),
+      sessionId: String(agent.sessionId || "").trim(),
+      stdoutExcerpt: normalizeDebugText(agent.stdoutExcerpt || "", 4000),
+      stderrExcerpt: normalizeDebugText(agent.stderrExcerpt || "", 4000),
+      elapsedMs: Math.max(0, Number(agent.elapsedMs || 0) || 0)
+    },
     lastError,
     events: Array.isArray(debug?.events)
       ? debug.events
@@ -248,6 +271,10 @@ function mergeTaskDebug(current = {}, updates = {}) {
     postProcess: {
       ...(current.postProcess || {}),
       ...(updates.postProcess || {})
+    },
+    agent: {
+      ...(current.agent || {}),
+      ...(updates.agent || {})
     },
     lastError: updates.lastError
       ? {
@@ -415,6 +442,25 @@ function cloneForAcceptedSnapshot(item) {
 export class ProjectService {
   constructor() {
     this.rejectionService = new RejectionService();
+    this.generationTaskMutationQueues = new Map();
+  }
+
+  enqueueGenerationTaskMutation(taskKey, mutation) {
+    const key = String(taskKey || "").trim();
+    const runner = typeof mutation === "function" ? mutation : async () => null;
+    if (!key) {
+      return runner();
+    }
+
+    const previous = this.generationTaskMutationQueues.get(key) || Promise.resolve();
+    const current = previous.catch(() => undefined).then(() => runner());
+    this.generationTaskMutationQueues.set(key, current);
+    current.finally(() => {
+      if (this.generationTaskMutationQueues.get(key) === current) {
+        this.generationTaskMutationQueues.delete(key);
+      }
+    });
+    return current;
   }
 
   async listProjects() {
@@ -777,84 +823,87 @@ export class ProjectService {
 
   async updateGenerationTask(projectId, moduleId, documentType, taskId, updates = {}) {
     const normalizedDocumentType = normalizeDocumentType(documentType);
-    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
-    const space = module.documentSpaces[normalizedDocumentType];
-    const task = space.generationTasks.find((item) => item.id === taskId);
-    if (!task) {
-      throw new Error("Task not found");
-    }
+    const taskKey = `${projectId}:${moduleId}:${normalizedDocumentType}:${taskId}`;
+    return this.enqueueGenerationTaskMutation(taskKey, async () => {
+      const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+      const space = module.documentSpaces[normalizedDocumentType];
+      const task = space.generationTasks.find((item) => item.id === taskId);
+      if (!task) {
+        throw new Error("Task not found");
+      }
 
-    if (updates.status) {
-      task.status = updates.status;
-    }
-    if (Array.isArray(updates.inputAssetIds)) {
-      task.inputAssetIds = updates.inputAssetIds;
-    }
-    if (Array.isArray(updates.uploadedAssetIds)) {
-      task.uploadedAssetIds = updates.uploadedAssetIds;
-    }
-    if (Array.isArray(updates.resultItems)) {
-      task.resultItems = updates.resultItems;
-    }
-    if (Array.isArray(updates.extractions)) {
-      task.extractions = updates.extractions;
-    }
-    if (Array.isArray(updates.traces)) {
-      task.traces = updates.traces;
-    }
-    if (Array.isArray(updates.conflicts)) {
-      task.conflicts = updates.conflicts;
-    }
-    if (Object.hasOwn(updates, "llmProfile")) {
-      task.llmProfile = updates.llmProfile || null;
-    }
-    if (typeof updates.summary === "string") {
-      task.summary = updates.summary;
-    }
-    if (Object.hasOwn(updates, "errorMessage")) {
-      task.errorMessage = String(updates.errorMessage || "").trim();
-    }
-    if (updates.progress && typeof updates.progress === "object") {
-      task.progress = {
-        ...normalizeTaskProgress(task.progress),
-        ...normalizeTaskProgress({
-          ...task.progress,
-          ...updates.progress,
-          updatedAt: now()
-        })
-      };
-    }
-    if (updates.metrics && typeof updates.metrics === "object") {
-      task.metrics = {
-        ...normalizeTaskMetrics(task.metrics),
-        ...normalizeTaskMetrics({
-          ...task.metrics,
-          ...updates.metrics
-        })
-      };
-    }
-    if (updates.debug && typeof updates.debug === "object") {
-      task.debug = mergeTaskDebug(task.debug, updates.debug);
-    }
-    if (updates.timelineEntry && typeof updates.timelineEntry === "object") {
-      appendTimelineEntry(task, updates.timelineEntry);
-    }
-    if (updates.debugEvent && typeof updates.debugEvent === "object") {
-      appendTaskDebugEvent(task, updates.debugEvent);
-    }
-    task.summary = buildTaskSummary(task);
-    task.updatedAt = now();
+      if (updates.status) {
+        task.status = updates.status;
+      }
+      if (Array.isArray(updates.inputAssetIds)) {
+        task.inputAssetIds = updates.inputAssetIds;
+      }
+      if (Array.isArray(updates.uploadedAssetIds)) {
+        task.uploadedAssetIds = updates.uploadedAssetIds;
+      }
+      if (Array.isArray(updates.resultItems)) {
+        task.resultItems = updates.resultItems;
+      }
+      if (Array.isArray(updates.extractions)) {
+        task.extractions = updates.extractions;
+      }
+      if (Array.isArray(updates.traces)) {
+        task.traces = updates.traces;
+      }
+      if (Array.isArray(updates.conflicts)) {
+        task.conflicts = updates.conflicts;
+      }
+      if (Object.hasOwn(updates, "llmProfile")) {
+        task.llmProfile = updates.llmProfile || null;
+      }
+      if (typeof updates.summary === "string") {
+        task.summary = updates.summary;
+      }
+      if (Object.hasOwn(updates, "errorMessage")) {
+        task.errorMessage = String(updates.errorMessage || "").trim();
+      }
+      if (updates.progress && typeof updates.progress === "object") {
+        task.progress = {
+          ...normalizeTaskProgress(task.progress),
+          ...normalizeTaskProgress({
+            ...task.progress,
+            ...updates.progress,
+            updatedAt: now()
+          })
+        };
+      }
+      if (updates.metrics && typeof updates.metrics === "object") {
+        task.metrics = {
+          ...normalizeTaskMetrics(task.metrics),
+          ...normalizeTaskMetrics({
+            ...task.metrics,
+            ...updates.metrics
+          })
+        };
+      }
+      if (updates.debug && typeof updates.debug === "object") {
+        task.debug = mergeTaskDebug(task.debug, updates.debug);
+      }
+      if (updates.timelineEntry && typeof updates.timelineEntry === "object") {
+        appendTimelineEntry(task, updates.timelineEntry);
+      }
+      if (updates.debugEvent && typeof updates.debugEvent === "object") {
+        appendTaskDebugEvent(task, updates.debugEvent);
+      }
+      task.summary = buildTaskSummary(task);
+      task.updatedAt = now();
 
-    if (task.status === "completed") {
-      touchModule(module, getGenerationActionLabel(normalizedDocumentType), `${getDocumentTypeLabel(normalizedDocumentType)}任务已完成`);
-    } else if (task.status === "failed") {
-      touchModule(module, "task_failed", `${getDocumentTypeLabel(normalizedDocumentType)}任务执行失败`);
-    } else {
-      touchModule(module, "task_updated", `${getDocumentTypeLabel(normalizedDocumentType)}任务状态已更新`);
-    }
+      if (task.status === "completed") {
+        touchModule(module, getGenerationActionLabel(normalizedDocumentType), `${getDocumentTypeLabel(normalizedDocumentType)}任务已完成`);
+      } else if (task.status === "failed") {
+        touchModule(module, "task_failed", `${getDocumentTypeLabel(normalizedDocumentType)}任务执行失败`);
+      } else {
+        touchModule(module, "task_updated", `${getDocumentTypeLabel(normalizedDocumentType)}任务状态已更新`);
+      }
 
-    await this.saveProject(project);
-    return task;
+      await this.saveProject(project);
+      return task;
+    });
   }
 
   async reviewTaskResult(projectId, moduleId, documentType, taskId, resultItemId, review = {}) {

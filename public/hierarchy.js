@@ -1080,6 +1080,7 @@ async function renderTaskDetailPage() {
 
   renderTaskMeta(task);
   renderTaskProgress(task);
+  renderTaskAgentRuntime(task);
   renderTaskResults(task, project.id, module.id, documentType);
   if (highlightedResultItemId) {
     window.setTimeout(() => {
@@ -1095,15 +1096,22 @@ async function renderTaskDetailPage() {
 }
 
 function renderTaskMeta(task) {
+  const visibleProgress = deriveVisibleTaskProgress(task);
+  const llmLabel =
+    task.llmProfile?.executionMode === "hermes_agent_cli"
+      ? "Installed Hermes CLI / configured-in-hermes"
+      : task.llmProfile?.executionMode === "hermes_agent_api"
+        ? `Hermes Agent API / ${task.llmProfile?.name || "已配置"}`
+        : task.llmProfile?.name || "本地回退";
   const taskMeta = document.querySelector("#task-meta");
   taskMeta.innerHTML = `
     <article class="meta-item"><span>任务状态</span><strong>${escapeHtml(translateStatus(task.status))}</strong></article>
-    <article class="meta-item"><span>当前阶段</span><strong>${escapeHtml(task.progress?.label || "待处理")}</strong></article>
-    <article class="meta-item"><span>完成进度</span><strong>${Math.round(Number(task.progress?.percent || 0))}%</strong></article>
+    <article class="meta-item"><span>当前阶段</span><strong>${escapeHtml(visibleProgress.label || "待处理")}</strong></article>
+    <article class="meta-item"><span>完成进度</span><strong>${Math.round(Number(visibleProgress.percent || 0))}%</strong></article>
     <article class="meta-item"><span>生成结果数</span><strong>${(task.resultItems || []).length}</strong></article>
     <article class="meta-item"><span>输入资产数</span><strong>${(task.inputAssetIds || []).length}</strong></article>
-    <article class="meta-item"><span>生成模型</span><strong>${escapeHtml(task.llmProfile?.name || "本地回退")}</strong></article>
-    <article class="meta-item"><span>最近更新</span><strong>${escapeHtml(formatDateTime(task.progress?.updatedAt || task.updatedAt))}</strong></article>
+    <article class="meta-item"><span>生成模型</span><strong>${escapeHtml(llmLabel)}</strong></article>
+    <article class="meta-item"><span>最近更新</span><strong>${escapeHtml(formatDateTime(visibleProgress.updatedAt || task.updatedAt))}</strong></article>
   `;
 }
 
@@ -1113,23 +1121,24 @@ function renderTaskProgress(task) {
     return;
   }
 
-  const percent = Math.round(Number(task.progress?.percent || 0));
+  const visibleProgress = deriveVisibleTaskProgress(task);
+  const percent = Math.round(Number(visibleProgress.percent || 0));
   const timeline = Array.isArray(task.timeline) ? [...task.timeline].reverse() : [];
   const metrics = task.metrics || {};
 
   taskProgress.innerHTML = `
     <div class="progress-shell">
       <div class="progress-hero">
-        <strong>${escapeHtml(task.progress?.label || translateStatus(task.status))}</strong>
-        <p>${escapeHtml(task.progress?.message || task.summary || "任务已创建，等待执行。")}</p>
+        <strong>${escapeHtml(visibleProgress.label || translateStatus(task.status))}</strong>
+        <p>${escapeHtml(visibleProgress.message || task.summary || "任务已创建，等待执行。")}</p>
         <div class="progress-bar" aria-hidden="true">
           <div class="progress-bar-fill" style="width: ${Math.max(0, Math.min(100, percent))}%"></div>
         </div>
         <div class="progress-meta">
           <span>进度 ${percent}%</span>
           ${
-            task.progress?.total
-              ? `<span>文件 ${Number(task.progress?.current || 0)}/${Number(task.progress?.total || 0)}</span>`
+            visibleProgress.total
+              ? `<span>文件 ${Number(visibleProgress.current || 0)}/${Number(visibleProgress.total || 0)}</span>`
               : ""
           }
           ${metrics.extractionEvidenceCount ? `<span>证据 ${metrics.extractionEvidenceCount} 条</span>` : ""}
@@ -1153,6 +1162,152 @@ function renderTaskProgress(task) {
                 )
                 .join("")
             : '<div class="empty-state">任务启动后，这里会持续显示阶段进度与关键日志。</div>'
+        }
+      </div>
+    </div>
+  `;
+}
+
+function formatRelativeDuration(timestamp) {
+  const value = String(timestamp || "").trim();
+  if (!value) {
+    return "--";
+  }
+  const diffMs = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(diffMs) || diffMs < 0) {
+    return formatDateTime(value);
+  }
+  const seconds = Math.round(diffMs / 1000);
+  if (seconds < 60) return `${seconds} 秒前`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} 小时前`;
+  const days = Math.round(hours / 24);
+  return `${days} 天前`;
+}
+
+function deriveVisibleTaskProgress(task) {
+  const base = task.progress || {};
+  const agent = task.debug?.agent || {};
+  if (task.status === "running" && agent.status === "completed") {
+    return {
+      ...base,
+      stage: "post_process",
+      label: "模型已返回，正在后处理",
+      message: "本机 Hermes 已返回结果，后端正在校验引用、执行规则检查并准备保存结果。",
+      percent: Math.max(Number(base.percent || 0), 84)
+    };
+  }
+  return base;
+}
+
+function buildAgentRuntimeMeta(event) {
+  const meta = [];
+  if (event.stepType) meta.push(`step: ${event.stepType}`);
+  if (event.status) meta.push(`status: ${event.status}`);
+  if (event.sessionId) meta.push(`session: ${event.sessionId}`);
+  if (event.elapsedMs) meta.push(`耗时 ${Math.round(event.elapsedMs / 1000)} 秒`);
+  return meta;
+}
+
+function renderTaskAgentRuntime(task) {
+  const runtimeRoot = document.querySelector("#task-agent-runtime");
+  if (!runtimeRoot) {
+    return;
+  }
+
+  const debug = task.debug || {};
+  const agent = debug.agent || {};
+  const events = Array.isArray(debug.events)
+    ? [...debug.events]
+        .filter((event) => event.type === "agent_runtime" || event.transport || event.sessionId || event.stdoutExcerpt || event.stderrExcerpt)
+        .reverse()
+    : [];
+  const isHermesTask = String(task.llmProfile?.executionMode || "").startsWith("hermes_agent");
+
+  if (!isHermesTask && !events.length) {
+    runtimeRoot.innerHTML = '<div class="empty-state">当前任务没有可展示的 Agent 运行日志。</div>';
+    return;
+  }
+
+  runtimeRoot.innerHTML = `
+    <div class="agent-runtime-shell">
+      <div class="agent-runtime-summary">
+        <article class="agent-runtime-card">
+          <span>Agent 传输</span>
+          <strong>${escapeHtml(agent.transport || task.llmProfile?.executionMode || "--")}</strong>
+        </article>
+        <article class="agent-runtime-card">
+          <span>当前 Step</span>
+          <strong>${escapeHtml(agent.currentStep || task.progress?.stage || "--")}</strong>
+        </article>
+        <article class="agent-runtime-card">
+          <span>Hermes 会话</span>
+          <strong>${escapeHtml(agent.sessionId || "--")}</strong>
+        </article>
+        <article class="agent-runtime-card">
+          <span>启动时间</span>
+          <strong>${escapeHtml(agent.startedAt ? formatDateTime(agent.startedAt) : "--")}</strong>
+        </article>
+        <article class="agent-runtime-card">
+          <span>最近心跳</span>
+          <strong>${escapeHtml(agent.lastHeartbeatAt ? `${formatDateTime(agent.lastHeartbeatAt)} / ${formatRelativeDuration(agent.lastHeartbeatAt)}` : "--")}</strong>
+        </article>
+        <article class="agent-runtime-card">
+          <span>当前状态</span>
+          <strong>${escapeHtml(agent.status || task.status || "--")}</strong>
+        </article>
+      </div>
+      <div class="agent-runtime-excerpts">
+        <article class="agent-runtime-excerpt">
+          <strong>最近一次 stdout 摘要</strong>
+          <pre>${escapeHtml(agent.stdoutExcerpt || "暂无 stdout 摘要")}</pre>
+        </article>
+        <article class="agent-runtime-excerpt">
+          <strong>最近一次 stderr 摘要</strong>
+          <pre>${escapeHtml(agent.stderrExcerpt || "暂无 stderr 摘要")}</pre>
+        </article>
+      </div>
+      <div class="agent-runtime-list">
+        ${
+          events.length
+            ? events
+                .slice(0, 20)
+                .map((event) => {
+                  const meta = buildAgentRuntimeMeta(event);
+                  return `
+                    <article class="agent-runtime-item ${escapeHtml(event.level || "info")}">
+                      <time>${escapeHtml(formatDateTime(event.at))}</time>
+                      <strong>${escapeHtml(event.label || event.stepType || "Agent 运行事件")}</strong>
+                      <div>${escapeHtml(event.message || "")}</div>
+                      ${
+                        meta.length
+                          ? `<div class="agent-runtime-item-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+                          : ""
+                      }
+                      ${
+                        event.stdoutExcerpt || event.stderrExcerpt
+                          ? `<details>
+                              <summary>查看输出摘要</summary>
+                              ${
+                                event.stdoutExcerpt
+                                  ? `<pre>${escapeHtml(event.stdoutExcerpt)}</pre>`
+                                  : ""
+                              }
+                              ${
+                                event.stderrExcerpt
+                                  ? `<pre>${escapeHtml(event.stderrExcerpt)}</pre>`
+                                  : ""
+                              }
+                            </details>`
+                          : ""
+                      }
+                    </article>
+                  `;
+                })
+                .join("")
+            : '<div class="empty-state">Agent 已接管此任务，但当前还没有写入运行事件。</div>'
         }
       </div>
     </div>
@@ -1206,9 +1361,10 @@ function buildResultSourceBlock(resultItem) {
 
 function renderTaskResults(task, projectId, moduleId, documentType) {
   const taskResults = document.querySelector("#task-results");
+  const visibleProgress = deriveVisibleTaskProgress(task);
   if (task.status === "running") {
     taskResults.innerHTML = `<div class="empty-state">${escapeHtml(
-      task.progress?.message || "任务正在生成中，页面会自动刷新最新进度。"
+      visibleProgress.message || "任务正在生成中，页面会自动刷新最新进度。"
     )}</div>`;
     return;
   }

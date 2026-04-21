@@ -82,6 +82,10 @@ async function withTempConfig(run) {
       command: "hermes",
       workdir: tempDir,
       timeoutMs: 2000,
+      stepTimeoutMs: {
+        outline_build: 2000,
+        content_generate: 4000
+      },
       maxTurns: 8,
       maxRecalledAtoms: 24,
       maxOutlineSections: 6,
@@ -1625,6 +1629,171 @@ const tests = [
     }
   },
   {
+    name: "Hermes agent client applies step-specific CLI timeout for content_generate",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 120000,
+          stepTimeoutMs: {
+            outline_build: 120000,
+            content_generate: 240000
+          },
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout: "{\"items\":[{\"title\":\"CLI item\",\"requirementText\":\"CLI text\",\"sourceRefs\":[]}]}\n\nsession_id: 20260421_144500_abcd12\n",
+              stderr: ""
+            };
+          }
+        });
+
+        await client.executeStep({
+          taskId: "task-cli-timeout",
+          stepType: "content_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            project: { name: "CLI Project", documentType: "software_requirement" },
+            evidence: [],
+            recalledAtoms: [],
+            outline: { sections: [{ title: "Section", objective: "Goal" }] },
+            template: { requirementIdPrefix: "SWR", sections: [] }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].options.timeout, 240000);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client emits CLI runtime events with heartbeat and output excerpts",
+    run: async () => {
+      await withTempConfig(async () => {
+        const events = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 500,
+          heartbeatIntervalMs: 10,
+          commandRunner: async () => {
+            await new Promise((resolve) => setTimeout(resolve, 35));
+            return {
+              stdout:
+                "{\"summary\":\"CLI outline\",\"sections\":[{\"title\":\"Functional behavior\",\"objective\":\"Describe charging state\",\"evidenceKeys\":[]}]}\n\nsession_id: 20260421_144530_heartbeat\n",
+              stderr: "tool summary stderr"
+            };
+          }
+        });
+
+        const response = await client.executeStep(
+          {
+            taskId: "task-cli-events",
+            stepType: "outline_build",
+            allowedPaths: [],
+            inputArtifact: {
+              recalledAtoms: [{ skillCode: "charging_rule", title: "Charging rule", content: "Write at behavior level." }],
+              evidence: [{ fileName: "Chrg.c", fileRole: "generatedCode", location: "line 1", excerpt: "chargeState = 1;" }]
+            },
+            skillInventory: { items: [] },
+            llmProfileSnapshot: null
+          },
+          {
+            onEvent(event) {
+              events.push(event);
+            }
+          }
+        );
+
+        assert.equal(response.sessionId, "20260421_144530_heartbeat");
+        assert.ok(events.some((event) => event.status === "started"));
+        assert.ok(events.some((event) => event.status === "heartbeat"));
+        const completed = events.find((event) => event.status === "completed");
+        assert.ok(completed);
+        assert.equal(completed.sessionId, "20260421_144530_heartbeat");
+        assert.match(completed.stdoutExcerpt || "", /CLI outline/);
+        assert.match(completed.stderrExcerpt || "", /tool summary stderr/);
+      });
+    }
+  },
+  {
+    name: "Project service serializes concurrent generation task updates to preserve terminal status",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Task Update Serialization Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "running",
+          summary: "正在调用本机 Hermes 生成正式内容",
+          progress: {
+            stage: "content_generate",
+            label: "正在调用本机 Hermes 生成正式内容",
+            message: "等待模型返回",
+            percent: 82
+          }
+        });
+
+        const originalSaveProject = projectService.saveProject.bind(projectService);
+        let saveInvocationCount = 0;
+        projectService.saveProject = async (inputProject) => {
+          saveInvocationCount += 1;
+          if (saveInvocationCount === 1) {
+            await new Promise((resolve) => setTimeout(resolve, 30));
+          }
+          return originalSaveProject(inputProject);
+        };
+
+        const staleRunningUpdate = projectService.updateGenerationTask(project.id, module.id, "software_requirement", task.id, {
+          progress: {
+            stage: "content_generate",
+            label: "正在调用本机 Hermes 生成正式内容",
+            message: "旧心跳仍在写回",
+            percent: 82
+          },
+          debugEvent: {
+            stage: "content_generate",
+            label: "Hermes CLI 仍在运行",
+            message: "模拟旧 heartbeat 写回。",
+            level: "info"
+          }
+        });
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        const failedUpdate = projectService.updateGenerationTask(project.id, module.id, "software_requirement", task.id, {
+          status: "failed",
+          errorMessage: "Hermes generated a sourceRef outside the extracted evidence set",
+          summary: "Hermes generated a sourceRef outside the extracted evidence set",
+          progress: {
+            stage: "failed",
+            label: "任务执行失败",
+            message: "Hermes generated a sourceRef outside the extracted evidence set",
+            percent: 100
+          },
+          timelineEntry: {
+            stage: "failed",
+            label: "任务失败",
+            message: "Hermes generated a sourceRef outside the extracted evidence set",
+            level: "error"
+          }
+        });
+
+        await Promise.all([staleRunningUpdate, failedUpdate]);
+
+        const persisted = await projectService.getGenerationTask(project.id, module.id, "software_requirement", task.id);
+        assert.equal(persisted.status, "failed");
+        assert.equal(persisted.errorMessage, "Hermes generated a sourceRef outside the extracted evidence set");
+        assert.equal(persisted.progress.stage, "failed");
+        assert.equal(persisted.progress.percent, 100);
+        assert.equal(persisted.summary, "Hermes generated a sourceRef outside the extracted evidence set");
+      });
+    }
+  },
+  {
     name: "Hermes agent client reports invalid CLI JSON responses clearly",
     run: async () => {
       await withTempConfig(async () => {
@@ -1815,6 +1984,80 @@ const tests = [
           assert.ok((result.task.resultItems[0].sourceRefs || []).length >= 1);
           assert.equal(result.task.progress.stage, "completed");
         });
+      });
+    }
+  },
+  {
+    name: "Pipeline service marks task failed immediately when Hermes CLI step times out",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+
+        pipelineService.hermesAgentClient.transport = "cli";
+        pipelineService.hermesAgentClient.executeStep = async (_payload, runtime = {}) => {
+          await runtime.onEvent?.({
+            type: "agent_runtime",
+            transport: "cli",
+            stepType: "outline_build",
+            status: "failed",
+            level: "error",
+            label: "Hermes CLI 请求超时",
+            message: "Hermes CLI request timed out after 15000ms",
+            startedAt: "2026-04-21T07:26:05.043Z",
+            elapsedMs: 15000
+          });
+          const error = new Error("Hermes CLI request timed out after 15000ms");
+          error.code = "hermes_timeout";
+          throw error;
+        };
+
+        const project = await projectService.createProject({ name: "CLI Failure Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging-system.md");
+        const modelFilePath = path.join(uploadDir, "charging-model.c");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+        await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging-system.md",
+              filename: "charging-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "charging-model.c",
+              filename: "charging-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 44
+            }
+          ]
+        });
+
+        await assert.rejects(
+          () => pipelineService.generateForModule(project.id, module.id, "software_requirement", {}),
+          /timed out/
+        );
+
+        const task = await projectService.getLatestGenerationTask(project.id, module.id, "software_requirement");
+        assert.equal(task.status, "failed");
+        assert.equal(task.progress.stage, "failed");
+        assert.match(task.errorMessage, /timed out/);
+        assert.equal(task.debug.agent.status, "failed");
+        assert.equal(task.debug.agent.currentStep, "outline_build");
+        assert.match(task.debug.events.at(-1)?.message || "", /timed out/);
       });
     }
   },

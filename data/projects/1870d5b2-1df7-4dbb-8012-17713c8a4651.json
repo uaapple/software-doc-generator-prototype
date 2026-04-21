@@ -96,6 +96,834 @@
           "documentType": "software_requirement",
           "generationTasks": [
             {
+              "id": "172ad500-1ced-48dc-aeec-544136390c09",
+              "moduleId": "9b0ef9e4-1ef0-43c6-8d99-c2756759bcf8",
+              "documentType": "software_requirement",
+              "status": "failed",
+              "createdAt": "2026-04-21T08:25:57.383Z",
+              "updatedAt": "2026-04-21T08:35:40.319Z",
+              "inputAssetIds": [
+                "7eac77b7-9dc3-45d3-923f-7a6dd4d7eb3f",
+                "ffeda7c7-123c-4eed-a218-e0dfdc01bfcf"
+              ],
+              "uploadedAssetIds": [],
+              "resultItems": [],
+              "extractions": [],
+              "traces": [],
+              "conflicts": [],
+              "llmProfile": {
+                "id": "20b11d97-48b6-4c36-b474-3ad13115d53f",
+                "provider": "zhipu",
+                "name": "GLM 4.5 Air",
+                "model": "glm-4.5-air",
+                "baseURL": "https://open.bigmodel.cn/api/paas/v4"
+              },
+              "summary": "Hermes 已返回 13 条候选软件需求，但有 58 个 sourceRef 未严格命中已抽取 evidence，任务停在结果校验阶段。",
+              "auditLog": [],
+              "progress": {
+                "stage": "failed",
+                "label": "任务执行失败",
+                "message": "Hermes 已返回 13 条候选软件需求，但有 58 个 sourceRef 未严格命中已抽取 evidence，任务停在结果校验阶段。",
+                "percent": 100,
+                "current": 2,
+                "total": 2,
+                "updatedAt": "2026-04-21T08:35:40.318Z"
+              },
+              "timeline": [
+                {
+                  "at": "2026-04-21T08:25:57.367Z",
+                  "stage": "queued",
+                  "label": "任务已启动",
+                  "message": "任务已创建，等待后台开始处理 2 个输入资产。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-21T08:25:57.614Z",
+                  "stage": "task_init",
+                  "label": "初始化任务上下文",
+                  "message": "已开始准备 Hermes 软件需求生成任务。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-21T08:26:05.192Z",
+                  "stage": "effective_skill_resolve",
+                  "label": "解析生效技能",
+                  "message": "已完成 software_requirement skill inventory 解析，命中 270 条 atom。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-21T08:26:05.497Z",
+                  "stage": "material_extract",
+                  "label": "抽取输入证据",
+                  "message": "已完成文件抽取，得到 81 条结构化证据。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-21T08:26:05.539Z",
+                  "stage": "atom_recall",
+                  "label": "召回技能原子",
+                  "message": "召回完成，得到 24 条候选 atom。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-21T08:26:05.626Z",
+                  "stage": "outline_build",
+                  "label": "正在调用本机 Hermes 生成提纲",
+                  "message": "已开始调用 本机 Hermes CLI 执行 生成提纲。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-21T08:27:18.084Z",
+                  "stage": "outline_build",
+                  "label": "生成需求提纲",
+                  "message": "提纲生成完成，覆盖 6 个主题。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-21T08:27:18.107Z",
+                  "stage": "content_generate",
+                  "label": "正在调用本机 Hermes 生成正式内容",
+                  "message": "已开始调用 本机 Hermes CLI 执行 生成正式内容。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-21T08:35:40.318Z",
+                  "stage": "failed",
+                  "label": "任务失败",
+                  "message": "Hermes 已返回 13 条候选软件需求，但有 58 个 sourceRef 未严格命中已抽取 evidence，任务停在结果校验阶段。",
+                  "level": "error"
+                }
+              ],
+              "metrics": {
+                "extractionFileCount": 2,
+                "extractionEvidenceCount": 81,
+                "llmDurationMs": 0,
+                "generatedItemCount": 0,
+                "conflictCount": 0
+              },
+              "debug": {
+                "updatedAt": "2026-04-21T08:35:40.318Z",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "result_items_validation_failed",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "agent": {
+                  "transport": "cli",
+                  "currentStep": "content_generate",
+                  "status": "completed",
+                  "startedAt": "2026-04-21T08:27:18.117Z",
+                  "lastHeartbeatAt": "2026-04-21T08:30:43.475Z",
+                  "lastEventAt": "2026-04-21T08:30:43.475Z",
+                  "sessionId": "20260421_162722_1642a5",
+                  "stdoutExcerpt": "{\"items\":[{\"title\":\"前轴扭矩干预激活判定\",\"requirementText\":\"软件应在“扭矩干预功能”中对前轴扭矩干预激活标志进行判定：当且仅当前轴升扭请求、前轴降扭请求、主动制动（AEB/CDP）、ADAS的VLC工况或前轴RBS请求中任一条件成立，且对应使能条件有效并满足ESC干预最小/最大扭矩阈值时，前轴扭矩干预激活标志应置为active；否则应置为inactive。\",\"type\":\"functional\",\"verificationHint\":\"通过功能测试验证前轴升扭、降扭、主动制动、VLC和RBS输入触发下前轴激活标志的置位与清除。\",\"sourceRefs\":[{\"fileName\":\"ESCWhlTq.c\",\"fileRole\":\"generated_c\",\"location\":\"assignment\",\"excerpt\":\"赋值: ESCWhlTq_bFrntAxleTqIntvActv = (rtb_AND || ESCWhlTq_bFrntAxleTqDecActv ||\\n    rtb_AND2 || rtb_AND9 || rtb_AND11)\"},{\"fileName\":\"ESCWhlTq.c\",\"fileRole\":\"generated_c\",\"location\":\"assignment\",\"excerpt\":\"赋值: ESCWhlTq_bFrntAxleTqDecActv = (rtb_OR6 && ESCWhlTq_bTqDecIntvEna_C &&\\n    ((rtb_TmpSignalConversionAticesc_ >= ESCWhlTq_tqESCIntvMin_C) &&\\n     (rtb_TmpSignalConversionAticesc_ <= ESCWhlTq_tqESCIntvMax_C)))\"},{\"fileName\":\"ESCWhlTq.c\",\"fileRole\":\"generated_c\",\"location\":\"assignment\",\"excerpt\":\"赋值: rtb_AND2 = (rtb_AND2 && ESCWhlTq_bTqIncIntvEna_C &&\\n              ((rtb_TmpSignalConversionAtices_e >= ESCWhlTq_tqESCIntvMin_C) &&\\n               (rtb_TmpSignalConversionAtices_e <= ESCWhlTq_tqESCIntvMax_C)))\"}],\"conflictNote\":\"\"},{\"title\":\"前轴目标扭矩优先级计算\",\"requirementText\":\"软件应按“前轴升扭请求 > 前轴降扭请求 > 主动制动（AEB/CDP） > ADAS的VLC工况 > RBS”的优先级计算前轴目标扭矩：当前轴升扭请求标志为active时，前轴目标扭矩应取前轴升扭请求；当前轴降扭请求标志为active时，前轴目标扭矩应取前轴降扭请求；当AEB或CDP任一功能激活时，前轴目标扭矩应为0；当APA或ACC激活且VLC扭矩控制激活时，前轴目标扭矩应取扭矩仲裁后的前轴目标扭矩；当前轴RBS请求标志为active且VehCfg_stRBCCtrlModeSel为0x3时，前轴目标扭矩应取“扭矩仲裁后前轴目标扭矩 + 前轴RBS目标再生扭矩”与0中的较小值；当前轴RBS请求标志为active且VehCfg_stRBCCtrlModeSel不为0x3时，前轴目标扭矩应取扭矩仲裁后前轴目标扭矩与0中的较小值；当前轴RBS请求标志为inactive时，前轴目标扭矩应取扭矩仲裁后前轴目标扭矩。最终输出应受前轴最小/最大扭矩边界约束。\",\"type\":\"functional\",\"verificationHint\":\"通过功能测试验证不同优先级请求单独激活和同时激活时前轴目标扭矩的取值与优先级覆盖关系。\",\"sourceRefs\":[{\"fileName\":\"system-requirements-example-torque-intervention.md\",\"fileRole\":\"system_pdf\",\"location\":\"page:1\",\"excerpt\":\"# 系统需求示例：扭矩干预功能\\n\\n## 文档信息\\n\\n- 文档类型：系统需求示例\\n- 领域：嵌入式 VCU\\n- 语言：中文\\n- 版本：v1\\n- 来源：调试用示例图片，人工提取整理\\n- 整理日期：2026-04-04\\n\\n## 章节信息\\n\\n- 章节编号：`5.30`\\n- 章节标题：`扭矩干预功能`\\n\\n## 需求条目\\n\\n#...",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 205358
+                },
+                "lastError": {
+                  "at": "2026-04-21T08:35:40.294Z",
+                  "stage": "result_items_validation_failed",
+                  "message": "Hermes 已返回 13 条候选软件需求，但有 58 个 sourceRef 未严格命中已抽取 evidence，任务停在结果校验阶段。",
+                  "stack": ""
+                },
+                "events": [
+                  {
+                    "at": "2026-04-21T08:27:43.168Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 25 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:27:43.146Z",
+                    "elapsedMs": 25029,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:27:48.157Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 30 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:27:48.147Z",
+                    "elapsedMs": 30030,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:27:53.157Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 35 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:27:53.147Z",
+                    "elapsedMs": 35030,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:27:58.169Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 40 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:27:58.149Z",
+                    "elapsedMs": 40032,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:03.159Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 45 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:03.149Z",
+                    "elapsedMs": 45032,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:08.158Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 50 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:08.150Z",
+                    "elapsedMs": 50033,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:13.181Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 55 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:13.152Z",
+                    "elapsedMs": 55035,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:18.161Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 60 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:18.154Z",
+                    "elapsedMs": 60037,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:23.271Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 65 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:23.190Z",
+                    "elapsedMs": 65073,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:28.371Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 70 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:28.200Z",
+                    "elapsedMs": 70083,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:33.318Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 75 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:33.203Z",
+                    "elapsedMs": 75086,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:38.218Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 80 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:38.204Z",
+                    "elapsedMs": 80087,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:43.234Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 85 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:43.205Z",
+                    "elapsedMs": 85088,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:48.238Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 90 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:48.207Z",
+                    "elapsedMs": 90090,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:53.224Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 95 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:53.209Z",
+                    "elapsedMs": 95092,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:28:58.218Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 100 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:28:58.210Z",
+                    "elapsedMs": 100093,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:03.221Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 105 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:03.211Z",
+                    "elapsedMs": 105094,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:08.228Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 110 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:08.213Z",
+                    "elapsedMs": 110096,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:13.237Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 115 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:13.214Z",
+                    "elapsedMs": 115097,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:18.227Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 120 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:18.215Z",
+                    "elapsedMs": 120098,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:23.223Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 125 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:23.216Z",
+                    "elapsedMs": 125099,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:28.231Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 130 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:28.216Z",
+                    "elapsedMs": 130099,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:33.226Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 135 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:33.218Z",
+                    "elapsedMs": 135101,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:38.232Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 140 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:38.219Z",
+                    "elapsedMs": 140102,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:43.234Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 145 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:43.220Z",
+                    "elapsedMs": 145103,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:48.232Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 150 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:48.220Z",
+                    "elapsedMs": 150103,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:53.233Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 155 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:53.222Z",
+                    "elapsedMs": 155105,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:29:58.232Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 160 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:29:58.222Z",
+                    "elapsedMs": 160105,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:03.233Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 165 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:03.223Z",
+                    "elapsedMs": 165106,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:08.238Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 170 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:08.223Z",
+                    "elapsedMs": 170106,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:13.234Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 175 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:13.225Z",
+                    "elapsedMs": 175108,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:18.233Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 180 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:18.226Z",
+                    "elapsedMs": 180109,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:23.243Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 185 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:23.227Z",
+                    "elapsedMs": 185110,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:28.240Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 190 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:28.228Z",
+                    "elapsedMs": 190111,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:33.244Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 195 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:33.231Z",
+                    "elapsedMs": 195114,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:38.247Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 200 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:38.232Z",
+                    "elapsedMs": 200115,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:43.244Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 205 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:43.233Z",
+                    "elapsedMs": 205116,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:43.478Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 已返回",
+                    "message": "本机 Hermes 已完成 content_generate。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "completed",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "20260421_162722_1642a5",
+                    "startedAt": "2026-04-21T08:27:18.117Z",
+                    "heartbeatAt": "2026-04-21T08:30:43.475Z",
+                    "elapsedMs": 205358,
+                    "stdoutExcerpt": "{\"items\":[{\"title\":\"前轴扭矩干预激活判定\",\"requirementText\":\"软件应在“扭矩干预功能”中对前轴扭矩干预激活标志进行判定：当且仅当前轴升扭请求、前轴降扭请求、主动制动（AEB/CDP）、ADAS的VLC工况或前轴RBS请求中任一条件成立，且对应使能条件有效并满足ESC干预最小/最大扭矩阈值时，前轴扭矩干预激活标志应置为active；否则应置为inactive。\",\"type\":\"functional\",\"verificationHint\":\"通过功能测试验证前轴升扭、降扭、主动制动、VLC和RBS输入触发下前轴激活标志的置位与清除。\",\"sourceRefs\":[{\"fileName\":\"ESCWhlTq.c\",\"fileRole\":\"generated_c\",\"location\":\"assignment\",\"excerpt\":\"赋值: ESCWhlTq_bFrntAxleTqIntvActv = (rtb_AND || ESCWhlTq_bFrntAxleTqDecActv ||\\n    rtb_AND2 || rtb_AND9 || rtb_AND11)\"},{\"fileName\":\"ESCWhlTq.c\",\"fileRole\":\"generated_c\",\"location\":\"assignment\",\"excerpt\":\"赋值: ESCWhlTq_bFrntAxleTqDecActv = (rtb_OR6 && ESCWhlTq_bTqDecIntvEna_C &&\\n    ((rtb_TmpSignalConversionAticesc_ >= ESCWhlTq_tqESCIntvMin_C) &&\\n     (rtb_TmpSignalConversionAticesc_ <= ESCWhlTq_tqESCIntvMax_C)))\"},{\"fileName\":\"ESCWhlTq.c\",\"fileRole\":\"generated_c\",\"location\":\"assignment\",\"excerpt\":\"赋值: rtb_AND2 = (rtb_AND2 && ESCWhlTq_bTqIncIntvEna_C &&\\n              ((rtb_TmpSignalConversionAtices_e >= ESCWhlTq_tqESCIntvMin_C) &&\\n               (rtb_TmpSignalConversionAtices_e <= ESCWhlTq_tqESCIntvMax_C)))\"}],\"conflictNote\":\"\"},{\"title\":\"前轴目标扭矩优先级计算\",\"requirementText\":\"软件应按“前轴升扭请求 > 前轴降扭请求 > 主动制动（AEB/CDP） > ADAS的VLC工况 > RBS”的优先级计算前轴目标扭矩：当前轴升扭请求标志为active时，前轴目标扭矩应取前轴升扭请求；当前轴降扭请求标志为active时，前轴目标扭矩应取前轴降扭请求；当AEB或CDP任一功能激活时，前轴目标扭矩应为0；当APA或ACC激活且VLC扭矩控制激活时，前轴目标扭矩应取扭矩仲裁后的前轴目标扭矩；当前轴RBS请求标志为active且VehCfg_stRBCCtrlModeSel为0x3时，前轴目标扭矩应取“扭矩仲裁后前轴目标扭矩 + 前轴RBS目标再生扭矩”与0中的较小值；当前轴RBS请求标志为active且VehCfg_stRBCCtrlModeSel不为0x3时，前轴目标扭矩应取扭矩仲裁后前轴目标扭矩与0中的较小值；当前轴RBS请求标志为inactive时，前轴目标扭矩应取扭矩仲裁后前轴目标扭矩。最终输出应受前轴最小/最大扭矩边界约束。\",\"type\":\"functional\",\"verificationHint\":\"通过功能测试验证不同优先级请求单独激活和同时激活时前轴目标扭矩的取值与优先级覆盖关系。\",\"sourceRefs\":[{\"fileName\":\"system-requirements-example-torque-intervention.md\",\"fileRole\":\"system_pdf\",\"location\":\"page:1\",\"excerpt\":\"# 系统需求示例：扭矩干预功能\\n\\n## 文档信息\\n\\n- 文档类型：系统需求示例\\n- 领域：嵌入式 VCU\\n- 语言：中文\\n- 版本：v1\\n- 来源：调试用示例图片，人工提取整理\\n- 整理日期：2026-04-04\\n\\n## 章节信息\\n\\n- 章节编号：`5.30`\\n- 章节标题：`扭矩干预功能`\\n\\n## 需求条目\\n\\n#...",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:30:43.489Z",
+                    "stage": "content_generate_returned",
+                    "label": "Hermes 已返回结果",
+                    "message": "已收到 13 条候选软件需求，准备进行结果校验。",
+                    "level": "info",
+                    "type": "",
+                    "status": "",
+                    "transport": "",
+                    "stepType": "",
+                    "sessionId": "",
+                    "startedAt": "",
+                    "heartbeatAt": "",
+                    "elapsedMs": 0,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-21T08:35:40.318Z",
+                    "stage": "result_items_validation_failed",
+                    "label": "结果校验失败",
+                    "message": "Hermes 已返回 13 条候选软件需求，但有 58 个 sourceRef 未严格命中已抽取 evidence，任务停在结果校验阶段。",
+                    "level": "error",
+                    "type": "",
+                    "status": "",
+                    "transport": "",
+                    "stepType": "",
+                    "sessionId": "",
+                    "startedAt": "",
+                    "heartbeatAt": "",
+                    "elapsedMs": 0,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  }
+                ]
+              },
+              "errorMessage": "Hermes 已返回 13 条候选软件需求，但有 58 个 sourceRef 未严格命中已抽取 evidence，任务停在结果校验阶段。"
+            },
+            {
               "id": "8f271cf8-3047-4340-a255-fb72e6c4e5f0",
               "moduleId": "9b0ef9e4-1ef0-43c6-8d99-c2756759bcf8",
               "documentType": "software_requirement",
@@ -1461,6 +2289,18 @@
                   "validationMs": 0,
                   "saveMs": 0,
                   "totalAfterModelMs": 0
+                },
+                "agent": {
+                  "transport": "",
+                  "currentStep": "",
+                  "status": "",
+                  "startedAt": "",
+                  "lastHeartbeatAt": "",
+                  "lastEventAt": "",
+                  "sessionId": "",
+                  "stdoutExcerpt": "",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 0
                 },
                 "lastError": null,
                 "events": []
@@ -3985,6 +4825,18 @@
                   "saveMs": 0,
                   "totalAfterModelMs": 0
                 },
+                "agent": {
+                  "transport": "",
+                  "currentStep": "",
+                  "status": "",
+                  "startedAt": "",
+                  "lastHeartbeatAt": "",
+                  "lastEventAt": "",
+                  "sessionId": "",
+                  "stdoutExcerpt": "",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 0
+                },
                 "lastError": null,
                 "events": []
               },
@@ -4303,10 +5155,960 @@
           "at": "2026-04-16T20:19:53.531Z",
           "action": "module_updated",
           "detail": "功能模块信息已更新"
+        },
+        {
+          "at": "2026-04-21T07:04:48.492Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已生成"
+        },
+        {
+          "at": "2026-04-21T07:04:48.533Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:04:55.250Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:04:55.474Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:04:55.699Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:25:19.433Z",
+          "action": "task_deleted",
+          "detail": "软件需求任务已删除（任务在运行中被手动删除）"
+        },
+        {
+          "at": "2026-04-21T07:26:02.155Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已生成"
+        },
+        {
+          "at": "2026-04-21T07:26:02.262Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:26:04.836Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:26:04.960Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:26:05.015Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:26:05.030Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:26:05.051Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:26:10.072Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:26:15.076Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:26:20.119Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:27:45.850Z",
+          "action": "task_deleted",
+          "detail": "软件需求任务已删除（任务在运行中被手动删除）"
+        },
+        {
+          "at": "2026-04-21T07:39:02.024Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已生成"
+        },
+        {
+          "at": "2026-04-21T07:39:02.117Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:06.314Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:06.697Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:06.729Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:06.753Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:06.776Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:11.805Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:16.872Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:21.814Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:26.810Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:31.835Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:36.827Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:41.822Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:46.823Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:51.848Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:39:56.835Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:01.825Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:06.821Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:11.831Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:16.824Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:17.292Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:17.300Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:17.309Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:17.318Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:22.335Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:27.331Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:32.336Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:37.333Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:42.341Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:47.333Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:52.342Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:40:57.343Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:02.338Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:07.339Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:12.347Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:17.349Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:22.352Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:27.356Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:32.345Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:37.346Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:42.347Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:47.358Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:52.354Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:41:57.356Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:42:02.356Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:42:07.353Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:42:12.359Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:42:17.382Z",
+          "action": "task_failed",
+          "detail": "软件需求任务执行失败"
+        },
+        {
+          "at": "2026-04-21T07:56:20.294Z",
+          "action": "task_deleted",
+          "detail": "软件需求任务已删除"
+        },
+        {
+          "at": "2026-04-21T07:56:38.992Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已生成"
+        },
+        {
+          "at": "2026-04-21T07:56:39.250Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:56:42.739Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:56:42.997Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:56:43.034Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:56:43.173Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:56:43.218Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:56:48.238Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:56:53.259Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:56:58.241Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:03.272Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:08.278Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:13.263Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:18.260Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:23.259Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:28.254Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:33.261Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:38.264Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:43.259Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:48.261Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:49.049Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:49.062Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:49.070Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:49.079Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:54.092Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:57:59.094Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:04.107Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:09.097Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:14.100Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:19.105Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:24.106Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:29.106Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:34.100Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:39.114Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:44.111Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:49.113Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:54.123Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:58:59.174Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:04.123Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:09.124Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:14.119Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:19.129Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:24.138Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:29.138Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:34.143Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:39.134Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:44.140Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:49.139Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:54.133Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T07:59:59.134Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:00:04.143Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:00:08.983Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:14:41.533Z",
+          "action": "task_failed",
+          "detail": "软件需求任务执行失败"
+        },
+        {
+          "at": "2026-04-21T08:25:57.388Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已生成"
+        },
+        {
+          "at": "2026-04-21T08:25:57.615Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:05.193Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:05.497Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:05.539Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:05.626Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:05.669Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:07.620Z",
+          "action": "task_deleted",
+          "detail": "软件需求任务已删除"
+        },
+        {
+          "at": "2026-04-21T08:26:11.007Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:16.005Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:21.797Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:26.472Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:31.466Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:36.464Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:41.467Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:46.467Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:51.486Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:26:56.480Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:01.479Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:06.475Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:11.486Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:16.485Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:18.069Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:18.084Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:18.107Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:18.125Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:23.162Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:28.165Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:33.161Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:38.156Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:43.168Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:48.157Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:53.157Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:27:58.169Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:03.159Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:08.158Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:13.181Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:18.161Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:23.271Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:28.371Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:33.319Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:38.218Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:43.234Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:48.238Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:53.224Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:28:58.218Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:03.222Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:08.228Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:13.237Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:18.227Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:23.223Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:28.231Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:33.226Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:38.232Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:43.234Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:48.232Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:53.233Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:29:58.232Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:03.233Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:08.238Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:13.234Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:18.233Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:23.243Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:28.240Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:33.244Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:38.247Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:43.244Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:43.478Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:30:43.489Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-21T08:35:40.319Z",
+          "action": "task_failed",
+          "detail": "软件需求任务执行失败"
         }
       ],
       "createdAt": "2026-04-14T06:39:33.853Z",
-      "updatedAt": "2026-04-16T20:19:53.531Z"
+      "updatedAt": "2026-04-21T08:35:40.319Z"
     },
     {
       "id": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
@@ -5659,6 +7461,18 @@
                   "saveMs": 0,
                   "totalAfterModelMs": 0
                 },
+                "agent": {
+                  "transport": "",
+                  "currentStep": "",
+                  "status": "",
+                  "startedAt": "",
+                  "lastHeartbeatAt": "",
+                  "lastEventAt": "",
+                  "sessionId": "",
+                  "stdoutExcerpt": "",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 0
+                },
                 "lastError": null,
                 "events": []
               },
@@ -6914,6 +8728,18 @@
                   "validationMs": 0,
                   "saveMs": 0,
                   "totalAfterModelMs": 0
+                },
+                "agent": {
+                  "transport": "",
+                  "currentStep": "",
+                  "status": "",
+                  "startedAt": "",
+                  "lastHeartbeatAt": "",
+                  "lastEventAt": "",
+                  "sessionId": "",
+                  "stdoutExcerpt": "",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 0
                 },
                 "lastError": null,
                 "events": []
@@ -8443,6 +10269,18 @@
                   "saveMs": 0,
                   "totalAfterModelMs": 0
                 },
+                "agent": {
+                  "transport": "",
+                  "currentStep": "",
+                  "status": "",
+                  "startedAt": "",
+                  "lastHeartbeatAt": "",
+                  "lastEventAt": "",
+                  "sessionId": "",
+                  "stdoutExcerpt": "",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 0
+                },
                 "lastError": null,
                 "events": []
               },
@@ -9741,6 +11579,18 @@
                   "validationMs": 0,
                   "saveMs": 0,
                   "totalAfterModelMs": 0
+                },
+                "agent": {
+                  "transport": "",
+                  "currentStep": "",
+                  "status": "",
+                  "startedAt": "",
+                  "lastHeartbeatAt": "",
+                  "lastEventAt": "",
+                  "sessionId": "",
+                  "stdoutExcerpt": "",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 0
                 },
                 "lastError": null,
                 "events": []
@@ -11146,6 +12996,18 @@
                   "saveMs": 0,
                   "totalAfterModelMs": 0
                 },
+                "agent": {
+                  "transport": "",
+                  "currentStep": "",
+                  "status": "",
+                  "startedAt": "",
+                  "lastHeartbeatAt": "",
+                  "lastEventAt": "",
+                  "sessionId": "",
+                  "stdoutExcerpt": "",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 0
+                },
                 "lastError": null,
                 "events": []
               },
@@ -11371,10 +13233,55 @@
       "at": "2026-04-16T20:53:56.002Z",
       "action": "module_task_deleted",
       "detail": "充电管理 / 软件需求 已删除任务"
+    },
+    {
+      "at": "2026-04-21T07:04:48.493Z",
+      "action": "module_task_generated",
+      "detail": "扭矩干预 / 软件需求 已新增任务"
+    },
+    {
+      "at": "2026-04-21T07:25:19.436Z",
+      "action": "module_task_deleted",
+      "detail": "扭矩干预 / 软件需求 已删除任务"
+    },
+    {
+      "at": "2026-04-21T07:26:02.155Z",
+      "action": "module_task_generated",
+      "detail": "扭矩干预 / 软件需求 已新增任务"
+    },
+    {
+      "at": "2026-04-21T07:27:45.852Z",
+      "action": "module_task_deleted",
+      "detail": "扭矩干预 / 软件需求 已删除任务"
+    },
+    {
+      "at": "2026-04-21T07:39:02.024Z",
+      "action": "module_task_generated",
+      "detail": "扭矩干预 / 软件需求 已新增任务"
+    },
+    {
+      "at": "2026-04-21T07:56:20.294Z",
+      "action": "module_task_deleted",
+      "detail": "扭矩干预 / 软件需求 已删除任务"
+    },
+    {
+      "at": "2026-04-21T07:56:38.992Z",
+      "action": "module_task_generated",
+      "detail": "扭矩干预 / 软件需求 已新增任务"
+    },
+    {
+      "at": "2026-04-21T08:25:57.388Z",
+      "action": "module_task_generated",
+      "detail": "扭矩干预 / 软件需求 已新增任务"
+    },
+    {
+      "at": "2026-04-21T08:26:07.620Z",
+      "action": "module_task_deleted",
+      "detail": "扭矩干预 / 软件需求 已删除任务"
     }
   ],
   "createdAt": "2026-04-14T06:39:33.852Z",
-  "updatedAt": "2026-04-19T16:05:11.122Z",
+  "updatedAt": "2026-04-21T08:35:40.319Z",
   "migrationMeta": {
     "kind": "legacy-workspace-demo",
     "migratedAt": "2026-04-14T06:39:33.853Z",

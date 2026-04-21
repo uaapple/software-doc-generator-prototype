@@ -86,7 +86,12 @@ export const config = {
     baseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
     command: process.env.HERMES_COMMAND || "hermes",
     workdir: process.env.HERMES_WORKDIR || rootDir,
-    timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 15000),
+    timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 120000),
+    stepTimeoutMs: {
+      outline_build: Number(process.env.HERMES_TIMEOUT_OUTLINE_BUILD_MS || 120000),
+      content_generate: Number(process.env.HERMES_TIMEOUT_CONTENT_GENERATE_MS || 240000)
+    },
+    heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
     maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
     maxRecalledAtoms: Number(process.env.HERMES_MAX_RECALLED_ATOMS || 24),
     maxOutlineSections: Number(process.env.HERMES_MAX_OUTLINE_SECTIONS || 6),

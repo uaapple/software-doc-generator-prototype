@@ -16,6 +16,18 @@ function clipText(value = "", maxLength = CLI_JSON_MAX_LENGTH) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
+async function emitHermesEvent(onEvent, event = {}) {
+  if (typeof onEvent !== "function") {
+    return;
+  }
+  await Promise.resolve(
+    onEvent({
+      at: new Date().toISOString(),
+      ...event
+    })
+  );
+}
+
 function sanitizeEvidenceItem(item = {}) {
   return {
     fileName: String(item.fileName || "").trim(),
@@ -322,6 +334,17 @@ function buildCliPrompt(payload = {}) {
   }
 }
 
+function normalizeStepTimeoutMap(stepTimeoutMs = {}) {
+  return Object.fromEntries(
+    Object.entries(stepTimeoutMs || {})
+      .map(([stepType, timeoutMs]) => [
+        String(stepType || "").trim(),
+        Math.max(1000, Number(timeoutMs || 0) || 0)
+      ])
+      .filter(([stepType, timeoutMs]) => stepType && timeoutMs > 0)
+  );
+}
+
 function normalizeCliArtifact(stepType, parsed = {}) {
   if (stepType === "material_extract") {
     return { extractions: Array.isArray(parsed.extractions) ? parsed.extractions : [] };
@@ -355,15 +378,34 @@ export class HermesAgentClient {
     this.transport = String(options.transport || config.hermes.transport || "cli").trim().toLowerCase();
     this.baseURL = trimTrailingSlash(options.baseURL || config.hermes.baseURL);
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs || config.hermes.timeoutMs) || config.hermes.timeoutMs);
+    this.stepTimeoutMs = normalizeStepTimeoutMap(options.stepTimeoutMs || config.hermes.stepTimeoutMs || {});
     this.command = String(options.command || config.hermes.command || "hermes").trim() || "hermes";
     this.maxTurns = Math.max(1, Number(options.maxTurns || config.hermes.maxTurns) || config.hermes.maxTurns || 40);
+    this.heartbeatIntervalMs = Math.max(
+      10,
+      Number(options.heartbeatIntervalMs || config.hermes.heartbeatIntervalMs) || config.hermes.heartbeatIntervalMs || 5000
+    );
     this.workdir = String(options.workdir || config.hermes.workdir || config.rootDir || process.cwd());
     this.commandRunner = typeof options.commandRunner === "function" ? options.commandRunner : defaultCommandRunner;
   }
 
-  async executeApiStep(payload = {}) {
+  getTimeoutMsForStep(stepType = "") {
+    return this.stepTimeoutMs[String(stepType || "").trim()] || this.timeoutMs;
+  }
+
+  async executeApiStep(payload = {}, runtime = {}) {
+    const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
+    await emitHermesEvent(runtime.onEvent, {
+      type: "agent_runtime",
+      transport: "api",
+      stepType: payload.stepType || "",
+      status: "started",
+      label: "已开始调用 Hermes API",
+      message: `正在请求 Hermes API 执行 ${payload.stepType || "step"}。`,
+      elapsedMs: 0
+    });
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(`${this.baseURL}/internal/steps/execute`, {
@@ -391,35 +433,105 @@ export class HermesAgentClient {
         throw error;
       }
 
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "api",
+        stepType: payload.stepType || "",
+        status: "completed",
+        label: "Hermes API 已返回",
+        message: `Hermes API 已完成 ${payload.stepType || "step"}。`
+      });
       return body;
     } catch (error) {
       if (error?.code === "hermes_invalid_response") {
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "api",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes API 返回非法 JSON",
+          message: "Hermes API 返回了无法解析的 JSON 响应。"
+        });
         throw error;
       }
       if (error?.name === "AbortError") {
-        const timeoutError = new Error(`Hermes request timed out after ${this.timeoutMs}ms`);
+        const timeoutError = new Error(`Hermes request timed out after ${timeoutMs}ms`);
         timeoutError.code = "hermes_timeout";
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "api",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes API 请求超时",
+          message: timeoutError.message
+        });
         throw timeoutError;
       }
       if (error instanceof TypeError) {
         const connectionError = new Error(`Hermes is unavailable at ${this.baseURL}`);
         connectionError.code = "hermes_unavailable";
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "api",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes API 不可用",
+          message: connectionError.message
+        });
         throw connectionError;
       }
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "api",
+        stepType: payload.stepType || "",
+        status: "failed",
+        level: "error",
+        label: "Hermes API 请求失败",
+        message: error?.message || "Hermes API 请求失败"
+      });
       throw error;
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  async executeCliStep(payload = {}) {
+  async executeCliStep(payload = {}, runtime = {}) {
     const prompt = buildCliPrompt(payload);
     const args = ["chat", "-q", prompt, "-Q", "--source", "tool", "--max-turns", String(this.maxTurns), "--yolo"];
+    const startedAt = Date.now();
+    const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
+    let heartbeatTimer = null;
 
     try {
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "cli",
+        stepType: payload.stepType || "",
+        status: "started",
+        command: this.command,
+        label: "已启动本机 Hermes CLI",
+        message: `正在调用本机 Hermes 执行 ${payload.stepType || "step"}。`,
+        startedAt: new Date(startedAt).toISOString()
+      });
+      heartbeatTimer = setInterval(() => {
+        void emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "cli",
+          stepType: payload.stepType || "",
+          status: "heartbeat",
+          label: "Hermes CLI 仍在运行",
+          message: `本机 Hermes 正在执行 ${payload.stepType || "step"}，已运行 ${Math.round((Date.now() - startedAt) / 1000)} 秒。`,
+          startedAt: new Date(startedAt).toISOString(),
+          heartbeatAt: new Date().toISOString(),
+          elapsedMs: Date.now() - startedAt
+        });
+      }, this.heartbeatIntervalMs);
       const { stdout = "", stderr = "" } = await this.commandRunner(this.command, args, {
         cwd: this.workdir,
-        timeout: this.timeoutMs,
+        timeout: timeoutMs,
         maxBuffer: 16 * 1024 * 1024,
         env: { ...process.env, NO_COLOR: "1" }
       });
@@ -432,9 +544,37 @@ export class HermesAgentClient {
         invalidError.code = "hermes_invalid_response";
         invalidError.rawOutput = body;
         invalidError.sessionId = sessionId;
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "cli",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes CLI 返回非法 JSON",
+          message: "Hermes CLI 返回了无法解析的 JSON 响应。",
+          sessionId,
+          startedAt: new Date(startedAt).toISOString(),
+          elapsedMs: Date.now() - startedAt,
+          stdoutExcerpt: clipText(body, 2000),
+          stderrExcerpt: clipText(stderr, 2000)
+        });
         throw invalidError;
       }
 
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "cli",
+        stepType: payload.stepType || "",
+        status: "completed",
+        label: "Hermes CLI 已返回",
+        message: `本机 Hermes 已完成 ${payload.stepType || "step"}。`,
+        sessionId,
+        startedAt: new Date(startedAt).toISOString(),
+        heartbeatAt: new Date().toISOString(),
+        elapsedMs: Date.now() - startedAt,
+        stdoutExcerpt: clipText(body, 2000),
+        stderrExcerpt: clipText(stderr, 2000)
+      });
       return {
         status: "succeeded",
         stepType: payload.stepType,
@@ -451,23 +591,61 @@ export class HermesAgentClient {
       if (error?.code === "ENOENT") {
         const unavailableError = new Error(`Hermes CLI is unavailable: ${this.command}`);
         unavailableError.code = "hermes_unavailable";
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "cli",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes CLI 不可用",
+          message: unavailableError.message,
+          startedAt: new Date(startedAt).toISOString(),
+          elapsedMs: Date.now() - startedAt
+        });
         throw unavailableError;
       }
       if (error?.killed || error?.signal === "SIGTERM") {
-        const timeoutError = new Error(`Hermes CLI request timed out after ${this.timeoutMs}ms`);
+        const timeoutError = new Error(`Hermes CLI request timed out after ${timeoutMs}ms`);
         timeoutError.code = "hermes_timeout";
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "cli",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes CLI 请求超时",
+          message: timeoutError.message,
+          startedAt: new Date(startedAt).toISOString(),
+          elapsedMs: Date.now() - startedAt
+        });
         throw timeoutError;
       }
       const requestError = new Error(error?.stderr || error?.message || "Hermes CLI request failed");
       requestError.code = error?.code || "hermes_request_failed";
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "cli",
+        stepType: payload.stepType || "",
+        status: "failed",
+        level: "error",
+        label: "Hermes CLI 请求失败",
+        message: requestError.message,
+        startedAt: new Date(startedAt).toISOString(),
+        elapsedMs: Date.now() - startedAt,
+        stderrExcerpt: clipText(error?.stderr || "", 2000)
+      });
       throw requestError;
+    } finally {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+      }
     }
   }
 
-  async executeStep(payload = {}) {
+  async executeStep(payload = {}, runtime = {}) {
     if (this.transport === "api") {
-      return this.executeApiStep(payload);
+      return this.executeApiStep(payload, runtime);
     }
-    return this.executeCliStep(payload);
+    return this.executeCliStep(payload, runtime);
   }
 }

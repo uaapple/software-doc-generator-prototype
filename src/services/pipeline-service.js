@@ -151,6 +151,36 @@ function assertValidResultItems(resultItems = [], extractions = []) {
   }
 }
 
+function formatElapsedSeconds(elapsedMs = 0) {
+  const seconds = Math.max(0, Math.round((Number(elapsedMs || 0) || 0) / 1000));
+  return `${seconds} 秒`;
+}
+
+function buildHermesStepDescriptor(stepType = "") {
+  if (stepType === "outline_build") {
+    return {
+      stage: "outline_build",
+      runningLabel: "正在调用本机 Hermes 生成提纲",
+      actionLabel: "生成提纲",
+      runningPercent: 68
+    };
+  }
+  if (stepType === "content_generate") {
+    return {
+      stage: "content_generate",
+      runningLabel: "正在调用本机 Hermes 生成正式内容",
+      actionLabel: "生成正式内容",
+      runningPercent: 82
+    };
+  }
+  return {
+    stage: stepType || "agent_runtime",
+    runningLabel: "正在调用本机 Hermes",
+    actionLabel: stepType || "agent step",
+    runningPercent: 60
+  };
+}
+
 export class PipelineService {
   constructor(projectService) {
     this.projectService = projectService;
@@ -271,6 +301,146 @@ export class PipelineService {
       throw new Error("当前 software_requirement skill inventory 为空，无法继续执行 Hermes 生成链路");
     }
 
+    const runHermesStep = async (stepType, inputArtifact) => {
+      const descriptor = buildHermesStepDescriptor(stepType);
+      const startedAt = new Date().toISOString();
+      await updateTaskProgress(
+        {
+          stage: descriptor.stage,
+          label: descriptor.runningLabel,
+          message: `已启动 ${this.hermesAgentClient.transport === "cli" ? "本机 Hermes CLI" : "Hermes API"}，等待返回 ${descriptor.actionLabel} 结果。`,
+          percent: descriptor.runningPercent,
+          current: inputAssets.length,
+          total: inputAssets.length
+        },
+        {
+          timelineEntry: {
+            stage: descriptor.stage,
+            label: descriptor.runningLabel,
+            message: `已开始调用 ${this.hermesAgentClient.transport === "cli" ? "本机 Hermes CLI" : "Hermes API"} 执行 ${descriptor.actionLabel}。`,
+            level: "info"
+          },
+          debug: {
+            agent: {
+              transport: this.hermesAgentClient.transport,
+              currentStep: stepType,
+              status: "running",
+              startedAt,
+              lastEventAt: startedAt,
+              elapsedMs: 0
+            }
+          }
+        }
+      );
+
+      const response = await this.hermesAgentClient.executeStep(
+        {
+          taskId,
+          stepType,
+          allowedPaths: [],
+          inputArtifact,
+          skillInventory: effectiveSkillInventory,
+          llmProfileSnapshot: llmProfile
+        },
+        {
+          onEvent: async (event = {}) => {
+            const status = String(event.status || "").trim();
+            const eventAt = event.at || new Date().toISOString();
+            const debugUpdate = {
+              agent: {
+                transport: event.transport || this.hermesAgentClient.transport,
+                currentStep: event.stepType || stepType,
+                status: status || "running",
+                startedAt: event.startedAt || startedAt,
+                lastHeartbeatAt: event.heartbeatAt || "",
+                lastEventAt: eventAt,
+                sessionId: event.sessionId || "",
+                stdoutExcerpt: event.stdoutExcerpt || "",
+                stderrExcerpt: event.stderrExcerpt || "",
+                elapsedMs: Number(event.elapsedMs || 0) || 0
+              }
+            };
+            const debugEvent = {
+              stage: descriptor.stage,
+              label: event.label || descriptor.runningLabel,
+              message: event.message || `${descriptor.actionLabel} 状态已更新。`,
+              level: event.level || (status === "failed" ? "error" : "info"),
+              type: event.type || "agent_runtime",
+              status,
+              transport: event.transport || this.hermesAgentClient.transport,
+              stepType: event.stepType || stepType,
+              sessionId: event.sessionId || "",
+              startedAt: event.startedAt || startedAt,
+              heartbeatAt: event.heartbeatAt || "",
+              elapsedMs: Number(event.elapsedMs || 0) || 0,
+              stdoutExcerpt: event.stdoutExcerpt || "",
+              stderrExcerpt: event.stderrExcerpt || ""
+            };
+
+            const runningMessage =
+              status === "heartbeat"
+                ? `${descriptor.runningLabel}，已运行 ${formatElapsedSeconds(event.elapsedMs || 0)}，最近一次心跳已写入运行日志。`
+                : status === "started"
+                  ? `已启动 ${this.hermesAgentClient.transport === "cli" ? "本机 Hermes CLI" : "Hermes API"}，等待返回 ${descriptor.actionLabel} 结果。`
+                  : null;
+
+            if (status === "failed") {
+              await updateTaskProgress(
+                {
+                  stage: "failed",
+                  label: "任务执行失败",
+                  message: event.message || `${descriptor.actionLabel} 失败`,
+                  percent: 100
+                },
+                {
+                  status: "failed",
+                  errorMessage: event.message || `${descriptor.actionLabel} 失败`,
+                  summary: event.message || `${descriptor.actionLabel} 失败`,
+                  debug: debugUpdate,
+                  debugEvent,
+                  timelineEntry: {
+                    stage: "failed",
+                    label: event.label || "任务失败",
+                    message: event.message || `${descriptor.actionLabel} 失败`,
+                    level: event.level || "error"
+                  }
+                }
+              );
+              return;
+            }
+
+            if (runningMessage) {
+              await updateTaskProgress(
+                {
+                  stage: descriptor.stage,
+                  label: descriptor.runningLabel,
+                  message: runningMessage,
+                  percent: descriptor.runningPercent,
+                  current: inputAssets.length,
+                  total: inputAssets.length
+                },
+                {
+                  debug: debugUpdate,
+                  debugEvent
+                }
+              );
+              return;
+            }
+
+            await updateTaskProgress(
+              {},
+              {
+                debug: debugUpdate,
+                debugEvent
+              }
+            );
+          }
+        }
+      );
+
+      return assertHermesStepResponse(stepType, response);
+    };
+
     let extractions = [];
     if (this.hermesAgentClient.transport === "cli") {
       extractions = await this.extractionService.extractFiles(
@@ -383,17 +553,7 @@ export class PipelineService {
       }
     );
 
-    const outline = assertHermesStepResponse(
-      "outline_build",
-      await this.hermesAgentClient.executeStep({
-        taskId,
-        stepType: "outline_build",
-        allowedPaths: [],
-        inputArtifact: { evidence, recalledAtoms },
-        skillInventory: effectiveSkillInventory,
-        llmProfileSnapshot: llmProfile
-      })
-    );
+    const outline = await runHermesStep("outline_build", { evidence, recalledAtoms });
     assertValidOutline(outline);
 
     await updateTaskProgress(
@@ -413,24 +573,37 @@ export class PipelineService {
       }
     );
 
-    const contentArtifact = assertHermesStepResponse(
-      "content_generate",
-      await this.hermesAgentClient.executeStep({
-        taskId,
-        stepType: "content_generate",
-        allowedPaths: [],
-        inputArtifact: {
-          project: contextProject,
-          template,
-          evidence,
-          recalledAtoms,
-          outline
-        },
-        skillInventory: effectiveSkillInventory,
-        llmProfileSnapshot: llmProfile
-      })
-    );
+    const contentArtifact = await runHermesStep("content_generate", {
+      project: contextProject,
+      template,
+      evidence,
+      recalledAtoms,
+      outline
+    });
     const resultItems = Array.isArray(contentArtifact.items) ? contentArtifact.items : [];
+
+    await updateTaskProgress(
+      {
+        stage: "content_postprocess",
+        label: "正在校验 Hermes 返回内容",
+        message: `Hermes 已返回 ${resultItems.length} 条候选软件需求，正在校验来源引用与结果结构。`,
+        percent: 84
+      },
+      {
+        debug: {
+          postProcess: {
+            lastStage: "content_generate_returned"
+          }
+        },
+        debugEvent: {
+          stage: "content_generate_returned",
+          label: "Hermes 已返回结果",
+          message: `已收到 ${resultItems.length} 条候选软件需求，准备进行结果校验。`,
+          level: "info"
+        }
+      }
+    );
+
     assertValidResultItems(resultItems, extractions);
 
     await updateTaskProgress(
@@ -442,6 +615,17 @@ export class PipelineService {
       },
       {
         llmProfile,
+        debug: {
+          postProcess: {
+            lastStage: "result_items_validated"
+          }
+        },
+        debugEvent: {
+          stage: "result_items_validated",
+          label: "结果校验通过",
+          message: `候选结果已通过来源引用与结构校验，共 ${resultItems.length} 条。`,
+          level: "info"
+        },
         timelineEntry: {
           stage: "content_generate",
           label: "生成软件需求",
