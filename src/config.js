@@ -79,6 +79,19 @@ export const config = {
   templateDir: path.join(rootDir, "templates"),
   templatePath: path.join(rootDir, "templates", "software-requirement-template.json"),
   skillDir: path.join(rootDir, "skills", "active"),
+  hermes: {
+    transport: process.env.HERMES_TRANSPORT || "cli",
+    host: process.env.HERMES_HOST || "127.0.0.1",
+    port: Number(process.env.HERMES_PORT || 3101),
+    baseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
+    command: process.env.HERMES_COMMAND || "hermes",
+    workdir: process.env.HERMES_WORKDIR || rootDir,
+    timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 15000),
+    maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
+    maxRecalledAtoms: Number(process.env.HERMES_MAX_RECALLED_ATOMS || 24),
+    maxOutlineSections: Number(process.env.HERMES_MAX_OUTLINE_SECTIONS || 6),
+    maxEvidenceForGeneration: Number(process.env.HERMES_MAX_EVIDENCE_FOR_GENERATION || 40)
+  },
   openai: {
     apiKey: process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY || "",
     model: process.env.OPENAI_MODEL || process.env.ZHIPU_MODEL || process.env.ARK_MODEL || "gpt-4.1-mini",

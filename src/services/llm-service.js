@@ -164,6 +164,43 @@ export class LlmService {
     }
   }
 
+  async generateSoftwareRequirementFromAgentContext(context = {}, options = {}) {
+    const template = context.template || (await this.templateService.getTemplate("software_requirement"));
+    const evidence = Array.isArray(context.evidence) ? context.evidence : [];
+    const recalledAtoms = Array.isArray(context.recalledAtoms) ? context.recalledAtoms : [];
+    const outline = context.outline && typeof context.outline === "object" ? context.outline : { summary: "", sections: [] };
+    const profile =
+      options.profileSnapshot ||
+      (context.llmProfileSnapshot?.id ? await this.profileService.resolveProfile(context.llmProfileSnapshot.id) : null) ||
+      (options.llmProfileId ? await this.profileService.resolveProfile(options.llmProfileId) : null);
+
+    if (!profile?.apiKey) {
+      return buildAgentFallbackItems(context.project || {}, template, evidence, recalledAtoms, outline);
+    }
+
+    const client = new OpenAI({
+      apiKey: profile.apiKey,
+      baseURL: profile.baseURL
+    });
+
+    const response = await createJsonChatCompletion(client, {
+      model: profile.model,
+      messages: buildAgentModelInput(context.project || {}, template, evidence, recalledAtoms, outline),
+      schemaName: getResponseSchemaName("software_requirement"),
+      schema: getResponseSchema("software_requirement")
+    });
+    const payload = response.payload || response;
+    const rawItems = Array.isArray(payload.items)
+      ? payload.items
+      : Array.isArray(payload.requirements)
+        ? payload.requirements
+        : [];
+    return dedupeItems(
+      rawItems.map((item, index) => normalizeResultItem(item, index, "software_requirement", template)),
+      "software_requirement"
+    );
+  }
+
   async generateReplayProposal(materialPack, options = {}) {
     const profile = await this.profileService.resolveProfile(options.llmProfileId);
     if (!options.llmProfileId) {
@@ -254,6 +291,78 @@ function buildModelInput(project, evidence, template, skills, documentType = "so
   ];
 }
 
+function buildAgentModelInput(project, template, evidence = [], recalledAtoms = [], outline = {}) {
+  const evidenceBrief = evidence.slice(0, 40).map((item) => ({
+    id: item.id || "",
+    fileRole: item.fileRole,
+    fileName: item.fileName,
+    location: item.location,
+    excerpt: item.excerpt,
+    tags: item.tags
+  }));
+  const atomBrief = recalledAtoms.slice(0, 24).map((item) => ({
+    skillCode: item.skillCode || "",
+    kind: item.kind || "",
+    layer: item.layer || "",
+    title: item.title || "",
+    content: item.content || "",
+    matchedReason: item.matchedReason || ""
+  }));
+
+  return [
+    {
+      role: "system",
+      content: [
+        {
+          type: "input_text",
+          text: [
+            "你是软件需求生成助手。",
+            "当前输入已经经过后端筛选，只能基于提供的提纲、证据和 skill 原子生成中文软件需求条目。",
+            "只输出满足 schema 的 JSON，不要输出额外解释。",
+            "sourceRefs 只能引用已给出的 evidence 内容，不要编造新的文件名、位置或摘录。",
+            "输出必须保持软件需求风格，不要写成详细设计步骤、HIL 操作步骤或泛化总结。"
+          ].join("\n\n")
+        }
+      ]
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: JSON.stringify(
+            {
+              project: {
+                name: project.name || "",
+                description: project.description || "",
+                language: project.language || "zh-CN",
+                documentType: "software_requirement",
+                domain: project.domain || "",
+                moduleSkillKey: project.moduleSkillKey || ""
+              },
+              template,
+              outline,
+              recalledAtoms: atomBrief,
+              evidence: evidenceBrief
+            },
+            null,
+            2
+          )
+        }
+      ]
+    }
+  ];
+}
+
+function trimSentence(text = "") {
+  const compact = String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/^[，。；：,\s]+/, "")
+    .replace(/^(软件应|系统应)/, "")
+    .trim();
+  return compact ? compact.slice(0, 160) : "根据当前输入执行对应功能。";
+}
+
 function buildFallbackItems(project, evidence, template, skills, documentType = "software_requirement") {
   const knowledge = skills["domain-knowledge.json"] || { examples: [] };
   const exampleDrivenItems = buildExampleDrivenItems(knowledge, evidence, template, documentType);
@@ -285,6 +394,62 @@ function buildFallbackItems(project, evidence, template, skills, documentType = 
   }
 
   return dedupeItems(items, documentType);
+}
+
+function buildAgentFallbackItems(project, template, evidence = [], recalledAtoms = [], outline = {}) {
+  const sections = Array.isArray(outline.sections) && outline.sections.length
+    ? outline.sections
+    : recalledAtoms.slice(0, 4).map((item, index) => ({
+        id: `section-${index + 1}`,
+        topic: item.title || item.skillCode || `主题 ${index + 1}`,
+        objective: item.content || "",
+        evidenceRefs: []
+      }));
+
+  if (!sections.length && evidence.length) {
+    sections.push({
+      id: "section-1",
+      topic: "核心需求",
+      objective: evidence[0]?.excerpt || "",
+      evidenceRefs: evidence[0]?.id ? [evidence[0].id] : []
+    });
+  }
+
+  const fallbackItems = sections.slice(0, 6).map((section, index) => {
+    const matchedEvidence =
+      evidence.find((item) => (section.evidenceRefs || []).includes(item.id)) ||
+      evidence[index] ||
+      evidence[0] ||
+      null;
+    const topic = String(section.topic || `软件需求 ${index + 1}`).trim() || `软件需求 ${index + 1}`;
+    const evidenceText = matchedEvidence?.excerpt || String(section.objective || "").trim() || "当前输入支持该主题。";
+    return normalizeResultItem(
+      {
+        requirementId: `${template.requirementIdPrefix}-${String(index + 1).padStart(3, "0")}`,
+        title: topic,
+        requirementText: `软件应${trimSentence(evidenceText)}`,
+        type: "functional",
+        sourceRefs: matchedEvidence
+          ? [
+              {
+                fileName: matchedEvidence.fileName,
+                location: matchedEvidence.location,
+                excerpt: matchedEvidence.excerpt
+              }
+            ]
+          : [],
+        rationale: recalledAtoms[index]?.matchedReason || "基于当前提纲和证据生成的本地回退草稿。",
+        verificationHint: "通过仿真或联调验证输入条件与输出行为。",
+        confidence: Number(matchedEvidence?.confidence || 0.45) || 0.45,
+        conflictNote: ""
+      },
+      index,
+      "software_requirement",
+      template
+    );
+  });
+
+  return dedupeItems(fallbackItems, "software_requirement");
 }
 function buildFallbackDraft(project, section, evidenceItem, sequence, template, documentType) {
   const base = {

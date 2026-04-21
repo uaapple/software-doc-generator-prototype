@@ -426,6 +426,50 @@ export class ProjectService {
     return projects.filter(Boolean).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
+  async recoverStaleGenerationTasks() {
+    const projects = await this.listProjects();
+    let recoveredCount = 0;
+
+    for (const project of projects) {
+      let changed = false;
+      for (const module of project.modules || []) {
+        for (const space of Object.values(module.documentSpaces || {})) {
+          for (const task of space.generationTasks || []) {
+            if (!isStaleRunningTask(task)) {
+              continue;
+            }
+            task.status = "failed";
+            task.errorMessage = "任务在服务重启或中断后未恢复，已标记为失败。";
+            task.progress = normalizeTaskProgress({
+              ...task.progress,
+              stage: "failed",
+              label: "任务已中断",
+              message: task.errorMessage,
+              percent: 100,
+              updatedAt: now()
+            });
+            appendTimelineEntry(task, {
+              at: now(),
+              stage: "failed",
+              label: "任务已中断",
+              message: task.errorMessage,
+              level: "error"
+            });
+            task.summary = task.errorMessage;
+            task.updatedAt = now();
+            recoveredCount += 1;
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        await this.saveProject(project);
+      }
+    }
+
+    return { recoveredCount };
+  }
+
   async createProject(input) {
     const project = normalizeProject({
       id: randomUUID(),
@@ -670,6 +714,11 @@ export class ProjectService {
   async getGenerationTask(projectId, moduleId, documentType, taskId) {
     const space = await this.getDocumentSpace(projectId, moduleId, documentType);
     return space.generationTasks.find((task) => task.id === taskId) || null;
+  }
+
+  async getLatestGenerationTask(projectId, moduleId, documentType) {
+    const tasks = await this.listGenerationTasks(projectId, moduleId, documentType);
+    return tasks[0] || null;
   }
 
   async deleteGenerationTask(projectId, moduleId, documentType, taskId) {

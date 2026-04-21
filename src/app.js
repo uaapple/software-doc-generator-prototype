@@ -78,6 +78,7 @@ export async function createApp() {
   const feedbackTicketService = new FeedbackTicketService();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
+  await projectService.recoverStaleGenerationTasks();
 
   const upload = multer({
     storage: multer.diskStorage({
@@ -443,6 +444,25 @@ export async function createApp() {
       next(error);
     }
   });
+
+  app.get(
+    "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/latest",
+    async (req, res, next) => {
+      try {
+        const task = await projectService.getLatestGenerationTask(
+          req.params.projectId,
+          req.params.moduleId,
+          req.params.documentType
+        );
+        if (!task) {
+          return res.status(404).json({ error: "任务不存在" });
+        }
+        res.json(task);
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
 
   app.get(
     "/api/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/:taskId",

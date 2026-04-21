@@ -24,6 +24,8 @@ import { SkillDatabaseService } from "../src/services/skill-database-service.js"
 import { SkillWorkOrderService } from "../src/services/skill-work-order-service.js";
 import { ReplayLabService } from "../src/services/replay-lab-service.js";
 import { FeedbackTicketService } from "../src/services/feedback-ticket-service.js";
+import { createHermesApp } from "../src/hermes-app.js";
+import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -71,7 +73,20 @@ async function withTempConfig(run) {
     feedbackTicketUploadDir: path.join(tempDir, "data", "uploads", "feedback-tickets"),
     templateDir: path.join(tempDir, "templates"),
     templatePath: path.join(tempDir, "templates", "software-requirement-template.json"),
-    skillDir: path.join(tempDir, "skills", "active")
+    skillDir: path.join(tempDir, "skills", "active"),
+    hermes: {
+      transport: "api",
+      host: "127.0.0.1",
+      port: 0,
+      baseURL: "http://127.0.0.1:0",
+      command: "hermes",
+      workdir: tempDir,
+      timeoutMs: 2000,
+      maxTurns: 8,
+      maxRecalledAtoms: 24,
+      maxOutlineSections: 6,
+      maxEvidenceForGeneration: 40
+    }
   });
   config.openai.apiKey = "";
   config.openai.baseURL = undefined;
@@ -139,6 +154,28 @@ async function seedFixtureFiles(tempDir) {
 
 async function withTestServer(run) {
   const app = await createApp();
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    return await run({ baseUrl });
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+}
+
+async function withHermesServer(run) {
+  const app = await createHermesApp();
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -1501,100 +1538,384 @@ const tests = [
     }
   },
   {
-    name: "Project and pipeline services support module tasks and accepted result snapshots",
+    name: "Hermes agent client reports invalid JSON responses clearly",
     run: async () => {
       await withTempConfig(async () => {
-        const bundleService = new SkillBundleService();
-        await bundleService.ensureInitialized();
-        const moduleSkillService = new ModuleSkillService();
-        assert.equal(await moduleSkillService.hasModuleProfile("charging_management"), true);
-        const projectService = new ProjectService();
-        const pipelineService = new PipelineService(projectService);
-
-        const project = await projectService.createProject({ name: "Workspace Project" });
-        const module = await projectService.createModule(project.id, {
-          name: "充电管理",
-          description: "负责充电状态与控制逻辑",
-          importedSkillKey: "charging_management"
+        const server = http.createServer((_req, res) => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end("{invalid-json");
+        });
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const address = server.address();
+        const client = new HermesAgentClient({
+          baseURL: `http://127.0.0.1:${address.port}`,
+          timeoutMs: 500
         });
 
-        const uploadDir = path.join(config.uploadDir, project.id, module.id);
-        await fs.mkdir(uploadDir, { recursive: true });
-        const systemFilePath = path.join(uploadDir, "charging.md");
-        const modelFilePath = path.join(uploadDir, "charging-model.c");
-        const referenceFilePath = path.join(uploadDir, "charging-example.md");
-        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
-        await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
-        await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
-
-        await projectService.attachModuleAssets(project.id, module.id, {
-          systemPdf: [
-            {
-              originalname: "charging.md",
-              filename: "charging.md",
-              path: systemFilePath,
-              mimetype: "text/markdown",
-              size: 24
+        try {
+          await assert.rejects(
+            () =>
+              client.executeStep({
+                taskId: "task-invalid",
+                stepType: "material_extract",
+                allowedPaths: [],
+                inputArtifact: {},
+                skillInventory: null,
+                llmProfileSnapshot: null
+              }),
+            (error) => {
+              assert.equal(error.code, "hermes_invalid_response");
+              assert.match(error.message, /Hermes/i);
+              return true;
             }
-          ],
-          generatedCode: [
-            {
-              originalname: "charging-model.c",
-              filename: "charging-model.c",
-              path: modelFilePath,
-              mimetype: "text/x-c",
-              size: 44
-            }
-          ],
-          referenceExample: [
-            {
-              originalname: "charging-example.md",
-              filename: "charging-example.md",
-              path: referenceFilePath,
-              mimetype: "text/markdown",
-              size: 27
-            }
-          ]
+          );
+        } finally {
+          await new Promise((resolve, reject) => {
+            server.close((error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve();
+            });
+          });
+        }
+      });
+    }
+  },
+  {
+    name: "Hermes agent client parses quiet CLI output and session id",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout: "{\"items\":[{\"title\":\"CLI item\",\"requirementText\":\"CLI text\",\"sourceRefs\":[]}]}\n\nsession_id: 20260421_144500_abcd12\n",
+              stderr: ""
+            };
+          }
         });
 
-        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
-        assert.equal(result.task.documentType, "software_requirement");
-        assert.equal(result.task.status, "completed");
-        assert.ok(result.task.resultItems.length >= 1);
-
-        const accepted = await projectService.createAcceptedItem(project.id, module.id, "software_requirement", {
-          sourceTaskId: result.task.id,
-          sourceResultItemId: result.task.resultItems[0].id,
-          requirementText: "软件应在充电使能时输出充电状态信号，并记录状态变化。"
+        const response = await client.executeStep({
+          taskId: "task-cli",
+          stepType: "content_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            project: { name: "CLI Project", documentType: "software_requirement" },
+            evidence: [],
+            recalledAtoms: [],
+            outline: { sections: [{ title: "Section", objective: "Goal" }] },
+            template: { requirementIdPrefix: "SWR", sections: [] }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
         });
-        assert.equal(accepted.sourceTaskId, result.task.id);
-        assert.ok(accepted.acceptedSnapshot.requirementText.length > 0);
-        assert.equal(
-          accepted.currentContent.requirementText,
-          "软件应在充电使能时输出充电状态信号，并记录状态变化。"
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].command, "hermes");
+        assert.ok(invocations[0].args.includes("chat"));
+        assert.ok(invocations[0].args.includes("-Q"));
+        assert.equal(response.status, "succeeded");
+        assert.equal(response.sessionId, "20260421_144500_abcd12");
+        assert.equal(response.artifact.items[0].title, "CLI item");
+      });
+    }
+  },
+  {
+    name: "Hermes agent client reports invalid CLI JSON responses clearly",
+    run: async () => {
+      await withTempConfig(async () => {
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async () => ({
+            stdout: "not-json\n\nsession_id: 20260421_144501_badbad\n",
+            stderr: ""
+          })
+        });
+
+        await assert.rejects(
+          () =>
+            client.executeStep({
+              taskId: "task-cli-invalid",
+              stepType: "outline_build",
+              allowedPaths: [],
+              inputArtifact: { recalledAtoms: [], evidence: [] },
+              skillInventory: { items: [] },
+              llmProfileSnapshot: null
+            }),
+          (error) => {
+            assert.equal(error.code, "hermes_invalid_response");
+            assert.match(error.message, /JSON/i);
+            return true;
+          }
         );
+      });
+    }
+  },
+  {
+    name: "App startup marks stale running generation tasks as failed",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Recovery Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+        const staleTime = new Date(Date.now() - 31 * 60 * 1000).toISOString();
+        await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          id: "stale-task",
+          status: "running",
+          summary: "正在生成软件需求",
+          progress: {
+            stage: "content_generate",
+            label: "正在生成",
+            message: "长时间未完成",
+            percent: 68,
+            updatedAt: staleTime
+          },
+          timeline: [
+            {
+              at: staleTime,
+              stage: "content_generate",
+              label: "正在生成",
+              message: "长时间未完成",
+              level: "info"
+            }
+          ],
+          createdAt: staleTime,
+          updatedAt: staleTime
+        });
 
-        const updated = await projectService.updateAcceptedItem(
+        await createApp();
+
+        const refreshedTask = await projectService.getGenerationTask(
           project.id,
           module.id,
           "software_requirement",
-          accepted.id,
-          {
-            requirementText: "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
-          }
+          "stale-task"
         );
-        assert.equal(
-          updated.currentContent.requirementText,
-          "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
-        );
+        assert.equal(refreshedTask.status, "failed");
+        assert.match(refreshedTask.errorMessage, /恢复|重启|中断/);
+        assert.equal(refreshedTask.progress.stage, "failed");
+      });
+    }
+  },
+  {
+    name: "Generation task API exposes latest task shortcut",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Latest Task Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Latest Task Module",
+          moduleSkillKey: "charging_management"
+        });
 
-        const refreshedProject = await projectService.getProject(project.id);
-        const refreshedModule = refreshedProject.modules.find((item) => item.id === module.id);
-        assert.equal(refreshedModule.assets.length, 3);
-        assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks.length, 1);
-        assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks[0].status, "completed");
-        assert.equal(refreshedModule.documentSpaces.software_requirement.acceptedItems.length, 1);
-        assert.equal(refreshedModule.documentSpaces.detail_design.generationTasks.length, 0);
+        await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          id: "older-task",
+          status: "failed",
+          summary: "older",
+          createdAt: "2026-04-20T00:00:00.000Z",
+          updatedAt: "2026-04-20T00:00:00.000Z"
+        });
+        await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          id: "latest-task",
+          status: "running",
+          summary: "latest",
+          createdAt: "2026-04-21T00:00:00.000Z",
+          updatedAt: "2026-04-21T00:00:00.000Z"
+        });
+
+        await withTestServer(async ({ baseUrl }) => {
+          const response = await fetch(
+            `${baseUrl}/api/projects/${project.id}/modules/${module.id}/spaces/software_requirement/tasks/latest`
+          );
+          assert.equal(response.status, 200);
+          const task = await response.json();
+          assert.equal(task.id, "latest-task");
+          assert.equal(task.summary, "latest");
+        });
+      });
+    }
+  },
+  {
+    name: "Pipeline service runs software requirement generation through Hermes workflow",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withHermesServer(async ({ baseUrl }) => {
+          config.hermes.baseURL = baseUrl;
+          const projectService = new ProjectService();
+          const pipelineService = new PipelineService(projectService);
+
+          const project = await projectService.createProject({ name: "Agent Validation Workspace" });
+          const module = await projectService.createModule(project.id, {
+            name: "Charging Management",
+            moduleSkillKey: "charging_management"
+          });
+
+          const uploadDir = path.join(config.uploadDir, project.id, module.id);
+          await fs.mkdir(uploadDir, { recursive: true });
+          const systemFilePath = path.join(uploadDir, "charging-system.md");
+          const modelFilePath = path.join(uploadDir, "charging-model.c");
+          const referenceFilePath = path.join(uploadDir, "charging-reference.md");
+          await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+          await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+          await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
+
+          await projectService.attachModuleAssets(project.id, module.id, {
+            systemPdf: [
+              {
+                originalname: "charging-system.md",
+                filename: "charging-system.md",
+                path: systemFilePath,
+                mimetype: "text/markdown",
+                size: 24
+              }
+            ],
+            generatedCode: [
+              {
+                originalname: "charging-model.c",
+                filename: "charging-model.c",
+                path: modelFilePath,
+                mimetype: "text/x-c",
+                size: 44
+              }
+            ],
+            referenceExample: [
+              {
+                originalname: "charging-reference.md",
+                filename: "charging-reference.md",
+                path: referenceFilePath,
+                mimetype: "text/markdown",
+                size: 27
+              }
+            ]
+          });
+
+          const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
+          assert.equal(result.task.status, "completed");
+          assert.ok(result.task.resultItems.length >= 1);
+          assert.ok(result.task.extractions.length >= 1);
+          assert.ok(result.task.metrics.extractionEvidenceCount >= 1);
+
+          const stages = (result.task.timeline || []).map((entry) => entry.stage);
+          assert.ok(stages.includes("task_init"));
+          assert.ok(stages.includes("effective_skill_resolve"));
+          assert.ok(stages.includes("material_extract"));
+          assert.ok(stages.includes("atom_recall"));
+          assert.ok(stages.includes("outline_build"));
+          assert.ok(stages.includes("content_generate"));
+          assert.ok(stages.includes("rule_validate"));
+          assert.ok(stages.includes("persist_result"));
+
+          assert.ok((result.task.resultItems[0].sourceRefs || []).length >= 1);
+          assert.equal(result.task.progress.stage, "completed");
+        });
+      });
+    }
+  },
+  {
+    name: "Project and pipeline services support module tasks and accepted result snapshots",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withHermesServer(async ({ baseUrl }) => {
+          config.hermes.baseURL = baseUrl;
+          const bundleService = new SkillBundleService();
+          await bundleService.ensureInitialized();
+          const moduleSkillService = new ModuleSkillService();
+          assert.equal(await moduleSkillService.hasModuleProfile("charging_management"), true);
+          const projectService = new ProjectService();
+          const pipelineService = new PipelineService(projectService);
+
+          const project = await projectService.createProject({ name: "Workspace Project" });
+          const module = await projectService.createModule(project.id, {
+            name: "充电管理",
+            description: "负责充电状态与控制逻辑",
+            importedSkillKey: "charging_management"
+          });
+
+          const uploadDir = path.join(config.uploadDir, project.id, module.id);
+          await fs.mkdir(uploadDir, { recursive: true });
+          const systemFilePath = path.join(uploadDir, "charging.md");
+          const modelFilePath = path.join(uploadDir, "charging-model.c");
+          const referenceFilePath = path.join(uploadDir, "charging-example.md");
+          await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+          await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+          await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
+
+          await projectService.attachModuleAssets(project.id, module.id, {
+            systemPdf: [
+              {
+                originalname: "charging.md",
+                filename: "charging.md",
+                path: systemFilePath,
+                mimetype: "text/markdown",
+                size: 24
+              }
+            ],
+            generatedCode: [
+              {
+                originalname: "charging-model.c",
+                filename: "charging-model.c",
+                path: modelFilePath,
+                mimetype: "text/x-c",
+                size: 44
+              }
+            ],
+            referenceExample: [
+              {
+                originalname: "charging-example.md",
+                filename: "charging-example.md",
+                path: referenceFilePath,
+                mimetype: "text/markdown",
+                size: 27
+              }
+            ]
+          });
+
+          const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
+          assert.equal(result.task.documentType, "software_requirement");
+          assert.equal(result.task.status, "completed");
+          assert.ok(result.task.resultItems.length >= 1);
+
+          const accepted = await projectService.createAcceptedItem(project.id, module.id, "software_requirement", {
+            sourceTaskId: result.task.id,
+            sourceResultItemId: result.task.resultItems[0].id,
+            requirementText: "软件应在充电使能时输出充电状态信号，并记录状态变化。"
+          });
+          assert.equal(accepted.sourceTaskId, result.task.id);
+          assert.ok(accepted.acceptedSnapshot.requirementText.length > 0);
+          assert.equal(
+            accepted.currentContent.requirementText,
+            "软件应在充电使能时输出充电状态信号，并记录状态变化。"
+          );
+
+          const updated = await projectService.updateAcceptedItem(
+            project.id,
+            module.id,
+            "software_requirement",
+            accepted.id,
+            {
+              requirementText: "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
+            }
+          );
+          assert.equal(
+            updated.currentContent.requirementText,
+            "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
+          );
+
+          const refreshedProject = await projectService.getProject(project.id);
+          const refreshedModule = refreshedProject.modules.find((item) => item.id === module.id);
+          assert.equal(refreshedModule.assets.length, 3);
+          assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks.length, 1);
+          assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks[0].status, "completed");
+          assert.equal(refreshedModule.documentSpaces.software_requirement.acceptedItems.length, 1);
+          assert.equal(refreshedModule.documentSpaces.detail_design.generationTasks.length, 0);
+        });
       });
     }
   },

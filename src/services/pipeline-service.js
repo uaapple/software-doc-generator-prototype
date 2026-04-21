@@ -6,6 +6,8 @@ import { LlmService } from "./llm-service.js";
 import { ValidationService } from "./validation-service.js";
 import { LlmProfileService } from "./llm-profile-service.js";
 import { ModuleSkillService } from "./module-skill-service.js";
+import { HermesAgentClient } from "./hermes-agent-client.js";
+import { recallSkillInventory } from "./software-requirement-agent-shared.js";
 
 function normalizeDocumentType(value) {
   if (value === "detail_design") return "detail_design";
@@ -33,6 +35,23 @@ function buildRunningSummary(documentType) {
 
 function countEvidence(extractions = []) {
   return extractions.reduce((total, item) => total + (Array.isArray(item.evidence) ? item.evidence.length : 0), 0);
+}
+
+function buildSkillInventory(skills = {}) {
+  const compiledPack = skills.__compiledSkillPack || {};
+  const items = Array.isArray(compiledPack.flatItems) ? compiledPack.flatItems : [];
+  return {
+    selectedProfiles: Array.isArray(compiledPack.selectedProfiles) ? compiledPack.selectedProfiles : skills.__profiles || [],
+    items: items.map((item) => ({
+      skillCode: item.skillCode || "",
+      layer: item.layer || "",
+      profileKey: item.profileKey || "",
+      kind: item.kind || "",
+      title: item.title || "",
+      content: item.content || "",
+      order: item.order || 0
+    }))
+  };
 }
 
 function isTaskDeletedError(error) {
@@ -65,6 +84,73 @@ function logGenerationDebug(event, payload = {}) {
   }
 }
 
+function assertHermesStepResponse(stepType, response = {}) {
+  if (!response || response.status !== "succeeded") {
+    throw new Error(`Hermes step failed: ${stepType}`);
+  }
+  return response.artifact || {};
+}
+
+function assertValidExtractions(extractions = []) {
+  if (!Array.isArray(extractions)) {
+    throw new Error("Hermes material_extract must return an extraction array");
+  }
+  for (const extraction of extractions) {
+    if (!Array.isArray(extraction.evidence)) {
+      throw new Error("Hermes extraction is missing evidence array");
+    }
+    for (const evidence of extraction.evidence) {
+      if (!evidence?.fileName || !evidence?.location || !evidence?.excerpt || !evidence?.fileRole) {
+        throw new Error("Hermes evidence item is missing required fields");
+      }
+    }
+  }
+}
+
+function assertValidRecalledAtoms(items = [], inventory = {}) {
+  if (!Array.isArray(items)) {
+    throw new Error("Hermes atom_recall must return an item array");
+  }
+  const allowedCodes = new Set((inventory.items || []).map((item) => item.skillCode).filter(Boolean));
+  for (const item of items) {
+    if (!item?.skillCode || !allowedCodes.has(item.skillCode)) {
+      throw new Error("Hermes recalled an atom outside the effective skill inventory");
+    }
+    if (!item.matchedReason) {
+      throw new Error("Hermes recalled atom is missing matchedReason");
+    }
+  }
+}
+
+function assertValidOutline(outline = {}) {
+  if (!outline || !Array.isArray(outline.sections) || !outline.sections.length) {
+    throw new Error("Hermes outline_build must return at least one outline section");
+  }
+}
+
+function assertValidResultItems(resultItems = [], extractions = []) {
+  if (!Array.isArray(resultItems) || !resultItems.length) {
+    throw new Error("Hermes content_generate must return at least one result item");
+  }
+  const evidenceKeys = new Set(
+    extractions.flatMap((item) =>
+      (item.evidence || []).map((evidence) => `${evidence.fileName}::${evidence.location}::${evidence.excerpt}`)
+    )
+  );
+
+  for (const item of resultItems) {
+    if (!item?.title || !item?.requirementText || !Array.isArray(item.sourceRefs)) {
+      throw new Error("Hermes generated result item is missing required fields");
+    }
+    for (const sourceRef of item.sourceRefs) {
+      const key = `${sourceRef.fileName}::${sourceRef.location}::${sourceRef.excerpt}`;
+      if (!evidenceKeys.has(key)) {
+        throw new Error("Hermes generated a sourceRef outside the extracted evidence set");
+      }
+    }
+  }
+}
+
 export class PipelineService {
   constructor(projectService) {
     this.projectService = projectService;
@@ -76,6 +162,7 @@ export class PipelineService {
     this.skillBundleService = new SkillBundleService();
     this.llmProfileService = new LlmProfileService();
     this.moduleSkillService = new ModuleSkillService();
+    this.hermesAgentClient = new HermesAgentClient();
   }
 
   async getMeta() {
@@ -91,6 +178,338 @@ export class PipelineService {
       skills: Object.keys(skills),
       llmConfigured,
       llm: llmMeta
+    };
+  }
+
+  async finalizeSoftwareRequirementGeneration({
+    projectId,
+    moduleId,
+    taskId,
+    project,
+    module,
+    inputAssets,
+    options = {},
+    selectedProfile,
+    updateTaskProgress
+  }) {
+    const contextProject = {
+      name: `${project.name} / ${module.name}`,
+      description: module.description || project.description,
+      language: project.language,
+      documentType: "software_requirement",
+      domain: module.domain || "embedded_vcu",
+      moduleSkillKey: module.moduleSkillKey || ""
+    };
+    const hermesExecutionMode =
+      this.hermesAgentClient.transport === "cli" ? "hermes_agent_cli" : "hermes_agent_api";
+    const hermesEndpoint =
+      this.hermesAgentClient.transport === "cli" ? this.hermesAgentClient.command : this.hermesAgentClient.baseURL;
+    const llmProfile = selectedProfile
+      ? {
+          id: selectedProfile.id,
+          provider: this.hermesAgentClient.transport === "cli" ? "hermes_cli" : selectedProfile.provider,
+          name: this.hermesAgentClient.transport === "cli" ? "Installed Hermes CLI" : selectedProfile.name,
+          model: this.hermesAgentClient.transport === "cli" ? "configured-in-hermes" : selectedProfile.model,
+          baseURL: this.hermesAgentClient.transport === "cli" ? "" : selectedProfile.baseURL,
+          executionMode: hermesExecutionMode,
+          agentEndpoint: hermesEndpoint
+        }
+      : {
+          id: "",
+          provider: this.hermesAgentClient.transport === "cli" ? "hermes_cli" : "local_fallback",
+          name: this.hermesAgentClient.transport === "cli" ? "Installed Hermes CLI" : "Hermes 本地回退",
+          model: this.hermesAgentClient.transport === "cli" ? "configured-in-hermes" : "",
+          baseURL: "",
+          executionMode: hermesExecutionMode,
+          agentEndpoint: hermesEndpoint
+        };
+
+    const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
+    let composedSkills = null;
+    try {
+      composedSkills = await this.skillLoader.loadFromRegistryContext(
+        {
+          documentType: "software_requirement",
+          domain: module.domain || "embedded_vcu",
+          moduleSkillKey: module.moduleSkillKey || ""
+        },
+        skillDir
+      );
+    } catch (_error) {
+      composedSkills = await this.skillLoader.loadForContext(
+        {
+          documentType: "software_requirement",
+          domain: module.domain || "embedded_vcu",
+          moduleSkillKey: module.moduleSkillKey || ""
+        },
+        skillDir
+      );
+    }
+
+    const template = await this.templateService.getTemplate("software_requirement");
+    const domainKnowledge = composedSkills["domain-knowledge.json"] || {};
+    const effectiveSkillInventory = buildSkillInventory(composedSkills);
+
+    await updateTaskProgress(
+      {
+        stage: "effective_skill_resolve",
+        label: "正在解析生效技能",
+        message: `已命中 ${effectiveSkillInventory.selectedProfiles.length || 0} 层 profile，准备下发 ${effectiveSkillInventory.items.length} 条 skill atom。`,
+        percent: 22
+      },
+      {
+        timelineEntry: {
+          stage: "effective_skill_resolve",
+          label: "解析生效技能",
+          message: `已完成 software_requirement skill inventory 解析，命中 ${effectiveSkillInventory.items.length} 条 atom。`,
+          level: "info"
+        }
+      }
+    );
+
+    if (!effectiveSkillInventory.items.length) {
+      throw new Error("当前 software_requirement skill inventory 为空，无法继续执行 Hermes 生成链路");
+    }
+
+    let extractions = [];
+    if (this.hermesAgentClient.transport === "cli") {
+      extractions = await this.extractionService.extractFiles(
+        {
+          files: inputAssets.map((asset) => ({
+            id: asset.id,
+            role: asset.role,
+            fileRole: asset.role,
+            originalName: asset.originalName,
+            absolutePath: asset.absolutePath,
+            relativePath: asset.relativePath,
+            storedName: asset.storedName,
+            mimeType: asset.mimeType,
+            size: asset.size
+          }))
+        },
+        { allowStoredNameFallback: true }
+      );
+    } else {
+      const extractArtifact = assertHermesStepResponse(
+        "material_extract",
+        await this.hermesAgentClient.executeStep({
+          taskId,
+          stepType: "material_extract",
+          allowedPaths: inputAssets.map((asset) => asset.absolutePath).filter(Boolean),
+          inputArtifact: {
+            files: inputAssets.map((asset) => ({
+              id: asset.id,
+              role: asset.role,
+              fileRole: asset.role,
+              originalName: asset.originalName,
+              absolutePath: asset.absolutePath,
+              relativePath: asset.relativePath,
+              storedName: asset.storedName,
+              mimeType: asset.mimeType,
+              size: asset.size
+            }))
+          },
+          skillInventory: effectiveSkillInventory,
+          llmProfileSnapshot: llmProfile
+        })
+      );
+      extractions = Array.isArray(extractArtifact.extractions) ? extractArtifact.extractions : [];
+    }
+    assertValidExtractions(extractions);
+    const evidence = extractions.flatMap((item) => item.evidence || []);
+
+    await updateTaskProgress(
+      {
+        stage: "material_extract",
+        label: "正在抽取输入证据",
+        message:
+          this.hermesAgentClient.transport === "cli"
+            ? `后端本地抽取已完成 ${inputAssets.length} 个输入文件，共得到 ${evidence.length} 条证据。`
+            : `Hermes 已完成 ${inputAssets.length} 个输入文件抽取，共得到 ${evidence.length} 条证据。`,
+        percent: 42,
+        current: inputAssets.length,
+        total: inputAssets.length
+      },
+      {
+        metrics: {
+          extractionFileCount: inputAssets.length,
+          extractionEvidenceCount: evidence.length
+        },
+        timelineEntry: {
+          stage: "material_extract",
+          label: "抽取输入证据",
+          message: `已完成文件抽取，得到 ${evidence.length} 条结构化证据。`,
+          level: "info"
+        }
+      }
+    );
+
+    let recalledAtoms = [];
+    if (this.hermesAgentClient.transport === "cli") {
+      recalledAtoms = recallSkillInventory(effectiveSkillInventory, evidence);
+    } else {
+      const recallArtifact = assertHermesStepResponse(
+        "atom_recall",
+        await this.hermesAgentClient.executeStep({
+          taskId,
+          stepType: "atom_recall",
+          allowedPaths: [],
+          inputArtifact: { evidence },
+          skillInventory: effectiveSkillInventory,
+          llmProfileSnapshot: llmProfile
+        })
+      );
+      recalledAtoms = Array.isArray(recallArtifact.items) ? recallArtifact.items : [];
+    }
+    assertValidRecalledAtoms(recalledAtoms, effectiveSkillInventory);
+
+    await updateTaskProgress(
+      {
+        stage: "atom_recall",
+        label: "正在召回相关技能原子",
+        message:
+          this.hermesAgentClient.transport === "cli"
+            ? `后端已基于有效 skill inventory 召回 ${recalledAtoms.length} 条相关 skill atom。`
+            : `Hermes 已召回 ${recalledAtoms.length} 条相关 skill atom。`,
+        percent: 56
+      },
+      {
+        timelineEntry: {
+          stage: "atom_recall",
+          label: "召回技能原子",
+          message: `召回完成，得到 ${recalledAtoms.length} 条候选 atom。`,
+          level: "info"
+        }
+      }
+    );
+
+    const outline = assertHermesStepResponse(
+      "outline_build",
+      await this.hermesAgentClient.executeStep({
+        taskId,
+        stepType: "outline_build",
+        allowedPaths: [],
+        inputArtifact: { evidence, recalledAtoms },
+        skillInventory: effectiveSkillInventory,
+        llmProfileSnapshot: llmProfile
+      })
+    );
+    assertValidOutline(outline);
+
+    await updateTaskProgress(
+      {
+        stage: "outline_build",
+        label: "正在生成需求提纲",
+        message: `Hermes 已构建 ${outline.sections.length} 个主题分解。`,
+        percent: 68
+      },
+      {
+        timelineEntry: {
+          stage: "outline_build",
+          label: "生成需求提纲",
+          message: `提纲生成完成，覆盖 ${outline.sections.length} 个主题。`,
+          level: "info"
+        }
+      }
+    );
+
+    const contentArtifact = assertHermesStepResponse(
+      "content_generate",
+      await this.hermesAgentClient.executeStep({
+        taskId,
+        stepType: "content_generate",
+        allowedPaths: [],
+        inputArtifact: {
+          project: contextProject,
+          template,
+          evidence,
+          recalledAtoms,
+          outline
+        },
+        skillInventory: effectiveSkillInventory,
+        llmProfileSnapshot: llmProfile
+      })
+    );
+    const resultItems = Array.isArray(contentArtifact.items) ? contentArtifact.items : [];
+    assertValidResultItems(resultItems, extractions);
+
+    await updateTaskProgress(
+      {
+        stage: "content_generate",
+        label: "正在生成软件需求",
+        message: `Hermes 已返回 ${resultItems.length} 条候选软件需求，准备执行规则校验。`,
+        percent: 82
+      },
+      {
+        llmProfile,
+        timelineEntry: {
+          stage: "content_generate",
+          label: "生成软件需求",
+          message: `内容生成完成，得到 ${resultItems.length} 条候选结果。`,
+          level: "info"
+        }
+      }
+    );
+
+    const conflicts = this.validationService.validate(resultItems, { domainKnowledge, documentType: "software_requirement" });
+    const traces = buildTraces(resultItems);
+
+    await updateTaskProgress(
+      {
+        stage: "rule_validate",
+        label: "正在校验生成结果",
+        message: `规则校验完成，识别到 ${conflicts.length} 个冲突，准备保存任务结果。`,
+        percent: 92
+      },
+      {
+        metrics: {
+          generatedItemCount: resultItems.length,
+          conflictCount: conflicts.length
+        },
+        timelineEntry: {
+          stage: "rule_validate",
+          label: "规则校验",
+          message: `已完成规则校验，得到 ${traces.length} 条追溯信息和 ${conflicts.length} 个冲突。`,
+          level: "info"
+        }
+      }
+    );
+
+    const updatedTask = await this.projectService.updateGenerationTask(projectId, moduleId, "software_requirement", taskId, {
+      status: "completed",
+      resultItems,
+      extractions,
+      traces,
+      conflicts,
+      llmProfile,
+      metrics: {
+        extractionFileCount: inputAssets.length,
+        extractionEvidenceCount: evidence.length,
+        generatedItemCount: resultItems.length,
+        conflictCount: conflicts.length
+      },
+      progress: {
+        stage: "completed",
+        label: "任务已完成",
+        message: `Hermes 已生成 ${resultItems.length} 条软件需求，可开始审核。`,
+        percent: 100
+      },
+      timelineEntry: {
+        stage: "persist_result",
+        label: "保存结果",
+        message: `任务结果已写入模块工作区，可在历史任务中查看详情。`,
+        level: "info"
+      },
+      summary: llmProfile.model
+        ? `通过 Hermes + ${llmProfile.name} 生成 ${resultItems.length} 条软件需求`
+        : `通过 Hermes 本地回退生成 ${resultItems.length} 条软件需求`
+    });
+
+    return {
+      projectId,
+      moduleId,
+      documentType: "software_requirement",
+      task: updatedTask
     };
   }
 
@@ -170,18 +589,25 @@ export class PipelineService {
         moduleSkillKey: module.moduleSkillKey || ""
       };
 
+      const initStage = normalizedDocumentType === "software_requirement" ? "task_init" : "module_bootstrap";
       await updateTaskProgress(
         {
-          stage: "module_bootstrap",
-          label: "正在准备模块上下文",
-          message: "正在校验模块资料、加载技能与生成上下文。",
+          stage: initStage,
+          label: normalizedDocumentType === "software_requirement" ? "正在初始化任务上下文" : "正在准备模块上下文",
+          message:
+            normalizedDocumentType === "software_requirement"
+              ? "正在校验输入资产、模块技能和 Hermes 执行上下文。"
+              : "正在校验模块资料、加载技能与生成上下文。",
           percent: 10
         },
         {
           timelineEntry: {
-            stage: "module_bootstrap",
-            label: "准备模块上下文",
-            message: "已开始准备模块技能、文档类型和输入资产。",
+            stage: initStage,
+            label: normalizedDocumentType === "software_requirement" ? "初始化任务上下文" : "准备模块上下文",
+            message:
+              normalizedDocumentType === "software_requirement"
+                ? "已开始准备 Hermes 软件需求生成任务。"
+                : "已开始准备模块技能、文档类型和输入资产。",
             level: "info"
           }
         }
@@ -200,6 +626,20 @@ export class PipelineService {
             llmProfileName: readiness.bootstrapLlmProfile?.name || ""
           },
           seededAt: new Date().toISOString()
+        });
+      }
+
+      if (normalizedDocumentType === "software_requirement") {
+        return this.finalizeSoftwareRequirementGeneration({
+          projectId,
+          moduleId,
+          taskId,
+          project,
+          module,
+          inputAssets,
+          options,
+          selectedProfile,
+          updateTaskProgress
         });
       }
 

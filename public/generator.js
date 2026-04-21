@@ -50,6 +50,7 @@ async function bootstrap() {
     renderProfiles();
     renderAssets();
     renderReferenceExampleCopy();
+    enforceRunningTaskGuard();
   } catch (error) {
     handleError(error);
     disableGenerate();
@@ -59,6 +60,10 @@ async function bootstrap() {
 async function handleGenerate(event) {
   event.preventDefault();
   try {
+    if (hasRunningTask()) {
+      disableGenerate(`当前模块已有进行中的${documentLabel(pageDocumentType)}任务，请等待完成后再发起新的生成。`);
+      return;
+    }
     const selectedAssetIds = [...assetPicker.querySelectorAll('input[name="assetIds"]:checked')].map((input) => input.value);
     const formData = new FormData(generateForm);
     if (selectedAssetIds.length) {
@@ -276,6 +281,18 @@ function documentLabel(documentType) {
 
 function countTasks(module, documentType) {
   return module?.documentSpaces?.[documentType]?.generationTasks?.length || 0;
+}
+
+function hasRunningTask() {
+  return (moduleData?.documentSpaces?.[pageDocumentType]?.generationTasks || []).some((task) => task.status === "running");
+}
+
+function enforceRunningTaskGuard() {
+  if (hasRunningTask()) {
+    disableGenerate(`当前模块已有进行中的${documentLabel(pageDocumentType)}任务，请先等待任务结束。`);
+  } else {
+    enableGenerate();
+  }
 }
 
 function getRoleLabel(role) {
