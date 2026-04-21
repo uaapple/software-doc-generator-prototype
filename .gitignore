@@ -13,6 +13,8 @@ data/*
 !data/rejections/**
 !data/replay-tasks/
 !data/replay-tasks/**
+!data/feedback-tickets/
+!data/feedback-tickets/**
 .local/
 docs/generated-requirements-overview.html
 docs/skill-overview.html

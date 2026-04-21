@@ -5,5 +5,417 @@
   "displayName": "Detail Design",
   "documentTypeScope": "detail_design",
   "status": "active",
-  "items": []
+  "items": [
+    {
+      "skillCode": "DOC-detail_design-writing_rule-001",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "writing_rule",
+      "title": "详细设计输出定位",
+      "content": "详细设计输出应描述“软件内部实现分解”，不是仅复述系统需求，也不是把源码变量逐句翻译成说明文字。",
+      "order": 1,
+      "status": "active",
+      "sectionKey": "写作定位"
+    },
+    {
+      "skillCode": "DOC-detail_design-writing_rule-002",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "writing_rule",
+      "title": "实现展开要素",
+      "content": "每条详细设计除主行为外，还应尽量写出内部变量、中间量、模式分支、承接路径或限幅关系，形成可审核的实现展开。",
+      "order": 2,
+      "status": "active",
+      "sectionKey": "写作定位"
+    },
+    {
+      "skillCode": "DOC-detail_design-writing_rule-003",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "writing_rule",
+      "title": "允许实现性句式",
+      "content": "正文允许使用“其中”“注”“计算方法为”等实现展开句式，以承载计算方法、上一时刻量、模式判断和边界限制。",
+      "order": 3,
+      "status": "active",
+      "sectionKey": "写作定位"
+    },
+    {
+      "skillCode": "DOC-detail_design-writing_rule-004",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "writing_rule",
+      "title": "层级保留但不强制编号",
+      "content": "标题层级仍应保留“父功能 -> 子功能 -> 设计点”的结构，但除非用户明确要求，不强制复现原始章节号。",
+      "order": 4,
+      "status": "active",
+      "sectionKey": "结构组织"
+    },
+    {
+      "skillCode": "DOC-detail_design-writing_rule-005",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "writing_rule",
+      "title": "结构化内容一致性",
+      "content": "每条详细设计的 `structuredContent` 应与正文语义一致，至少能映射出可审阅的 `designBreakdown`。",
+      "order": 5,
+      "status": "active",
+      "sectionKey": "结构组织"
+    },
+    {
+      "skillCode": "DOC-detail_design-writing_rule-006",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "writing_rule",
+      "title": "详细设计优先内部量",
+      "content": "与软件需求相比，详细设计可以更显式写出内部量计算方法、上一时刻量、模式枚举和限幅路径，但不得脱离系统需求边界创造新功能主题。",
+      "order": 6,
+      "status": "active",
+      "sectionKey": "写作定位"
+    },
+    {
+      "skillCode": "DOC-detail_design-extraction_rule-001",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "extraction_rule",
+      "title": "输入源优先级",
+      "content": "系统需求优先定义功能边界、对象和主控制主题；模型代码与模型文档主要提供实现展开、内部变量、模式分支和限幅细节。",
+      "order": 7,
+      "status": "active",
+      "sectionKey": "抽取重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-extraction_rule-002",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "extraction_rule",
+      "title": "中间量单独抽取",
+      "content": "抽取时除条件和动作外，还应单独归档中间变量、上一时刻量、模式分支、默认承接路径、限幅链路和注释型实现说明。",
+      "order": 8,
+      "status": "active",
+      "sectionKey": "抽取重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-extraction_rule-003",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "extraction_rule",
+      "title": "二级结构拆证据",
+      "content": "若同一设计点同时存在“正文主逻辑 + 其中/注”的二级结构，应分别建立事实集合，避免实现展开在写作阶段丢失。",
+      "order": 9,
+      "status": "active",
+      "sectionKey": "抽取重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-extraction_rule-004",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "extraction_rule",
+      "title": "代码细节只做细化",
+      "content": "对 `detail_design` 可以从代码中抽取实现细节，但这些事实只能补充和细化已存在的功能主题，不能覆盖系统需求边界或新增未要求的功能。",
+      "order": 10,
+      "status": "active",
+      "sectionKey": "抽取重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-extraction_rule-005",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "extraction_rule",
+      "title": "对象级证据优先",
+      "content": "对前轴/后轴、请求/退出、主路径/默认路径等对象或流程分支，应优先保留对象级证据集合，不要在抽取阶段先行合并。",
+      "order": 11,
+      "status": "active",
+      "sectionKey": "抽取重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-validation_rule-001",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "validation_rule",
+      "title": "详细设计基础字段校验",
+      "content": "每条详细设计必须同时具备 `requirementText`、`sourceRefs`、`verificationHint` 和 `structuredContent`，任一缺失都应判为高风险。",
+      "order": 12,
+      "status": "active",
+      "sectionKey": "校验重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-validation_rule-002",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "validation_rule",
+      "title": "实现展开充分性校验",
+      "content": "若正文只有需求复述，没有实现分解、内部变量、分支承接、模式判断或限幅说明，应判为“过于像软件需求”。",
+      "order": 13,
+      "status": "active",
+      "sectionKey": "校验重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-validation_rule-003",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "validation_rule",
+      "title": "结构化内容空壳校验",
+      "content": "若 `structuredContent` 为空壳，或与正文中的主行为、分支和对象归属不一致，应判为高风险结构问题。",
+      "order": 14,
+      "status": "active",
+      "sectionKey": "校验重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-validation_rule-004",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "validation_rule",
+      "title": "对象级设计点校验",
+      "content": "若输出只写总述，没有落到对象级设计点、对称子项或默认路径，应判为结构不完整。",
+      "order": 15,
+      "status": "active",
+      "sectionKey": "校验重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-validation_rule-005",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "validation_rule",
+      "title": "实现细节越位校验",
+      "content": "若把代码局部实现直接抬升为新的功能主题，或脱离系统需求新增章节，应标记为越界扩写。",
+      "order": 16,
+      "status": "active",
+      "sectionKey": "校验重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-generation_priority-001",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "generation_priority",
+      "title": "详细设计优先级 1",
+      "content": "先生成稳定的设计主线，再补“其中/注/内部计算方法”等实现展开，不要先堆叠零散实现细节。",
+      "order": 17,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "DOC-detail_design-generation_priority-002",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "generation_priority",
+      "title": "详细设计优先级 2",
+      "content": "先保留对象拆分，再展开对象内部的状态判断、计算逻辑、补充说明和边界限制。",
+      "order": 18,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "DOC-detail_design-generation_priority-003",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "generation_priority",
+      "title": "详细设计优先级 3",
+      "content": "先承接系统需求已经稳定的功能主题，再吸收模型代码和模型文档中的内部实现细节。",
+      "order": 19,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "DOC-detail_design-generation_priority-004",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "generation_priority",
+      "title": "详细设计优先级 4",
+      "content": "先保证 `structuredContent` 能完整表达设计分解，再追求正文的丰富度和措辞润色。",
+      "order": 20,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "DOC-detail_design-rule_hint-001",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "rule_hint",
+      "title": "detail design rule hint",
+      "content": "",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "documentType": "detail_design",
+        "sectionHints": [
+          "功能概述",
+          "状态判断",
+          "计算逻辑",
+          "补充说明",
+          "边界限制"
+        ],
+        "writingPattern": "功能主题 -> 对象拆分 -> 分支计算 -> 其中/注 -> 限制说明",
+        "targetStyle": "可审核的详细设计条目，不是软件需求摘要，也不是源码注释翻译。",
+        "sourceBasis": [
+          "系统需求",
+          "模型代码/模型文档",
+          "模块样例"
+        ]
+      },
+      "order": 21,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "DOC-detail_design-document_blueprint_section-001",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "preferred function section",
+      "content": "详细设计优先保留一个顶层功能章节承载模块主功能。",
+      "structuredPayload": {
+        "role": "preferredFunctionSection",
+        "title": "功能概述",
+        "sectionNumber": "",
+        "coreRequirementTypes": [
+          "detail_design"
+        ]
+      },
+      "order": 22,
+      "status": "active",
+      "sectionKey": "文档蓝图"
+    },
+    {
+      "skillCode": "DOC-detail_design-document_blueprint_section-002",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "状态判断 subsection",
+      "content": "详细设计优先保留对象级状态判断章节。",
+      "structuredPayload": {
+        "role": "subsection",
+        "title": "状态判断",
+        "sectionNumber": "",
+        "coreRequirementTypes": [
+          "detail_design"
+        ]
+      },
+      "order": 23,
+      "status": "active",
+      "sectionKey": "文档蓝图"
+    },
+    {
+      "skillCode": "DOC-detail_design-document_blueprint_section-003",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "计算逻辑 subsection",
+      "content": "详细设计优先保留计算逻辑章节。",
+      "structuredPayload": {
+        "role": "subsection",
+        "title": "计算逻辑",
+        "sectionNumber": "",
+        "coreRequirementTypes": [
+          "detail_design"
+        ]
+      },
+      "order": 24,
+      "status": "active",
+      "sectionKey": "文档蓝图"
+    },
+    {
+      "skillCode": "DOC-detail_design-document_blueprint_section-004",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "补充说明 subsection",
+      "content": "详细设计允许通过补充说明章节承载“其中”“计算方法为”等实现展开。",
+      "structuredPayload": {
+        "role": "subsection",
+        "title": "补充说明",
+        "sectionNumber": "",
+        "coreRequirementTypes": [
+          "detail_design"
+        ]
+      },
+      "order": 25,
+      "status": "active",
+      "sectionKey": "文档蓝图"
+    },
+    {
+      "skillCode": "DOC-detail_design-document_blueprint_section-005",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "边界限制 subsection",
+      "content": "详细设计优先保留边界限制章节或注释块。",
+      "structuredPayload": {
+        "role": "subsection",
+        "title": "边界限制",
+        "sectionNumber": "",
+        "coreRequirementTypes": [
+          "detail_design"
+        ]
+      },
+      "order": 26,
+      "status": "active",
+      "sectionKey": "文档蓝图"
+    },
+    {
+      "skillCode": "DOC-detail_design-document_blueprint_policy-001",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "document_blueprint_policy",
+      "title": "require section numbers",
+      "content": "详细设计默认不强制章节号。",
+      "structuredPayload": {
+        "key": "requireSectionNumbers",
+        "value": false
+      },
+      "order": 27,
+      "status": "active",
+      "sectionKey": "文档蓝图"
+    },
+    {
+      "skillCode": "DOC-detail_design-document_blueprint_policy-002",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "document_blueprint_policy",
+      "title": "allow note blocks",
+      "content": "详细设计允许使用“其中”“注”等说明块承载实现展开。",
+      "structuredPayload": {
+        "key": "allowNoteBlocks",
+        "value": true
+      },
+      "order": 28,
+      "status": "active",
+      "sectionKey": "文档蓝图"
+    },
+    {
+      "skillCode": "DOC-detail_design-document_blueprint_policy-003",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "document_blueprint_policy",
+      "title": "prefer structured content mapping",
+      "content": "详细设计应优先让结构化内容映射正文的设计分解。",
+      "structuredPayload": {
+        "key": "preferStructuredContentMapping",
+        "value": true
+      },
+      "order": 29,
+      "status": "active",
+      "sectionKey": "文档蓝图"
+    },
+    {
+      "skillCode": "DOC-detail_design-extraction_rule-006",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "extraction_rule",
+      "title": "锁存与复位路径抽取",
+      "content": "对布尔请求标志位、状态位、状态机条件等设计点，除激活条件外，还应同时抽取锁存条件、复位条件、默认保持路径、状态范围触发条件。",
+      "order": 30,
+      "status": "active",
+      "sectionKey": "抽取重点"
+    },
+    {
+      "skillCode": "DOC-detail_design-validation_rule-006",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "kind": "validation_rule",
+      "title": "请求标志位完整性校验",
+      "content": "若详细设计写了激活条件，但漏写锁存、清除、复位、默认路径或状态范围限制，应判为实现展开不足。",
+      "order": 31,
+      "status": "active",
+      "sectionKey": "校验重点"
+    }
+  ]
 }

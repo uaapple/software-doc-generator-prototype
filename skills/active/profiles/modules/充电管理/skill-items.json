@@ -10,6 +10,7 @@
       "skillCode": "MOD-充电管理-generation_priority-001",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "generation_priority",
       "title": "generation priority 1",
       "content": "若输入明显属于充电管理，优先生成堵转加热模式、充电截止SOC、充电截止SOC记忆，再考虑充满跳转标志位等补充条目。",
@@ -32,6 +33,7 @@
       "skillCode": "MOD-充电管理-generation_priority-002",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "generation_priority",
       "title": "generation priority 2",
       "content": "若当前输入同时提供人工软件设计需求样例，优先复现样例中的核心条目数、主题顺序和章节归属，不要把代码还能支持的补充逻辑提前写成新的主条目。",
@@ -54,6 +56,7 @@
       "skillCode": "MOD-充电管理-generation_priority-003",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "generation_priority",
       "title": "generation priority 3",
       "content": "若输出 schema 只能承载列表，也要在标题或正文中保留层级关系和对象归属，但不要输出具体章节数字。",
@@ -76,6 +79,7 @@
       "skillCode": "MOD-充电管理-good_example-001",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "good_example",
       "title": "充电过程堵转加热模式",
       "content": "当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。",
@@ -136,6 +140,7 @@
       "skillCode": "MOD-充电管理-good_example-002",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "good_example",
       "title": "充电截止SOC",
       "content": "当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
@@ -193,6 +198,7 @@
       "skillCode": "MOD-充电管理-good_example-003",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "good_example",
       "title": "充电截止SOC记忆",
       "content": "VCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。",
@@ -246,6 +252,7 @@
       "skillCode": "MOD-充电管理-rule_hint-001",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "rule_hint",
       "title": "充电管理 rule hint",
       "content": "",
@@ -262,9 +269,9 @@
         "writingPattern": "优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。",
         "targetStyle": "输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。",
         "sourceBasis": [
-          "input/20260411/充电管理/system-requirements-example-charging-management.md",
-          "input/20260411/充电管理/software-design-requirements-example-charging-management.md",
-          "input/20260411/Chrg.c"
+          "input/20260411/充电管理/充电管理系统需求.md",
+          "input/20260411/充电管理/充电管理软件需求.md",
+          "input/20260411/充电管理/Chrg.c"
         ]
       },
       "order": 7,
@@ -286,6 +293,7 @@
       "skillCode": "MOD-充电管理-anti_pattern-001",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "anti_pattern",
       "title": "anti pattern 1",
       "content": "不要把堵转加热、截止SOC、记忆、充满跳转标志位、电流计算等充电主题揉成一条综合需求。",
@@ -308,6 +316,7 @@
       "skillCode": "MOD-充电管理-anti_pattern-002",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "anti_pattern",
       "title": "anti pattern 2",
       "content": "不要在人工样例已经拆分“截止SOC控制”和“截止SOC记忆”时，再把两者混写成一条增强版需求。",
@@ -330,6 +339,7 @@
       "skillCode": "MOD-充电管理-anti_pattern-003",
       "layer": "module",
       "profileKey": "充电管理",
+      "documentTypeScope": "software_requirement",
       "kind": "anti_pattern",
       "title": "anti pattern 3",
       "content": "不要把代码侧补充条目如 ChargingFull 状态跳转，提前写成与人工样例并列的核心主输出。",
@@ -347,6 +357,431 @@
       },
       "createdAt": "2026-04-16T07:26:49.703Z",
       "updatedAt": "2026-04-16T07:26:49.703Z"
+    },
+    {
+      "skillCode": "MOD-充电管理-generation_priority-004",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 4",
+      "content": "若输入包含充电管理详细设计整理稿或等价图片，优先按3个稳定设计点输出：后电机堵转加热请求、AC充电联接至充满标志位、DC充电联接至充满标志位。",
+      "order": 11,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-generation_priority-005",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 5",
+      "content": "对请求或标志位类设计点，优先写输出值判定，再写“其中”展开的激活请求、故障、退出或子状态条件。",
+      "order": 12,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-generation_priority-006",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 6",
+      "content": "AC与DC必须分别成条，不要合并成“充电联接至充满标志位”总述。",
+      "order": 13,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-generation_priority-007",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 7",
+      "content": "代码细节只能细化后电机堵转加热请求、AC充电联接至充满标志位、DC充电联接至充满标志位这3个主题，不新增ChargingFull状态机、预约充电、截止SOC或充电错误等一级主题。",
+      "order": 14,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-rule_hint-002",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "rule_hint",
+      "title": "charging management detail design rule hint",
+      "content": "",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "documentType": "detail_design",
+        "subdomain": "充电管理",
+        "sectionHints": [
+          "充电管理",
+          "后电机堵转加热请求",
+          "AC充电联接至充满标志位",
+          "DC充电联接至充满标志位"
+        ],
+        "writingPattern": "功能主题 -> 输出请求/标志位 -> 其中：激活请求 -> 其中：故障/退出 -> 条件列表",
+        "targetStyle": "可审核的详细设计条目，保留工程信号、状态值、标定量和“其中”展开，不写成软件需求摘要，也不直接照搬代码状态机名。",
+        "sourceBasis": [
+          "input/20260411/充电管理/充电管理系统需求.md",
+          "input/20260411/充电管理/充电管理详细设计.md",
+          "input/20260411/HvCoorn.c",
+          "input/20260411/充电管理/Chrg.c"
+        ]
+      },
+      "order": 15,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-good_example-004",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "后电机堵转加热请求",
+      "content": "当满足以下所有条件时，右后电机堵转加热请求为1，否则，右后电机堵转加热请求为0：1. 后电机堵转加热激活请求为1；2. 后电机堵转加热故障为0。其中，[后电机堵转加热激活请求]控制计算如下，当满足以下所有条件时，[后电机堵转加热激活请求]为1，否则，[后电机堵转加热激活请求]为0：1. 充电状态激活为1；2. <VCU内部驾驶员挡位状态>等于GearLvr_stDrvGearP_SC（6）；3. <实际车速>小于一定值vMax4MCUPlsHeatgEna；4. <电池状态>等于BMS1_stBattMdDCChrg（8）；5. <电机堵转加热需求>等于1；6. 后电机堵转加热状态不等于RMCU_stStalHeatg_HeatgFaild_SC（3），且不等于RMCU_stStalHeatg_HeatgOver_SC（2）。其中，[后电机堵转加热故障]控制计算如下，当满足以下条件时，右后电机堵转加热故障为1，否则，[后电机堵转加热故障]为0：1. 后电机堵转加热激活请求为1，且激活时间大于等于一定值tiMCUStalHeatgFlt_C；2. 后电机堵转加热状态不等于RMCU_stStalHeatg_Heatg_SC（1）。",
+      "structuredPayload": {
+        "topic": "后电机堵转加热请求",
+        "sectionTitle": "充电管理",
+        "requirementType": "request_flag_logic",
+        "preferredTitle": "充电管理 - 后电机堵转加热请求",
+        "requirementText": "当满足以下所有条件时，右后电机堵转加热请求为1，否则，右后电机堵转加热请求为0：1. 后电机堵转加热激活请求为1；2. 后电机堵转加热故障为0。其中，[后电机堵转加热激活请求]控制计算如下，当满足以下所有条件时，[后电机堵转加热激活请求]为1，否则，[后电机堵转加热激活请求]为0：1. 充电状态激活为1；2. <VCU内部驾驶员挡位状态>等于GearLvr_stDrvGearP_SC（6）；3. <实际车速>小于一定值vMax4MCUPlsHeatgEna；4. <电池状态>等于BMS1_stBattMdDCChrg（8）；5. <电机堵转加热需求>等于1；6. 后电机堵转加热状态不等于RMCU_stStalHeatg_HeatgFaild_SC（3），且不等于RMCU_stStalHeatg_HeatgOver_SC（2）。其中，[后电机堵转加热故障]控制计算如下，当满足以下条件时，右后电机堵转加热故障为1，否则，[后电机堵转加热故障]为0：1. 后电机堵转加热激活请求为1，且激活时间大于等于一定值tiMCUStalHeatgFlt_C；2. 后电机堵转加热状态不等于RMCU_stStalHeatg_Heatg_SC（1）。",
+        "signals": [
+          "后电机堵转加热请求",
+          "[后电机堵转加热激活请求]",
+          "[后电机堵转加热故障]",
+          "<VCU内部驾驶员挡位状态>",
+          "GearLvr_stDrvGearP_SC（6）",
+          "<实际车速>",
+          "vMax4MCUPlsHeatgEna",
+          "<电池状态>",
+          "BMS1_stBattMdDCChrg（8）",
+          "<电机堵转加热需求>",
+          "后电机堵转加热状态",
+          "tiMCUStalHeatgFlt_C"
+        ],
+        "references": [
+          "CheryVCU-1088",
+          "CheryVCU-1077"
+        ],
+        "canonicalBranches": [
+          "请求输出",
+          "激活请求判断",
+          "故障超时判断"
+        ],
+        "keywords": [
+          "后电机堵转加热请求",
+          "堵转加热",
+          "激活请求",
+          "故障超时",
+          "DC充电",
+          "P挡"
+        ]
+      },
+      "order": 16,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-good_example-005",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "AC充电联接至充满标志位",
+      "content": "以下条件同时满足，则[AC充电联接至充满标志位]状态值为1：1. [AC充电联接至充满退出标志位]为0；2. [AC充电联接至充满电池状态位]为0；3. <AC充电联接OK标志位>为1；4. <AC充电充满标志位>为1。",
+      "structuredPayload": {
+        "topic": "AC充电联接至充满标志位",
+        "sectionTitle": "充电管理",
+        "requirementType": "state_flag_logic",
+        "preferredTitle": "充电管理 - AC充电联接至充满标志位",
+        "requirementText": "以下条件同时满足，则[AC充电联接至充满标志位]状态值为1：1. [AC充电联接至充满退出标志位]为0；2. [AC充电联接至充满电池状态位]为0；3. <AC充电联接OK标志位>为1；4. <AC充电充满标志位>为1。",
+        "signals": [
+          "[AC充电联接至充满标志位]",
+          "[AC充电联接至充满退出标志位]",
+          "[AC充电联接至充满电池状态位]",
+          "<AC充电联接OK标志位>",
+          "<AC充电充满标志位>"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "退出标志位为0",
+          "电池状态位为0",
+          "联接OK",
+          "充满标志位"
+        ],
+        "keywords": [
+          "AC充电",
+          "联接至充满标志位",
+          "联接OK",
+          "充满标志位"
+        ]
+      },
+      "order": 17,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-good_example-006",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "DC充电联接至充满标志位",
+      "content": "以下条件同时满足，则[DC充电联接至充满标志位]状态值为1：1. [DC充电联接至充满退出标志位]为0；2. [DC充电联接至充满电池状态位]为0；3. <DC充电联接OK标志位>为1；4. <DC充电充满标志位>为1。",
+      "structuredPayload": {
+        "topic": "DC充电联接至充满标志位",
+        "sectionTitle": "充电管理",
+        "requirementType": "state_flag_logic",
+        "preferredTitle": "充电管理 - DC充电联接至充满标志位",
+        "requirementText": "以下条件同时满足，则[DC充电联接至充满标志位]状态值为1：1. [DC充电联接至充满退出标志位]为0；2. [DC充电联接至充满电池状态位]为0；3. <DC充电联接OK标志位>为1；4. <DC充电充满标志位>为1。",
+        "signals": [
+          "[DC充电联接至充满标志位]",
+          "[DC充电联接至充满退出标志位]",
+          "[DC充电联接至充满电池状态位]",
+          "<DC充电联接OK标志位>",
+          "<DC充电充满标志位>"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "退出标志位为0",
+          "电池状态位为0",
+          "联接OK",
+          "充满标志位"
+        ],
+        "keywords": [
+          "DC充电",
+          "联接至充满标志位",
+          "联接OK",
+          "充满标志位"
+        ]
+      },
+      "order": 18,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-anti_pattern-004",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "anti_pattern",
+      "title": "anti pattern 4",
+      "content": "不要把“后电机堵转加热请求”简化回软件需求式一句话，丢掉“激活请求/故障超时”的二级展开。",
+      "order": 19,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-anti_pattern-005",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "anti_pattern",
+      "title": "anti pattern 5",
+      "content": "不要把AC和DC两个“联接至充满标志位”合并成一个“对应充电通道”条目。",
+      "order": 20,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-anti_pattern-006",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "anti_pattern",
+      "title": "anti pattern 6",
+      "content": "不要把ChargingFull、ACCharging、DCCharging、HvCoorn_bRMCUStalHeatgActvRaw之类源码状态或局部变量名直接抬升为文档一级主题。",
+      "order": 21,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-source_alias-001",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "source_alias",
+      "title": "source alias 后电机堵转加热请求",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "后电机堵转加热请求",
+        "aliases": [
+          "HvCoorn_bRMCUStalHeatgReq"
+        ]
+      },
+      "order": 22,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-source_alias-002",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "source_alias",
+      "title": "source alias 后电机堵转加热激活请求",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "后电机堵转加热激活请求",
+        "aliases": [
+          "HvCoorn_bRMCUStalHeatgActvRaw"
+        ]
+      },
+      "order": 23,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-source_alias-003",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "source_alias",
+      "title": "source alias 后电机堵转加热故障",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "后电机堵转加热故障",
+        "aliases": [
+          "HvCoorn_bRMCUStalHeatgFlt"
+        ]
+      },
+      "order": 24,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-source_alias-004",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "source_alias",
+      "title": "source alias AC充电联接OK标志位",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "AC充电联接OK标志位",
+        "aliases": [
+          "HvCoorn_bACChrgLinkOk"
+        ]
+      },
+      "order": 25,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-source_alias-005",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "source_alias",
+      "title": "source alias AC充电充满标志位",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "AC充电充满标志位",
+        "aliases": [
+          "icbms_bAcChrgFull"
+        ]
+      },
+      "order": 26,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-source_alias-006",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "source_alias",
+      "title": "source alias DC充电充满标志位",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "DC充电充满标志位",
+        "aliases": [
+          "icbms_bDcChrgFull"
+        ]
+      },
+      "order": 27,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-normalization_rule-001",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "normalization_rule",
+      "title": "normalization rule 1",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "连接",
+        "replacement": "联接"
+      },
+      "order": 28,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-normalization_rule-002",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "normalization_rule",
+      "title": "normalization rule 2",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "右后电机堵转加热请求",
+        "replacement": "后电机堵转加热请求"
+      },
+      "order": 29,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-forbidden_expansion-001",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion charge_management_detail_design_states",
+      "content": "",
+      "structuredPayload": {
+        "topic": "charge_management_detail_design_state_machine_names",
+        "entries": [
+          "ChargingFull",
+          "ACCharging",
+          "DCCharging",
+          "Chrg_IN_ACCharging",
+          "Chrg_IN_DCCharging",
+          "Chrg_IN_ChargingFull"
+        ]
+      },
+      "order": 30,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-充电管理-forbidden_expansion-002",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "detail_design",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion charge_management_unrelated_topics",
+      "content": "",
+      "structuredPayload": {
+        "topic": "charge_management_detail_design_unrelated_topics",
+        "entries": [
+          "充电截止SOC",
+          "充电截止SOC记忆"
+        ]
+      },
+      "order": 31,
+      "status": "active",
+      "sectionKey": "default"
     }
   ]
 }

@@ -891,6 +891,99 @@ const tests = [
     }
   },
   {
+    name: "Torque intervention detail design profile loads dedicated detail design guidance",
+    run: async () => {
+      const loader = new SkillLoader();
+      const skills = await loader.loadForContext({
+        documentType: "detail_design",
+        domain: "embedded_vcu",
+        moduleSkillKey: "扭矩干预"
+      });
+
+      assert.match(skills["requirement_writing.md"], /详细设计输出应描述“软件内部实现分解”/);
+      assert.ok(skills["domain-knowledge.json"].documentBlueprint);
+      assert.ok(
+        skills["domain-knowledge.json"].examples.some((item) => item.topic === "计算前轴仅RBS激活标志位")
+      );
+      assert.ok(
+        skills["domain-knowledge.json"].examples.some((item) => item.topic === "计算后轴仅RBS激活标志位")
+      );
+    }
+  },
+  {
+    name: "Torque intervention software requirement profile stays free of detail design-only examples",
+    run: async () => {
+      const loader = new SkillLoader();
+      const skills = await loader.loadForContext({
+        documentType: "software_requirement",
+        domain: "embedded_vcu",
+        moduleSkillKey: "扭矩干预"
+      });
+
+      const scopedModuleItems = skills.__compiledSkillPack.flatItems.filter(
+        (item) => item.layer === "module" && item.profileKey === "扭矩干预"
+      );
+      assert.ok(
+        !scopedModuleItems.some((item) => item.skillCode === "MOD-扭矩干预-good_example-007")
+      );
+      assert.ok(
+        !scopedModuleItems.some((item) => item.skillCode === "MOD-扭矩干预-good_example-010")
+      );
+      assert.ok(
+        !scopedModuleItems.some((item) => item.skillCode === "MOD-扭矩干预-rule_hint-002")
+      );
+    }
+  },
+  {
+    name: "Hv/lv system management detail design profile loads dedicated detail design guidance",
+    run: async () => {
+      const loader = new SkillLoader();
+      const skills = await loader.loadForContext({
+        documentType: "detail_design",
+        domain: "embedded_vcu",
+        moduleSkillKey: "高低系统管理"
+      });
+
+      assert.match(skills["requirement_extraction.md"], /锁存条件、复位条件、默认保持路径、状态范围触发条件/);
+      assert.match(skills["requirement_validation.md"], /激活条件，但漏写锁存、清除、复位、默认路径或状态范围限制/);
+      assert.ok(
+        skills["domain-knowledge.json"].generationPriorities.some((item) =>
+          item.includes("请求标志位")
+        )
+      );
+      assert.ok(
+        skills["domain-knowledge.json"].examples.some((item) => item.topic === "KeyOn高压请求标志位")
+      );
+      assert.ok(
+        skills["domain-knowledge.json"].examples.some((item) => item.topic === "本地KL15上高压建立流程")
+      );
+    }
+  },
+  {
+    name: "Hv/lv system management software requirement profile stays free of detail design-only items",
+    run: async () => {
+      const loader = new SkillLoader();
+      const skills = await loader.loadForContext({
+        documentType: "software_requirement",
+        domain: "embedded_vcu",
+        moduleSkillKey: "高低系统管理"
+      });
+
+      const scopedModuleItems = skills.__compiledSkillPack.flatItems.filter(
+        (item) => item.layer === "module" && item.profileKey === "高低系统管理"
+      );
+      assert.ok(
+        !scopedModuleItems.some((item) => item.skillCode === "MOD-高低系统管理-good_example-003")
+      );
+      assert.ok(
+        !scopedModuleItems.some((item) => item.skillCode === "MOD-高低系统管理-good_example-004")
+      );
+      assert.ok(
+        !scopedModuleItems.some((item) => item.skillCode === "MOD-高低系统管理-rule_hint-002")
+      );
+    }
+  },
+  {
     name: "Module skill service uses LLM bootstrap result when available",
     run: async () => {
       await withTempConfig(async () => {

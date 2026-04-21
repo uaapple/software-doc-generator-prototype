@@ -821,6 +821,7 @@ function sanitizeItem(item = {}, defaults = {}) {
     skillCode: String(item.skillCode || defaults.skillCode || "").trim(),
     layer,
     profileKey,
+    documentTypeScope: String(item.documentTypeScope || defaults.documentTypeScope || "").trim(),
     kind,
     title,
     content,

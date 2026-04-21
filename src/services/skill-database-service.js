@@ -103,6 +103,7 @@ export class SkillDatabaseService {
         kind TEXT NOT NULL,
         title TEXT NOT NULL,
         content TEXT NOT NULL DEFAULT '',
+        document_type_scope TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'active',
         order_index INTEGER NOT NULL,
         section_key TEXT NOT NULL DEFAULT 'default',
@@ -205,6 +206,11 @@ export class SkillDatabaseService {
         FOREIGN KEY(skill_item_id) REFERENCES skill_items(id) ON DELETE CASCADE
       );
     `);
+
+    const skillItemColumns = this.db.prepare("PRAGMA table_info(skill_items)").all();
+    if (!skillItemColumns.some((column) => column.name === "document_type_scope")) {
+      this.db.exec("ALTER TABLE skill_items ADD COLUMN document_type_scope TEXT NOT NULL DEFAULT ''");
+    }
   }
 
   setMeta(key, value) {
@@ -337,7 +343,7 @@ export class SkillDatabaseService {
 
     const itemRows = this.db.prepare(`
       SELECT id, skill_code AS skillCode, kind, title, content, status, order_index AS orderIndex,
-             section_key AS sectionKey, provenance_json AS provenanceJson, review_json AS reviewJson,
+             document_type_scope AS documentTypeScope, section_key AS sectionKey, provenance_json AS provenanceJson, review_json AS reviewJson,
              structured_payload_json AS structuredPayloadJson, created_at AS createdAt, updated_at AS updatedAt
       FROM skill_items
       WHERE profile_id = ?
@@ -358,6 +364,7 @@ export class SkillDatabaseService {
         kind: row.kind,
         title: row.title,
         content: row.content || "",
+        documentTypeScope: row.documentTypeScope || "",
         status: row.status || "active",
         order: Number(row.orderIndex || 0) || 0,
         sectionKey: row.sectionKey || "default",
@@ -405,10 +412,10 @@ export class SkillDatabaseService {
 
     const insertItem = this.db.prepare(`
       INSERT INTO skill_items(
-        profile_id, skill_code, kind, title, content, status, order_index, section_key,
+        profile_id, skill_code, kind, title, content, document_type_scope, status, order_index, section_key,
         provenance_json, review_json, structured_payload_json, created_at, updated_at
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING id
     `);
 
@@ -419,6 +426,7 @@ export class SkillDatabaseService {
         item.kind,
         item.title || "",
         item.content || "",
+        item.documentTypeScope || "",
         item.status || "active",
         Number(item.order || 0) || 0,
         item.sectionKey || "default",

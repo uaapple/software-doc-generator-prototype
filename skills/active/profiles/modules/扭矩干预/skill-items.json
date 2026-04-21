@@ -231,7 +231,8 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
-      "updatedAt": "2026-04-16T07:26:49.700Z"
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
     },
     {
       "skillCode": "MOD-扭矩干预-generation_priority-004",
@@ -253,7 +254,8 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
-      "updatedAt": "2026-04-16T07:26:49.700Z"
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
     },
     {
       "skillCode": "MOD-扭矩干预-generation_priority-005",
@@ -297,7 +299,8 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
-      "updatedAt": "2026-04-16T07:26:49.700Z"
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
     },
     {
       "skillCode": "MOD-扭矩干预-generation_priority-007",
@@ -397,7 +400,8 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
-      "updatedAt": "2026-04-16T07:26:49.700Z"
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
     },
     {
       "skillCode": "MOD-扭矩干预-good_example-002",
@@ -463,7 +467,8 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
-      "updatedAt": "2026-04-16T07:26:49.700Z"
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
     },
     {
       "skillCode": "MOD-扭矩干预-good_example-003",
@@ -519,7 +524,8 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
-      "updatedAt": "2026-04-16T07:26:49.700Z"
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
     },
     {
       "skillCode": "MOD-扭矩干预-good_example-004",
@@ -585,7 +591,8 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
-      "updatedAt": "2026-04-16T07:26:49.700Z"
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
     },
     {
       "skillCode": "MOD-扭矩干预-rule_hint-001",
@@ -603,7 +610,7 @@
           "ESC后轴扭矩干预"
         ],
         "writingPattern": "优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。",
-        "targetStyle": "输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。",
+        "targetStyle": "输出应贴近工程侧人工样例的结构化控制逻辑写法。",
         "sourceBasis": [
           "input/software-requirement-writing-rules-vcu.md",
           "input/system-requirements-example-torque-intervention.md",
@@ -623,7 +630,8 @@
         "updatedAt": ""
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
-      "updatedAt": "2026-04-16T07:26:49.700Z"
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
     },
     {
       "skillCode": "MOD-扭矩干预-anti_pattern-001",
@@ -648,6 +656,51 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "skillCode": "MOD-扭矩干预-good_example-005",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "ESP干预前轴状态判断",
+      "content": "当满足以下任意条件时，<前轴扭矩干预激活标志位>为1：1. <前轴RBS扭矩激活标志位>为1，且<RBS需求前轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <前轴降扭激活标志位>为1，且<前轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <前轴升扭激活标志位>为1，且<前轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<前轴扭矩干预激活标志位>为0。",
+      "structuredPayload": {
+        "topic": "ESP干预前轴状态判断",
+        "sectionTitle": "前轴扭矩干预",
+        "requirementType": "status_judgment_logic",
+        "preferredTitle": "前轴扭矩干预 - 状态判断",
+        "requirementText": "当满足以下任意条件时，<前轴扭矩干预激活标志位>为1：1. <前轴RBS扭矩激活标志位>为1，且<RBS需求前轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <前轴降扭激活标志位>为1，且<前轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <前轴升扭激活标志位>为1，且<前轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<前轴扭矩干预激活标志位>为0。",
+        "signals": [
+          "<前轴扭矩干预激活标志位>",
+          "<前轴RBS扭矩激活标志位>",
+          "<RBS需求前轴扭矩>",
+          "<前轴降扭激活标志位>",
+          "<前轴降扭目标扭矩>",
+          "<前轴升扭激活标志位>",
+          "<前轴升扭目标扭矩>",
+          "tqESCIntvMin",
+          "tqESCIntvMax"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "前轴RBS干预激活",
+          "前轴降扭干预激活",
+          "前轴升扭干预激活",
+          "否则为0"
+        ],
+        "keywords": [
+          "前轴",
+          "状态判断",
+          "扭矩干预激活",
+          "RBS",
+          "升扭",
+          "降扭"
+        ]
+      },
+      "order": 21,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
       "skillCode": "MOD-扭矩干预-anti_pattern-002",
       "layer": "module",
       "profileKey": "扭矩干预",
@@ -668,6 +721,58 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-006",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "ESP干预前轴扭矩计算",
+      "content": "当前轴升扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的前轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的前轴目标扭矩>=<仲裁后的前轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的前轴目标扭矩>=min(<ESC干涉的滑行回收前轴目标扭矩>+<RBS需求前轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的前轴目标扭矩>=min(<仲裁后的前轴目标扭矩>,0)；否则承接<仲裁后的前轴目标扭矩>。其中，<ESC干涉的滑行回收前轴目标扭矩>需根据前轴RBS激活状态和上一时刻量计算。注：结果需经过前轴最大/最小允许扭矩限制。",
+      "structuredPayload": {
+        "topic": "ESP干预前轴扭矩计算",
+        "sectionTitle": "前轴扭矩干预",
+        "requirementType": "torque_calculation_logic",
+        "preferredTitle": "前轴扭矩干预 - 扭矩计算",
+        "requirementText": "当前轴升扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的前轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的前轴目标扭矩>=<仲裁后的前轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的前轴目标扭矩>=min(<ESC干涉的滑行回收前轴目标扭矩>+<RBS需求前轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的前轴目标扭矩>=min(<仲裁后的前轴目标扭矩>,0)；否则承接<仲裁后的前轴目标扭矩>。其中，<ESC干涉的滑行回收前轴目标扭矩>需根据前轴RBS激活状态和上一时刻量计算。注：结果需经过前轴最大/最小允许扭矩限制。",
+        "signals": [
+          "<ESC干预后的前轴目标扭矩>",
+          "<前轴升扭目标扭矩>",
+          "<前轴降扭目标扭矩>",
+          "<仲裁后的前轴目标扭矩>",
+          "<ESC干涉的滑行回收前轴目标扭矩>",
+          "<RBS需求前轴扭矩>",
+          "<RBC控制模式状态>",
+          "VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)",
+          "<前轴最大允许扭矩>",
+          "<前轴最小允许扭矩>"
+        ],
+        "references": [
+          "ESP干预前轴状态判断"
+        ],
+        "canonicalBranches": [
+          "升扭分支",
+          "降扭分支",
+          "AEB/CDP置零分支",
+          "APA/ACC承接分支",
+          "RBC模式分支",
+          "默认承接分支",
+          "滑行回收目标扭矩计算方法",
+          "最大/最小允许扭矩限制"
+        ],
+        "keywords": [
+          "前轴",
+          "扭矩计算",
+          "RBC控制模式",
+          "滑行回收",
+          "上一时刻量",
+          "限幅"
+        ]
+      },
+      "order": 22,
+      "status": "active",
+      "sectionKey": "default"
     },
     {
       "skillCode": "MOD-扭矩干预-anti_pattern-003",
@@ -692,6 +797,55 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "skillCode": "MOD-扭矩干预-good_example-007",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "计算前轴仅RBS激活标志位",
+      "content": "当以下条件全部满足时，将<前轴仅RBS激活标志位>置1，否则置0：1. [前轴升扭干预激活]=0；2. [前轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [前轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+      "structuredPayload": {
+        "topic": "计算前轴仅RBS激活标志位",
+        "sectionTitle": "前轴扭矩干预",
+        "requirementType": "state_flag_logic",
+        "preferredTitle": "前轴扭矩干预 - 仅RBS激活标志位",
+        "requirementText": "当以下条件全部满足时，将<前轴仅RBS激活标志位>置1，否则置0：1. [前轴升扭干预激活]=0；2. [前轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [前轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+        "signals": [
+          "<前轴仅RBS激活标志位>",
+          "[前轴升扭干预激活]",
+          "[前轴降扭干预激活]",
+          "[前轴RBS干预激活]",
+          "<ABS激活标志位>",
+          "<EBD激活标志位>",
+          "<AEB激活标志位>",
+          "<CDP激活标志位>",
+          "<APA激活标志位>",
+          "<ACC激活标志位>",
+          "<泊车请求扭矩有效>"
+        ],
+        "references": [
+          "ESP干预前轴状态判断",
+          "ESP干预前轴扭矩计算"
+        ],
+        "canonicalBranches": [
+          "升扭未激活",
+          "降扭未激活",
+          "主动安全功能均未激活",
+          "RBS干预未激活",
+          "APA/ACC与泊车请求条件"
+        ],
+        "keywords": [
+          "前轴",
+          "仅RBS激活标志位",
+          "布尔判定",
+          "主动安全功能"
+        ]
+      },
+      "order": 23,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
       "skillCode": "MOD-扭矩干预-anti_pattern-004",
       "layer": "module",
       "profileKey": "扭矩干预",
@@ -712,6 +866,51 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-008",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "ESP干预后轴状态判断",
+      "content": "当满足以下任意条件时，<后轴扭矩干预激活标志位>为1：1. <后轴RBS扭矩激活标志位>为1，且<RBS需求后轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <后轴降扭激活标志位>为1，且<后轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <后轴升扭激活标志位>为1，且<后轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<后轴扭矩干预激活标志位>为0。",
+      "structuredPayload": {
+        "topic": "ESP干预后轴状态判断",
+        "sectionTitle": "后轴扭矩干预",
+        "requirementType": "status_judgment_logic",
+        "preferredTitle": "后轴扭矩干预 - 状态判断",
+        "requirementText": "当满足以下任意条件时，<后轴扭矩干预激活标志位>为1：1. <后轴RBS扭矩激活标志位>为1，且<RBS需求后轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <后轴降扭激活标志位>为1，且<后轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <后轴升扭激活标志位>为1，且<后轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<后轴扭矩干预激活标志位>为0。",
+        "signals": [
+          "<后轴扭矩干预激活标志位>",
+          "<后轴RBS扭矩激活标志位>",
+          "<RBS需求后轴扭矩>",
+          "<后轴降扭激活标志位>",
+          "<后轴降扭目标扭矩>",
+          "<后轴升扭激活标志位>",
+          "<后轴升扭目标扭矩>",
+          "tqESCIntvMin",
+          "tqESCIntvMax"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "后轴RBS干预激活",
+          "后轴降扭干预激活",
+          "后轴升扭干预激活",
+          "否则为0"
+        ],
+        "keywords": [
+          "后轴",
+          "状态判断",
+          "扭矩干预激活",
+          "RBS",
+          "升扭",
+          "降扭"
+        ]
+      },
+      "order": 24,
+      "status": "active",
+      "sectionKey": "default"
     },
     {
       "skillCode": "MOD-扭矩干预-anti_pattern-005",
@@ -736,6 +935,58 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "skillCode": "MOD-扭矩干预-good_example-009",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "ESP干预后轴扭矩计算",
+      "content": "当后轴升扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的后轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的后轴目标扭矩>=<仲裁后的后轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的后轴目标扭矩>=min(<ESC干涉的滑行回收后轴目标扭矩>+<RBS需求后轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的后轴目标扭矩>=min(<仲裁后的后轴目标扭矩>,0)；否则承接<仲裁后的后轴目标扭矩>。其中，<ESC干涉的滑行回收后轴目标扭矩>需根据后轴RBS激活状态和上一时刻量计算。注：结果需经过后轴最大/最小允许扭矩限制。",
+      "structuredPayload": {
+        "topic": "ESP干预后轴扭矩计算",
+        "sectionTitle": "后轴扭矩干预",
+        "requirementType": "torque_calculation_logic",
+        "preferredTitle": "后轴扭矩干预 - 扭矩计算",
+        "requirementText": "当后轴升扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的后轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的后轴目标扭矩>=<仲裁后的后轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的后轴目标扭矩>=min(<ESC干涉的滑行回收后轴目标扭矩>+<RBS需求后轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的后轴目标扭矩>=min(<仲裁后的后轴目标扭矩>,0)；否则承接<仲裁后的后轴目标扭矩>。其中，<ESC干涉的滑行回收后轴目标扭矩>需根据后轴RBS激活状态和上一时刻量计算。注：结果需经过后轴最大/最小允许扭矩限制。",
+        "signals": [
+          "<ESC干预后的后轴目标扭矩>",
+          "<后轴升扭目标扭矩>",
+          "<后轴降扭目标扭矩>",
+          "<仲裁后的后轴目标扭矩>",
+          "<ESC干涉的滑行回收后轴目标扭矩>",
+          "<RBS需求后轴扭矩>",
+          "<RBC控制模式状态>",
+          "VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)",
+          "<后轴最大允许扭矩>",
+          "<后轴最小允许扭矩>"
+        ],
+        "references": [
+          "ESP干预后轴状态判断"
+        ],
+        "canonicalBranches": [
+          "升扭分支",
+          "降扭分支",
+          "AEB/CDP置零分支",
+          "APA/ACC承接分支",
+          "RBC模式分支",
+          "默认承接分支",
+          "滑行回收目标扭矩计算方法",
+          "最大/最小允许扭矩限制"
+        ],
+        "keywords": [
+          "后轴",
+          "扭矩计算",
+          "RBC控制模式",
+          "滑行回收",
+          "上一时刻量",
+          "限幅"
+        ]
+      },
+      "order": 25,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
       "skillCode": "MOD-扭矩干预-anti_pattern-006",
       "layer": "module",
       "profileKey": "扭矩干预",
@@ -758,6 +1009,55 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "skillCode": "MOD-扭矩干预-good_example-010",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "计算后轴仅RBS激活标志位",
+      "content": "当以下条件全部满足时，将<后轴仅RBS激活标志位>置1，否则置0：1. [后轴升扭干预激活]=0；2. [后轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [后轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+      "structuredPayload": {
+        "topic": "计算后轴仅RBS激活标志位",
+        "sectionTitle": "后轴扭矩干预",
+        "requirementType": "state_flag_logic",
+        "preferredTitle": "后轴扭矩干预 - 仅RBS激活标志位",
+        "requirementText": "当以下条件全部满足时，将<后轴仅RBS激活标志位>置1，否则置0：1. [后轴升扭干预激活]=0；2. [后轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [后轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+        "signals": [
+          "<后轴仅RBS激活标志位>",
+          "[后轴升扭干预激活]",
+          "[后轴降扭干预激活]",
+          "[后轴RBS干预激活]",
+          "<ABS激活标志位>",
+          "<EBD激活标志位>",
+          "<AEB激活标志位>",
+          "<CDP激活标志位>",
+          "<APA激活标志位>",
+          "<ACC激活标志位>",
+          "<泊车请求扭矩有效>"
+        ],
+        "references": [
+          "ESP干预后轴状态判断",
+          "ESP干预后轴扭矩计算"
+        ],
+        "canonicalBranches": [
+          "升扭未激活",
+          "降扭未激活",
+          "主动安全功能均未激活",
+          "RBS干预未激活",
+          "APA/ACC与泊车请求条件"
+        ],
+        "keywords": [
+          "后轴",
+          "仅RBS激活标志位",
+          "布尔判定",
+          "主动安全功能"
+        ]
+      },
+      "order": 26,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
       "skillCode": "MOD-扭矩干预-anti_pattern-007",
       "layer": "module",
       "profileKey": "扭矩干预",
@@ -778,6 +1078,18 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-009",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 9",
+      "content": "若输入包含系统需求和模型代码，详细设计优先形成六个核心主题：前轴状态判断、前轴扭矩计算、前轴仅RBS激活标志位、后轴状态判断、后轴扭矩计算、后轴仅RBS激活标志位。",
+      "order": 27,
+      "status": "active",
+      "sectionKey": "default"
     },
     {
       "skillCode": "MOD-扭矩干预-source_policy_setting-001",
@@ -806,6 +1118,18 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "skillCode": "MOD-扭矩干预-generation_priority-010",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 10",
+      "content": "详细设计应先写前轴三条，再以对称方式展开后轴三条，避免在对象结构尚未稳定前先写补充条目。",
+      "order": 28,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
       "skillCode": "MOD-扭矩干预-source_policy_setting-002",
       "layer": "module",
       "profileKey": "扭矩干预",
@@ -830,6 +1154,18 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-011",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 11",
+      "content": "前后轴仅RBS激活标志位属于详细设计核心，不应被当作可有可无的补充噪声。",
+      "order": 29,
+      "status": "active",
+      "sectionKey": "default"
     },
     {
       "skillCode": "MOD-扭矩干预-source_policy_setting-003",
@@ -858,6 +1194,18 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "skillCode": "MOD-扭矩干预-generation_priority-012",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 12",
+      "content": "ESC干涉的滑行回收目标扭矩计算方法应并入对应轴的扭矩计算条目，不单独升格为新的主章节。",
+      "order": 30,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
       "skillCode": "MOD-扭矩干预-code_style_prefix-001",
       "layer": "module",
       "profileKey": "扭矩干预",
@@ -878,6 +1226,38 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-rule_hint-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "rule_hint",
+      "title": "torque_intervention detail design rule hint",
+      "content": "",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "documentType": "detail_design",
+        "subdomain": "torque_intervention",
+        "sectionHints": [
+          "前轴状态判断",
+          "前轴扭矩计算",
+          "前轴仅RBS激活标志位",
+          "后轴状态判断",
+          "后轴扭矩计算",
+          "后轴仅RBS激活标志位"
+        ],
+        "writingPattern": "前后轴镜像展开；每轴先写状态判断，再写扭矩计算与仅RBS激活标志位；在扭矩计算条目内保留其中/注、模式分支和限幅说明。",
+        "targetStyle": "输出应贴近工程侧详细设计条目的原文式实现展开。",
+        "sourceBasis": [
+          "系统需求",
+          "模型代码文件",
+          "扭矩干预详细设计人工整理稿"
+        ]
+      },
+      "order": 31,
+      "status": "active",
+      "sectionKey": "default"
     },
     {
       "skillCode": "MOD-扭矩干预-code_style_prefix-002",

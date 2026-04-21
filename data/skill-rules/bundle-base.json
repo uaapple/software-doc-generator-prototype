@@ -1,9 +1,9 @@
 {
   "bundleId": "bundle-base",
-  "ruleIndexVersion": "registry-1776648885748",
-  "importedAt": "2026-04-20T01:34:45.748Z",
+  "ruleIndexVersion": "registry-1776748792201",
+  "importedAt": "2026-04-21T05:19:52.201Z",
   "skillDir": "skills/active",
-  "sourceFingerprint": "3acfea187a3270b37edf80552088b263719510b5",
+  "sourceFingerprint": "6be806a95dc3682e78453940ff174ae296e3acac",
   "rules": [
     {
       "id": "GEN-generic-extraction_rule-001",
@@ -3870,6 +3870,874 @@
       "updatedAt": "2026-04-16T07:26:49.651Z"
     },
     {
+      "id": "DOC-detail_design-writing_rule-001",
+      "ruleId": "DOC-detail_design-writing_rule-001",
+      "skillCode": "DOC-detail_design-writing_rule-001",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "targetArea": "writing",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "writing_rule",
+      "title": "详细设计输出定位",
+      "content": "详细设计输出应描述“软件内部实现分解”，不是仅复述系统需求，也不是把源码变量逐句翻译成说明文字。",
+      "sectionKey": "写作定位",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-writing_rule-002",
+      "ruleId": "DOC-detail_design-writing_rule-002",
+      "skillCode": "DOC-detail_design-writing_rule-002",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "targetArea": "writing",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "writing_rule",
+      "title": "实现展开要素",
+      "content": "每条详细设计除主行为外，还应尽量写出内部变量、中间量、模式分支、承接路径或限幅关系，形成可审核的实现展开。",
+      "sectionKey": "写作定位",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-writing_rule-003",
+      "ruleId": "DOC-detail_design-writing_rule-003",
+      "skillCode": "DOC-detail_design-writing_rule-003",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "targetArea": "writing",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "writing_rule",
+      "title": "允许实现性句式",
+      "content": "正文允许使用“其中”“注”“计算方法为”等实现展开句式，以承载计算方法、上一时刻量、模式判断和边界限制。",
+      "sectionKey": "写作定位",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-writing_rule-004",
+      "ruleId": "DOC-detail_design-writing_rule-004",
+      "skillCode": "DOC-detail_design-writing_rule-004",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "targetArea": "writing",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "writing_rule",
+      "title": "层级保留但不强制编号",
+      "content": "标题层级仍应保留“父功能 -> 子功能 -> 设计点”的结构，但除非用户明确要求，不强制复现原始章节号。",
+      "sectionKey": "结构组织",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-writing_rule-005",
+      "ruleId": "DOC-detail_design-writing_rule-005",
+      "skillCode": "DOC-detail_design-writing_rule-005",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "targetArea": "writing",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "writing_rule",
+      "title": "结构化内容一致性",
+      "content": "每条详细设计的 `structuredContent` 应与正文语义一致，至少能映射出可审阅的 `designBreakdown`。",
+      "sectionKey": "结构组织",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-writing_rule-006",
+      "ruleId": "DOC-detail_design-writing_rule-006",
+      "skillCode": "DOC-detail_design-writing_rule-006",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_writing.md",
+      "targetArea": "writing",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "writing_rule",
+      "title": "详细设计优先内部量",
+      "content": "与软件需求相比，详细设计可以更显式写出内部量计算方法、上一时刻量、模式枚举和限幅路径，但不得脱离系统需求边界创造新功能主题。",
+      "sectionKey": "写作定位",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-extraction_rule-001",
+      "ruleId": "DOC-detail_design-extraction_rule-001",
+      "skillCode": "DOC-detail_design-extraction_rule-001",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "targetArea": "extraction",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "extraction_rule",
+      "title": "输入源优先级",
+      "content": "系统需求优先定义功能边界、对象和主控制主题；模型代码与模型文档主要提供实现展开、内部变量、模式分支和限幅细节。",
+      "sectionKey": "抽取重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-extraction_rule-002",
+      "ruleId": "DOC-detail_design-extraction_rule-002",
+      "skillCode": "DOC-detail_design-extraction_rule-002",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "targetArea": "extraction",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "extraction_rule",
+      "title": "中间量单独抽取",
+      "content": "抽取时除条件和动作外，还应单独归档中间变量、上一时刻量、模式分支、默认承接路径、限幅链路和注释型实现说明。",
+      "sectionKey": "抽取重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-extraction_rule-003",
+      "ruleId": "DOC-detail_design-extraction_rule-003",
+      "skillCode": "DOC-detail_design-extraction_rule-003",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "targetArea": "extraction",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "extraction_rule",
+      "title": "二级结构拆证据",
+      "content": "若同一设计点同时存在“正文主逻辑 + 其中/注”的二级结构，应分别建立事实集合，避免实现展开在写作阶段丢失。",
+      "sectionKey": "抽取重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-extraction_rule-004",
+      "ruleId": "DOC-detail_design-extraction_rule-004",
+      "skillCode": "DOC-detail_design-extraction_rule-004",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "targetArea": "extraction",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "extraction_rule",
+      "title": "代码细节只做细化",
+      "content": "对 `detail_design` 可以从代码中抽取实现细节，但这些事实只能补充和细化已存在的功能主题，不能覆盖系统需求边界或新增未要求的功能。",
+      "sectionKey": "抽取重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-extraction_rule-005",
+      "ruleId": "DOC-detail_design-extraction_rule-005",
+      "skillCode": "DOC-detail_design-extraction_rule-005",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "targetArea": "extraction",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "extraction_rule",
+      "title": "对象级证据优先",
+      "content": "对前轴/后轴、请求/退出、主路径/默认路径等对象或流程分支，应优先保留对象级证据集合，不要在抽取阶段先行合并。",
+      "sectionKey": "抽取重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-validation_rule-001",
+      "ruleId": "DOC-detail_design-validation_rule-001",
+      "skillCode": "DOC-detail_design-validation_rule-001",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "targetArea": "validation",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "validation_rule",
+      "title": "详细设计基础字段校验",
+      "content": "每条详细设计必须同时具备 `requirementText`、`sourceRefs`、`verificationHint` 和 `structuredContent`，任一缺失都应判为高风险。",
+      "sectionKey": "校验重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-validation_rule-002",
+      "ruleId": "DOC-detail_design-validation_rule-002",
+      "skillCode": "DOC-detail_design-validation_rule-002",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "targetArea": "validation",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "validation_rule",
+      "title": "实现展开充分性校验",
+      "content": "若正文只有需求复述，没有实现分解、内部变量、分支承接、模式判断或限幅说明，应判为“过于像软件需求”。",
+      "sectionKey": "校验重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-validation_rule-003",
+      "ruleId": "DOC-detail_design-validation_rule-003",
+      "skillCode": "DOC-detail_design-validation_rule-003",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "targetArea": "validation",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "validation_rule",
+      "title": "结构化内容空壳校验",
+      "content": "若 `structuredContent` 为空壳，或与正文中的主行为、分支和对象归属不一致，应判为高风险结构问题。",
+      "sectionKey": "校验重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-validation_rule-004",
+      "ruleId": "DOC-detail_design-validation_rule-004",
+      "skillCode": "DOC-detail_design-validation_rule-004",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "targetArea": "validation",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "validation_rule",
+      "title": "对象级设计点校验",
+      "content": "若输出只写总述，没有落到对象级设计点、对称子项或默认路径，应判为结构不完整。",
+      "sectionKey": "校验重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-validation_rule-005",
+      "ruleId": "DOC-detail_design-validation_rule-005",
+      "skillCode": "DOC-detail_design-validation_rule-005",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "targetArea": "validation",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "validation_rule",
+      "title": "实现细节越位校验",
+      "content": "若把代码局部实现直接抬升为新的功能主题，或脱离系统需求新增章节，应标记为越界扩写。",
+      "sectionKey": "校验重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-generation_priority-001",
+      "ruleId": "DOC-detail_design-generation_priority-001",
+      "skillCode": "DOC-detail_design-generation_priority-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "详细设计优先级 1",
+      "content": "先生成稳定的设计主线，再补“其中/注/内部计算方法”等实现展开，不要先堆叠零散实现细节。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-generation_priority-002",
+      "ruleId": "DOC-detail_design-generation_priority-002",
+      "skillCode": "DOC-detail_design-generation_priority-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "详细设计优先级 2",
+      "content": "先保留对象拆分，再展开对象内部的状态判断、计算逻辑、补充说明和边界限制。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-generation_priority-003",
+      "ruleId": "DOC-detail_design-generation_priority-003",
+      "skillCode": "DOC-detail_design-generation_priority-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "详细设计优先级 3",
+      "content": "先承接系统需求已经稳定的功能主题，再吸收模型代码和模型文档中的内部实现细节。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-generation_priority-004",
+      "ruleId": "DOC-detail_design-generation_priority-004",
+      "skillCode": "DOC-detail_design-generation_priority-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "详细设计优先级 4",
+      "content": "先保证 `structuredContent` 能完整表达设计分解，再追求正文的丰富度和措辞润色。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-rule_hint-001",
+      "ruleId": "DOC-detail_design-rule_hint-001",
+      "skillCode": "DOC-detail_design-rule_hint-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "rule_hint",
+      "title": "detail design rule hint",
+      "content": "在 embedded_vcu / detail_design 范围内，优先关注 功能概述、状态判断、计算逻辑、补充说明、边界限制。写作时采用 功能主题 -> 对象拆分 -> 分支计算 -> 其中/注 -> 限制说明。目标风格保持 可审核的详细设计条目，不是软件需求摘要，也不是源码注释翻译。。可以优先参考 系统需求、模型代码/模型文档、模块样例。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.412Z",
+      "updatedAt": "2026-04-20T08:46:51.412Z"
+    },
+    {
+      "id": "DOC-detail_design-document_blueprint_section-001",
+      "ruleId": "DOC-detail_design-document_blueprint_section-001",
+      "skillCode": "DOC-detail_design-document_blueprint_section-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "preferred function section",
+      "content": "详细设计优先保留一个顶层功能章节承载模块主功能。",
+      "sectionKey": "文档蓝图",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-document_blueprint_section-002",
+      "ruleId": "DOC-detail_design-document_blueprint_section-002",
+      "skillCode": "DOC-detail_design-document_blueprint_section-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "状态判断 subsection",
+      "content": "详细设计优先保留对象级状态判断章节。",
+      "sectionKey": "文档蓝图",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-document_blueprint_section-003",
+      "ruleId": "DOC-detail_design-document_blueprint_section-003",
+      "skillCode": "DOC-detail_design-document_blueprint_section-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "计算逻辑 subsection",
+      "content": "详细设计优先保留计算逻辑章节。",
+      "sectionKey": "文档蓝图",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-document_blueprint_section-004",
+      "ruleId": "DOC-detail_design-document_blueprint_section-004",
+      "skillCode": "DOC-detail_design-document_blueprint_section-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "补充说明 subsection",
+      "content": "详细设计允许通过补充说明章节承载“其中”“计算方法为”等实现展开。",
+      "sectionKey": "文档蓝图",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-document_blueprint_section-005",
+      "ruleId": "DOC-detail_design-document_blueprint_section-005",
+      "skillCode": "DOC-detail_design-document_blueprint_section-005",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "document_blueprint_section",
+      "title": "边界限制 subsection",
+      "content": "详细设计优先保留边界限制章节或注释块。",
+      "sectionKey": "文档蓝图",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-document_blueprint_policy-001",
+      "ruleId": "DOC-detail_design-document_blueprint_policy-001",
+      "skillCode": "DOC-detail_design-document_blueprint_policy-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "document_blueprint_policy",
+      "title": "require section numbers",
+      "content": "详细设计默认不强制章节号。",
+      "sectionKey": "文档蓝图",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-document_blueprint_policy-002",
+      "ruleId": "DOC-detail_design-document_blueprint_policy-002",
+      "skillCode": "DOC-detail_design-document_blueprint_policy-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "document_blueprint_policy",
+      "title": "allow note blocks",
+      "content": "详细设计允许使用“其中”“注”等说明块承载实现展开。",
+      "sectionKey": "文档蓝图",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-document_blueprint_policy-003",
+      "ruleId": "DOC-detail_design-document_blueprint_policy-003",
+      "skillCode": "DOC-detail_design-document_blueprint_policy-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "document_blueprint_policy",
+      "title": "prefer structured content mapping",
+      "content": "详细设计应优先让结构化内容映射正文的设计分解。",
+      "sectionKey": "文档蓝图",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-extraction_rule-006",
+      "ruleId": "DOC-detail_design-extraction_rule-006",
+      "skillCode": "DOC-detail_design-extraction_rule-006",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_extraction.md",
+      "targetArea": "extraction",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "extraction_rule",
+      "title": "锁存与复位路径抽取",
+      "content": "对布尔请求标志位、状态位、状态机条件等设计点，除激活条件外，还应同时抽取锁存条件、复位条件、默认保持路径、状态范围触发条件。",
+      "sectionKey": "抽取重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
+      "id": "DOC-detail_design-validation_rule-006",
+      "ruleId": "DOC-detail_design-validation_rule-006",
+      "skillCode": "DOC-detail_design-validation_rule-006",
+      "bundleId": "bundle-base",
+      "targetFile": "requirement_validation.md",
+      "targetArea": "validation",
+      "layer": "docType",
+      "profileKey": "detail_design",
+      "documentTypeScope": "detail_design",
+      "kind": "validation_rule",
+      "title": "请求标志位完整性校验",
+      "content": "若详细设计写了激活条件，但漏写锁存、清除、复位、默认路径或状态范围限制，应判为实现展开不足。",
+      "sectionKey": "校验重点",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/doc-types/detail_design/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.413Z",
+      "updatedAt": "2026-04-20T08:46:51.413Z"
+    },
+    {
       "id": "DOC-software_requirement-writing_rule-001",
       "ruleId": "DOC-software_requirement-writing_rule-001",
       "skillCode": "DOC-software_requirement-writing_rule-001",
@@ -3894,8 +4762,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.586Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-002",
@@ -3922,8 +4790,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-003",
@@ -3950,8 +4818,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-004",
@@ -3978,8 +4846,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-005",
@@ -4006,8 +4874,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-006",
@@ -4034,8 +4902,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-007",
@@ -4062,8 +4930,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-008",
@@ -4090,8 +4958,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-009",
@@ -4118,8 +4986,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-010",
@@ -4146,8 +5014,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-011",
@@ -4174,8 +5042,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-012",
@@ -4202,8 +5070,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-001",
@@ -4230,8 +5098,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-002",
@@ -4258,8 +5126,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-003",
@@ -4286,8 +5154,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-004",
@@ -4314,8 +5182,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-005",
@@ -4342,8 +5210,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-006",
@@ -4370,8 +5238,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-007",
@@ -4398,8 +5266,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-008",
@@ -4426,8 +5294,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-009",
@@ -4454,8 +5322,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-010",
@@ -4482,8 +5350,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-001",
@@ -4510,8 +5378,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-002",
@@ -4538,8 +5406,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-003",
@@ -4566,8 +5434,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-004",
@@ -4594,8 +5462,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-005",
@@ -4622,8 +5490,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-006",
@@ -4650,8 +5518,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-good_example-001",
@@ -4678,8 +5546,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-good_example-002",
@@ -4706,8 +5574,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-good_example-003",
@@ -4734,8 +5602,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-good_example-004",
@@ -4762,8 +5630,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-001",
@@ -4790,8 +5658,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-002",
@@ -4818,8 +5686,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-003",
@@ -4846,8 +5714,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-004",
@@ -4874,8 +5742,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-001",
@@ -4902,8 +5770,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-002",
@@ -4930,8 +5798,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-003",
@@ -4958,8 +5826,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-004",
@@ -4986,8 +5854,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-005",
@@ -5014,8 +5882,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-006",
@@ -5042,8 +5910,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T01:34:45.590Z",
-      "updatedAt": "2026-04-20T01:34:45.590Z"
+      "createdAt": "2026-04-20T08:46:51.416Z",
+      "updatedAt": "2026-04-20T08:46:51.416Z"
     },
     {
       "id": "DOM-embedded_vcu-source_policy_setting-001",
@@ -6009,7 +6877,7 @@
       "documentTypeScope": "",
       "kind": "rule_hint",
       "title": "充电管理 rule hint",
-      "content": "在 embedded_vcu / 充电管理 范围内，优先关注 充电管理、充电过程、堵转加热模式、充电截止SOC、充电截止SOC记忆。写作时采用 优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。。目标风格保持 输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。。可以优先参考 input/20260411/充电管理/system-requirements-example-charging-management.md、input/20260411/充电管理/software-design-requirements-example-charging-management.md、input/20260411/Chrg.c。",
+      "content": "在 embedded_vcu / 充电管理 范围内，优先关注 充电管理、充电过程、堵转加热模式、充电截止SOC、充电截止SOC记忆。写作时采用 优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。。目标风格保持 输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。。可以优先参考 input/20260411/充电管理/充电管理系统需求.md、input/20260411/充电管理/充电管理软件需求.md、input/20260411/充电管理/Chrg.c。",
       "sectionKey": "default",
       "status": "active",
       "version": 1,
@@ -6108,6 +6976,594 @@
       },
       "createdAt": "2026-04-16T07:26:49.703Z",
       "updatedAt": "2026-04-16T07:26:49.703Z"
+    },
+    {
+      "id": "MOD-充电管理-generation_priority-004",
+      "ruleId": "MOD-充电管理-generation_priority-004",
+      "skillCode": "MOD-充电管理-generation_priority-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 4",
+      "content": "若输入包含充电管理详细设计整理稿或等价图片，优先按3个稳定设计点输出：后电机堵转加热请求、AC充电联接至充满标志位、DC充电联接至充满标志位。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.386Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-generation_priority-005",
+      "ruleId": "MOD-充电管理-generation_priority-005",
+      "skillCode": "MOD-充电管理-generation_priority-005",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 5",
+      "content": "对请求或标志位类设计点，优先写输出值判定，再写“其中”展开的激活请求、故障、退出或子状态条件。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-generation_priority-006",
+      "ruleId": "MOD-充电管理-generation_priority-006",
+      "skillCode": "MOD-充电管理-generation_priority-006",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 6",
+      "content": "AC与DC必须分别成条，不要合并成“充电联接至充满标志位”总述。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-generation_priority-007",
+      "ruleId": "MOD-充电管理-generation_priority-007",
+      "skillCode": "MOD-充电管理-generation_priority-007",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 7",
+      "content": "代码细节只能细化后电机堵转加热请求、AC充电联接至充满标志位、DC充电联接至充满标志位这3个主题，不新增ChargingFull状态机、预约充电、截止SOC或充电错误等一级主题。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-rule_hint-002",
+      "ruleId": "MOD-充电管理-rule_hint-002",
+      "skillCode": "MOD-充电管理-rule_hint-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "rule_hint",
+      "title": "charging management detail design rule hint",
+      "content": "在 embedded_vcu / detail_design / 充电管理 范围内，优先关注 充电管理、后电机堵转加热请求、AC充电联接至充满标志位、DC充电联接至充满标志位。写作时采用 功能主题 -> 输出请求/标志位 -> 其中：激活请求 -> 其中：故障/退出 -> 条件列表。目标风格保持 可审核的详细设计条目，保留工程信号、状态值、标定量和“其中”展开，不写成软件需求摘要，也不直接照搬代码状态机名。。可以优先参考 input/20260411/充电管理/充电管理系统需求.md、input/20260411/充电管理/充电管理详细设计.md、input/20260411/HvCoorn.c、input/20260411/充电管理/Chrg.c。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-good_example-004",
+      "ruleId": "MOD-充电管理-good_example-004",
+      "skillCode": "MOD-充电管理-good_example-004",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "后电机堵转加热请求",
+      "content": "当满足以下所有条件时，右后电机堵转加热请求为1，否则，右后电机堵转加热请求为0：1. 后电机堵转加热激活请求为1；2. 后电机堵转加热故障为0。其中，[后电机堵转加热激活请求]控制计算如下，当满足以下所有条件时，[后电机堵转加热激活请求]为1，否则，[后电机堵转加热激活请求]为0：1. 充电状态激活为1；2. <VCU内部驾驶员挡位状态>等于GearLvr_stDrvGearP_SC（6）；3. <实际车速>小于一定值vMax4MCUPlsHeatgEna；4. <电池状态>等于BMS1_stBattMdDCChrg（8）；5. <电机堵转加热需求>等于1；6. 后电机堵转加热状态不等于RMCU_stStalHeatg_HeatgFaild_SC（3），且不等于RMCU_stStalHeatg_HeatgOver_SC（2）。其中，[后电机堵转加热故障]控制计算如下，当满足以下条件时，右后电机堵转加热故障为1，否则，[后电机堵转加热故障]为0：1. 后电机堵转加热激活请求为1，且激活时间大于等于一定值tiMCUStalHeatgFlt_C；2. 后电机堵转加热状态不等于RMCU_stStalHeatg_Heatg_SC（1）。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-good_example-005",
+      "ruleId": "MOD-充电管理-good_example-005",
+      "skillCode": "MOD-充电管理-good_example-005",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "AC充电联接至充满标志位",
+      "content": "以下条件同时满足，则[AC充电联接至充满标志位]状态值为1：1. [AC充电联接至充满退出标志位]为0；2. [AC充电联接至充满电池状态位]为0；3. <AC充电联接OK标志位>为1；4. <AC充电充满标志位>为1。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-good_example-006",
+      "ruleId": "MOD-充电管理-good_example-006",
+      "skillCode": "MOD-充电管理-good_example-006",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "DC充电联接至充满标志位",
+      "content": "以下条件同时满足，则[DC充电联接至充满标志位]状态值为1：1. [DC充电联接至充满退出标志位]为0；2. [DC充电联接至充满电池状态位]为0；3. <DC充电联接OK标志位>为1；4. <DC充电充满标志位>为1。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-anti_pattern-004",
+      "ruleId": "MOD-充电管理-anti_pattern-004",
+      "skillCode": "MOD-充电管理-anti_pattern-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 4",
+      "content": "不要把“后电机堵转加热请求”简化回软件需求式一句话，丢掉“激活请求/故障超时”的二级展开。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-anti_pattern-005",
+      "ruleId": "MOD-充电管理-anti_pattern-005",
+      "skillCode": "MOD-充电管理-anti_pattern-005",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 5",
+      "content": "不要把AC和DC两个“联接至充满标志位”合并成一个“对应充电通道”条目。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-anti_pattern-006",
+      "ruleId": "MOD-充电管理-anti_pattern-006",
+      "skillCode": "MOD-充电管理-anti_pattern-006",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 6",
+      "content": "不要把ChargingFull、ACCharging、DCCharging、HvCoorn_bRMCUStalHeatgActvRaw之类源码状态或局部变量名直接抬升为文档一级主题。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-source_alias-001",
+      "ruleId": "MOD-充电管理-source_alias-001",
+      "skillCode": "MOD-充电管理-source_alias-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "source_alias",
+      "title": "source alias 后电机堵转加热请求",
+      "content": "生成、抽取和审核时，统一将 HvCoorn_bRMCUStalHeatgReq 视为标准名称 后电机堵转加热请求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.388Z",
+      "updatedAt": "2026-04-20T08:46:51.388Z"
+    },
+    {
+      "id": "MOD-充电管理-source_alias-002",
+      "ruleId": "MOD-充电管理-source_alias-002",
+      "skillCode": "MOD-充电管理-source_alias-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "source_alias",
+      "title": "source alias 后电机堵转加热激活请求",
+      "content": "生成、抽取和审核时，统一将 HvCoorn_bRMCUStalHeatgActvRaw 视为标准名称 后电机堵转加热激活请求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
+    },
+    {
+      "id": "MOD-充电管理-source_alias-003",
+      "ruleId": "MOD-充电管理-source_alias-003",
+      "skillCode": "MOD-充电管理-source_alias-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "source_alias",
+      "title": "source alias 后电机堵转加热故障",
+      "content": "生成、抽取和审核时，统一将 HvCoorn_bRMCUStalHeatgFlt 视为标准名称 后电机堵转加热故障。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
+    },
+    {
+      "id": "MOD-充电管理-source_alias-004",
+      "ruleId": "MOD-充电管理-source_alias-004",
+      "skillCode": "MOD-充电管理-source_alias-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "source_alias",
+      "title": "source alias AC充电联接OK标志位",
+      "content": "生成、抽取和审核时，统一将 HvCoorn_bACChrgLinkOk 视为标准名称 AC充电联接OK标志位。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
+    },
+    {
+      "id": "MOD-充电管理-source_alias-005",
+      "ruleId": "MOD-充电管理-source_alias-005",
+      "skillCode": "MOD-充电管理-source_alias-005",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "source_alias",
+      "title": "source alias AC充电充满标志位",
+      "content": "生成、抽取和审核时，统一将 icbms_bAcChrgFull 视为标准名称 AC充电充满标志位。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
+    },
+    {
+      "id": "MOD-充电管理-source_alias-006",
+      "ruleId": "MOD-充电管理-source_alias-006",
+      "skillCode": "MOD-充电管理-source_alias-006",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "source_alias",
+      "title": "source alias DC充电充满标志位",
+      "content": "生成、抽取和审核时，统一将 icbms_bDcChrgFull 视为标准名称 DC充电充满标志位。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
+    },
+    {
+      "id": "MOD-充电管理-normalization_rule-001",
+      "ruleId": "MOD-充电管理-normalization_rule-001",
+      "skillCode": "MOD-充电管理-normalization_rule-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "normalization_rule",
+      "title": "normalization rule 1",
+      "content": "出现“连接”时，统一写作“联接”。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
+    },
+    {
+      "id": "MOD-充电管理-normalization_rule-002",
+      "ruleId": "MOD-充电管理-normalization_rule-002",
+      "skillCode": "MOD-充电管理-normalization_rule-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "normalization_rule",
+      "title": "normalization rule 2",
+      "content": "出现“右后电机堵转加热请求”时，统一写作“后电机堵转加热请求”。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
+    },
+    {
+      "id": "MOD-充电管理-forbidden_expansion-001",
+      "ruleId": "MOD-充电管理-forbidden_expansion-001",
+      "skillCode": "MOD-充电管理-forbidden_expansion-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion charge_management_detail_design_states",
+      "content": "涉及 charge_management_detail_design_state_machine_names 时，不要额外扩写 ChargingFull、ACCharging、DCCharging、Chrg_IN_ACCharging、Chrg_IN_DCCharging、Chrg_IN_ChargingFull。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
+    },
+    {
+      "id": "MOD-充电管理-forbidden_expansion-002",
+      "ruleId": "MOD-充电管理-forbidden_expansion-002",
+      "skillCode": "MOD-充电管理-forbidden_expansion-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "充电管理",
+      "documentTypeScope": "",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion charge_management_unrelated_topics",
+      "content": "涉及 charge_management_detail_design_unrelated_topics 时，不要额外扩写 充电截止SOC、充电截止SOC记忆。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/充电管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.389Z",
+      "updatedAt": "2026-04-20T08:46:51.389Z"
     },
     {
       "id": "MOD-扭矩干预-bad_example-001",
@@ -6653,7 +8109,7 @@
       "documentTypeScope": "",
       "kind": "rule_hint",
       "title": "torque_intervention rule hint",
-      "content": "在 embedded_vcu / torque_intervention 范围内，优先关注 扭矩干预功能、ESC前轴扭矩干预、ESC后轴扭矩干预。写作时采用 优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。。目标风格保持 输出应该尽可能接近详细设计文档条目，而不是软件需求摘要列表。。可以优先参考 input/software-requirement-writing-rules-vcu.md、input/system-requirements-example-torque-intervention.md、input/software-design-requirements-example-esc-torque-intervention.md。",
+      "content": "在 embedded_vcu / torque_intervention 范围内，优先关注 扭矩干预功能、ESC前轴扭矩干预、ESC后轴扭矩干预。写作时采用 优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。。目标风格保持 输出应贴近工程侧人工样例的结构化控制逻辑写法。。可以优先参考 input/software-requirement-writing-rules-vcu.md、input/system-requirements-example-torque-intervention.md、input/software-design-requirements-example-esc-torque-intervention.md。",
       "sectionKey": "default",
       "status": "active",
       "version": 1,
@@ -6698,6 +8154,34 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "id": "MOD-扭矩干预-good_example-005",
+      "ruleId": "MOD-扭矩干预-good_example-005",
+      "skillCode": "MOD-扭矩干预-good_example-005",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "ESP干预前轴状态判断",
+      "content": "当满足以下任意条件时，<前轴扭矩干预激活标志位>为1：1. <前轴RBS扭矩激活标志位>为1，且<RBS需求前轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <前轴降扭激活标志位>为1，且<前轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <前轴升扭激活标志位>为1，且<前轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<前轴扭矩干预激活标志位>为0。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
+    },
+    {
       "id": "MOD-扭矩干预-anti_pattern-002",
       "ruleId": "MOD-扭矩干预-anti_pattern-002",
       "skillCode": "MOD-扭矩干预-anti_pattern-002",
@@ -6724,6 +8208,34 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-good_example-006",
+      "ruleId": "MOD-扭矩干预-good_example-006",
+      "skillCode": "MOD-扭矩干预-good_example-006",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "ESP干预前轴扭矩计算",
+      "content": "当前轴升扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的前轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的前轴目标扭矩>=<仲裁后的前轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的前轴目标扭矩>=min(<ESC干涉的滑行回收前轴目标扭矩>+<RBS需求前轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的前轴目标扭矩>=min(<仲裁后的前轴目标扭矩>,0)；否则承接<仲裁后的前轴目标扭矩>。其中，<ESC干涉的滑行回收前轴目标扭矩>需根据前轴RBS激活状态和上一时刻量计算。注：结果需经过前轴最大/最小允许扭矩限制。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-003",
@@ -6754,6 +8266,34 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "id": "MOD-扭矩干预-good_example-007",
+      "ruleId": "MOD-扭矩干预-good_example-007",
+      "skillCode": "MOD-扭矩干预-good_example-007",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "计算前轴仅RBS激活标志位",
+      "content": "当以下条件全部满足时，将<前轴仅RBS激活标志位>置1，否则置0：1. [前轴升扭干预激活]=0；2. [前轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [前轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
+    },
+    {
       "id": "MOD-扭矩干预-anti_pattern-004",
       "ruleId": "MOD-扭矩干预-anti_pattern-004",
       "skillCode": "MOD-扭矩干预-anti_pattern-004",
@@ -6780,6 +8320,34 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-good_example-008",
+      "ruleId": "MOD-扭矩干预-good_example-008",
+      "skillCode": "MOD-扭矩干预-good_example-008",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "ESP干预后轴状态判断",
+      "content": "当满足以下任意条件时，<后轴扭矩干预激活标志位>为1：1. <后轴RBS扭矩激活标志位>为1，且<RBS需求后轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <后轴降扭激活标志位>为1，且<后轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <后轴升扭激活标志位>为1，且<后轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<后轴扭矩干预激活标志位>为0。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-005",
@@ -6810,6 +8378,34 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "id": "MOD-扭矩干预-good_example-009",
+      "ruleId": "MOD-扭矩干预-good_example-009",
+      "skillCode": "MOD-扭矩干预-good_example-009",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "ESP干预后轴扭矩计算",
+      "content": "当后轴升扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的后轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的后轴目标扭矩>=<仲裁后的后轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的后轴目标扭矩>=min(<ESC干涉的滑行回收后轴目标扭矩>+<RBS需求后轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的后轴目标扭矩>=min(<仲裁后的后轴目标扭矩>,0)；否则承接<仲裁后的后轴目标扭矩>。其中，<ESC干涉的滑行回收后轴目标扭矩>需根据后轴RBS激活状态和上一时刻量计算。注：结果需经过后轴最大/最小允许扭矩限制。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
+    },
+    {
       "id": "MOD-扭矩干预-anti_pattern-006",
       "ruleId": "MOD-扭矩干预-anti_pattern-006",
       "skillCode": "MOD-扭矩干预-anti_pattern-006",
@@ -6836,6 +8432,34 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-good_example-010",
+      "ruleId": "MOD-扭矩干预-good_example-010",
+      "skillCode": "MOD-扭矩干预-good_example-010",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "计算后轴仅RBS激活标志位",
+      "content": "当以下条件全部满足时，将<后轴仅RBS激活标志位>置1，否则置0：1. [后轴升扭干预激活]=0；2. [后轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [后轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-007",
@@ -6866,6 +8490,34 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "id": "MOD-扭矩干预-generation_priority-009",
+      "ruleId": "MOD-扭矩干预-generation_priority-009",
+      "skillCode": "MOD-扭矩干预-generation_priority-009",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 9",
+      "content": "若输入包含系统需求和模型代码，详细设计优先形成六个核心主题：前轴状态判断、前轴扭矩计算、前轴仅RBS激活标志位、后轴状态判断、后轴扭矩计算、后轴仅RBS激活标志位。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
+    },
+    {
       "id": "MOD-扭矩干预-source_policy_setting-001",
       "ruleId": "MOD-扭矩干预-source_policy_setting-001",
       "skillCode": "MOD-扭矩干预-source_policy_setting-001",
@@ -6892,6 +8544,34 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-generation_priority-010",
+      "ruleId": "MOD-扭矩干预-generation_priority-010",
+      "skillCode": "MOD-扭矩干预-generation_priority-010",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 10",
+      "content": "详细设计应先写前轴三条，再以对称方式展开后轴三条，避免在对象结构尚未稳定前先写补充条目。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
     },
     {
       "id": "MOD-扭矩干预-source_policy_setting-002",
@@ -6922,6 +8602,34 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "id": "MOD-扭矩干预-generation_priority-011",
+      "ruleId": "MOD-扭矩干预-generation_priority-011",
+      "skillCode": "MOD-扭矩干预-generation_priority-011",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 11",
+      "content": "前后轴仅RBS激活标志位属于详细设计核心，不应被当作可有可无的补充噪声。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
+    },
+    {
       "id": "MOD-扭矩干预-source_policy_setting-003",
       "ruleId": "MOD-扭矩干预-source_policy_setting-003",
       "skillCode": "MOD-扭矩干预-source_policy_setting-003",
@@ -6950,6 +8658,34 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "id": "MOD-扭矩干预-generation_priority-012",
+      "ruleId": "MOD-扭矩干预-generation_priority-012",
+      "skillCode": "MOD-扭矩干预-generation_priority-012",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 12",
+      "content": "ESC干涉的滑行回收目标扭矩计算方法应并入对应轴的扭矩计算条目，不单独升格为新的主章节。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
+    },
+    {
       "id": "MOD-扭矩干预-code_style_prefix-001",
       "ruleId": "MOD-扭矩干预-code_style_prefix-001",
       "skillCode": "MOD-扭矩干预-code_style_prefix-001",
@@ -6976,6 +8712,34 @@
       },
       "createdAt": "2026-04-16T07:26:49.700Z",
       "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-rule_hint-002",
+      "ruleId": "MOD-扭矩干预-rule_hint-002",
+      "skillCode": "MOD-扭矩干预-rule_hint-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "rule_hint",
+      "title": "torque_intervention detail design rule hint",
+      "content": "在 embedded_vcu / detail_design / torque_intervention 范围内，优先关注 前轴状态判断、前轴扭矩计算、前轴仅RBS激活标志位、后轴状态判断、后轴扭矩计算、后轴仅RBS激活标志位。写作时采用 前后轴镜像展开；每轴先写状态判断，再写扭矩计算与仅RBS激活标志位；在扭矩计算条目内保留其中/注、模式分支和限幅说明。。目标风格保持 输出应贴近工程侧详细设计条目的原文式实现展开。。可以优先参考 系统需求、模型代码文件、扭矩干预详细设计人工整理稿。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.420Z",
+      "updatedAt": "2026-04-20T08:46:51.420Z"
     },
     {
       "id": "MOD-扭矩干预-code_style_prefix-002",
@@ -8404,6 +10168,258 @@
       },
       "createdAt": "2026-04-16T07:26:49.708Z",
       "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-generation_priority-006",
+      "ruleId": "MOD-高低系统管理-generation_priority-006",
+      "skillCode": "MOD-高低系统管理-generation_priority-006",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 6",
+      "content": "先围绕“KeyOn上高压”保留稳定对象拆分，再展开实现细节，不先生成泛化状态机总述。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
+    },
+    {
+      "id": "MOD-高低系统管理-generation_priority-007",
+      "ruleId": "MOD-高低系统管理-generation_priority-007",
+      "skillCode": "MOD-高低系统管理-generation_priority-007",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 7",
+      "content": "对“请求标志位”类设计点，优先写激活、锁存、复位、状态范围，再补SOC或功率阈值等使能条件。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
+    },
+    {
+      "id": "MOD-高低系统管理-generation_priority-008",
+      "ruleId": "MOD-高低系统管理-generation_priority-008",
+      "skillCode": "MOD-高低系统管理-generation_priority-008",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 8",
+      "content": "代码细节只能细化“本地KL15上高压请求激活判断”和“本地KL15上高压建立流程”这两个已存在主题，不新增V2L、防盗、诊断为主章节。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
+    },
+    {
+      "id": "MOD-高低系统管理-rule_hint-002",
+      "ruleId": "MOD-高低系统管理-rule_hint-002",
+      "skillCode": "MOD-高低系统管理-rule_hint-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "rule_hint",
+      "title": "hv-lv system management detail design rule hint",
+      "content": "在 embedded_vcu / detail_design / 高低系统管理 范围内，优先关注 KeyOn上高压、KeyOn高压请求标志位、本地KL15上高压建立流程。写作时采用 功能主题 -> 请求标志位或流程对象 -> 激活条件 -> 锁存/复位 -> 阈值与状态范围 -> 补充说明。目标风格保持 可审核的详细设计条目，保留工程信号与标定量，不写成软件需求摘要。。可以优先参考 高低系统管理系统需求、高低系统管理详细设计整理稿、HvCoorn模型/代码。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
+    },
+    {
+      "id": "MOD-高低系统管理-good_example-003",
+      "ruleId": "MOD-高低系统管理-good_example-003",
+      "skillCode": "MOD-高低系统管理-good_example-003",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "KeyOn高压请求标志位",
+      "content": "以下条件同时满足，则激活[KeyOn高压请求标志位]：1. <整车电源模式>为0x1：On，TurnOnDelay一定时间tiKeyOnDly出现上升沿，则激活并锁存；2. <电池SOC>大于等于pctBatSOCLim4Shut或<电池最大放电功率>大于等于pwrBatDChrgLim4Shut。若<高压下电指令>为1且TurnOnDelay一定时间tiPwrOffDly4RstKeyOn，或<整车电源模式>为0x0：off，或当前时刻<高压系统状态>在115~130之间出现上升沿，则Reset。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
+    },
+    {
+      "id": "MOD-高低系统管理-good_example-004",
+      "ruleId": "MOD-高低系统管理-good_example-004",
+      "skillCode": "MOD-高低系统管理-good_example-004",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "本地KL15上高压建立流程",
+      "content": "当本地KL15上高压请求成立且整车存在高压需求时，HCU应向BMS发送高压连通请求，由BMS执行预充并闭合主高压回路。HCU应结合主回路正负继电器状态、MCU母线电压和ISG母线电压联合判断高压回路是否连通；当高压回路连通后，请求高压附件使能，并请求DCDC进入Buck状态；当DCDC进入Buck且高压系统满足Ready判定条件后，置HvReady有效。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-007",
+      "ruleId": "MOD-高低系统管理-anti_pattern-007",
+      "skillCode": "MOD-高低系统管理-anti_pattern-007",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 7",
+      "content": "不要把“请求激活判断”和“高压建立流程”合并成一个泛化章节。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-008",
+      "ruleId": "MOD-高低系统管理-anti_pattern-008",
+      "skillCode": "MOD-高低系统管理-anti_pattern-008",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 8",
+      "content": "不要只写激活条件而漏掉锁存、复位、状态范围和阈值。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-009",
+      "ruleId": "MOD-高低系统管理-anti_pattern-009",
+      "skillCode": "MOD-高低系统管理-anti_pattern-009",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 9",
+      "content": "不要把HvCoorn局部变量或代码块名直接抬升为新的一级主题。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-20T08:46:51.422Z",
+      "updatedAt": "2026-04-20T08:46:51.422Z"
     },
     {
       "id": "MOD-高压能量管理-generation_priority-001",

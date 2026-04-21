@@ -29,6 +29,10 @@ function normalizeKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
 }
 
+function normalizeItemDocumentTypeScope(value) {
+  return normalizeDocumentType(String(value || "").trim());
+}
+
 function ensureArray(value) {
   if (Array.isArray(value)) return value.filter(Boolean);
   return value ? [value] : [];
@@ -199,14 +203,20 @@ export class SkillLoader {
   }
 
   buildCompiledPack(context = {}, selectedProfiles = [], items = []) {
+    const contextDocumentType = normalizeDocumentType(context.documentType);
     const activeItems = items
       .filter((item) => item.status === "active")
+      .filter((item) => {
+        const scope = String(item.documentTypeScope || "").trim();
+        if (!scope) return true;
+        return normalizeItemDocumentTypeScope(scope) === contextDocumentType;
+      })
       .sort((left, right) => left.order - right.order);
     const knowledge = buildKnowledgeFromItems(activeItems, Math.max(...activeItems.map((item) => Number(item.version || 1) || 1), 1));
 
     return {
       context: {
-        documentType: normalizeDocumentType(context.documentType),
+        documentType: contextDocumentType,
         domain: normalizeKey(context.domain),
         moduleSkillKey: normalizeKey(context.moduleSkillKey)
       },

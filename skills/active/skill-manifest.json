@@ -39,7 +39,20 @@
         "documentTypeScope": "detail_design",
         "status": "active",
         "registry": "profiles/doc-types/detail_design/skill-items.json",
-        "files": {}
+        "files": {
+          "requirement_writing.md": [
+            "profiles/doc-types/detail_design/requirement_writing.md"
+          ],
+          "requirement_extraction.md": [
+            "profiles/doc-types/detail_design/requirement_extraction.md"
+          ],
+          "requirement_validation.md": [
+            "profiles/doc-types/detail_design/requirement_validation.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/doc-types/detail_design/domain-knowledge.json"
+          ]
+        }
       },
       "hil_test_case": {
         "displayName": "HIL Test Case",
