@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.js";
 
@@ -6,6 +7,9 @@ const execFileAsync = promisify(execFile);
 const CLI_JSON_MAX_LENGTH = 120000;
 const CLI_EXCERPT_MAX_LENGTH = 600;
 const CLI_SKILL_CONTENT_MAX_LENGTH = 1200;
+const CLI_PATH_MAX_LENGTH = 260;
+const HERMES_USAGE_QUERY_RETRIES = 5;
+const HERMES_USAGE_QUERY_RETRY_DELAY_MS = 250;
 
 function trimTrailingSlash(value = "") {
   return String(value || "").replace(/\/+$/, "");
@@ -37,6 +41,29 @@ function sanitizeEvidenceItem(item = {}) {
   };
 }
 
+function sanitizeAssetItem(item = {}) {
+  return {
+    assetId: String(item.assetId || item.id || "").trim(),
+    fileName: String(item.fileName || item.originalName || "").trim(),
+    fileRole: String(item.fileRole || item.role || "").trim(),
+    absolutePath: clipText(item.absolutePath || item.path || "", CLI_PATH_MAX_LENGTH)
+  };
+}
+
+function sanitizeAnchorItem(item = {}) {
+  return {
+    anchorId: String(item.anchorId || item.id || "").trim(),
+    assetId: String(item.assetId || "").trim(),
+    fileName: String(item.fileName || "").trim(),
+    fileRole: String(item.fileRole || item.role || "").trim(),
+    location: String(item.location || "").trim(),
+    anchorType: String(item.anchorType || "").trim(),
+    excerpt: clipText(item.excerpt || "", CLI_EXCERPT_MAX_LENGTH),
+    summary: clipText(item.summary || "", 300),
+    tags: Array.isArray(item.tags) ? item.tags.map((tag) => clipText(tag || "", 80)).slice(0, 12) : []
+  };
+}
+
 function sanitizeSkillInventory(skillInventory = {}) {
   return {
     selectedProfiles: Array.isArray(skillInventory.selectedProfiles)
@@ -61,6 +88,27 @@ function sanitizeSkillInventory(skillInventory = {}) {
   };
 }
 
+function sanitizeSkillBundle(skillBundle = {}, options = {}) {
+  const includeChunks = options.includeChunks !== false;
+  const sanitized = {
+    bundlePath: clipText(skillBundle.bundlePath || "", CLI_PATH_MAX_LENGTH),
+    manifestPath: clipText(skillBundle.manifestPath || "", CLI_PATH_MAX_LENGTH),
+    recommendedSkillCodes: Array.isArray(skillBundle.recommendedSkillCodes)
+      ? skillBundle.recommendedSkillCodes.map((item) => clipText(item || "", 120)).slice(0, 40)
+      : []
+  };
+  if (includeChunks) {
+    sanitized.chunks = Array.isArray(skillBundle.chunks)
+      ? skillBundle.chunks.map((item) => ({
+          kind: String(item?.kind || "").trim(),
+          title: String(item?.title || "").trim(),
+          path: clipText(item?.path || item?.absolutePath || "", CLI_PATH_MAX_LENGTH)
+        }))
+      : [];
+  }
+  return sanitized;
+}
+
 function sanitizeOutline(outline = {}) {
   return {
     summary: clipText(outline.summary || "", 3000),
@@ -68,11 +116,26 @@ function sanitizeOutline(outline = {}) {
       ? outline.sections.map((section) => ({
           title: clipText(section?.title || "", 200),
           objective: clipText(section?.objective || "", 600),
-          evidenceKeys: Array.isArray(section?.evidenceKeys)
-            ? section.evidenceKeys.map((item) => clipText(item || "", 200)).slice(0, 20)
+          anchorIds: Array.isArray(section?.anchorIds)
+            ? section.anchorIds.map((item) => clipText(item || "", 200)).slice(0, 20)
+            : Array.isArray(section?.evidenceKeys)
+              ? section.evidenceKeys.map((item) => clipText(item || "", 200)).slice(0, 20)
             : []
         }))
       : []
+  };
+}
+
+function sanitizeContentItem(item = {}) {
+  return {
+    title: clipText(item.title || "", 200),
+    requirementText: clipText(item.requirementText || "", 6000),
+    type: clipText(item.type || "", 80),
+    verificationHint: clipText(item.verificationHint || "", 1000),
+    sourceAnchorIds: Array.isArray(item.sourceAnchorIds)
+      ? item.sourceAnchorIds.map((value) => clipText(value || "", 120)).slice(0, 20)
+      : [],
+    conflictNote: clipText(item.conflictNote || "", 1000)
   };
 }
 
@@ -105,6 +168,128 @@ function parseCliResponse(stdout = "") {
     body,
     sessionId
   };
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeTokenUsage(usage = {}) {
+  const contextTokens = Math.max(0, Number(usage.contextTokens || 0) || 0);
+  const contextLength = Math.max(0, Number(usage.contextLength || 0) || 0);
+  const inputTokens = Math.max(0, Number(usage.inputTokens || 0) || 0);
+  const outputTokens = Math.max(0, Number(usage.outputTokens || 0) || 0);
+  const cacheReadTokens = Math.max(0, Number(usage.cacheReadTokens || 0) || 0);
+  const cacheWriteTokens = Math.max(0, Number(usage.cacheWriteTokens || 0) || 0);
+  const reasoningTokens = Math.max(0, Number(usage.reasoningTokens || 0) || 0);
+  const totalTokens =
+    Math.max(0, Number(usage.totalTokens || 0) || 0) ||
+    inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+  return {
+    model: String(usage.model || "").trim(),
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    reasoningTokens,
+    totalTokens,
+    estimatedCostUsd: Number.isFinite(Number(usage.estimatedCostUsd))
+      ? Number(usage.estimatedCostUsd)
+      : null,
+    actualCostUsd: Number.isFinite(Number(usage.actualCostUsd))
+      ? Number(usage.actualCostUsd)
+      : null,
+    costStatus: String(usage.costStatus || "").trim(),
+    contextTokens,
+    contextLength,
+    contextPercent: contextLength
+      ? Math.max(0, Math.min(100, Math.round((contextTokens / contextLength) * 100)))
+      : null
+  };
+}
+
+function buildUsageSummary(usage = {}) {
+  if (!usage || !usage.totalTokens) {
+    return "";
+  }
+  return [
+    `input ${usage.inputTokens || 0}`,
+    `output ${usage.outputTokens || 0}`,
+    `total ${usage.totalTokens || 0}`
+  ].join(", ");
+}
+
+function parseSqliteUsageRow(stdout = "") {
+  const line = String(stdout || "")
+    .trim()
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .at(-1);
+  if (!line) {
+    return null;
+  }
+  const [
+    id,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    reasoningTokens,
+    estimatedCostUsd,
+    actualCostUsd,
+    costStatus,
+    model
+  ] = line.split("|");
+  if (!id) {
+    return null;
+  }
+  return normalizeTokenUsage({
+    model,
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    reasoningTokens,
+    totalTokens:
+      (Number(inputTokens || 0) || 0) +
+      (Number(outputTokens || 0) || 0) +
+      (Number(cacheReadTokens || 0) || 0) +
+      (Number(cacheWriteTokens || 0) || 0),
+    estimatedCostUsd,
+    actualCostUsd,
+    costStatus
+  });
+}
+
+async function defaultUsageReader({ sessionId, stateDbPath, commandRunner, workdir }) {
+  if (!sessionId || !stateDbPath) {
+    return null;
+  }
+  const escapedSessionId = String(sessionId).replace(/'/g, "''");
+  const sql =
+    "select id, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, estimated_cost_usd, actual_cost_usd, cost_status, model " +
+    `from sessions where id = '${escapedSessionId}';`;
+  for (let attempt = 0; attempt < HERMES_USAGE_QUERY_RETRIES; attempt += 1) {
+    try {
+      const { stdout = "" } = await commandRunner("sqlite3", ["-separator", "|", path.resolve(stateDbPath), sql], {
+        cwd: workdir,
+        timeout: 5000,
+        maxBuffer: 1024 * 1024,
+        env: process.env
+      });
+      const parsed = parseSqliteUsageRow(stdout);
+      if (parsed) {
+        return parsed;
+      }
+    } catch (_error) {
+      return null;
+    }
+    if (attempt < HERMES_USAGE_QUERY_RETRIES - 1) {
+      await delay(HERMES_USAGE_QUERY_RETRY_DELAY_MS);
+    }
+  }
+  return null;
 }
 
 function buildMaterialExtractPrompt(payload = {}) {
@@ -157,16 +342,72 @@ function buildMaterialExtractPrompt(payload = {}) {
   ].join("\n");
 }
 
+function buildAnchorIndexPrompt(payload = {}) {
+  const assets = Array.isArray(payload.inputArtifact?.assets) ? payload.inputArtifact.assets.map(sanitizeAssetItem) : [];
+  return [
+    "You are executing the Hermes step `anchor_index_build` for software requirement generation.",
+    "Use your local tools to read ONLY the allowed asset files below.",
+    "Build stable anchor records that can be referenced later by anchorId.",
+    "Return strict JSON only. No markdown fences. No explanation.",
+    "",
+    "Allowed asset files:",
+    JSON.stringify(assets, null, 2),
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        anchors: [
+          {
+            anchorId: "asset-1::line-10-18::behavior",
+            assetId: "asset-1",
+            fileName: "module.c",
+            fileRole: "generatedCode",
+            location: "line 10-18",
+            anchorType: "behavior",
+            excerpt: "verbatim excerpt from the asset",
+            summary: "Short summary of the anchor",
+            tags: ["activation", "front_axle"]
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "",
+    "Rules:",
+    "- Only read the files listed in `Allowed asset files`.",
+    "- Every anchor must have a unique anchorId.",
+    "- `excerpt` must be verbatim from the asset.",
+    "- `summary` should be short, concrete, and reuse the asset meaning without inventing behavior.",
+    "- `location` should be a concrete locator like line numbers or page markers.",
+    "- Focus on behavior, signals, conditions, outputs, boundaries, and timing relevant to software requirements."
+  ].join("\n");
+}
+
 function buildAtomRecallPrompt(payload = {}) {
-  const evidence = Array.isArray(payload.inputArtifact?.evidence) ? payload.inputArtifact.evidence.map(sanitizeEvidenceItem) : [];
+  const anchors = Array.isArray(payload.inputArtifact?.anchors)
+    ? payload.inputArtifact.anchors.map(sanitizeAnchorItem)
+    : Array.isArray(payload.inputArtifact?.evidence)
+      ? payload.inputArtifact.evidence.map((item, index) => ({
+          anchorId: String(item.anchorId || `legacy-evidence-${index + 1}`),
+          assetId: String(item.assetId || ""),
+          fileName: String(item.fileName || "").trim(),
+          fileRole: String(item.fileRole || item.role || "").trim(),
+          location: String(item.location || "").trim(),
+          anchorType: "legacy_evidence",
+          excerpt: clipText(item.excerpt || "", CLI_EXCERPT_MAX_LENGTH),
+          summary: clipText(item.summary || item.excerpt || "", 300),
+          tags: []
+        }))
+      : [];
   const inventory = sanitizeSkillInventory(payload.skillInventory || {});
   return [
     "You are executing the Hermes step `atom_recall` for software requirement generation.",
-    "Select the most relevant skill atoms from the effective skill inventory for the given evidence.",
+    "Select the most relevant skill atoms from the effective skill inventory for the given anchors.",
     "Return strict JSON only. No markdown fences. No explanation.",
     "",
-    "Evidence:",
-    JSON.stringify(evidence, null, 2),
+    "Anchors:",
+    JSON.stringify(anchors, null, 2),
     "",
     "Effective skill inventory:",
     JSON.stringify(inventory, null, 2),
@@ -200,22 +441,51 @@ function buildAtomRecallPrompt(payload = {}) {
 }
 
 function buildOutlinePrompt(payload = {}) {
-  const evidence = Array.isArray(payload.inputArtifact?.evidence) ? payload.inputArtifact.evidence.map(sanitizeEvidenceItem) : [];
+  const inputArtifact = payload.inputArtifact || {};
+  const assets = Array.isArray(inputArtifact.assets) ? inputArtifact.assets.map(sanitizeAssetItem) : [];
+  const anchors = Array.isArray(inputArtifact.anchors)
+    ? inputArtifact.anchors.map(sanitizeAnchorItem)
+    : Array.isArray(inputArtifact.evidence)
+      ? inputArtifact.evidence.map((item, index) => ({
+          anchorId: String(item.anchorId || `legacy-evidence-${index + 1}`),
+          assetId: String(item.assetId || ""),
+          fileName: String(item.fileName || "").trim(),
+          fileRole: String(item.fileRole || item.role || "").trim(),
+          location: String(item.location || "").trim(),
+          anchorType: "legacy_evidence",
+          excerpt: clipText(item.excerpt || "", CLI_EXCERPT_MAX_LENGTH),
+          summary: clipText(item.summary || item.excerpt || "", 300),
+          tags: []
+        }))
+      : [];
+  const skillBundle = sanitizeSkillBundle(
+    inputArtifact.skillBundle || {
+      bundlePath: payload.skillBundlePath,
+      manifestPath: payload.skillBundlePath,
+      recommendedSkillCodes: payload.recommendedSkillCodes
+    },
+    { includeChunks: false }
+  );
   const recalledAtoms = Array.isArray(payload.inputArtifact?.recalledAtoms)
     ? payload.inputArtifact.recalledAtoms.map((item) => ({
         skillCode: item.skillCode,
         title: item.title,
-        matchedReason: clipText(item.matchedReason || "", 300),
-        content: clipText(item.content || "", 800)
+        matchedReason: clipText(item.matchedReason || "", 300)
       }))
     : [];
   return [
     "You are executing the Hermes step `outline_build` for software requirement generation.",
-    "Create a concise requirement-writing outline from the evidence and recalled skill atoms.",
+    "Create a concise requirement-writing outline from the asset anchors, task skill bundle, and recalled skill atoms.",
     "Return strict JSON only. No markdown fences. No explanation.",
     "",
-    "Evidence:",
-    JSON.stringify(evidence, null, 2),
+    "Assets:",
+    JSON.stringify(assets, null, 2),
+    "",
+    "Anchors:",
+    JSON.stringify(anchors, null, 2),
+    "",
+    "Task skill bundle:",
+    JSON.stringify(skillBundle, null, 2),
     "",
     "Recalled skill atoms:",
     JSON.stringify(recalledAtoms, null, 2),
@@ -228,7 +498,7 @@ function buildOutlinePrompt(payload = {}) {
           {
             title: "Functional behavior",
             objective: "What this section should cover",
-            evidenceKeys: ["file.c::line 10-18"]
+            anchorIds: ["asset-1::line-10-18::behavior"]
           }
         ]
       },
@@ -238,14 +508,37 @@ function buildOutlinePrompt(payload = {}) {
     "",
     "Rules:",
     `- Return at most ${Math.max(1, Number(config.hermes.maxOutlineSections || 6))} sections.`,
+    "- Read the task skill bundle manifest and use recommended skill codes as the primary structure hints for this step.",
+    "- Do not read skill正文 chunk files in this step unless the manifest alone cannot disambiguate the section structure.",
     "- Keep the outline within software requirements scope.",
-    "- Do not include detail design or HIL-specific fields."
+    "- Do not include detail design or HIL-specific fields.",
+    "- Only reference anchors that exist in the provided anchor list."
   ].join("\n");
 }
 
 function buildContentGeneratePrompt(payload = {}) {
   const inputArtifact = payload.inputArtifact || {};
-  const evidence = Array.isArray(inputArtifact.evidence) ? inputArtifact.evidence.map(sanitizeEvidenceItem) : [];
+  const assets = Array.isArray(inputArtifact.assets) ? inputArtifact.assets.map(sanitizeAssetItem) : [];
+  const anchors = Array.isArray(inputArtifact.anchors)
+    ? inputArtifact.anchors.map(sanitizeAnchorItem)
+    : Array.isArray(inputArtifact.evidence)
+      ? inputArtifact.evidence.map((item, index) => ({
+          anchorId: String(item.anchorId || `legacy-evidence-${index + 1}`),
+          assetId: String(item.assetId || ""),
+          fileName: String(item.fileName || "").trim(),
+          fileRole: String(item.fileRole || item.role || "").trim(),
+          location: String(item.location || "").trim(),
+          anchorType: "legacy_evidence",
+          excerpt: clipText(item.excerpt || "", CLI_EXCERPT_MAX_LENGTH),
+          summary: clipText(item.summary || item.excerpt || "", 300),
+          tags: []
+        }))
+      : [];
+  const skillBundle = sanitizeSkillBundle(inputArtifact.skillBundle || {
+    bundlePath: payload.skillBundlePath,
+    manifestPath: payload.skillBundlePath,
+    recommendedSkillCodes: payload.recommendedSkillCodes
+  });
   const recalledAtoms = Array.isArray(inputArtifact.recalledAtoms)
     ? inputArtifact.recalledAtoms.map((item) => ({
         skillCode: item.skillCode,
@@ -266,7 +559,7 @@ function buildContentGeneratePrompt(payload = {}) {
   const template = inputArtifact.template || {};
   return [
     "You are executing the Hermes step `content_generate` for software requirement generation.",
-    "Generate structured software requirement items from the provided project context, template, evidence, recalled skill atoms, and outline.",
+    "Generate structured software requirement items from the provided project context, template, anchors, task skill bundle, recalled skill atoms, and outline.",
     "Return strict JSON only. No markdown fences. No explanation.",
     "",
     "Project:",
@@ -278,8 +571,14 @@ function buildContentGeneratePrompt(payload = {}) {
     "Outline:",
     JSON.stringify(outline, null, 2),
     "",
-    "Evidence:",
-    JSON.stringify(evidence, null, 2),
+    "Assets:",
+    JSON.stringify(assets, null, 2),
+    "",
+    "Anchors:",
+    JSON.stringify(anchors, null, 2),
+    "",
+    "Task skill bundle:",
+    JSON.stringify(skillBundle, null, 2),
     "",
     "Recalled skill atoms:",
     JSON.stringify(recalledAtoms, null, 2),
@@ -293,14 +592,7 @@ function buildContentGeneratePrompt(payload = {}) {
             requirementText: "The software shall ...",
             type: "functional",
             verificationHint: "How to verify",
-            sourceRefs: [
-              {
-                fileName: "file.ext",
-                fileRole: "generatedCode",
-                location: "line 10-18",
-                excerpt: "verbatim excerpt"
-              }
-            ],
+            sourceAnchorIds: ["asset-1::line-10-18::behavior"],
             conflictNote: ""
           }
         ]
@@ -310,15 +602,19 @@ function buildContentGeneratePrompt(payload = {}) {
     ),
     "",
     "Rules:",
-    "- Every requirement must be traceable to one or more sourceRefs from the provided evidence.",
-    "- sourceRefs must exactly reuse fileName, location, excerpt, and fileRole from the provided evidence.",
+    "- First read the task skill bundle manifest, then read only the skill chunks you need to write each requirement.",
+    "- Use anchors as the source-of-truth references for generated requirements.",
+    "- Every requirement must be traceable to one or more sourceAnchorIds from the provided anchors.",
+    "- sourceAnchorIds must only contain anchor ids that exist in the provided anchor list.",
     "- Keep content at software requirement level, not implementation detail level.",
-    "- Do not invent sources or ids."
+    "- Do not invent sources, anchor ids, or skill codes."
   ].join("\n");
 }
 
 function buildCliPrompt(payload = {}) {
   switch (payload.stepType) {
+    case "anchor_index_build":
+      return buildAnchorIndexPrompt(payload);
     case "material_extract":
       return buildMaterialExtractPrompt(payload);
     case "atom_recall":
@@ -346,6 +642,9 @@ function normalizeStepTimeoutMap(stepTimeoutMs = {}) {
 }
 
 function normalizeCliArtifact(stepType, parsed = {}) {
+  if (stepType === "anchor_index_build") {
+    return { anchors: Array.isArray(parsed.anchors) ? parsed.anchors.map(sanitizeAnchorItem) : [] };
+  }
   if (stepType === "material_extract") {
     return { extractions: Array.isArray(parsed.extractions) ? parsed.extractions : [] };
   }
@@ -359,7 +658,7 @@ function normalizeCliArtifact(stepType, parsed = {}) {
     };
   }
   if (stepType === "content_generate") {
-    return { items: Array.isArray(parsed.items) ? parsed.items : [] };
+    return { items: Array.isArray(parsed.items) ? parsed.items.map(sanitizeContentItem) : [] };
   }
   return parsed;
 }
@@ -386,7 +685,9 @@ export class HermesAgentClient {
       Number(options.heartbeatIntervalMs || config.hermes.heartbeatIntervalMs) || config.hermes.heartbeatIntervalMs || 5000
     );
     this.workdir = String(options.workdir || config.hermes.workdir || config.rootDir || process.cwd());
+    this.stateDbPath = String(options.stateDbPath || config.hermes.stateDbPath || "").trim();
     this.commandRunner = typeof options.commandRunner === "function" ? options.commandRunner : defaultCommandRunner;
+    this.usageReader = typeof options.usageReader === "function" ? options.usageReader : defaultUsageReader;
   }
 
   getTimeoutMsForStep(stepType = "") {
@@ -536,6 +837,14 @@ export class HermesAgentClient {
         env: { ...process.env, NO_COLOR: "1" }
       });
       const { body, sessionId } = parseCliResponse(stdout);
+      const tokenUsage = sessionId
+        ? await this.usageReader({
+            sessionId,
+            stateDbPath: this.stateDbPath,
+            commandRunner: this.commandRunner,
+            workdir: this.workdir
+          })
+        : null;
       let parsed = null;
       try {
         parsed = JSON.parse(extractJsonText(body));
@@ -567,11 +876,14 @@ export class HermesAgentClient {
         stepType: payload.stepType || "",
         status: "completed",
         label: "Hermes CLI 已返回",
-        message: `本机 Hermes 已完成 ${payload.stepType || "step"}。`,
+        message: tokenUsage
+          ? `本机 Hermes 已完成 ${payload.stepType || "step"}，${buildUsageSummary(tokenUsage)}。`
+          : `本机 Hermes 已完成 ${payload.stepType || "step"}。`,
         sessionId,
         startedAt: new Date(startedAt).toISOString(),
         heartbeatAt: new Date().toISOString(),
         elapsedMs: Date.now() - startedAt,
+        tokenUsage,
         stdoutExcerpt: clipText(body, 2000),
         stderrExcerpt: clipText(stderr, 2000)
       });
@@ -579,7 +891,7 @@ export class HermesAgentClient {
         status: "succeeded",
         stepType: payload.stepType,
         artifact: normalizeCliArtifact(payload.stepType, parsed),
-        metrics: {},
+        metrics: tokenUsage ? { tokenUsage } : {},
         logs: stderr ? [clipText(stderr, 4000)] : [],
         error: null,
         sessionId

@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "resolutionOrder": [
+    "generic",
+    "docType",
+    "domain",
+    "module"
+  ],
+  "profiles": {
+    "generic": {
+      "displayName": "Generic / 通用基础层",
+      "documentTypeScope": "",
+      "status": "active",
+      "registry": "profiles/generic/skill-items.json",
+      "files": {
+        "requirement_extraction.md": [
+          "requirement_extraction.md"
+        ],
+        "requirement_writing.md": [
+          "requirement_writing.md"
+        ],
+        "requirement_validation.md": [
+          "requirement_validation.md"
+        ],
+        "examples/good_examples.md": [
+          "examples/good_examples.md"
+        ],
+        "examples/bad_examples.md": [
+          "examples/bad_examples.md"
+        ],
+        "domain-knowledge.json": [
+          "profiles/generic/domain-knowledge.json"
+        ]
+      }
+    },
+    "docTypes": {
+      "detail_design": {
+        "displayName": "Detail Design",
+        "documentTypeScope": "detail_design",
+        "status": "active",
+        "registry": "profiles/doc-types/detail_design/skill-items.json",
+        "files": {
+          "requirement_writing.md": [
+            "profiles/doc-types/detail_design/requirement_writing.md"
+          ],
+          "requirement_extraction.md": [
+            "profiles/doc-types/detail_design/requirement_extraction.md"
+          ],
+          "requirement_validation.md": [
+            "profiles/doc-types/detail_design/requirement_validation.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/doc-types/detail_design/domain-knowledge.json"
+          ]
+        }
+      },
+      "hil_test_case": {
+        "displayName": "HIL Test Case",
+        "documentTypeScope": "hil_test_case",
+        "status": "active",
+        "registry": "profiles/doc-types/hil_test_case/skill-items.json",
+        "files": {}
+      },
+      "software_requirement": {
+        "displayName": "Software Requirement",
+        "documentTypeScope": "software_requirement",
+        "status": "active",
+        "registry": "profiles/doc-types/software_requirement/skill-items.json",
+        "files": {
+          "requirement_writing.md": [
+            "profiles/doc-types/software_requirement/requirement_writing.md"
+          ],
+          "requirement_validation.md": [
+            "profiles/doc-types/software_requirement/requirement_validation.md"
+          ],
+          "examples/good_examples.md": [
+            "profiles/doc-types/software_requirement/examples/good_examples.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/doc-types/software_requirement/domain-knowledge.json"
+          ]
+        }
+      }
+    },
+    "domains": {
+      "embedded_vcu": {
+        "displayName": "embedded_vcu",
+        "documentTypeScope": "",
+        "status": "active",
+        "registry": "profiles/domains/embedded_vcu/skill-items.json",
+        "files": {
+          "domain-knowledge.json": [
+            "profiles/domains/embedded_vcu/domain-knowledge.json"
+          ]
+        }
+      }
+    },
+    "modules": {
+      "充电管理": {
+        "displayName": "充电管理",
+        "documentTypeScope": "",
+        "status": "active",
+        "registry": "profiles/modules/充电管理/skill-items.json",
+        "files": {
+          "examples/good_examples.md": [
+            "profiles/modules/充电管理/examples/good_examples.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/modules/充电管理/domain-knowledge.json"
+          ]
+        }
+      },
+      "扭矩干预": {
+        "displayName": "扭矩干预",
+        "documentTypeScope": "",
+        "status": "active",
+        "registry": "profiles/modules/扭矩干预/skill-items.json",
+        "files": {
+          "examples/bad_examples.md": [
+            "profiles/modules/扭矩干预/examples/bad_examples.md"
+          ],
+          "examples/good_examples.md": [
+            "profiles/modules/扭矩干预/examples/good_examples.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/modules/扭矩干预/domain-knowledge.json"
+          ]
+        }
+      },
+      "高低系统管理": {
+        "displayName": "高低系统管理",
+        "documentTypeScope": "",
+        "status": "active",
+        "registry": "profiles/modules/高低系统管理/skill-items.json",
+        "files": {
+          "examples/good_examples.md": [
+            "profiles/modules/高低系统管理/examples/good_examples.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/modules/高低系统管理/domain-knowledge.json"
+          ]
+        }
+      },
+      "高压能量管理": {
+        "displayName": "高压能量管理",
+        "documentTypeScope": "",
+        "status": "active",
+        "registry": "profiles/modules/高压能量管理/skill-items.json",
+        "files": {
+          "examples/good_examples.md": [
+            "profiles/modules/高压能量管理/examples/good_examples.md"
+          ],
+          "domain-knowledge.json": [
+            "profiles/modules/高压能量管理/domain-knowledge.json"
+          ]
+        }
+      }
+    }
+  }
+}

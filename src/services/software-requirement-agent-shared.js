@@ -19,10 +19,12 @@ function sortByScoreAndOrder(left, right) {
   return String(left.skillCode || "").localeCompare(String(right.skillCode || ""));
 }
 
-function collectEvidenceTokens(evidence = []) {
+function collectAnchorTokens(anchors = []) {
   return unique(
-    evidence.flatMap((item) =>
-      tokenize(`${item.fileName || ""} ${item.location || ""} ${item.excerpt || ""} ${(item.tags || []).join(" ")}`)
+    anchors.flatMap((item) =>
+      tokenize(
+        `${item.fileName || ""} ${item.location || ""} ${item.anchorType || ""} ${item.summary || ""} ${item.excerpt || ""} ${(item.tags || []).join(" ")}`
+      )
     )
   );
 }
@@ -35,9 +37,9 @@ function scoreTokenOverlap(targetTokens = [], candidateTokens = []) {
   return candidateTokens.reduce((score, token) => score + (targetSet.has(token) ? (token.length >= 6 ? 2 : 1) : 0), 0);
 }
 
-export function recallSkillInventory(skillInventory = {}, evidence = [], options = {}) {
+export function recallSkillInventory(skillInventory = {}, anchors = [], options = {}) {
   const items = Array.isArray(skillInventory.items) ? skillInventory.items : [];
-  const evidenceTokens = collectEvidenceTokens(evidence);
+  const evidenceTokens = collectAnchorTokens(anchors);
   const limit = Math.max(1, Number(options.limit || 24) || 24);
 
   const ranked = items

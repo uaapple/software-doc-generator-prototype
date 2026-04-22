@@ -27,6 +27,49 @@ const workspaceFrame = document.querySelector("#module-workspace-frame");
 const TASK_POLL_INTERVAL_MS = 30000;
 const PENDING_GENERATION_STORAGE_KEY = "pending-module-generations";
 const PENDING_GENERATION_MAX_AGE_MS = 30 * 60 * 1000;
+const TASK_TIMELINE_COLLAPSED_ITEMS = 3;
+const TASK_STAGE_PRESENTATION = {
+  anchor_index_build: {
+    label: "正在构建引用锚点",
+    message: "本机 Hermes 正在读取资产并建立可复用的引用锚点。"
+  },
+  effective_skill_resolve: {
+    label: "正在解析生效技能并生成 Skill 包",
+    message: "后端正在解析全量有效 skill，并为本次任务生成本地 Skill 包。"
+  },
+  atom_recall: {
+    label: "正在生成推荐技能短名单",
+    message: "后端正在基于锚点生成推荐 skill shortlist，供 Hermes 优先读取。"
+  },
+  skill_manifest_read: {
+    label: "正在读取 Skill 清单",
+    message: "本机 Hermes 正在读取本次任务的 Skill 清单与推荐项。"
+  },
+  skill_chunk_read: {
+    label: "正在补读 Skill 正文",
+    message: "本机 Hermes 正在按需补读当前任务的 Skill 正文分片。"
+  },
+  outline_build: {
+    label: "正在生成提纲",
+    message: "本机 Hermes 正在结合锚点和 Skill 约束生成软件需求提纲。"
+  },
+  content_generate: {
+    label: "正在生成正式内容",
+    message: "本机 Hermes 正在基于锚点、Skill 约束和提纲生成正式软件需求。"
+  },
+  content_generate_returned: {
+    label: "模型已返回，正在解析引用锚点",
+    message: "本机 Hermes 已返回结果，后端正在校验 sourceAnchorIds 并准备回填来源引用。"
+  },
+  reference_resolve: {
+    label: "正在回填来源引用",
+    message: "后端正在把 sourceAnchorIds 解析回前端可直接展示的来源引用。"
+  },
+  post_process: {
+    label: "模型已返回，正在后处理",
+    message: "本机 Hermes 已返回结果，后端正在校验引用、执行规则检查并准备保存结果。"
+  }
+};
 let taskPollTimer = 0;
 const state = {
   rejectContext: null,
@@ -35,6 +78,10 @@ const state = {
   activeWorkspaceTab: "",
   acceptedDragContext: null,
   suppressAcceptedClickUntil: 0,
+  taskProgressExpandedTaskId: "",
+  taskProgressExpanded: false,
+  taskAgentRuntimeExpandedTaskId: "",
+  taskAgentRuntimeExpanded: false,
   feedbackHistory: {
     tasks: [],
     selectedTaskId: ""
@@ -1125,6 +1172,11 @@ function renderTaskProgress(task) {
   const percent = Math.round(Number(visibleProgress.percent || 0));
   const timeline = Array.isArray(task.timeline) ? [...task.timeline].reverse() : [];
   const metrics = task.metrics || {};
+  const shouldCollapseTimeline = isTerminalTaskStatus(task.status) && timeline.length > TASK_TIMELINE_COLLAPSED_ITEMS;
+  const isExpanded =
+    state.taskProgressExpandedTaskId === task.id ? state.taskProgressExpanded : !shouldCollapseTimeline;
+  const visibleTimeline = isExpanded ? timeline : timeline.slice(0, TASK_TIMELINE_COLLAPSED_ITEMS);
+  const hiddenTimelineCount = Math.max(0, timeline.length - visibleTimeline.length);
 
   taskProgress.innerHTML = `
     <div class="progress-shell">
@@ -1147,25 +1199,45 @@ function renderTaskProgress(task) {
           ${metrics.llmDurationMs ? `<span>模型耗时 ${metrics.llmDurationMs} ms</span>` : ""}
         </div>
       </div>
+      ${
+        shouldCollapseTimeline
+          ? `<div class="timeline-toggle-row">
+              <span class="timeline-toggle-hint">${
+                isExpanded ? "已展开全部执行历史。" : `已自动折叠较早历史，隐藏 ${hiddenTimelineCount} 条更新。`
+              }</span>
+              <button type="button" class="secondary-button timeline-toggle-button" data-toggle-task-progress>
+                ${isExpanded ? "只看最近进度" : "展开全部进度"}
+              </button>
+            </div>`
+          : ""
+      }
       <div class="timeline-list">
         ${
-          timeline.length
-            ? timeline
-                .map(
-                  (entry) => `
+          visibleTimeline.length
+            ? visibleTimeline
+                .map((entry) => {
+                  const stageDetails = describeTaskStage(entry.stage, entry.label, entry.message);
+                  return `
                     <article class="timeline-item ${escapeHtml(entry.level || "info")}">
                       <time>${escapeHtml(formatDateTime(entry.at))}</time>
-                      <strong>${escapeHtml(entry.label || entry.stage || "进度更新")}</strong>
-                      <div>${escapeHtml(entry.message || "")}</div>
+                      <strong>${escapeHtml(stageDetails.label)}</strong>
+                      <div>${escapeHtml(stageDetails.message)}</div>
                     </article>
-                  `
-                )
+                  `;
+                })
                 .join("")
             : '<div class="empty-state">任务启动后，这里会持续显示阶段进度与关键日志。</div>'
         }
       </div>
     </div>
   `;
+
+  const toggleButton = taskProgress.querySelector("[data-toggle-task-progress]");
+  toggleButton?.addEventListener("click", () => {
+    state.taskProgressExpandedTaskId = task.id;
+    state.taskProgressExpanded = !isExpanded;
+    renderTaskProgress(task);
+  });
 }
 
 function formatRelativeDuration(timestamp) {
@@ -1187,27 +1259,70 @@ function formatRelativeDuration(timestamp) {
   return `${days} 天前`;
 }
 
+function formatTokenCount(value) {
+  const number = Number(value || 0) || 0;
+  if (number <= 0) {
+    return "--";
+  }
+  if (number < 1000) {
+    return `${number}`;
+  }
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: number >= 100000 ? 0 : 1
+  }).format(number);
+}
+
+function formatUsdAmount(value) {
+  if (value == null || value === "") {
+    return "--";
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return "--";
+  }
+  return `$${number.toFixed(4)}`;
+}
+
 function deriveVisibleTaskProgress(task) {
   const base = task.progress || {};
   const agent = task.debug?.agent || {};
+  const stagePresentation = TASK_STAGE_PRESENTATION[String(base.stage || "").trim()] || null;
   if (task.status === "running" && agent.status === "completed") {
     return {
       ...base,
       stage: "post_process",
-      label: "模型已返回，正在后处理",
-      message: "本机 Hermes 已返回结果，后端正在校验引用、执行规则检查并准备保存结果。",
+      label: TASK_STAGE_PRESENTATION.post_process.label,
+      message: TASK_STAGE_PRESENTATION.post_process.message,
       percent: Math.max(Number(base.percent || 0), 84)
     };
   }
-  return base;
+  return {
+    ...base,
+    label: base.label || stagePresentation?.label || "",
+    message: base.message || stagePresentation?.message || ""
+  };
+}
+
+function isTerminalTaskStatus(status = "") {
+  return ["completed", "failed", "cancelled"].includes(String(status || "").trim());
+}
+
+function describeTaskStage(stage = "", fallbackLabel = "", fallbackMessage = "") {
+  const presentation = TASK_STAGE_PRESENTATION[String(stage || "").trim()] || null;
+  return {
+    label: fallbackLabel || presentation?.label || stage || "进度更新",
+    message: fallbackMessage || presentation?.message || ""
+  };
 }
 
 function buildAgentRuntimeMeta(event) {
   const meta = [];
-  if (event.stepType) meta.push(`step: ${event.stepType}`);
+  if (event.stepType) meta.push(`step: ${describeTaskStage(event.stepType).label}`);
   if (event.status) meta.push(`status: ${event.status}`);
   if (event.sessionId) meta.push(`session: ${event.sessionId}`);
   if (event.elapsedMs) meta.push(`耗时 ${Math.round(event.elapsedMs / 1000)} 秒`);
+  if (event.tokenUsage?.totalTokens) meta.push(`tokens ${formatTokenCount(event.tokenUsage.totalTokens)}`);
   return meta;
 }
 
@@ -1219,12 +1334,19 @@ function renderTaskAgentRuntime(task) {
 
   const debug = task.debug || {};
   const agent = debug.agent || {};
+  const tokenUsage = agent.tokenUsage || null;
+  const taskSkillBundle = debug.artifacts?.taskSkillBundle || null;
   const events = Array.isArray(debug.events)
     ? [...debug.events]
         .filter((event) => event.type === "agent_runtime" || event.transport || event.sessionId || event.stdoutExcerpt || event.stderrExcerpt)
         .reverse()
     : [];
   const isHermesTask = String(task.llmProfile?.executionMode || "").startsWith("hermes_agent");
+  const shouldCollapseEvents = isTerminalTaskStatus(task.status) && events.length > TASK_TIMELINE_COLLAPSED_ITEMS;
+  const isExpanded =
+    state.taskAgentRuntimeExpandedTaskId === task.id ? state.taskAgentRuntimeExpanded : !shouldCollapseEvents;
+  const visibleEvents = isExpanded ? events : events.slice(0, TASK_TIMELINE_COLLAPSED_ITEMS);
+  const hiddenEventCount = Math.max(0, events.length - visibleEvents.length);
 
   if (!isHermesTask && !events.length) {
     runtimeRoot.innerHTML = '<div class="empty-state">当前任务没有可展示的 Agent 运行日志。</div>';
@@ -1240,7 +1362,7 @@ function renderTaskAgentRuntime(task) {
         </article>
         <article class="agent-runtime-card">
           <span>当前 Step</span>
-          <strong>${escapeHtml(agent.currentStep || task.progress?.stage || "--")}</strong>
+          <strong>${escapeHtml(describeTaskStage(agent.currentStep || task.progress?.stage).label || "--")}</strong>
         </article>
         <article class="agent-runtime-card">
           <span>Hermes 会话</span>
@@ -1258,8 +1380,60 @@ function renderTaskAgentRuntime(task) {
           <span>当前状态</span>
           <strong>${escapeHtml(agent.status || task.status || "--")}</strong>
         </article>
+        <article class="agent-runtime-card">
+          <span>总 Token</span>
+          <strong>${escapeHtml(formatTokenCount(tokenUsage?.totalTokens))}</strong>
+        </article>
+        <article class="agent-runtime-card">
+          <span>输入 Token</span>
+          <strong>${escapeHtml(formatTokenCount(tokenUsage?.inputTokens))}</strong>
+        </article>
+        <article class="agent-runtime-card">
+          <span>输出 Token</span>
+          <strong>${escapeHtml(formatTokenCount(tokenUsage?.outputTokens))}</strong>
+        </article>
       </div>
       <div class="agent-runtime-excerpts">
+        ${
+          tokenUsage
+            ? `<article class="agent-runtime-excerpt">
+                <strong>Token 使用统计</strong>
+                <pre>${escapeHtml(
+                  [
+                    `model: ${tokenUsage.model || agent.model || "--"}`,
+                    `inputTokens: ${tokenUsage.inputTokens || 0}`,
+                    `outputTokens: ${tokenUsage.outputTokens || 0}`,
+                    `cacheReadTokens: ${tokenUsage.cacheReadTokens || 0}`,
+                    `cacheWriteTokens: ${tokenUsage.cacheWriteTokens || 0}`,
+                    `reasoningTokens: ${tokenUsage.reasoningTokens || 0}`,
+                    `totalTokens: ${tokenUsage.totalTokens || 0}`,
+                    `estimatedCostUsd: ${formatUsdAmount(tokenUsage.estimatedCostUsd)}`,
+                    `costStatus: ${tokenUsage.costStatus || "--"}`,
+                    tokenUsage.contextTokens
+                      ? `context: ${tokenUsage.contextTokens}/${tokenUsage.contextLength || "--"} (${tokenUsage.contextPercent ?? "--"}%)`
+                      : ""
+                  ]
+                    .filter(Boolean)
+                    .join("\n")
+                )}</pre>
+              </article>`
+            : ""
+        }
+        ${
+          taskSkillBundle
+            ? `<article class="agent-runtime-excerpt">
+                <strong>Task Skill Bundle</strong>
+                <pre>${escapeHtml(
+                  [
+                    `skillBundlePath: ${taskSkillBundle.skillBundlePath || "--"}`,
+                    `skillManifestPath: ${taskSkillBundle.skillManifestPath || "--"}`,
+                    `effectiveSkillCount: ${taskSkillBundle.effectiveSkillCount || 0}`,
+                    `recommendedSkillCodesCount: ${(taskSkillBundle.recommendedSkillCodes || []).length}`
+                  ].join("\n")
+                )}</pre>
+              </article>`
+            : ""
+        }
         <article class="agent-runtime-excerpt">
           <strong>最近一次 stdout 摘要</strong>
           <pre>${escapeHtml(agent.stdoutExcerpt || "暂无 stdout 摘要")}</pre>
@@ -1269,21 +1443,39 @@ function renderTaskAgentRuntime(task) {
           <pre>${escapeHtml(agent.stderrExcerpt || "暂无 stderr 摘要")}</pre>
         </article>
       </div>
+      ${
+        shouldCollapseEvents
+          ? `<div class="timeline-toggle-row">
+              <span class="timeline-toggle-hint">${
+                isExpanded ? "已展开全部 Agent 运行事件。" : `已自动折叠较早日志，隐藏 ${hiddenEventCount} 条事件。`
+              }</span>
+              <button type="button" class="secondary-button timeline-toggle-button" data-toggle-agent-runtime>
+                ${isExpanded ? "只看最近日志" : "展开全部日志"}
+              </button>
+            </div>`
+          : ""
+      }
       <div class="agent-runtime-list">
         ${
-          events.length
-            ? events
+          visibleEvents.length
+            ? visibleEvents
                 .slice(0, 20)
                 .map((event) => {
                   const meta = buildAgentRuntimeMeta(event);
+                  const stageDetails = describeTaskStage(event.stepType, event.label, event.message);
                   return `
                     <article class="agent-runtime-item ${escapeHtml(event.level || "info")}">
                       <time>${escapeHtml(formatDateTime(event.at))}</time>
-                      <strong>${escapeHtml(event.label || event.stepType || "Agent 运行事件")}</strong>
-                      <div>${escapeHtml(event.message || "")}</div>
+                      <strong>${escapeHtml(stageDetails.label || "Agent 运行事件")}</strong>
+                      <div>${escapeHtml(stageDetails.message || "")}</div>
                       ${
                         meta.length
                           ? `<div class="agent-runtime-item-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+                          : ""
+                      }
+                      ${
+                        event.tokenUsage?.totalTokens
+                          ? `<div class="agent-runtime-item-meta"><span>tokens ${escapeHtml(formatTokenCount(event.tokenUsage.totalTokens))}</span></div>`
                           : ""
                       }
                       ${
@@ -1312,6 +1504,13 @@ function renderTaskAgentRuntime(task) {
       </div>
     </div>
   `;
+
+  const toggleButton = runtimeRoot.querySelector("[data-toggle-agent-runtime]");
+  toggleButton?.addEventListener("click", () => {
+    state.taskAgentRuntimeExpandedTaskId = task.id;
+    state.taskAgentRuntimeExpanded = !isExpanded;
+    renderTaskAgentRuntime(task);
+  });
 }
 
 function getResultConflicts(task, resultItem) {
@@ -1336,27 +1535,34 @@ function buildResultConflictBlock(task, resultItem) {
   `;
 }
 
-function buildResultTraceBlock(task, resultItem) {
-  const traces = getResultTraces(task, resultItem);
+function buildCollapsibleResultSection(title, countLabel, bodyHtml) {
   return `
-    <div class="result-section">
-      <strong>追溯信息</strong>
-      <div class="result-section-body">${escapeHtml(
-        traces.map((item) => `${item.fileName} @ ${item.location}`).join("\n") || "无"
-      )}</div>
-    </div>
+    <details class="result-section result-section-collapsible">
+      <summary>
+        <strong>${escapeHtml(title)}</strong>
+        <span class="result-section-summary-meta">${escapeHtml(countLabel)}</span>
+      </summary>
+      <div class="result-section-body">${bodyHtml}</div>
+    </details>
   `;
 }
 
+function buildResultTraceBlock(task, resultItem) {
+  const traces = getResultTraces(task, resultItem);
+  return buildCollapsibleResultSection(
+    "追溯信息",
+    traces.length ? `${traces.length} 条` : "无",
+    escapeHtml(traces.map((item) => `${item.fileName} @ ${item.location}`).join("\n") || "无")
+  );
+}
+
 function buildResultSourceBlock(resultItem) {
-  return `
-    <div class="result-section">
-      <strong>来源片段</strong>
-      <div class="result-section-body">${escapeHtml(
-        (resultItem.sourceRefs || []).map((ref) => `${ref.fileName} @ ${ref.location}: ${ref.excerpt}`).join("\n\n") || "无"
-      )}</div>
-    </div>
-  `;
+  const sourceRefs = resultItem.sourceRefs || [];
+  return buildCollapsibleResultSection(
+    "来源片段",
+    sourceRefs.length ? `${sourceRefs.length} 段` : "无",
+    escapeHtml(sourceRefs.map((ref) => `${ref.fileName} @ ${ref.location}: ${ref.excerpt}`).join("\n\n") || "无")
+  );
 }
 
 function renderTaskResults(task, projectId, moduleId, documentType) {
@@ -2074,6 +2280,7 @@ function ensureTaskDetailPolling(projectId, moduleId, documentType, taskId, task
       const task = await request(`/api/projects/${projectId}/modules/${moduleId}/spaces/${documentType}/tasks/${taskId}`);
       renderTaskMeta(task);
       renderTaskProgress(task);
+      renderTaskAgentRuntime(task);
       renderTaskResults(task, projectId, moduleId, documentType);
       if (task.status === "running") {
         ensureTaskDetailPolling(projectId, moduleId, documentType, taskId, task.status);

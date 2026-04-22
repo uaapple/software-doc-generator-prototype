@@ -785,6 +785,23 @@ button:hover {
   gap: 10px;
 }
 
+.timeline-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+
+.timeline-toggle-hint {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.timeline-toggle-button {
+  white-space: nowrap;
+}
+
 .timeline-item {
   border-left: 3px solid var(--line);
   padding: 8px 0 8px 12px;
@@ -1057,9 +1074,40 @@ select {
   border-top: 1px dashed var(--line);
 }
 
+.result-section-collapsible {
+  padding-top: 10px;
+}
+
+.result-section-collapsible summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.result-section-collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+.result-section-summary-meta {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.result-section-collapsible .result-section-body {
+  margin-top: 8px;
+}
+
 .result-section strong {
   display: block;
   margin-bottom: 6px;
+}
+
+.result-section-collapsible summary strong {
+  margin-bottom: 0;
 }
 
 .result-section-body {

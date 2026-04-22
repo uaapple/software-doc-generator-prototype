@@ -36,6 +36,8 @@
     "先复现目标样例的章节骨架，再补足细节，不要先生成泛化条目。",
     "前轴和后轴必须分别成条，不要统一写成对应轴。",
     "优先生成四个核心设计主题：前轴激活、前轴计算、后轴激活、后轴计算。",
+    "若输入明显属于充电管理，优先生成堵转加热模式、充电截止SOC、充电截止SOC记忆，再考虑充满跳转标志位等补充条目。",
+    "若当前输入同时提供人工软件设计需求样例，优先复现样例中的核心条目数、主题顺序和章节归属，不要把代码还能支持的补充逻辑提前写成新的主条目。",
     "若输出 schema 只能承载列表，也要在标题或正文中保留层级关系和对象归属，但不要输出具体章节数字。",
     "只有在四个核心主题已经成型后，才考虑追加接口、时序、诊断等补充条目。",
     "信号命名优先使用参考样例中的标准工程命名，不要让代码变量名主导最终正文。",
@@ -334,6 +336,113 @@
         "RBC模式",
         "边界限制"
       ]
+    },
+    {
+      "requirementId": "CheryVCU-3015",
+      "topic": "充电过程堵转加热模式",
+      "sectionNumber": "",
+      "sectionTitle": "充电过程",
+      "requirementType": "charge_mode_request_logic",
+      "preferredTitle": "充电过程 - 堵转加热模式",
+      "requirementText": "当 ECC_StallHeatingReq = ON、DC充电枪已连接、车辆处于P挡、车速低于允许阈值、电池处于DC Charge状态，且 RMCU 堵转加热状态不处于 Heating Failed / Heating Over 时，VCU 应发送堵转加热请求 VCU2_St_StallHeatingReq = Request，并发送后驱模式请求 VCU82_St_RModeReq = TrqCtl。若请求发出 2s 后 RMCU2_St_StallHeating 仍未进入 Heating，则应撤销该请求。",
+      "signals": [
+        "ECC_StallHeatingReq",
+        "VCU2_St_StallHeatingReq",
+        "VCU82_St_RModeReq",
+        "BMS3_St_DCChargePlugin",
+        "VCU1_N_ActualGear",
+        "ESC_VehiclESCspeed",
+        "BMS1_St_BatteryMode",
+        "RMCU2_St_StallHeating"
+      ],
+      "references": [
+        "CheryVCU-1088",
+        "CheryVCU-1077"
+      ],
+      "canonicalBranches": [
+        "ECC请求成立",
+        "DC充电连接成立",
+        "P挡且低车速成立",
+        "电池DC充电模式成立",
+        "RMCU状态允许",
+        "发送请求与模式",
+        "2s超时撤销"
+      ],
+      "keywords": [
+        "充电过程",
+        "堵转加热",
+        "DC充电",
+        "TrqCtl",
+        "超时保护"
+      ]
+    },
+    {
+      "requirementId": "CheryVCU-8102",
+      "topic": "充电截止SOC",
+      "sectionNumber": "",
+      "sectionTitle": "充电过程",
+      "requirementType": "charge_soc_limit_control",
+      "preferredTitle": "充电过程 - 充电截止SOC",
+      "requirementText": "当 ICM 或 TCP 下发新的充电截止SOC且该值不等于 112 时，VCU 应更新截止SOC并反馈状态；当表显SOC大于等于截止点时，应发送充电停止请求；当表显SOC小于截止点减 1%，或交流枪/直流枪重新连接时，应重新开始截止判断。",
+      "signals": [
+        "ICM_Chg_SOC_LimitPointSet",
+        "TCP_Chg_SOC_LimitPointSet",
+        "VCU_Chg_SOC_LimitSts",
+        "VCU1_St_ChrStopRequest",
+        "BMS2_N_SOC",
+        "OBC1_St_ChargerConnection",
+        "BMS3_St_DCChargePlugin",
+        "Chrg_bChrgStopBySOCLim"
+      ],
+      "references": [
+        "CheryVCU-10935"
+      ],
+      "canonicalBranches": [
+        "设置值更新",
+        "112无效值过滤",
+        "达到截止点发送Stop",
+        "低于截止点1%恢复",
+        "插枪上升沿恢复"
+      ],
+      "keywords": [
+        "充电截止SOC",
+        "设置记忆",
+        "Stop请求",
+        "恢复滞回",
+        "重新插枪"
+      ]
+    },
+    {
+      "requirementId": "CheryVCU-12147",
+      "topic": "充电截止SOC记忆",
+      "sectionNumber": "",
+      "sectionTitle": "充电过程",
+      "requirementType": "charge_soc_memory",
+      "preferredTitle": "充电过程 - 充电截止SOC记忆",
+      "requirementText": "VCU 应对当前充电截止SOC值进行下电记忆；若 ICM 或 TCP 设置值更新，应在本次循环生效，并在下次下电时继续保存该值。若记忆值无效或超出 50%-100% 范围，则应回退为默认有效值。",
+      "signals": [
+        "ICM_Chg_SOC_LimitPointSet",
+        "TCP_Chg_SOC_LimitPointSet",
+        "Chrg_pctBookChrgSocSetEEW",
+        "Chrg_pctBookChrgSocSetEER"
+      ],
+      "references": [
+        "CheryVCU-12147"
+      ],
+      "canonicalBranches": [
+        "设置值更新",
+        "下电记忆",
+        "上电读取",
+        "50%-100%范围校验",
+        "无效值默认回退"
+      ],
+      "keywords": [
+        "充电截止SOC记忆",
+        "下电记忆",
+        "EEW",
+        "EER",
+        "默认回退"
+      ]
     }
   ],
   "ruleHints": [
@@ -352,6 +461,24 @@
         "input/system-requirements-example-torque-intervention.md",
         "input/software-design-requirements-example-esc-torque-intervention.md"
       ]
+    },
+    {
+      "domain": "embedded_vcu",
+      "subdomain": "charging_management",
+      "sectionHints": [
+        "充电管理",
+        "充电过程",
+        "堵转加热模式",
+        "充电截止SOC",
+        "充电截止SOC记忆"
+      ],
+      "writingPattern": "优先按充电过程下的控制主题拆条；先写堵转加热请求及超时保护，再写截止SOC设置与停止逻辑，最后单独写截止SOC记忆；若人工样例只保留三条主线，则先严格对齐这三条，再决定是否追加充满跳转标志位等 supplement。",
+      "targetStyle": "输出应贴近人工样例条目，显式写出输入信号、条件、输出动作和恢复路径，但不要把代码中的内部实现细节直接抬升为新的主条目或混入控制正文。",
+      "sourceBasis": [
+        "input/20260411/充电管理/system-requirements-example-charging-management.md",
+        "input/20260411/充电管理/software-design-requirements-example-charging-management.md",
+        "input/20260411/Chrg.c"
+      ]
     }
   ],
   "antiPatterns": [
@@ -361,6 +488,9 @@
     "不要输出没有来源依据的内部引用编号。",
     "不要把前轴和后轴合并成一个对应轴需求。",
     "不要在四个核心设计主题缺失时，优先输出接口总表、执行周期、越野 TCS 等泛化条目。",
-    "不要只做系统需求复述，要尽量落到激活条件、输出变量、分支和边界处理。"
+    "不要只做系统需求复述，要尽量落到激活条件、输出变量、分支和边界处理。",
+    "不要把堵转加热、截止SOC、记忆、充满跳转标志位、电流计算等充电主题揉成一条综合需求。",
+    "不要在人工样例已经拆分“截止SOC控制”和“截止SOC记忆”时，再把两者混写成一条增强版需求。",
+    "不要把代码侧补充条目如 ChargingFull 状态跳转，提前写成与人工样例并列的核心主输出。"
   ]
 }

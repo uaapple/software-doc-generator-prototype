@@ -218,6 +218,22 @@
 ### 阶段：Fallback 技能工单质量验证与 Prompt 收敛
 - **状态：** in_progress（完成真实远端验证，已定位当前主阻塞到工单正文选择）
 - **执行的操作：**
+
+## 会话：2026-04-22
+
+### 阶段：Hermes Agent 软件需求链路交接文档补齐
+- **状态：** complete
+- **执行的操作：**
+  - 新增 [docs/superpowers/hermes-agent-generation-handover.md](/Users/guanzhengyang/Documents/software-doc-generator-prototype/docs/superpowers/hermes-agent-generation-handover.md)，集中记录当前 `software_requirement` 的 Hermes agent 生成模式。
+  - 在 handoff 中明确了当前真实运行方式：默认 `HERMES_TRANSPORT=cli`，后端按 step 拉起本机 `hermes chat`，而不是依赖常驻 Hermes HTTP 服务。
+  - 在 handoff 中记录了当前主协议：`anchors -> sourceAnchorIds -> reference_resolve -> sourceRefs`。
+  - 在 handoff 中记录了 task skill bundle、token usage 读取方式、已解决问题、已知基线失败和“新模块冷启动切换到 Hermes 模式”的阅读入口。
+- **建议后续线程优先阅读：**
+  - `docs/superpowers/hermes-agent-generation-handover.md`
+  - `progress.md`
+  - `src/services/pipeline-service.js`
+  - `src/services/hermes-agent-client.js`
+  - `tests/run-tests.js`
   - 继续沿着 `充电管理 / software_requirement / CheryVCU-12147` 真实样本排查远端 replay 失败原因，确认最初问题是 prompt 过长。
   - 将 replay prompt 收敛为“原始生成 skill 文本 + rejectionContext + candidateSkillInventory + referenceAssets”，去掉重复的 `compiledPrompt / compiledSkillPack`。
   - 补强 replay system prompt、schema 和后处理归一化逻辑，让模型必须输出 machine enum 风格的 `action`、合法 `evidenceRefs` 与可用的 `targetSkillCode / targetLayer / targetProfileKey / targetKind`。

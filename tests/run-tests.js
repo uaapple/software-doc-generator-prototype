@@ -50,6 +50,7 @@ async function withTempConfig(run) {
     legacySkillDir: path.join(tempDir, "skills"),
     activeSkillDir: path.join(tempDir, "skills", "active"),
     skillBundleDir: path.join(tempDir, "skills", "bundles"),
+    generationTaskArtifactDir: path.join(tempDir, "data", "generation-task-artifacts"),
     dataDir: path.join(tempDir, "data"),
     skillDatabasePath: path.join(tempDir, "data", "skills.sqlite"),
     projectStoreDir: path.join(tempDir, "data", "projects"),
@@ -83,13 +84,15 @@ async function withTempConfig(run) {
       workdir: tempDir,
       timeoutMs: 2000,
       stepTimeoutMs: {
+        anchor_index_build: 2000,
         outline_build: 2000,
         content_generate: 4000
       },
       maxTurns: 8,
       maxRecalledAtoms: 24,
       maxOutlineSections: 6,
-      maxEvidenceForGeneration: 40
+      maxEvidenceForGeneration: 40,
+      maxAnchorsForGeneration: 80
     }
   });
   config.openai.apiKey = "";
@@ -1592,13 +1595,28 @@ const tests = [
     run: async () => {
       await withTempConfig(async () => {
         const invocations = [];
+        const usageReaderInvocations = [];
         const client = new HermesAgentClient({
           transport: "cli",
           commandRunner: async (command, args, options) => {
             invocations.push({ command, args, options });
             return {
-              stdout: "{\"items\":[{\"title\":\"CLI item\",\"requirementText\":\"CLI text\",\"sourceRefs\":[]}]}\n\nsession_id: 20260421_144500_abcd12\n",
+              stdout:
+                "{\"items\":[{\"title\":\"CLI item\",\"requirementText\":\"CLI text\",\"sourceAnchorIds\":[\"anchor-1\"]}]}\n\nsession_id: 20260421_144500_abcd12\n",
               stderr: ""
+            };
+          },
+          usageReader: async ({ sessionId }) => {
+            usageReaderInvocations.push(sessionId);
+            return {
+              model: "gpt-5.4",
+              inputTokens: 1200,
+              outputTokens: 300,
+              cacheReadTokens: 50,
+              cacheWriteTokens: 0,
+              reasoningTokens: 22,
+              totalTokens: 1550,
+              costStatus: "included"
             };
           }
         });
@@ -1625,6 +1643,10 @@ const tests = [
         assert.equal(response.status, "succeeded");
         assert.equal(response.sessionId, "20260421_144500_abcd12");
         assert.equal(response.artifact.items[0].title, "CLI item");
+        assert.deepEqual(response.artifact.items[0].sourceAnchorIds, ["anchor-1"]);
+        assert.deepEqual(usageReaderInvocations, ["20260421_144500_abcd12"]);
+        assert.equal(response.metrics.tokenUsage.totalTokens, 1550);
+        assert.equal(response.metrics.tokenUsage.inputTokens, 1200);
       });
     }
   },
@@ -1637,13 +1659,15 @@ const tests = [
           transport: "cli",
           timeoutMs: 120000,
           stepTimeoutMs: {
+            anchor_index_build: 120000,
             outline_build: 120000,
             content_generate: 240000
           },
           commandRunner: async (command, args, options) => {
             invocations.push({ command, args, options });
             return {
-              stdout: "{\"items\":[{\"title\":\"CLI item\",\"requirementText\":\"CLI text\",\"sourceRefs\":[]}]}\n\nsession_id: 20260421_144500_abcd12\n",
+              stdout:
+                "{\"items\":[{\"title\":\"CLI item\",\"requirementText\":\"CLI text\",\"sourceAnchorIds\":[\"anchor-1\"]}]}\n\nsession_id: 20260421_144500_abcd12\n",
               stderr: ""
             };
           }
@@ -1666,6 +1690,264 @@ const tests = [
 
         assert.equal(invocations.length, 1);
         assert.equal(invocations[0].options.timeout, 240000);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client builds anchor_index_build prompt and parses anchors",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout: JSON.stringify(
+                {
+                  anchors: [
+                    {
+                      anchorId: "asset-1::line-10-18::behavior",
+                      assetId: "asset-1",
+                      fileName: "charging-model.c",
+                      fileRole: "generatedCode",
+                      location: "line 10-18",
+                      anchorType: "behavior",
+                      excerpt: "chargeState = 1;",
+                      summary: "充电状态输出被置位",
+                      tags: ["charge_state", "output"]
+                    }
+                  ]
+                },
+                null,
+                2
+              ) + "\n\nsession_id: 20260421_144510_anchor01\n",
+              stderr: ""
+            };
+          }
+        });
+
+        const response = await client.executeStep({
+          taskId: "task-anchor-index",
+          stepType: "anchor_index_build",
+          allowedPaths: ["/tmp/charging-model.c"],
+          inputArtifact: {
+            assets: [
+              {
+                assetId: "asset-1",
+                fileName: "charging-model.c",
+                fileRole: "generatedCode",
+                absolutePath: "/tmp/charging-model.c"
+              }
+            ]
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(response.status, "succeeded");
+        assert.equal(response.sessionId, "20260421_144510_anchor01");
+        assert.equal(response.artifact.anchors[0].anchorId, "asset-1::line-10-18::behavior");
+        const prompt = invocations[0].args[2];
+        assert.match(prompt, /anchor_index_build/);
+        assert.match(prompt, /anchorId/);
+        assert.match(prompt, /charging-model\.c/);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client content_generate prompt uses skill bundle and sourceAnchorIds contract",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"items\":[{\"title\":\"CLI item\",\"requirementText\":\"CLI text\",\"type\":\"functional\",\"verificationHint\":\"inspect\",\"sourceAnchorIds\":[\"anchor-1\",\"anchor-2\"],\"conflictNote\":\"\"}]}\n\nsession_id: 20260421_144511_anchor02\n",
+              stderr: ""
+            };
+          }
+        });
+
+        const response = await client.executeStep({
+          taskId: "task-cli-contract",
+          stepType: "content_generate",
+          allowedPaths: ["/tmp/charging-model.c", "/tmp/skills/manifest.json"],
+          inputArtifact: {
+            project: { name: "CLI Project", documentType: "software_requirement" },
+            assets: [
+              {
+                assetId: "asset-1",
+                fileName: "charging-model.c",
+                fileRole: "generatedCode",
+                absolutePath: "/tmp/charging-model.c"
+              }
+            ],
+            anchors: [
+              {
+                anchorId: "anchor-1",
+                assetId: "asset-1",
+                fileName: "charging-model.c",
+                fileRole: "generatedCode",
+                location: "line 10-18",
+                anchorType: "behavior",
+                excerpt: "chargeState = 1;",
+                summary: "充电状态输出被置位"
+              }
+            ],
+            recalledAtoms: [],
+            outline: { sections: [{ title: "Section", objective: "Goal", anchorIds: ["anchor-1"] }] },
+            template: { requirementIdPrefix: "SWR", sections: [] },
+            skillBundle: {
+              bundlePath: "/tmp/skills",
+              manifestPath: "/tmp/skills/manifest.json",
+              recommendedSkillCodes: ["module_rule_1"],
+              chunks: [{ kind: "good_example", path: "/tmp/skills/by-kind/good-example.json" }]
+            }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.deepEqual(response.artifact.items[0].sourceAnchorIds, ["anchor-1", "anchor-2"]);
+        const prompt = invocations[0].args[2];
+        assert.match(prompt, /sourceAnchorIds/);
+        assert.match(prompt, /manifest\.json/);
+        assert.match(prompt, /module_rule_1/);
+        assert.doesNotMatch(prompt, /sourceRefs must exactly reuse/i);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client keeps skill bundle path even when recommended skill shortlist is empty",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"summary\":\"outline\",\"sections\":[{\"title\":\"Section\",\"objective\":\"Goal\",\"anchorIds\":[\"anchor-1\"]}]}\n\nsession_id: 20260421_144512_outline03\n",
+              stderr: ""
+            };
+          }
+        });
+
+        const response = await client.executeStep({
+          taskId: "task-cli-empty-shortlist",
+          stepType: "outline_build",
+          allowedPaths: ["/tmp/charging-model.c", "/tmp/skills/skill-manifest.json"],
+          skillBundlePath: "/tmp/skills/skill-manifest.json",
+          recommendedSkillCodes: [],
+          inputArtifact: {
+            assets: [
+              {
+                assetId: "asset-1",
+                fileName: "charging-model.c",
+                fileRole: "generatedCode",
+                absolutePath: "/tmp/charging-model.c"
+              }
+            ],
+            anchors: [
+              {
+                anchorId: "anchor-1",
+                assetId: "asset-1",
+                fileName: "charging-model.c",
+                fileRole: "generatedCode",
+                location: "line 10-18",
+                anchorType: "behavior",
+                excerpt: "chargeState = 1;",
+                summary: "充电状态输出被置位"
+              }
+            ],
+            recalledAtoms: [],
+            template: { requirementIdPrefix: "SWR", sections: [] }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(response.status, "succeeded");
+        const prompt = invocations[0].args[2];
+        assert.match(prompt, /skill-manifest\.json/);
+        assert.match(prompt, /Task skill bundle/);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client outline_build prompt keeps manifest and shortlist but omits skill chunks and atom正文",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"summary\":\"outline\",\"sections\":[{\"title\":\"Section\",\"objective\":\"Goal\",\"anchorIds\":[\"anchor-1\"]}]}\n\nsession_id: 20260421_175100_outline04\n",
+              stderr: ""
+            };
+          }
+        });
+
+        await client.executeStep({
+          taskId: "task-cli-outline-manifest-only",
+          stepType: "outline_build",
+          allowedPaths: ["/tmp/charging-model.c", "/tmp/skills/skill-manifest.json"],
+          skillBundlePath: "/tmp/skills/skill-manifest.json",
+          recommendedSkillCodes: ["module_rule_1"],
+          inputArtifact: {
+            assets: [
+              {
+                assetId: "asset-1",
+                fileName: "charging-model.c",
+                fileRole: "generatedCode",
+                absolutePath: "/tmp/charging-model.c"
+              }
+            ],
+            anchors: [
+              {
+                anchorId: "anchor-1",
+                assetId: "asset-1",
+                fileName: "charging-model.c",
+                fileRole: "generatedCode",
+                location: "line 10-18",
+                anchorType: "behavior",
+                excerpt: "chargeState = 1;",
+                summary: "充电状态输出被置位"
+              }
+            ],
+            recalledAtoms: [
+              {
+                skillCode: "module_rule_1",
+                title: "Module rule",
+                matchedReason: "命中关键词：charge / state",
+                content: "This should not appear in the outline prompt."
+              }
+            ],
+            skillBundle: {
+              bundlePath: "/tmp/skills",
+              manifestPath: "/tmp/skills/skill-manifest.json",
+              recommendedSkillCodes: ["module_rule_1"],
+              chunks: [{ kind: "good_example", path: "/tmp/skills/by-chunk/chunk-001.json" }]
+            },
+            template: { requirementIdPrefix: "SWR", sections: [] }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        const prompt = invocations[0].args[2];
+        assert.match(prompt, /skill-manifest\.json/);
+        assert.match(prompt, /module_rule_1/);
+        assert.doesNotMatch(prompt, /chunk-001\.json/);
+        assert.doesNotMatch(prompt, /This should not appear in the outline prompt\./);
       });
     }
   },
@@ -1912,77 +2194,453 @@ const tests = [
     }
   },
   {
+    name: "Task detail frontend recognizes anchor and skill bundle stages",
+    run: async () => {
+      const hierarchySource = await fs.readFile(new URL("../public/hierarchy.js", import.meta.url), "utf8");
+      const taskDetailSource = await fs.readFile(new URL("../public/task-detail.html", import.meta.url), "utf8");
+
+      assert.match(hierarchySource, /正在构建引用锚点/);
+      assert.match(hierarchySource, /正在读取 Skill 清单/);
+      assert.match(hierarchySource, /正在补读 Skill 正文/);
+      assert.match(hierarchySource, /正在回填来源引用/);
+      assert.match(hierarchySource, /content_generate_returned/);
+      assert.match(hierarchySource, /function ensureTaskDetailPolling[\s\S]*renderTaskAgentRuntime\(task\);/);
+      assert.match(taskDetailSource, /Agent 运行日志/);
+    }
+  },
+  {
     name: "Pipeline service runs software requirement generation through Hermes workflow",
     run: async () => {
       await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        const hermesPayloads = [];
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          hermesPayloads.push(payload);
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在充电使能时输出充电状态信号。",
+                    summary: "充电使能时输出充电状态信号。",
+                    tags: ["requirement-like", "state"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "atom_recall") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    skillCode: "module.charge_enable.state",
+                    layer: "module",
+                    profileKey: "charging_management",
+                    kind: "good_example",
+                    title: "充电状态信号输出",
+                    content: "当充电使能时，软件应输出充电状态信号。",
+                    order: 1,
+                    matchedReason: "锚点明确提到充电状态输出。"
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "outline_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                summary: "充电状态输出",
+                sections: [
+                  {
+                    title: "功能行为",
+                    objective: "描述充电状态输出行为",
+                    anchorIds: ["anchor-1"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "atom_recall") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    skillCode: "module.charge_enable.state",
+                    layer: "module",
+                    profileKey: "charging_management",
+                    kind: "good_example",
+                    title: "充电状态信号输出",
+                    content: "当充电使能时，软件应输出充电状态信号。",
+                    order: 1,
+                    matchedReason: "锚点明确提到充电状态输出。"
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "content_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    title: "充电状态信号输出",
+                    requirementText: "当充电使能时，软件应输出充电状态信号。",
+                    type: "functional",
+                    verificationHint: "验证充电使能时的状态输出。",
+                    sourceAnchorIds: ["anchor-1"],
+                    conflictNote: ""
+                  }
+                ]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Agent Validation Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging-system.md");
+        const modelFilePath = path.join(uploadDir, "charging-model.c");
+        const referenceFilePath = path.join(uploadDir, "charging-reference.md");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+        await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+        await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging-system.md",
+              filename: "charging-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "charging-model.c",
+              filename: "charging-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 44
+            }
+          ],
+          referenceExample: [
+            {
+              originalname: "charging-reference.md",
+              filename: "charging-reference.md",
+              path: referenceFilePath,
+              mimetype: "text/markdown",
+              size: 27
+            }
+          ]
+        });
+
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
+        assert.equal(result.task.status, "completed");
+        assert.ok(result.task.resultItems.length >= 1);
+        assert.ok(result.task.extractions.length >= 1);
+        assert.ok(result.task.metrics.extractionEvidenceCount >= 1);
+        assert.equal(result.task.debug.artifacts.assetManifest.length, 3);
+        assert.equal(result.task.debug.artifacts.anchors.length, 1);
+        assert.ok(result.task.debug.artifacts.taskSkillBundle);
+        assert.ok(result.task.debug.artifacts.taskSkillBundle.skillBundlePath);
+        assert.ok(result.task.debug.artifacts.taskSkillBundle.skillManifestPath);
+        assert.ok(Array.isArray(result.task.debug.artifacts.taskSkillBundle.recommendedSkillCodes));
+        assert.ok(result.task.debug.artifacts.taskSkillBundle.effectiveSkillCount > 0);
+
+        const skillBundlePath = result.task.debug.artifacts.taskSkillBundle.skillBundlePath;
+        const skillManifestPath = result.task.debug.artifacts.taskSkillBundle.skillManifestPath;
+        const manifest = JSON.parse(await fs.readFile(skillManifestPath, "utf8"));
+        assert.ok(skillBundlePath.includes(result.task.id));
+        assert.ok(Array.isArray(manifest.items));
+        assert.ok(manifest.items.length > 0);
+        assert.ok(manifest.items.every((item) => item.chunkPath));
+
+        const outlinePayload = hermesPayloads.find((payload) => payload.stepType === "outline_build");
+        const contentPayload = hermesPayloads.find((payload) => payload.stepType === "content_generate");
+        assert.equal(outlinePayload.skillBundlePath, skillManifestPath);
+        assert.equal(contentPayload.skillBundlePath, skillManifestPath);
+        assert.ok(Array.isArray(outlinePayload.recommendedSkillCodes));
+        assert.ok(Array.isArray(contentPayload.recommendedSkillCodes));
+        assert.ok(outlinePayload.recommendedSkillCodes.length > 0);
+        assert.ok(contentPayload.recommendedSkillCodes.length > 0);
+        assert.ok(outlinePayload.recommendedSkillCodes.length <= config.hermes.maxRecalledAtoms);
+        assert.ok(contentPayload.recommendedSkillCodes.length <= config.hermes.maxRecalledAtoms);
+
+        const stages = (result.task.timeline || []).map((entry) => entry.stage);
+        assert.ok(stages.includes("task_init"));
+        assert.ok(stages.includes("effective_skill_resolve"));
+        assert.ok(stages.includes("anchor_index_build"));
+        assert.ok(stages.includes("atom_recall"));
+        assert.ok(stages.includes("outline_build"));
+        assert.ok(stages.includes("content_generate"));
+        assert.ok(stages.includes("reference_resolve"));
+        assert.ok(stages.includes("rule_validate"));
+        assert.ok(stages.includes("persist_result"));
+
+        assert.deepEqual(result.task.resultItems[0].sourceAnchorIds, ["anchor-1"]);
+        assert.equal((result.task.resultItems[0].sourceRefs || []).length, 1);
+        assert.equal(result.task.resultItems[0].sourceRefs[0].fileName, "charging-system.md");
+        assert.equal(result.task.progress.stage, "completed");
+      });
+    }
+  },
+  {
+    name: "Pipeline service fails software requirement generation when Hermes returns invalid sourceAnchorIds",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在充电使能时输出充电状态信号。",
+                    summary: "充电使能时输出充电状态信号。",
+                    tags: ["requirement-like"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "outline_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                summary: "充电状态输出",
+                sections: [
+                  {
+                    title: "功能行为",
+                    objective: "描述充电状态输出行为",
+                    anchorIds: ["anchor-1"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "atom_recall") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    skillCode: "module.charge_enable.state",
+                    layer: "module",
+                    profileKey: "charging_management",
+                    kind: "good_example",
+                    title: "充电状态信号输出",
+                    content: "当充电使能时，软件应输出充电状态信号。",
+                    order: 1,
+                    matchedReason: "锚点明确提到充电状态输出。"
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "content_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    title: "充电状态信号输出",
+                    requirementText: "当充电使能时，软件应输出充电状态信号。",
+                    type: "functional",
+                    verificationHint: "验证充电使能时的状态输出。",
+                    sourceAnchorIds: ["anchor-missing"],
+                    conflictNote: ""
+                  }
+                ]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Anchor Failure Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging-system.md");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging-system.md",
+              filename: "charging-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ]
+        });
+
+        await assert.rejects(
+          () => pipelineService.generateForModule(project.id, module.id, "software_requirement", {}),
+          /sourceAnchorId outside the anchor index set/
+        );
+
+        let task = null;
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          task = await projectService.getLatestGenerationTask(project.id, module.id, "software_requirement");
+          if (task?.status === "failed") {
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(task.status, "failed");
+        assert.equal(task.progress.stage, "failed");
+        assert.match(task.errorMessage, /sourceAnchorId outside the anchor index set/);
+        assert.ok((task.timeline || []).some((entry) => entry.stage === "anchor_index_build"));
+      });
+    }
+  },
+  {
+    name: "Hermes API server supports anchor-based software requirement contract",
+    run: async () => {
+      await withTempConfig(async () => {
         await withHermesServer(async ({ baseUrl }) => {
-          config.hermes.baseURL = baseUrl;
-          const projectService = new ProjectService();
-          const pipelineService = new PipelineService(projectService);
+          const assetDir = path.join(config.uploadDir, "anchor-contract");
+          await fs.mkdir(assetDir, { recursive: true });
+          const modelFilePath = path.join(assetDir, "charging-model.c");
+          await fs.writeFile(
+            modelFilePath,
+            "void Charging_step(void) { chargeState = 1; chargeEnable = 1; }",
+            "utf8"
+          );
 
-          const project = await projectService.createProject({ name: "Agent Validation Workspace" });
-          const module = await projectService.createModule(project.id, {
-            name: "Charging Management",
-            moduleSkillKey: "charging_management"
+          const indexResponse = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "anchor_index_build",
+              allowedPaths: [assetDir],
+              inputArtifact: {
+                assets: [
+                  {
+                    id: "asset-generated-code",
+                    fileRole: "generated_code",
+                    originalName: "charging-model.c",
+                    absolutePath: modelFilePath
+                  }
+                ]
+              }
+            })
           });
+          assert.equal(indexResponse.status, 200);
+          const indexPayload = await indexResponse.json();
+          assert.equal(indexPayload.status, "succeeded");
+          assert.ok(Array.isArray(indexPayload.artifact?.anchors));
+          assert.ok(indexPayload.artifact.anchors.length >= 1);
+          assert.ok(indexPayload.artifact.anchors[0].anchorId);
 
-          const uploadDir = path.join(config.uploadDir, project.id, module.id);
-          await fs.mkdir(uploadDir, { recursive: true });
-          const systemFilePath = path.join(uploadDir, "charging-system.md");
-          const modelFilePath = path.join(uploadDir, "charging-model.c");
-          const referenceFilePath = path.join(uploadDir, "charging-reference.md");
-          await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
-          await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
-          await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
-
-          await projectService.attachModuleAssets(project.id, module.id, {
-            systemPdf: [
-              {
-                originalname: "charging-system.md",
-                filename: "charging-system.md",
-                path: systemFilePath,
-                mimetype: "text/markdown",
-                size: 24
-              }
-            ],
-            generatedCode: [
-              {
-                originalname: "charging-model.c",
-                filename: "charging-model.c",
-                path: modelFilePath,
-                mimetype: "text/x-c",
-                size: 44
-              }
-            ],
-            referenceExample: [
-              {
-                originalname: "charging-reference.md",
-                filename: "charging-reference.md",
-                path: referenceFilePath,
-                mimetype: "text/markdown",
-                size: 27
-              }
-            ]
+          const anchors = indexPayload.artifact.anchors;
+          const recallResponse = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "atom_recall",
+              skillInventory: {
+                items: [
+                  {
+                    skillCode: "module.charge_enable.state",
+                    kind: "good_example",
+                    layer: "module",
+                    profileKey: "charging_management",
+                    title: "充电状态信号输出",
+                    content: "当充电使能生效时，软件应输出充电状态信号。",
+                    order: 1
+                  }
+                ]
+              },
+              inputArtifact: { anchors }
+            })
           });
+          assert.equal(recallResponse.status, 200);
+          const recallPayload = await recallResponse.json();
+          assert.ok(Array.isArray(recallPayload.artifact?.items));
+          assert.ok(recallPayload.artifact.items.length >= 1);
 
-          const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
-          assert.equal(result.task.status, "completed");
-          assert.ok(result.task.resultItems.length >= 1);
-          assert.ok(result.task.extractions.length >= 1);
-          assert.ok(result.task.metrics.extractionEvidenceCount >= 1);
+          const outlineResponse = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "outline_build",
+              inputArtifact: {
+                anchors,
+                recalledAtoms: recallPayload.artifact.items
+              }
+            })
+          });
+          assert.equal(outlineResponse.status, 200);
+          const outlinePayload = await outlineResponse.json();
+          assert.ok(Array.isArray(outlinePayload.artifact?.sections));
+          assert.ok(outlinePayload.artifact.sections.length >= 1);
+          assert.ok(Array.isArray(outlinePayload.artifact.sections[0].anchorIds));
 
-          const stages = (result.task.timeline || []).map((entry) => entry.stage);
-          assert.ok(stages.includes("task_init"));
-          assert.ok(stages.includes("effective_skill_resolve"));
-          assert.ok(stages.includes("material_extract"));
-          assert.ok(stages.includes("atom_recall"));
-          assert.ok(stages.includes("outline_build"));
-          assert.ok(stages.includes("content_generate"));
-          assert.ok(stages.includes("rule_validate"));
-          assert.ok(stages.includes("persist_result"));
-
-          assert.ok((result.task.resultItems[0].sourceRefs || []).length >= 1);
-          assert.equal(result.task.progress.stage, "completed");
+          const contentResponse = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "content_generate",
+              inputArtifact: {
+                project: {
+                  name: "Charging Module",
+                  documentType: "software_requirement"
+                },
+                template: {
+                  requirementIdPrefix: "SWR"
+                },
+                anchors,
+                recalledAtoms: recallPayload.artifact.items,
+                outline: outlinePayload.artifact
+              }
+            })
+          });
+          assert.equal(contentResponse.status, 200);
+          const contentPayload = await contentResponse.json();
+          assert.ok(Array.isArray(contentPayload.artifact?.items));
+          assert.ok(contentPayload.artifact.items.length >= 1);
+          assert.ok(Array.isArray(contentPayload.artifact.items[0].sourceAnchorIds));
+          assert.ok(contentPayload.artifact.items[0].sourceAnchorIds.length >= 1);
         });
       });
     }

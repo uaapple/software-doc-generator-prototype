@@ -55,6 +55,7 @@ export const config = {
   legacySkillDir: path.join(rootDir, "skills"),
   activeSkillDir: path.join(rootDir, "skills", "active"),
   skillBundleDir: path.join(rootDir, "skills", "bundles"),
+  generationTaskArtifactDir: path.join(rootDir, "data", "generation-task-artifacts"),
   dataDir: path.join(rootDir, "data"),
   skillDatabasePath: path.join(rootDir, "data", "skills.sqlite"),
   projectStoreDir: path.join(rootDir, "data", "projects"),
@@ -85,17 +86,20 @@ export const config = {
     port: Number(process.env.HERMES_PORT || 3101),
     baseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
     command: process.env.HERMES_COMMAND || "hermes",
+    stateDbPath: process.env.HERMES_STATE_DB_PATH || path.join(process.env.HOME || "", ".hermes", "state.db"),
     workdir: process.env.HERMES_WORKDIR || rootDir,
     timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 120000),
     stepTimeoutMs: {
-      outline_build: Number(process.env.HERMES_TIMEOUT_OUTLINE_BUILD_MS || 120000),
+      anchor_index_build: Number(process.env.HERMES_TIMEOUT_ANCHOR_INDEX_BUILD_MS || 180000),
+      outline_build: Number(process.env.HERMES_TIMEOUT_OUTLINE_BUILD_MS || 180000),
       content_generate: Number(process.env.HERMES_TIMEOUT_CONTENT_GENERATE_MS || 240000)
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
     maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
     maxRecalledAtoms: Number(process.env.HERMES_MAX_RECALLED_ATOMS || 24),
     maxOutlineSections: Number(process.env.HERMES_MAX_OUTLINE_SECTIONS || 6),
-    maxEvidenceForGeneration: Number(process.env.HERMES_MAX_EVIDENCE_FOR_GENERATION || 40)
+    maxEvidenceForGeneration: Number(process.env.HERMES_MAX_EVIDENCE_FOR_GENERATION || 40),
+    maxAnchorsForGeneration: Number(process.env.HERMES_MAX_ANCHORS_FOR_GENERATION || 80)
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY || "",

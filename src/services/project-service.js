@@ -199,6 +199,29 @@ function normalizeTaskDebugEvent(event = {}) {
     startedAt: String(event?.startedAt || "").trim(),
     heartbeatAt: String(event?.heartbeatAt || "").trim(),
     elapsedMs: Math.max(0, Number(event?.elapsedMs || 0) || 0),
+    tokenUsage: event?.tokenUsage && typeof event.tokenUsage === "object"
+      ? {
+          model: String(event.tokenUsage.model || "").trim(),
+          inputTokens: Math.max(0, Number(event.tokenUsage.inputTokens || 0) || 0),
+          outputTokens: Math.max(0, Number(event.tokenUsage.outputTokens || 0) || 0),
+          cacheReadTokens: Math.max(0, Number(event.tokenUsage.cacheReadTokens || 0) || 0),
+          cacheWriteTokens: Math.max(0, Number(event.tokenUsage.cacheWriteTokens || 0) || 0),
+          reasoningTokens: Math.max(0, Number(event.tokenUsage.reasoningTokens || 0) || 0),
+          totalTokens: Math.max(0, Number(event.tokenUsage.totalTokens || 0) || 0),
+          estimatedCostUsd: Number.isFinite(Number(event.tokenUsage.estimatedCostUsd))
+            ? Number(event.tokenUsage.estimatedCostUsd)
+            : null,
+          actualCostUsd: Number.isFinite(Number(event.tokenUsage.actualCostUsd))
+            ? Number(event.tokenUsage.actualCostUsd)
+            : null,
+          costStatus: String(event.tokenUsage.costStatus || "").trim(),
+          contextTokens: Math.max(0, Number(event.tokenUsage.contextTokens || 0) || 0),
+          contextLength: Math.max(0, Number(event.tokenUsage.contextLength || 0) || 0),
+          contextPercent: event.tokenUsage.contextPercent == null
+            ? null
+            : Math.max(0, Math.min(100, Number(event.tokenUsage.contextPercent || 0) || 0))
+        }
+      : null,
     stdoutExcerpt: normalizeDebugText(event?.stdoutExcerpt || "", 4000),
     stderrExcerpt: normalizeDebugText(event?.stderrExcerpt || "", 4000)
   };
@@ -208,6 +231,7 @@ function normalizeTaskDebug(debug = {}) {
   const llm = debug?.llm || {};
   const postProcess = debug?.postProcess || {};
   const agent = debug?.agent || {};
+  const artifacts = debug?.artifacts || {};
   const lastError = debug?.lastError && typeof debug.lastError === "object"
     ? {
         at: debug.lastError.at || "",
@@ -248,7 +272,84 @@ function normalizeTaskDebug(debug = {}) {
       sessionId: String(agent.sessionId || "").trim(),
       stdoutExcerpt: normalizeDebugText(agent.stdoutExcerpt || "", 4000),
       stderrExcerpt: normalizeDebugText(agent.stderrExcerpt || "", 4000),
-      elapsedMs: Math.max(0, Number(agent.elapsedMs || 0) || 0)
+      elapsedMs: Math.max(0, Number(agent.elapsedMs || 0) || 0),
+      tokenUsage: agent.tokenUsage && typeof agent.tokenUsage === "object"
+        ? {
+            model: String(agent.tokenUsage.model || "").trim(),
+            inputTokens: Math.max(0, Number(agent.tokenUsage.inputTokens || 0) || 0),
+            outputTokens: Math.max(0, Number(agent.tokenUsage.outputTokens || 0) || 0),
+            cacheReadTokens: Math.max(0, Number(agent.tokenUsage.cacheReadTokens || 0) || 0),
+            cacheWriteTokens: Math.max(0, Number(agent.tokenUsage.cacheWriteTokens || 0) || 0),
+            reasoningTokens: Math.max(0, Number(agent.tokenUsage.reasoningTokens || 0) || 0),
+            totalTokens: Math.max(0, Number(agent.tokenUsage.totalTokens || 0) || 0),
+            estimatedCostUsd: Number.isFinite(Number(agent.tokenUsage.estimatedCostUsd))
+              ? Number(agent.tokenUsage.estimatedCostUsd)
+              : null,
+            actualCostUsd: Number.isFinite(Number(agent.tokenUsage.actualCostUsd))
+              ? Number(agent.tokenUsage.actualCostUsd)
+              : null,
+            costStatus: String(agent.tokenUsage.costStatus || "").trim(),
+            contextTokens: Math.max(0, Number(agent.tokenUsage.contextTokens || 0) || 0),
+            contextLength: Math.max(0, Number(agent.tokenUsage.contextLength || 0) || 0),
+            contextPercent: agent.tokenUsage.contextPercent == null
+              ? null
+              : Math.max(0, Math.min(100, Number(agent.tokenUsage.contextPercent || 0) || 0))
+          }
+        : null
+    },
+    artifacts: {
+      assetManifest: Array.isArray(artifacts.assetManifest)
+        ? artifacts.assetManifest
+            .map((item) => ({
+              assetId: String(item?.assetId || "").trim(),
+              fileName: String(item?.fileName || "").trim(),
+              fileRole: String(item?.fileRole || "").trim(),
+              absolutePath: normalizeDebugText(item?.absolutePath || "", 4000)
+            }))
+            .filter((item) => item.assetId || item.fileName)
+            .slice(0, 200)
+        : [],
+      anchors: Array.isArray(artifacts.anchors)
+        ? artifacts.anchors
+            .map((item) => ({
+              anchorId: String(item?.anchorId || "").trim(),
+              assetId: String(item?.assetId || "").trim(),
+              fileName: String(item?.fileName || "").trim(),
+              fileRole: String(item?.fileRole || "").trim(),
+              location: String(item?.location || "").trim(),
+              anchorType: String(item?.anchorType || "").trim(),
+              excerpt: normalizeDebugText(item?.excerpt || "", 2000),
+              summary: normalizeDebugText(item?.summary || "", 1000),
+              tags: Array.isArray(item?.tags)
+                ? item.tags.map((tag) => String(tag || "").trim()).filter(Boolean).slice(0, 20)
+                : []
+            }))
+            .filter((item) => item.anchorId)
+            .slice(0, 500)
+        : [],
+      taskSkillBundle: artifacts.taskSkillBundle && typeof artifacts.taskSkillBundle === "object"
+        ? {
+            skillBundlePath: normalizeDebugText(artifacts.taskSkillBundle.skillBundlePath || "", 4000),
+            skillManifestPath: normalizeDebugText(artifacts.taskSkillBundle.skillManifestPath || "", 4000),
+            recommendedSkillCodes: Array.isArray(artifacts.taskSkillBundle.recommendedSkillCodes)
+              ? artifacts.taskSkillBundle.recommendedSkillCodes
+                  .map((item) => String(item || "").trim())
+                  .filter(Boolean)
+                  .slice(0, 80)
+              : [],
+            effectiveSkillCount: Math.max(0, Number(artifacts.taskSkillBundle.effectiveSkillCount || 0) || 0),
+            chunks: Array.isArray(artifacts.taskSkillBundle.chunks)
+              ? artifacts.taskSkillBundle.chunks
+                  .map((chunk) => ({
+                    kind: String(chunk?.kind || "").trim(),
+                    title: String(chunk?.title || "").trim(),
+                    path: normalizeDebugText(chunk?.path || "", 2000),
+                    itemCount: Math.max(0, Number(chunk?.itemCount || 0) || 0)
+                  }))
+                  .slice(0, 120)
+              : []
+          }
+        : null
     },
     lastError,
     events: Array.isArray(debug?.events)
@@ -275,6 +376,10 @@ function mergeTaskDebug(current = {}, updates = {}) {
     agent: {
       ...(current.agent || {}),
       ...(updates.agent || {})
+    },
+    artifacts: {
+      ...(current.artifacts || {}),
+      ...(updates.artifacts || {})
     },
     lastError: updates.lastError
       ? {

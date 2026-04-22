@@ -1,3 +1,5 @@
+import path from "node:path";
+import { promises as fs } from "node:fs";
 import { SkillLoader } from "./skill-loader.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
@@ -7,7 +9,9 @@ import { ValidationService } from "./validation-service.js";
 import { LlmProfileService } from "./llm-profile-service.js";
 import { ModuleSkillService } from "./module-skill-service.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
-import { recallSkillInventory } from "./software-requirement-agent-shared.js";
+import { recallSkillInventory, tokenize } from "./software-requirement-agent-shared.js";
+import { writeJson } from "./storage.js";
+import { config } from "../config.js";
 
 function normalizeDocumentType(value) {
   if (value === "detail_design") return "detail_design";
@@ -51,6 +55,127 @@ function buildSkillInventory(skills = {}) {
       content: item.content || "",
       order: item.order || 0
     }))
+  };
+}
+
+function summarizeSkillContent(content = "", limit = 220) {
+  const normalized = String(content || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized;
+}
+
+function safeSegment(value = "", fallback = "segment") {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^\p{L}\p{N}_-]+/gu, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || fallback;
+}
+
+function buildSkillTagList(item = {}) {
+  return tokenize(`${item.title || ""} ${item.content || ""}`).slice(0, 8);
+}
+
+function chunkSkillInventory(items = [], chunkSize = 24) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+async function buildTaskSkillBundle({
+  projectId,
+  moduleId,
+  taskId,
+  effectiveSkillInventory,
+  recommendedSkillCodes = []
+}) {
+  const taskRoot = path.join(config.generationTaskArtifactDir, projectId, moduleId, taskId, "skill-bundle");
+  const byKindDir = path.join(taskRoot, "skills", "by-kind");
+  const byChunkDir = path.join(taskRoot, "skills", "by-chunk");
+  await fs.mkdir(byKindDir, { recursive: true });
+  await fs.mkdir(byChunkDir, { recursive: true });
+
+  const inventoryItems = Array.isArray(effectiveSkillInventory?.items) ? effectiveSkillInventory.items : [];
+  const manifestItems = [];
+  const chunkDescriptors = [];
+
+  const itemsByKind = new Map();
+  for (const item of inventoryItems) {
+    const kind = String(item.kind || "misc").trim() || "misc";
+    if (!itemsByKind.has(kind)) {
+      itemsByKind.set(kind, []);
+    }
+    itemsByKind.get(kind).push(item);
+  }
+
+  for (const [kind, kindItems] of itemsByKind.entries()) {
+    const kindFilePath = path.join(byKindDir, `${safeSegment(kind, "kind")}.json`);
+    await writeJson(kindFilePath, {
+      kind,
+      itemCount: kindItems.length,
+      items: kindItems
+    });
+    chunkDescriptors.push({
+      kind,
+      title: `${kind} bundle`,
+      path: kindFilePath,
+      itemCount: kindItems.length
+    });
+  }
+
+  const chunkGroups = chunkSkillInventory(inventoryItems, 24);
+  for (const [chunkIndex, chunkItems] of chunkGroups.entries()) {
+    const chunkFilePath = path.join(byChunkDir, `chunk-${String(chunkIndex + 1).padStart(3, "0")}.json`);
+    await writeJson(chunkFilePath, {
+      chunkId: `chunk-${chunkIndex + 1}`,
+      itemCount: chunkItems.length,
+      items: chunkItems
+    });
+    const chunkDescriptor = {
+      chunkId: `chunk-${chunkIndex + 1}`,
+      title: `Skill chunk ${chunkIndex + 1}`,
+      path: chunkFilePath,
+      itemCount: chunkItems.length
+    };
+    chunkDescriptors.push(chunkDescriptor);
+
+    for (const item of chunkItems) {
+      manifestItems.push({
+        skillCode: item.skillCode || "",
+        kind: item.kind || "",
+        layer: item.layer || "",
+        profileKey: item.profileKey || "",
+        title: item.title || "",
+        summary: summarizeSkillContent(item.content || ""),
+        tags: buildSkillTagList(item),
+        chunkPath: chunkFilePath
+      });
+    }
+  }
+
+  const manifestPath = path.join(taskRoot, "skill-manifest.json");
+  await writeJson(manifestPath, {
+    taskId,
+    projectId,
+    moduleId,
+    createdAt: new Date().toISOString(),
+    effectiveSkillCount: manifestItems.length,
+    recommendedSkillCodes,
+    chunks: chunkDescriptors,
+    items: manifestItems
+  });
+
+  return {
+    skillBundlePath: taskRoot,
+    skillManifestPath: manifestPath,
+    recommendedSkillCodes,
+    effectiveSkillCount: manifestItems.length,
+    chunks: chunkDescriptors
   };
 }
 
@@ -128,27 +253,151 @@ function assertValidOutline(outline = {}) {
   }
 }
 
-function assertValidResultItems(resultItems = [], extractions = []) {
+function buildAssetManifest(inputAssets = []) {
+  return inputAssets.map((asset) => ({
+    assetId: asset.id || "",
+    fileName: asset.originalName || asset.storedName || asset.relativePath || "",
+    fileRole: asset.role || asset.fileRole || "",
+    absolutePath: asset.absolutePath || ""
+  }));
+}
+
+function buildAnchorsFromExtractions(extractions = [], assetManifest = []) {
+  const assetById = new Map(assetManifest.map((asset) => [asset.assetId, asset]));
+  let anchorIndex = 0;
+
+  return extractions.flatMap((extraction) => {
+    const matchedAsset = assetById.get(extraction.fileId) || assetManifest.find((asset) => asset.fileName === extraction.fileName) || null;
+    return (extraction.evidence || []).map((evidence) => {
+      anchorIndex += 1;
+      return {
+        anchorId: evidence.id || `anchor-${anchorIndex}`,
+        assetId: evidence.fileId || matchedAsset?.assetId || "",
+        fileName: evidence.fileName || extraction.fileName || matchedAsset?.fileName || "",
+        fileRole: evidence.fileRole || extraction.fileRole || matchedAsset?.fileRole || "",
+        location: evidence.location || "",
+        anchorType: (evidence.tags || []).includes("requirement-like") ? "requirement_clause" : "asset_excerpt",
+        excerpt: evidence.excerpt || "",
+        summary: String(evidence.excerpt || "").slice(0, 160),
+        tags: Array.isArray(evidence.tags) ? evidence.tags : []
+      };
+    });
+  });
+}
+
+function buildAnchorBackedExtractions(anchors = [], assetManifest = []) {
+  const grouped = new Map();
+  for (const asset of assetManifest) {
+    grouped.set(asset.assetId, {
+      fileId: asset.assetId,
+      fileName: asset.fileName,
+      fileRole: asset.fileRole,
+      summary: "",
+      evidence: []
+    });
+  }
+
+  for (const anchor of anchors) {
+    const key = anchor.assetId || `${anchor.fileName}::${anchor.fileRole}`;
+    const existing =
+      grouped.get(key) ||
+      {
+        fileId: anchor.assetId || "",
+        fileName: anchor.fileName || "",
+        fileRole: anchor.fileRole || "",
+        summary: "",
+        evidence: []
+      };
+
+    existing.summary = existing.summary || anchor.summary || "";
+    existing.evidence.push({
+      id: anchor.anchorId,
+      fileId: anchor.assetId || existing.fileId || "",
+      fileName: anchor.fileName || existing.fileName || "",
+      fileRole: anchor.fileRole || existing.fileRole || "",
+      location: anchor.location || "",
+      excerpt: anchor.excerpt || "",
+      tags: Array.isArray(anchor.tags) ? anchor.tags : []
+    });
+
+    grouped.set(key, existing);
+  }
+
+  return Array.from(grouped.values()).filter((item) => item.fileName || item.evidence.length);
+}
+
+function assertValidAnchors(anchors = [], assetManifest = []) {
+  if (!Array.isArray(anchors)) {
+    throw new Error("Hermes anchor_index_build must return an anchor array");
+  }
+
+  const allowedAssetIds = new Set(assetManifest.map((asset) => asset.assetId).filter(Boolean));
+  const seenAnchorIds = new Set();
+  for (const anchor of anchors) {
+    if (
+      !anchor?.anchorId ||
+      !anchor?.assetId ||
+      !anchor?.fileRole ||
+      !anchor?.location ||
+      !anchor?.anchorType ||
+      !anchor?.excerpt ||
+      !anchor?.summary
+    ) {
+      throw new Error("Hermes anchor item is missing required fields");
+    }
+    if (!allowedAssetIds.has(anchor.assetId)) {
+      throw new Error("Hermes generated an anchor outside the allowed asset manifest");
+    }
+    if (seenAnchorIds.has(anchor.anchorId)) {
+      throw new Error("Hermes generated a duplicate anchorId");
+    }
+    seenAnchorIds.add(anchor.anchorId);
+  }
+}
+
+function assertValidResultItems(resultItems = [], anchors = []) {
   if (!Array.isArray(resultItems) || !resultItems.length) {
     throw new Error("Hermes content_generate must return at least one result item");
   }
-  const evidenceKeys = new Set(
-    extractions.flatMap((item) =>
-      (item.evidence || []).map((evidence) => `${evidence.fileName}::${evidence.location}::${evidence.excerpt}`)
-    )
-  );
+  const anchorIds = new Set(anchors.map((anchor) => anchor.anchorId).filter(Boolean));
 
   for (const item of resultItems) {
-    if (!item?.title || !item?.requirementText || !Array.isArray(item.sourceRefs)) {
+    if (!item?.title || !item?.requirementText || !Array.isArray(item.sourceAnchorIds) || !item.sourceAnchorIds.length) {
       throw new Error("Hermes generated result item is missing required fields");
     }
-    for (const sourceRef of item.sourceRefs) {
-      const key = `${sourceRef.fileName}::${sourceRef.location}::${sourceRef.excerpt}`;
-      if (!evidenceKeys.has(key)) {
-        throw new Error("Hermes generated a sourceRef outside the extracted evidence set");
+    for (const sourceAnchorId of item.sourceAnchorIds) {
+      if (!anchorIds.has(sourceAnchorId)) {
+        throw new Error("Hermes generated a sourceAnchorId outside the anchor index set");
       }
     }
   }
+}
+
+function resolveSourceAnchors(resultItems = [], anchors = []) {
+  const anchorById = new Map(anchors.map((anchor) => [anchor.anchorId, anchor]));
+  return resultItems.map((item) => {
+    const resolvedSourceRefs = (item.sourceAnchorIds || []).map((sourceAnchorId) => {
+      const anchor = anchorById.get(sourceAnchorId);
+      if (!anchor) {
+        throw new Error(`无法解析 sourceAnchorId: ${sourceAnchorId}`);
+      }
+      return {
+        fileName: anchor.fileName,
+        fileRole: anchor.fileRole,
+        location: anchor.location,
+        excerpt: anchor.excerpt
+      };
+    });
+
+    if (!resolvedSourceRefs.length) {
+      throw new Error("reference_resolve 未生成任何 sourceRefs");
+    }
+
+    return {
+      ...item,
+      sourceRefs: resolvedSourceRefs
+    };
+  });
 }
 
 function formatElapsedSeconds(elapsedMs = 0) {
@@ -160,16 +409,16 @@ function buildHermesStepDescriptor(stepType = "") {
   if (stepType === "outline_build") {
     return {
       stage: "outline_build",
-      runningLabel: "正在调用本机 Hermes 生成提纲",
-      actionLabel: "生成提纲",
+      runningLabel: "正在调用 Hermes 读取 Skill 清单并生成提纲",
+      actionLabel: "读取 Skill 清单并生成提纲",
       runningPercent: 68
     };
   }
   if (stepType === "content_generate") {
     return {
       stage: "content_generate",
-      runningLabel: "正在调用本机 Hermes 生成正式内容",
-      actionLabel: "生成正式内容",
+      runningLabel: "正在调用 Hermes 补读 Skill 正文并生成正式内容",
+      actionLabel: "补读 Skill 正文并生成正式内容",
       runningPercent: 82
     };
   }
@@ -279,19 +528,57 @@ export class PipelineService {
     const template = await this.templateService.getTemplate("software_requirement");
     const domainKnowledge = composedSkills["domain-knowledge.json"] || {};
     const effectiveSkillInventory = buildSkillInventory(composedSkills);
+    const assetManifest = buildAssetManifest(inputAssets);
+    let taskSkillBundle = await buildTaskSkillBundle({
+      projectId,
+      moduleId,
+      taskId,
+      effectiveSkillInventory,
+      recommendedSkillCodes: []
+    });
+
+    await updateTaskProgress(
+      {
+        stage: "task_init",
+        label: "正在初始化任务上下文",
+        message: `已锁定 ${assetManifest.length} 个输入资产，并生成本次任务的 asset manifest 与 task skill bundle。`,
+        percent: 16,
+        current: assetManifest.length,
+        total: assetManifest.length
+      },
+      {
+        debug: {
+          artifacts: {
+            assetManifest,
+            taskSkillBundle
+          }
+        },
+        timelineEntry: {
+          stage: "task_init",
+          label: "资产清单已准备",
+          message: `asset manifest 与 task skill bundle 已生成，共 ${assetManifest.length} 个输入资产。`,
+          level: "info"
+        }
+      }
+    );
 
     await updateTaskProgress(
       {
         stage: "effective_skill_resolve",
         label: "正在解析生效技能",
-        message: `已命中 ${effectiveSkillInventory.selectedProfiles.length || 0} 层 profile，准备下发 ${effectiveSkillInventory.items.length} 条 skill atom。`,
+        message: `已命中 ${effectiveSkillInventory.selectedProfiles.length || 0} 层 profile，已解析 ${effectiveSkillInventory.items.length} 条有效 skill 并生成本次任务 skill 包。`,
         percent: 22
       },
       {
+        debug: {
+          artifacts: {
+            taskSkillBundle
+          }
+        },
         timelineEntry: {
           stage: "effective_skill_resolve",
           label: "解析生效技能",
-          message: `已完成 software_requirement skill inventory 解析，命中 ${effectiveSkillInventory.items.length} 条 atom。`,
+          message: `已完成 software_requirement skill inventory 解析，并生成 task skill bundle，命中 ${effectiveSkillInventory.items.length} 条 atom。`,
           level: "info"
         }
       }
@@ -337,8 +624,25 @@ export class PipelineService {
         {
           taskId,
           stepType,
-          allowedPaths: [],
-          inputArtifact,
+          skillBundlePath: taskSkillBundle.skillManifestPath,
+          recommendedSkillCodes: taskSkillBundle.recommendedSkillCodes,
+          allowedPaths: Array.isArray(inputArtifact?.assets)
+            ? [
+                ...inputArtifact.assets.map((asset) => asset.absolutePath).filter(Boolean),
+                taskSkillBundle.skillBundlePath,
+                taskSkillBundle.skillManifestPath,
+                ...taskSkillBundle.chunks.map((chunk) => chunk.path).filter(Boolean)
+              ]
+            : [
+                ...assetManifest.map((asset) => asset.absolutePath).filter(Boolean),
+                taskSkillBundle.skillBundlePath,
+                taskSkillBundle.skillManifestPath,
+                ...taskSkillBundle.chunks.map((chunk) => chunk.path).filter(Boolean)
+              ],
+          inputArtifact: {
+            ...inputArtifact,
+            skillBundle: taskSkillBundle
+          },
           skillInventory: effectiveSkillInventory,
           llmProfileSnapshot: llmProfile
         },
@@ -355,6 +659,7 @@ export class PipelineService {
                 lastHeartbeatAt: event.heartbeatAt || "",
                 lastEventAt: eventAt,
                 sessionId: event.sessionId || "",
+                tokenUsage: event.tokenUsage || null,
                 stdoutExcerpt: event.stdoutExcerpt || "",
                 stderrExcerpt: event.stderrExcerpt || "",
                 elapsedMs: Number(event.elapsedMs || 0) || 0
@@ -373,6 +678,7 @@ export class PipelineService {
               startedAt: event.startedAt || startedAt,
               heartbeatAt: event.heartbeatAt || "",
               elapsedMs: Number(event.elapsedMs || 0) || 0,
+              tokenUsage: event.tokenUsage || null,
               stdoutExcerpt: event.stdoutExcerpt || "",
               stderrExcerpt: event.stderrExcerpt || ""
             };
@@ -442,6 +748,7 @@ export class PipelineService {
     };
 
     let extractions = [];
+    let anchors = [];
     if (this.hermesAgentClient.transport === "cli") {
       extractions = await this.extractionService.extractFiles(
         {
@@ -459,43 +766,35 @@ export class PipelineService {
         },
         { allowStoredNameFallback: true }
       );
+      anchors = buildAnchorsFromExtractions(extractions, assetManifest);
     } else {
-      const extractArtifact = assertHermesStepResponse(
-        "material_extract",
+      const anchorArtifact = assertHermesStepResponse(
+        "anchor_index_build",
         await this.hermesAgentClient.executeStep({
           taskId,
-          stepType: "material_extract",
-          allowedPaths: inputAssets.map((asset) => asset.absolutePath).filter(Boolean),
+          stepType: "anchor_index_build",
+          allowedPaths: assetManifest.map((asset) => asset.absolutePath).filter(Boolean),
           inputArtifact: {
-            files: inputAssets.map((asset) => ({
-              id: asset.id,
-              role: asset.role,
-              fileRole: asset.role,
-              originalName: asset.originalName,
-              absolutePath: asset.absolutePath,
-              relativePath: asset.relativePath,
-              storedName: asset.storedName,
-              mimeType: asset.mimeType,
-              size: asset.size
-            }))
+            assets: assetManifest
           },
           skillInventory: effectiveSkillInventory,
           llmProfileSnapshot: llmProfile
         })
       );
-      extractions = Array.isArray(extractArtifact.extractions) ? extractArtifact.extractions : [];
+      anchors = Array.isArray(anchorArtifact.anchors) ? anchorArtifact.anchors : [];
     }
+    assertValidAnchors(anchors, assetManifest);
+    extractions = buildAnchorBackedExtractions(anchors, assetManifest);
     assertValidExtractions(extractions);
-    const evidence = extractions.flatMap((item) => item.evidence || []);
 
     await updateTaskProgress(
       {
-        stage: "material_extract",
-        label: "正在抽取输入证据",
+        stage: "anchor_index_build",
+        label: "正在构建引用锚点",
         message:
           this.hermesAgentClient.transport === "cli"
-            ? `后端本地抽取已完成 ${inputAssets.length} 个输入文件，共得到 ${evidence.length} 条证据。`
-            : `Hermes 已完成 ${inputAssets.length} 个输入文件抽取，共得到 ${evidence.length} 条证据。`,
+            ? `后端本地已基于 ${inputAssets.length} 个输入文件构建 ${anchors.length} 个引用锚点。`
+            : `Hermes 已完成 ${inputAssets.length} 个输入文件的锚点构建，共得到 ${anchors.length} 个引用锚点。`,
         percent: 42,
         current: inputAssets.length,
         total: inputAssets.length
@@ -503,71 +802,74 @@ export class PipelineService {
       {
         metrics: {
           extractionFileCount: inputAssets.length,
-          extractionEvidenceCount: evidence.length
+          extractionEvidenceCount: anchors.length
+        },
+        debug: {
+          artifacts: {
+            anchors
+          }
         },
         timelineEntry: {
-          stage: "material_extract",
-          label: "抽取输入证据",
-          message: `已完成文件抽取，得到 ${evidence.length} 条结构化证据。`,
+          stage: "anchor_index_build",
+          label: "构建引用锚点",
+          message: `已完成锚点构建，得到 ${anchors.length} 条结构化 anchor。`,
           level: "info"
         }
       }
     );
 
-    let recalledAtoms = [];
-    if (this.hermesAgentClient.transport === "cli") {
-      recalledAtoms = recallSkillInventory(effectiveSkillInventory, evidence);
-    } else {
-      const recallArtifact = assertHermesStepResponse(
-        "atom_recall",
-        await this.hermesAgentClient.executeStep({
-          taskId,
-          stepType: "atom_recall",
-          allowedPaths: [],
-          inputArtifact: { evidence },
-          skillInventory: effectiveSkillInventory,
-          llmProfileSnapshot: llmProfile
-        })
-      );
-      recalledAtoms = Array.isArray(recallArtifact.items) ? recallArtifact.items : [];
-    }
+    const recalledAtoms = recallSkillInventory(effectiveSkillInventory, anchors);
     assertValidRecalledAtoms(recalledAtoms, effectiveSkillInventory);
+    taskSkillBundle = {
+      ...taskSkillBundle,
+      recommendedSkillCodes: recalledAtoms.map((item) => item.skillCode).filter(Boolean)
+    };
+    await writeJson(taskSkillBundle.skillManifestPath, {
+      ...(JSON.parse(await fs.readFile(taskSkillBundle.skillManifestPath, "utf8"))),
+      recommendedSkillCodes: taskSkillBundle.recommendedSkillCodes
+    });
 
     await updateTaskProgress(
       {
         stage: "atom_recall",
-        label: "正在召回相关技能原子",
-        message:
-          this.hermesAgentClient.transport === "cli"
-            ? `后端已基于有效 skill inventory 召回 ${recalledAtoms.length} 条相关 skill atom。`
-            : `Hermes 已召回 ${recalledAtoms.length} 条相关 skill atom。`,
+        label: "正在生成推荐技能短名单",
+        message: `后端已基于 anchor 摘要与有效 skill inventory 生成 ${recalledAtoms.length} 条推荐 skill shortlist。`,
         percent: 56
       },
       {
+        debug: {
+          artifacts: {
+            taskSkillBundle
+          }
+        },
         timelineEntry: {
           stage: "atom_recall",
-          label: "召回技能原子",
-          message: `召回完成，得到 ${recalledAtoms.length} 条候选 atom。`,
+          label: "生成推荐技能短名单",
+          message: `已生成推荐 skill shortlist，共 ${recalledAtoms.length} 条候选 atom。`,
           level: "info"
         }
       }
     );
 
-    const outline = await runHermesStep("outline_build", { evidence, recalledAtoms });
+    const outline = await runHermesStep("outline_build", {
+      assets: assetManifest,
+      anchors,
+      recalledAtoms
+    });
     assertValidOutline(outline);
 
     await updateTaskProgress(
       {
         stage: "outline_build",
-        label: "正在生成需求提纲",
-        message: `Hermes 已构建 ${outline.sections.length} 个主题分解。`,
+        label: "正在调用 Hermes 读取 Skill 清单并生成提纲",
+        message: `Hermes 已读取 task skill bundle，并构建 ${outline.sections.length} 个主题分解。`,
         percent: 68
       },
       {
         timelineEntry: {
           stage: "outline_build",
           label: "生成需求提纲",
-          message: `提纲生成完成，覆盖 ${outline.sections.length} 个主题。`,
+          message: `提纲生成完成，Hermes 已基于 task skill bundle 覆盖 ${outline.sections.length} 个主题。`,
           level: "info"
         }
       }
@@ -576,7 +878,8 @@ export class PipelineService {
     const contentArtifact = await runHermesStep("content_generate", {
       project: contextProject,
       template,
-      evidence,
+      assets: assetManifest,
+      anchors,
       recalledAtoms,
       outline
     });
@@ -586,7 +889,7 @@ export class PipelineService {
       {
         stage: "content_postprocess",
         label: "正在校验 Hermes 返回内容",
-        message: `Hermes 已返回 ${resultItems.length} 条候选软件需求，正在校验来源引用与结果结构。`,
+        message: `Hermes 已返回 ${resultItems.length} 条候选软件需求，正在校验 sourceAnchorIds 与结果结构。`,
         percent: 84
       },
       {
@@ -604,13 +907,13 @@ export class PipelineService {
       }
     );
 
-    assertValidResultItems(resultItems, extractions);
+    assertValidResultItems(resultItems, anchors);
 
     await updateTaskProgress(
       {
         stage: "content_generate",
-        label: "正在生成软件需求",
-        message: `Hermes 已返回 ${resultItems.length} 条候选软件需求，准备执行规则校验。`,
+        label: "正在调用 Hermes 补读 Skill 正文并生成正式内容",
+        message: `Hermes 已返回 ${resultItems.length} 条候选软件需求，准备解析引用锚点。`,
         percent: 82
       },
       {
@@ -623,7 +926,7 @@ export class PipelineService {
         debugEvent: {
           stage: "result_items_validated",
           label: "结果校验通过",
-          message: `候选结果已通过来源引用与结构校验，共 ${resultItems.length} 条。`,
+          message: `候选结果已通过 sourceAnchorIds 与结构校验，共 ${resultItems.length} 条。`,
           level: "info"
         },
         timelineEntry: {
@@ -635,8 +938,54 @@ export class PipelineService {
       }
     );
 
-    const conflicts = this.validationService.validate(resultItems, { domainKnowledge, documentType: "software_requirement" });
-    const traces = buildTraces(resultItems);
+    await updateTaskProgress(
+      {
+        stage: "reference_resolve",
+        label: "正在回填来源引用",
+        message: `准备将 ${resultItems.length} 条候选结果中的 sourceAnchorIds 解析为 sourceRefs。`,
+        percent: 90
+      },
+      {
+        debug: {
+          postProcess: {
+            lastStage: "reference_resolve_started"
+          }
+        },
+        timelineEntry: {
+          stage: "reference_resolve",
+          label: "回填来源引用",
+          message: "开始将 sourceAnchorIds 反解为前端兼容的 sourceRefs。",
+          level: "info"
+        }
+      }
+    );
+
+    const resolvedResultItems = resolveSourceAnchors(resultItems, anchors);
+
+    await updateTaskProgress(
+      {
+        stage: "reference_resolve",
+        label: "正在回填来源引用",
+        message: `已完成 ${resolvedResultItems.length} 条结果的来源引用回填，准备执行规则校验。`,
+        percent: 91
+      },
+      {
+        debug: {
+          postProcess: {
+            lastStage: "reference_resolve_completed"
+          }
+        },
+        debugEvent: {
+          stage: "reference_resolve",
+          label: "引用回填完成",
+          message: `已将 ${resolvedResultItems.length} 条结果的 sourceAnchorIds 解析为 sourceRefs。`,
+          level: "info"
+        }
+      }
+    );
+
+    const conflicts = this.validationService.validate(resolvedResultItems, { domainKnowledge, documentType: "software_requirement" });
+    const traces = buildTraces(resolvedResultItems);
 
     await updateTaskProgress(
       {
@@ -647,7 +996,7 @@ export class PipelineService {
       },
       {
         metrics: {
-          generatedItemCount: resultItems.length,
+          generatedItemCount: resolvedResultItems.length,
           conflictCount: conflicts.length
         },
         timelineEntry: {
@@ -661,21 +1010,21 @@ export class PipelineService {
 
     const updatedTask = await this.projectService.updateGenerationTask(projectId, moduleId, "software_requirement", taskId, {
       status: "completed",
-      resultItems,
+      resultItems: resolvedResultItems,
       extractions,
       traces,
       conflicts,
       llmProfile,
       metrics: {
         extractionFileCount: inputAssets.length,
-        extractionEvidenceCount: evidence.length,
-        generatedItemCount: resultItems.length,
+        extractionEvidenceCount: anchors.length,
+        generatedItemCount: resolvedResultItems.length,
         conflictCount: conflicts.length
       },
       progress: {
         stage: "completed",
         label: "任务已完成",
-        message: `Hermes 已生成 ${resultItems.length} 条软件需求，可开始审核。`,
+        message: `Hermes 已生成 ${resolvedResultItems.length} 条软件需求，可开始审核。`,
         percent: 100
       },
       timelineEntry: {
@@ -685,8 +1034,8 @@ export class PipelineService {
         level: "info"
       },
       summary: llmProfile.model
-        ? `通过 Hermes + ${llmProfile.name} 生成 ${resultItems.length} 条软件需求`
-        : `通过 Hermes 本地回退生成 ${resultItems.length} 条软件需求`
+        ? `通过 Hermes + ${llmProfile.name} 生成 ${resolvedResultItems.length} 条软件需求`
+        : `通过 Hermes 本地回退生成 ${resolvedResultItems.length} 条软件需求`
     });
 
     return {
@@ -814,7 +1163,7 @@ export class PipelineService {
       }
 
       if (normalizedDocumentType === "software_requirement") {
-        return this.finalizeSoftwareRequirementGeneration({
+        return await this.finalizeSoftwareRequirementGeneration({
           projectId,
           moduleId,
           taskId,

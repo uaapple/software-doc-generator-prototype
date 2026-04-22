@@ -1,0 +1,741 @@
+{
+  "version": 1,
+  "layer": "module",
+  "profileKey": "高低系统管理",
+  "displayName": "高低系统管理",
+  "documentTypeScope": "",
+  "status": "active",
+  "items": [
+    {
+      "skillCode": "MOD-高低系统管理-generation_priority-001",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "generation_priority",
+      "title": "generation priority 1",
+      "content": "本地KL15上高压请求激活判断",
+      "order": 1,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-generation_priority-002",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "generation_priority",
+      "title": "generation priority 2",
+      "content": "本地KL15上高压建立流程",
+      "order": 2,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-generation_priority-003",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "generation_priority",
+      "title": "generation priority 3",
+      "content": "高压状态机主流程",
+      "order": 3,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-generation_priority-004",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "generation_priority",
+      "title": "generation priority 4",
+      "content": "故障下高压与紧急关断",
+      "order": 4,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-generation_priority-005",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "generation_priority",
+      "title": "generation priority 5",
+      "content": "补充逻辑（如V2L、防盗、诊断）不应抢占主线",
+      "order": 5,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-good_example-001",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "good_example",
+      "title": "本地KL15上高压请求激活判断",
+      "content": "HCU应根据VCCM控制器的KL15上拉状态或ZCU发送的Powerup信号标志位，判断本地KL15上高压请求是否被激活。",
+      "structuredPayload": {
+        "requirementId": "CheryVCU-1123",
+        "topic": "本地KL15上高压请求激活判断",
+        "sectionNumber": "5.1.1.1",
+        "sectionTitle": "本地KL15上高压",
+        "requirementType": "Functional",
+        "preferredTitle": "本地KL15上高压请求激活判断",
+        "requirementText": "HCU应根据VCCM控制器的KL15上拉状态或ZCU发送的Powerup信号标志位，判断本地KL15上高压请求是否被激活。",
+        "signals": [
+          "idi_bKeyOn",
+          "HvCoorn_bKeyOnPwrUp"
+        ],
+        "references": [
+          "CheryVCU-1123"
+        ],
+        "canonicalBranches": [
+          "HighVoltagePowerOn"
+        ],
+        "keywords": [
+          "KL15",
+          "Powerup",
+          "高压请求"
+        ]
+      },
+      "order": 6,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#examples",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-good_example-002",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "good_example",
+      "title": "本地KL15上高压建立流程",
+      "content": "当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。",
+      "structuredPayload": {
+        "requirementId": "CheryVCU-1120",
+        "topic": "本地KL15上高压建立流程",
+        "sectionNumber": "5.1.1.1",
+        "sectionTitle": "本地KL15上高压",
+        "requirementType": "Functional",
+        "preferredTitle": "本地KL15上高压建立流程",
+        "requirementText": "当HCU确定整车高压需求后，应向BMS发送高压连通请求以闭合主高压回路；在确认高压回路连通后，请求高压附件使能及DCDC进入Buck状态，并最终判定整车上高压成功。",
+        "signals": [
+          "HvCoorn_stBMSModeReq",
+          "icbms_stMainPosRly",
+          "icbms_stMainNegRly",
+          "icdc_stMode",
+          "HvCoorn_bHvReady"
+        ],
+        "references": [
+          "CheryVCU-1120"
+        ],
+        "canonicalBranches": [
+          "HighVoltagePowerOn"
+        ],
+        "keywords": [
+          "高压连通",
+          "预充",
+          "DCDC",
+          "高压Ready"
+        ]
+      },
+      "order": 7,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#examples",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-rule_hint-001",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "rule_hint",
+      "title": "高低系统管理 rule hint",
+      "content": "",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "subdomain": "高低系统管理",
+        "sectionHints": [
+          "5.1.1.1 本地KL15上高压"
+        ],
+        "writingPattern": "基于状态机的功能需求描述",
+        "targetStyle": "软件需求条目",
+        "sourceBasis": [
+          "system-requirements-example-hv-lv-system-management.md",
+          "HvCoorn.pdf"
+        ]
+      },
+      "order": 8,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#ruleHints",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-001",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "anti_pattern",
+      "title": "anti pattern 1",
+      "content": "不要将整个模型状态机作为一个主题，应拆解为具体功能条目",
+      "order": 9,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-002",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "anti_pattern",
+      "title": "anti pattern 2",
+      "content": "不要忽略人工范例中的具体需求ID（如CheryVCU-1123）",
+      "order": 10,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-003",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "anti_pattern",
+      "title": "anti pattern 3",
+      "content": "不要将诊断、配置等支撑逻辑提升为核心主题",
+      "order": 11,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-004",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "anti_pattern",
+      "title": "anti pattern 4",
+      "content": "不要使用代码变量名直接作为章节标题",
+      "order": 12,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-005",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "anti_pattern",
+      "title": "anti pattern 5",
+      "content": "不要将整段原文直接贴入examples，应压缩为规范需求表达",
+      "order": 13,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-006",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "anti_pattern",
+      "title": "anti pattern 6",
+      "content": "不要写成“步骤如下”或“a) b) c)”这种说明文风格",
+      "order": 14,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-document_blueprint_section-001",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "document_blueprint_section",
+      "title": "preferred function section 本地KL15上高压",
+      "content": "",
+      "structuredPayload": {
+        "role": "preferredFunctionSection",
+        "sectionNumber": "5.1.1.1",
+        "title": "本地KL15上高压"
+      },
+      "order": 15,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.preferredFunctionSection",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-document_blueprint_section-002",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "document_blueprint_section",
+      "title": "preferred subsection 本地KL15上高压",
+      "content": "",
+      "structuredPayload": {
+        "role": "preferredSubsection",
+        "sectionNumber": "5.1.1.1",
+        "title": "本地KL15上高压",
+        "coreRequirementTypes": [
+          "Functional"
+        ]
+      },
+      "order": 16,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.preferredSubsections",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-document_blueprint_policy-001",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy coreFirst",
+      "content": "",
+      "structuredPayload": {
+        "key": "coreFirst",
+        "value": true
+      },
+      "order": 17,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-document_blueprint_policy-002",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy preferSymmetricExpansion",
+      "content": "",
+      "structuredPayload": {
+        "key": "preferSymmetricExpansion",
+        "value": true
+      },
+      "order": 18,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-document_blueprint_policy-003",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy preferObjectSpecificRequirements",
+      "content": "",
+      "structuredPayload": {
+        "key": "preferObjectSpecificRequirements",
+        "value": true
+      },
+      "order": 19,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-document_blueprint_policy-004",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy discourageGenericScatterRequirements",
+      "content": "",
+      "structuredPayload": {
+        "key": "discourageGenericScatterRequirements",
+        "value": true
+      },
+      "order": 20,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "migrationBatchId": "2026-04-16T07:26:49.708Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-generation_priority-006",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 6",
+      "content": "先围绕“KeyOn上高压”保留稳定对象拆分，再展开实现细节，不先生成泛化状态机总述。",
+      "order": 21,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-generation_priority-007",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 7",
+      "content": "对“请求标志位”类设计点，优先写激活、锁存、复位、状态范围，再补SOC或功率阈值等使能条件。",
+      "order": 22,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-generation_priority-008",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 8",
+      "content": "代码细节只能细化“本地KL15上高压请求激活判断”和“本地KL15上高压建立流程”这两个已存在主题，不新增V2L、防盗、诊断为主章节。",
+      "order": 23,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-rule_hint-002",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "rule_hint",
+      "title": "hv-lv system management detail design rule hint",
+      "content": "",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "documentType": "detail_design",
+        "subdomain": "高低系统管理",
+        "sectionHints": [
+          "KeyOn上高压",
+          "KeyOn高压请求标志位",
+          "本地KL15上高压建立流程"
+        ],
+        "writingPattern": "功能主题 -> 请求标志位或流程对象 -> 激活条件 -> 锁存/复位 -> 阈值与状态范围 -> 补充说明",
+        "targetStyle": "可审核的详细设计条目，保留工程信号与标定量，不写成软件需求摘要。",
+        "sourceBasis": [
+          "高低系统管理系统需求",
+          "高低系统管理详细设计整理稿",
+          "HvCoorn模型/代码"
+        ]
+      },
+      "order": 24,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-good_example-003",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "KeyOn高压请求标志位",
+      "content": "以下条件同时满足，则激活[KeyOn高压请求标志位]：1. <整车电源模式>为0x1：On，TurnOnDelay一定时间tiKeyOnDly出现上升沿，则激活并锁存；2. <电池SOC>大于等于pctBatSOCLim4Shut或<电池最大放电功率>大于等于pwrBatDChrgLim4Shut。若<高压下电指令>为1且TurnOnDelay一定时间tiPwrOffDly4RstKeyOn，或<整车电源模式>为0x0：off，或当前时刻<高压系统状态>在115~130之间出现上升沿，则Reset。",
+      "structuredPayload": {
+        "topic": "KeyOn高压请求标志位",
+        "sectionTitle": "KeyOn上高压",
+        "requirementType": "state_flag_logic",
+        "preferredTitle": "KeyOn上高压 - KeyOn高压请求标志位",
+        "requirementText": "以下条件同时满足，则激活[KeyOn高压请求标志位]：1. <整车电源模式>为0x1：On，TurnOnDelay一定时间tiKeyOnDly出现上升沿，则激活并锁存；2. <电池SOC>大于等于pctBatSOCLim4Shut或<电池最大放电功率>大于等于pwrBatDChrgLim4Shut。若<高压下电指令>为1且TurnOnDelay一定时间tiPwrOffDly4RstKeyOn，或<整车电源模式>为0x0：off，或当前时刻<高压系统状态>在115~130之间出现上升沿，则Reset。",
+        "signals": [
+          "<整车电源模式>",
+          "tiKeyOnDly",
+          "<高压下电指令>",
+          "tiPwrOffDly4RstKeyOn",
+          "<高压系统状态>",
+          "<电池SOC>",
+          "pctBatSOCLim4Shut",
+          "<电池最大放电功率>",
+          "pwrBatDChrgLim4Shut",
+          "HvCoorn_bKeyOnPwrUp"
+        ],
+        "references": [
+          "CheryVCU-1123"
+        ],
+        "canonicalBranches": [
+          "On上升沿激活",
+          "锁存",
+          "高压下电指令复位",
+          "电源模式Off复位",
+          "高压系统状态115~130复位",
+          "SOC或放电功率阈值使能"
+        ],
+        "keywords": [
+          "KeyOn",
+          "高压请求标志位",
+          "锁存",
+          "Reset",
+          "SOC阈值",
+          "放电功率阈值"
+        ]
+      },
+      "order": 25,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-good_example-004",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "本地KL15上高压建立流程",
+      "content": "当本地KL15上高压请求成立且整车存在高压需求时，HCU应向BMS发送高压连通请求，由BMS执行预充并闭合主高压回路。HCU应结合主回路正负继电器状态、MCU母线电压和ISG母线电压联合判断高压回路是否连通；当高压回路连通后，请求高压附件使能，并请求DCDC进入Buck状态；当DCDC进入Buck且高压系统满足Ready判定条件后，置HvReady有效。",
+      "structuredPayload": {
+        "topic": "本地KL15上高压建立流程",
+        "sectionTitle": "本地KL15上高压",
+        "requirementType": "process_logic",
+        "preferredTitle": "本地KL15上高压 - 建立流程",
+        "requirementText": "当本地KL15上高压请求成立且整车存在高压需求时，HCU应向BMS发送高压连通请求，由BMS执行预充并闭合主高压回路。HCU应结合主回路正负继电器状态、MCU母线电压和ISG母线电压联合判断高压回路是否连通；当高压回路连通后，请求高压附件使能，并请求DCDC进入Buck状态；当DCDC进入Buck且高压系统满足Ready判定条件后，置HvReady有效。",
+        "signals": [
+          "HvCoorn_stBMSModeReq",
+          "icbms_stMainPosRly",
+          "icbms_stMainNegRly",
+          "icfm_uAct",
+          "icisg_uAct",
+          "icdc_stMode",
+          "HvCoorn_bHvReady"
+        ],
+        "references": [
+          "CheryVCU-1120",
+          "CheryVCU-1123"
+        ],
+        "canonicalBranches": [
+          "BMS高压连通请求",
+          "主回路继电器与母线电压联合判定",
+          "高压附件使能",
+          "DCDC进入Buck",
+          "HvReady判定"
+        ],
+        "keywords": [
+          "KL15上高压",
+          "高压连通请求",
+          "预充",
+          "Buck",
+          "HvReady"
+        ]
+      },
+      "order": 26,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-007",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "anti_pattern",
+      "title": "anti pattern 7",
+      "content": "不要把“请求激活判断”和“高压建立流程”合并成一个泛化章节。",
+      "order": 27,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-008",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "anti_pattern",
+      "title": "anti pattern 8",
+      "content": "不要只写激活条件而漏掉锁存、复位、状态范围和阈值。",
+      "order": 28,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-高低系统管理-anti_pattern-009",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "detail_design",
+      "kind": "anti_pattern",
+      "title": "anti pattern 9",
+      "content": "不要把HvCoorn局部变量或代码块名直接抬升为新的一级主题。",
+      "order": 29,
+      "status": "active",
+      "sectionKey": "default"
+    }
+  ]
+}
