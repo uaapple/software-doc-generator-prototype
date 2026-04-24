@@ -12,6 +12,7 @@
     "wiki:dev": "node --disable-warning=ExperimentalWarning --watch src/wiki-server.js",
     "test": "node --disable-warning=ExperimentalWarning tests/run-tests.js",
     "check:wiki": "node scripts/check-wiki.mjs",
+    "check:skills-db-diff": "node scripts/check-skills-db-diff.mjs",
     "check:encoding": "node scripts/check-text-encoding.mjs",
     "fix:encoding": "node scripts/fix-text-encoding.mjs"
   },
