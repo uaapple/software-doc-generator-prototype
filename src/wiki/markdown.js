@@ -17,15 +17,17 @@ function slugify(value = "") {
 }
 
 function renderInline(text = "") {
-  const pattern = /`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
   let cursor = 0;
   let html = "";
 
   for (const match of text.matchAll(pattern)) {
-    const [token, code, linkText, linkHref, boldText] = match;
+    const [token, imageAlt, imageSrc, code, linkText, linkHref, boldText] = match;
     const index = match.index ?? 0;
     html += escapeHtml(text.slice(cursor, index));
-    if (code) {
+    if (imageSrc) {
+      html += `<img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(imageAlt || "")}" loading="lazy" />`;
+    } else if (code) {
       html += `<code>${escapeHtml(code)}</code>`;
     } else if (linkText && linkHref) {
       html += `<a href="${escapeHtml(linkHref)}">${escapeHtml(linkText)}</a>`;

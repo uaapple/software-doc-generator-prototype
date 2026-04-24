@@ -93,7 +93,8 @@ body.drawer-open {
 }
 
 #registry-view[hidden],
-#work-order-view[hidden] {
+#work-order-view[hidden],
+#skill-version-view[hidden] {
   display: none;
 }
 
@@ -1573,12 +1574,101 @@ button[disabled] {
   font-size: 12px;
 }
 
+.skill-version-view {
+  display: grid;
+  gap: 20px;
+}
+
+.skill-version-workspace {
+  display: grid;
+  gap: 0;
+  grid-template-columns: 380px minmax(0, 1fr);
+  min-height: 660px;
+  overflow: hidden;
+}
+
+.skill-version-list-pane,
+.skill-version-detail {
+  padding: 22px;
+}
+
+.skill-version-list-pane {
+  border-right: 1px solid var(--pane-line);
+  background: rgba(246, 251, 255, 0.78);
+}
+
+.skill-version-list,
+.skill-version-change-list {
+  display: grid;
+  gap: 12px;
+}
+
+.skill-version-list {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.skill-version-list-card {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 15px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.skill-version-list-card p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.skill-version-list-card.is-selected {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 1px rgba(12, 105, 197, 0.18);
+}
+
+.skill-version-detail {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.skill-version-section,
+.skill-version-change-item {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 14px;
+}
+
+.skill-version-section {
+  display: grid;
+  gap: 12px;
+}
+
+.skill-version-change-item {
+  background: rgba(247, 250, 255, 0.88);
+}
+
+.skill-version-change-item p {
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 960px) {
-  .work-order-workspace {
+  .work-order-workspace,
+  .skill-version-workspace {
     grid-template-columns: 1fr;
   }
 
-  .work-order-list-pane {
+  .work-order-list-pane,
+  .skill-version-list-pane {
     border-right: 0;
     border-bottom: 1px solid var(--pane-line);
   }

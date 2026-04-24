@@ -2551,7 +2551,9 @@ export class PipelineService {
       throw new Error("No assets selected");
     }
 
-    const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
+    const skillVersion = await this.skillBundleService.getSkillVersionRef(options.skillBundleId || "");
+    const lockedSkillBundleId = skillVersion.bundleId;
+    const skillDir = await this.skillBundleService.getSkillDir(lockedSkillBundleId);
     const composedSkills = await this.skillLoader.loadForContext(
       {
         documentType: normalizedDocumentType,
@@ -2577,6 +2579,7 @@ export class PipelineService {
       inputAssetIds: inputAssets.map((asset) => asset.id),
       uploadedAssetIds: Array.isArray(options.uploadedAssetIds) ? options.uploadedAssetIds : [],
       manualTitleOutline,
+      skillVersion,
       llmProfile,
       summary: buildTaskSummaryForIntent(normalizedDocumentType, options.taskIntent),
       progress: {
@@ -2604,6 +2607,8 @@ export class PipelineService {
 
     const runGeneration = () => this.finalizeModuleGeneration(projectId, moduleId, normalizedDocumentType, inputAssets, {
       ...options,
+      skillBundleId: lockedSkillBundleId,
+      skillVersion,
       manualTitleOutline,
       taskId: task.id
     });

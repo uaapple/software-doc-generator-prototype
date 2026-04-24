@@ -32,9 +32,10 @@ const pageQuery = new URLSearchParams(window.location.search)
 
 const state = {
   payload: null,
+  bundlePayload: null,
   detailProfile: null,
   detailItem: null,
-  view: pageQuery.get("view") === "work-orders" ? "work-orders" : "registry",
+  view: ["work-orders", "skill-versions"].includes(pageQuery.get("view")) ? pageQuery.get("view") : "registry",
   selectedProfileId: "",
   selectedSkillCode: "",
   selectedKind: "",
@@ -43,6 +44,7 @@ const state = {
   workOrders: [],
   workOrderDetail: null,
   selectedWorkOrderId: pageQuery.get("workOrderId") || "",
+  selectedBundleId: pageQuery.get("bundleId") || "",
   isEditorOpen: false,
   editorMode: "edit",
   railFilters: {
@@ -59,8 +61,10 @@ const refreshButton = document.querySelector("#refresh-button")
 const pageStatusRoot = document.querySelector("#page-status")
 const registryViewTab = document.querySelector("#registry-view-tab")
 const workOrderViewTab = document.querySelector("#work-order-view-tab")
+const skillVersionViewTab = document.querySelector("#skill-version-view-tab")
 const registryViewRoot = document.querySelector("#registry-view")
 const workOrderViewRoot = document.querySelector("#work-order-view")
+const skillVersionViewRoot = document.querySelector("#skill-version-view")
 const summaryMetricsRoot = document.querySelector("#summary-metrics")
 const sourceMetaRoot = document.querySelector("#source-meta")
 const skillWorkspaceRoot = document.querySelector(".skill-workspace")
@@ -81,6 +85,9 @@ const workOrderStatusFilter = document.querySelector("#work-order-status-filter"
 const workOrderDocumentFilter = document.querySelector("#work-order-document-filter")
 const workOrderListRoot = document.querySelector("#work-order-list")
 const workOrderDetailRoot = document.querySelector("#work-order-detail")
+const skillVersionSummaryRoot = document.querySelector("#skill-version-summary")
+const skillVersionListRoot = document.querySelector("#skill-version-list")
+const skillVersionDetailRoot = document.querySelector("#skill-version-detail")
 const REVIEW_LAYOUT_BREAKPOINT = window.matchMedia("(max-width: 1180px)")
 const REVIEW_WIDTH_STORAGE_KEY = "skill-management:review-width"
 
@@ -96,6 +103,7 @@ await bootstrap()
 refreshButton.addEventListener("click", () => refreshAll(true))
 registryViewTab?.addEventListener("click", () => setView("registry"))
 workOrderViewTab?.addEventListener("click", () => setView("work-orders"))
+skillVersionViewTab?.addEventListener("click", () => setView("skill-versions"))
 profileQueryInput.addEventListener("input", handleRailFilterChange)
 profileLayerFilter.addEventListener("change", handleRailFilterChange)
 profileRailRoot.addEventListener("click", handleRailClick)
@@ -108,6 +116,8 @@ workOrderDocumentFilter?.addEventListener("input", handleWorkOrderFilterChange)
 workOrderListRoot?.addEventListener("click", handleWorkOrderListClick)
 workOrderDetailRoot?.addEventListener("click", handleWorkOrderDetailClick)
 workOrderDetailRoot?.addEventListener("submit", handleWorkOrderDetailSubmit)
+skillVersionListRoot?.addEventListener("click", handleSkillVersionListClick)
+skillVersionDetailRoot?.addEventListener("click", handleSkillVersionDetailClick)
 editorBackdrop.addEventListener("click", () => closeEditor())
 editorDrawerBody.addEventListener("click", handleDrawerClick)
 editorDrawerBody.addEventListener("change", handleDrawerChange)
@@ -322,22 +332,25 @@ async function bootstrap() {
 async function refreshAll(showHint = false) {
   try {
     if (showHint) {
-      setPageStatus(state.view === "work-orders" ? "正在刷新技能工单..." : "正在刷新 skill registry...")
+      setPageStatus(formatRefreshStatus("loading"))
     }
     state.payload = await request("/api/skill-management")
+    state.bundlePayload = await request("/api/skill-bundles")
     state.workOrders = await request(buildWorkOrderListUrl()).then((payload) => payload.workOrders || [])
     syncSelection()
     syncWorkOrderSelection()
+    syncBundleSelection()
     renderSummary()
     renderWorkspace()
     renderWorkOrderWorkspace()
+    renderSkillVersionWorkspace()
     if (state.view === "registry") {
       await loadSelection()
-    } else {
+    } else if (state.view === "work-orders") {
       await loadWorkOrderSelection()
     }
     if (showHint) {
-      setPageStatus(state.view === "work-orders" ? "技能工单已刷新。" : "skill registry 已刷新。")
+      setPageStatus(formatRefreshStatus("done"))
     }
   } catch (error) {
     setPageStatus(buildLoadFailureMessage(error), true)
@@ -346,7 +359,15 @@ async function refreshAll(showHint = false) {
     state.workOrderDetail = null
     renderWorkspace()
     renderWorkOrderWorkspace()
+    renderSkillVersionWorkspace()
   }
+}
+
+function formatRefreshStatus(phase = "loading") {
+  const loading = phase === "loading"
+  if (state.view === "work-orders") return loading ? "正在刷新技能工单..." : "技能工单已刷新。"
+  if (state.view === "skill-versions") return loading ? "正在刷新技能版本..." : "技能版本已刷新。"
+  return loading ? "正在刷新 skill registry..." : "skill registry 已刷新。"
 }
 
 async function handleRailFilterChange() {
@@ -741,6 +762,59 @@ async function handleWorkOrderDetailSubmit(event) {
   event.preventDefault()
 }
 
+async function handleSkillVersionListClick(event) {
+  const button = event.target.closest("[data-select-bundle]")
+  if (!button) return
+  state.selectedBundleId = button.dataset.selectBundle || ""
+  const nextUrl = new URL(window.location.href)
+  nextUrl.searchParams.set("view", "skill-versions")
+  if (state.selectedBundleId) {
+    nextUrl.searchParams.set("bundleId", state.selectedBundleId)
+  }
+  window.history.replaceState({}, "", nextUrl)
+  renderSkillVersionWorkspace()
+}
+
+async function handleSkillVersionDetailClick(event) {
+  const releaseButton = event.target.closest("[data-bundle-release]")
+  if (releaseButton) {
+    await submitBundleAction(releaseButton.dataset.bundleRelease, "release")
+    return
+  }
+  const rollbackButton = event.target.closest("[data-bundle-rollback]")
+  if (rollbackButton) {
+    await submitBundleAction(rollbackButton.dataset.bundleRollback, "rollback")
+    return
+  }
+  const forkButton = event.target.closest("[data-bundle-fork]")
+  if (forkButton) {
+    await submitBundleAction(forkButton.dataset.bundleFork, "fork")
+  }
+}
+
+async function submitBundleAction(bundleId, action) {
+  if (!bundleId || !action) return
+  const endpointByAction = {
+    release: `/api/skill-bundles/${encodeURIComponent(bundleId)}/release`,
+    rollback: `/api/skill-bundles/${encodeURIComponent(bundleId)}/rollback`,
+    fork: `/api/skill-bundles/${encodeURIComponent(bundleId)}/fork`
+  }
+  try {
+    const result = await request(endpointByAction[action], {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ releasedBy: "web-ui", createdBy: "web-ui", reason: "web-ui rollback" })
+    })
+    if (result?.id) {
+      state.selectedBundleId = result.id
+    }
+    await refreshAll(false)
+    setPageStatus(action === "release" ? "候选技能版本已发布。" : action === "rollback" ? "已回滚到选定技能版本。" : "已 fork 出新的候选技能版本。")
+  } catch (error) {
+    setPageStatus(`技能版本操作失败：${error.message}`, true)
+  }
+}
+
 async function loadSelection() {
   const profile = getSelectedProfileSummary()
   if (!profile) {
@@ -855,34 +929,48 @@ function syncSelection() {
 }
 
 function syncView() {
-  const isRegistry = state.view !== "work-orders"
+  const isRegistry = state.view === "registry"
+  const isWorkOrders = state.view === "work-orders"
+  const isSkillVersions = state.view === "skill-versions"
   registryViewRoot.hidden = !isRegistry
-  workOrderViewRoot.hidden = isRegistry
+  workOrderViewRoot.hidden = !isWorkOrders
+  skillVersionViewRoot.hidden = !isSkillVersions
   registryViewTab?.classList.toggle("is-active", isRegistry)
-  workOrderViewTab?.classList.toggle("is-active", !isRegistry)
+  workOrderViewTab?.classList.toggle("is-active", isWorkOrders)
+  skillVersionViewTab?.classList.toggle("is-active", isSkillVersions)
   registryViewTab?.setAttribute("aria-selected", isRegistry ? "true" : "false")
-  workOrderViewTab?.setAttribute("aria-selected", !isRegistry ? "true" : "false")
+  workOrderViewTab?.setAttribute("aria-selected", isWorkOrders ? "true" : "false")
+  skillVersionViewTab?.setAttribute("aria-selected", isSkillVersions ? "true" : "false")
 }
 
 function setView(nextView) {
-  state.view = nextView === "work-orders" ? "work-orders" : "registry"
+  state.view = ["work-orders", "skill-versions"].includes(nextView) ? nextView : "registry"
   const nextUrl = new URL(window.location.href)
   if (state.view === "work-orders") {
     nextUrl.searchParams.set("view", "work-orders")
     if (state.selectedWorkOrderId) {
       nextUrl.searchParams.set("workOrderId", state.selectedWorkOrderId)
     }
+    nextUrl.searchParams.delete("bundleId")
+  } else if (state.view === "skill-versions") {
+    nextUrl.searchParams.set("view", "skill-versions")
+    if (state.selectedBundleId) {
+      nextUrl.searchParams.set("bundleId", state.selectedBundleId)
+    }
+    nextUrl.searchParams.delete("workOrderId")
   } else {
     nextUrl.searchParams.delete("view")
     nextUrl.searchParams.delete("workOrderId")
+    nextUrl.searchParams.delete("bundleId")
   }
   window.history.replaceState({}, "", nextUrl)
   syncView()
   renderWorkspace()
   renderWorkOrderWorkspace()
+  renderSkillVersionWorkspace()
   if (state.view === "registry") {
     loadSelection()
-  } else {
+  } else if (state.view === "work-orders") {
     loadWorkOrderSelection()
   }
 }
@@ -897,6 +985,25 @@ function syncWorkOrderSelection() {
   if (!visible.some((item) => item.id === state.selectedWorkOrderId)) {
     state.selectedWorkOrderId = visible[0].id
     state.workOrderDetail = null
+  }
+}
+
+function getSkillBundles() {
+  return state.bundlePayload?.bundles || []
+}
+
+function getActiveBundle() {
+  return state.bundlePayload?.activeBundle || null
+}
+
+function syncBundleSelection() {
+  const bundles = getSkillBundles()
+  if (!bundles.length) {
+    state.selectedBundleId = ""
+    return
+  }
+  if (!bundles.some((bundle) => bundle.id === state.selectedBundleId)) {
+    state.selectedBundleId = getActiveBundle()?.id || bundles[0].id
   }
 }
 
@@ -920,6 +1027,15 @@ function renderWorkOrderWorkspace() {
   renderWorkOrderSummary()
   renderWorkOrderList()
   renderWorkOrderDetail()
+}
+
+function renderSkillVersionWorkspace() {
+  if (state.view !== "skill-versions") {
+    return
+  }
+  renderSkillVersionSummary()
+  renderSkillVersionList()
+  renderSkillVersionDetail()
 }
 
 function renderSummary() {
@@ -954,6 +1070,15 @@ function renderSummary() {
   sourceMetaRoot.textContent = `当前来源：${state.payload.activeSource?.skillDir || "-"} · manifest：${state.payload.activeSource?.manifestPath || "-"}`
 }
 
+function renderMetric(label, value) {
+  return `
+    <div class="skill-summary-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value))}</strong>
+    </div>
+  `
+}
+
 function renderWorkOrderSummary() {
   if (!workOrderSummaryRoot) return
   const visible = getVisibleWorkOrders()
@@ -963,7 +1088,7 @@ function renderWorkOrderSummary() {
     { label: "工单数", value: visible.length },
     { label: "待处理工单", value: visible.filter((item) => item.status === "pending_review").length },
     { label: "修改项总数", value: totalItems },
-    { label: "已应用项", value: appliedItems }
+    { label: "已加入候选项", value: appliedItems }
   ]
   workOrderSummaryRoot.innerHTML = cards
     .map(
@@ -1121,6 +1246,7 @@ function renderWorkOrderItemCard(item = {}) {
   const draftContent = edited.afterContent || edited.recommendedSkillText || item.afterContent || item.recommendedSkillText || ""
   const changeSummary = item.changeSummary || item.title || item.whyChange || item.fallbackReason || ""
   const beforeContent = item.beforeContent || (item.conclusionType === "create_new" ? "当前无原技能，新建技能条目。" : "无")
+  const stagedBundleText = item.stagedBundleId ? `候选版本：${item.stagedBundleId}` : ""
   return `
     <article class="work-order-item-card">
       <div class="detail-header-row">
@@ -1168,14 +1294,118 @@ function renderWorkOrderItemCard(item = {}) {
       </details>
       <div class="work-order-inline-actions">
         ${item.targetSkillCode ? `<button type="button" class="secondary-button" data-work-order-jump-skill="${escapeHtml(item.targetSkillCode)}">查看命中技能</button>` : ""}
-        ${item.reviewStatus !== "applied" ? `
-          <button type="button" data-work-order-accept="${item.itemId}">接受并应用</button>
-          <button type="button" class="secondary-button" data-work-order-edit-apply="${item.itemId}">编辑后应用</button>
+        ${!["applied", "staged"].includes(item.reviewStatus) ? `
+          <button type="button" data-work-order-accept="${item.itemId}">加入候选版本</button>
+          <button type="button" class="secondary-button" data-work-order-edit-apply="${item.itemId}">编辑后加入</button>
           <button type="button" class="ghost-button" data-work-order-reject="${item.itemId}">拒绝</button>
         ` : `
-          <span class="summary">已于 ${escapeHtml(formatDate(item.appliedAt))} 由 ${escapeHtml(item.appliedBy || "system")} 应用。</span>
+          <span class="summary">已于 ${escapeHtml(formatDate(item.stagedAt || item.appliedAt))} 由 ${escapeHtml(item.stagedBy || item.appliedBy || "system")} 加入候选版本。${escapeHtml(stagedBundleText)}</span>
         `}
       </div>
+    </article>
+  `
+}
+
+function renderSkillVersionSummary() {
+  if (!skillVersionSummaryRoot) return
+  const bundles = getSkillBundles()
+  const active = getActiveBundle()
+  const countByStatus = (status) => bundles.filter((bundle) => bundle.status === status).length
+  skillVersionSummaryRoot.innerHTML = `
+    ${renderMetric("Active", active?.version || active?.id || "-")}
+    ${renderMetric("Candidate", countByStatus("candidate"))}
+    ${renderMetric("Archived", countByStatus("archived"))}
+    ${renderMetric("Rolled Back", countByStatus("rolled_back"))}
+  `
+}
+
+function renderSkillVersionList() {
+  if (!skillVersionListRoot) return
+  const bundles = getSkillBundles()
+  if (!bundles.length) {
+    skillVersionListRoot.innerHTML = '<div class="empty-state">暂无技能版本。</div>'
+    return
+  }
+  skillVersionListRoot.innerHTML = bundles
+    .map((bundle) => `
+      <button type="button" class="skill-version-list-card ${bundle.id === state.selectedBundleId ? "is-selected" : ""}" data-select-bundle="${escapeHtml(bundle.id)}">
+        <div class="inline-meta-row">
+          <span class="mini-pill ${statusTone(bundle.status)}">${escapeHtml(formatBundleStatus(bundle.status))}</span>
+          <span>${escapeHtml(formatDate(bundle.updatedAt || bundle.createdAt))}</span>
+        </div>
+        <strong>${escapeHtml(bundle.version || bundle.id)}</strong>
+        <span class="work-order-code">${escapeHtml(bundle.id)}</span>
+        <p>${escapeHtml(bundle.changeSummary || "无变更摘要")}</p>
+      </button>
+    `)
+    .join("")
+}
+
+function renderSkillVersionDetail() {
+  if (!skillVersionDetailRoot) return
+  const bundle = getSkillBundles().find((item) => item.id === state.selectedBundleId)
+  if (!bundle) {
+    skillVersionDetailRoot.className = "skill-version-detail empty-state"
+    skillVersionDetailRoot.textContent = "选择一个技能版本查看详情。"
+    return
+  }
+
+  const isCandidate = bundle.status === "candidate"
+  const canRollback = ["archived", "rolled_back"].includes(bundle.status)
+  const stagedChanges = bundle.stagedChanges || []
+  skillVersionDetailRoot.className = "skill-version-detail"
+  skillVersionDetailRoot.innerHTML = `
+    <section class="skill-version-section">
+      <div class="detail-header-row">
+        <div>
+          <div class="inline-meta-row">
+            <span class="mini-pill ${statusTone(bundle.status)}">${escapeHtml(formatBundleStatus(bundle.status))}</span>
+            <span class="work-order-code">${escapeHtml(bundle.id)}</span>
+          </div>
+          <h3>${escapeHtml(bundle.version || bundle.id)}</h3>
+          <p class="summary">${escapeHtml(bundle.changeSummary || "暂无变更摘要")}</p>
+        </div>
+        <div class="work-order-inline-actions">
+          ${isCandidate ? `<button type="button" data-bundle-release="${escapeHtml(bundle.id)}">发布</button>` : ""}
+          ${canRollback ? `<button type="button" class="secondary-button" data-bundle-rollback="${escapeHtml(bundle.id)}">回滚到此版本</button>` : ""}
+          <button type="button" class="secondary-button" data-bundle-fork="${escapeHtml(bundle.id)}">Fork 候选</button>
+        </div>
+      </div>
+    </section>
+    <section class="skill-version-section">
+      <div class="work-order-meta-grid">
+        ${renderWorkOrderMetaItem("Base Bundle", bundle.baseBundleId || "-")}
+        ${renderWorkOrderMetaItem("Forked From", bundle.forkedFromBundleId || "-")}
+        ${renderWorkOrderMetaItem("Snapshot Hash", bundle.snapshotHash || "-")}
+        ${renderWorkOrderMetaItem("Rule Index", bundle.ruleIndexVersion || "-")}
+        ${renderWorkOrderMetaItem("SQLite Snapshot", bundle.sqliteSnapshotPath || "-")}
+        ${renderWorkOrderMetaItem("来源", bundle.sourceType || "-")}
+      </div>
+    </section>
+    <section class="skill-version-section">
+      <div class="work-order-section-head">
+        <div>
+          <h4>候选变更</h4>
+          <p class="summary">从工单或 replay 提案加入此版本的变更会集中显示在这里。</p>
+        </div>
+        <span class="mini-pill subtle">${escapeHtml(String(stagedChanges.length || 0))} 条</span>
+      </div>
+      <div class="skill-version-change-list">
+        ${stagedChanges.length ? stagedChanges.map(renderBundleChangeItem).join("") : '<div class="empty-state">当前版本没有记录工单变更。</div>'}
+      </div>
+    </section>
+  `
+}
+
+function renderBundleChangeItem(change = {}) {
+  return `
+    <article class="skill-version-change-item">
+      <div class="inline-meta-row">
+        <strong>${escapeHtml(change.title || change.skillCode || "技能变更")}</strong>
+        <span class="mini-pill subtle">${escapeHtml(change.mode || "stage")}</span>
+      </div>
+      <p>${escapeHtml(change.skillCode || "-")}</p>
+      <p class="summary">${escapeHtml([change.workOrderId, change.workOrderItemId].filter(Boolean).join(" / ") || "无来源工单")}</p>
     </article>
   `
 }
@@ -2365,8 +2595,8 @@ function formatWorkOrderStatus(status = "") {
   const labels = {
     pending_review: "待审阅",
     partially_reviewed: "部分已审阅",
-    partially_applied: "部分已应用",
-    applied: "已应用",
+    partially_applied: "部分已加入候选",
+    applied: "已加入候选",
     closed: "已关闭"
   }
   return labels[status] || status || "未知"
@@ -2375,10 +2605,21 @@ function formatWorkOrderStatus(status = "") {
 function formatWorkOrderItemStatus(status = "") {
   const labels = {
     pending: "待处理",
-    accepted: "待应用",
-    edited: "编辑后待应用",
+    accepted: "待加入候选",
+    edited: "编辑后待加入",
     rejected: "已拒绝",
-    applied: "已应用"
+    applied: "已应用",
+    staged: "已加入候选"
+  }
+  return labels[status] || status || "未知"
+}
+
+function formatBundleStatus(status = "") {
+  const labels = {
+    active: "Active",
+    candidate: "Candidate",
+    archived: "Archived",
+    rolled_back: "Rolled Back"
   }
   return labels[status] || status || "未知"
 }
@@ -2416,9 +2657,9 @@ function formatReuseJudgement(value = "") {
 }
 
 function statusTone(status = "") {
-  if (["applied", "accepted", "closed"].includes(status)) return "success"
+  if (["active", "applied", "staged", "accepted", "closed"].includes(status)) return "success"
   if (["rejected"].includes(status)) return "danger"
-  if (["edited", "partially_applied", "partially_reviewed"].includes(status)) return "warning"
+  if (["candidate", "edited", "partially_applied", "partially_reviewed"].includes(status)) return "warning"
   return "subtle"
 }
 
@@ -2447,15 +2688,15 @@ async function submitWorkOrderItemAction(itemId, reviewStatus, useEditedContent,
             }
       )
     })
-    await request(`/api/skill-work-orders/${encodeURIComponent(state.selectedWorkOrderId)}/items/${encodeURIComponent(itemId)}/apply`, {
+    await request(`/api/skill-work-orders/${encodeURIComponent(state.selectedWorkOrderId)}/items/${encodeURIComponent(itemId)}/stage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ appliedBy: "web-ui" })
+      body: JSON.stringify({ stagedBy: "web-ui" })
     })
     await refreshAll(false)
-    setPageStatus("修改项已应用到 active 技能条目。")
+    setPageStatus("修改项已加入候选技能版本。")
   } catch (error) {
-    setPageStatus(`应用技能工单失败：${error.message}`, true)
+    setPageStatus(`加入候选版本失败：${error.message}`, true)
   }
 }
 

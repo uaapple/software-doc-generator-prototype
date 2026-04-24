@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
@@ -6,6 +6,7 @@ import { copyDirectory, pathExists, readJson, writeJson } from "./storage.js";
 import { SkillRuleService } from "./skill-rule-service.js";
 import { SkillLoader } from "./skill-loader.js";
 import { SkillRegistryService } from "./skill-registry-service.js";
+import { SkillDatabaseService } from "./skill-database-service.js";
 
 const MANAGED_SKILL_FILES = [
   "requirement_extraction.md",
@@ -52,6 +53,50 @@ function getBundleMetaPath(bundleId) {
   return path.join(config.skillRefinementBundleMetaDir, `${bundleId}.json`);
 }
 
+function getBundleSnapshotPath(bundleId) {
+  return path.join(config.skillBundleSnapshotDir, `${bundleId}.sqlite`);
+}
+
+function serializeRuntimePath(value = "") {
+  const resolved = path.resolve(value);
+  const relativePath = path.relative(config.rootDir, resolved);
+  if (relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)) {
+    return relativePath.replaceAll("\\", "/");
+  }
+  return resolved.replaceAll("\\", "/");
+}
+
+async function collectHashFiles(dir, baseDir = dir) {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const files = [];
+  for (const entry of entries) {
+    const absolutePath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await collectHashFiles(absolutePath, baseDir)));
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (entry.name.includes(".tmp-")) continue;
+    files.push({
+      absolutePath,
+      relativePath: path.relative(baseDir, absolutePath).replaceAll("\\", "/")
+    });
+  }
+  return files.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+}
+
+async function computeSkillDirHash(skillDir) {
+  const hash = createHash("sha1");
+  const files = await collectHashFiles(skillDir);
+  for (const file of files) {
+    hash.update(file.relativePath);
+    hash.update("\0");
+    hash.update(await fs.readFile(file.absolutePath));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
 async function hasStructuredProfiles(skillDir) {
   return (
     (await pathExists(path.join(skillDir, "skill-manifest.json"))) ||
@@ -91,6 +136,16 @@ export class SkillBundleService {
           });
         }
         await this.skillRuleService.ensureBundleRuleIndex(activePointer.bundleId, config.activeSkillDir);
+        const activeMetadata = await readJson(getBundleMetaPath(activePointer.bundleId), null);
+        if (activeMetadata && (!activeMetadata.snapshotHash || !activeMetadata.sqliteSnapshotPath)) {
+          await this.persistBundleMetadata(
+            {
+              ...activeMetadata,
+              updatedAt: now()
+            },
+            { skillDir: config.activeSkillDir }
+          );
+        }
         this.initialized = true;
         return;
       }
@@ -132,7 +187,7 @@ export class SkillBundleService {
       metadata.ruleIndexVersion = ruleIndex.ruleIndexVersion;
       metadata.appliedProposalItemIds = [];
       metadata.appliedReplayTaskIds = [];
-      await writeJson(getBundleMetaPath(bundleId), metadata);
+      await this.persistBundleMetadata(metadata, { skillDir: bundleDir, forceRuleIndex: true });
       await writeJson(config.activeSkillBundlePointerPath, { bundleId });
       this.initialized = true;
     })();
@@ -195,6 +250,85 @@ export class SkillBundleService {
     return path.join(config.skillBundleDir, bundleId);
   }
 
+  getBundleSnapshotPath(bundleId) {
+    return getBundleSnapshotPath(bundleId);
+  }
+
+  async createSqliteSnapshot(bundleId, skillDir) {
+    const snapshotPath = getBundleSnapshotPath(bundleId);
+    await fs.mkdir(path.dirname(snapshotPath), { recursive: true });
+    await fs.rm(snapshotPath, { force: true }).catch(() => {});
+
+    const snapshotDb = new SkillDatabaseService(snapshotPath);
+    try {
+      const registries = await this.registryService.importActiveRegistriesFromFiles(skillDir);
+      snapshotDb.importRegistries(registries);
+      snapshotDb.setMeta("bundle_id", bundleId);
+      snapshotDb.setMeta("snapshot_created_at", now());
+    } finally {
+      snapshotDb.close();
+    }
+
+    return snapshotPath;
+  }
+
+  async persistBundleMetadata(metadata = {}, options = {}) {
+    const bundleId = metadata.id;
+    if (!bundleId) {
+      throw new Error("Bundle metadata requires id");
+    }
+
+    const skillDir = options.skillDir || (await this.getSkillDir(bundleId));
+    if (path.resolve(skillDir) === path.resolve(config.activeSkillDir)) {
+      await this.registryService.materializeAll(config.activeSkillDir);
+    }
+    const ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, skillDir, {
+      force: Boolean(options.forceRuleIndex)
+    });
+    const snapshotHash = await computeSkillDirHash(skillDir);
+    const sqliteSnapshotPath = options.skipSqliteSnapshot
+      ? metadata.sqliteSnapshotPath || ""
+      : serializeRuntimePath(await this.createSqliteSnapshot(bundleId, skillDir));
+    const nextMetadata = {
+      ...metadata,
+      files: metadata.files || [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
+      ruleIndexVersion: ruleIndex.ruleIndexVersion,
+      snapshotHash,
+      sqliteSnapshotPath,
+      updatedAt: metadata.updatedAt || now()
+    };
+    await writeJson(getBundleMetaPath(bundleId), nextMetadata);
+    return nextMetadata;
+  }
+
+  async getSkillVersionRef(bundleId = "") {
+    await this.ensureInitialized();
+    const bundle = bundleId ? await this.getBundle(bundleId) : await this.getActiveBundle();
+    if (!bundle) {
+      throw new Error("Skill bundle not found");
+    }
+    const skillDir = await this.getSkillDir(bundle.id);
+    const needsRefresh = !bundle.snapshotHash || !bundle.ruleIndexVersion || !bundle.sqliteSnapshotPath;
+    const metadata = needsRefresh
+      ? await this.persistBundleMetadata(
+          {
+            ...bundle,
+            updatedAt: now()
+          },
+          { skillDir }
+        )
+      : bundle;
+    return {
+      bundleId: metadata.id,
+      baseBundleId: metadata.baseBundleId || "",
+      version: metadata.version || "",
+      status: metadata.status || "",
+      snapshotHash: metadata.snapshotHash || "",
+      ruleIndexVersion: metadata.ruleIndexVersion || "",
+      sqliteSnapshotPath: metadata.sqliteSnapshotPath || ""
+    };
+  }
+
   async listBundles() {
     await this.ensureInitialized();
     const names = await fs.readdir(config.skillRefinementBundleMetaDir);
@@ -247,48 +381,151 @@ export class SkillBundleService {
 
   async createCandidateBundle({ baseBundleId = "", proposal, proposalItems = [], replayTaskId = "", createdFromCaseIds = [], evaluationSummary = null }) {
     await this.ensureInitialized();
-    const baseBundle = baseBundleId ? await this.getBundle(baseBundleId) : await this.getActiveBundle();
-    const bundleId = randomUUID();
-    const targetDir = this.getBundleSkillDir(bundleId);
-    const baseDir = await this.getSkillDir(baseBundle?.id);
+    const candidate = await this.createDraftBundle({
+      baseBundleId,
+      changeSummary: proposal?.summary || "Candidate bundle generated from refinement run.",
+      sourceType: replayTaskId ? "replay_proposal" : "refinement_run",
+      createdFromCaseIds
+    });
+    const targetDir = this.getBundleSkillDir(candidate.id);
 
-    if (path.resolve(baseDir) === path.resolve(config.activeSkillDir)) {
-      await this.registryService.materializeAll(config.activeSkillDir);
-    }
-    await copyDirectory(baseDir, targetDir);
-    await this.ensureDomainKnowledgeFile(targetDir);
-
-    let ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, targetDir, { force: true });
+    let ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(candidate.id, targetDir, { force: true });
     if (proposalItems.length) {
       ruleIndex = await this.skillRuleService.applyProposalItems({
-        bundleId,
+        bundleId: candidate.id,
         bundleDir: targetDir,
         proposalItems,
         replayTaskId
       });
     } else {
       await this.applyProposalToBundle(targetDir, proposal);
-      ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(bundleId, targetDir, { force: true });
+      ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(candidate.id, targetDir, { force: true });
     }
 
     const metadata = {
-      id: bundleId,
-      version: `${baseBundle?.version || "1.0.0"}-candidate-${Date.now()}`,
-      baseBundleId: baseBundle?.id || "",
+      ...candidate,
       status: "candidate",
-      files: [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
       changeSummary: proposal?.summary || "Candidate bundle generated from refinement run.",
       createdFromCaseIds,
       evaluationSummary,
       ruleIndexVersion: ruleIndex.ruleIndexVersion,
-      appliedProposalItemIds: proposalItems.map((item) => item.proposalItemId || item.id),
-      appliedReplayTaskIds: replayTaskId ? [replayTaskId] : [],
+      appliedProposalItemIds: [...(candidate.appliedProposalItemIds || []), ...proposalItems.map((item) => item.proposalItemId || item.id)],
+      appliedReplayTaskIds: replayTaskId ? [...new Set([...(candidate.appliedReplayTaskIds || []), replayTaskId])] : candidate.appliedReplayTaskIds || [],
+      updatedAt: now()
+    };
+
+    return this.persistBundleMetadata(metadata, { skillDir: targetDir, forceRuleIndex: true });
+  }
+
+  async createDraftBundle({
+    baseBundleId = "",
+    changeSummary = "Draft skill bundle.",
+    sourceType = "manual_draft",
+    createdFromCaseIds = [],
+    createdFromWorkOrderIds = [],
+    createdBy = "system",
+    forkedFromBundleId = ""
+  } = {}) {
+    await this.ensureInitialized();
+    const activeBundle = await this.getActiveBundle();
+    const baseBundle = baseBundleId ? await this.getBundle(baseBundleId) : activeBundle;
+    if (!baseBundle) {
+      throw new Error("Base bundle not found");
+    }
+
+    const bundleId = randomUUID();
+    const targetDir = this.getBundleSkillDir(bundleId);
+    const baseDir = forkedFromBundleId
+      ? await this.getSkillDir(forkedFromBundleId)
+      : await this.getSkillDir(baseBundle.id);
+    if (path.resolve(baseDir) === path.resolve(config.activeSkillDir)) {
+      await this.registryService.materializeAll(config.activeSkillDir);
+    }
+    await copyDirectory(baseDir, targetDir);
+    await this.ensureDomainKnowledgeFile(targetDir);
+
+    const metadata = {
+      id: bundleId,
+      version: `${baseBundle.version || "1.0.0"}-candidate-${Date.now()}`,
+      baseBundleId: baseBundle.id,
+      baseSnapshotHash: baseBundle.snapshotHash || "",
+      forkedFromBundleId,
+      status: "candidate",
+      sourceType,
+      files: [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
+      changeSummary,
+      createdBy,
+      createdFromCaseIds,
+      createdFromWorkOrderIds,
+      evaluationSummary: null,
+      appliedProposalItemIds: [],
+      appliedReplayTaskIds: [],
+      stagedWorkOrderItemIds: [],
+      stagedChanges: [],
       createdAt: now(),
       updatedAt: now()
     };
 
-    await writeJson(getBundleMetaPath(bundleId), metadata);
-    return metadata;
+    return this.persistBundleMetadata(metadata, { skillDir: targetDir, forceRuleIndex: true });
+  }
+
+  async findOrCreateWorkOrderCandidate({ baseBundleId = "", workOrderId = "", changeSummary = "" } = {}) {
+    await this.ensureInitialized();
+    const baseBundle = baseBundleId ? await this.getBundle(baseBundleId) : await this.getActiveBundle();
+    if (!baseBundle) {
+      throw new Error("Base bundle not found");
+    }
+    const bundles = await this.listBundles();
+    const existing = bundles.find(
+      (bundle) =>
+        bundle.status === "candidate" &&
+        bundle.baseBundleId === baseBundle.id &&
+        bundle.sourceType === "work_order_staging" &&
+        (!workOrderId || (bundle.createdFromWorkOrderIds || []).includes(workOrderId))
+    );
+    if (existing) {
+      return existing;
+    }
+
+    return this.createDraftBundle({
+      baseBundleId: baseBundle.id,
+      changeSummary: changeSummary || `Work order staging candidate based on ${baseBundle.id}.`,
+      sourceType: "work_order_staging",
+      createdFromWorkOrderIds: workOrderId ? [workOrderId] : []
+    });
+  }
+
+  async recordStagedWorkOrderItem(bundleId, change = {}) {
+    const bundle = await this.getBundle(bundleId);
+    if (!bundle) {
+      throw new Error("Bundle not found");
+    }
+    if (bundle.status !== "candidate") {
+      throw new Error("Only candidate bundles can receive staged work order items");
+    }
+    const workOrderId = String(change.workOrderId || "").trim();
+    const workOrderItemId = String(change.workOrderItemId || "").trim();
+    const next = {
+      ...bundle,
+      createdFromWorkOrderIds: workOrderId
+        ? [...new Set([...(bundle.createdFromWorkOrderIds || []), workOrderId])]
+        : bundle.createdFromWorkOrderIds || [],
+      stagedWorkOrderItemIds: workOrderItemId
+        ? [...new Set([...(bundle.stagedWorkOrderItemIds || []), workOrderItemId])]
+        : bundle.stagedWorkOrderItemIds || [],
+      stagedChanges: [
+        ...(bundle.stagedChanges || []),
+        {
+          ...change,
+          stagedAt: change.stagedAt || now()
+        }
+      ],
+      updatedAt: now()
+    };
+    return this.persistBundleMetadata(next, {
+      skillDir: await this.getSkillDir(bundleId),
+      forceRuleIndex: true
+    });
   }
 
   async applyProposalToBundle(bundleDir, proposal = {}) {
@@ -350,6 +587,10 @@ export class SkillBundleService {
   }
 
   async approveBundle(bundleId, evaluationSummary = null) {
+    return this.releaseBundle(bundleId, { evaluationSummary });
+  }
+
+  async releaseBundle(bundleId, options = {}) {
     await this.ensureInitialized();
     const activeBundle = await this.getActiveBundle();
     const candidate = await this.getBundle(bundleId);
@@ -359,22 +600,101 @@ export class SkillBundleService {
     if (candidate.status !== "candidate") {
       throw new Error("Only candidate bundles can be approved");
     }
+    if (activeBundle?.id && candidate.baseBundleId && candidate.baseBundleId !== activeBundle.id && !options.force) {
+      const error = new Error("Candidate bundle is not based on the current active bundle");
+      error.code = "skill_bundle_base_mismatch";
+      error.details = {
+        candidateBundleId: candidate.id,
+        candidateBaseBundleId: candidate.baseBundleId,
+        activeBundleId: activeBundle.id
+      };
+      throw error;
+    }
 
     await copyDirectory(this.getBundleSkillDir(bundleId), config.activeSkillDir);
     await this.registryService.rebuildDatabaseFromFiles(config.activeSkillDir);
 
     if (activeBundle) {
       activeBundle.status = "archived";
+      activeBundle.archivedAt = now();
       activeBundle.updatedAt = now();
       await writeJson(getBundleMetaPath(activeBundle.id), activeBundle);
     }
 
-    candidate.status = "active";
-    candidate.evaluationSummary = evaluationSummary || candidate.evaluationSummary || null;
-    candidate.updatedAt = now();
-    await writeJson(getBundleMetaPath(candidate.id), candidate);
+    const releasedAt = now();
+    const released = await this.persistBundleMetadata(
+      {
+        ...candidate,
+        status: "active",
+        evaluationSummary: options.evaluationSummary || candidate.evaluationSummary || null,
+        releasedAt,
+        releasedBy: options.releasedBy || "system",
+        updatedAt: releasedAt
+      },
+      { skillDir: config.activeSkillDir, forceRuleIndex: true }
+    );
     await writeJson(config.activeSkillBundlePointerPath, { bundleId: candidate.id });
-    return candidate;
+    return released;
+  }
+
+  async rollbackBundle(bundleId, options = {}) {
+    await this.ensureInitialized();
+    const target = await this.getBundle(bundleId);
+    const activeBundle = await this.getActiveBundle();
+    if (!target) {
+      throw new Error("Bundle not found");
+    }
+    if (activeBundle?.id === target.id) {
+      return target;
+    }
+    if (!["archived", "rolled_back", "active"].includes(target.status)) {
+      const error = new Error("Only archived bundles can be rolled back to active");
+      error.code = "skill_bundle_rollback_status_invalid";
+      error.details = { bundleId, status: target.status };
+      throw error;
+    }
+
+    await copyDirectory(this.getBundleSkillDir(target.id), config.activeSkillDir);
+    await this.registryService.rebuildDatabaseFromFiles(config.activeSkillDir);
+
+    if (activeBundle) {
+      await writeJson(getBundleMetaPath(activeBundle.id), {
+        ...activeBundle,
+        status: "rolled_back",
+        rolledBackAt: now(),
+        updatedAt: now()
+      });
+    }
+
+    const activated = await this.persistBundleMetadata(
+      {
+        ...target,
+        status: "active",
+        rollbackFromBundleId: activeBundle?.id || "",
+        rollbackReason: options.reason || "",
+        rolledForwardAt: now(),
+        updatedAt: now()
+      },
+      { skillDir: config.activeSkillDir, forceRuleIndex: true }
+    );
+    await writeJson(config.activeSkillBundlePointerPath, { bundleId: target.id });
+    return activated;
+  }
+
+  async forkBundle(bundleId, options = {}) {
+    await this.ensureInitialized();
+    const source = await this.getBundle(bundleId);
+    if (!source) {
+      throw new Error("Bundle not found");
+    }
+    const activeBundle = await this.getActiveBundle();
+    return this.createDraftBundle({
+      baseBundleId: options.baseBundleId || activeBundle?.id || source.baseBundleId || source.id,
+      forkedFromBundleId: source.id,
+      sourceType: "bundle_fork",
+      changeSummary: options.changeSummary || `Forked from ${source.id}.`,
+      createdBy: options.createdBy || "system"
+    });
   }
 
   async rejectBundle(bundleId) {

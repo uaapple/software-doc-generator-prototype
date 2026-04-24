@@ -493,7 +493,8 @@ export class ReplayTaskService {
     const activeBundle = targetBundleId
       ? await this.skillBundleService.getBundle(targetBundleId)
       : await this.skillBundleService.getActiveBundle();
-    const bundleId = activeBundle?.id || targetBundleId || "bundle-base";
+    const skillVersion = await this.skillBundleService.getSkillVersionRef(activeBundle?.id || targetBundleId || "");
+    const bundleId = skillVersion.bundleId;
     const skillDir = await this.skillBundleService.getSkillDir(bundleId);
     const effectiveAreas = targetAreas.length ? targetAreas : [...new Set(records.map((item) => normalizeArea(item.skillContext?.targetArea)))];
     const normalizedReferenceAssetIds = normalizeReferenceAssetIds(referenceAssetIds);
@@ -529,6 +530,7 @@ export class ReplayTaskService {
       inferredProjectId,
       inferredModuleId,
       bundleId,
+      skillVersion,
       skillDir,
       effectiveAreas,
       normalizedReferenceAssetIds,
@@ -620,6 +622,7 @@ export class ReplayTaskService {
     const materialPack = {
       summary: `${records.length} rejection records selected for replay`,
       targetBundleId: bundleId,
+      skillVersion: context.skillVersion || null,
       targetAreas: effectiveAreas,
       targetLayerConstraint,
       targetProfileKeyConstraint,
@@ -744,6 +747,7 @@ export class ReplayTaskService {
     selectedIds,
     group,
     bundleId,
+    skillVersion,
     llmProfileId,
     normalizedReferenceAssetIds,
     materialPack,
@@ -759,6 +763,7 @@ export class ReplayTaskService {
       sourceRejectionIds: selectedIds,
       groupIds: group ? [group.id] : [],
       targetBundleId: bundleId,
+      skillVersion: skillVersion || materialPack.skillVersion || null,
       llmProfileId,
       referenceAssetIds: normalizedReferenceAssetIds,
       taskStatus: "queued",
@@ -1082,6 +1087,7 @@ export class ReplayTaskService {
       inferredProjectId,
       inferredModuleId,
       bundleId,
+      skillVersion,
       effectiveAreas,
       normalizedReferenceAssetIds,
       project,
@@ -1103,6 +1109,7 @@ export class ReplayTaskService {
         selectedIds,
         group,
         bundleId,
+        skillVersion,
         llmProfileId,
         normalizedReferenceAssetIds,
         materialPack,
@@ -1153,6 +1160,7 @@ export class ReplayTaskService {
         sourceRejectionIds: selectedIds,
         groupIds: group ? [group.id] : [],
         targetBundleId: bundleId,
+        skillVersion,
         llmProfileId,
         referenceAssetIds: normalizedReferenceAssetIds,
         taskStatus: "failed",
@@ -1183,6 +1191,7 @@ export class ReplayTaskService {
       sourceRejectionIds: selectedIds,
       groupIds: group ? [group.id] : [],
       targetBundleId: bundleId,
+      skillVersion,
       llmProfileId,
       referenceAssetIds: normalizedReferenceAssetIds,
       taskStatus: "done",

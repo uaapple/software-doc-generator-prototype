@@ -422,6 +422,11 @@ async function renderModuleCreatePage() {
   const getSelectedSkillInitMode = () =>
     skillInitModeInputs.find((input) => input.checked)?.value === "cold_start" ? "cold_start" : "import_existing";
 
+  const syncModuleSkillKeyFromName = () => {
+    if (!moduleSkillKeyInput) return;
+    moduleSkillKeyInput.value = nameInput?.value?.trim() || "";
+  };
+
   const setSelectedSkillInitMode = (value) => {
     const normalized = value === "cold_start" ? "cold_start" : "import_existing";
     skillInitModeInputs.forEach((input) => {
@@ -470,15 +475,6 @@ async function renderModuleCreatePage() {
     const description = descriptionInput?.value?.trim() || "";
     const moduleSkillKey = moduleSkillKeyInput?.value?.trim() || "";
 
-    if (!name) {
-      domainSelect.innerHTML = '<option value="embedded_vcu">embedded_vcu</option>';
-      candidateSelect.innerHTML = '<option value="">请选择一个已有 Module Skill</option>';
-      previewHint.textContent = "输入模块名称后，系统会推荐 domain 并检索可复用的 module skill。";
-      bootstrapRoot.textContent = "新模块如果不导入已有 skill，后续生成前需要上传系统需求、模型/代码输入和对应文档类型的人工优秀范例。";
-      syncSkillInitModeUi();
-      return;
-    }
-
     preview = await request(`/api/projects/${project.id}/modules/initialize-preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -489,10 +485,6 @@ async function renderModuleCreatePage() {
         documentType: project.documentType
       })
     });
-
-    if ((!moduleSkillKeyInput.value || !moduleSkillKeyInput.value.trim()) && preview.moduleSkillKey) {
-      moduleSkillKeyInput.value = preview.moduleSkillKey;
-    }
 
     domainSelect.innerHTML = (preview.recommendedDomains || [])
       .map((item, index) => `<option value="${escapeHtml(item.domain)}" ${index === 0 ? "selected" : ""}>${escapeHtml(item.domain)}</option>`)
@@ -513,6 +505,10 @@ async function renderModuleCreatePage() {
     if (isEditing) {
       candidateSelect.value = existingModule?.skillSource?.type === "module_profile" ? existingModule.skillSource.key || "" : "";
     }
+    if (!name) {
+      previewHint.textContent = "未填写模块名称时，先展示库内全部 Module Skill；填写后会自动同步 Module Skill Key，并把更相关的候选排在前面。";
+      bootstrapRoot.textContent = "如果不导入已有 skill，后续生成前需要上传系统需求、模型/代码输入和对应文档类型的人工优秀范例。";
+    }
     syncSkillInitModeUi();
   };
 
@@ -523,7 +519,10 @@ async function renderModuleCreatePage() {
     }, 200);
   };
 
-  nameInput?.addEventListener("input", queuePreview);
+  nameInput?.addEventListener("input", () => {
+    syncModuleSkillKeyFromName();
+    queuePreview();
+  });
   descriptionInput?.addEventListener("input", queuePreview);
   moduleSkillKeyInput?.addEventListener("input", queuePreview);
   await refreshPreview();

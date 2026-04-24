@@ -70,6 +70,7 @@ async function withTempConfig(run) {
     skillRefinementEvaluationDir: path.join(tempDir, "data", "skill-refinement", "evaluations"),
     skillRefinementAuditDir: path.join(tempDir, "data", "skill-refinement", "audit"),
     skillRefinementBundleMetaDir: path.join(tempDir, "data", "skill-refinement", "bundles"),
+    skillBundleSnapshotDir: path.join(tempDir, "data", "skill-refinement", "bundle-snapshots"),
     skillRefinementUploadDir: path.join(tempDir, "data", "skill-refinement", "uploads"),
     activeSkillBundlePointerPath: path.join(tempDir, "data", "skill-refinement", "active-bundle.json"),
     skillRuleDir: path.join(tempDir, "data", "skill-rules"),
@@ -83,6 +84,9 @@ async function withTempConfig(run) {
     templateDir: path.join(tempDir, "templates"),
     templatePath: path.join(tempDir, "templates", "software-requirement-template.json"),
     skillDir: path.join(tempDir, "skills", "active"),
+    skillVersioning: {
+      directActiveSkillItemWrites: "allow"
+    },
       hermes: {
         transport: "api",
         host: "127.0.0.1",
@@ -3453,6 +3457,50 @@ const tests = [
     }
   },
   {
+    name: "Module skill preview returns all library candidates and sorts exact matches first",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new ModuleSkillService();
+
+        await service.persistBootstrappedKnowledge(
+          { name: "Charging Management", moduleSkillKey: "charging_management", domain: "embedded_vcu" },
+          "software_requirement",
+          {
+            version: 1,
+            generationPriorities: ["优先保留充电管理主线。"],
+            examples: [],
+            ruleHints: [{ domain: "embedded_vcu", sectionHints: ["充电管理"], writingPattern: "先写主流程。", targetStyle: "software requirement" }],
+            antiPatterns: ["不要遗漏退出条件。"]
+          }
+        );
+        await service.persistBootstrappedKnowledge(
+          { name: "Thermal Management", moduleSkillKey: "thermal_management", domain: "embedded_vcu" },
+          "software_requirement",
+          {
+            version: 1,
+            generationPriorities: ["优先保留热管理主线。"],
+            examples: [],
+            ruleHints: [{ domain: "embedded_vcu", sectionHints: ["热管理"], writingPattern: "先写热控流程。", targetStyle: "software requirement" }],
+            antiPatterns: ["不要混入无关控制。"]
+          }
+        );
+
+        const blankPreview = await service.previewNewModule({ documentType: "software_requirement", domain: "embedded_vcu" }, {}, {});
+        assert.ok(blankPreview.skillCandidates.length >= 2);
+        assert.ok(blankPreview.skillCandidates.some((item) => item.key === "charging_management"));
+        assert.ok(blankPreview.skillCandidates.some((item) => item.key === "thermal_management"));
+
+        const matchedPreview = await service.previewNewModule(
+          { documentType: "software_requirement", domain: "embedded_vcu" },
+          { name: "Charging Management" },
+          {}
+        );
+        assert.equal(matchedPreview.skillCandidates[0].key, "charging_management");
+        assert.equal(matchedPreview.moduleSkillKey, "charging_management");
+      });
+    }
+  },
+  {
     name: "Module create flow exposes explicit skill initialization modes",
     run: async () => {
       const html = await fs.readFile(new URL("../public/module-create.html", import.meta.url), "utf8");
@@ -3464,6 +3512,8 @@ const tests = [
       assert.match(source, /payload\.skillInitMode/);
       assert.match(source, /候选 Module Skill/);
       assert.match(source, /模块会以冷启动模式创建/);
+      assert.match(source, /syncModuleSkillKeyFromName/);
+      assert.match(source, /未填写模块名称时，先展示库内全部 Module Skill/);
     }
   },
   {
@@ -6397,7 +6447,7 @@ const tests = [
     }
   },
   {
-    name: "Skill work order review and apply updates active atomic skill",
+    name: "Skill work order review stages changes into candidate bundle",
     run: async () => {
       await withTempConfig(async () => {
         const bundleService = new SkillBundleService();
@@ -6465,13 +6515,25 @@ const tests = [
         const applied = await workOrderService.applyItem(workOrder.id, item.itemId, {
           appliedBy: "tester"
         });
-        assert.equal(applied.item.reviewStatus, "applied");
+        assert.equal(applied.item.reviewStatus, "staged");
+        assert.ok(applied.candidateBundle.id);
+        assert.equal(applied.candidateBundle.status, "candidate");
+        assert.equal(applied.item.stagedBundleId, applied.candidateBundle.id);
         assert.ok(applied.item.appliedChange.afterSnapshot);
 
         const targetSkillCode = applied.item.appliedChange.skillCode;
-        const refreshedSkill = await skillManagementService.getSkillItem(targetSkillCode);
+        const candidateSkillDir = await bundleService.getSkillDir(applied.candidateBundle.id);
+        const refreshedSkill = await skillManagementService.getSkillItem(targetSkillCode, candidateSkillDir);
         assert.ok(refreshedSkill.item.content.includes("补充约束") || refreshedSkill.item.content.includes("避免"));
         assert.equal(refreshedSkill.item.provenance.sourceTaskId, replayTask.id);
+        assert.equal(refreshedSkill.item.provenance.stagedBundleId, applied.candidateBundle.id);
+
+        if (applied.item.conclusionType === "modify_existing") {
+          const activeSkill = await skillManagementService.getSkillItem(targetSkillCode);
+          assert.notEqual(activeSkill.item.content, refreshedSkill.item.content);
+        } else {
+          await assert.rejects(() => skillManagementService.getSkillItem(targetSkillCode));
+        }
 
         const refreshedWorkOrder = await workOrderService.getWorkOrder(workOrder.id);
         assert.equal(refreshedWorkOrder.status, "applied");
@@ -6547,6 +6609,190 @@ const tests = [
           .then(() => true)
           .catch(() => false);
         assert.equal(restoredFile, true);
+      });
+    }
+  },
+  {
+    name: "Skill bundle release, rollback, and fork preserve version isolation",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const skillManagementService = new SkillManagementService();
+        const activeRef = await bundleService.getSkillVersionRef();
+        const draft = await bundleService.createDraftBundle({
+          baseBundleId: activeRef.bundleId,
+          changeSummary: "Candidate B for version isolation test"
+        });
+        const staleDraft = await bundleService.createDraftBundle({
+          baseBundleId: activeRef.bundleId,
+          changeSummary: "Stale candidate based on A"
+        });
+        const draftSkillDir = await bundleService.getSkillDir(draft.id);
+        const candidateItems = await skillManagementService.listSkillItems({}, draftSkillDir);
+        const target = candidateItems.items.find((item) => item.kind === "validation_rule") || candidateItems.items[0];
+        assert.ok(target?.skillCode);
+        const activeBefore = await skillManagementService.getSkillItem(target.skillCode);
+
+        await skillManagementService.updateSkillItem(
+          target.skillCode,
+          {
+            content: "candidate version marker"
+          },
+          draftSkillDir
+        );
+
+        const released = await bundleService.releaseBundle(draft.id, { releasedBy: "tester" });
+        assert.equal(released.status, "active");
+        assert.equal((await bundleService.getActiveBundle()).id, draft.id);
+        assert.ok(released.snapshotHash);
+        assert.ok(released.sqliteSnapshotPath);
+        const snapshotPath = path.isAbsolute(released.sqliteSnapshotPath)
+          ? released.sqliteSnapshotPath
+          : path.join(config.rootDir, released.sqliteSnapshotPath);
+        assert.ok((await fs.stat(snapshotPath)).size > 0);
+        assert.equal(new SkillDatabaseService(config.skillDatabasePath).hasForeignKeyViolations(), false);
+
+        const activeAfterRelease = await skillManagementService.getSkillItem(target.skillCode);
+        assert.equal(activeAfterRelease.item.content, "candidate version marker");
+        assert.equal((await bundleService.getBundle(activeRef.bundleId)).status, "archived");
+        await assert.rejects(
+          () => bundleService.releaseBundle(staleDraft.id),
+          (error) => error?.code === "skill_bundle_base_mismatch"
+        );
+
+        const rolledBack = await bundleService.rollbackBundle(activeRef.bundleId, { reason: "regression" });
+        assert.equal(rolledBack.status, "active");
+        assert.equal((await bundleService.getActiveBundle()).id, activeRef.bundleId);
+        assert.equal((await bundleService.getBundle(draft.id)).status, "rolled_back");
+        const activeAfterRollback = await skillManagementService.getSkillItem(target.skillCode);
+        assert.equal(activeAfterRollback.item.content, activeBefore.item.content);
+
+        const forked = await bundleService.forkBundle(draft.id, {
+          changeSummary: "Candidate C from rolled back B"
+        });
+        assert.equal(forked.status, "candidate");
+        assert.equal(forked.baseBundleId, activeRef.bundleId);
+        assert.equal(forked.forkedFromBundleId, draft.id);
+        const releasedFork = await bundleService.releaseBundle(forked.id, { releasedBy: "tester" });
+        assert.equal(releasedFork.status, "active");
+        assert.equal((await bundleService.getActiveBundle()).id, forked.id);
+      });
+    }
+  },
+  {
+    name: "Direct active skill item writes can be blocked in versioned mode",
+    run: async () => {
+      await withTempConfig(async () => {
+        config.skillVersioning.directActiveSkillItemWrites = "blocked";
+        await withTestServer(async ({ baseUrl }) => {
+          const blockedResponse = await fetch(`${baseUrl}/api/skill-items`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              layer: "generic",
+              profileKey: "generic",
+              kind: "validation_rule",
+              title: "Blocked direct write",
+              content: "should not write active"
+            })
+          });
+          assert.equal(blockedResponse.status, 409);
+          assert.equal((await blockedResponse.json()).code, "direct_active_skill_write_blocked");
+
+          const draftResponse = await fetch(`${baseUrl}/api/skill-bundles/drafts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ changeSummary: "API candidate" })
+          });
+          assert.equal(draftResponse.status, 201);
+          const draft = await draftResponse.json();
+          const candidateResponse = await fetch(`${baseUrl}/api/skill-items`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetBundleId: draft.id,
+              layer: "generic",
+              profileKey: "generic",
+              kind: "validation_rule",
+              title: "Candidate write",
+              content: "writes only candidate"
+            })
+          });
+          assert.equal(candidateResponse.status, 201);
+          const created = await candidateResponse.json();
+          assert.ok(created.skillCode);
+        });
+      });
+    }
+  },
+  {
+    name: "Queued generation tasks keep the skill version locked at creation time",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const queuedEntries = [];
+        const pipelineService = new PipelineService(projectService, {
+          hermesTaskQueueService: {
+            enqueue(entry) {
+              queuedEntries.push(entry);
+              return Promise.resolve(null);
+            }
+          }
+        });
+        const activeRef = await bundleService.getSkillVersionRef();
+        const project = await projectService.createProject({ name: "Skill Lock Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "system.md");
+        const codeFilePath = path.join(uploadDir, "code.c");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+        await fs.writeFile(codeFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "system.md",
+              filename: "system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "code.c",
+              filename: "code.c",
+              path: codeFilePath,
+              mimetype: "text/x-c",
+              size: 44
+            }
+          ]
+        });
+
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+          manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }]),
+          asyncStart: true
+        });
+        assert.equal(result.task.status, "queued");
+        assert.equal(result.task.skillVersion.bundleId, activeRef.bundleId);
+        assert.equal(queuedEntries.length, 1);
+
+        const draft = await bundleService.createDraftBundle({
+          baseBundleId: activeRef.bundleId,
+          changeSummary: "Release after queued task"
+        });
+        await bundleService.releaseBundle(draft.id, { releasedBy: "tester" });
+        assert.equal((await bundleService.getActiveBundle()).id, draft.id);
+
+        const storedModule = await projectService.getModule(project.id, module.id);
+        const storedTask = storedModule.documentSpaces.software_requirement.generationTasks.find((item) => item.id === result.task.id);
+        assert.equal(storedTask.skillVersion.bundleId, activeRef.bundleId);
       });
     }
   },

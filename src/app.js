@@ -67,6 +67,15 @@ function documentExtractionUploadFields() {
     { name: "spreadsheets", maxCount: 4 }
   ];
 }
+
+function createHttpError(message, statusCode = 400, code = "request_error", details = {}) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
+  error.details = details;
+  return error;
+}
+
 export async function createApp() {
   await ensureStorage();
 
@@ -90,6 +99,35 @@ export async function createApp() {
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
   await projectService.recoverStaleGenerationTasks();
+
+  async function resolveSkillItemWriteDir(req) {
+    const targetBundleId = String(req.body?.targetBundleId || req.query?.targetBundleId || "").trim();
+    const directMode = String(config.skillVersioning?.directActiveSkillItemWrites || "allow").trim();
+    if (!targetBundleId) {
+      if (directMode === "block" || directMode === "blocked") {
+        throw createHttpError(
+          "Direct active skill edits are disabled; provide a candidate targetBundleId.",
+          409,
+          "direct_active_skill_write_blocked"
+        );
+      }
+      return config.activeSkillDir;
+    }
+
+    const bundle = await skillBundleService.getBundle(targetBundleId);
+    if (!bundle) {
+      throw createHttpError("Skill bundle not found", 404, "skill_bundle_not_found", { targetBundleId });
+    }
+    if ((directMode === "block" || directMode === "blocked") && bundle.status === "active") {
+      throw createHttpError(
+        "Direct active skill edits are disabled; targetBundleId must point to a candidate bundle.",
+        409,
+        "direct_active_skill_write_blocked",
+        { targetBundleId }
+      );
+    }
+    return skillBundleService.getSkillDir(targetBundleId);
+  }
 
   const upload = multer({
     storage: multer.diskStorage({
@@ -1017,6 +1055,15 @@ export async function createApp() {
     }
   });
 
+  app.post("/api/skill-work-orders/:workOrderId/items/:itemId/stage", async (req, res, next) => {
+    try {
+      const result = await skillWorkOrderService.stageItem(req.params.workOrderId, req.params.itemId, req.body || {});
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/skill-work-orders/:workOrderId/items/:itemId/apply", async (req, res, next) => {
     try {
       const result = await skillWorkOrderService.applyItem(req.params.workOrderId, req.params.itemId, req.body || {});
@@ -1094,7 +1141,8 @@ export async function createApp() {
 
   app.post("/api/skill-items", async (req, res, next) => {
     try {
-      res.status(201).json(await skillManagementService.createSkillItem(req.body || {}));
+      const skillDir = await resolveSkillItemWriteDir(req);
+      res.status(201).json(await skillManagementService.createSkillItem(req.body || {}, skillDir));
     } catch (error) {
       next(error);
     }
@@ -1102,7 +1150,8 @@ export async function createApp() {
 
   app.patch("/api/skill-items/:skillCode", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.updateSkillItem(req.params.skillCode, req.body || {}));
+      const skillDir = await resolveSkillItemWriteDir(req);
+      res.json(await skillManagementService.updateSkillItem(req.params.skillCode, req.body || {}, skillDir));
     } catch (error) {
       next(error);
     }
@@ -1110,7 +1159,8 @@ export async function createApp() {
 
   app.delete("/api/skill-items/:skillCode", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.deleteSkillItem(req.params.skillCode));
+      const skillDir = await resolveSkillItemWriteDir(req);
+      res.json(await skillManagementService.deleteSkillItem(req.params.skillCode, skillDir));
     } catch (error) {
       next(error);
     }
@@ -1118,7 +1168,8 @@ export async function createApp() {
 
   app.post("/api/skill-items/:skillCode/reorder", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.reorderSkillItem(req.params.skillCode, req.body || {}));
+      const skillDir = await resolveSkillItemWriteDir(req);
+      res.json(await skillManagementService.reorderSkillItem(req.params.skillCode, req.body || {}, skillDir));
     } catch (error) {
       next(error);
     }
@@ -1152,6 +1203,67 @@ export async function createApp() {
         compiledPrompt: pack.__compiledPrompt || "",
         compiledSkillPack: pack.__compiledSkillPack || null
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/skill-bundles", async (_req, res, next) => {
+    try {
+      const activeBundle = await skillBundleService.getActiveBundle();
+      const bundles = await skillBundleService.listBundles();
+      res.json({ activeBundle, bundles });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-bundles/drafts", async (req, res, next) => {
+    try {
+      const bundle = await skillBundleService.createDraftBundle({
+        baseBundleId: req.body?.baseBundleId || "",
+        changeSummary: req.body?.changeSummary || "Manual draft skill bundle.",
+        createdBy: req.body?.createdBy || "web-ui",
+        sourceType: req.body?.sourceType || "manual_draft"
+      });
+      res.status(201).json(bundle);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-bundles/:bundleId/release", async (req, res, next) => {
+    try {
+      res.json(
+        await skillBundleService.releaseBundle(req.params.bundleId, {
+          evaluationSummary: req.body?.evaluationSummary || null,
+          releasedBy: req.body?.releasedBy || "web-ui",
+          force: Boolean(req.body?.force)
+        })
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-bundles/:bundleId/rollback", async (req, res, next) => {
+    try {
+      res.json(await skillBundleService.rollbackBundle(req.params.bundleId, {
+        reason: req.body?.reason || ""
+      }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/skill-bundles/:bundleId/fork", async (req, res, next) => {
+    try {
+      const bundle = await skillBundleService.forkBundle(req.params.bundleId, {
+        baseBundleId: req.body?.baseBundleId || "",
+        changeSummary: req.body?.changeSummary || "",
+        createdBy: req.body?.createdBy || "web-ui"
+      });
+      res.status(201).json(bundle);
     } catch (error) {
       next(error);
     }
@@ -1312,8 +1424,11 @@ export async function createApp() {
   });
 
   app.use((error, _req, res, _next) => {
-    console.error(error);
-    res.status(error.statusCode || 500).json({
+    const statusCode = error.statusCode || 500;
+    if (statusCode >= 500) {
+      console.error(error);
+    }
+    res.status(statusCode).json({
       error: error.message || "Internal server error",
       code: error.code || "internal_error",
       details: error.details || null

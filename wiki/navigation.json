@@ -29,10 +29,10 @@
         {
           "slug": "quick-start",
           "title": "快速开始",
-          "summary": "认识工程、模块、资产、生成任务和已采纳结果这些核心概念。",
+          "summary": "从创建工程、创建模块、选择 Module Skill 或冷启动，到开始一次软件需求生成。",
           "audience": "系统使用者",
           "status": "stable",
-          "lastReviewed": "2026-04-17",
+          "lastReviewed": "2026-04-24",
           "relatedPages": [
             "project-module-workspace",
             "faq-current-limits"

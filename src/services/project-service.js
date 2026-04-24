@@ -244,6 +244,7 @@ function normalizeTask(task = {}) {
     inputAssetIds: Array.isArray(task.inputAssetIds) ? task.inputAssetIds : [],
     uploadedAssetIds: Array.isArray(task.uploadedAssetIds) ? task.uploadedAssetIds : [],
     manualTitleOutline: normalizeTaskManualTitleOutline(task.manualTitleOutline),
+    skillVersion: normalizeSkillVersionRef(task.skillVersion),
     resultItems: Array.isArray(task.resultItems) ? task.resultItems.map(normalizeTaskResultItem) : [],
     extractions: Array.isArray(task.extractions) ? task.extractions : [],
     traces: Array.isArray(task.traces) ? task.traces : [],
@@ -256,6 +257,25 @@ function normalizeTask(task = {}) {
     metrics: normalizeTaskMetrics(task.metrics),
     debug: normalizeTaskDebug(task.debug),
     errorMessage: String(task.errorMessage || "").trim()
+  };
+}
+
+function normalizeSkillVersionRef(ref = {}) {
+  if (!ref || typeof ref !== "object") {
+    return null;
+  }
+  const bundleId = String(ref.bundleId || ref.id || "").trim();
+  if (!bundleId) {
+    return null;
+  }
+  return {
+    bundleId,
+    baseBundleId: String(ref.baseBundleId || "").trim(),
+    version: String(ref.version || "").trim(),
+    status: String(ref.status || "").trim(),
+    snapshotHash: String(ref.snapshotHash || "").trim(),
+    ruleIndexVersion: String(ref.ruleIndexVersion || "").trim(),
+    sqliteSnapshotPath: String(ref.sqliteSnapshotPath || "").trim()
   };
 }
 
@@ -1204,6 +1224,9 @@ export class ProjectService {
       }
       if (Object.hasOwn(updates, "llmProfile")) {
         task.llmProfile = updates.llmProfile || null;
+      }
+      if (Object.hasOwn(updates, "skillVersion")) {
+        task.skillVersion = normalizeSkillVersionRef(updates.skillVersion);
       }
       if (typeof updates.summary === "string") {
         task.summary = updates.summary;

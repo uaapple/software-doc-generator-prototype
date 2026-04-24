@@ -37,6 +37,7 @@
           <div class="view-tabs" role="tablist" aria-label="技能管理视图">
             <button id="registry-view-tab" type="button" class="view-tab is-active" role="tab" aria-selected="true">技能条目</button>
             <button id="work-order-view-tab" type="button" class="view-tab" role="tab" aria-selected="false">技能工单</button>
+            <button id="skill-version-view-tab" type="button" class="view-tab" role="tab" aria-selected="false">技能版本</button>
           </div>
           <button id="refresh-button" type="button" class="secondary-button">刷新列表</button>
         </div>
@@ -121,7 +122,7 @@
               <span class="section-index">工单</span>
               <div>
                 <h2>Fallback 技能工单</h2>
-                <p>每次 fallback/replay 任务会生成一张技能工单，在这里逐条确认并直接写入 active 技能条目。</p>
+                <p>每次 fallback/replay 任务会生成一张技能工单，在这里逐条确认并加入候选技能版本。</p>
               </div>
             </div>
             <div id="work-order-summary" class="skill-summary-grid"></div>
@@ -144,8 +145,8 @@
                   <option value="">全部</option>
                   <option value="pending_review">待审阅</option>
                   <option value="partially_reviewed">部分已审阅</option>
-                  <option value="partially_applied">部分已应用</option>
-                  <option value="applied">已应用</option>
+                  <option value="partially_applied">部分已加入候选</option>
+                  <option value="applied">已加入候选</option>
                   <option value="closed">已关闭</option>
                 </select>
               </label>
@@ -159,6 +160,38 @@
 
           <section id="work-order-detail" class="work-order-detail empty-state">
             选择一张工单查看详情。
+          </section>
+        </section>
+      </section>
+
+      <section id="skill-version-view" class="skill-version-view" hidden>
+        <section class="panel">
+          <div class="card skill-overview-card">
+            <div class="section-head compact-head">
+              <span class="section-index">版本</span>
+              <div>
+                <h2>技能库版本</h2>
+                <p>Active、Candidate、Archived 与回滚版本在这里集中审阅，发布会切换新任务默认技能库。</p>
+              </div>
+            </div>
+            <div id="skill-version-summary" class="skill-summary-grid"></div>
+          </div>
+        </section>
+
+        <section class="card skill-version-workspace">
+          <aside class="skill-version-list-pane">
+            <div class="section-head compact-head">
+              <span class="section-index">Bundle</span>
+              <div>
+                <h2>版本列表</h2>
+                <p>按更新时间排序，候选版本可发布，历史版本可回滚或 fork。</p>
+              </div>
+            </div>
+            <div id="skill-version-list" class="skill-version-list"></div>
+          </aside>
+
+          <section id="skill-version-detail" class="skill-version-detail empty-state">
+            选择一个技能版本查看详情。
           </section>
         </section>
       </section>

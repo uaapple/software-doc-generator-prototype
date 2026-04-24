@@ -68,6 +68,7 @@ export const config = {
   skillRefinementEvaluationDir: path.join(rootDir, "data", "skill-refinement", "evaluations"),
   skillRefinementAuditDir: path.join(rootDir, "data", "skill-refinement", "audit"),
   skillRefinementBundleMetaDir: path.join(rootDir, "data", "skill-refinement", "bundles"),
+  skillBundleSnapshotDir: path.join(rootDir, "data", "skill-refinement", "bundle-snapshots"),
   skillRefinementUploadDir: path.join(rootDir, "data", "skill-refinement", "uploads"),
   activeSkillBundlePointerPath: path.join(rootDir, "data", "skill-refinement", "active-bundle.json"),
   skillRuleDir: path.join(rootDir, "data", "skill-rules"),
@@ -81,6 +82,9 @@ export const config = {
   templateDir: path.join(rootDir, "templates"),
   templatePath: path.join(rootDir, "templates", "software-requirement-template.json"),
   skillDir: path.join(rootDir, "skills", "active"),
+  skillVersioning: {
+    directActiveSkillItemWrites: process.env.SKILL_DIRECT_ACTIVE_WRITES || "allow"
+  },
   hermes: {
     transport: process.env.HERMES_TRANSPORT || "cli",
     host: process.env.HERMES_HOST || "127.0.0.1",

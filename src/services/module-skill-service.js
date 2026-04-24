@@ -363,9 +363,12 @@ export class ModuleSkillService {
     const candidates = await this.listRegisteredModuleProfiles(skillDir);
     return candidates
       .map((candidate) => ({ ...candidate, ...scoreCandidate(candidate, input) }))
-      .filter((candidate) => candidate.score > 0)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, 5)
+      .sort((left, right) => {
+        if ((right.score || 0) !== (left.score || 0)) {
+          return (right.score || 0) - (left.score || 0);
+        }
+        return String(left.key || "").localeCompare(String(right.key || ""));
+      })
       .map((candidate) => ({
         key: candidate.key,
         domain: candidate.domain,

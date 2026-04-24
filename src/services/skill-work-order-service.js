@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { readJson, writeJson } from "./storage.js";
 import { SkillManagementService } from "./skill-management-service.js";
+import { SkillBundleService } from "./skill-bundle-service.js";
 import { isKindAllowedForLayer } from "../../public/skill-kind-matrix.js";
 
 function now() {
@@ -39,7 +40,7 @@ function buildWorkOrderTitle(task = {}) {
 }
 
 function normalizeItemReviewStatus(value = "") {
-  if (["pending", "accepted", "edited", "rejected", "applied"].includes(String(value || "").trim())) {
+  if (["pending", "accepted", "edited", "rejected", "applied", "staged"].includes(String(value || "").trim())) {
     return String(value || "").trim();
   }
   return "pending";
@@ -53,7 +54,7 @@ function computeItemStats(items = [], validatorSuggestions = []) {
     validatorOnly: Array.isArray(validatorSuggestions) ? validatorSuggestions.length : 0,
     accepted: items.filter((item) => item.reviewStatus === "accepted" || item.reviewStatus === "edited").length,
     rejected: items.filter((item) => item.reviewStatus === "rejected").length,
-    applied: items.filter((item) => item.reviewStatus === "applied").length
+    applied: items.filter((item) => item.reviewStatus === "applied" || item.reviewStatus === "staged").length
   };
   return stats;
 }
@@ -62,8 +63,8 @@ function computeWorkOrderStatus(items = []) {
   if (!items.length) return "pending_review";
   const allPending = items.every((item) => item.reviewStatus === "pending");
   if (allPending) return "pending_review";
-  const appliedItems = items.filter((item) => item.reviewStatus === "applied");
-  const allResolved = items.every((item) => item.reviewStatus === "rejected" || item.reviewStatus === "applied");
+  const appliedItems = items.filter((item) => item.reviewStatus === "applied" || item.reviewStatus === "staged");
+  const allResolved = items.every((item) => item.reviewStatus === "rejected" || item.reviewStatus === "applied" || item.reviewStatus === "staged");
   if (allResolved && appliedItems.length === items.length) return "applied";
   if (allResolved && appliedItems.length > 0) return "partially_applied";
   if (allResolved) return "partially_reviewed";
@@ -98,6 +99,7 @@ function buildSourceTaskSummary(task = {}) {
     projectName: task.projectName || "",
     documentType: task.materialPack?.moduleContext?.documentType || "",
     llmProfileId: task.llmProfileId || "",
+    skillVersion: cloneJson(task.skillVersion || task.materialPack?.skillVersion || null),
     createdAt: task.createdAt || "",
     updatedAt: task.updatedAt || "",
     sourceRejectionIds: task.sourceRejectionIds || []
@@ -290,6 +292,7 @@ function mergeAppliedProvenance(base = {}, extra = {}) {
 export class SkillWorkOrderService {
   constructor() {
     this.skillManagementService = new SkillManagementService();
+    this.skillBundleService = new SkillBundleService();
   }
 
   async listReplayTasks() {
@@ -458,6 +461,7 @@ export class SkillWorkOrderService {
         id: task.llmProfileId || "",
         label: task.llmProfileId || "local-fallback"
       },
+      skillVersion: cloneJson(task.skillVersion || task.materialPack?.skillVersion || null),
       effectiveSkillSnapshot: summarizeSkillSnapshot(task.materialPack),
       status,
       summary: String(generated.summary || task.summary || "").trim(),
@@ -483,7 +487,7 @@ export class SkillWorkOrderService {
     if (!item) {
       throw createManagedError("Skill work order item not found", 404, "skill_work_order_item_not_found", { itemId });
     }
-    if (item.reviewStatus === "applied") {
+    if (item.reviewStatus === "applied" || item.reviewStatus === "staged") {
       throw createManagedError("Applied item cannot be reviewed again", 400, "skill_work_order_item_applied");
     }
 
@@ -526,7 +530,46 @@ export class SkillWorkOrderService {
     return item;
   }
 
-  async applyItem(workOrderId, itemId, payload = {}) {
+  resolveBaseBundleId(workOrder = {}) {
+    return String(
+      workOrder.skillVersion?.bundleId ||
+        workOrder.effectiveSkillSnapshot?.bundleId ||
+        workOrder.sourceTaskSummary?.skillVersion?.bundleId ||
+        ""
+    ).trim();
+  }
+
+  async resolveStagingBundle(workOrder = {}, payload = {}) {
+    const baseBundleId = this.resolveBaseBundleId(workOrder);
+    const requestedBundleId = String(payload.targetBundleId || payload.candidateBundleId || "").trim();
+    const bundle = requestedBundleId
+      ? await this.skillBundleService.getBundle(requestedBundleId)
+      : await this.skillBundleService.findOrCreateWorkOrderCandidate({
+          baseBundleId,
+          workOrderId: workOrder.id,
+          changeSummary: `Staged changes from work order ${workOrder.id}.`
+        });
+    if (!bundle) {
+      throw createManagedError("Skill bundle not found", 404, "skill_bundle_not_found", { bundleId: requestedBundleId });
+    }
+    if (bundle.status !== "candidate") {
+      throw createManagedError("Work order items can only be staged into candidate bundles", 400, "skill_bundle_not_candidate", {
+        bundleId: bundle.id,
+        status: bundle.status
+      });
+    }
+    if (baseBundleId && bundle.baseBundleId !== baseBundleId) {
+      throw createManagedError("Work order base bundle does not match candidate base bundle", 409, "skill_bundle_base_mismatch", {
+        workOrderId: workOrder.id,
+        workOrderBaseBundleId: baseBundleId,
+        candidateBundleId: bundle.id,
+        candidateBaseBundleId: bundle.baseBundleId
+      });
+    }
+    return bundle;
+  }
+
+  async stageItem(workOrderId, itemId, payload = {}) {
     const workOrder = await this.getWorkOrder(workOrderId);
     if (!workOrder) {
       throw createManagedError("Skill work order not found", 404, "skill_work_order_not_found", { workOrderId });
@@ -549,7 +592,7 @@ export class SkillWorkOrderService {
     const targetKind = String(editedPayload.targetKind || item.targetKind || "").trim();
     const title = String(editedPayload.title || item.title || "").trim();
     const afterContent = String(editedPayload.afterContent || editedPayload.recommendedSkillText || item.afterContent || item.recommendedSkillText || "").trim();
-    const appliedBy = String(payload.appliedBy || "system").trim() || "system";
+    const stagedBy = String(payload.stagedBy || payload.appliedBy || "system").trim() || "system";
 
     if (!afterContent) {
       throw createManagedError("Applying a skill work order item requires non-empty after content", 400, "empty_after_content", {
@@ -572,6 +615,10 @@ export class SkillWorkOrderService {
       rejectionIds: (workOrder.evidenceRefs || []).map((entry) => entry.refId).filter(Boolean)
     };
 
+    const candidateBundle = await this.resolveStagingBundle(workOrder, payload);
+    const candidateSkillDir = await this.skillBundleService.getSkillDir(candidateBundle.id);
+    provenance.stagedBundleId = candidateBundle.id;
+
     let beforeSnapshot = null;
     let afterSnapshot = null;
     let appliedSkillCode = targetSkillCode;
@@ -581,7 +628,7 @@ export class SkillWorkOrderService {
         throw createManagedError("Modify-existing item requires targetSkillCode", 400, "missing_target_skill_code", { itemId });
       }
 
-      const detail = await this.skillManagementService.getSkillItem(targetSkillCode);
+      const detail = await this.skillManagementService.getSkillItem(targetSkillCode, candidateSkillDir);
       const current = detail.item;
       beforeSnapshot = cloneJson(current);
       if (current.layer !== targetLayer || current.profileKey !== targetProfileKey || current.kind !== targetKind) {
@@ -596,11 +643,11 @@ export class SkillWorkOrderService {
         content: afterContent,
         provenance: mergeAppliedProvenance(current.provenance, provenance),
         review: {
-          reviewer: appliedBy,
-          note: `Applied from work order ${workOrderId}`,
+          reviewer: stagedBy,
+          note: `Staged from work order ${workOrderId}`,
           updatedAt: now()
         }
-      });
+      }, candidateSkillDir);
     } else {
       afterSnapshot = await this.skillManagementService.createSkillItem({
         layer: targetLayer,
@@ -610,32 +657,52 @@ export class SkillWorkOrderService {
         content: afterContent,
         provenance,
         review: {
-          reviewer: appliedBy,
+          reviewer: stagedBy,
           note: `Created from work order ${workOrderId}`,
           updatedAt: now()
         }
-      });
+      }, candidateSkillDir);
       appliedSkillCode = afterSnapshot.skillCode;
     }
 
-    item.reviewStatus = "applied";
-    item.appliedAt = now();
-    item.appliedBy = appliedBy;
+    const stagedAt = now();
+    item.reviewStatus = "staged";
+    item.stagedAt = stagedAt;
+    item.stagedBy = stagedBy;
+    item.stagedBundleId = candidateBundle.id;
+    item.appliedAt = stagedAt;
+    item.appliedBy = stagedBy;
     item.appliedChange = {
       mode: item.conclusionType === "modify_existing" ? "update" : "create",
       skillCode: appliedSkillCode,
       beforeSnapshot,
-      afterSnapshot: cloneJson(afterSnapshot)
+      afterSnapshot: cloneJson(afterSnapshot),
+      stagedBundleId: candidateBundle.id
     };
     item.updatedAt = now();
     workOrder.itemStats = computeItemStats(workOrder.items || [], workOrder.validatorSuggestions || []);
     workOrder.status = computeWorkOrderStatus(workOrder.items || []);
     workOrder.updatedAt = now();
     await writeJson(getWorkOrderPath(workOrderId), workOrder);
+    const refreshedCandidateBundle = await this.skillBundleService.recordStagedWorkOrderItem(candidateBundle.id, {
+      workOrderId,
+      workOrderItemId: itemId,
+      sourceTaskId: workOrder.sourceTaskId,
+      mode: item.appliedChange.mode,
+      skillCode: appliedSkillCode,
+      title,
+      stagedBy,
+      stagedAt
+    });
     return {
       workOrder,
-      item
+      item,
+      candidateBundle: refreshedCandidateBundle
     };
+  }
+
+  async applyItem(workOrderId, itemId, payload = {}) {
+    return this.stageItem(workOrderId, itemId, payload);
   }
 
   async closeWorkOrder(workOrderId, payload = {}) {
