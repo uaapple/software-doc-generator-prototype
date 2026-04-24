@@ -1,5 +1,6 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { SkillLoader } from "./skill-loader.js";
 import { SkillBundleService } from "./skill-bundle-service.js";
 import { TemplateService } from "./template-service.js";
@@ -7,8 +8,9 @@ import { ExtractionService } from "./extraction-service.js";
 import { LlmService } from "./llm-service.js";
 import { ValidationService } from "./validation-service.js";
 import { LlmProfileService } from "./llm-profile-service.js";
-import { ModuleSkillService } from "./module-skill-service.js";
+import { ModuleSkillService, canonicalizeBootstrapAssetRole } from "./module-skill-service.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
+import { SpreadsheetExtractionService } from "./spreadsheet-extraction-service.js";
 import { recallSkillInventory, tokenize } from "./software-requirement-agent-shared.js";
 import { writeJson } from "./storage.js";
 import { config } from "../config.js";
@@ -17,6 +19,126 @@ function normalizeDocumentType(value) {
   if (value === "detail_design") return "detail_design";
   if (value === "hil_test_case") return "hil_test_case";
   return "software_requirement";
+}
+
+function normalizeDocumentExtractionType(value) {
+  if (value === "system_requirement") return "system_requirement";
+  if (value === "detail_design") return "detail_design";
+  if (value === "hil_test_case") return "hil_test_case";
+  return "software_requirement";
+}
+
+function getDocumentExtractionTypeLabel(documentType) {
+  if (documentType === "system_requirement") return "系统需求";
+  if (documentType === "detail_design") return "详细设计";
+  if (documentType === "hil_test_case") return "HIL测试用例";
+  return "软件需求";
+}
+
+function buildExtractionTaskSummary(documentType) {
+  return `正在提取${getDocumentExtractionTypeLabel(documentType)}`;
+}
+
+function escapeMarkdownTableCell(value = "") {
+  return String(value || "").replaceAll("|", "\\|").replace(/\r?\n/g, "<br>");
+}
+
+function normalizeTextBlock(value = "") {
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+}
+
+function buildHilSpreadsheetMarkdown(moduleName = "", spreadsheetExtraction = null) {
+  const files = Array.isArray(spreadsheetExtraction?.files) ? spreadsheetExtraction.files : [];
+  const cases = files.flatMap((file, fileIndex) =>
+    (file.cases || []).map((item, caseIndex) => ({
+      ...item,
+      sourceFileName: file.originalName || "",
+      sourceSheetName: file.sheetName || "",
+      ordinal: `${fileIndex + 1}.${caseIndex + 1}`,
+      flatIndex: 0
+    }))
+  );
+
+  cases.forEach((item, index) => {
+    item.flatIndex = index + 1;
+  });
+
+  const title = `${String(moduleName || "").trim() || "未命名模块"}-HIL测试用例`;
+  const overviewRows = cases
+    .map(
+      (item) =>
+        `| ${item.flatIndex} | ${escapeMarkdownTableCell(item.title || `用例 ${item.flatIndex}`)} | ${escapeMarkdownTableCell(item.id || "-")} |`
+    )
+    .join("\n");
+
+  const detailBlocks = cases
+    .map((item) => {
+      const meta = [];
+      if (item.id) meta.push(`- 来源ID：\`${item.id}\``);
+      if (item.sourceFileName) meta.push(`- 来源文件：\`${item.sourceFileName}\``);
+      if (item.sourceSheetName) meta.push(`- 来源工作表：\`${item.sourceSheetName}\``);
+
+      return [
+        `### ${item.flatIndex}. ${item.title || `用例 ${item.flatIndex}`}`,
+        "",
+        ...meta,
+        ...(meta.length ? [""] : []),
+        "#### Precondition",
+        "",
+        "```text",
+        normalizeTextBlock(item.precondition) || "(empty)",
+        "```",
+        "",
+        "#### Step Description",
+        "",
+        "```text",
+        normalizeTextBlock(item.stepDescription) || "(empty)",
+        "```",
+        "",
+        "#### Expected Result",
+        "",
+        "```text",
+        normalizeTextBlock(item.expectedResult) || "(empty)",
+        "```"
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  return [
+    `# ${title}`,
+    "",
+    "## 文档信息",
+    "",
+    "- 文档类型：HIL测试用例",
+    "- 来源：Excel 导出提取整理",
+    `- 用例数量：${cases.length}`,
+    "",
+    "## 用例总览",
+    "",
+    "| 序号 | Title | 来源ID |",
+    "| --- | --- | --- |",
+    overviewRows,
+    "",
+    "## 用例详情",
+    "",
+    detailBlocks
+  ]
+    .join("\n")
+    .trim();
+}
+
+function inferExtractionSourceMode(sourceText = "", imageInputs = [], spreadsheetInputs = []) {
+  const hasText = Boolean(String(sourceText || "").trim());
+  const hasImages = Array.isArray(imageInputs) && imageInputs.length > 0;
+  const hasSpreadsheets = Array.isArray(spreadsheetInputs) && spreadsheetInputs.length > 0;
+  const populatedKinds = [hasText, hasImages, hasSpreadsheets].filter(Boolean).length;
+  if (populatedKinds > 1) return "mixed";
+  if (hasSpreadsheets) return "spreadsheet";
+  if (hasImages) return "image";
+  return "text";
 }
 
 function buildTraces(items) {
@@ -35,6 +157,86 @@ function buildRunningSummary(documentType) {
   if (documentType === "detail_design") return "\u6b63\u5728\u751f\u6210\u8be6\u7ec6\u8bbe\u8ba1";
   if (documentType === "hil_test_case") return "\u6b63\u5728\u751f\u6210 HIL \u7528\u4f8b";
   return "\u6b63\u5728\u751f\u6210\u8f6f\u4ef6\u9700\u6c42";
+}
+
+function normalizeTaskIntent(value = "") {
+  return String(value || "").trim() === "module_skill_bootstrap" ? "module_skill_bootstrap" : "generation";
+}
+
+function isModuleSkillBootstrapTask(options = {}) {
+  return normalizeTaskIntent(options.taskIntent) === "module_skill_bootstrap";
+}
+
+function buildTaskSummaryForIntent(documentType, taskIntent = "generation") {
+  if (normalizeTaskIntent(taskIntent) === "module_skill_bootstrap") {
+    if (documentType === "detail_design") return "\u6b63\u5728\u51b7\u542f\u52a8\u8be6\u7ec6\u8bbe\u8ba1 Module Skill";
+    if (documentType === "hil_test_case") return "\u6b63\u5728\u51b7\u542f\u52a8 HIL Module Skill";
+    return "\u6b63\u5728\u51b7\u542f\u52a8\u8f6f\u4ef6\u9700\u6c42 Module Skill";
+  }
+  return buildRunningSummary(documentType);
+}
+
+export function normalizeManualTitleOutline(value = {}) {
+  const candidate =
+    typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value);
+          } catch (_error) {
+            return null;
+          }
+        })()
+      : value;
+
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const normalizedSections = [];
+  for (const section of Array.isArray(candidate.sections) ? candidate.sections : []) {
+    const sectionTitle = String(section?.sectionTitle || section?.title || "").trim();
+    if (!sectionTitle) {
+      continue;
+    }
+
+    const normalizedItems = [];
+    for (const item of Array.isArray(section?.items) ? section.items : []) {
+      const itemTitle = String(item?.itemTitle || item?.title || "").trim();
+      if (!itemTitle) {
+        continue;
+      }
+      normalizedItems.push({ itemTitle });
+    }
+
+    if (normalizedItems.length) {
+      normalizedSections.push({
+        sectionTitle,
+        items: normalizedItems
+      });
+    }
+  }
+
+  if (!normalizedSections.length) {
+    return null;
+  }
+
+  return {
+    sections: normalizedSections
+  };
+}
+
+function flattenManualTitleOutline(value = {}) {
+  const normalized = normalizeManualTitleOutline(value);
+  if (!normalized) {
+    return [];
+  }
+
+  return normalized.sections.flatMap((section) =>
+    section.items.map((item) => ({
+      sectionTitle: section.sectionTitle,
+      itemTitle: item.itemTitle
+    }))
+  );
 }
 
 function countEvidence(extractions = []) {
@@ -253,13 +455,58 @@ function assertValidOutline(outline = {}) {
   }
 }
 
-function buildAssetManifest(inputAssets = []) {
+function assertValidModuleBootstrapAnalysis(analysis = {}) {
+  if (!analysis || typeof analysis !== "object") {
+    throw new Error("Hermes module_bootstrap_analyze must return an analysis object");
+  }
+  const summary = String(analysis.summary || "").trim();
+  const themes = Array.isArray(analysis.themes) ? analysis.themes : [];
+  if (!summary && !themes.length) {
+    throw new Error("Hermes module_bootstrap_analyze must return a summary or at least one theme");
+  }
+  for (const theme of themes) {
+    if (!String(theme?.title || "").trim()) {
+      throw new Error("Hermes module_bootstrap_analyze theme is missing title");
+    }
+    if (theme.anchorIds && !Array.isArray(theme.anchorIds)) {
+      throw new Error("Hermes module_bootstrap_analyze theme anchorIds must be an array");
+    }
+  }
+}
+
+function assertValidModuleBootstrapKnowledge(knowledge = {}) {
+  if (!knowledge || typeof knowledge !== "object") {
+    throw new Error("Hermes module_bootstrap_generate must return a knowledge object");
+  }
+  const hasKnowledgePayload =
+    Array.isArray(knowledge.generationPriorities) ||
+    Array.isArray(knowledge.examples) ||
+    Array.isArray(knowledge.ruleHints) ||
+    Array.isArray(knowledge.antiPatterns);
+  if (!hasKnowledgePayload) {
+    throw new Error("Hermes module_bootstrap_generate must return compatible module knowledge fields");
+  }
+}
+
+function createModuleSkillInitializationError(details = {}) {
+  const error = new Error("Module skill initialization required before generation.");
+  error.statusCode = 409;
+  error.code = "module_skill_initialization_required";
+  error.details = details;
+  return error;
+}
+
+function buildAssetManifest(inputAssets = [], documentType = "software_requirement") {
   return inputAssets.map((asset) => ({
     assetId: asset.id || "",
     fileName: asset.originalName || asset.storedName || asset.relativePath || "",
-    fileRole: asset.role || asset.fileRole || "",
+    fileRole: canonicalizeBootstrapAssetRole(asset.role || asset.fileRole || "", documentType),
     absolutePath: asset.absolutePath || ""
   }));
+}
+
+function isDisallowedFormalSoftwareRequirementAsset(asset = {}) {
+  return canonicalizeBootstrapAssetRole(asset.role || asset.fileRole || "", "software_requirement") === "reference_requirement_example";
 }
 
 function buildAnchorsFromExtractions(extractions = [], assetManifest = []) {
@@ -362,7 +609,7 @@ function assertValidResultItems(resultItems = [], anchors = []) {
   const anchorIds = new Set(anchors.map((anchor) => anchor.anchorId).filter(Boolean));
 
   for (const item of resultItems) {
-    if (!item?.title || !item?.requirementText || !Array.isArray(item.sourceAnchorIds) || !item.sourceAnchorIds.length) {
+    if (!String(item?.requirementText || "").trim() || !Array.isArray(item.sourceAnchorIds) || !item.sourceAnchorIds.length) {
       throw new Error("Hermes generated result item is missing required fields");
     }
     for (const sourceAnchorId of item.sourceAnchorIds) {
@@ -370,6 +617,20 @@ function assertValidResultItems(resultItems = [], anchors = []) {
         throw new Error("Hermes generated a sourceAnchorId outside the anchor index set");
       }
     }
+  }
+}
+
+function assertValidExtractedDocument(document = {}, targetDocumentType = "software_requirement") {
+  const normalizedTarget = normalizeDocumentExtractionType(targetDocumentType);
+  if (!document || typeof document !== "object") {
+    throw new Error("Hermes document_extract_generate must return an object");
+  }
+  if (!String(document.markdown || "").trim()) {
+    throw new Error("Hermes document_extract_generate must return markdown content");
+  }
+  const artifactType = normalizeDocumentExtractionType(document.targetDocumentType);
+  if (artifactType !== normalizedTarget) {
+    throw new Error("Hermes document_extract_generate returned an unexpected targetDocumentType");
   }
 }
 
@@ -406,6 +667,22 @@ function formatElapsedSeconds(elapsedMs = 0) {
 }
 
 function buildHermesStepDescriptor(stepType = "") {
+  if (stepType === "module_bootstrap_analyze") {
+    return {
+      stage: "module_bootstrap_analyze",
+      runningLabel: "正在分析模块输入并提炼模块主题",
+      actionLabel: "分析模块输入并提炼模块主题",
+      runningPercent: 60
+    };
+  }
+  if (stepType === "module_bootstrap_generate") {
+    return {
+      stage: "module_bootstrap_generate",
+      runningLabel: "正在生成模块 Skill",
+      actionLabel: "生成模块 Skill",
+      runningPercent: 64
+    };
+  }
   if (stepType === "outline_build") {
     return {
       stage: "outline_build",
@@ -422,6 +699,14 @@ function buildHermesStepDescriptor(stepType = "") {
       runningPercent: 82
     };
   }
+  if (stepType === "document_extract_generate") {
+    return {
+      stage: "document_extract_generate",
+      runningLabel: "正在提取文档内容",
+      actionLabel: "提取文档内容",
+      runningPercent: 68
+    };
+  }
   return {
     stage: stepType || "agent_runtime",
     runningLabel: "正在调用本机 Hermes",
@@ -431,8 +716,9 @@ function buildHermesStepDescriptor(stepType = "") {
 }
 
 export class PipelineService {
-  constructor(projectService) {
+  constructor(projectService, options = {}) {
     this.projectService = projectService;
+    this.hermesTaskQueueService = options.hermesTaskQueueService || null;
     this.skillLoader = new SkillLoader();
     this.templateService = new TemplateService();
     this.extractionService = new ExtractionService();
@@ -441,6 +727,7 @@ export class PipelineService {
     this.skillBundleService = new SkillBundleService();
     this.llmProfileService = new LlmProfileService();
     this.moduleSkillService = new ModuleSkillService();
+    this.spreadsheetExtractionService = new SpreadsheetExtractionService();
     this.hermesAgentClient = new HermesAgentClient();
   }
 
@@ -504,31 +791,33 @@ export class PipelineService {
         };
 
     const skillDir = await this.skillBundleService.getSkillDir(options.skillBundleId);
-    let composedSkills = null;
-    try {
-      composedSkills = await this.skillLoader.loadFromRegistryContext(
-        {
-          documentType: "software_requirement",
-          domain: module.domain || "embedded_vcu",
-          moduleSkillKey: module.moduleSkillKey || ""
-        },
-        skillDir
-      );
-    } catch (_error) {
-      composedSkills = await this.skillLoader.loadForContext(
-        {
-          documentType: "software_requirement",
-          domain: module.domain || "embedded_vcu",
-          moduleSkillKey: module.moduleSkillKey || ""
-        },
-        skillDir
-      );
-    }
+    const loadSoftwareRequirementSkills = async () => {
+      try {
+        return await this.skillLoader.loadFromRegistryContext(
+          {
+            documentType: "software_requirement",
+            domain: module.domain || "embedded_vcu",
+            moduleSkillKey: module.moduleSkillKey || ""
+          },
+          skillDir
+        );
+      } catch (_error) {
+        return this.skillLoader.loadForContext(
+          {
+            documentType: "software_requirement",
+            domain: module.domain || "embedded_vcu",
+            moduleSkillKey: module.moduleSkillKey || ""
+          },
+          skillDir
+        );
+      }
+    };
+    let composedSkills = await loadSoftwareRequirementSkills();
 
     const template = await this.templateService.getTemplate("software_requirement");
-    const domainKnowledge = composedSkills["domain-knowledge.json"] || {};
-    const effectiveSkillInventory = buildSkillInventory(composedSkills);
-    const assetManifest = buildAssetManifest(inputAssets);
+    let domainKnowledge = composedSkills["domain-knowledge.json"] || {};
+    let effectiveSkillInventory = buildSkillInventory(composedSkills);
+    const assetManifest = buildAssetManifest(inputAssets, "software_requirement");
     let taskSkillBundle = await buildTaskSkillBundle({
       projectId,
       moduleId,
@@ -536,6 +825,14 @@ export class PipelineService {
       effectiveSkillInventory,
       recommendedSkillCodes: []
     });
+    const isBootstrapTask = isModuleSkillBootstrapTask(options);
+    const requiredTitleOutline = isBootstrapTask ? null : normalizeManualTitleOutline(options.manualTitleOutline);
+    const requiredLeafOutline = requiredTitleOutline ? flattenManualTitleOutline(requiredTitleOutline) : [];
+    const requiredLeafCount = requiredLeafOutline.length;
+    if (!isBootstrapTask && (!requiredTitleOutline || !requiredLeafCount)) {
+      throw new Error("manualTitleOutline is required for software requirement generation");
+    }
+    const readiness = await this.moduleSkillService.inspectModule(project, module, "software_requirement", skillDir);
 
     await updateTaskProgress(
       {
@@ -550,7 +847,8 @@ export class PipelineService {
         debug: {
           artifacts: {
             assetManifest,
-            taskSkillBundle
+            taskSkillBundle,
+            requiredTitleOutline
           }
         },
         timelineEntry: {
@@ -583,6 +881,17 @@ export class PipelineService {
         }
       }
     );
+
+    if (readiness.requiresExplicitBootstrap && !isModuleSkillBootstrapTask(options)) {
+      const error = createModuleSkillInitializationError(readiness);
+      error.code = "module_skill_bootstrap_required";
+      error.message = "This module requires an explicit module skill bootstrap before generation.";
+      throw error;
+    }
+
+    if (!readiness.hasUsableModuleSkill && readiness.missingBootstrapAssets.length) {
+      throw createModuleSkillInitializationError(readiness);
+    }
 
     if (!effectiveSkillInventory.items.length) {
       throw new Error("当前 software_requirement skill inventory 为空，无法继续执行 Hermes 生成链路");
@@ -818,7 +1127,7 @@ export class PipelineService {
       }
     );
 
-    const recalledAtoms = recallSkillInventory(effectiveSkillInventory, anchors);
+    let recalledAtoms = recallSkillInventory(effectiveSkillInventory, anchors);
     assertValidRecalledAtoms(recalledAtoms, effectiveSkillInventory);
     taskSkillBundle = {
       ...taskSkillBundle,
@@ -851,6 +1160,192 @@ export class PipelineService {
       }
     );
 
+    if (!readiness.hasUsableModuleSkill) {
+      await updateTaskProgress(
+        {
+          stage: "module_bootstrap",
+          label: "正在提炼模块 Skill",
+          message: "当前文档类型缺少 module skill，正在通过 Hermes 冷启动提炼模块级写作能力。",
+          percent: 58
+        },
+        {
+          timelineEntry: {
+            stage: "module_bootstrap",
+            label: "开始模块冷启动",
+            message: "将先通过 Hermes 提炼当前文档类型的 module skill，再继续正式软件需求生成。",
+            level: "info"
+          }
+        }
+      );
+
+      const moduleBootstrapAnalysis = await runHermesStep("module_bootstrap_analyze", {
+        project: contextProject,
+        assets: assetManifest,
+        anchors,
+        recalledAtoms
+      });
+      assertValidModuleBootstrapAnalysis(moduleBootstrapAnalysis);
+
+      await updateTaskProgress(
+        {
+          stage: "module_bootstrap_analyze",
+          label: "正在分析模块输入并提炼模块主题",
+          message: `Hermes 已完成模块冷启动分析，识别 ${moduleBootstrapAnalysis.themes?.length || 0} 个核心主题。`,
+          percent: 62
+        },
+        {
+          debug: {
+            artifacts: {
+              moduleBootstrapAnalysis
+            }
+          },
+          timelineEntry: {
+            stage: "module_bootstrap_analyze",
+            label: "完成模块冷启动分析",
+            message: "Hermes 已输出模块主题、写作焦点和注意事项。",
+            level: "info"
+          }
+        }
+      );
+
+      const moduleBootstrapKnowledge = await runHermesStep("module_bootstrap_generate", {
+        project: contextProject,
+        assets: assetManifest,
+        anchors,
+        recalledAtoms,
+        analysis: moduleBootstrapAnalysis
+      });
+      assertValidModuleBootstrapKnowledge(moduleBootstrapKnowledge);
+
+      await updateTaskProgress(
+        {
+          stage: "module_bootstrap_generate",
+          label: "正在生成模块 Skill",
+          message: "Hermes 已生成兼容现有 skill 库格式的 module knowledge，正在准备写入。",
+          percent: 65
+        },
+        {
+          debug: {
+            artifacts: {
+              moduleBootstrapAnalysis,
+              moduleBootstrapKnowledge
+            }
+          },
+          timelineEntry: {
+            stage: "module_bootstrap_generate",
+            label: "生成模块 Skill",
+            message: "Hermes 已输出当前文档类型的 module skill 知识包。",
+            level: "info"
+          }
+        }
+      );
+
+      await updateTaskProgress(
+        {
+          stage: "module_profile_persist",
+          label: "正在写入模块 Skill",
+          message: "正在把 Hermes 冷启动结果写回 module skill 库，并刷新本次任务 skill 包。",
+          percent: 67
+        },
+        {
+          timelineEntry: {
+            stage: "module_profile_persist",
+            label: "写入模块 Skill",
+            message: "正在持久化当前文档类型的 module skill，并刷新正式生成所需的 skill bundle。",
+            level: "info"
+          }
+        }
+      );
+
+      await this.moduleSkillService.persistBootstrappedKnowledge(module, "software_requirement", moduleBootstrapKnowledge, skillDir);
+      await this.projectService.updateModuleSkillState(projectId, moduleId, {
+        skillStatus: "bootstrapped",
+        skillSource: {
+          type: "bootstrap",
+          documentType: "software_requirement",
+          strategy: "hermes_agent",
+          llmProfileName: llmProfile.name || ""
+        },
+        seededAt: new Date().toISOString()
+      });
+
+      composedSkills = await loadSoftwareRequirementSkills();
+      domainKnowledge = composedSkills["domain-knowledge.json"] || {};
+      effectiveSkillInventory = buildSkillInventory(composedSkills);
+      if (!effectiveSkillInventory.items.length) {
+        throw new Error("模块冷启动完成后，software_requirement skill inventory 仍为空，无法继续执行 Hermes 生成链路");
+      }
+
+      taskSkillBundle = await buildTaskSkillBundle({
+        projectId,
+        moduleId,
+        taskId,
+        effectiveSkillInventory,
+        recommendedSkillCodes: []
+      });
+      recalledAtoms = recallSkillInventory(effectiveSkillInventory, anchors);
+      assertValidRecalledAtoms(recalledAtoms, effectiveSkillInventory);
+      taskSkillBundle = {
+        ...taskSkillBundle,
+        recommendedSkillCodes: recalledAtoms.map((item) => item.skillCode).filter(Boolean)
+      };
+      await writeJson(taskSkillBundle.skillManifestPath, {
+        ...(JSON.parse(await fs.readFile(taskSkillBundle.skillManifestPath, "utf8"))),
+        recommendedSkillCodes: taskSkillBundle.recommendedSkillCodes
+      });
+
+      await updateTaskProgress(
+        {},
+        {
+          debug: {
+            artifacts: {
+              moduleBootstrapAnalysis,
+              moduleBootstrapKnowledge,
+              taskSkillBundle
+            }
+          }
+        }
+      );
+    }
+
+    if (isModuleSkillBootstrapTask(options)) {
+      const bootstrapSummary = readiness.hasUsableModuleSkill
+        ? "当前模块的 software_requirement module skill 已就绪，无需重复冷启动。"
+        : "Hermes 已完成 software_requirement module skill 冷启动，可返回继续生成正式软件需求。";
+      const completedBootstrapTask = await this.projectService.updateGenerationTask(projectId, moduleId, "software_requirement", taskId, {
+        status: "completed",
+        resultItems: [],
+        extractions,
+        llmProfile,
+        metrics: {
+          extractionFileCount: inputAssets.length,
+          extractionEvidenceCount: anchors.length,
+          generatedItemCount: 0,
+          conflictCount: 0
+        },
+        progress: {
+          stage: "completed",
+          label: "技能冷启动已完成",
+          message: bootstrapSummary,
+          percent: 100
+        },
+        timelineEntry: {
+          stage: "completed",
+          label: "技能冷启动已完成",
+          message: bootstrapSummary,
+          level: "info"
+        },
+        summary: "软件需求 Module Skill 冷启动已完成"
+      });
+
+      return {
+        projectId,
+        moduleId,
+        documentType: "software_requirement",
+        task: completedBootstrapTask
+      };
+    }
+
     const outline = await runHermesStep("outline_build", {
       assets: assetManifest,
       anchors,
@@ -881,15 +1376,32 @@ export class PipelineService {
       assets: assetManifest,
       anchors,
       recalledAtoms,
-      outline
+      outline,
+      requiredTitleOutline,
+      requiredLeafCount
     });
     const resultItems = Array.isArray(contentArtifact.items) ? contentArtifact.items : [];
+    if (resultItems.length !== requiredLeafCount) {
+      throw new Error(
+        `Hermes content_generate must return exactly ${requiredLeafCount} result items, received ${resultItems.length}`
+      );
+    }
+    const titledResultItems = resultItems.map((item, index) => {
+      const leaf = requiredLeafOutline[index];
+      return {
+        ...item,
+        id: item.id || randomUUID(),
+        sectionTitle: leaf.sectionTitle,
+        itemTitle: leaf.itemTitle,
+        title: leaf.itemTitle
+      };
+    });
 
     await updateTaskProgress(
       {
         stage: "content_postprocess",
         label: "正在校验 Hermes 返回内容",
-        message: `Hermes 已返回 ${resultItems.length} 条候选软件需求，正在校验 sourceAnchorIds 与结果结构。`,
+        message: `Hermes 已返回 ${titledResultItems.length} 条正文，正在校验 sourceAnchorIds 与结果结构。`,
         percent: 84
       },
       {
@@ -901,19 +1413,19 @@ export class PipelineService {
         debugEvent: {
           stage: "content_generate_returned",
           label: "Hermes 已返回结果",
-          message: `已收到 ${resultItems.length} 条候选软件需求，准备进行结果校验。`,
+          message: `已收到 ${titledResultItems.length} 条候选软件需求正文，准备进行结果校验。`,
           level: "info"
         }
       }
     );
 
-    assertValidResultItems(resultItems, anchors);
+    assertValidResultItems(titledResultItems, anchors);
 
     await updateTaskProgress(
       {
         stage: "content_generate",
         label: "正在调用 Hermes 补读 Skill 正文并生成正式内容",
-        message: `Hermes 已返回 ${resultItems.length} 条候选软件需求，准备解析引用锚点。`,
+        message: `Hermes 已返回 ${titledResultItems.length} 条候选软件需求正文，准备解析引用锚点。`,
         percent: 82
       },
       {
@@ -926,13 +1438,13 @@ export class PipelineService {
         debugEvent: {
           stage: "result_items_validated",
           label: "结果校验通过",
-          message: `候选结果已通过 sourceAnchorIds 与结构校验，共 ${resultItems.length} 条。`,
+          message: `候选结果已通过 sourceAnchorIds 与结构校验，共 ${titledResultItems.length} 条。`,
           level: "info"
         },
         timelineEntry: {
           stage: "content_generate",
           label: "生成软件需求",
-          message: `内容生成完成，得到 ${resultItems.length} 条候选结果。`,
+          message: `内容生成完成，得到 ${titledResultItems.length} 条候选结果。`,
           level: "info"
         }
       }
@@ -960,7 +1472,7 @@ export class PipelineService {
       }
     );
 
-    const resolvedResultItems = resolveSourceAnchors(resultItems, anchors);
+    const resolvedResultItems = resolveSourceAnchors(titledResultItems, anchors);
 
     await updateTaskProgress(
       {
@@ -1146,6 +1658,20 @@ export class PipelineService {
         }
       );
 
+      if (normalizedDocumentType === "software_requirement") {
+        return await this.finalizeSoftwareRequirementGeneration({
+          projectId,
+          moduleId,
+          taskId,
+          project,
+          module,
+          inputAssets,
+          options,
+          selectedProfile,
+          updateTaskProgress
+        });
+      }
+
       const readiness = await this.moduleSkillService.ensureModuleReady(project, module, normalizedDocumentType, {
         llmProfileId: options.llmProfileId || ""
       });
@@ -1159,20 +1685,6 @@ export class PipelineService {
             llmProfileName: readiness.bootstrapLlmProfile?.name || ""
           },
           seededAt: new Date().toISOString()
-        });
-      }
-
-      if (normalizedDocumentType === "software_requirement") {
-        return await this.finalizeSoftwareRequirementGeneration({
-          projectId,
-          moduleId,
-          taskId,
-          project,
-          module,
-          inputAssets,
-          options,
-          selectedProfile,
-          updateTaskProgress
         });
       }
 
@@ -1654,16 +2166,388 @@ export class PipelineService {
     }
   }
 
+  async extractDocumentForModule(projectId, moduleId, options = {}) {
+    const normalizedTargetDocumentType = normalizeDocumentExtractionType(options.targetDocumentType);
+    const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
+    const sourceText = String(options.sourceText || "").trim();
+    const imageInputs = Array.isArray(options.imageInputs) ? options.imageInputs : [];
+    const spreadsheetInputs = Array.isArray(options.spreadsheetInputs) ? options.spreadsheetInputs : [];
+
+    if (spreadsheetInputs.length && normalizedTargetDocumentType !== "hil_test_case") {
+      throw new Error("当前仅 HIL 测试用例支持 Excel 表格提取");
+    }
+
+    let spreadsheetExtraction = null;
+    if (spreadsheetInputs.length) {
+      const parsedResults = [];
+      for (const input of spreadsheetInputs) {
+        const parsed = await this.spreadsheetExtractionService.parseHilSpreadsheet(input.absolutePath);
+        parsedResults.push({
+          ...input,
+          sheetName: parsed.sheetName,
+          caseCount: parsed.cases.length,
+          cases: parsed.cases,
+          normalizedText: parsed.normalizedText
+        });
+      }
+      spreadsheetExtraction = {
+        files: parsedResults,
+        normalizedText: parsedResults.map((item) => item.normalizedText).filter(Boolean).join("\n\n")
+      };
+    }
+
+    const normalizedSourceText = [sourceText, spreadsheetExtraction?.normalizedText || ""].filter(Boolean).join("\n\n");
+
+    if (!normalizedSourceText && !imageInputs.length && !spreadsheetInputs.length) {
+      throw new Error("No extraction input provided");
+    }
+
+    const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
+    const sourceMode = inferExtractionSourceMode(sourceText, imageInputs, spreadsheetInputs);
+    const inputArtifacts = [...imageInputs, ...spreadsheetInputs];
+    const task = await this.projectService.recordDocumentExtractionTask(projectId, moduleId, {
+      status: options.asyncStart ? "queued" : "running",
+      targetDocumentType: normalizedTargetDocumentType,
+      sourceMode,
+      sourceText,
+      inputArtifacts,
+      summary: buildExtractionTaskSummary(normalizedTargetDocumentType),
+      progress: {
+        stage: "queued",
+        label: "提取任务已启动",
+        message: "任务已创建，正在排队准备提取输入文档。",
+        percent: 3,
+        current: 0,
+        total: inputArtifacts.length
+      },
+      timeline: [
+        {
+          at: new Date().toISOString(),
+          stage: "queued",
+          label: "提取任务已启动",
+          message: `提取任务已创建，等待后台开始处理 ${imageInputs.length} 个图片输入和 ${spreadsheetInputs.length} 个表格输入。`,
+          level: "info"
+        }
+      ]
+    });
+
+    const llmProfile = selectedProfile
+      ? {
+          id: selectedProfile.id,
+          provider: selectedProfile.provider,
+          name: selectedProfile.name,
+          model: selectedProfile.model,
+          baseURL: selectedProfile.baseURL
+        }
+      : null;
+
+    const runExtraction = async () => {
+      try {
+        await this.projectService.updateDocumentExtractionTask(projectId, moduleId, task.id, {
+          progress: {
+            stage: "document_extract_prepare",
+            label: "正在准备提取输入",
+            message: `已整理 ${imageInputs.length} 个图片输入、${spreadsheetInputs.length} 个表格输入和 ${normalizedSourceText ? 1 : 0} 段文本输入。`,
+            percent: 18,
+            current: inputArtifacts.length,
+            total: inputArtifacts.length
+          },
+          debug: {
+            artifacts: {
+              extractionInput: {
+                sourceMode,
+                sourceText,
+                normalizedSourceText,
+                imageInputs,
+                spreadsheetInputs,
+                spreadsheetExtraction
+              }
+            }
+          },
+          timelineEntry: {
+            stage: "document_extract_prepare",
+            label: "准备提取输入",
+            message: "已完成提取输入整理，准备调用 Hermes。",
+            level: "info"
+          }
+        });
+
+        const descriptor = buildHermesStepDescriptor("document_extract_generate");
+        const startedAt = new Date().toISOString();
+        await this.projectService.updateDocumentExtractionTask(projectId, moduleId, task.id, {
+          progress: {
+            stage: descriptor.stage,
+            label: descriptor.runningLabel,
+            message: "正在调用 Hermes 提取文档内容。",
+            percent: descriptor.runningPercent
+          },
+          debug: {
+            agent: {
+              transport: this.hermesAgentClient.transport,
+              currentStep: "document_extract_generate",
+              status: "running",
+              startedAt,
+              lastEventAt: startedAt,
+              elapsedMs: 0
+            }
+          },
+          timelineEntry: {
+            stage: descriptor.stage,
+            label: descriptor.runningLabel,
+            message: "已开始调用 Hermes 执行文档提取。",
+            level: "info"
+          }
+        });
+
+        const extractionArtifact = assertHermesStepResponse(
+          "document_extract_generate",
+          await this.hermesAgentClient.executeStep(
+            {
+              taskId: task.id,
+              stepType: "document_extract_generate",
+              allowedPaths: inputArtifacts.map((item) => item.absolutePath).filter(Boolean),
+              inputArtifact: {
+                project: {
+                  name: `${project.name} / ${module.name}`,
+                  description: module.description || project.description,
+                  language: project.language,
+                  documentType: normalizedTargetDocumentType,
+                  domain: module.domain || "embedded_vcu",
+                  moduleSkillKey: module.moduleSkillKey || ""
+                },
+                module: {
+                  name: module.name,
+                  description: module.description || "",
+                  domain: module.domain || "embedded_vcu"
+                },
+                targetDocumentType: normalizedTargetDocumentType,
+                sourceText: normalizedSourceText,
+                images: imageInputs,
+                spreadsheets: spreadsheetInputs,
+                spreadsheetExtraction: spreadsheetExtraction
+                  ? {
+                      fileCount: spreadsheetExtraction.files.length,
+                      totalCases: spreadsheetExtraction.files.reduce((total, item) => total + (item.caseCount || 0), 0),
+                      sheets: spreadsheetExtraction.files.map((item) => ({
+                        originalName: item.originalName,
+                        sheetName: item.sheetName,
+                        caseCount: item.caseCount
+                      }))
+                    }
+                  : null
+              },
+              llmProfileSnapshot: llmProfile
+            },
+            {
+              onEvent: async (event = {}) => {
+                const eventAt = event.at || new Date().toISOString();
+                await this.projectService.updateDocumentExtractionTask(projectId, moduleId, task.id, {
+                  debug: {
+                    agent: {
+                      transport: event.transport || this.hermesAgentClient.transport,
+                      currentStep: event.stepType || "document_extract_generate",
+                      status: String(event.status || "").trim() || "running",
+                      startedAt: event.startedAt || startedAt,
+                      lastHeartbeatAt: event.heartbeatAt || "",
+                      lastEventAt: eventAt,
+                      sessionId: event.sessionId || "",
+                      tokenUsage: event.tokenUsage || null,
+                      stdoutExcerpt: event.stdoutExcerpt || "",
+                      stderrExcerpt: event.stderrExcerpt || "",
+                      elapsedMs: Number(event.elapsedMs || 0) || 0
+                    }
+                  },
+                  debugEvent: {
+                    stage: descriptor.stage,
+                    label: event.label || descriptor.runningLabel,
+                    message: event.message || "Hermes 文档提取状态已更新。",
+                    level: event.level || "info",
+                    type: event.type || "agent_runtime",
+                    status: event.status || "",
+                    transport: event.transport || this.hermesAgentClient.transport,
+                    stepType: event.stepType || "document_extract_generate",
+                    sessionId: event.sessionId || "",
+                    startedAt: event.startedAt || startedAt,
+                    heartbeatAt: event.heartbeatAt || "",
+                    elapsedMs: Number(event.elapsedMs || 0) || 0,
+                    tokenUsage: event.tokenUsage || null,
+                    stdoutExcerpt: event.stdoutExcerpt || "",
+                    stderrExcerpt: event.stderrExcerpt || ""
+                  }
+                });
+              }
+            }
+          )
+        );
+
+        assertValidExtractedDocument(extractionArtifact, normalizedTargetDocumentType);
+
+        await this.projectService.updateDocumentExtractionTask(projectId, moduleId, task.id, {
+          progress: {
+            stage: "document_extract_persist",
+            label: "正在写回模块资产",
+            message: "Hermes 已返回提取结果，正在写回 Markdown 资产。",
+            percent: 88
+          },
+          timelineEntry: {
+            stage: "document_extract_persist",
+            label: "写回模块资产",
+            message: "开始将提取结果写回当前模块资产。",
+            level: "info"
+          }
+        });
+
+        const finalMarkdown =
+          normalizedTargetDocumentType === "hil_test_case" && spreadsheetExtraction?.files?.length
+            ? buildHilSpreadsheetMarkdown(module.name, spreadsheetExtraction)
+            : extractionArtifact.markdown;
+
+        const outputAsset = await this.projectService.createExtractedModuleAsset(projectId, moduleId, {
+          sourceTaskId: task.id,
+          targetDocumentType: normalizedTargetDocumentType,
+          markdown: finalMarkdown,
+          summary: extractionArtifact.summary || ""
+        });
+
+        const completedTask = await this.projectService.updateDocumentExtractionTask(projectId, moduleId, task.id, {
+          status: "completed",
+          outputAssetId: outputAsset.id,
+          outputAssetName: outputAsset.originalName,
+          summary: extractionArtifact.summary || `已提取${getDocumentExtractionTypeLabel(normalizedTargetDocumentType)}`,
+          progress: {
+            stage: "completed",
+            label: "提取任务已完成",
+            message: `已生成模块资产：${outputAsset.originalName}`,
+            percent: 100
+          },
+          timelineEntry: {
+            stage: "completed",
+            label: "提取任务完成",
+            message: `提取完成，结果已写回模块资产：${outputAsset.originalName}`,
+            level: "info"
+          }
+        });
+
+        return {
+          projectId,
+          moduleId,
+          targetDocumentType: normalizedTargetDocumentType,
+          task: completedTask,
+          outputAsset
+        };
+      } catch (error) {
+        const stackCapture = clipDebugText(error.stack || "", DEBUG_STACK_LIMIT);
+        await this.projectService.updateDocumentExtractionTask(projectId, moduleId, task.id, {
+          status: "failed",
+          errorMessage: error.message || "文档提取失败",
+          debug: {
+            lastError: {
+              at: new Date().toISOString(),
+              stage: error.stage || error.debugStage || "document_extract",
+              message: error.message || "文档提取失败",
+              stack: stackCapture.text
+            }
+          },
+          progress: {
+            stage: "failed",
+            label: "提取任务失败",
+            message: error.message || "文档提取失败",
+            percent: 100
+          },
+          timelineEntry: {
+            stage: "failed",
+            label: "提取任务失败",
+            message: error.message || "文档提取失败",
+            level: "error"
+          },
+          summary: error.message || "文档提取失败"
+        });
+        throw error;
+      }
+    };
+
+    if (options.asyncStart) {
+      const runQueuedTask = () => runExtraction().catch((error) => {
+        console.error("Document extraction failed", error);
+        return null;
+      });
+      if (this.hermesTaskQueueService) {
+        this.hermesTaskQueueService.enqueue({
+          id: task.id,
+          type: "document_extraction",
+          title: buildExtractionTaskSummary(normalizedTargetDocumentType),
+          projectId,
+          moduleId,
+          documentType: normalizedTargetDocumentType,
+          onStart: async () => {
+            await this.projectService.updateDocumentExtractionTask(projectId, moduleId, task.id, {
+              status: "running",
+              progress: {
+                stage: "queued",
+                label: "提取任务开始执行",
+                message: "任务已从 Hermes 队列取出，正在准备提取输入文档。",
+                percent: 5
+              },
+              timelineEntry: {
+                stage: "queued",
+                label: "提取任务开始执行",
+                message: "任务已从 Hermes 队列取出，开始后台处理。",
+                level: "info"
+              }
+            });
+          },
+          run: runQueuedTask
+        });
+      } else {
+        runQueuedTask();
+      }
+      return {
+        projectId,
+        moduleId,
+        targetDocumentType: normalizedTargetDocumentType,
+        task
+      };
+    }
+
+    return runExtraction();
+  }
+
   async generateForModule(projectId, moduleId, documentType, options = {}) {
     const normalizedDocumentType = normalizeDocumentType(documentType);
     const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
     const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId);
+    const manualTitleOutline = normalizeManualTitleOutline(options.manualTitleOutline);
+    if (normalizedDocumentType === "software_requirement" && !isModuleSkillBootstrapTask(options) && !manualTitleOutline) {
+      const error = new Error("manualTitleOutline is required for software requirement generation");
+      error.statusCode = 400;
+      error.code = "invalid_manual_title_outline";
+      throw error;
+    }
     const selectedAssetIds = Array.isArray(options.assetIds) && options.assetIds.length
       ? options.assetIds
       : module.assets.map((asset) => asset.id);
-    const inputAssets = module.assets.filter((asset) => selectedAssetIds.includes(asset.id));
+    const selectedAssets = module.assets.filter((asset) => selectedAssetIds.includes(asset.id));
+    const inputAssets =
+      normalizedDocumentType === "software_requirement" && !isModuleSkillBootstrapTask(options)
+        ? selectedAssets.filter((asset) => !isDisallowedFormalSoftwareRequirementAsset(asset))
+        : selectedAssets;
 
     if (!inputAssets.length) {
+      if (
+        normalizedDocumentType === "software_requirement" &&
+        !isModuleSkillBootstrapTask(options) &&
+        selectedAssets.length &&
+        selectedAssets.every((asset) => isDisallowedFormalSoftwareRequirementAsset(asset))
+      ) {
+        const error = new Error("正式软件需求生成不会使用人工范例资产，请选择系统需求或代码/模型资产。");
+        error.statusCode = 400;
+        error.code = "invalid_generation_assets";
+        error.details = {
+          documentType: normalizedDocumentType,
+          excludedAssetIds: selectedAssets.map((asset) => asset.id)
+        };
+        throw error;
+      }
       throw new Error("No assets selected");
     }
 
@@ -1687,17 +2571,20 @@ export class PipelineService {
           baseURL: selectedProfile.baseURL
         }
       : null;
-
     const task = await this.projectService.recordGenerationTask(projectId, moduleId, normalizedDocumentType, {
-      status: "running",
+      taskKind: normalizeTaskIntent(options.taskIntent),
+      status: options.asyncStart ? "queued" : "running",
       inputAssetIds: inputAssets.map((asset) => asset.id),
       uploadedAssetIds: Array.isArray(options.uploadedAssetIds) ? options.uploadedAssetIds : [],
+      manualTitleOutline,
       llmProfile,
-      summary: buildRunningSummary(normalizedDocumentType),
+      summary: buildTaskSummaryForIntent(normalizedDocumentType, options.taskIntent),
       progress: {
         stage: "queued",
-        label: "任务已启动",
-        message: `任务已创建，正在排队准备生成${normalizeDocumentType(documentType) === "hil_test_case" ? " HIL 用例" : ""}。`,
+        label: isModuleSkillBootstrapTask(options) ? "技能冷启动任务已启动" : "任务已启动",
+        message: isModuleSkillBootstrapTask(options)
+          ? "任务已创建，正在排队准备提炼当前文档类型的 module skill。"
+          : `任务已创建，正在排队准备生成${normalizeDocumentType(documentType) === "hil_test_case" ? " HIL 用例" : ""}。`,
         percent: 3,
         current: 0,
         total: inputAssets.length
@@ -1706,22 +2593,57 @@ export class PipelineService {
         {
           at: new Date().toISOString(),
           stage: "queued",
-          label: "任务已启动",
-          message: `任务已创建，等待后台开始处理 ${inputAssets.length} 个输入资产。`,
+          label: isModuleSkillBootstrapTask(options) ? "技能冷启动任务已启动" : "任务已启动",
+          message: isModuleSkillBootstrapTask(options)
+            ? `技能冷启动任务已创建，等待后台开始处理 ${inputAssets.length} 个输入资产。`
+            : `任务已创建，等待后台开始处理 ${inputAssets.length} 个输入资产。`,
           level: "info"
         }
       ]
     });
 
-    const resultPromise = this.finalizeModuleGeneration(projectId, moduleId, normalizedDocumentType, inputAssets, {
+    const runGeneration = () => this.finalizeModuleGeneration(projectId, moduleId, normalizedDocumentType, inputAssets, {
       ...options,
+      manualTitleOutline,
       taskId: task.id
     });
 
     if (options.asyncStart) {
-      resultPromise.catch((error) => {
+      const queueType = isModuleSkillBootstrapTask(options) ? "module_skill_bootstrap" : "generation";
+      const runQueuedTask = () => runGeneration().catch((error) => {
         console.error("Module generation failed", error);
+        return null;
       });
+      if (this.hermesTaskQueueService) {
+        this.hermesTaskQueueService.enqueue({
+          id: task.id,
+          type: queueType,
+          title: buildTaskSummaryForIntent(normalizedDocumentType, options.taskIntent),
+          projectId,
+          moduleId,
+          documentType: normalizedDocumentType,
+          onStart: async () => {
+            await this.projectService.updateGenerationTask(projectId, moduleId, normalizedDocumentType, task.id, {
+              status: "running",
+              progress: {
+                stage: "queued",
+                label: "任务开始执行",
+                message: "任务已从 Hermes 队列取出，正在准备执行。",
+                percent: 5
+              },
+              timelineEntry: {
+                stage: "queued",
+                label: "任务开始执行",
+                message: "任务已从 Hermes 队列取出，开始后台处理。",
+                level: "info"
+              }
+            });
+          },
+          run: runQueuedTask
+        });
+      } else {
+        runQueuedTask();
+      }
       return {
         projectId,
         moduleId,
@@ -1730,6 +2652,6 @@ export class PipelineService {
       };
     }
 
-    return resultPromise;
+    return runGeneration();
   }
 }

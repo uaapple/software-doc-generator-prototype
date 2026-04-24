@@ -36,6 +36,20 @@
             <input name="moduleSkillKey" placeholder="charging_management" />
           </label>
 
+          <fieldset class="stack-card">
+            <legend>Skill 初始化方式</legend>
+            <label>
+              <input type="radio" name="skillInitMode" value="import_existing" checked />
+              绑定已有 Module Skill
+              <span class="inline-hint">优先复用已有 module 层能力，后续可直接进入正式生成。</span>
+            </label>
+            <label>
+              <input type="radio" name="skillInitMode" value="cold_start" />
+              冷启动
+              <span class="inline-hint">创建后先保持空白 module skill；进入软件需求生成时会先引导做一次技能冷启动。</span>
+            </label>
+          </fieldset>
+
           <section class="stack-card" id="module-preview-card">
             <strong>Domain &#25512;&#33616;&#19982; Skill &#20505;&#36873;</strong>
             <p id="module-preview-hint" class="inline-hint">&#36755;&#20837;&#27169;&#22359;&#21517;&#31216;&#21518;&#65292;&#31995;&#32479;&#20250;&#25512;&#33616; domain &#24182;&#26816;&#26597;&#26159;&#21542;&#23384;&#22312;&#21487;&#22797;&#29992;&#30340; module skill&#12290;</p>
@@ -44,7 +58,7 @@
               <select name="domain" id="domain-select"></select>
             </label>
             <label>
-              &#21487;&#22797;&#29992;&#30340; Module Skill
+              候选 Module Skill
               <select name="importedSkillKey" id="skill-candidate-select">
                 <option value="">&#19981;&#23548;&#20837;&#65292;&#21518;&#32493;&#36208;&#20919;&#21551;&#21160;</option>
               </select>
@@ -61,6 +75,7 @@
     </main>
 
     <script type="module" src="/hierarchy.js"></script>
+    <script type="module" src="/task-queue-widget.js"></script>
     <script type="module" src="/feedback-widget.js"></script>
   </body>
 </html>

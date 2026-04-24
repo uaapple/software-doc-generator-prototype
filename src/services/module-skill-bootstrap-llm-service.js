@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { LlmProfileService } from "./llm-profile-service.js";
 import { createJsonChatCompletion } from "./openai-compatible-chat.js";
+import { normalizeKnowledgeForLayer } from "./skill-registry-service.js";
+import { getAllowedKindsForAreasAndLayer } from "../../public/skill-kind-matrix.js";
 
 const TOPIC_SCHEMA = {
   type: "object",
@@ -99,7 +101,7 @@ const MODULE_KNOWLEDGE_SCHEMA = {
     antiPatterns: { type: "array", items: { type: "string" } },
     sourceOfTruthPolicy: {
       type: "object",
-      additionalProperties: false,
+      additionalProperties: true,
       properties: {
         systemRequirementsDefineCoreTopics: { type: "boolean" },
         modelCodeProvidesDetailOnly: { type: "boolean" },
@@ -107,7 +109,13 @@ const MODULE_KNOWLEDGE_SCHEMA = {
         conflictsMustBeSurfaced: { type: "boolean" },
         conflictHandlingRule: { type: "string" },
         codeDetailDemotionRule: { type: "string" },
-        preferredEvidenceOrder: { type: "array", items: { type: "string" } }
+        preferredEvidenceOrder: { type: "array", items: { type: "string" } },
+        preferredFunctionSection: { type: "object" },
+        preferredSubsections: { type: "array", items: { type: "object" } },
+        coreFirst: { type: "boolean" },
+        preferSymmetricExpansion: { type: "boolean" },
+        preferObjectSpecificRequirements: { type: "boolean" },
+        discourageGenericScatterRequirements: { type: "boolean" }
       },
       required: [
         "systemRequirementsDefineCoreTopics",
@@ -119,51 +127,9 @@ const MODULE_KNOWLEDGE_SCHEMA = {
         "preferredEvidenceOrder"
       ]
     },
-    conflictHints: { type: "array", items: CONFLICT_HINT_SCHEMA },
-    documentBlueprint: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        domain: { type: "string" },
-        subdomain: { type: "string" },
-        preferredFunctionSection: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            sectionNumber: { type: "string" },
-            title: { type: "string" }
-          },
-          required: ["sectionNumber", "title"]
-        },
-        preferredSubsections: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              sectionNumber: { type: "string" },
-              title: { type: "string" },
-              coreRequirementTypes: { type: "array", items: { type: "string" } }
-            },
-            required: ["sectionNumber", "title", "coreRequirementTypes"]
-          }
-        },
-        targetOutputPolicy: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            coreFirst: { type: "boolean" },
-            preferSymmetricExpansion: { type: "boolean" },
-            preferObjectSpecificRequirements: { type: "boolean" },
-            discourageGenericScatterRequirements: { type: "boolean" }
-          },
-          required: ["coreFirst", "preferSymmetricExpansion", "preferObjectSpecificRequirements", "discourageGenericScatterRequirements"]
-        }
-      },
-      required: ["domain", "subdomain", "preferredFunctionSection", "preferredSubsections", "targetOutputPolicy"]
-    }
+    conflictHints: { type: "array", items: CONFLICT_HINT_SCHEMA }
   },
-  required: ["version", "generationPriorities", "examples", "ruleHints", "antiPatterns", "sourceOfTruthPolicy", "conflictHints", "documentBlueprint"]
+  required: ["version", "generationPriorities", "examples", "ruleHints", "antiPatterns", "sourceOfTruthPolicy", "conflictHints"]
 };
 
 function normalizeDocumentType(value) {
@@ -281,7 +247,7 @@ export class ModuleSkillBootstrapLlmService {
       schemaName: "module_skill_bootstrap_knowledge",
       schema: MODULE_KNOWLEDGE_SCHEMA
     });
-    return {
+    return normalizeKnowledgeForLayer("module", {
       ...parsed,
       version: Number(parsed.version || 1) || 1,
       generationPriorities: unique(parsed.generationPriorities),
@@ -297,20 +263,8 @@ export class ModuleSkillBootstrapLlmService {
         codeDetailDemotionRule: "模型/代码中的状态、接口、诊断、配置和实现步骤默认作为核心主题的细化条件，不应脱离系统需求单独升级为一级条目。",
         preferredEvidenceOrder: ["system_requirement", "reference_requirement_example", "model_pdf", "generated_c"]
       },
-      conflictHints: uniqueObjects(parsed.conflictHints),
-      documentBlueprint: parsed.documentBlueprint || {
-        domain: payload.module.domain || "embedded_vcu",
-        subdomain: payload.moduleSkillKey,
-        preferredFunctionSection: { sectionNumber: "", title: payload.module.name || payload.moduleSkillKey },
-        preferredSubsections: [],
-        targetOutputPolicy: {
-          coreFirst: true,
-          preferSymmetricExpansion: true,
-          preferObjectSpecificRequirements: true,
-          discourageGenericScatterRequirements: true
-        }
-      }
-    };
+      conflictHints: uniqueObjects(parsed.conflictHints)
+    });
   }
 }
 
@@ -365,6 +319,7 @@ function buildAnalysisPrompt({ module, documentType, moduleSkillKey, evidence })
 }
 
 function buildKnowledgePrompt({ module, documentType, moduleSkillKey, evidence, analysis }) {
+  const allowedKinds = getAllowedKindsForAreasAndLayer(["domain_knowledge"], "module");
   return [
     {
       role: "system",
@@ -374,6 +329,7 @@ function buildKnowledgePrompt({ module, documentType, moduleSkillKey, evidence, 
           text: [
             "你现在要把上一步的结构化分析整理成 module skill 的 domain-knowledge.json。",
             "请生成高质量、可复用的模块知识，而不是把原始材料整段贴进去。",
+            `module 层允许的 kind 只有：${allowedKinds.join(" / ") || "无"}`,
             "要求：",
             "0. 必须显式体现“系统需求定主线、模型/代码补细节、人工样例定表达”的原则。",
             "1. examples 必须优先覆盖人工优秀范例中的核心条目清单，而不是只保留一个总纲样例。",
@@ -382,10 +338,13 @@ function buildKnowledgePrompt({ module, documentType, moduleSkillKey, evidence, 
             "4. sourceOfTruthPolicy 必须明确：系统需求决定一级主题，模型/代码只能补充条件、时序、阈值、状态转移、清除逻辑等细节；如果代码证据与系统需求不一致，必须保留冲突说明。",
             "5. conflictHints 必须列出关键冲突项，至少包含：系统需求表述、模型/代码证据、冲突摘要、推荐处理方式和关键词，供后续生成写入 conflictNote。",
             "6. ruleHints 里要给出写作模式、目标风格、sectionHints 和 sourceBasis，目标风格应明确偏向“软件需求条目”，而不是“详细设计说明”或“实现步骤描述”。",
+            "6.1 sourceBasis 只能写稳定的人类可读依据类别，例如“系统需求”“参考软件需求”“相关代码语义”“相关既有技能规则”；不要写锚点 id、UUID、task skill bundle shortlist、recalled atoms 等运行时痕迹。",
+            "6.2 如果某个锚点带来了关键条件、例外或边界，请把该条件直接写进 writingPattern、generationPriorities 或 antiPatterns，而不是把锚点 id 抄进 sourceBasis。",
             "7. antiPatterns 要明确指出本模块常见误写方式，特别是：总纲合并、代码细节抢主线、诊断逻辑过早提升、整段原文贴入 examples。",
-            "8. documentBlueprint 要尽量反映优秀范例的稳定章节组织；如果人工样例是统一挂在一个章节下的多条需求，就不要凭空拆出新的子章节树。",
-            "9. subdomain 使用模块中文名称；不要自动翻译成英文 key。",
-            "10. requirementText 应是压缩后的规范需求表达，不要照抄整段原文，也不要写成“步骤如下”“a) b) c)”这种说明文。",
+            "8. 不要输出 documentBlueprint，也不要生成 document_blueprint_section / document_blueprint_policy 这类 module 层非法 kind。",
+            "9. 如果你需要表达章节稳定落位、子章节组织或输出策略，请改写到 ruleHints.sectionHints、generationPriorities 或 sourceOfTruthPolicy 中。",
+            "10. subdomain 使用模块中文名称；不要自动翻译成英文 key。",
+            "11. requirementText 应是压缩后的规范需求表达，不要照抄整段原文，也不要写成“步骤如下”“a) b) c)”这种说明文。",
             "输出必须符合 JSON schema。"
           ].join("\n")
         }

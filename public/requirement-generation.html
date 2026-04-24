@@ -113,9 +113,26 @@
           <button id="generate-button" type="submit">启动生成</button>
         </form>
       </section>
+
+      <section id="manual-title-outline-card" class="card manual-title-outline-card" hidden>
+        <div class="section-head">
+          <span class="section-index">05</span>
+          <div>
+            <h2>人工标题框架</h2>
+            <p>只在软件需求正式生成模式下显示，用来定义一级标题和二级标题的两级框架。</p>
+          </div>
+        </div>
+        <div id="manual-title-outline-summary" class="summary manual-title-outline-summary"></div>
+        <p id="manual-title-outline-status" class="inline-hint manual-title-outline-status"></p>
+        <div id="manual-title-outline-root" class="manual-title-outline-root"></div>
+        <div class="outline-actions">
+          <button id="manual-title-outline-add-section" type="button" class="secondary-button">新增一级标题</button>
+        </div>
+      </section>
     </main>
 
     <script type="module" src="/generator.js"></script>
+    <script type="module" src="/task-queue-widget.js"></script>
     <script type="module" src="/feedback-widget.js"></script>
   </body>
 </html>

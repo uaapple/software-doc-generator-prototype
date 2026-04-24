@@ -4,13 +4,14 @@ import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { getProjectPath, readJson, resolveStoredFilePath, writeJson } from "./storage.js";
 import { RejectionService } from "./rejection-service.js";
+import { normalizeUploadedFileName } from "./upload-filename.js";
 
 function now() {
   return new Date().toISOString();
 }
 
-function isStaleRunningTask(task = {}) {
-  if (task.status !== "running") return false;
+function isInterruptedTaskAfterRestart(task = {}) {
+  if (task.status !== "running" && task.status !== "queued") return false;
   const reference = task.progress?.updatedAt || task.updatedAt || task.createdAt || "";
   const timestamp = new Date(reference).getTime();
   if (Number.isNaN(timestamp)) return false;
@@ -43,6 +44,62 @@ function normalizeModuleSkillKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
 }
 
+function normalizeSkillInitMode(value = "") {
+  const normalized = String(value || "").trim();
+  if (normalized === "import_existing") return "import_existing";
+  if (normalized === "cold_start") return "cold_start";
+  return "";
+}
+
+function normalizeTaskKind(value = "") {
+  return String(value || "").trim() === "module_skill_bootstrap" ? "module_skill_bootstrap" : "generation";
+}
+
+function normalizeTaskManualTitleOutline(value = {}) {
+  const candidate =
+    typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value);
+          } catch (_error) {
+            return null;
+          }
+        })()
+      : value;
+
+  const normalizedSections = [];
+  for (const section of Array.isArray(candidate?.sections) ? candidate.sections : []) {
+    const sectionTitle = String(section?.sectionTitle || section?.title || "").trim();
+    if (!sectionTitle) {
+      continue;
+    }
+
+    const items = [];
+    for (const item of Array.isArray(section?.items) ? section.items : []) {
+      const itemTitle = String(item?.itemTitle || item?.title || "").trim();
+      if (!itemTitle) {
+        continue;
+      }
+      items.push({ itemTitle });
+    }
+
+    if (items.length) {
+      normalizedSections.push({
+        sectionTitle,
+        items
+      });
+    }
+  }
+
+  if (!normalizedSections.length) {
+    return null;
+  }
+
+  return {
+    sections: normalizedSections
+  };
+}
+
 function normalizeReasonTags(reasonTags) {
   if (Array.isArray(reasonTags)) {
     return reasonTags.map((item) => String(item || "").trim()).filter(Boolean);
@@ -66,6 +123,27 @@ function createEmptyDocumentSpace(documentType) {
   };
 }
 
+function normalizeDocumentExtractionType(value) {
+  if (value === "system_requirement") return "system_requirement";
+  if (value === "detail_design") return "detail_design";
+  if (value === "hil_test_case") return "hil_test_case";
+  return "software_requirement";
+}
+
+function getDocumentExtractionTypeLabel(documentType) {
+  if (documentType === "system_requirement") return "系统需求";
+  if (documentType === "detail_design") return "详细设计";
+  if (documentType === "hil_test_case") return "HIL测试用例";
+  return "软件需求";
+}
+
+function getExtractedAssetRole(documentType) {
+  if (documentType === "system_requirement") return "extracted_system_requirement";
+  if (documentType === "detail_design") return "extracted_detail_design";
+  if (documentType === "hil_test_case") return "extracted_hil_test_case";
+  return "extracted_software_requirement";
+}
+
 function ensureDocumentSpaces(documentSpaces = {}) {
   return {
     software_requirement:
@@ -79,7 +157,7 @@ function buildFileRecord(projectId, moduleId, file, role) {
   return {
     id: randomUUID(),
     role,
-    originalName: file.originalname,
+    originalName: normalizeUploadedFileName(file.originalname),
     storedName: file.filename,
     relativePath: moduleId ? path.join(projectId, moduleId, file.filename) : path.join(projectId, file.filename),
     absolutePath: file.path,
@@ -89,8 +167,43 @@ function buildFileRecord(projectId, moduleId, file, role) {
   };
 }
 
+function toSafeStoredName(fileName = "") {
+  return String(fileName || "").replace(/[^\w.\-\u4e00-\u9fa5]/g, "_");
+}
+
+function formatAssetTimestamp(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  const pad = (input) => String(input).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+function buildExtractedAssetBaseName(moduleName, documentType) {
+  return `${String(moduleName || "").trim() || "未命名模块"}-${getDocumentExtractionTypeLabel(documentType)}.md`;
+}
+
+function createGeneratedModuleAssetRecord(projectId, moduleId, fileName, role) {
+  const storedName = toSafeStoredName(fileName);
+  const relativePath = path.join(projectId, moduleId, storedName);
+  return {
+    id: randomUUID(),
+    role,
+    originalName: fileName,
+    storedName,
+    relativePath,
+    absolutePath: path.join(config.uploadDir, relativePath),
+    mimeType: "text/markdown",
+    size: 0,
+    uploadedAt: now()
+  };
+}
+
 function createModuleRecord(projectId, input = {}) {
   const importedSkillKey = normalizeModuleSkillKey(input.importedSkillKey || "");
+  const skillInitMode = Object.hasOwn(input, "skillInitMode")
+    ? normalizeSkillInitMode(input.skillInitMode)
+    : importedSkillKey
+      ? "import_existing"
+      : "";
   return {
     id: randomUUID(),
     projectId,
@@ -98,11 +211,13 @@ function createModuleRecord(projectId, input = {}) {
     description: input.description?.trim() || "",
     domain: normalizeDomain(input.domain),
     moduleSkillKey: normalizeModuleSkillKey(importedSkillKey || input.moduleSkillKey || input.name),
+    skillInitMode,
     skillStatus: input.skillStatus || (importedSkillKey ? "imported" : "draft"),
     skillSource: input.skillSource || (importedSkillKey ? { type: "module_profile", key: importedSkillKey } : null),
     seededAt: input.seededAt || null,
     assets: [],
     documentSpaces: ensureDocumentSpaces(),
+    documentExtractionTasks: [],
     auditLog: [
       {
         at: now(),
@@ -122,12 +237,14 @@ function normalizeTask(task = {}) {
     id: task.id || randomUUID(),
     moduleId: task.moduleId || "",
     documentType: normalizeDocumentType(task.documentType),
+    taskKind: normalizeTaskKind(task.taskKind),
     status: task.status || "completed",
     createdAt: task.createdAt || now(),
     updatedAt: task.updatedAt || task.createdAt || now(),
     inputAssetIds: Array.isArray(task.inputAssetIds) ? task.inputAssetIds : [],
     uploadedAssetIds: Array.isArray(task.uploadedAssetIds) ? task.uploadedAssetIds : [],
-    resultItems: Array.isArray(task.resultItems) ? task.resultItems : [],
+    manualTitleOutline: normalizeTaskManualTitleOutline(task.manualTitleOutline),
+    resultItems: Array.isArray(task.resultItems) ? task.resultItems.map(normalizeTaskResultItem) : [],
     extractions: Array.isArray(task.extractions) ? task.extractions : [],
     traces: Array.isArray(task.traces) ? task.traces : [],
     conflicts: Array.isArray(task.conflicts) ? task.conflicts : [],
@@ -139,6 +256,18 @@ function normalizeTask(task = {}) {
     metrics: normalizeTaskMetrics(task.metrics),
     debug: normalizeTaskDebug(task.debug),
     errorMessage: String(task.errorMessage || "").trim()
+  };
+}
+
+function normalizeTaskResultItem(item = {}) {
+  const nextItemTitle = String(item?.itemTitle || item?.title || "").trim();
+  const nextTitle = String(item?.title || item?.itemTitle || "").trim();
+  return {
+    ...item,
+    id: item.id || randomUUID(),
+    sectionTitle: String(item?.sectionTitle || "").trim(),
+    itemTitle: nextItemTitle,
+    title: nextTitle || nextItemTitle
   };
 }
 
@@ -444,16 +573,62 @@ function appendTimelineEntry(task, timelineEntry) {
 
 function buildTaskSummary(task = {}) {
   const documentTypeLabel = getDocumentTypeLabel(task.documentType);
+  const taskKind = normalizeTaskKind(task.taskKind);
+  const subjectLabel = taskKind === "module_skill_bootstrap" ? `${documentTypeLabel}技能冷启动` : documentTypeLabel;
   if (task.status === "running") {
-    return task.progress?.label || task.progress?.message || `正在生成${documentTypeLabel}`;
+    return task.progress?.label || task.progress?.message || (taskKind === "module_skill_bootstrap" ? `正在提炼${subjectLabel}` : `正在生成${documentTypeLabel}`);
   }
   if (task.status === "failed") {
-    return task.errorMessage || task.summary || `${documentTypeLabel}生成失败`;
+    return task.errorMessage || task.summary || `${subjectLabel}失败`;
   }
   if (task.summary) {
     return task.summary;
   }
-  return `${documentTypeLabel}任务`;
+  return taskKind === "module_skill_bootstrap" ? `${subjectLabel}任务` : `${documentTypeLabel}任务`;
+}
+
+function buildDocumentExtractionTaskSummary(task = {}) {
+  const documentTypeLabel = getDocumentExtractionTypeLabel(task.targetDocumentType);
+  if (task.status === "running") {
+    return task.progress?.label || task.progress?.message || `正在提取${documentTypeLabel}`;
+  }
+  if (task.status === "failed") {
+    return task.errorMessage || task.summary || `${documentTypeLabel}提取失败`;
+  }
+  if (task.summary) {
+    return task.summary;
+  }
+  return `${documentTypeLabel}提取任务`;
+}
+
+function normalizeDocumentExtractionTask(task = {}) {
+  return {
+    id: task.id || randomUUID(),
+    moduleId: task.moduleId || "",
+    status: String(task.status || "completed").trim() || "completed",
+    targetDocumentType: normalizeDocumentExtractionType(task.targetDocumentType),
+    sourceMode: String(task.sourceMode || "text").trim() || "text",
+    sourceText: typeof task.sourceText === "string" ? task.sourceText : "",
+    inputArtifacts: Array.isArray(task.inputArtifacts)
+      ? task.inputArtifacts.map((item) => ({
+          originalName: String(item?.originalName || item?.originalname || "").trim(),
+          storedName: String(item?.storedName || item?.filename || "").trim(),
+          mimeType: String(item?.mimeType || item?.mimetype || "").trim(),
+          size: Math.max(0, Number(item?.size || 0) || 0),
+          absolutePath: String(item?.absolutePath || item?.path || "").trim(),
+          relativePath: String(item?.relativePath || "").trim()
+        }))
+      : [],
+    outputAssetId: String(task.outputAssetId || "").trim(),
+    outputAssetName: String(task.outputAssetName || "").trim(),
+    summary: String(task.summary || "").trim(),
+    progress: normalizeTaskProgress(task.progress),
+    timeline: normalizeTaskTimeline(task.timeline),
+    debug: normalizeTaskDebug(task.debug),
+    errorMessage: String(task.errorMessage || "").trim(),
+    createdAt: task.createdAt || now(),
+    updatedAt: task.updatedAt || task.createdAt || now()
+  };
 }
 
 function normalizeAcceptedItem(item = {}) {
@@ -485,6 +660,11 @@ function normalizeModule(module, projectId) {
     description: module.description?.trim() || "",
     domain: normalizeDomain(module.domain),
     moduleSkillKey: normalizeModuleSkillKey(module.moduleSkillKey || module.name),
+    skillInitMode: Object.hasOwn(module, "skillInitMode")
+      ? normalizeSkillInitMode(module.skillInitMode)
+      : module.skillSource?.type === "module_profile"
+        ? "import_existing"
+        : "",
     skillStatus: module.skillStatus || "draft",
     skillSource: module.skillSource || null,
     seededAt: module.seededAt || null,
@@ -499,6 +679,9 @@ function normalizeModule(module, projectId) {
         }
       ])
     ),
+    documentExtractionTasks: Array.isArray(module.documentExtractionTasks)
+      ? module.documentExtractionTasks.map(normalizeDocumentExtractionTask)
+      : [],
     auditLog: Array.isArray(module.auditLog) ? module.auditLog : [],
     createdAt: module.createdAt || now(),
     updatedAt: module.updatedAt || module.createdAt || now()
@@ -586,11 +769,14 @@ export class ProjectService {
       for (const module of project.modules || []) {
         for (const space of Object.values(module.documentSpaces || {})) {
           for (const task of space.generationTasks || []) {
-            if (!isStaleRunningTask(task)) {
+            if (!isInterruptedTaskAfterRestart(task)) {
               continue;
             }
+            const previousStatus = task.status;
             task.status = "failed";
-            task.errorMessage = "任务在服务重启或中断后未恢复，已标记为失败。";
+            task.errorMessage = previousStatus === "queued"
+              ? "任务在服务重启后仍处于排队状态，请重新发起。"
+              : "任务在服务重启或中断后未恢复，已标记为失败。";
             task.progress = normalizeTaskProgress({
               ...task.progress,
               stage: "failed",
@@ -611,6 +797,35 @@ export class ProjectService {
             recoveredCount += 1;
             changed = true;
           }
+        }
+        for (const task of module.documentExtractionTasks || []) {
+          if (!isInterruptedTaskAfterRestart(task)) {
+            continue;
+          }
+          const previousStatus = task.status;
+          task.status = "failed";
+          task.errorMessage = previousStatus === "queued"
+            ? "任务在服务重启后仍处于排队状态，请重新发起。"
+            : "任务在服务重启或中断后未恢复，已标记为失败。";
+          task.progress = normalizeTaskProgress({
+            ...task.progress,
+            stage: "failed",
+            label: "任务已中断",
+            message: task.errorMessage,
+            percent: 100,
+            updatedAt: now()
+          });
+          appendTimelineEntry(task, {
+            at: now(),
+            stage: "failed",
+            label: "任务已中断",
+            message: task.errorMessage,
+            level: "error"
+          });
+          task.summary = task.errorMessage;
+          task.updatedAt = now();
+          recoveredCount += 1;
+          changed = true;
         }
       }
       if (changed) {
@@ -724,6 +939,9 @@ export class ProjectService {
     module.description = input.description?.trim() || "";
     module.domain = normalizeDomain(input.domain || module.domain);
     module.moduleSkillKey = normalizeModuleSkillKey(input.importedSkillKey || input.moduleSkillKey || module.moduleSkillKey || module.name);
+    if (Object.hasOwn(input, "skillInitMode")) {
+      module.skillInitMode = normalizeSkillInitMode(input.skillInitMode || module.skillInitMode);
+    }
     if (Object.hasOwn(input, "skillStatus")) {
       module.skillStatus = input.skillStatus || module.skillStatus || "draft";
     }
@@ -772,6 +990,9 @@ export class ProjectService {
     if (Object.hasOwn(updates, "domain")) {
       module.domain = normalizeDomain(updates.domain || module.domain);
     }
+    if (Object.hasOwn(updates, "skillInitMode")) {
+      module.skillInitMode = normalizeSkillInitMode(updates.skillInitMode || module.skillInitMode);
+    }
     if (Object.hasOwn(updates, "skillStatus")) {
       module.skillStatus = updates.skillStatus || module.skillStatus || "draft";
     }
@@ -794,6 +1015,29 @@ export class ProjectService {
   async listAssets(projectId, moduleId) {
     const module = await this.getModule(projectId, moduleId);
     return module.assets;
+  }
+
+  async getModuleAssetContent(projectId, moduleId, assetId) {
+    const module = await this.getModule(projectId, moduleId);
+    const asset = module.assets.find((item) => item.id === assetId);
+    if (!asset) {
+      throw new Error("Asset not found");
+    }
+
+    const assetPath = resolveStoredFilePath(asset, { baseDir: config.uploadDir });
+    if (!assetPath) {
+      throw new Error("Asset not found");
+    }
+
+    const content = await fs.readFile(assetPath, "utf8");
+    return {
+      assetId: asset.id,
+      originalName: asset.originalName,
+      mimeType: asset.mimeType || "text/plain",
+      role: asset.role || "",
+      uploadedAt: asset.uploadedAt || "",
+      content
+    };
   }
 
   async attachModuleAssets(projectId, moduleId, filesByField, options = {}) {
@@ -947,7 +1191,7 @@ export class ProjectService {
         task.uploadedAssetIds = updates.uploadedAssetIds;
       }
       if (Array.isArray(updates.resultItems)) {
-        task.resultItems = updates.resultItems;
+        task.resultItems = updates.resultItems.map(normalizeTaskResultItem);
       }
       if (Array.isArray(updates.extractions)) {
         task.extractions = updates.extractions;
@@ -1027,8 +1271,18 @@ export class ProjectService {
     if (typeof review.requirementText === "string" && review.requirementText.trim()) {
       resultItem.requirementText = review.requirementText.trim();
     }
+    if (typeof review.sectionTitle === "string" && review.sectionTitle.trim()) {
+      resultItem.sectionTitle = review.sectionTitle.trim();
+    }
+    if (typeof review.itemTitle === "string" && review.itemTitle.trim()) {
+      const nextItemTitle = review.itemTitle.trim();
+      resultItem.itemTitle = nextItemTitle;
+      resultItem.title = nextItemTitle;
+    }
     if (typeof review.title === "string" && review.title.trim()) {
-      resultItem.title = review.title.trim();
+      const nextTitle = review.title.trim();
+      resultItem.title = nextTitle;
+      resultItem.itemTitle = nextTitle;
     }
 
     const nextStatus = review.status || resultItem.review?.status || "pending";
@@ -1133,14 +1387,19 @@ export class ProjectService {
       throw new Error("Result item not found");
     }
 
+    const nextTitle = input.itemTitle?.trim() || input.title?.trim() || resultItem.itemTitle || resultItem.title || "";
+    const nextSectionTitle = input.sectionTitle?.trim() || resultItem.sectionTitle || "";
+
     const acceptedItem = normalizeAcceptedItem({
       sourceTaskId: task.id,
       sourceResultItemId: resultItem.id,
       acceptedSnapshot: cloneForAcceptedSnapshot(resultItem),
       currentContent: {
         ...cloneForAcceptedSnapshot(resultItem),
+        sectionTitle: nextSectionTitle,
         requirementText: input.requirementText?.trim() || resultItem.requirementText,
-        title: input.title?.trim() || resultItem.title
+        title: nextTitle,
+        itemTitle: nextTitle
       },
       review: {
         status: "accepted",
@@ -1172,9 +1431,23 @@ export class ProjectService {
       throw new Error("Accepted item not found");
     }
 
+    const nextTitle =
+      input.itemTitle?.trim() ||
+      input.title?.trim() ||
+      acceptedItem.currentContent?.itemTitle ||
+      acceptedItem.currentContent?.title ||
+      acceptedItem.acceptedSnapshot?.itemTitle ||
+      acceptedItem.acceptedSnapshot?.title ||
+      "";
     acceptedItem.currentContent = {
       ...(acceptedItem.currentContent || {}),
-      title: input.title?.trim() || acceptedItem.currentContent?.title || acceptedItem.acceptedSnapshot?.title || "",
+      sectionTitle:
+        input.sectionTitle?.trim() ||
+        acceptedItem.currentContent?.sectionTitle ||
+        acceptedItem.acceptedSnapshot?.sectionTitle ||
+        "",
+      title: nextTitle,
+      itemTitle: nextTitle,
       requirementText:
         input.requirementText?.trim() ||
         acceptedItem.currentContent?.requirementText ||
@@ -1242,6 +1515,175 @@ export class ProjectService {
     touchModule(module, "accepted_item_reordered", `${getDocumentTypeLabel(normalizedDocumentType)}接受结果顺序已调整`);
     await this.saveProject(project);
     return [...space.acceptedItems];
+  }
+
+  async listDocumentExtractionTasks(projectId, moduleId) {
+    const module = await this.getModule(projectId, moduleId);
+    return [...(module.documentExtractionTasks || [])].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  async getDocumentExtractionTask(projectId, moduleId, taskId) {
+    const module = await this.getModule(projectId, moduleId);
+    return (module.documentExtractionTasks || []).find((task) => task.id === taskId) || null;
+  }
+
+  async deleteDocumentExtractionTask(projectId, moduleId, taskId) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const taskIndex = (module.documentExtractionTasks || []).findIndex((item) => item.id === taskId);
+    if (taskIndex === -1) {
+      throw new Error("Document extraction task not found");
+    }
+
+    const [removedTask] = module.documentExtractionTasks.splice(taskIndex, 1);
+    touchModule(
+      module,
+      "document_extraction_task_deleted",
+      `${getDocumentExtractionTypeLabel(removedTask.targetDocumentType)}提取任务已删除`
+    );
+    project.auditLog.push({
+      at: now(),
+      action: "module_document_extraction_task_deleted",
+      detail: `${module.name} / ${getDocumentExtractionTypeLabel(removedTask.targetDocumentType)} 提取任务已删除`
+    });
+    await this.saveProject(project);
+    return { id: taskId, deleted: true };
+  }
+
+  async recordDocumentExtractionTask(projectId, moduleId, taskInput = {}) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const task = normalizeDocumentExtractionTask({
+      ...taskInput,
+      moduleId,
+      createdAt: now(),
+      updatedAt: now()
+    });
+    task.summary = buildDocumentExtractionTaskSummary(task);
+    module.documentExtractionTasks.unshift(task);
+    touchModule(
+      module,
+      "document_extraction_task_created",
+      `${getDocumentExtractionTypeLabel(task.targetDocumentType)}提取任务已创建`
+    );
+    project.auditLog.push({
+      at: now(),
+      action: "module_document_extraction_task_created",
+      detail: `${module.name} / ${getDocumentExtractionTypeLabel(task.targetDocumentType)} 已新增提取任务`
+    });
+    await this.saveProject(project);
+    return task;
+  }
+
+  async updateDocumentExtractionTask(projectId, moduleId, taskId, updates = {}) {
+    const taskKey = `${projectId}:${moduleId}:document_extraction:${taskId}`;
+    return this.enqueueGenerationTaskMutation(taskKey, async () => {
+      const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+      const task = (module.documentExtractionTasks || []).find((item) => item.id === taskId);
+      if (!task) {
+        throw new Error("Document extraction task not found");
+      }
+
+      if (updates.status) {
+        task.status = String(updates.status).trim();
+      }
+      if (Object.hasOwn(updates, "sourceMode")) {
+        task.sourceMode = String(updates.sourceMode || task.sourceMode || "text").trim() || "text";
+      }
+      if (typeof updates.sourceText === "string") {
+        task.sourceText = updates.sourceText;
+      }
+      if (Array.isArray(updates.inputArtifacts)) {
+        task.inputArtifacts = normalizeDocumentExtractionTask({
+          inputArtifacts: updates.inputArtifacts
+        }).inputArtifacts;
+      }
+      if (typeof updates.outputAssetId === "string") {
+        task.outputAssetId = updates.outputAssetId.trim();
+      }
+      if (typeof updates.outputAssetName === "string") {
+        task.outputAssetName = updates.outputAssetName.trim();
+      }
+      if (typeof updates.summary === "string") {
+        task.summary = updates.summary;
+      }
+      if (Object.hasOwn(updates, "errorMessage")) {
+        task.errorMessage = String(updates.errorMessage || "").trim();
+      }
+      if (updates.progress && typeof updates.progress === "object") {
+        task.progress = {
+          ...normalizeTaskProgress(task.progress),
+          ...normalizeTaskProgress({
+            ...task.progress,
+            ...updates.progress,
+            updatedAt: now()
+          })
+        };
+      }
+      if (updates.debug && typeof updates.debug === "object") {
+        task.debug = mergeTaskDebug(task.debug, updates.debug);
+      }
+      if (updates.timelineEntry && typeof updates.timelineEntry === "object") {
+        appendTimelineEntry(task, updates.timelineEntry);
+      }
+      if (updates.debugEvent && typeof updates.debugEvent === "object") {
+        appendTaskDebugEvent(task, updates.debugEvent);
+      }
+
+      task.summary = buildDocumentExtractionTaskSummary(task);
+      task.updatedAt = now();
+
+      if (task.status === "completed") {
+        touchModule(module, "document_extracted", `${getDocumentExtractionTypeLabel(task.targetDocumentType)}提取任务已完成`);
+      } else if (task.status === "failed") {
+        touchModule(module, "document_extraction_failed", `${getDocumentExtractionTypeLabel(task.targetDocumentType)}提取任务失败`);
+      } else {
+        touchModule(module, "document_extraction_task_updated", `${getDocumentExtractionTypeLabel(task.targetDocumentType)}提取任务状态已更新`);
+      }
+
+      await this.saveProject(project);
+      return task;
+    });
+  }
+
+  async createExtractedModuleAsset(projectId, moduleId, input = {}) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const normalizedDocumentType = normalizeDocumentExtractionType(input.targetDocumentType);
+    const role = getExtractedAssetRole(normalizedDocumentType);
+    const baseName = buildExtractedAssetBaseName(module.name, normalizedDocumentType);
+    const existingNames = new Set((module.assets || []).map((asset) => asset.originalName));
+    let fileName = baseName;
+    if (existingNames.has(fileName)) {
+      const stampedName = `${baseName.replace(/\.md$/i, "")}-${formatAssetTimestamp()}.md`;
+      fileName = existingNames.has(stampedName) ? `${baseName.replace(/\.md$/i, "")}-${formatAssetTimestamp()}-2.md` : stampedName;
+    }
+
+    const record = createGeneratedModuleAssetRecord(projectId, moduleId, fileName, role);
+    await fs.mkdir(path.dirname(record.absolutePath), { recursive: true });
+    await fs.writeFile(record.absolutePath, String(input.markdown || ""), "utf8");
+    const stat = await fs.stat(record.absolutePath);
+    record.size = stat.size;
+    record.uploadedAt = now();
+
+    module.assets.push(record);
+
+    if (input.sourceTaskId) {
+      const task = (module.documentExtractionTasks || []).find((item) => item.id === input.sourceTaskId);
+      if (task) {
+        task.outputAssetId = record.id;
+        task.outputAssetName = record.originalName;
+        task.updatedAt = now();
+      }
+    }
+
+    touchModule(module, "extracted_asset_created", `已生成提取资产：${record.originalName}`);
+    project.auditLog.push({
+      at: now(),
+      action: "module_extracted_asset_created",
+      detail: `${module.name} 已新增提取资产：${record.originalName}`
+    });
+    await this.saveProject(project);
+    return record;
   }
 
   async getProjectAndModule(projectId, moduleId) {

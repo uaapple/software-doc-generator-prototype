@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.js";
+import { getAllowedKindsForAreasAndLayer } from "../../public/skill-kind-matrix.js";
 
 const execFileAsync = promisify(execFile);
 const CLI_JSON_MAX_LENGTH = 120000;
@@ -122,6 +123,118 @@ function sanitizeOutline(outline = {}) {
               ? section.evidenceKeys.map((item) => clipText(item || "", 200)).slice(0, 20)
             : []
         }))
+      : []
+  };
+}
+
+function sanitizeManualTitleOutline(outline = {}) {
+  const candidate =
+    typeof outline === "string"
+      ? (() => {
+          try {
+            return JSON.parse(outline);
+          } catch (_error) {
+            return null;
+          }
+        })()
+      : outline;
+
+  const normalizedSections = [];
+  for (const section of Array.isArray(candidate?.sections) ? candidate.sections : []) {
+    const sectionTitle = String(section?.sectionTitle || section?.title || "").trim();
+    if (!sectionTitle) {
+      continue;
+    }
+
+    const items = [];
+    for (const item of Array.isArray(section?.items) ? section.items : []) {
+      const itemTitle = String(item?.itemTitle || item?.title || "").trim();
+      if (!itemTitle) {
+        continue;
+      }
+      items.push({ itemTitle });
+    }
+
+    if (items.length) {
+      normalizedSections.push({
+        sectionTitle,
+        items
+      });
+    }
+  }
+
+  if (!normalizedSections.length) {
+    return null;
+  }
+
+  return {
+    sections: normalizedSections
+  };
+}
+
+function sanitizeReplayContextArtifact(inputArtifact = {}) {
+  const replayContext = inputArtifact.replayContext && typeof inputArtifact.replayContext === "object"
+    ? inputArtifact.replayContext
+    : {};
+  const replayContextDir = replayContext.directory || inputArtifact.replayContextDir || "";
+  const manifestFileName = replayContext.manifestFileName || "manifest.json";
+  const taskBriefFileName = replayContext.taskBriefFileName || "task-brief.md";
+  const manifestPath = replayContext.manifestPath || inputArtifact.manifestPath || (replayContextDir ? path.join(replayContextDir, manifestFileName) : "");
+  const taskBriefPath = replayContext.taskBriefPath || inputArtifact.taskBriefPath || (replayContextDir ? path.join(replayContextDir, taskBriefFileName) : "");
+  return {
+    replayContext: {
+      directory: clipText(replayContextDir || "", CLI_PATH_MAX_LENGTH),
+      manifestFileName: clipText(manifestFileName || "", 120),
+      taskBriefFileName: clipText(taskBriefFileName || "", 120)
+    },
+    replayContextDir: clipText(replayContextDir || "", CLI_PATH_MAX_LENGTH),
+    manifestPath: clipText(manifestPath || "", CLI_PATH_MAX_LENGTH),
+    taskBriefPath: clipText(taskBriefPath || "", CLI_PATH_MAX_LENGTH),
+    files: inputArtifact.files && typeof inputArtifact.files === "object"
+      ? {
+          rejectionsPath: clipText(inputArtifact.files.rejectionsPath || "", CLI_PATH_MAX_LENGTH),
+          effectiveSkillManifestPath: clipText(inputArtifact.files.effectiveSkillManifestPath || "", CLI_PATH_MAX_LENGTH),
+          layerSkillInventoryPath: clipText(inputArtifact.files.layerSkillInventoryPath || "", CLI_PATH_MAX_LENGTH),
+          referenceAssetFiles: Array.isArray(inputArtifact.files.referenceAssetFiles)
+            ? inputArtifact.files.referenceAssetFiles.map((item) => ({
+                fileName: clipText(item?.fileName || "", 160),
+                role: clipText(item?.role || "", 80),
+                path: clipText(item?.path || "", CLI_PATH_MAX_LENGTH)
+              }))
+            : []
+        }
+      : {}
+  };
+}
+
+function sanitizeProjectContext(project = {}) {
+  return {
+    name: clipText(project.name || "", 200),
+    description: clipText(project.description || "", 1000),
+    language: clipText(project.language || "", 80),
+    documentType: clipText(project.documentType || "software_requirement", 80),
+    domain: clipText(project.domain || "", 120),
+    moduleSkillKey: clipText(project.moduleSkillKey || "", 120)
+  };
+}
+
+function sanitizeModuleBootstrapAnalysis(analysis = {}) {
+  return {
+    summary: clipText(analysis.summary || "", 2000),
+    themes: Array.isArray(analysis.themes)
+      ? analysis.themes.map((item) => ({
+          title: clipText(item?.title || "", 200),
+          objective: clipText(item?.objective || "", 600),
+          anchorIds: Array.isArray(item?.anchorIds)
+            ? item.anchorIds.map((value) => clipText(value || "", 120)).slice(0, 20)
+            : []
+        }))
+      : [],
+    ruleFocus: Array.isArray(analysis.ruleFocus)
+      ? analysis.ruleFocus.map((item) => clipText(item || "", 200)).slice(0, 12)
+      : [],
+    cautionNotes: Array.isArray(analysis.cautionNotes)
+      ? analysis.cautionNotes.map((item) => clipText(item || "", 300)).slice(0, 12)
       : []
   };
 }
@@ -516,8 +629,178 @@ function buildOutlinePrompt(payload = {}) {
   ].join("\n");
 }
 
+function buildModuleBootstrapAnalyzePrompt(payload = {}) {
+  const inputArtifact = payload.inputArtifact || {};
+  const project = sanitizeProjectContext(inputArtifact.project || {});
+  const assets = Array.isArray(inputArtifact.assets) ? inputArtifact.assets.map(sanitizeAssetItem) : [];
+  const anchors = Array.isArray(inputArtifact.anchors) ? inputArtifact.anchors.map(sanitizeAnchorItem) : [];
+  const skillBundle = sanitizeSkillBundle(
+    inputArtifact.skillBundle || {
+      bundlePath: payload.skillBundlePath,
+      manifestPath: payload.skillBundlePath,
+      recommendedSkillCodes: payload.recommendedSkillCodes
+    },
+    { includeChunks: false }
+  );
+  const recalledAtoms = Array.isArray(inputArtifact.recalledAtoms)
+    ? inputArtifact.recalledAtoms.map((item) => ({
+        skillCode: item.skillCode,
+        title: item.title,
+        matchedReason: clipText(item.matchedReason || "", 300)
+      }))
+    : [];
+  return [
+    "You are executing the Hermes step `module_bootstrap_analyze` for software requirement cold start.",
+    "Analyze the provided assets, anchors, task skill bundle, and recalled skill shortlist to derive reusable module-level writing guidance.",
+    "Return strict JSON only. No markdown fences. No explanation.",
+    "",
+    "Project:",
+    JSON.stringify(project, null, 2),
+    "",
+    "Assets:",
+    JSON.stringify(assets, null, 2),
+    "",
+    "Anchors:",
+    JSON.stringify(anchors, null, 2),
+    "",
+    "Task skill bundle:",
+    JSON.stringify(skillBundle, null, 2),
+    "",
+    "Recalled skill atoms:",
+    JSON.stringify(recalledAtoms, null, 2),
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        summary: "One paragraph module analysis",
+        themes: [
+          {
+            title: "Cooling request establishment",
+            objective: "Describe the core module topic and writing focus",
+            anchorIds: ["anchor-1"]
+          }
+        ],
+        ruleFocus: ["Prefer lifecycle wording for this module"],
+        cautionNotes: ["Do not drift into implementation detail"]
+      },
+      null,
+      2
+    ),
+    "",
+    "Rules:",
+    "- Focus on reusable module-level guidance for software requirement writing.",
+    "- Reuse only the provided anchors and recalled atoms; do not invent source anchor ids.",
+    "- Identify the core behavioral topics, preferred writing pattern, and key pitfalls for this module.",
+    "- Keep the analysis concise and directly useful for generating module skill knowledge."
+  ].join("\n");
+}
+
+function buildModuleBootstrapGeneratePrompt(payload = {}) {
+  const inputArtifact = payload.inputArtifact || {};
+  const project = sanitizeProjectContext(inputArtifact.project || {});
+  const assets = Array.isArray(inputArtifact.assets) ? inputArtifact.assets.map(sanitizeAssetItem) : [];
+  const anchors = Array.isArray(inputArtifact.anchors) ? inputArtifact.anchors.map(sanitizeAnchorItem) : [];
+  const skillBundle = sanitizeSkillBundle(
+    inputArtifact.skillBundle || {
+      bundlePath: payload.skillBundlePath,
+      manifestPath: payload.skillBundlePath,
+      recommendedSkillCodes: payload.recommendedSkillCodes
+    }
+  );
+  const recalledAtoms = Array.isArray(inputArtifact.recalledAtoms)
+    ? inputArtifact.recalledAtoms.map((item) => ({
+        skillCode: item.skillCode,
+        title: item.title,
+        matchedReason: clipText(item.matchedReason || "", 300),
+        content: clipText(item.content || "", 900)
+      }))
+    : [];
+  const analysis = sanitizeModuleBootstrapAnalysis(inputArtifact.analysis || {});
+  const allowedKinds = getAllowedKindsForAreasAndLayer(["domain_knowledge"], "module");
+  return [
+    "You are executing the Hermes step `module_bootstrap_generate` for software requirement cold start.",
+    "Generate reusable module-level skill knowledge for this module.",
+    "The output must be compatible with the existing module `domain-knowledge.json` schema.",
+    "Return strict JSON only. No markdown fences. No explanation.",
+    "",
+    "Project:",
+    JSON.stringify(project, null, 2),
+    "",
+    "Analysis:",
+    JSON.stringify(analysis, null, 2),
+    "",
+    "Assets:",
+    JSON.stringify(assets, null, 2),
+    "",
+    "Anchors:",
+    JSON.stringify(anchors, null, 2),
+    "",
+    "Task skill bundle:",
+    JSON.stringify(skillBundle, null, 2),
+    "",
+    "Recalled skill atoms:",
+    JSON.stringify(recalledAtoms, null, 2),
+    "",
+    "Module layer allowed kinds:",
+    JSON.stringify(allowedKinds, null, 2),
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        version: 1,
+        generationPriorities: ["Prioritize the core behavioral lifecycle first."],
+        examples: [],
+        ruleHints: [
+        {
+          domain: "embedded_vcu",
+          subdomain: "thermal_management",
+          sectionHints: ["Cooling request establishment"],
+          writingPattern: "First write establishment, then withdrawal conditions.",
+          targetStyle: "Concise software requirement style",
+          sourceBasis: ["系统需求", "参考软件需求", "相关既有技能规则"]
+        }
+      ],
+        antiPatterns: ["Do not mix implementation details into requirement text"],
+        sourceOfTruthPolicy: {
+          preferredFunctionSection: {
+            sectionNumber: "",
+            title: "Thermal management"
+          },
+          preferredSubsections: [
+            {
+              sectionNumber: "",
+              title: "Cooling request lifecycle",
+              coreRequirementTypes: ["software_requirement"]
+            }
+          ],
+          coreFirst: true,
+          preferSymmetricExpansion: true,
+          preferObjectSpecificRequirements: true,
+          discourageGenericScatterRequirements: true
+        }
+      },
+      null,
+      2
+    ),
+    "",
+    "Rules:",
+    "- Produce reusable module-level guidance, not final software requirement result items.",
+    "- Keep the output within software requirement scope.",
+    "- Base the guidance on the provided analysis, anchors, and recalled atoms.",
+    "- You must only generate kinds that are valid for the module layer allowed kinds listed above.",
+    "- Do not output `document_blueprint_section` or `document_blueprint_policy`.",
+    "- If you need to express section placement or output-organization intent, encode it inside `ruleHints.sectionHints`, `generationPriorities`, or `sourceOfTruthPolicy` instead so it can be stored as module-layer `source_policy_setting` items.",
+    "- `ruleHints.sourceBasis` must use stable human-readable basis labels such as `系统需求`、`参考软件需求`、`相关代码语义`、`相关既有技能规则`.",
+    "- Do not include raw anchor ids, UUIDs, or runtime artifact labels inside `sourceBasis`, such as `task skill bundle recalled atoms`, `task skill bundle shortlist`, or `...锚点 <uuid>`.",
+    "- If a specific anchor contributes an important condition or edge case, write that condition directly into `writingPattern`, `generationPriorities`, or `antiPatterns` instead of citing the anchor id.",
+    "- `examples` may be empty if no trustworthy example can be derived from the provided sources.",
+    "- Do not invent source files, anchor ids, or unsupported sections."
+  ].join("\n");
+}
+
 function buildContentGeneratePrompt(payload = {}) {
   const inputArtifact = payload.inputArtifact || {};
+  const project = sanitizeProjectContext(inputArtifact.project || {});
   const assets = Array.isArray(inputArtifact.assets) ? inputArtifact.assets.map(sanitizeAssetItem) : [];
   const anchors = Array.isArray(inputArtifact.anchors)
     ? inputArtifact.anchors.map(sanitizeAnchorItem)
@@ -548,18 +831,14 @@ function buildContentGeneratePrompt(payload = {}) {
       }))
     : [];
   const outline = sanitizeOutline(inputArtifact.outline || {});
-  const project = {
-    name: clipText(inputArtifact.project?.name || "", 200),
-    description: clipText(inputArtifact.project?.description || "", 1000),
-    language: clipText(inputArtifact.project?.language || "", 80),
-    documentType: clipText(inputArtifact.project?.documentType || "software_requirement", 80),
-    domain: clipText(inputArtifact.project?.domain || "", 120),
-    moduleSkillKey: clipText(inputArtifact.project?.moduleSkillKey || "", 120)
-  };
+  const requiredTitleOutline = sanitizeManualTitleOutline(inputArtifact.requiredTitleOutline || inputArtifact.manualTitleOutline || {});
+  const requiredLeafCount = Math.max(0, Number(inputArtifact.requiredLeafCount || 0) || 0);
   const template = inputArtifact.template || {};
   return [
     "You are executing the Hermes step `content_generate` for software requirement generation.",
-    "Generate structured software requirement items from the provided project context, template, anchors, task skill bundle, recalled skill atoms, and outline.",
+    "Generate structured software requirement body text from the provided project context, template, anchors, task skill bundle, recalled skill atoms, and outline.",
+    "Do not generate section titles or item titles. The backend will inject them after generation.",
+    "The `outline` block is supporting context only; obey `requiredTitleOutline` for the actual title structure.",
     "Return strict JSON only. No markdown fences. No explanation.",
     "",
     "Project:",
@@ -570,6 +849,12 @@ function buildContentGeneratePrompt(payload = {}) {
     "",
     "Outline:",
     JSON.stringify(outline, null, 2),
+    "",
+    "Required title outline:",
+    JSON.stringify(requiredTitleOutline, null, 2),
+    "",
+    "Required leaf count:",
+    JSON.stringify({ requiredLeafCount }, null, 2),
     "",
     "Assets:",
     JSON.stringify(assets, null, 2),
@@ -588,7 +873,6 @@ function buildContentGeneratePrompt(payload = {}) {
       {
         items: [
           {
-            title: "Requirement title",
             requirementText: "The software shall ...",
             type: "functional",
             verificationHint: "How to verify",
@@ -604,6 +888,9 @@ function buildContentGeneratePrompt(payload = {}) {
     "Rules:",
     "- First read the task skill bundle manifest, then read only the skill chunks you need to write each requirement.",
     "- Use anchors as the source-of-truth references for generated requirements.",
+    "- Treat `requiredTitleOutline` as the authoritative ordering and cardinality constraint for the output items.",
+    "- Return exactly `requiredLeafCount` items in the same order as the leaf list implied by `requiredTitleOutline`.",
+    "- Do not invent titles, headings, or grouping text.",
     "- Every requirement must be traceable to one or more sourceAnchorIds from the provided anchors.",
     "- sourceAnchorIds must only contain anchor ids that exist in the provided anchor list.",
     "- Keep content at software requirement level, not implementation detail level.",
@@ -611,14 +898,510 @@ function buildContentGeneratePrompt(payload = {}) {
   ].join("\n");
 }
 
+function buildDocumentExtractPrompt(payload = {}) {
+  const inputArtifact = payload.inputArtifact || {};
+  const project = sanitizeProjectContext(inputArtifact.project || {});
+  const targetDocumentType = String(inputArtifact.targetDocumentType || "software_requirement").trim();
+  const sourceText = clipText(inputArtifact.sourceText || "", 16000);
+  const images = Array.isArray(inputArtifact.images) ? inputArtifact.images.map(sanitizeAssetItem) : [];
+  const spreadsheets = Array.isArray(inputArtifact.spreadsheets) ? inputArtifact.spreadsheets.map(sanitizeAssetItem) : [];
+  const spreadsheetExtraction = inputArtifact.spreadsheetExtraction && typeof inputArtifact.spreadsheetExtraction === "object"
+    ? inputArtifact.spreadsheetExtraction
+    : null;
+  return [
+    "You are executing the Hermes step `document_extract_generate` for module-local document extraction.",
+    "Extract the uploaded images, spreadsheets, and/or pasted text into a structured markdown document.",
+    "Respect the original wording and layout as much as possible. Do not omit content. Do not invent missing requirements.",
+    "Return strict JSON only. No markdown fences. No explanation.",
+    "",
+    "Project:",
+    JSON.stringify(project, null, 2),
+    "",
+    "Target document type:",
+    JSON.stringify({ targetDocumentType }, null, 2),
+    "",
+    "Source text:",
+    JSON.stringify({ sourceText }, null, 2),
+    "",
+    "Allowed image files:",
+    JSON.stringify(images, null, 2),
+    "",
+    "Allowed spreadsheet files:",
+    JSON.stringify(spreadsheets, null, 2),
+    "",
+    "Spreadsheet extraction summary:",
+    JSON.stringify(spreadsheetExtraction, null, 2),
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        targetDocumentType,
+        title: "模块名-文档类型",
+        markdown: "# 模块名文档\n\n## 文档信息\n",
+        summary: "提取完成摘要",
+        keySections: ["文档信息", "章节信息", "需求条目", "提炼摘要"]
+      },
+      null,
+      2
+    ),
+    "",
+    "Rules:",
+    "- Use the uploaded images, spreadsheets, and/or pasted text as the only source of truth.",
+    "- If spreadsheet extraction summary is present, treat the normalized spreadsheet rows as source truth and reorganize them without inventing extra steps.",
+    "- Preserve chapter numbers, requirement ids, signal names, status values, and section structure when present.",
+    "- For `system_requirement`, format as: 文档信息 / 章节信息 / 需求条目 / 提炼摘要.",
+    "- For `software_requirement`, format as: 文档信息 / 章节结构 / 需求条目 / 提炼摘要.",
+    "- For `detail_design`, preserve explicit structure, keep simple numbering, and remove internal raw ids when the source uses them only as implementation labels.",
+    "- For `hil_test_case`, preserve test case titles and ids, keep Precondition / Step Description / Expected Result structure, and write a reviewable structured markdown test case document.",
+    "- File naming style inside markdown should align with module name + document type, but the JSON should only return the document content.",
+    "- Do not add content that is not supported by the input."
+  ].join("\n");
+}
+
+const REPLAY_PROPOSAL_ALLOWED_LAYERS = new Set(["generic", "docType", "domain", "module"]);
+const REPLAY_PROPOSAL_ALLOWED_ACTIONS = new Set([
+  "add_skill_item",
+  "modify_skill_item",
+  "split_skill_item",
+  "deprecate_skill_item"
+]);
+const REPLAY_PROPOSAL_ALLOWED_KINDS = new Set([
+  "writing_rule",
+  "good_example",
+  "rule_hint",
+  "generation_priority",
+  "extraction_rule",
+  "validation_rule",
+  "anti_pattern",
+  "bad_example",
+  "source_alias",
+  "normalization_rule",
+  "forbidden_expansion",
+  "source_policy_setting",
+  "document_blueprint_section",
+  "document_blueprint_policy",
+  "code_style_prefix"
+]);
+
+function normalizeReplayLayer(value = "", fallback = "") {
+  const trimmed = String(value || "").trim();
+  return REPLAY_PROPOSAL_ALLOWED_LAYERS.has(trimmed) ? trimmed : fallback;
+}
+
+function normalizeReplayAction(value = "", fallback = "modify_skill_item") {
+  const trimmed = String(value || "").trim();
+  const mapped = {
+    add_rule: "add_skill_item",
+    add_example: "add_skill_item",
+    modify_rule: "modify_skill_item",
+    split_rule: "split_skill_item",
+    deprecate_rule: "deprecate_skill_item"
+  }[trimmed];
+  const normalized = mapped || trimmed || fallback;
+  return REPLAY_PROPOSAL_ALLOWED_ACTIONS.has(normalized) ? normalized : fallback;
+}
+
+function normalizeReplayKind(value = "", fallback = "validation_rule") {
+  const trimmed = String(value || "").trim();
+  return REPLAY_PROPOSAL_ALLOWED_KINDS.has(trimmed) ? trimmed : fallback;
+}
+
+function normalizeReplaySlug(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w\u4e00-\u9fa5-]/g, "_");
+}
+
+function mapReplayAreaToKind(targetArea = "") {
+  if (targetArea === "writing") return "writing_rule";
+  if (targetArea === "extraction") return "extraction_rule";
+  if (targetArea === "examples") return "bad_example";
+  if (targetArea === "domain_knowledge") return "rule_hint";
+  return "validation_rule";
+}
+
+function mapReplayKindToTargetFile(kind = "") {
+  if (kind === "writing_rule") return "requirement_writing.md";
+  if (kind === "extraction_rule") return "requirement_extraction.md";
+  if (kind === "validation_rule") return "requirement_validation.md";
+  if (kind === "good_example") return "examples/good_examples.md";
+  if (kind === "bad_example") return "examples/bad_examples.md";
+  return "domain-knowledge.json";
+}
+
+function getReplayProposalHint(payload = {}) {
+  const replayContext = payload.inputArtifact?.replayContext;
+  const manifest =
+    replayContext?.manifest && typeof replayContext.manifest === "object"
+      ? replayContext.manifest
+      : payload.inputArtifact?.replayManifest && typeof payload.inputArtifact.replayManifest === "object"
+        ? payload.inputArtifact.replayManifest
+        : {};
+  const taskContext =
+    manifest.taskContext && typeof manifest.taskContext === "object"
+      ? manifest.taskContext
+      : replayContext?.taskContext && typeof replayContext.taskContext === "object"
+        ? replayContext.taskContext
+        : {};
+  const records = Array.isArray(manifest.rejectionContext?.records)
+    ? manifest.rejectionContext.records
+    : [];
+  const candidates = Array.isArray(manifest.layerSkillInventory)
+    ? manifest.layerSkillInventory
+    : Array.isArray(manifest.candidateSkillInventory)
+      ? manifest.candidateSkillInventory
+      : [];
+  const targetArea = Array.isArray(taskContext.targetAreas) && taskContext.targetAreas.length
+    ? String(taskContext.targetAreas[0] || "").trim() || "validation"
+    : "validation";
+  const targetLayer = normalizeReplayLayer(taskContext.targetLayerConstraint || "", "docType");
+  const preferredKind = mapReplayAreaToKind(targetArea);
+  const allowedKinds = Array.isArray(taskContext.allowedKindsForReplay)
+    ? taskContext.allowedKindsForReplay.map((item) => normalizeReplayKind(item || "", "")).filter(Boolean)
+    : [];
+  const targetKind = allowedKinds.includes(preferredKind) ? preferredKind : allowedKinds[0] || preferredKind;
+  const moduleProfileKey = normalizeReplaySlug(taskContext.moduleSkillKey || taskContext.moduleName || "");
+  const documentType = normalizeReplaySlug(taskContext.documentType || "software_requirement") || "software_requirement";
+  const domain = normalizeReplaySlug(taskContext.domain || "embedded_vcu") || "embedded_vcu";
+  let targetProfileKey = normalizeReplaySlug(taskContext.targetProfileKeyConstraint || "");
+  if (!targetProfileKey) {
+    if (targetLayer === "module") targetProfileKey = moduleProfileKey || documentType;
+    else if (targetLayer === "domain") targetProfileKey = domain;
+    else if (targetLayer === "docType") targetProfileKey = documentType;
+    else targetProfileKey = "generic";
+  }
+  const candidateSkillMap = new Map(
+    candidates
+      .map((item) => [String(item?.skillCode || item?.ruleId || "").trim(), item])
+      .filter(([skillCode]) => skillCode)
+  );
+  const validEvidenceRefs = new Set(
+    records
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean)
+  );
+  const fallbackReason = records
+    .flatMap((item) => [item?.expectedNote, item?.reasonText])
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join("; ");
+  return {
+    targetLayer,
+    targetProfileKey,
+    targetKind,
+    candidateSkillMap,
+    validEvidenceRefs,
+    fallbackReason,
+    evidenceRefs: [...validEvidenceRefs],
+    reasonCategory: String(records[0]?.reasonCategory || "").trim()
+  };
+}
+
+function buildReplayNewRuleDraft(item = {}, title = "", afterContent = "") {
+  if (item.newRuleDraft && typeof item.newRuleDraft === "object") {
+    return {
+      title: String(item.newRuleDraft.title || title || "").trim(),
+      content: String(item.newRuleDraft.content || afterContent || "").trim(),
+      structuredPayload:
+        item.newRuleDraft.structuredPayload && typeof item.newRuleDraft.structuredPayload === "object"
+          ? item.newRuleDraft.structuredPayload
+          : null,
+      rules: Array.isArray(item.newRuleDraft.rules)
+        ? item.newRuleDraft.rules
+            .map((rule) => ({
+              title: String(rule?.title || "").trim(),
+              content: String(rule?.content || "").trim(),
+              structuredPayload:
+                rule?.structuredPayload && typeof rule.structuredPayload === "object" ? rule.structuredPayload : null
+            }))
+            .filter((rule) => rule.title && rule.content)
+        : []
+    };
+  }
+  if (!afterContent) {
+    return null;
+  }
+  return {
+    title: title || "回投提议",
+    content: afterContent,
+    structuredPayload: null,
+    rules: []
+  };
+}
+
+function normalizeReplayEvidenceRefs(rawRefs = [], validEvidenceRefs = new Set(), fallbackEvidenceRefs = []) {
+  if (!Array.isArray(rawRefs)) {
+    return Array.isArray(fallbackEvidenceRefs) ? [...new Set(fallbackEvidenceRefs.filter(Boolean))] : [];
+  }
+  const refs = rawRefs.map((item) => String(item || "").trim()).filter(Boolean);
+  if (!validEvidenceRefs.size) {
+    return [...new Set(refs)];
+  }
+  const filtered = [...new Set(refs.filter((item) => validEvidenceRefs.has(item)))];
+  if (filtered.length) {
+    return filtered;
+  }
+  return Array.isArray(fallbackEvidenceRefs) ? [...new Set(fallbackEvidenceRefs.filter(Boolean))] : [];
+}
+
+function inferReplayReuseJudgement(targetLayer = "") {
+  if (targetLayer === "module") return "module_specific";
+  if (targetLayer === "domain") return "domain_general";
+  if (targetLayer === "generic") return "generic_general";
+  return "doc_type_general";
+}
+
+function inferReplayRuleIntent(targetKind = "") {
+  if (targetKind === "writing_rule") return "补充文档类型写作规则。";
+  if (targetKind === "extraction_rule") return "补充通用抽取规则。";
+  if (targetKind === "bad_example") return "补充反例或样例约束。";
+  if (targetKind === "rule_hint") return "补充跨模块领域规则。";
+  return "补充文档类型校验规则。";
+}
+
+function normalizeReplayProposalItem(item = {}, index = 0, hint = {}) {
+  let action = normalizeReplayAction(item.action || "", "modify_skill_item");
+  const candidateSkillCode = String(item.targetSkillCode || item.targetRuleId || "").trim();
+  const candidate = hint.candidateSkillMap?.get(candidateSkillCode) || null;
+  const targetLayer = normalizeReplayLayer(
+    item.targetLayer || item.layer || candidate?.targetLayer || candidate?.layer || "",
+    hint.targetLayer || "docType"
+  );
+  let targetProfileKey = normalizeReplaySlug(
+    item.targetProfileKey || item.profileKey || candidate?.targetProfileKey || candidate?.profileKey || hint.targetProfileKey || ""
+  );
+  if (!targetProfileKey) {
+    targetProfileKey = targetLayer === "generic" ? "generic" : hint.targetProfileKey || "software_requirement";
+  }
+  const targetKind = normalizeReplayKind(
+    item.targetKind || item.kind || candidate?.targetKind || candidate?.kind || "",
+    hint.targetKind || "validation_rule"
+  );
+  const title = String(item.title || item.newRuleDraft?.title || `回投提议 ${index + 1}`).trim();
+  const fallbackReason = String(item.fallbackReason || item.rationale || hint.fallbackReason || "").trim();
+  const beforeContent = String(item.beforeContent || item.before || candidate?.content || candidate?.contentSummary || "").trim();
+  const afterContent = String(item.afterContent || item.after || item.newRuleDraft?.content || "").trim();
+  const evidenceRefs = normalizeReplayEvidenceRefs(
+    item.evidenceRefs,
+    hint.validEvidenceRefs || new Set(),
+    hint.evidenceRefs || []
+  );
+  if (action === "modify_skill_item" && !candidateSkillCode) {
+    action = "add_skill_item";
+  }
+  const conclusionType = action === "add_skill_item" ? "create_new" : "modify_existing";
+  const newRuleDraft = buildReplayNewRuleDraft(item, title, afterContent);
+  const abstractionScore = /^建议补充以下约束[:：]?/.test(afterContent) || /^请/.test(afterContent)
+    ? 0.38
+    : afterContent.length >= 40
+      ? 0.78
+      : 0.6;
+  return {
+    conclusionType,
+    action,
+    targetSkillCode: conclusionType === "create_new" ? "" : candidateSkillCode,
+    targetLayer,
+    targetProfileKey,
+    targetKind,
+    kind: targetKind,
+    targetFile: String(item.targetFile || candidate?.targetFile || mapReplayKindToTargetFile(targetKind)).trim(),
+    title,
+    fallbackReason,
+    whyCurrent: String(item.whyCurrent || "").trim() || "当前 skill 约束未覆盖这类回投问题。",
+    whyChange: String(item.whyChange || "").trim() || "补充更明确的 atomic skill 约束后，可减少同类问题再次出现。",
+    targetInsertionHint: String(item.targetInsertionHint || "").trim(),
+    beforeContent,
+    afterContent,
+    before: beforeContent,
+    after: afterContent || String(newRuleDraft?.content || "").trim(),
+    rationale: String(item.rationale || fallbackReason || "").trim(),
+    evidenceRefs,
+    newRuleDraft,
+    scopeDecision: String(item.scopeDecision || targetLayer).trim(),
+    scopeReason:
+      String(item.scopeReason || "").trim() ||
+      (conclusionType === "create_new"
+        ? "当前提议未命中现有 atomic skill，将在目标层新增规则。"
+        : "当前提议命中现有 atomic skill，沿用该目标进行修订。"),
+    scopeConfidence: Number(item.scopeConfidence ?? (conclusionType === "create_new" ? 0.6 : 0.86)) || 0,
+    abstractionScore,
+    isParaphraseOfRejection: Boolean(item.isParaphraseOfRejection) || abstractionScore < 0.5,
+    reviewReadiness: String(item.reviewReadiness || "").trim() || (abstractionScore >= 0.75 ? "ready_to_apply" : "needs_human_refine"),
+    reuseJudgement: String(item.reuseJudgement || "").trim() || inferReplayReuseJudgement(targetLayer),
+    ruleIntent: String(item.ruleIntent || "").trim() || inferReplayRuleIntent(targetKind),
+    recommendedSkillText: String(item.recommendedSkillText || "").trim()
+  };
+}
+
+function buildFallbackReplayProposalItem(hint = {}) {
+  const title = `${hint.reasonCategory || "Replay"}补充规则`;
+  const afterContent = hint.fallbackReason
+    ? `建议补充以下约束：${hint.fallbackReason}`
+    : "建议补充更明确、可验证、可复用的 atomic skill 约束。";
+  const candidate = [...(hint.candidateSkillMap?.values() || [])][0] || null;
+  if (candidate?.skillCode || candidate?.ruleId) {
+    const baseText = String(candidate.content || candidate.contentSummary || "").trim();
+    return normalizeReplayProposalItem(
+      {
+        conclusionType: "modify_existing",
+        action: "modify_skill_item",
+        targetSkillCode: candidate.skillCode || candidate.ruleId || "",
+        targetLayer: candidate.targetLayer || candidate.layer || hint.targetLayer,
+        targetProfileKey: candidate.targetProfileKey || candidate.profileKey || hint.targetProfileKey,
+        targetKind: candidate.targetKind || candidate.kind || hint.targetKind,
+        title: `${candidate.title || title}（补充修订）`,
+        fallbackReason: hint.fallbackReason,
+        whyCurrent: "当前命中的 atomic skill 尚未把这类问题沉淀成明确边界。",
+        whyChange: "补充对应约束后，可降低同类回投再次发生的概率。",
+        beforeContent: baseText,
+        afterContent: baseText ? `${baseText}\n补充约束：${hint.fallbackReason || afterContent}` : afterContent,
+        evidenceRefs: hint.evidenceRefs
+      },
+      0,
+      hint
+    );
+  }
+  return normalizeReplayProposalItem(
+    {
+      conclusionType: "create_new",
+      action: "add_skill_item",
+      targetLayer: hint.targetLayer,
+      targetProfileKey: hint.targetProfileKey,
+      targetKind: hint.targetKind,
+      title,
+      fallbackReason: hint.fallbackReason,
+      whyCurrent: "当前 skill 快照中没有足以承接该问题的 atomic skill。",
+      whyChange: "新增对应 atomic skill 后，可把该问题沉淀为可复用规则。",
+      beforeContent: "",
+      afterContent,
+      evidenceRefs: hint.evidenceRefs
+    },
+    0,
+    hint
+  );
+}
+
+function normalizeReplayProposalArtifact(parsed = {}, payload = {}) {
+  const hint = getReplayProposalHint(payload);
+  const items = Array.isArray(parsed.items)
+    ? parsed.items.map((item, index) => normalizeReplayProposalItem(item, index, hint)).filter(Boolean)
+    : [];
+  const normalizedItems = items.length ? items : [buildFallbackReplayProposalItem(hint)];
+  return {
+    summary: String(parsed.summary || `已生成 ${normalizedItems.length} 条回投提议。`).trim(),
+    decisionSummary:
+      String(parsed.decisionSummary || "").trim() ||
+      `命中已有 atomic skill ${normalizedItems.filter((item) => item.action === "modify_skill_item").length} 条，建议新增 atomic skill ${normalizedItems.filter((item) => item.action === "add_skill_item").length} 条。`,
+    rootCauses: Array.isArray(parsed.rootCauses)
+      ? parsed.rootCauses.map((item) => String(item || "").trim()).filter(Boolean)
+      : hint.reasonCategory
+        ? [`多条驳回记录共同指向“${hint.reasonCategory}”相关问题。`]
+        : [],
+    validatorSuggestions: Array.isArray(parsed.validatorSuggestions)
+      ? parsed.validatorSuggestions
+          .map((item) => ({
+            title: String(item?.title || "").trim(),
+            ruleText: String(item?.ruleText || "").trim(),
+            why: String(item?.why || "").trim()
+          }))
+          .filter((item) => item.title || item.ruleText || item.why)
+      : [],
+    items: normalizedItems
+  };
+}
+
+function buildReplayProposalPrompt(payload = {}) {
+  const inputArtifact = sanitizeReplayContextArtifact(payload.inputArtifact || {});
+  return [
+    "You are executing the Hermes step `replay_proposal_generate` for replay-based skill optimization.",
+    "Use your local tools to read `manifest.json` first from the provided replay context directory.",
+    "Then read `task-brief.md`, and read any specific files referenced by `manifest.json` under `effective-skill/` and `reference-assets/` when they are relevant to the replay task.",
+    "Produce structured replay proposal JSON compatible with the existing replay proposal schema.",
+    "Return strict JSON only. No markdown fences. No explanation.",
+    "",
+    "Replay context artifact:",
+    JSON.stringify(inputArtifact, null, 2),
+    "",
+    "File contract:",
+    "- `manifest.json` contains the structured replay context, including taskContext, rejectionContext.records, and candidate skill inventories.",
+    "- `task-brief.md` is the operator-friendly replay brief and should only be used as a supporting summary source.",
+    "",
+    "Output requirements:",
+    "- Stay strictly within the targetLayerConstraint and targetProfileKeyConstraint described by `manifest.json`.",
+    "- Use evidenceRefs only from the rejection ids described by `rejectionContext.records` in `manifest.json`.",
+    "- Prefer modifying an existing same-layer atomic skill when it can carry the issue clearly.",
+    "- If no existing same-layer atomic skill can carry the issue, create a new one in the constrained layer/profile.",
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        summary: "One paragraph summary",
+        decisionSummary: "Short decision summary",
+        rootCauses: ["Root cause 1"],
+        validatorSuggestions: [
+          {
+            title: "Optional validator suggestion",
+            ruleText: "Read-only rule suggestion",
+            why: "Why this helps"
+          }
+        ],
+        items: [
+          {
+            conclusionType: "modify_existing",
+            action: "modify_skill_item",
+            targetSkillCode: "DOC-software_requirement-writing_rule-001",
+            targetLayer: "docType",
+            targetProfileKey: "software_requirement",
+            targetKind: "validation_rule",
+            kind: "validation_rule",
+            targetFile: "requirement_validation.md",
+            title: "Replay proposal title",
+            fallbackReason: "Why this proposal is needed",
+            whyCurrent: "Why current skill missed the issue",
+            whyChange: "Why the change prevents recurrence",
+            targetInsertionHint: "Where to insert",
+            beforeContent: "Current content",
+            afterContent: "Proposed skill text",
+            before: "Current content",
+            after: "Proposed skill text",
+            rationale: "Reasoning",
+            evidenceRefs: ["rej-1"],
+            newRuleDraft: null
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "",
+    "Rules:",
+    "- `modify_existing` items must use `targetSkillCode` from `layerSkillInventory` or `candidateSkillInventory` in `manifest.json`.",
+    "- If no existing skill fits, output `create_new` with `action = add_skill_item` and an empty `targetSkillCode`.",
+    "- `targetKind` must stay within `taskContext.allowedKindsForReplay` when that list is present.",
+    "- `afterContent` must be reusable atomic skill text, not a one-off edit instruction for a single rejected requirement.",
+    "- Produce at least one executable replay proposal item whenever replay rejection records exist."
+  ].join("\n");
+}
+
 function buildCliPrompt(payload = {}) {
   switch (payload.stepType) {
+    case "replay_proposal_generate":
+      return buildReplayProposalPrompt(payload);
+    case "document_extract_generate":
+      return buildDocumentExtractPrompt(payload);
     case "anchor_index_build":
       return buildAnchorIndexPrompt(payload);
     case "material_extract":
       return buildMaterialExtractPrompt(payload);
     case "atom_recall":
       return buildAtomRecallPrompt(payload);
+    case "module_bootstrap_analyze":
+      return buildModuleBootstrapAnalyzePrompt(payload);
+    case "module_bootstrap_generate":
+      return buildModuleBootstrapGeneratePrompt(payload);
     case "outline_build":
       return buildOutlinePrompt(payload);
     case "content_generate":
@@ -641,7 +1424,10 @@ function normalizeStepTimeoutMap(stepTimeoutMs = {}) {
   );
 }
 
-function normalizeCliArtifact(stepType, parsed = {}) {
+function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
+  if (stepType === "replay_proposal_generate") {
+    return normalizeReplayProposalArtifact(parsed, payload);
+  }
   if (stepType === "anchor_index_build") {
     return { anchors: Array.isArray(parsed.anchors) ? parsed.anchors.map(sanitizeAnchorItem) : [] };
   }
@@ -650,6 +1436,15 @@ function normalizeCliArtifact(stepType, parsed = {}) {
   }
   if (stepType === "atom_recall") {
     return { items: Array.isArray(parsed.items) ? parsed.items : [] };
+  }
+  if (stepType === "module_bootstrap_analyze") {
+    return sanitizeModuleBootstrapAnalysis(parsed);
+  }
+  if (stepType === "module_bootstrap_generate") {
+    return parsed && typeof parsed === "object" ? parsed : {};
+  }
+  if (stepType === "document_extract_generate") {
+    return parsed && typeof parsed === "object" ? parsed : {};
   }
   if (stepType === "outline_build") {
     return {
@@ -732,6 +1527,10 @@ export class HermesAgentClient {
         error.code = body?.code || "hermes_request_failed";
         error.details = body?.details || null;
         throw error;
+      }
+
+      if (body?.artifact && typeof body.artifact === "object") {
+        body.artifact = normalizeCliArtifact(payload.stepType, body.artifact, payload);
       }
 
       await emitHermesEvent(runtime.onEvent, {
@@ -890,7 +1689,7 @@ export class HermesAgentClient {
       return {
         status: "succeeded",
         stepType: payload.stepType,
-        artifact: normalizeCliArtifact(payload.stepType, parsed),
+        artifact: normalizeCliArtifact(payload.stepType, parsed, payload),
         metrics: tokenUsage ? { tokenUsage } : {},
         logs: stderr ? [clipText(stderr, 4000)] : [],
         error: null,

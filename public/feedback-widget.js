@@ -1,6 +1,14 @@
 const MAX_FILES = 6;
 
-if (!window.__feedbackWidgetInitialized) {
+function shouldMountFeedbackWidget() {
+  try {
+    return window.top === window;
+  } catch {
+    return false;
+  }
+}
+
+if (!window.__feedbackWidgetInitialized && shouldMountFeedbackWidget()) {
   window.__feedbackWidgetInitialized = true;
   initFeedbackWidget();
 }

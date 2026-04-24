@@ -6,6 +6,7 @@ import { pathExists, readJson, writeJson } from "./storage.js";
 import { SkillDatabaseService } from "./skill-database-service.js";
 import {
   ALLOWED_KINDS_BY_AREA,
+  getAllowedKindsByLayer,
   isKindAllowedForLayer
 } from "../../public/skill-kind-matrix.js";
 
@@ -53,6 +54,11 @@ const KNOWLEDGE_ITEM_KINDS = new Set([
   "document_blueprint_section",
   "document_blueprint_policy"
 ]);
+
+function isKnowledgeItemKind(kind = "") {
+  const normalizedKind = String(kind || "").trim();
+  return normalizedKind === "good_example" || KNOWLEDGE_ITEM_KINDS.has(normalizedKind);
+}
 
 const ITEM_KINDS = new Set([
   ...Object.keys(MARKDOWN_KIND_TO_FILE),
@@ -190,6 +196,64 @@ function asStringArray(value) {
   return ensureArray(value)
     .map((item) => String(item || "").trim())
     .filter(Boolean);
+}
+
+function uniqueStringArray(values = []) {
+  return Array.from(new Set(asStringArray(values)));
+}
+
+function sanitizeRuleHintSourceBasisEntry(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  const lower = normalized.toLowerCase();
+
+  if (lower.includes("task skill bundle recalled atoms") || lower.includes("task skill bundle shortlist") || lower.includes("recalled skill atoms")) {
+    return "相关既有技能规则";
+  }
+  if (lower.includes("system asset anchors")) {
+    return "系统需求";
+  }
+  if (lower.includes("reference requirement")) {
+    return "参考软件需求";
+  }
+  if (lower.includes("code semantic") || lower.includes("code anchor")) {
+    return "相关代码语义";
+  }
+  if (/系统需求.*锚点/u.test(normalized)) {
+    return "系统需求";
+  }
+  if (/(?:参考)?软件需求.*锚点/u.test(normalized) || /软件需求参考锚点/u.test(normalized)) {
+    return "参考软件需求";
+  }
+  if (/代码(?:语义)?参考?锚点/u.test(normalized) || /代码锚点/u.test(normalized)) {
+    return "相关代码语义";
+  }
+  if (/既有技能/u.test(normalized) || /skill bundle/i.test(normalized) || /recalled atoms/i.test(normalized)) {
+    return "相关既有技能规则";
+  }
+
+  const withoutUuid = normalized
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[，。、,.:：;；-]+$/u, "")
+    .trim();
+
+  if (!withoutUuid || /^(anchor|anchors|锚点)$/iu.test(withoutUuid)) {
+    return "";
+  }
+  return withoutUuid;
+}
+
+function sanitizeRuleHintPayload(payload = {}) {
+  const trimmed = trimObject(cloneJson(payload)) || {};
+  return trimObject({
+    ...trimmed,
+    sectionHints: uniqueStringArray(trimmed.sectionHints || []),
+    sourceBasis: uniqueStringArray((trimmed.sourceBasis || []).map(sanitizeRuleHintSourceBasisEntry).filter(Boolean))
+  }) || {};
 }
 
 function trimObject(value) {
@@ -335,6 +399,34 @@ function describeSourcePolicySettingKey(key = "", value) {
   if (normalizedKey === "forbidCodeStyleSignals") {
     return value ? "正文不允许直接沿用代码风格信号名，应优先回到规范术语。" : "正文允许保留代码风格信号名。";
   }
+  if (normalizedKey === "preferredFunctionSection") {
+    const title = String(value?.title || value?.sectionTitle || "").trim();
+    if (title) {
+      return `优先功能章节固定为“${title}”，生成时优先围绕该功能主题组织正文。`;
+    }
+    return "优先功能章节已固定，生成时应优先围绕核心功能主题组织正文。";
+  }
+  if (normalizedKey === "preferredSubsections") {
+    const titles = ensureArray(value)
+      .map((item) => String(item?.title || item?.sectionTitle || "").trim())
+      .filter(Boolean);
+    if (titles.length) {
+      return `优先子章节包括 ${joinChineseList(titles)}，生成时尽量按这些稳定主题落位。`;
+    }
+    return "已指定优先子章节，生成时应尽量按稳定主题组织正文。";
+  }
+  if (normalizedKey === "coreFirst") {
+    return value ? "优先先铺开核心章节和核心规则，再补充外围内容。" : "不强制核心优先，允许按其它结构组织正文。";
+  }
+  if (normalizedKey === "preferSymmetricExpansion") {
+    return value ? "优先按对象或轴对称展开章节和需求。" : "不要求按对象或轴对称展开需求。";
+  }
+  if (normalizedKey === "preferObjectSpecificRequirements") {
+    return value ? "优先写面向具体对象的需求，而不是泛化描述。" : "允许使用更泛化的需求组织方式。";
+  }
+  if (normalizedKey === "discourageGenericScatterRequirements") {
+    return value ? "避免把需求打散成泛化、零散的条目。" : "允许采用较分散的泛化条目组织方式。";
+  }
   return "用于约束事实来源、术语引用或正文边界。";
 }
 
@@ -456,22 +548,23 @@ function formatStructuredContent(kind, payload = {}) {
   }
 
   if (kind === "rule_hint") {
-    const scope = [trimmed.domain, trimmed.documentType, trimmed.subdomain].filter((item) => item && item !== "-");
+    const normalizedHint = sanitizeRuleHintPayload(trimmed);
+    const scope = [normalizedHint.domain, normalizedHint.documentType, normalizedHint.subdomain].filter((item) => item && item !== "-");
     const parts = [];
     if (scope.length) {
       parts.push(`在 ${scope.join(" / ")} 范围内，`);
     }
-    const sectionHints = asStringArray(trimmed.sectionHints);
+    const sectionHints = asStringArray(normalizedHint.sectionHints);
     if (sectionHints.length) {
       parts.push(`优先关注 ${joinChineseList(sectionHints)}。`);
     }
-    if (trimmed.writingPattern) {
-      parts.push(`写作时采用 ${trimmed.writingPattern}。`);
+    if (normalizedHint.writingPattern) {
+      parts.push(`写作时采用 ${normalizedHint.writingPattern}。`);
     }
-    if (trimmed.targetStyle) {
-      parts.push(`目标风格保持 ${trimmed.targetStyle}。`);
+    if (normalizedHint.targetStyle) {
+      parts.push(`目标风格保持 ${normalizedHint.targetStyle}。`);
     }
-    const sourceBasis = asStringArray(trimmed.sourceBasis);
+    const sourceBasis = asStringArray(normalizedHint.sourceBasis);
     if (sourceBasis.length) {
       parts.push(`可以优先参考 ${joinChineseList(sourceBasis)}。`);
     }
@@ -562,6 +655,58 @@ function parseStructuredContent(kind, content = "", fallbackPayload = null, titl
       if (text === describeSourcePolicySettingKey("forbidCodeStyleSignals", true)) return { key: "forbidCodeStyleSignals", value: true };
       if (text === describeSourcePolicySettingKey("forbidCodeStyleSignals", false)) return { key: "forbidCodeStyleSignals", value: false };
     }
+    if (titleKey === "coreFirst") {
+      if (text === describeSourcePolicySettingKey("coreFirst", true)) return { key: "coreFirst", value: true };
+      if (text === describeSourcePolicySettingKey("coreFirst", false)) return { key: "coreFirst", value: false };
+    }
+    if (titleKey === "preferSymmetricExpansion") {
+      if (text === describeSourcePolicySettingKey("preferSymmetricExpansion", true)) return { key: "preferSymmetricExpansion", value: true };
+      if (text === describeSourcePolicySettingKey("preferSymmetricExpansion", false)) return { key: "preferSymmetricExpansion", value: false };
+    }
+    if (titleKey === "preferObjectSpecificRequirements") {
+      if (text === describeSourcePolicySettingKey("preferObjectSpecificRequirements", true)) {
+        return { key: "preferObjectSpecificRequirements", value: true };
+      }
+      if (text === describeSourcePolicySettingKey("preferObjectSpecificRequirements", false)) {
+        return { key: "preferObjectSpecificRequirements", value: false };
+      }
+    }
+    if (titleKey === "discourageGenericScatterRequirements") {
+      if (text === describeSourcePolicySettingKey("discourageGenericScatterRequirements", true)) {
+        return { key: "discourageGenericScatterRequirements", value: true };
+      }
+      if (text === describeSourcePolicySettingKey("discourageGenericScatterRequirements", false)) {
+        return { key: "discourageGenericScatterRequirements", value: false };
+      }
+    }
+    if (titleKey === "preferredFunctionSection") {
+      const match = /优先功能章节(?:固定)?为[“"](.+?)[”"]/u.exec(text);
+      return trimObject({
+        key: "preferredFunctionSection",
+        value: {
+          ...(fallbackPayload?.value && typeof fallbackPayload.value === "object" ? fallbackPayload.value : {}),
+          title: match ? match[1].trim() : fallbackPayload?.value?.title
+        }
+      }) || null;
+    }
+    if (titleKey === "preferredSubsections") {
+      const match = /优先子章节(?:包括|为)\s+(.+?)，生成时/u.exec(text);
+      const titles = match
+        ? match[1]
+            .split(/[、,，]/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : null;
+      return trimObject({
+        key: "preferredSubsections",
+        value: titles?.length
+          ? titles.map((title, index) => ({
+              ...(fallbackPayload?.value?.[index] && typeof fallbackPayload.value[index] === "object" ? fallbackPayload.value[index] : {}),
+              title
+            }))
+          : fallbackPayload?.value
+      }) || null;
+    }
     return trimObject(cloneJson(fallbackPayload)) || null;
   }
 
@@ -632,14 +777,14 @@ function parseStructuredContent(kind, content = "", fallbackPayload = null, titl
   }
 
   if (kind === "rule_hint") {
-    return trimObject({
+    return sanitizeRuleHintPayload({
       domain: sectionValue(sections, "适用领域") || fallbackPayload?.domain,
       documentType: sectionValue(sections, "适用文档类型") || fallbackPayload?.documentType,
       subdomain: sectionValue(sections, "适用子域") || fallbackPayload?.subdomain,
-      sectionHints: sectionList(sections, "章节提示"),
+      sectionHints: sectionList(sections, "章节提示").length ? sectionList(sections, "章节提示") : fallbackPayload?.sectionHints,
       writingPattern: sectionValue(sections, "写作模式") || fallbackPayload?.writingPattern,
       targetStyle: sectionValue(sections, "目标风格") || fallbackPayload?.targetStyle,
-      sourceBasis: sectionList(sections, "来源依据")
+      sourceBasis: sectionList(sections, "来源依据").length ? sectionList(sections, "来源依据") : fallbackPayload?.sourceBasis
     }) || null;
   }
 
@@ -810,6 +955,9 @@ function sanitizeItem(item = {}, defaults = {}) {
   let structuredPayload = trimObject(cloneJson(item.structuredPayload));
   if (isTextTruthStructuredKind(kind)) {
     structuredPayload = parseStructuredContent(kind, content, structuredPayload, item.title || defaults.title);
+    if (kind === "rule_hint" && structuredPayload) {
+      structuredPayload = sanitizeRuleHintPayload(structuredPayload);
+    }
     if ((!content || hasLegacyStructuredMarkers(kind, content)) && structuredPayload) {
       content = formatStructuredContent(kind, structuredPayload);
     }
@@ -851,6 +999,61 @@ function sanitizeItem(item = {}, defaults = {}) {
 
 function createRegistryItem(base = {}, defaults = {}) {
   return sanitizeItem({ ...defaults, ...base }, defaults);
+}
+
+export function normalizeKnowledgeForLayer(layer, knowledge = {}) {
+  const normalizedLayer = normalizeLayer(layer);
+  const nextKnowledge = trimObject(cloneJson(knowledge)) || {};
+  if (!normalizedLayer) {
+    return nextKnowledge;
+  }
+
+  const allowedKinds = new Set(getAllowedKindsByLayer(normalizedLayer));
+  if (allowedKinds.has("document_blueprint_section") && allowedKinds.has("document_blueprint_policy")) {
+    return nextKnowledge;
+  }
+
+  const blueprint = trimObject(nextKnowledge.documentBlueprint);
+  if (!blueprint) {
+    return nextKnowledge;
+  }
+
+  nextKnowledge.sourceOfTruthPolicy ||= {};
+  if (blueprint.preferredFunctionSection) {
+    nextKnowledge.sourceOfTruthPolicy.preferredFunctionSection = cloneJson(blueprint.preferredFunctionSection);
+  }
+
+  const preferredSubsections = ensureArray(blueprint.preferredSubsections)
+    .map((item) => trimObject(item))
+    .filter(Boolean);
+  if (preferredSubsections.length) {
+    nextKnowledge.sourceOfTruthPolicy.preferredSubsections = preferredSubsections;
+  }
+
+  const targetOutputPolicy = trimObject(blueprint.targetOutputPolicy) || {};
+  for (const [key, value] of Object.entries(targetOutputPolicy)) {
+    if (!Object.hasOwn(nextKnowledge.sourceOfTruthPolicy, key)) {
+      nextKnowledge.sourceOfTruthPolicy[key] = cloneJson(value);
+    }
+  }
+
+  const sectionHints = uniqueStringArray([
+    blueprint.preferredFunctionSection?.title,
+    ...preferredSubsections.map((item) => item?.title)
+  ]);
+  if (sectionHints.length && Array.isArray(nextKnowledge.ruleHints) && nextKnowledge.ruleHints.length) {
+    nextKnowledge.ruleHints = nextKnowledge.ruleHints.map((item, index) =>
+      index === 0
+        ? {
+            ...item,
+            sectionHints: uniqueStringArray([...(item?.sectionHints || []), ...sectionHints])
+          }
+        : item
+    );
+  }
+
+  delete nextKnowledge.documentBlueprint;
+  return trimObject(nextKnowledge) || {};
 }
 
 function parseMarkdownAsItems({ text = "", layer, profileKey, kind, relativePath }) {
@@ -970,10 +1173,11 @@ function deriveExampleTitle(item = {}, index = 0) {
 }
 
 function importKnowledgeItems({ layer, profileKey, knowledge = {}, relativePath = "" }) {
+  const normalizedKnowledge = normalizeKnowledgeForLayer(layer, knowledge);
   const imported = [];
   const baseProvenance = { legacySource: relativePath };
 
-  asStringArray(knowledge.generationPriorities).forEach((content, index) => {
+  asStringArray(normalizedKnowledge.generationPriorities).forEach((content, index) => {
     imported.push({
       layer,
       profileKey,
@@ -984,7 +1188,7 @@ function importKnowledgeItems({ layer, profileKey, knowledge = {}, relativePath 
     });
   });
 
-  ensureArray(knowledge.examples).forEach((item, index) => {
+  ensureArray(normalizedKnowledge.examples).forEach((item, index) => {
     imported.push({
       layer,
       profileKey,
@@ -999,7 +1203,7 @@ function importKnowledgeItems({ layer, profileKey, knowledge = {}, relativePath 
     });
   });
 
-  ensureArray(knowledge.ruleHints).forEach((item, index) => {
+  ensureArray(normalizedKnowledge.ruleHints).forEach((item, index) => {
     imported.push({
       layer,
       profileKey,
@@ -1014,7 +1218,7 @@ function importKnowledgeItems({ layer, profileKey, knowledge = {}, relativePath 
     });
   });
 
-  asStringArray(knowledge.antiPatterns).forEach((content, index) => {
+  asStringArray(normalizedKnowledge.antiPatterns).forEach((content, index) => {
     imported.push({
       layer,
       profileKey,
@@ -1028,46 +1232,13 @@ function importKnowledgeItems({ layer, profileKey, knowledge = {}, relativePath 
     });
   });
 
-  const sourcePolicy = knowledge.sourceOfTruthPolicy || {};
-  if (sourcePolicy.standard) {
-    imported.push({
-      layer,
-      profileKey,
-      kind: "source_policy_setting",
-      title: "source policy standard",
-      structuredPayload: { key: "standard", value: sourcePolicy.standard },
-      provenance: {
-        ...baseProvenance,
-        legacySource: `${relativePath}#sourceOfTruthPolicy.standard`
-      }
-    });
-  }
-  if (sourcePolicy.singleSourceOfTruth) {
-    imported.push({
-      layer,
-      profileKey,
-      kind: "source_policy_setting",
-      title: "single source of truth",
-      structuredPayload: { key: "singleSourceOfTruth", value: sourcePolicy.singleSourceOfTruth },
-      provenance: {
-        ...baseProvenance,
-        legacySource: `${relativePath}#sourceOfTruthPolicy.singleSourceOfTruth`
-      }
-    });
-  }
-  if (sourcePolicy.forbidCodeStyleSignals !== undefined) {
-    imported.push({
-      layer,
-      profileKey,
-      kind: "source_policy_setting",
-      title: "forbid code style signals",
-      structuredPayload: { key: "forbidCodeStyleSignals", value: Boolean(sourcePolicy.forbidCodeStyleSignals) },
-      provenance: {
-        ...baseProvenance,
-        legacySource: `${relativePath}#sourceOfTruthPolicy.forbidCodeStyleSignals`
-      }
-    });
-  }
+  const sourcePolicy = normalizedKnowledge.sourceOfTruthPolicy || {};
+  const handledSourcePolicyKeys = new Set([
+    "codeStylePrefixes",
+    "canonicalSignalAliases",
+    "normalizationRules",
+    "forbiddenExpansions"
+  ]);
 
   asStringArray(sourcePolicy.codeStylePrefixes).forEach((content, index) => {
     imported.push({
@@ -1132,51 +1303,19 @@ function importKnowledgeItems({ layer, profileKey, knowledge = {}, relativePath 
     });
   });
 
-  const blueprint = knowledge.documentBlueprint || {};
-  if (blueprint.preferredFunctionSection) {
+  Object.entries(sourcePolicy).forEach(([key, value]) => {
+    if (handledSourcePolicyKeys.has(key) || value === undefined) {
+      return;
+    }
     imported.push({
       layer,
       profileKey,
-      kind: "document_blueprint_section",
-      title: `preferred function section ${blueprint.preferredFunctionSection.title || ""}`.trim(),
-      structuredPayload: {
-        role: "preferredFunctionSection",
-        ...trimObject(blueprint.preferredFunctionSection)
-      },
+      kind: "source_policy_setting",
+      title: `source policy ${key}`,
+      structuredPayload: { key, value: cloneJson(value) },
       provenance: {
         ...baseProvenance,
-        legacySource: `${relativePath}#documentBlueprint.preferredFunctionSection`
-      }
-    });
-  }
-
-  ensureArray(blueprint.preferredSubsections).forEach((item, index) => {
-    imported.push({
-      layer,
-      profileKey,
-      kind: "document_blueprint_section",
-      title: `preferred subsection ${item?.title || index + 1}`,
-      structuredPayload: {
-        role: "preferredSubsection",
-        ...trimObject(item)
-      },
-      provenance: {
-        ...baseProvenance,
-        legacySource: `${relativePath}#documentBlueprint.preferredSubsections`
-      }
-    });
-  });
-
-  Object.entries(blueprint.targetOutputPolicy || {}).forEach(([key, value]) => {
-    imported.push({
-      layer,
-      profileKey,
-      kind: "document_blueprint_policy",
-      title: `document blueprint policy ${key}`,
-      structuredPayload: { key, value },
-      provenance: {
-        ...baseProvenance,
-        legacySource: `${relativePath}#documentBlueprint.targetOutputPolicy`
+        legacySource: `${relativePath}#sourceOfTruthPolicy.${key}`
       }
     });
   });
@@ -1540,6 +1679,28 @@ export class SkillRegistryService {
     }
   }
 
+  preserveDatabaseOnlyModuleRegistries(registries = []) {
+    const preserved = [...registries];
+    const importedKeys = new Set(
+      preserved.map((registry) => `${normalizeLayer(registry.layer)}:${normalizeProfileKey(registry.profileKey)}`)
+    );
+
+    for (const profile of this.databaseService.listProfiles()) {
+      if (profile.layer !== "module") continue;
+      const normalizedKey = normalizeProfileKey(profile.profileKey);
+      const registryKey = `module:${normalizedKey}`;
+      if (importedKeys.has(registryKey)) continue;
+
+      const existingRegistry = this.databaseService.loadProfileRegistry("module", normalizedKey);
+      if (!existingRegistry || !ensureArray(existingRegistry.items).length) continue;
+
+      preserved.push(existingRegistry);
+      importedKeys.add(registryKey);
+    }
+
+    return preserved;
+  }
+
   async ensureDatabaseImported(skillDir = config.activeSkillDir) {
     if (!this.isDatabaseBacked(skillDir)) {
       return;
@@ -1553,7 +1714,7 @@ export class SkillRegistryService {
       return;
     }
 
-    const registries = await this.importActiveRegistriesFromFiles(skillDir);
+    const registries = this.preserveDatabaseOnlyModuleRegistries(await this.importActiveRegistriesFromFiles(skillDir));
     this.databaseService.importRegistries(registries);
     this.validateImportedRegistries(registries);
     this.databaseService.setMeta("active_registry_source_signature", await buildRegistrySourceSignature(skillDir));
@@ -1565,7 +1726,7 @@ export class SkillRegistryService {
     if (!this.isDatabaseBacked(skillDir)) {
       return;
     }
-    const registries = await this.importActiveRegistriesFromFiles(skillDir);
+    const registries = this.preserveDatabaseOnlyModuleRegistries(await this.importActiveRegistriesFromFiles(skillDir));
     this.databaseService.importRegistries(registries);
     this.validateImportedRegistries(registries);
   }
@@ -2159,43 +2320,47 @@ export class SkillRegistryService {
     return this.getItem(skillCode, skillDir);
   }
 
-  async replaceKnowledgeItems(layer, profileKey, knowledge = {}, skillDir = config.activeSkillDir) {
+  async replaceKnowledgeItems(layer, profileKey, knowledge = {}, skillDir = config.activeSkillDir, options = {}) {
     const registry = await this.loadProfileRegistry(layer, profileKey, skillDir);
-    const retained = registry.items.filter(
-      (item) =>
-        ![
-          "generation_priority",
-          "good_example",
-          "rule_hint",
-          "anti_pattern",
-          "source_alias",
-          "code_style_prefix",
-          "forbidden_expansion",
-          "normalization_rule",
-          "source_policy_setting",
-          "document_blueprint_section",
-          "document_blueprint_policy"
-        ].includes(item.kind)
-    );
+    const normalizedLayer = normalizeLayer(layer);
+    const normalizedKey = normalizedLayer === "generic" ? "generic" : normalizeProfileKey(profileKey);
+    const normalizedDocumentTypeScope = normalizedLayer === "module" ? String(options.documentType || "").trim() : "";
+    const retained = registry.items.filter((item) => {
+      if (!isKnowledgeItemKind(item.kind)) {
+        return true;
+      }
+      if (normalizedLayer !== "module" || !normalizedDocumentTypeScope) {
+        return false;
+      }
+      return String(item.documentTypeScope || "").trim() !== normalizedDocumentTypeScope;
+    });
     const imported = importKnowledgeItems({
-      layer: normalizeLayer(layer),
-      profileKey: layer === "generic" ? "generic" : normalizeProfileKey(profileKey),
+      layer: normalizedLayer,
+      profileKey: normalizedKey,
       knowledge,
-      relativePath: `${getProfileRelativeDir(normalizeLayer(layer), normalizeProfileKey(profileKey)).replaceAll("\\", "/")}/domain-knowledge.json`
-    }).map((item, index) =>
-      sanitizeItem(item, {
-        layer,
-        profileKey,
-        order: retained.length + index + 1,
-        createdAt: now(),
-        updatedAt: now()
+      relativePath: `${getProfileRelativeDir(normalizedLayer, normalizedKey).replaceAll("\\", "/")}/domain-knowledge.json`
+    })
+      .map((item) => {
+        assertKindAllowedInLayer(normalizedLayer, item.kind);
+        return item;
       })
+      .map((item, index) =>
+      sanitizeItem(
+        normalizedDocumentTypeScope ? { ...item, documentTypeScope: normalizedDocumentTypeScope } : item,
+        {
+          layer: normalizedLayer,
+          profileKey: normalizedKey,
+          order: retained.length + index + 1,
+          createdAt: now(),
+          updatedAt: now()
+        }
+      )
     );
 
     const nextItems = assignSkillCodes(
       [...retained, ...imported],
-      normalizeLayer(layer),
-      normalizeLayer(layer) === "generic" ? "generic" : normalizeProfileKey(profileKey)
+      normalizedLayer,
+      normalizedKey
     ).map((item, index) => ({ ...item, order: index + 1 }));
     registry.version = Math.max(Number(knowledge.version || registry.version || 1) || 1, 1);
     registry.items = nextItems;

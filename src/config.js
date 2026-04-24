@@ -56,6 +56,7 @@ export const config = {
   activeSkillDir: path.join(rootDir, "skills", "active"),
   skillBundleDir: path.join(rootDir, "skills", "bundles"),
   generationTaskArtifactDir: path.join(rootDir, "data", "generation-task-artifacts"),
+  replayTaskArtifactDir: path.join(rootDir, "data", "replay-task-artifacts"),
   dataDir: path.join(rootDir, "data"),
   skillDatabasePath: path.join(rootDir, "data", "skills.sqlite"),
   projectStoreDir: path.join(rootDir, "data", "projects"),
@@ -92,9 +93,13 @@ export const config = {
     stepTimeoutMs: {
       anchor_index_build: Number(process.env.HERMES_TIMEOUT_ANCHOR_INDEX_BUILD_MS || 180000),
       outline_build: Number(process.env.HERMES_TIMEOUT_OUTLINE_BUILD_MS || 180000),
-      content_generate: Number(process.env.HERMES_TIMEOUT_CONTENT_GENERATE_MS || 240000)
+      module_bootstrap_generate: Number(process.env.HERMES_TIMEOUT_MODULE_BOOTSTRAP_GENERATE_MS || 600000),
+      content_generate: Number(process.env.HERMES_TIMEOUT_CONTENT_GENERATE_MS || 600000),
+      document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
+      replay_proposal_generate: Number(process.env.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS || 600000)
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
+    taskConcurrency: Number(process.env.HERMES_TASK_CONCURRENCY || 1),
     maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
     maxRecalledAtoms: Number(process.env.HERMES_MAX_RECALLED_ATOMS || 24),
     maxOutlineSections: Number(process.env.HERMES_MAX_OUTLINE_SECTIONS || 6),

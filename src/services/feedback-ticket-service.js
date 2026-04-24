@@ -3,6 +3,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "../config.js";
 import { readJson, writeJson } from "./storage.js";
+import { normalizeUploadedFileName } from "./upload-filename.js";
 
 function now() {
   return new Date().toISOString();
@@ -38,7 +39,7 @@ function buildAttachmentRecord(file) {
 
   return {
     id: randomUUID(),
-    originalName: String(file?.originalname || "").trim() || "image",
+    originalName: normalizeUploadedFileName(file?.originalname) || "image",
     storedName: String(file?.filename || "").trim(),
     relativePath: path.join("feedback-tickets", String(file?.filename || "").trim()).replaceAll("\\", "/"),
     absolutePath: "",

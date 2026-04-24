@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { ExtractionService } from "./extraction-service.js";
 import { ModuleSkillBootstrapLlmService } from "./module-skill-bootstrap-llm-service.js";
 import { readJson, writeJson } from "./storage.js";
-import { SkillRegistryService, buildKnowledgeFromItems } from "./skill-registry-service.js";
+import { SkillRegistryService, buildKnowledgeFromItems, normalizeKnowledgeForLayer } from "./skill-registry-service.js";
 
 const DEFAULT_DOMAIN = "embedded_vcu";
 const REFERENCE_ROLE_BY_DOCUMENT_TYPE = {
@@ -12,12 +12,33 @@ const REFERENCE_ROLE_BY_DOCUMENT_TYPE = {
   detail_design: "reference_detail_design_example",
   hil_test_case: "reference_hil_test_case_example"
 };
+const EXTRACTED_REFERENCE_ROLE_BY_DOCUMENT_TYPE = {
+  software_requirement: "extracted_software_requirement",
+  detail_design: "extracted_detail_design"
+};
 const IMPLEMENTATION_ROLES = new Set(["generated_c", "model_pdf", "simulink_slx"]);
+const MODULE_KNOWLEDGE_ITEM_KINDS = new Set([
+  "generation_priority",
+  "good_example",
+  "rule_hint",
+  "anti_pattern",
+  "source_alias",
+  "code_style_prefix",
+  "forbidden_expansion",
+  "normalization_rule",
+  "source_policy_setting",
+  "document_blueprint_section",
+  "document_blueprint_policy"
+]);
 
 function normalizeDocumentType(value) {
   if (value === "detail_design") return "detail_design";
   if (value === "hil_test_case") return "hil_test_case";
   return "software_requirement";
+}
+
+function normalizeDocumentTypeScope(value = "") {
+  return String(value || "").trim();
 }
 
 function normalizeModuleSkillKey(value) {
@@ -40,8 +61,28 @@ function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
 }
 
+function isModuleKnowledgeItemKind(kind = "") {
+  return MODULE_KNOWLEDGE_ITEM_KINDS.has(String(kind || "").trim());
+}
+
 function referenceRoleFor(documentType) {
   return REFERENCE_ROLE_BY_DOCUMENT_TYPE[normalizeDocumentType(documentType)] || REFERENCE_ROLE_BY_DOCUMENT_TYPE.software_requirement;
+}
+
+export function canonicalizeBootstrapAssetRole(role = "", documentType = "software_requirement") {
+  const normalizedRole = String(role || "").trim();
+  const normalizedDocumentType = normalizeDocumentType(documentType);
+  const referenceRole = referenceRoleFor(normalizedDocumentType);
+  const extractedReferenceRole =
+    EXTRACTED_REFERENCE_ROLE_BY_DOCUMENT_TYPE[normalizedDocumentType] || EXTRACTED_REFERENCE_ROLE_BY_DOCUMENT_TYPE.software_requirement;
+
+  if (normalizedRole === "extracted_system_requirement") {
+    return "system_pdf";
+  }
+  if (normalizedRole === extractedReferenceRole) {
+    return referenceRole;
+  }
+  return normalizedRole;
 }
 
 function scoreCandidate(candidate, input = {}) {
@@ -289,6 +330,35 @@ export class ModuleSkillService {
     return Boolean(manifest?.profiles?.modules?.[normalizedKey]);
   }
 
+  async loadModuleRegistry(moduleSkillKey, skillDir = config.activeSkillDir) {
+    const normalizedKey = normalizeModuleSkillKey(moduleSkillKey);
+    try {
+      return await this.registryService.loadProfileRegistry("module", normalizedKey, skillDir);
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  resolveModuleReadiness(registry = null, documentType = "software_requirement") {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const activeKnowledgeItems = (registry?.items || []).filter(
+      (item) => item.status === "active" && isModuleKnowledgeItemKind(item.kind)
+    );
+    const scopedKnowledgeItems = activeKnowledgeItems.filter(
+      (item) => normalizeDocumentTypeScope(item.documentTypeScope) === normalizedDocumentType
+    );
+    const legacyFallbackItems = activeKnowledgeItems.filter((item) => !normalizeDocumentTypeScope(item.documentTypeScope));
+    const hasScopedModuleSkill = scopedKnowledgeItems.length > 0;
+    const usesLegacyGlobalFallback = legacyFallbackItems.length > 0;
+    const hasUsableModuleSkill = hasScopedModuleSkill || usesLegacyGlobalFallback;
+
+    return {
+      hasScopedModuleSkill,
+      usesLegacyGlobalFallback,
+      hasUsableModuleSkill
+    };
+  }
+
   async listSkillCandidates(input = {}, skillDir = config.activeSkillDir) {
     const candidates = await this.listRegisteredModuleProfiles(skillDir);
     return candidates
@@ -328,9 +398,10 @@ export class ModuleSkillService {
   computeMissingBootstrapAssets(assets = [], documentType = "software_requirement") {
     const normalizedDocumentType = normalizeDocumentType(documentType);
     const referenceRole = referenceRoleFor(normalizedDocumentType);
-    const hasSystem = assets.some((item) => item.role === "system_pdf");
-    const hasImplementation = assets.some((item) => IMPLEMENTATION_ROLES.has(item.role));
-    const hasReference = assets.some((item) => item.role === referenceRole);
+    const canonicalRoles = assets.map((item) => canonicalizeBootstrapAssetRole(item.role, normalizedDocumentType));
+    const hasSystem = canonicalRoles.some((role) => role === "system_pdf");
+    const hasImplementation = canonicalRoles.some((role) => IMPLEMENTATION_ROLES.has(role));
+    const hasReference = canonicalRoles.some((role) => role === referenceRole);
     const missing = [];
 
     if (!hasSystem) missing.push({ code: "system_requirement", label: "system_requirement" });
@@ -363,15 +434,21 @@ export class ModuleSkillService {
     };
   }
 
-  async inspectModule(project = {}, module = {}, documentType = "software_requirement") {
+  async inspectModule(project = {}, module = {}, documentType = "software_requirement", skillDir = config.activeSkillDir) {
     const normalizedDocumentType = normalizeDocumentType(documentType);
     const candidates = await this.listSkillCandidates({
       name: module.name,
       moduleSkillKey: module.moduleSkillKey,
       domain: module.domain
-    });
-    const hasModuleProfile = await this.hasModuleProfile(module.moduleSkillKey);
-    const missingBootstrapAssets = hasModuleProfile
+    }, skillDir);
+    const registry = await this.loadModuleRegistry(module.moduleSkillKey || module.name, skillDir);
+    const readiness = this.resolveModuleReadiness(registry, normalizedDocumentType);
+    const hasModuleProfile = Boolean(registry);
+    const requiresExplicitBootstrap =
+      String(module.skillInitMode || "").trim() === "cold_start" &&
+      normalizedDocumentType === "software_requirement" &&
+      !readiness.hasUsableModuleSkill;
+    const missingBootstrapAssets = readiness.hasUsableModuleSkill
       ? []
       : this.computeMissingBootstrapAssets(module.assets || [], normalizedDocumentType);
 
@@ -385,15 +462,23 @@ export class ModuleSkillService {
       selectedDomain: normalizeDomain(module.domain),
       skillCandidates: candidates,
       hasModuleProfile,
+      hasUsableModuleSkill: readiness.hasUsableModuleSkill,
+      hasScopedModuleSkill: readiness.hasScopedModuleSkill,
+      usesLegacyGlobalFallback: readiness.usesLegacyGlobalFallback,
+      requiresExplicitBootstrap,
+      recommendedAction: requiresExplicitBootstrap ? "module_skill_bootstrap" : "generate_document",
       missingBootstrapAssets,
-      canGenerateDirectly: hasModuleProfile || missingBootstrapAssets.length === 0,
+      canGenerateDirectly: readiness.hasUsableModuleSkill || (!requiresExplicitBootstrap && missingBootstrapAssets.length === 0),
       skillStatus: module.skillStatus || (hasModuleProfile ? "existing" : "draft")
     };
   }
 
-  async ensureModuleProfile(moduleSkillKey, knowledge, skillDir = config.activeSkillDir) {
-    const normalizedKey = normalizeModuleSkillKey(moduleSkillKey);
-    if (skillDir === config.activeSkillDir) {
+  async persistBootstrappedKnowledge(module, documentType = "software_requirement", knowledge = {}, skillDir = config.activeSkillDir) {
+    const normalizedDocumentType = normalizeDocumentType(documentType);
+    const normalizedKey = normalizeModuleSkillKey(module.moduleSkillKey || module.name);
+    const existingRegistry = await this.loadModuleRegistry(normalizedKey, skillDir);
+
+    if (!existingRegistry) {
       await this.registryService.saveProfileRegistry(
         "module",
         normalizedKey,
@@ -401,38 +486,41 @@ export class ModuleSkillService {
           version: 1,
           layer: "module",
           profileKey: normalizedKey,
-          displayName: normalizedKey,
+          displayName: module.name || normalizedKey,
           documentTypeScope: "",
           status: "active",
           items: []
         },
         skillDir
       );
-      await this.registryService.replaceKnowledgeItems("module", normalizedKey, knowledge, skillDir);
-      return;
     }
 
-    const moduleDir = path.join(skillDir, "profiles", "modules", normalizedKey);
-    const knowledgeRelativePath = path.join("profiles", "modules", normalizedKey, "domain-knowledge.json").replaceAll("\\", "/");
-    await fs.mkdir(moduleDir, { recursive: true });
-    await writeJson(path.join(moduleDir, "domain-knowledge.json"), knowledge);
+    const registry = await this.registryService.replaceKnowledgeItems("module", normalizedKey, knowledge, skillDir, {
+      documentType: normalizedDocumentType
+    });
 
-    const manifestPath = path.join(skillDir, "skill-manifest.json");
-    const manifest = await this.loadManifest(skillDir);
-    manifest.profiles ||= {};
-    manifest.profiles.modules ||= {};
-    manifest.profiles.modules[normalizedKey] = {
-      files: {
-        "domain-knowledge.json": [knowledgeRelativePath]
-      }
-    };
-    await writeJson(manifestPath, manifest);
+    if (this.registryService.isDatabaseBacked(skillDir)) {
+      await this.registryService.saveProfileRegistryToFiles("module", normalizedKey, registry, skillDir);
+    }
+
+    return registry;
+  }
+
+  async ensureModuleProfile(moduleSkillKey, knowledge, skillDir = config.activeSkillDir) {
+    return this.persistBootstrappedKnowledge(
+      { moduleSkillKey, name: moduleSkillKey },
+      "software_requirement",
+      knowledge,
+      skillDir
+    );
   }
 
   buildRuleBasedBootstrapKnowledge(module, documentType = "software_requirement", extractions = []) {
     const normalizedDocumentType = normalizeDocumentType(documentType);
     const referenceRole = referenceRoleFor(normalizedDocumentType);
-    const referenceExtractions = extractions.filter((item) => item.fileRole === referenceRole);
+    const referenceExtractions = extractions.filter(
+      (item) => canonicalizeBootstrapAssetRole(item.fileRole, normalizedDocumentType) === referenceRole
+    );
     const referenceEvidence = referenceExtractions.flatMap((item) => item.evidence || []).filter(Boolean);
     const fallbackEvidence = extractions.flatMap((item) => item.evidence || []).filter(Boolean);
     const exampleEvidence = (referenceEvidence.length ? referenceEvidence : fallbackEvidence)
@@ -460,13 +548,16 @@ export class ModuleSkillService {
       ruleHints: [buildRuleHint(module, normalizedDocumentType, extractions)],
       antiPatterns: buildAntiPatterns(normalizedDocumentType)
     };
-
     const blueprint = maybeBuildDocumentBlueprint(module, normalizedDocumentType, referenceExtractions);
     if (blueprint) {
-      knowledge.documentBlueprint = blueprint;
+      knowledge.sourceOfTruthPolicy = {
+        preferredFunctionSection: blueprint.preferredFunctionSection,
+        preferredSubsections: blueprint.preferredSubsections,
+        ...(blueprint.targetOutputPolicy || {})
+      };
     }
 
-    return knowledge;
+    return normalizeKnowledgeForLayer("module", knowledge);
   }
 
   async bootstrapModuleKnowledge(module, documentType = "software_requirement", options = {}) {
@@ -483,7 +574,7 @@ export class ModuleSkillService {
 
     if (llmResult?.knowledge) {
       return {
-        knowledge: llmResult.knowledge,
+        knowledge: normalizeKnowledgeForLayer("module", llmResult.knowledge),
         strategy: "llm",
         extractions,
         llmProfile: llmResult.profile || null
@@ -500,7 +591,7 @@ export class ModuleSkillService {
 
   async ensureModuleReady(project, module, documentType = "software_requirement", options = {}) {
     const inspection = await this.inspectModule(project, module, documentType);
-    if (inspection.hasModuleProfile) {
+    if (inspection.hasUsableModuleSkill) {
       return { inspection, bootstrapped: false };
     }
     if (inspection.missingBootstrapAssets.length) {
@@ -508,9 +599,17 @@ export class ModuleSkillService {
     }
 
     const bootstrapResult = await this.bootstrapModuleKnowledge(module, documentType, options);
-    await this.ensureModuleProfile(module.moduleSkillKey, bootstrapResult.knowledge);
+    await this.persistBootstrappedKnowledge(module, documentType, bootstrapResult.knowledge);
     return {
-      inspection: { ...inspection, hasModuleProfile: true, missingBootstrapAssets: [], canGenerateDirectly: true, skillStatus: "bootstrapped" },
+      inspection: {
+        ...inspection,
+        hasModuleProfile: true,
+        hasUsableModuleSkill: true,
+        hasScopedModuleSkill: true,
+        missingBootstrapAssets: [],
+        canGenerateDirectly: true,
+        skillStatus: "bootstrapped"
+      },
       bootstrapped: true,
       knowledge: bootstrapResult.knowledge,
       bootstrapStrategy: bootstrapResult.strategy,

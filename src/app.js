@@ -5,19 +5,21 @@ import { promises as fs } from "node:fs";
 import { config } from "./config.js";
 import { ensureStorage } from "./services/storage.js";
 import { ProjectService } from "./services/project-service.js";
-import { PipelineService } from "./services/pipeline-service.js";
+import { PipelineService, normalizeManualTitleOutline } from "./services/pipeline-service.js";
 import { BenchmarkCaseService } from "./services/benchmark-case-service.js";
 import { SkillRefinementService } from "./services/skill-refinement-service.js";
 import { SkillBundleService } from "./services/skill-bundle-service.js";
 import { LlmProfileService } from "./services/llm-profile-service.js";
 import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
+import { HermesTaskQueueService } from "./services/hermes-task-queue-service.js";
 import { ModuleSkillService } from "./services/module-skill-service.js";
 import { SkillManagementService } from "./services/skill-management-service.js";
 import { SkillWorkOrderService } from "./services/skill-work-order-service.js";
 import { SkillLoader } from "./services/skill-loader.js";
 import { ReplayLabService, DEFAULT_REPLAY_LAB_TEMPLATE_TASK_ID } from "./services/replay-lab-service.js";
 import { FeedbackTicketService } from "./services/feedback-ticket-service.js";
+import { buildStoredUploadName, normalizeUploadedFileName } from "./services/upload-filename.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -58,18 +60,27 @@ function moduleUploadFields() {
     { name: "referenceExample", maxCount: 6 }
   ];
 }
+
+function documentExtractionUploadFields() {
+  return [
+    { name: "images", maxCount: 12 },
+    { name: "spreadsheets", maxCount: 4 }
+  ];
+}
 export async function createApp() {
   await ensureStorage();
 
   const app = express();
   const projectService = new ProjectService();
-  const pipelineService = new PipelineService(projectService);
+  const hermesTaskQueueService = new HermesTaskQueueService({ projectService });
+  const pipelineService = new PipelineService(projectService, { hermesTaskQueueService });
   const benchmarkCaseService = new BenchmarkCaseService();
   const skillRefinementService = new SkillRefinementService();
   const skillBundleService = new SkillBundleService();
   const llmProfileService = new LlmProfileService();
   const rejectionService = new RejectionService();
-  const replayTaskService = new ReplayTaskService();
+  const replayTaskService = new ReplayTaskService({ hermesTaskQueueService });
+  hermesTaskQueueService.setReplayTaskService(replayTaskService);
   const moduleSkillService = new ModuleSkillService();
   const skillManagementService = new SkillManagementService();
   const skillWorkOrderService = new SkillWorkOrderService();
@@ -96,7 +107,7 @@ export async function createApp() {
         }
       },
       filename: (_req, file, cb) => {
-        const safeName = `${Date.now()}-${file.originalname.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_")}`;
+        const safeName = buildStoredUploadName(file.originalname);
         cb(null, safeName);
       }
     })
@@ -113,7 +124,7 @@ export async function createApp() {
         }
       },
       filename: (_req, file, cb) => {
-        const safeName = `${Date.now()}-${file.originalname.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_")}`;
+        const safeName = buildStoredUploadName(file.originalname);
         cb(null, safeName);
       }
     })
@@ -130,7 +141,7 @@ export async function createApp() {
         }
       },
       filename: (_req, file, cb) => {
-        const safeName = `${Date.now()}-${file.originalname.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_")}`;
+        const safeName = buildStoredUploadName(file.originalname);
         cb(null, safeName);
       }
     }),
@@ -143,6 +154,23 @@ export async function createApp() {
   app.use(express.json({ limit: "2mb" }));
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/task-queue", async (_req, res, next) => {
+    try {
+      const tasks = await hermesTaskQueueService.listTaskSummaries();
+      const counts = tasks.reduce(
+        (acc, task) => {
+          const status = task.status || "queued";
+          acc[status] = (acc[status] || 0) + 1;
+          return acc;
+        },
+        { queued: 0, running: 0, completed: 0, failed: 0 }
+      );
+      res.json({ tasks, counts });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post("/api/feedback-tickets", feedbackUpload.array("images", 6), async (req, res, next) => {
@@ -191,6 +219,9 @@ export async function createApp() {
   });
   app.get("/detail-design-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "detail-design-generation.html"));
+  });
+  app.get("/document-extractor", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "document-extractor.html"));
   });
   app.get("/hil-test-case-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "hil-test-case-generation.html"));
@@ -391,6 +422,22 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/projects/:projectId/modules/:moduleId/assets/:assetId/content", async (req, res, next) => {
+    try {
+      const payload = await projectService.getModuleAssetContent(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.assetId
+      );
+      res.json(payload);
+    } catch (error) {
+      if (error.message === "Asset not found") {
+        return res.status(404).json({ error: "资产不存在" });
+      }
+      next(error);
+    }
+  });
+
   app.post(
     "/api/projects/:projectId/modules/:moduleId/assets",
     upload.fields(moduleUploadFields()),
@@ -418,6 +465,83 @@ export async function createApp() {
       next(error);
     }
   });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/document-extraction-tasks", async (req, res, next) => {
+    try {
+      const tasks = await projectService.listDocumentExtractionTasks(req.params.projectId, req.params.moduleId);
+      res.json({ tasks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/document-extraction-tasks/:taskId", async (req, res, next) => {
+    try {
+      const task = await projectService.getDocumentExtractionTask(req.params.projectId, req.params.moduleId, req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "提取任务不存在" });
+      }
+      res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/projects/:projectId/modules/:moduleId/document-extraction-tasks/:taskId", async (req, res, next) => {
+    try {
+      const result = await projectService.deleteDocumentExtractionTask(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.taskId
+      );
+      res.json(result);
+    } catch (error) {
+      if (error.message === "Document extraction task not found") {
+        return res.status(404).json({ error: "提取任务不存在" });
+      }
+      next(error);
+    }
+  });
+
+  app.post(
+    "/api/projects/:projectId/modules/:moduleId/document-extraction-tasks",
+    upload.fields(documentExtractionUploadFields()),
+    async (req, res, next) => {
+      try {
+        const imageInputs = Array.isArray(req.files?.images)
+          ? req.files.images.map((file) => ({
+              originalName: normalizeUploadedFileName(file.originalname),
+              storedName: file.filename,
+              mimeType: file.mimetype,
+              size: file.size,
+              absolutePath: file.path,
+              relativePath: path.join(req.params.projectId, req.params.moduleId, file.filename)
+            }))
+          : [];
+        const spreadsheetInputs = Array.isArray(req.files?.spreadsheets)
+          ? req.files.spreadsheets.map((file) => ({
+              originalName: normalizeUploadedFileName(file.originalname),
+              storedName: file.filename,
+              mimeType: file.mimetype,
+              size: file.size,
+              absolutePath: file.path,
+              relativePath: path.join(req.params.projectId, req.params.moduleId, file.filename)
+            }))
+          : [];
+        const result = await pipelineService.extractDocumentForModule(req.params.projectId, req.params.moduleId, {
+          targetDocumentType: req.body?.targetDocumentType || "software_requirement",
+          sourceText: req.body?.sourceText || "",
+          imageInputs,
+          spreadsheetInputs,
+          llmProfileId: req.body?.llmProfileId || "",
+          asyncStart: true
+        });
+        res.status(202).json({ ...result, taskStarted: true });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
 
   app.get("/api/projects/:projectId/modules/:moduleId/spaces/:documentType", async (req, res, next) => {
     try {
@@ -506,6 +630,21 @@ export async function createApp() {
     upload.fields(moduleUploadFields()),
     async (req, res, next) => {
       try {
+        const taskIntent = String(req.body?.taskIntent || "").trim() || "generation";
+        let manualTitleOutline = null;
+        if (req.params.documentType === "software_requirement" && taskIntent !== "module_skill_bootstrap") {
+          manualTitleOutline = normalizeManualTitleOutline(req.body?.manualTitleOutline || "");
+          if (!manualTitleOutline) {
+            const error = new Error("manualTitleOutline is required and must be valid for software_requirement generation");
+            error.statusCode = 400;
+            error.code = "invalid_manual_title_outline";
+            error.details = {
+              documentType: req.params.documentType,
+              taskIntent
+            };
+            throw error;
+          }
+        }
         const uploaded = await projectService.attachModuleAssets(req.params.projectId, req.params.moduleId, req.files || {}, {
           documentType: req.params.documentType
         });
@@ -520,6 +659,8 @@ export async function createApp() {
             uploadedAssetIds,
             skillBundleId: req.body?.skillBundleId || "",
             llmProfileId: req.body?.llmProfileId || "",
+            taskIntent,
+            manualTitleOutline,
             asyncStart: true
           }
         );
@@ -754,7 +895,10 @@ export async function createApp() {
 
   app.post("/api/replay-tasks", async (req, res, next) => {
     try {
-      const task = await replayTaskService.createTask(req.body || {});
+      const task = await replayTaskService.createTask({
+        ...(req.body || {}),
+        asyncExecution: true
+      });
       res.status(201).json(task);
     } catch (error) {
       next(error);
@@ -777,6 +921,14 @@ export async function createApp() {
         return res.status(404).json({ error: "Replay task not found" });
       }
       res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/replay-tasks/:taskId", async (req, res, next) => {
+    try {
+      res.json(await replayTaskService.deleteTask(req.params.taskId));
     } catch (error) {
       next(error);
     }

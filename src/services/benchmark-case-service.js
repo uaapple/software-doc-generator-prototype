@@ -7,6 +7,7 @@ import { GoldenStructurerService } from "./golden-structurer-service.js";
 import { CaseAlignmentService } from "./case-alignment-service.js";
 import { SkillRefinementAuditService } from "./skill-refinement-audit-service.js";
 import { readJson, writeJson } from "./storage.js";
+import { normalizeUploadedFileName } from "./upload-filename.js";
 
 function now() {
   return new Date().toISOString();
@@ -20,7 +21,7 @@ function buildFileRecord(file, role) {
   return {
     id: randomUUID(),
     role,
-    originalName: file.originalname,
+    originalName: normalizeUploadedFileName(file.originalname),
     storedName: file.filename,
     relativePath: file.filename,
     absolutePath: file.path,

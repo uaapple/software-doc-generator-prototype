@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>文档提取</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/feedback-widget.css" />
+  </head>
+  <body data-page-kind="document-extractor">
+    <main class="layout">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>软件开发需求自动生成平台</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">工程列表</a>
+          <a class="nav-link active" href="/document-extractor">文档提取</a>
+          <a class="nav-link" href="/requirement-generation">软件需求生成</a>
+          <a class="nav-link" href="/detail-design-generation">软件详细设计生成</a>
+          <a class="nav-link" href="/feedback-pool">反馈池</a>
+        </div>
+      </nav>
+
+      <nav id="generator-breadcrumb" class="breadcrumb-strip card"></nav>
+
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">模块工具</p>
+          <h1>文档提取</h1>
+          <p class="strip-text">把图片或文本整理成模块资产，并保持与现有人工样例一致的文档结构。</p>
+        </div>
+        <div class="strip-actions">
+          <a id="back-to-module" class="hero-link secondary" href="/">返回功能模块</a>
+        </div>
+      </section>
+
+      <section class="panel panel-grid">
+        <div class="card">
+          <div class="section-head">
+            <span class="section-index">01</span>
+            <div>
+              <h2>当前上下文</h2>
+              <p id="context-copy">正在加载工程和模块信息。</p>
+            </div>
+          </div>
+          <div id="context-meta" class="summary"></div>
+        </div>
+
+        <form id="extract-form" class="card" enctype="multipart/form-data">
+          <div class="section-head">
+            <span class="section-index">02</span>
+            <div>
+              <h2>启动提取</h2>
+              <p>选择目标文档类型，上传图片或直接粘贴图片、文本。</p>
+            </div>
+          </div>
+          <label>
+            目标文档类型
+            <select id="target-document-type" name="targetDocumentType">
+              <option value="system_requirement">系统需求</option>
+              <option value="software_requirement" selected>软件需求</option>
+              <option value="detail_design">详细设计</option>
+              <option value="hil_test_case">HIL 测试用例</option>
+            </select>
+          </label>
+          <label>
+            当前模型
+            <select id="llm-profile-select" name="llmProfileId"></select>
+          </label>
+          <p id="llm-profile-hint" class="inline-hint"></p>
+          <label>
+            直接粘贴文本
+            <textarea id="source-text" name="sourceText" rows="8" placeholder="可直接粘贴需求原文、OCR 文本或手工整理稿。"></textarea>
+          </label>
+          <div id="paste-zone" class="card" tabindex="0">
+            <strong>图片输入区</strong>
+            <p>支持点击选择本地图片，也支持在此区域直接使用 `Ctrl/Cmd+V` 粘贴剪贴板图片。</p>
+            <input id="image-input" type="file" accept="image/*" multiple />
+            <div id="image-preview-list" class="files-list"></div>
+          </div>
+          <div id="spreadsheet-zone" class="card">
+            <strong>表格输入区</strong>
+            <p id="spreadsheet-copy">当前仅 HIL 测试用例支持 Excel 导入。切换到 “HIL 测试用例” 后可上传 `.xlsx` 文件。</p>
+            <input id="spreadsheet-input" type="file" accept=".xlsx" />
+            <div id="spreadsheet-preview-list" class="files-list"></div>
+          </div>
+          <p id="status" class="status" hidden></p>
+          <button id="extract-submit" type="submit">启动提取</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="card">
+          <div class="section-head">
+            <span class="section-index">03</span>
+            <div>
+              <h2>最近提取任务</h2>
+              <p>这里会展示最近的提取状态、生成资产名和写回结果。</p>
+            </div>
+          </div>
+          <div id="task-list" class="stack-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="asset-preview-dialog" class="files-dialog">
+      <div class="files-dialog-head">
+        <div>
+          <p class="strip-label">Asset Preview</p>
+          <h2 id="asset-preview-title">提取结果预览</h2>
+          <p id="asset-preview-meta">可直接在前端核对生成的 Markdown 内容。</p>
+        </div>
+        <button id="asset-preview-close" type="button" class="secondary-button files-dialog-close">关闭</button>
+      </div>
+      <div class="files-list">
+        <pre id="asset-preview-content" class="asset-preview-content">正在加载预览内容。</pre>
+      </div>
+    </dialog>
+
+    <dialog id="task-started-dialog" class="files-dialog">
+      <div class="files-dialog-head">
+        <div>
+          <p class="strip-label">Task Started</p>
+          <h2 id="task-started-title">提取任务已启动</h2>
+          <p id="task-started-copy">任务已经进入后台处理，你可以留在当前页查看进度，也可以回到模块历史任务统一核对。</p>
+        </div>
+        <button id="task-started-close" type="button" class="secondary-button files-dialog-close">关闭</button>
+      </div>
+      <div class="files-list">
+        <div class="file-item evidence-item">
+          <div class="file-item-copy">
+            <div class="file-item-title-row">
+              <strong id="task-started-task-name">文档提取任务</strong>
+            </div>
+            <p id="task-started-task-meta">等待后台处理。</p>
+          </div>
+        </div>
+        <div class="inline-actions">
+          <button id="task-started-stay" type="button" class="secondary-button">留在当前页</button>
+          <button id="task-started-go-history" type="button">前往模块历史任务</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script type="module" src="/document-extractor.js"></script>
+    <script type="module" src="/task-queue-widget.js"></script>
+    <script type="module" src="/feedback-widget.js"></script>
+  </body>
+</html>
