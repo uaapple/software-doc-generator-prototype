@@ -19,6 +19,7 @@
           <div class="module-head-actions">
             <div class="module-primary-actions" role="tablist" aria-label="模块工作区">
               <button id="accepted-results-link" class="secondary-link button-link module-workspace-tab" type="button" data-workspace-tab="accepted_results">已采纳结果</button>
+              <button id="document-extractor-link" class="secondary-link button-link module-workspace-tab" type="button" data-workspace-tab="document_extractor">文档提取</button>
               <button id="req-generate-link" class="primary-link module-workspace-tab" type="button" data-workspace-tab="software_requirement">进入软件需求生成</button>
               <button id="detail-generate-link" class="secondary-link button-link module-workspace-tab" type="button" data-workspace-tab="detail_design">进入详细设计生成</button>
               <button id="hil-generate-link" class="secondary-link button-link module-workspace-tab" type="button" data-workspace-tab="hil_test_case">进入 HIL 用例生成</button>
@@ -47,7 +48,7 @@
         <div class="panel-head accepted-results-head">
           <div>
             <h2>&#24050;&#37319;&#32435;&#32467;&#26524;</h2>
-            <p class="muted accepted-results-note">按软件需求、详细设计、HIL 用例三个域分区查看。点击卡片可跳转到对应生成结果继续查看原始上下文。</p>
+            <p class="muted accepted-results-note">按软件需求、详细设计、HIL 用例三个域分区查看，组内再按章节标题分组。点击卡片可跳转到对应生成结果继续查看原始上下文。</p>
           </div>
         </div>
         <div id="accepted-list" class="stack-list accepted-results-list"></div>
@@ -59,8 +60,8 @@
       <div class="history-drawer-head">
         <div>
           <p class="eyebrow">History</p>
-          <h2>历史生成任务</h2>
-          <p class="muted">从右侧快速查看任务记录，进入后可继续看完整生成详情。</p>
+          <h2>历史任务</h2>
+          <p class="muted">统一查看文档生成、技能冷启动和文档提取任务，按类型区分并快速进入对应操作。</p>
         </div>
         <button id="close-history-drawer" type="button" class="secondary-button">关闭</button>
       </div>
@@ -83,15 +84,36 @@
       </div>
     </aside>
 
+    <dialog id="module-record-review-dialog" class="module-record-review-dialog">
+      <div class="module-record-review-shell">
+        <div class="module-record-review-head">
+          <div class="module-record-review-copy">
+            <p class="eyebrow">Replay 审阅</p>
+            <h2 id="module-record-review-title">Replay 详情</h2>
+            <div id="module-record-review-meta" class="record-review-dialog-meta" aria-live="polite"></div>
+          </div>
+          <div class="module-record-review-actions">
+            <button id="module-record-review-work-order" type="button" class="secondary-button" hidden>查看技能工单</button>
+            <button id="module-record-review-close" type="button" class="secondary-button">关闭</button>
+          </div>
+        </div>
+        <div id="module-record-review-content" class="module-record-review-body"></div>
+      </div>
+    </dialog>
+
     <dialog id="accepted-edit-dialog" class="files-dialog accepted-edit-dialog">
       <div class="files-dialog-head">
         <h3>编辑已采纳结果</h3>
-        <p id="accepted-edit-subtitle" class="muted">更新标题和正文内容。</p>
+        <p id="accepted-edit-subtitle" class="muted">更新章节标题、条目标题和正文内容，title 会与条目标题保持一致。</p>
       </div>
       <form id="accepted-edit-form" class="stack-form accepted-edit-form">
         <label>
-          标题
-          <input id="accepted-edit-title" name="title" required />
+          一级标题
+          <input id="accepted-edit-section-title" name="sectionTitle" required />
+        </label>
+        <label>
+          二级标题
+          <input id="accepted-edit-item-title" name="itemTitle" required />
         </label>
         <label>
           正文
@@ -104,7 +126,22 @@
       </form>
     </dialog>
 
+    <dialog id="module-asset-preview-dialog" class="files-dialog">
+      <div class="files-dialog-head">
+        <div>
+          <p class="eyebrow">Asset Preview</p>
+          <h3 id="module-asset-preview-title">任务资产预览</h3>
+          <p id="module-asset-preview-meta" class="muted">可在模块页直接核对提取产物。</p>
+        </div>
+        <button id="module-asset-preview-close" type="button" class="secondary-button files-dialog-close">关闭</button>
+      </div>
+      <div class="files-list">
+        <pre id="module-asset-preview-content" class="asset-preview-content">正在加载预览内容。</pre>
+      </div>
+    </dialog>
+
     <script type="module" src="/hierarchy.js"></script>
+    <script type="module" src="/task-queue-widget.js"></script>
     <script type="module" src="/feedback-widget.js"></script>
   </body>
 </html>

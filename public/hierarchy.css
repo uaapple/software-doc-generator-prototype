@@ -128,6 +128,16 @@ label {
   align-items: stretch;
 }
 
+body[data-page="project-detail"] .page-head > div:first-child {
+  min-width: 0;
+}
+
+body[data-page="project-detail"] .top-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
 .module-page-head {
   display: block;
 }
@@ -212,6 +222,363 @@ label {
   min-height: 420px;
   border: 0;
   background: #fff;
+}
+
+.module-record-review-dialog {
+  width: min(1480px, calc(100vw - 36px));
+  max-width: 1480px;
+  height: min(920px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: #f6f9fc;
+  box-shadow: 0 30px 80px rgba(10, 28, 52, 0.34);
+  overflow: hidden;
+}
+
+.module-record-review-dialog::backdrop {
+  background: rgba(12, 28, 48, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.module-record-review-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+}
+
+.module-record-review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid rgba(206, 221, 236, 0.92);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 247, 255, 0.96));
+}
+
+.module-record-review-copy {
+  min-width: 0;
+}
+
+.module-record-review-copy h2 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.16;
+}
+
+.module-record-review-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.module-record-review-body {
+  overflow: auto;
+  padding: 24px 28px 30px;
+}
+
+.record-review-dialog-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.record-review-dialog-meta-item,
+.mini-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.record-review-dialog-meta-item {
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(205, 219, 234, 0.92);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.record-review-dialog-meta-item strong {
+  color: var(--brand);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mini-pill.success {
+  background: #e6f4ea;
+  color: var(--success);
+}
+
+.mini-pill.warning {
+  background: #fff2dd;
+  color: var(--warning);
+}
+
+.mini-pill.danger {
+  background: #f7e7e5;
+  color: var(--danger);
+}
+
+.mini-pill.subtle {
+  background: #edf4fb;
+  color: var(--ink-soft);
+}
+
+.record-review-layout,
+.record-review-primary,
+.record-review-sidebar,
+.record-review-section {
+  display: grid;
+  gap: 18px;
+}
+
+.record-review-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.82fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.record-review-summary-card,
+.record-review-side-card,
+.record-review-proposal-card,
+.record-review-suggestion-card,
+.record-review-support-card,
+.record-review-empty-card {
+  border: 1px solid rgba(207, 222, 237, 0.96);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 28px rgba(15, 41, 74, 0.07);
+}
+
+.record-review-summary-card,
+.record-review-side-card,
+.record-review-proposal-card,
+.record-review-support-card,
+.record-review-suggestion-card,
+.record-review-empty-card {
+  padding: 18px 20px;
+}
+
+.record-review-summary-card,
+.record-review-side-card,
+.record-review-support-card,
+.record-review-suggestion-card,
+.record-review-proposal-card {
+  display: grid;
+  gap: 14px;
+}
+
+.record-review-summary-card.is-empty {
+  border-color: rgba(156, 106, 28, 0.28);
+  background: #fffaf2;
+}
+
+.record-review-proposal-card.is-highlight {
+  border-color: rgba(14, 106, 168, 0.24);
+  background: #f7fbff;
+}
+
+.record-review-section-kicker {
+  margin: 0 0 6px;
+  color: var(--brand);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.record-review-summary-card h3,
+.record-review-side-card h3,
+.record-review-support-card h3,
+.record-review-section-head h3,
+.record-review-proposal-head h4 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.record-review-section-head,
+.record-review-proposal-head,
+.record-review-history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.record-review-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.record-review-meta-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(218, 229, 241, 0.96);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.record-review-meta-item span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.record-review-meta-item strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.record-review-text-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(218, 229, 241, 0.96);
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
+.record-review-text-panel.is-muted {
+  background: #f4f7fb;
+}
+
+.record-review-panel-label {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.record-review-rich-text,
+.record-review-empty-copy,
+.record-review-footnote,
+.record-review-history-item p,
+.record-review-trace-item span {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.68;
+  font-size: 14px;
+}
+
+.record-review-empty-copy,
+.record-review-footnote,
+.record-review-placeholder,
+.record-review-history-item p,
+.record-review-trace-item span {
+  color: var(--ink-soft);
+}
+
+.record-review-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.record-review-suggestion-list,
+.record-review-proposal-grid,
+.record-review-trace-list,
+.record-review-history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.record-review-suggestion-list {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.record-review-proposal-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.record-review-support-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.record-review-support-card.is-wide {
+  grid-column: 1 / -1;
+}
+
+.record-review-trace-item,
+.record-review-history-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(218, 229, 241, 0.96);
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.record-review-history-item.is-selected {
+  border-color: rgba(14, 106, 168, 0.22);
+  background: #f2f8ff;
+}
+
+@media (max-width: 900px) {
+  .module-record-review-dialog {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+    max-height: calc(100vh - 20px);
+    border-radius: 18px;
+  }
+
+  .module-record-review-head {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 20px 18px 16px;
+  }
+
+  .module-record-review-copy h2 {
+    font-size: 26px;
+  }
+
+  .module-record-review-actions {
+    justify-content: flex-start;
+  }
+
+  .module-record-review-body {
+    padding: 18px 16px 22px;
+  }
+
+  .record-review-hero,
+  .record-review-support-grid,
+  .record-review-meta-grid,
+  .record-review-proposal-grid,
+  .record-review-suggestion-list {
+    grid-template-columns: 1fr;
+  }
+
+  .record-review-section-head,
+  .record-review-proposal-head,
+  .record-review-history-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .record-review-dialog-meta-item {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 
 .accepted-results-panel {
@@ -507,8 +874,76 @@ label {
 }
 
 .feedback-history-task-card {
-  text-align: left;
+  display: grid;
   gap: 10px;
+  color: var(--ink);
+  padding: 14px 16px;
+}
+
+.feedback-history-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.feedback-history-card-main {
+  display: grid;
+  gap: 6px;
+  align-items: start;
+  justify-items: start;
+  text-align: left;
+  width: 100%;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+}
+
+.feedback-history-card-delete {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(165, 65, 63, 0.2);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.feedback-history-card-delete:hover {
+  background: rgba(246, 227, 225, 0.96);
+}
+
+.feedback-history-card-delete:active {
+  border-color: rgba(165, 65, 63, 0.34);
+}
+
+.feedback-history-task-card strong {
+  color: var(--ink);
+  line-height: 1.45;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.feedback-history-task-card p {
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.feedback-history-task-card .feedback-history-meta {
+  color: var(--ink-soft);
+}
+
+.feedback-history-task-card .feedback-history-stage-line {
+  color: var(--ink-soft);
 }
 
 .feedback-history-task-card.is-selected {
@@ -533,6 +968,55 @@ label {
   align-items: center;
   color: var(--ink-soft);
   font-size: 13px;
+}
+
+.feedback-history-stage-line {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 2px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.feedback-history-stage-line > span:last-child {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.feedback-history-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(14, 106, 168, 0.08);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.feedback-history-stage-pill.queued {
+  background: rgba(14, 106, 168, 0.08);
+  color: var(--brand);
+}
+
+.feedback-history-stage-pill.running {
+  background: rgba(193, 120, 25, 0.12);
+  color: #9c5f10;
+}
+
+.feedback-history-stage-pill.done {
+  background: rgba(47, 143, 97, 0.12);
+  color: #1f8250;
+}
+
+.feedback-history-stage-pill.failed {
+  background: rgba(190, 76, 68, 0.12);
+  color: #aa3a33;
 }
 
 .feedback-history-badge {
@@ -575,6 +1059,22 @@ label {
   font-size: 28px;
 }
 
+.feedback-history-task-summary {
+  margin-top: 10px;
+  margin-bottom: 0;
+  max-width: 58ch;
+}
+
+.feedback-history-detail-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 18px;
+}
+
+.feedback-history-detail-link {
+  min-height: 40px;
+}
+
 .feedback-history-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -594,6 +1094,12 @@ label {
   margin-bottom: 6px;
   color: var(--ink-soft);
   font-size: 12px;
+}
+
+.feedback-history-detail-card .feedback-history-detail-note {
+  margin-top: 6px;
+  margin-bottom: 0;
+  line-height: 1.6;
 }
 
 .feedback-history-detail-card strong {
@@ -637,6 +1143,43 @@ label {
 
 .feedback-history-detail-item p {
   margin-bottom: 0;
+}
+
+.feedback-history-stage-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.feedback-history-progress-shell,
+.feedback-history-runtime-shell,
+.feedback-history-artifact-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.feedback-history-timeline,
+.feedback-history-runtime-list {
+  display: grid;
+  gap: 12px;
+}
+
+.feedback-history-runtime-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.feedback-history-artifact-details {
+  border-radius: 18px;
+  border: 1px solid rgba(14, 106, 168, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 14px 16px;
+}
+
+.feedback-history-artifact-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--ink);
 }
 
 .history-drawer-head {
@@ -1240,6 +1783,10 @@ select[disabled] {
   }
 
   .feedback-history-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feedback-history-runtime-meta {
     grid-template-columns: 1fr;
   }
 }

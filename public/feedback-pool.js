@@ -1,6 +1,7 @@
 import { PROFILE_LAYER_ORDER, getAllowedKindsForAreasAndLayer } from "/skill-kind-matrix.js";
 
 const query = new URLSearchParams(window.location.search);
+const initialTaskId = query.get("taskId") || "";
 
 const state = {
   projectId: query.get("projectId") || "",
@@ -10,11 +11,10 @@ const state = {
   records: [],
   tasks: [],
   selectedRecordId: "",
-  selectedTaskId: "",
+  selectedTaskId: initialTaskId,
   replayRecordIds: [],
   selectedReplayModuleId: "",
-  pendingReplay: null,
-  externalTaskDrawerOpen: false,
+  externalTaskDrawerOpen: Boolean(initialTaskId),
   filters: {
     reasonCategory: "",
     replayStatus: ""
@@ -36,8 +36,10 @@ const refreshRecordsButton = document.querySelector("#refresh-records");
 const openTaskDrawerButton = document.querySelector("#open-task-drawer");
 const openTaskDrawerSecondaryButton = document.querySelector("#open-task-drawer-secondary");
 const recordDetailDialog = document.querySelector("#record-detail-dialog");
+const recordDetailTitle = document.querySelector("#record-detail-title");
 const recordDetailSubtitle = document.querySelector("#record-detail-subtitle");
 const recordDetailContent = document.querySelector("#record-detail-content");
+const recordDetailWorkOrder = document.querySelector("#record-detail-work-order");
 const recordDetailClose = document.querySelector("#record-detail-close");
 const replayDialog = document.querySelector("#replay-dialog");
 const replayDialogSubtitle = document.querySelector("#replay-dialog-subtitle");
@@ -54,7 +56,7 @@ const taskDrawerListRoot = document.querySelector("#task-drawer-list");
 const taskDrawerDetailRoot = document.querySelector("#task-drawer-detail");
 const feedbackStatusRoot = document.querySelector("#feedback-status");
 
-let pendingReplayTimer = 0;
+let replayTaskPollTimer = 0;
 const REPLAY_DIALOG_HEIGHT_STORAGE_KEY = "feedback-pool:replay-dialog-height";
 const replayDialogResizeState = {
   active: false,
@@ -64,9 +66,13 @@ const replayDialogResizeState = {
   height: 0
 };
 
+syncTopNavLinks();
 syncReplayDialogHeight();
 
 await bootstrap();
+if (initialTaskId && state.selectedTaskId) {
+  openTaskDrawer();
+}
 
 refreshRecordsButton.addEventListener("click", refreshAllData);
 openTaskDrawerButton.addEventListener("click", openTaskDrawer);
@@ -79,8 +85,12 @@ recordCategoryFilter.addEventListener("change", handleFilterChange);
 recordReplayFilter.addEventListener("change", handleFilterChange);
 recordListRoot.addEventListener("click", handleRecordRowClick);
 recordDetailClose.addEventListener("click", () => recordDetailDialog.close());
+recordDetailWorkOrder?.addEventListener("click", () => openWorkOrder(recordDetailWorkOrder.dataset.workOrderId || ""));
 recordDetailDialog.addEventListener("click", (event) => {
   if (event.target === recordDetailDialog) recordDetailDialog.close();
+});
+recordDetailDialog.addEventListener("close", () => {
+  postToHost({ type: "feedback_pool:record_detail_closed" });
 });
 replayForm.addEventListener("submit", submitReplayTask);
 replayFormCancel.addEventListener("click", () => replayDialog.close());
@@ -89,6 +99,7 @@ replayDialog.addEventListener("click", (event) => {
 });
 replayDialog.addEventListener("close", cleanupReplayDialogResizeSession);
 replayDialog.addEventListener("cancel", cleanupReplayDialogResizeSession);
+window.addEventListener("beforeunload", stopReplayTaskPolling);
 if (replayDialogResizer) {
   replayDialogResizer.addEventListener("pointerdown", handleReplayDialogResizePointerDown);
   replayDialogResizer.addEventListener("keydown", handleReplayDialogResizeKeyDown);
@@ -121,6 +132,29 @@ async function refreshAllData() {
   renderTaskDrawer();
   renderFeedbackStatus();
   renderTaskDrawerButtons();
+}
+
+function syncTopNavLinks() {
+  if (!state.projectId) {
+    return;
+  }
+  const params = new URLSearchParams({ projectId: state.projectId });
+  if (state.moduleFilterId) {
+    params.set("moduleId", state.moduleFilterId);
+  }
+  const routeMap = {
+    "/document-extractor": `/document-extractor?${params.toString()}`,
+    "/requirement-generation": `/requirement-generation?${params.toString()}`,
+    "/detail-design-generation": `/detail-design-generation?${params.toString()}`,
+    "/hil-test-case-generation": `/hil-test-case-generation?${params.toString()}`,
+    "/feedback-pool": `/feedback-pool?${params.toString()}`
+  };
+
+  for (const [route, targetUrl] of Object.entries(routeMap)) {
+    document.querySelectorAll(`.top-nav .nav-link[href="${route}"]`).forEach((link) => {
+      link.href = targetUrl;
+    });
+  }
 }
 
 async function refreshContext() {
@@ -156,6 +190,7 @@ async function refreshTasks() {
 
   const response = await request(`/api/replay-tasks?${params.toString()}`);
   state.tasks = response.tasks || [];
+  syncReplayTaskPolling();
 
   if (state.selectedTaskId && !state.tasks.some((task) => task.id === state.selectedTaskId)) {
     state.selectedTaskId = state.tasks[0]?.id || "";
@@ -166,7 +201,7 @@ function renderProjectSummary() {
   const projectName = state.project?.name || "未命名工程";
   const currentModule = state.modules.find((item) => item.id === state.moduleFilterId) || null;
   const replayedCount = state.records.filter((record) => record.replayStatus && record.replayStatus !== "not_started").length;
-  const pendingCount = state.pendingReplay ? 1 : 0;
+  const activeCount = countActiveReplayTasks();
 
   heroTitleRoot.textContent = currentModule
     ? `${projectName} / ${currentModule.name} 驳回记录`
@@ -179,7 +214,7 @@ function renderProjectSummary() {
     { label: "功能模块", value: state.modules.length },
     { label: "驳回记录", value: state.records.length },
     { label: "已 Replay", value: replayedCount },
-    { label: "最近任务", value: state.tasks.length + pendingCount }
+    { label: activeCount ? "处理中任务" : "最近任务", value: activeCount || state.tasks.length }
   ];
 
   projectMetricsRoot.innerHTML = metrics
@@ -188,8 +223,7 @@ function renderProjectSummary() {
 }
 
 function renderTaskDrawerButtons() {
-  const pendingCount = state.pendingReplay ? 1 : 0;
-  const taskCount = state.tasks.length + pendingCount;
+  const taskCount = state.tasks.length;
   const label = taskCount ? `Fallback 历史任务（${taskCount}）` : "查看 Fallback 历史任务";
   if (openTaskDrawerButton) {
     openTaskDrawerButton.textContent = label;
@@ -229,8 +263,11 @@ function renderRecords() {
   }
 
   recordListRoot.innerHTML = state.records
-    .map(
-      (record) => `
+    .map((record) => {
+      const reasonText = String(record.reasonText || "").trim();
+      const reasonPreview = getRecordReasonPreview(reasonText);
+      const reasonTitle = reasonText || "未提供驳回说明";
+      return `
         <article class="feedback-record-row ${state.selectedRecordId === record.id ? "is-selected" : ""}">
           <button type="button" class="feedback-record-button" data-record-open="${record.id}">
             <span class="feedback-record-code">${escapeHtml(record.requirementCode || record.requirementId || "未编号")}</span>
@@ -238,14 +275,15 @@ function renderRecords() {
             <span class="feedback-record-module">${escapeHtml(record.moduleName || "未指定模块")}</span>
             <span class="feedback-record-category">${escapeHtml(getReasonCategoryLabel(record.reasonCategory))}</span>
             <span class="feedback-record-status"><span class="mini-pill ${statusTone(record.replayStatus)}">${escapeHtml(replayStatusLabel(record.replayStatus))}</span></span>
-            <span class="feedback-record-reason">${escapeHtml(record.reasonText || "")}</span>
+            <span class="feedback-record-reason" title="${escapeHtml(reasonTitle)}">${escapeHtml(reasonPreview || "未提供驳回说明")}</span>
           </button>
           <div class="feedback-record-actions">
             <button type="button" class="ghost-button" data-record-replay="${record.id}">发起 Replay</button>
+            <button type="button" class="danger subtle-danger" data-record-delete="${record.id}">删除</button>
           </div>
         </article>
       `
-    )
+    })
     .join("");
 }
 
@@ -266,7 +304,7 @@ function renderReplayProfileOptions() {
 }
 
 function renderTaskDrawer() {
-  const visibleTasks = state.pendingReplay ? [buildPendingReplayTaskCardData(), ...state.tasks] : state.tasks;
+  const visibleTasks = state.tasks;
 
   if (!visibleTasks.length) {
     taskDrawerListRoot.innerHTML = '<div class="empty-state">当前项目下还没有 Replay 任务。</div>';
@@ -280,24 +318,28 @@ function renderTaskDrawer() {
 
   taskDrawerListRoot.innerHTML = visibleTasks
     .map((task) => {
-      const isPending = task.taskStatus === "running";
-      const isFailed = task.taskStatus === "failed";
-      const proposalCount = (task.proposals || []).flatMap((proposal) => proposal.items || []).length;
+      const normalizedStatus = normalizeReplayTaskStatus(task.taskStatus || task.status || "");
+      const isActive = isReplayTaskActive(normalizedStatus);
+      const isFailed = normalizedStatus === "failed";
+      const proposalCount = getReplayTaskProposalCount(task);
+      const artifactSummary = summarizeReplayTaskArtifacts(task);
+      const runtimeSummary = getReplayTaskRuntimeSummary(task);
       return `
-        <button type="button" class="list-card feedback-task-card ${task.id === state.selectedTaskId ? "is-selected" : ""} ${isPending ? "is-pending" : ""}" data-task-open="${task.id}">
+        <button type="button" class="list-card feedback-task-card ${task.id === state.selectedTaskId ? "is-selected" : ""} ${isActive ? "is-pending" : ""}" data-task-open="${task.id}">
           <strong>${escapeHtml(task.summary || task.id)}</strong>
           <p>${escapeHtml(task.moduleName || "未指定模块")}</p>
           <div class="list-card-meta">
-            <span>${task.sourceRejectionIds.length} 条记录</span>
+            <span>${getReplayTaskRecordCount(task)} 条记录</span>
             <span>${proposalCount} 条提案</span>
             <span>${escapeHtml(task.llmProfileId || "本地回放")}</span>
           </div>
           <div class="list-card-meta">
-            <span class="mini-pill ${escapeHtml(replayTaskStatusTone(task.taskStatus || ""))}">${escapeHtml(replayTaskStatusLabel(task.taskStatus || ""))}</span>
-            <span>${escapeHtml(formatDateTime(task.createdAt))}</span>
+            <span class="mini-pill ${escapeHtml(replayTaskStatusTone(normalizedStatus))}">${escapeHtml(replayTaskStatusLabel(normalizedStatus))}</span>
+            <span>${escapeHtml(formatDateTime(task.updatedAt || task.createdAt))}</span>
           </div>
-          ${isPending ? `<p class="inline-hint">${escapeHtml(task.pendingStageMessage || "系统正在处理本次回放任务。")}</p>` : ""}
+          ${isActive ? `<p class="inline-hint">${escapeHtml(runtimeSummary || "系统正在处理本次回放任务。")}</p>` : ""}
           ${isFailed ? `<p class="inline-hint">${escapeHtml(task.errorMessage || "任务执行失败，请查看详情。")}</p>` : ""}
+          ${artifactSummary ? `<p class="inline-hint">${escapeHtml(artifactSummary)}</p>` : ""}
         </button>
       `;
     })
@@ -323,10 +365,11 @@ function renderTaskDrawer() {
 }
 
 function buildTaskDetail(task) {
-  if (task.taskStatus === "running") {
-    return buildPendingTaskDetail(task);
+  const normalizedStatus = normalizeReplayTaskStatus(task.taskStatus || task.status || "");
+  if (isReplayTaskActive(normalizedStatus)) {
+    return buildActiveTaskDetail(task, normalizedStatus);
   }
-  if (task.taskStatus === "failed") {
+  if (normalizedStatus === "failed") {
     return buildFailedTaskDetail(task);
   }
 
@@ -341,13 +384,16 @@ function buildTaskDetail(task) {
     <div class="detail-card feedback-task-detail-card">
       <h3>${escapeHtml(task.summary || task.id)}</h3>
       <p><strong>模块：</strong>${escapeHtml(task.moduleName || "未指定模块")}</p>
-      <p><strong>记录数：</strong>${task.sourceRejectionIds.length}</p>
+      <p><strong>记录数：</strong>${getReplayTaskRecordCount(task)}</p>
       <p><strong>模型：</strong>${escapeHtml(task.llmProfileId || "本地回放")}</p>
       <p><strong>参考资产：</strong>${escapeHtml(referenceAssets.map((asset) => asset.originalName || asset.fileName || asset.id).join("，") || "未选择")}</p>
       ${task.workOrderId ? `<p><strong>技能工单：</strong>${escapeHtml(task.workOrderId)} · ${escapeHtml(workOrderSummary?.status || "pending_review")}</p>` : ""}
+      ${buildReplayTaskRuntimeBlock(task)}
+      ${buildReplayTaskArtifactBlock(task)}
       <div class="detail-actions-row">
         <button type="button" data-task-apply="${task.id}">应用已接受提案</button>
         ${task.workOrderId ? `<button type="button" class="ghost-button" data-open-work-order="${task.workOrderId}">查看技能工单</button>` : ""}
+        ${buildReplayTaskDeleteButton(task)}
       </div>
       <div class="proposal-list">
         ${proposalItems.length
@@ -436,18 +482,21 @@ function formatProposalActionLabel(action = "") {
   return map[action] || action || "未指定动作";
 }
 
-function buildPendingTaskDetail(task) {
+function buildActiveTaskDetail(task, normalizedStatus = "running") {
+  const runtimeSummary = getReplayTaskRuntimeSummary(task);
   return `
     <div class="detail-card feedback-task-detail-card feedback-task-detail-card-pending">
       <div class="feedback-pending-orbit" aria-hidden="true"></div>
-      <h3>${escapeHtml(task.summary || "Replay / Fallback 正在处理中")}</h3>
+      <h3>${escapeHtml(task.summary || (normalizedStatus === "queued" ? "Replay / Fallback 已排队" : "Replay / Fallback 正在处理中"))}</h3>
       <p><strong>模块：</strong>${escapeHtml(task.moduleName || "未指定模块")}</p>
-      <p><strong>记录数：</strong>${task.sourceRejectionIds.length}</p>
+      <p><strong>记录数：</strong>${getReplayTaskRecordCount(task)}</p>
       <p><strong>模型：</strong>${escapeHtml(task.llmProfileId || "本地回放")}</p>
-      <p><strong>当前阶段：</strong>${escapeHtml(task.pendingStageLabel || "正在处理中")}</p>
-      <p class="summary">${escapeHtml(task.pendingStageMessage || "系统已接收请求，正在整理驳回记录、参考资产和候选技能规则。")}</p>
-      <div class="feedback-pending-timeline">
-        ${buildPendingTimeline(task)}
+      <p><strong>当前状态：</strong>${escapeHtml(replayTaskStatusLabel(normalizedStatus))}</p>
+      <p class="summary">${escapeHtml(runtimeSummary || (normalizedStatus === "queued" ? "任务已进入后端队列，等待开始处理。" : "系统已接收请求，正在整理驳回记录、参考资产和候选技能规则。"))}</p>
+      ${buildReplayTaskRuntimeBlock(task)}
+      ${buildReplayTaskArtifactBlock(task)}
+      <div class="detail-actions-row">
+        ${buildReplayTaskDeleteButton(task)}
       </div>
       <div class="empty-state">任务完成后，这里会自动切换成真实的提案详情。</div>
     </div>
@@ -472,7 +521,7 @@ function buildFailedTaskDetail(task) {
         </div>
         <div class="detail-block">
           <span class="label">记录数</span>
-          <pre>${String(task.sourceRejectionIds.length || 0)}</pre>
+          <pre>${String(getReplayTaskRecordCount(task))}</pre>
         </div>
       </div>
       <div class="detail-block">
@@ -483,126 +532,442 @@ function buildFailedTaskDetail(task) {
         <span class="label">参考资产</span>
         <pre>${escapeHtml(referenceAssets.map((asset) => asset.originalName || asset.fileName || asset.id).join("，") || "未选择")}</pre>
       </div>
+      ${buildReplayTaskRuntimeBlock(task)}
+      ${buildReplayTaskArtifactBlock(task)}
+      <div class="detail-actions-row">
+        ${buildReplayTaskDeleteButton(task)}
+      </div>
       <div class="empty-state">这次远端任务已经按失败状态保留在历史里，没有生成提案和技能工单。</div>
     </div>
   `;
 }
 
-function buildPendingTimeline(task) {
-  const phaseIndex = Number(task.pendingPhaseIndex || 0);
-  const phases = replayPendingPhases();
-  return phases
-    .map(
-      (phase, index) => `
-        <article class="feedback-pending-step ${index <= phaseIndex ? "is-active" : ""}">
-          <strong>${escapeHtml(phase.label)}</strong>
-          <p>${escapeHtml(phase.copy)}</p>
-        </article>
-      `
-    )
-    .join("");
+function buildReplayTaskDeleteButton(task) {
+  return `<button type="button" class="danger" data-task-delete="${task.id}">删除任务</button>`;
 }
 
-function buildRecordDetail(record) {
-  const relatedTasks = state.tasks.filter((task) => (task.sourceRejectionIds || []).includes(record.id));
-  const proposalHits = relatedTasks.flatMap((task) =>
-    (task.proposals || []).flatMap((proposal) =>
-      (proposal.items || []).filter((item) => (item.evidenceRefs || []).includes(record.id)).map((item) => ({ task, item }))
-    )
+function getReplayTaskPrimaryProposal(task = {}) {
+  return Array.isArray(task.proposals) ? task.proposals[0] || null : null;
+}
+
+function getReplayTaskProposalItems(task = {}) {
+  return Array.isArray(task.proposals) ? task.proposals.flatMap((proposal) => proposal.items || []) : [];
+}
+
+function getTimestamp(value = "") {
+  const parsed = Date.parse(String(value || "").trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getRecordReasonPreview(reasonText = "", maxLength = 96) {
+  const normalized = String(reasonText || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  if (normalized.length <= maxLength) return normalized;
+  const sentencePreview = normalized.match(/^(.{0,84}[。！？!?])/u)?.[1]?.trim();
+  if (sentencePreview && sentencePreview.length >= Math.floor(maxLength * 0.45)) {
+    return `${sentencePreview} …`;
+  }
+  return `${normalized.slice(0, maxLength).trim()}…`;
+}
+
+function sortByLatest(items = []) {
+  return [...items].sort((left, right) =>
+    getTimestamp(firstNonEmptyString(right.updatedAt, right.createdAt)) - getTimestamp(firstNonEmptyString(left.updatedAt, left.createdAt))
   );
+}
+
+function getRecordDisplayTitle(record = {}) {
+  return firstNonEmptyString(record.outputSnapshot?.title, record.requirementCode, record.requirementId, "Replay 详情");
+}
+
+function getRecordDisplayCode(record = {}) {
+  return firstNonEmptyString(record.requirementCode, record.requirementId, "未编号");
+}
+
+function getRecordRelatedTasks(record = {}) {
+  return sortByLatest(state.tasks.filter((task) => (task.sourceRejectionIds || []).includes(record.id)));
+}
+
+function selectRecordReviewTask(tasks = []) {
+  return tasks.find((task) => getReplayTaskProposalItems(task).length > 0) || tasks[0] || null;
+}
+
+function getProposalAfterText(item = {}) {
+  return firstNonEmptyString(item.editedPayload?.after, item.after, item.afterContent, item.newRuleDraft?.content, item.recommendedSkillText);
+}
+
+function buildRecordReviewViewModel(record = {}) {
+  const relatedTasks = getRecordRelatedTasks(record);
+  const selectedTask = selectRecordReviewTask(relatedTasks);
+  const selectedProposal = getReplayTaskPrimaryProposal(selectedTask || {});
+  const proposalItems = getReplayTaskProposalItems(selectedTask || {});
+  const validatorSuggestions = Array.isArray(selectedTask?.validatorSuggestions) && selectedTask.validatorSuggestions.length
+    ? selectedTask.validatorSuggestions
+    : Array.isArray(selectedProposal?.validatorSuggestions)
+      ? selectedProposal.validatorSuggestions
+      : [];
+  const conflictSummary = (record.outputSnapshot?.conflicts || []).map((item) => `${item.code}: ${item.message}`).join("\n");
+
+  return {
+    title: getRecordDisplayTitle(record),
+    code: getRecordDisplayCode(record),
+    moduleName: firstNonEmptyString(record.moduleName, "未指定模块"),
+    replayStatusLabel: replayStatusLabel(record.replayStatus),
+    replayStatusTone: statusTone(record.replayStatus),
+    latestReplayAt: firstNonEmptyString(selectedTask?.updatedAt, selectedTask?.createdAt, record.lastReplayAt, record.updatedAt, record.createdAt),
+    relatedTasks,
+    selectedTask,
+    selectedTaskStatus: normalizeReplayTaskStatus(selectedTask?.taskStatus || selectedTask?.status || ""),
+    selectedTaskStatusLabel: selectedTask ? replayTaskStatusLabel(selectedTask.taskStatus || selectedTask.status || "") : replayStatusLabel(record.replayStatus),
+    decisionSummary: firstNonEmptyString(selectedTask?.decisionSummary, selectedProposal?.decisionSummary),
+    replaySummary: firstNonEmptyString(selectedTask?.summary, selectedProposal?.summary),
+    validatorSuggestions,
+    primaryProposalItem: proposalItems[0] || null,
+    secondaryProposalItems: proposalItems.slice(1),
+    traces: Array.isArray(record.outputSnapshot?.traces) ? record.outputSnapshot.traces : [],
+    verificationHint: firstNonEmptyString(record.outputSnapshot?.verificationHint, "无校验提示"),
+    requirementText: firstNonEmptyString(record.outputSnapshot?.requirementText, "无生成内容"),
+    requirementType: firstNonEmptyString(record.outputSnapshot?.type, "functional"),
+    confidence: record.outputSnapshot?.confidence ?? "--",
+    conflictSummary: firstNonEmptyString(conflictSummary, record.outputSnapshot?.conflictNote, "无"),
+    reasonCategoryLabel: getReasonCategoryLabel(record.reasonCategory),
+    severityLabel: getSeverityLabel(record.severity),
+    reasonTags: Array.isArray(record.reasonTags) ? record.reasonTags.filter(Boolean) : [],
+    reasonText: firstNonEmptyString(record.reasonText, "无驳回说明"),
+    expectedNote: firstNonEmptyString(record.expectedNote, "无"),
+    poolStatusLabel: record.poolStatus === "archived" ? "否" : "是",
+    replayCount: Number(record.replayCount || 0),
+    workOrderId: firstNonEmptyString(selectedTask?.workOrderId, relatedTasks.find((task) => task.workOrderId)?.workOrderId)
+  };
+}
+
+function buildDialogMetaItem(label, value, { raw = false } = {}) {
+  return `
+    <span class="record-review-dialog-meta-item">
+      <strong>${escapeHtml(label)}</strong>
+      ${raw ? value : escapeHtml(value || "-")}
+    </span>
+  `;
+}
+
+function renderRichText(value = "", emptyText = "无") {
+  return `<div class="record-review-rich-text">${escapeHtml(value || emptyText)}</div>`;
+}
+
+function renderTagPills(values = [], tone = "subtle") {
+  if (!values.length) {
+    return '<span class="record-review-placeholder">无</span>';
+  }
+  return `
+    <div class="record-review-pill-row">
+      ${values.map((value) => `<span class="mini-pill ${tone}">${escapeHtml(value)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function renderReviewMetaItems(items = []) {
+  return `
+    <div class="record-review-meta-grid">
+      ${items
+        .filter((item) => item && item.value != null && item.value !== "")
+        .map(
+          (item) => `
+            <article class="record-review-meta-item">
+              <span>${escapeHtml(item.label)}</span>
+              <strong>${escapeHtml(String(item.value))}</strong>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function buildProposalCard(item = {}, { highlight = false } = {}) {
+  const afterText = getProposalAfterText(item);
+  const beforeText = firstNonEmptyString(item.before, item.editedPayload?.before);
+  const targetScope = [item.targetLayer || "-", item.targetProfileKey || "-", item.targetKind || item.kind || "-"].join(" / ");
 
   return `
-    <article class="detail-card feedback-detail-card">
-      <div class="detail-header-row">
+    <article class="record-review-proposal-card ${highlight ? "is-highlight" : ""}">
+      <div class="record-review-proposal-head">
         <div>
-          <h3>${escapeHtml(record.outputSnapshot?.title || record.requirementCode || "驳回记录")}</h3>
-          <p class="summary">${escapeHtml(record.requirementCode || record.requirementId || "未编号")} · ${escapeHtml(record.moduleName || "未指定模块")}</p>
+          <p class="record-review-section-kicker">${highlight ? "主建议" : "附加建议"}</p>
+          <h4>${escapeHtml(item.title || "提案修改建议")}</h4>
         </div>
-        <span class="mini-pill ${statusTone(record.replayStatus)}">${escapeHtml(replayStatusLabel(record.replayStatus))}</span>
+        <span class="mini-pill subtle">${escapeHtml(formatProposalActionLabel(item.action))}</span>
       </div>
-
-      <div class="detail-block-grid">
-        <div class="detail-block">
-          <span class="label">标题</span>
-          <pre>${escapeHtml(record.outputSnapshot?.title || "")}</pre>
-        </div>
-        <div class="detail-block">
-          <span class="label">生成摘要</span>
-          <pre>${escapeHtml(record.outputSnapshot?.type || "functional")} · 置信度 ${String(record.outputSnapshot?.confidence ?? "--")}\n${escapeHtml(record.outputSnapshot?.verificationHint || "无校验提示")}</pre>
-        </div>
+      ${renderReviewMetaItems([
+        { label: "目标 Skill", value: firstNonEmptyString(item.targetSkillCode, "新增技能项") },
+        { label: "目标层级", value: targetScope },
+        { label: "变更原因", value: firstNonEmptyString(item.rationale, item.ruleIntent, item.scopeReason, "未提供") }
+      ])}
+      <div class="record-review-text-panel">
+        <span class="record-review-panel-label">建议修改内容</span>
+        ${renderRichText(afterText, "当前没有可展示的修改内容。")}
       </div>
+      ${beforeText
+        ? `
+          <div class="record-review-text-panel is-muted">
+            <span class="record-review-panel-label">修改前参考</span>
+            ${renderRichText(beforeText)}
+          </div>
+        `
+        : ""}
+    </article>
+  `;
+}
 
-      <div class="detail-block">
-        <span class="label">生成内容</span>
-        <pre>${escapeHtml(record.outputSnapshot?.requirementText || "")}</pre>
-      </div>
+function buildValidatorSuggestionsSection(viewModel) {
+  if (!viewModel.validatorSuggestions.length) return "";
 
-      <div class="detail-block-grid">
-        <div class="detail-block">
-          <span class="label">冲突项</span>
-          <pre>${escapeHtml((record.outputSnapshot?.conflicts || []).map((item) => `${item.code}: ${item.message}`).join("\n") || record.outputSnapshot?.conflictNote || "无")}</pre>
+  return `
+    <section class="record-review-section">
+      <div class="record-review-section-head">
+        <div>
+          <p class="record-review-section-kicker">校验补充</p>
+          <h3>提案校验建议</h3>
         </div>
-        <div class="detail-block">
-          <span class="label">追溯信息</span>
-          <pre>${escapeHtml((record.outputSnapshot?.traces || []).map((item) => `${item.fileName} @ ${item.location}`).join("\n") || "无")}</pre>
-        </div>
+        <span class="mini-pill subtle">${viewModel.validatorSuggestions.length} 条</span>
       </div>
-
-      <div class="detail-block">
-        <span class="label">来源片段</span>
-        <pre>${escapeHtml((record.sourceRefsSnapshot || []).map((item) => `${item.fileName} @ ${item.location}: ${item.excerpt}`).join("\n\n") || "无")}</pre>
+      <div class="record-review-suggestion-list">
+        ${viewModel.validatorSuggestions
+          .map(
+            (item) => `
+              <article class="record-review-suggestion-card">
+                <strong>${escapeHtml(item.title || "校验建议")}</strong>
+                ${renderRichText(firstNonEmptyString(item.ruleText, "无规则说明"))}
+                ${item.why ? `<p class="record-review-footnote">${escapeHtml(item.why)}</p>` : ""}
+              </article>
+            `
+          )
+          .join("")}
       </div>
+    </section>
+  `;
+}
 
-      <div class="detail-block-grid">
-        <div class="detail-block">
-          <span class="label">人工驳回信息</span>
-          <p><strong>分类：</strong>${escapeHtml(getReasonCategoryLabel(record.reasonCategory))}</p>
-          <p><strong>标签：</strong>${escapeHtml((record.reasonTags || []).join("，") || "无")}</p>
-          <p><strong>严重程度：</strong>${escapeHtml(getSeverityLabel(record.severity))}</p>
-          <p><strong>驳回说明：</strong>${escapeHtml(record.reasonText || "")}</p>
-          <p><strong>期望修正：</strong>${escapeHtml(record.expectedNote || "无")}</p>
-          <p><strong>是否入池：</strong>${record.poolStatus === "archived" ? "否" : "是"}</p>
+function buildReplayOutcomeSection(viewModel) {
+  if (!viewModel.relatedTasks.length) {
+    return `
+      <section class="record-review-section">
+        <article class="record-review-summary-card is-empty">
+          <p class="record-review-section-kicker">Replay 状态</p>
+          <h3>这条驳回记录还没有进入 Replay</h3>
+          <p class="record-review-empty-copy">当前先展示人工驳回信息和原始生成结果，后续有提案后会自动在这里呈现主建议。</p>
+        </article>
+      </section>
+    `;
+  }
+
+  if (!viewModel.primaryProposalItem) {
+    const failedCopy = viewModel.selectedTaskStatus === "failed"
+      ? firstNonEmptyString(viewModel.selectedTask?.errorMessage, viewModel.replaySummary, "本次 Replay 失败，尚未生成可审阅提案。")
+      : firstNonEmptyString(viewModel.replaySummary, viewModel.decisionSummary, "最近一次 Replay 暂未生成可审阅提案。");
+
+    return `
+      <section class="record-review-section">
+        <article class="record-review-summary-card is-empty">
+          <p class="record-review-section-kicker">Replay 状态</p>
+          <h3>${escapeHtml(viewModel.selectedTaskStatus === "failed" ? "本次 Replay 未产出提案" : "最近一次 Replay 暂无提案")}</h3>
+          <p class="record-review-empty-copy">${escapeHtml(failedCopy)}</p>
+        </article>
+      </section>
+    `;
+  }
+
+  const summaryHeading = firstNonEmptyString(viewModel.primaryProposalItem?.title, "建议修改方向");
+  const summaryBody = firstNonEmptyString(viewModel.decisionSummary, viewModel.replaySummary);
+  const supportingSummary = viewModel.replaySummary && viewModel.replaySummary !== viewModel.decisionSummary
+    ? `<p class="record-review-footnote">${escapeHtml(viewModel.replaySummary)}</p>`
+    : "";
+
+  return `
+    <section class="record-review-section">
+      <article class="record-review-summary-card">
+        <div class="record-review-section-head">
+          <div>
+            <p class="record-review-section-kicker">提案修改建议</p>
+            <h3>${escapeHtml(summaryHeading)}</h3>
+          </div>
+          <span class="mini-pill ${escapeHtml(replayTaskStatusTone(viewModel.selectedTaskStatus))}">${escapeHtml(viewModel.selectedTaskStatusLabel)}</span>
         </div>
-        <div class="detail-block">
-          <span class="label">Replay 状态</span>
-          <p><strong>当前状态：</strong>${escapeHtml(replayStatusLabel(record.replayStatus))}</p>
-          <p><strong>回投次数：</strong>${record.replayCount || 0}</p>
-          <p><strong>最近回投：</strong>${escapeHtml(formatDateTime(record.lastReplayAt))}</p>
-          <p><strong>关联任务：</strong>${relatedTasks.length}</p>
+        ${summaryBody ? renderRichText(summaryBody) : ""}
+        ${supportingSummary}
+      </article>
+      ${buildProposalCard(viewModel.primaryProposalItem, { highlight: true })}
+    </section>
+  `;
+}
+
+function buildManualReviewSidebar(viewModel) {
+  return `
+    <aside class="record-review-sidebar">
+      <article class="record-review-side-card">
+        <p class="record-review-section-kicker">人工驳回信息</p>
+        <h3>${escapeHtml(viewModel.reasonCategoryLabel)}</h3>
+        ${renderReviewMetaItems([
+          { label: "严重程度", value: viewModel.severityLabel },
+          { label: "是否入池", value: viewModel.poolStatusLabel },
+          { label: "回投次数", value: String(viewModel.replayCount) },
+          { label: "关联任务", value: String(viewModel.relatedTasks.length) }
+        ])}
+        <div class="record-review-text-panel">
+          <span class="record-review-panel-label">驳回说明</span>
+          ${renderRichText(viewModel.reasonText)}
         </div>
+        <div class="record-review-text-panel">
+          <span class="record-review-panel-label">期望修正</span>
+          ${renderRichText(viewModel.expectedNote)}
+        </div>
+        <div class="record-review-text-panel is-compact">
+          <span class="record-review-panel-label">标签</span>
+          ${renderTagPills(viewModel.reasonTags)}
+        </div>
+      </article>
+      <article class="record-review-side-card">
+        <p class="record-review-section-kicker">当前回放</p>
+        <h3>${escapeHtml(viewModel.selectedTask ? "最近一次 Replay" : viewModel.replayStatusLabel)}</h3>
+        ${renderReviewMetaItems([
+          { label: "Replay 状态", value: viewModel.selectedTaskStatusLabel },
+          { label: "最近回投", value: formatDateTime(viewModel.latestReplayAt) },
+          { label: "任务 ID", value: firstNonEmptyString(viewModel.selectedTask?.id, "暂无") },
+          { label: "技能工单", value: firstNonEmptyString(viewModel.workOrderId, "未创建") }
+        ])}
+      </article>
+    </aside>
+  `;
+}
+
+function buildSecondaryProposalSection(viewModel) {
+  const emptyCopy = viewModel.primaryProposalItem
+    ? "当前只有 1 条主建议，其余提案项为空。"
+    : "当前没有可展示的附加提案项。";
+  return `
+    <section class="record-review-section">
+      <div class="record-review-section-head">
+        <div>
+          <p class="record-review-section-kicker">补充建议</p>
+          <h3>其余提案项</h3>
+        </div>
+        <span class="mini-pill subtle">${viewModel.secondaryProposalItems.length} 条</span>
       </div>
+      ${viewModel.secondaryProposalItems.length
+        ? `
+          <div class="record-review-proposal-grid">
+            ${viewModel.secondaryProposalItems.map((item) => buildProposalCard(item)).join("")}
+          </div>
+        `
+        : `<div class="record-review-empty-card">${escapeHtml(emptyCopy)}</div>`}
+    </section>
+  `;
+}
 
-      <div class="detail-block">
-        <span class="label">关联 Replay 任务</span>
-        ${relatedTasks.length
-          ? relatedTasks
+function buildTraceSummaryCard(viewModel) {
+  return `
+    <article class="record-review-support-card">
+      <p class="record-review-section-kicker">辅助信息</p>
+      <h3>追溯信息</h3>
+      ${viewModel.traces.length
+        ? `
+          <div class="record-review-trace-list">
+            ${viewModel.traces
+              .slice(0, 6)
               .map(
-                (task) => `
-                  <div class="inline-rule">
-                    <strong>${escapeHtml(task.summary || task.id)}</strong>
-                    <p>${escapeHtml(task.moduleName || "未指定模块")} · ${formatDateTime(task.createdAt)}</p>
+                (item) => `
+                  <div class="record-review-trace-item">
+                    <strong>${escapeHtml(item.fileName || "未命名来源")}</strong>
+                    <span>${escapeHtml(item.location || "未标注位置")}</span>
                   </div>
                 `
               )
-              .join("")
-          : '<p class="empty-state">该记录尚未参与 Replay。</p>'}
-      </div>
+              .join("")}
+          </div>
+          ${viewModel.traces.length > 6 ? `<p class="record-review-footnote">其余 ${viewModel.traces.length - 6} 条追溯信息已省略。</p>` : ""}
+        `
+        : '<p class="record-review-empty-copy">当前没有可展示的追溯信息。</p>'}
+    </article>
+  `;
+}
 
-      <div class="detail-block">
-        <span class="label">命中的提议项</span>
-        ${proposalHits.length
-          ? proposalHits
-              .map(
-                ({ task, item }) => `
-                  <div class="inline-rule">
-                    <strong>${escapeHtml(item.title)}</strong>
-                    <p>${escapeHtml(item.action)} · ${escapeHtml(task.summary || task.id)}</p>
-                  </div>
-                `
-              )
-              .join("")
-          : '<p class="empty-state">当前没有命中的提案。</p>'}
+function buildReplayHistoryCard(viewModel) {
+  return `
+    <article class="record-review-support-card">
+      <p class="record-review-section-kicker">辅助信息</p>
+      <h3>Replay 历史摘要</h3>
+      ${viewModel.relatedTasks.length
+        ? `
+          <div class="record-review-history-list">
+            ${viewModel.relatedTasks
+              .map((task) => {
+                const normalizedStatus = normalizeReplayTaskStatus(task.taskStatus || task.status || "");
+                const isSelected = viewModel.selectedTask?.id === task.id;
+                return `
+                  <article class="record-review-history-item ${isSelected ? "is-selected" : ""}">
+                    <div class="record-review-history-head">
+                      <strong>${escapeHtml(task.summary || task.id)}</strong>
+                      <span class="mini-pill ${escapeHtml(replayTaskStatusTone(normalizedStatus))}">${escapeHtml(replayTaskStatusLabel(normalizedStatus))}</span>
+                    </div>
+                    <p>${escapeHtml(formatDateTime(task.updatedAt || task.createdAt))}</p>
+                    <p>${getReplayTaskProposalCount(task)} 条提案${isSelected ? " · 当前展示" : ""}</p>
+                  </article>
+                `;
+              })
+              .join("")}
+          </div>
+        `
+        : '<p class="record-review-empty-copy">该记录尚未参与 Replay。</p>'}
+    </article>
+  `;
+}
+
+function buildOriginalOutputCard(viewModel) {
+  return `
+    <article class="record-review-support-card is-wide">
+      <p class="record-review-section-kicker">辅助信息</p>
+      <h3>原始生成结果</h3>
+      ${renderReviewMetaItems([
+        { label: "标题", value: viewModel.title },
+        { label: "类型", value: viewModel.requirementType },
+        { label: "置信度", value: String(viewModel.confidence) },
+        { label: "校验提示", value: viewModel.verificationHint }
+      ])}
+      <div class="record-review-text-panel">
+        <span class="record-review-panel-label">生成内容</span>
+        ${renderRichText(viewModel.requirementText)}
       </div>
+      <div class="record-review-text-panel is-muted">
+        <span class="record-review-panel-label">冲突项</span>
+        ${renderRichText(viewModel.conflictSummary)}
+      </div>
+    </article>
+  `;
+}
+
+function buildRecordDetail(viewModel) {
+  return `
+    <article class="record-review-layout">
+      <section class="record-review-hero">
+        <div class="record-review-primary">
+          ${buildReplayOutcomeSection(viewModel)}
+          ${buildValidatorSuggestionsSection(viewModel)}
+        </div>
+        ${buildManualReviewSidebar(viewModel)}
+      </section>
+      ${buildSecondaryProposalSection(viewModel)}
+      <section class="record-review-section">
+        <div class="record-review-section-head">
+          <div>
+            <p class="record-review-section-kicker">其他辅助信息</p>
+            <h3>追溯与历史</h3>
+          </div>
+        </div>
+        <div class="record-review-support-grid">
+          ${buildTraceSummaryCard(viewModel)}
+          ${buildReplayHistoryCard(viewModel)}
+          ${buildOriginalOutputCard(viewModel)}
+        </div>
+      </section>
     </article>
   `;
 }
@@ -610,9 +975,35 @@ function buildRecordDetail(record) {
 function openRecordDetail(recordId) {
   const record = state.records.find((item) => item.id === recordId);
   if (!record) return;
+
+  const viewModel = buildRecordReviewViewModel(record);
   state.selectedRecordId = recordId;
-  recordDetailSubtitle.textContent = `${record.requirementCode || record.requirementId || "未编号"} · ${record.moduleName || "未指定模块"}`;
-  recordDetailContent.innerHTML = buildRecordDetail(record);
+  const subtitleHtml = [
+    buildDialogMetaItem("编号", viewModel.code),
+    buildDialogMetaItem("模块", viewModel.moduleName),
+    buildDialogMetaItem("Replay 状态", `<span class="mini-pill ${viewModel.replayStatusTone}">${escapeHtml(viewModel.replayStatusLabel)}</span>`, { raw: true }),
+    buildDialogMetaItem("最近回投", formatDateTime(viewModel.latestReplayAt))
+  ].join("");
+  const detailHtml = buildRecordDetail(viewModel);
+
+  if (isEmbeddedFeedbackPool()) {
+    postToHost({
+      type: "feedback_pool:open_record_review_overlay",
+      title: viewModel.title,
+      subtitleHtml,
+      detailHtml,
+      workOrderId: viewModel.workOrderId || ""
+    });
+    return;
+  }
+
+  recordDetailTitle.textContent = viewModel.title;
+  recordDetailSubtitle.innerHTML = subtitleHtml;
+  recordDetailWorkOrder.hidden = !viewModel.workOrderId;
+  recordDetailWorkOrder.dataset.workOrderId = viewModel.workOrderId || "";
+  recordDetailContent.innerHTML = detailHtml;
+  recordDetailContent.scrollTop = 0;
+  postToHost({ type: "feedback_pool:record_detail_opened" });
   recordDetailDialog.showModal();
 }
 
@@ -771,11 +1162,6 @@ function handleReplayDialogResizeKeyDown(event) {
 }
 
 async function openReplayDialog(recordIds = []) {
-  if (state.pendingReplay) {
-    window.alert("当前已有一条 Replay / Fallback 任务正在处理中，请等待它完成后再发起新的任务。");
-    return;
-  }
-
   const selectedRecords = state.records.filter((record) => recordIds.includes(record.id));
   if (!selectedRecords.length) {
     window.alert("当前没有可用于 Replay 的驳回记录。");
@@ -863,24 +1249,9 @@ async function submitReplayTask(event) {
     window.alert("One replay run can only include rejections with the same target layer constraint.");
     return;
   }
-  const module = state.modules.find((item) => item.id === state.selectedReplayModuleId) || null;
-  const pendingReplay = createPendingReplayState({
-    records: selectedRecords,
-    module,
-    llmProfileId: replayLlmProfileSelect.value || "",
-    referenceAssetIds
-  });
-
-  setPendingReplay(pendingReplay);
-  renderProjectSummary();
-  renderTaskDrawer();
-  renderFeedbackStatus();
-  openTaskDrawer();
   replayDialog.close();
   if (submitButton) submitButton.disabled = true;
   if (cancelButton) cancelButton.disabled = true;
-
-  await waitForNextPaint();
 
   try {
     const task = await request("/api/replay-tasks", {
@@ -895,21 +1266,22 @@ async function submitReplayTask(event) {
       })
     });
 
-    clearPendingReplay();
     state.selectedTaskId = task.id;
     await Promise.all([refreshRecords(), refreshTasks()]);
     renderProjectSummary();
     renderFilters();
     renderRecords();
     renderTaskDrawer();
-    if (task.taskStatus === "failed") {
+    const normalizedStatus = normalizeReplayTaskStatus(task.taskStatus || task.status || "");
+    if (normalizedStatus === "failed") {
       renderFeedbackStatus(localizeErrorMessage(task.errorMessage || task.summary || "Replay 任务失败"), true);
+    } else if (isReplayTaskActive(normalizedStatus)) {
+      renderFeedbackStatus(`Replay 任务已${replayTaskStatusLabel(normalizedStatus)}，任务详情将随后台状态自动刷新。`, false);
     } else {
       renderFeedbackStatus(`Replay 任务已生成完成，最新提案已经出现在最近任务里。`, false);
     }
     openTaskDrawer();
   } catch (error) {
-    clearPendingReplay();
     renderProjectSummary();
     renderTaskDrawer();
     renderFeedbackStatus(localizeErrorMessage(error.message || "发起 Replay 失败"), true);
@@ -924,6 +1296,7 @@ async function handleFilterChange() {
   state.moduleFilterId = moduleFilterSelect.value || "";
   state.filters.reasonCategory = recordCategoryFilter.value || "";
   state.filters.replayStatus = recordReplayFilter.value || "";
+  syncTopNavLinks();
   await Promise.all([refreshRecords(), refreshTasks()]);
   renderProjectSummary();
   renderFilters();
@@ -945,9 +1318,52 @@ function handleRecordRowClick(event) {
     return;
   }
 
+  const deleteButton = event.target.closest("[data-record-delete]");
+  if (deleteButton) {
+    deleteRejectionRecord(deleteButton.dataset.recordDelete);
+    return;
+  }
+
   const openButton = event.target.closest("[data-record-open]");
   if (!openButton) return;
   openRecordDetail(openButton.dataset.recordOpen);
+}
+
+async function deleteRejectionRecord(recordId = "") {
+  if (!recordId) return;
+
+  const record = state.records.find((item) => item.id === recordId);
+  const title = record?.outputSnapshot?.title || record?.requirementCode || recordId;
+  if (!window.confirm(`确认删除这条驳回记录？\n\n${title}\n\n删除后它不会再出现在驳回池中。`)) {
+    return;
+  }
+
+  try {
+    await request(`/api/rejections/${encodeURIComponent(recordId)}`, { method: "DELETE" });
+    if (state.selectedRecordId === recordId) {
+      state.selectedRecordId = "";
+    }
+    state.replayRecordIds = state.replayRecordIds.filter((id) => id !== recordId);
+    await Promise.all([refreshRecords(), refreshTasks()]);
+    renderProjectSummary();
+    renderFilters();
+    renderRecords();
+    renderTaskDrawer();
+    renderFeedbackStatus("驳回记录已删除。");
+  } catch (error) {
+    renderFeedbackStatus(localizeErrorMessage(error.message || "删除驳回记录失败"), true);
+    console.error(error);
+  }
+}
+
+function openWorkOrder(workOrderId = "") {
+  if (!workOrderId) return;
+  const targetUrl = `/skill-management?view=work-orders&workOrderId=${encodeURIComponent(workOrderId)}`;
+  if (window.top && window.top !== window) {
+    window.top.location.href = targetUrl;
+    return;
+  }
+  window.location.href = targetUrl;
 }
 
 function handleTaskClick(event) {
@@ -960,8 +1376,28 @@ function handleTaskClick(event) {
 async function handleTaskDetailAction(event) {
   const openWorkOrderButton = event.target.closest("[data-open-work-order]");
   if (openWorkOrderButton) {
-    const workOrderId = openWorkOrderButton.dataset.openWorkOrder;
-    window.location.href = `/skill-management?view=work-orders&workOrderId=${encodeURIComponent(workOrderId)}`;
+    openWorkOrder(openWorkOrderButton.dataset.openWorkOrder);
+    return;
+  }
+
+  const deleteButton = event.target.closest("[data-task-delete]");
+  if (deleteButton) {
+    const taskId = deleteButton.dataset.taskDelete;
+    if (!taskId) return;
+    if (!window.confirm("确认删除这条 Fallback 历史任务？删除后不会再出现在历史列表中。")) {
+      return;
+    }
+
+    await request(`/api/replay-tasks/${taskId}`, { method: "DELETE" });
+    if (state.selectedTaskId === taskId) {
+      state.selectedTaskId = "";
+    }
+    await Promise.all([refreshRecords(), refreshTasks()]);
+    renderProjectSummary();
+    renderFilters();
+    renderRecords();
+    renderTaskDrawer();
+    renderFeedbackStatus("历史任务已删除。");
     return;
   }
 
@@ -1066,17 +1502,296 @@ function statusTone(status = "") {
 }
 
 function replayTaskStatusLabel(status = "") {
+  if (status === "queued") return "排队中";
   if (status === "running") return "处理中";
   if (status === "done") return "已完成";
   if (status === "failed") return "已失败";
+  if (status === "cancelled") return "已取消";
   return "待处理";
 }
 
 function replayTaskStatusTone(status = "") {
+  if (status === "queued") return "subtle";
   if (status === "running") return "warning";
   if (status === "done") return "success";
   if (status === "failed") return "danger";
+  if (status === "cancelled") return "subtle";
   return "subtle";
+}
+
+function normalizeReplayTaskStatus(status = "") {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (["queued", "pending", "created"].includes(normalized)) return "queued";
+  if (["running", "processing", "in_progress"].includes(normalized)) return "running";
+  if (["done", "completed", "succeeded", "success"].includes(normalized)) return "done";
+  if (["failed", "error"].includes(normalized)) return "failed";
+  if (["cancelled", "canceled"].includes(normalized)) return "cancelled";
+  return normalized;
+}
+
+function isReplayTaskActive(status = "") {
+  return ["queued", "running"].includes(normalizeReplayTaskStatus(status));
+}
+
+function getActiveReplayTasks() {
+  return state.tasks.filter((task) => isReplayTaskActive(task.taskStatus || task.status || ""));
+}
+
+function countActiveReplayTasks() {
+  return getActiveReplayTasks().length;
+}
+
+function getReplayTaskRecordCount(task = {}) {
+  return Array.isArray(task.sourceRejectionIds) ? task.sourceRejectionIds.length : 0;
+}
+
+function getReplayTaskProposalCount(task = {}) {
+  return Array.isArray(task.proposals) ? task.proposals.flatMap((proposal) => proposal.items || []).length : 0;
+}
+
+function firstNonEmptyString(...values) {
+  return values.map((value) => String(value || "").trim()).find(Boolean) || "";
+}
+
+function formatRuntimeElapsed(value) {
+  const elapsedMs = Number(value || 0) || 0;
+  if (!elapsedMs) return "";
+  const seconds = Math.round(elapsedMs / 1000);
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const remainSeconds = seconds % 60;
+  return remainSeconds ? `${minutes} 分 ${remainSeconds} 秒` : `${minutes} 分`;
+}
+
+function safeBasename(value = "") {
+  const normalized = String(value || "").trim().split(/[\\/]/).filter(Boolean);
+  return normalized[normalized.length - 1] || "";
+}
+
+function getReplayTaskRuntimeSource(task = {}) {
+  const runtime = task.runtime && typeof task.runtime === "object" ? task.runtime : null;
+  const runtimeInfo = task.runtimeInfo && typeof task.runtimeInfo === "object" ? task.runtimeInfo : null;
+  const runtimeSummary = task.runtimeSummary && typeof task.runtimeSummary === "object" ? task.runtimeSummary : null;
+  const agent = task.debug?.agent && typeof task.debug.agent === "object" ? task.debug.agent : null;
+  const progress = task.progress && typeof task.progress === "object" ? task.progress : null;
+  return {
+    runtime,
+    runtimeInfo,
+    runtimeSummary,
+    agent,
+    progress
+  };
+}
+
+function getReplayTaskRuntimeSummary(task = {}) {
+  const { runtime, runtimeInfo, runtimeSummary, agent, progress } = getReplayTaskRuntimeSource(task);
+  const queuedSummary = firstNonEmptyString(
+    runtimeSummary?.queueMessage,
+    runtimeSummary?.message,
+    runtimeInfo?.queueMessage,
+    runtimeInfo?.message,
+    runtime?.queueMessage,
+    runtime?.message,
+    progress?.message
+  );
+  const runningSummary = firstNonEmptyString(
+    runtimeSummary?.message,
+    runtimeSummary?.summary,
+    runtimeInfo?.message,
+    runtimeInfo?.summary,
+    runtime?.message,
+    runtime?.summary,
+    progress?.message,
+    agent?.stderrExcerpt,
+    agent?.stdoutExcerpt
+  );
+  const status = normalizeReplayTaskStatus(task.taskStatus || task.status || "");
+  return status === "queued" ? queuedSummary : runningSummary;
+}
+
+function getReplayTaskRuntimeMeta(task = {}) {
+  const { runtime, runtimeInfo, runtimeSummary, agent, progress } = getReplayTaskRuntimeSource(task);
+  const tokenUsage = runtime?.tokenUsage || runtimeInfo?.tokenUsage || runtimeSummary?.tokenUsage || agent?.tokenUsage || null;
+  const entries = [
+    ["当前阶段", firstNonEmptyString(runtimeSummary?.stageLabel, runtimeSummary?.stage, runtimeInfo?.stageLabel, runtimeInfo?.stage, runtime?.stageLabel, runtime?.stage, progress?.label, progress?.stage)],
+    ["队列位置", runtimeSummary?.queuePosition ?? runtimeInfo?.queuePosition ?? runtime?.queuePosition ?? runtimeSummary?.position ?? runtimeInfo?.position ?? runtime?.position ?? ""],
+    ["Worker", firstNonEmptyString(runtimeSummary?.workerId, runtimeInfo?.workerId, runtime?.workerId)],
+    ["传输", firstNonEmptyString(runtimeSummary?.transport, runtimeInfo?.transport, runtime?.transport, agent?.transport)],
+    ["会话", firstNonEmptyString(runtimeSummary?.sessionId, runtimeInfo?.sessionId, runtime?.sessionId, agent?.sessionId)],
+    ["开始时间", firstNonEmptyString(runtimeSummary?.startedAt, runtimeInfo?.startedAt, runtime?.startedAt, agent?.startedAt)],
+    ["最近心跳", firstNonEmptyString(runtimeSummary?.lastHeartbeatAt, runtimeInfo?.lastHeartbeatAt, runtime?.lastHeartbeatAt, agent?.lastHeartbeatAt)],
+    ["最近更新", firstNonEmptyString(runtimeSummary?.updatedAt, runtimeInfo?.updatedAt, runtime?.updatedAt, agent?.lastEventAt, task.updatedAt)],
+    ["已运行", formatRuntimeElapsed(runtimeSummary?.elapsedMs ?? runtimeInfo?.elapsedMs ?? runtime?.elapsedMs ?? agent?.elapsedMs)],
+    ["总 Token", tokenUsage?.totalTokens ? String(tokenUsage.totalTokens) : ""]
+  ];
+
+  return entries.filter(([, value]) => value !== "" && value != null).map(([label, value]) => ({ label, value: String(value) }));
+}
+
+function buildReplayTaskRuntimeBlock(task = {}) {
+  const meta = getReplayTaskRuntimeMeta(task);
+  const summary = getReplayTaskRuntimeSummary(task);
+  if (!meta.length && !summary) return "";
+
+  return `
+    <div class="detail-block">
+      <span class="label">运行信息</span>
+      <pre>${escapeHtml([
+        summary ? `摘要：${summary}` : "",
+        ...meta.map((item) => `${item.label}：${item.value}`)
+      ].filter(Boolean).join("\n"))}</pre>
+    </div>
+  `;
+}
+
+function normalizeReplayArtifactFile(item = {}) {
+  if (!item || typeof item !== "object") return null;
+  const pathValue = firstNonEmptyString(
+    item.absolutePath,
+    item.path,
+    item.filePath,
+    item.chunkPath,
+    item.manifestPath,
+    item.skillManifestPath,
+    item.skillBundlePath
+  );
+  const name = firstNonEmptyString(item.fileName, item.originalName, item.title, safeBasename(pathValue), item.assetId, item.id);
+  const role = firstNonEmptyString(item.fileRole, item.role, item.kind, item.type);
+  const extra = [];
+  if (item.itemCount) extra.push(`${Number(item.itemCount || 0)} items`);
+  if (item.assetId) extra.push(`asset ${item.assetId}`);
+  if (!name && !pathValue) return null;
+  return {
+    key: [pathValue, name, role].filter(Boolean).join("|"),
+    name,
+    role,
+    path: pathValue,
+    extra: extra.join(" · ")
+  };
+}
+
+function getReplayTaskArtifactInfo(task = {}) {
+  const sources = [
+    task.artifact,
+    task.artifacts,
+    task.outputArtifact,
+    task.outputArtifacts,
+    task.runtime?.artifact,
+    task.runtimeInfo?.artifact,
+    task.runtimeSummary?.artifact,
+    task.debug?.artifacts
+  ].filter((source) => source && typeof source === "object");
+  const taskSkillBundle = task.debug?.artifacts?.taskSkillBundle || null;
+  const files = [];
+  const seen = new Set();
+  let manifestPath = "";
+
+  const pushFile = (candidate) => {
+    const normalized = normalizeReplayArtifactFile(candidate);
+    if (!normalized || seen.has(normalized.key)) return;
+    seen.add(normalized.key);
+    files.push(normalized);
+  };
+
+  for (const source of sources) {
+    manifestPath ||= firstNonEmptyString(
+      source.manifestPath,
+      source.assetManifestPath,
+      source.artifactManifestPath,
+      source.fileManifestPath,
+      source.outputManifestPath,
+      source.skillManifestPath
+    );
+    [
+      source.files,
+      source.fileList,
+      source.artifactFiles,
+      source.outputFiles,
+      source.assets,
+      source.assetManifest
+    ]
+      .filter(Array.isArray)
+      .forEach((list) => list.forEach(pushFile));
+  }
+
+  manifestPath ||= firstNonEmptyString(taskSkillBundle?.skillManifestPath, taskSkillBundle?.skillBundlePath);
+  (taskSkillBundle?.chunks || []).forEach(pushFile);
+
+  return {
+    manifestPath,
+    files
+  };
+}
+
+function summarizeReplayTaskArtifacts(task = {}) {
+  const artifactInfo = getReplayTaskArtifactInfo(task);
+  const summary = [];
+  if (artifactInfo.files.length) {
+    summary.push(`产物 ${artifactInfo.files.length} 个`);
+  }
+  if (artifactInfo.manifestPath) {
+    summary.push(`manifest ${safeBasename(artifactInfo.manifestPath) || artifactInfo.manifestPath}`);
+  }
+  return summary.join(" · ");
+}
+
+function buildReplayTaskArtifactBlock(task = {}) {
+  const artifactInfo = getReplayTaskArtifactInfo(task);
+  if (!artifactInfo.manifestPath && !artifactInfo.files.length) return "";
+
+  return `
+    <div class="detail-block">
+      <span class="label">产物文件</span>
+      <pre>${escapeHtml([
+        artifactInfo.manifestPath ? `Manifest：${artifactInfo.manifestPath}` : "",
+        ...artifactInfo.files.map((file) =>
+          [file.name || safeBasename(file.path), file.role ? `(${file.role})` : "", file.path ? `-> ${file.path}` : "", file.extra ? `· ${file.extra}` : ""]
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim()
+        )
+      ].filter(Boolean).join("\n"))}</pre>
+    </div>
+  `;
+}
+
+function syncReplayTaskPolling() {
+  if (!state.projectId) {
+    stopReplayTaskPolling();
+    return;
+  }
+  if (countActiveReplayTasks()) {
+    if (!replayTaskPollTimer) {
+      replayTaskPollTimer = window.setTimeout(pollReplayTaskUpdates, 2500);
+    }
+    return;
+  }
+  stopReplayTaskPolling();
+}
+
+function stopReplayTaskPolling() {
+  if (replayTaskPollTimer) {
+    window.clearTimeout(replayTaskPollTimer);
+    replayTaskPollTimer = 0;
+  }
+}
+
+async function pollReplayTaskUpdates() {
+  replayTaskPollTimer = 0;
+  try {
+    await Promise.all([refreshRecords(), refreshTasks()]);
+    renderProjectSummary();
+    renderFilters();
+    renderRecords();
+    renderTaskDrawer();
+    renderFeedbackStatus();
+    renderTaskDrawerButtons();
+  } catch (error) {
+    console.error("Replay task polling failed", error);
+    renderFeedbackStatus(localizeErrorMessage(error.message || "刷新 Replay 任务失败"), true);
+  } finally {
+    syncReplayTaskPolling();
+  }
 }
 
 function getTargetLayerConstraintLabel(layer = "") {
@@ -1091,6 +1806,7 @@ function getTargetLayerConstraintLabel(layer = "") {
 
 function getReasonCategoryLabel(category = "") {
   const map = {
+    coverage_gap: "覆盖缺口",
     missing_coverage: "覆盖缺失",
     traceability_issue: "来源追踪问题",
     wording_issue: "表述问题",
@@ -1112,6 +1828,10 @@ function getRoleLabel(role) {
   if (role === "model_pdf") return "模型文档";
   if (role === "generated_c") return "生成代码";
   if (role === "simulink_slx") return "SLX 模型";
+  if (role === "extracted_system_requirement") return "提取系统需求";
+  if (role === "extracted_software_requirement") return "提取软件需求";
+  if (role === "extracted_detail_design") return "提取详细设计";
+  if (role === "extracted_hil_test_case") return "提取 HIL 测试用例";
   if (role === "reference_requirement_example") return "软件需求样例";
   if (role === "reference_detail_design_example") return "详细设计样例";
   if (role === "reference_hil_test_case_example") return "HIL 用例样例";
@@ -1138,110 +1858,19 @@ async function request(url, options = {}) {
   return data;
 }
 
-function createPendingReplayState({ records = [], module = null, llmProfileId = "", referenceAssetIds = [] } = {}) {
-  const createdAt = new Date().toISOString();
-  return {
-    id: `pending-replay-${Date.now()}`,
-    projectId: state.projectId,
-    moduleId: module?.id || state.selectedReplayModuleId || "",
-    moduleName: module?.name || records[0]?.moduleName || "未指定模块",
-    sourceRejectionIds: records.map((record) => record.id),
-    referenceAssetIds,
-    llmProfileId,
-    proposals: [],
-    taskStatus: "running",
-    summary: llmProfileId ? "Replay 提案生成中" : "Fallback 提案生成中",
-    createdAt,
-    updatedAt: createdAt,
-    pendingPhaseIndex: 0,
-    pendingStageLabel: replayPendingPhases()[0].label,
-    pendingStageMessage: replayPendingPhases()[0].copy
-  };
-}
-
-function setPendingReplay(pendingReplay) {
-  state.pendingReplay = pendingReplay;
-  state.selectedTaskId = pendingReplay.id;
-  startPendingReplayTimer();
-}
-
-function clearPendingReplay() {
-  state.pendingReplay = null;
-  stopPendingReplayTimer();
-}
-
-function startPendingReplayTimer() {
-  stopPendingReplayTimer();
-  updatePendingReplayPhase();
-  pendingReplayTimer = window.setInterval(() => {
-    updatePendingReplayPhase();
-    renderTaskDrawer();
-    renderFeedbackStatus();
-  }, 1200);
-}
-
-function stopPendingReplayTimer() {
-  if (pendingReplayTimer) {
-    window.clearInterval(pendingReplayTimer);
-    pendingReplayTimer = 0;
-  }
-}
-
-function updatePendingReplayPhase() {
-  if (!state.pendingReplay) return;
-  const phases = replayPendingPhases();
-  const elapsedMs = Date.now() - new Date(state.pendingReplay.createdAt).getTime();
-  let nextIndex = 0;
-  if (elapsedMs >= 24000) {
-    nextIndex = 3;
-  } else if (elapsedMs >= 12000) {
-    nextIndex = 2;
-  } else if (elapsedMs >= 4000) {
-    nextIndex = 1;
-  }
-  const phase = phases[nextIndex] || phases[0];
-  state.pendingReplay = {
-    ...state.pendingReplay,
-    pendingPhaseIndex: nextIndex,
-    pendingStageLabel: phase.label,
-    pendingStageMessage: phase.copy,
-    updatedAt: new Date().toISOString()
-  };
-}
-
-function replayPendingPhases() {
-  return [
-    {
-      label: "已发起任务",
-      copy: "系统已经接收本次 Replay / Fallback 请求，正在准备回放材料。"
-    },
-    {
-      label: "整理上下文",
-      copy: "正在汇总驳回记录、参考资产和候选技能规则，准备生成提案。"
-    },
-    {
-      label: "生成提案",
-      copy: "正在产出可审阅的 Replay / Fallback 提案，这一步通常会稍微久一点。"
-    },
-    {
-      label: "写回结果",
-      copy: "正在整理提案、生成技能工单并刷新最近任务列表。"
-    }
-  ];
-}
-
-function buildPendingReplayTaskCardData() {
-  return state.pendingReplay;
-}
-
 function renderFeedbackStatus(message = "", isError = false) {
   if (!feedbackStatusRoot) return;
 
-  const pending = state.pendingReplay;
-  const text = message || (pending ? `${pending.summary}：${pending.pendingStageMessage}` : "");
+  const activeTasks = getActiveReplayTasks();
+  const defaultText = activeTasks.length
+    ? activeTasks.length === 1
+      ? `${activeTasks[0].summary || "Replay 任务处理中"}：${getReplayTaskRuntimeSummary(activeTasks[0]) || "后台状态会自动刷新。"}`
+      : `当前有 ${activeTasks.length} 条 Replay 任务正在处理中，任务列表会自动刷新。`
+    : "";
+  const text = message || defaultText;
   feedbackStatusRoot.hidden = !text;
   feedbackStatusRoot.textContent = text;
-  feedbackStatusRoot.classList.toggle("status-busy", Boolean(pending) && !isError);
+  feedbackStatusRoot.classList.toggle("status-busy", activeTasks.length > 0 && !isError);
   feedbackStatusRoot.classList.toggle("danger", Boolean(isError));
 }
 
@@ -1254,20 +1883,14 @@ function localizeErrorMessage(message = "") {
   return normalized;
 }
 
-function waitForNextPaint() {
-  return new Promise((resolve) => {
-    window.requestAnimationFrame(() => resolve());
-  });
-}
-
 function isEmbeddedFeedbackPool() {
   return window.parent !== window;
 }
 
 function buildExternalTaskDrawerPayload() {
   return {
-    tasks: state.pendingReplay ? [buildPendingReplayTaskCardData(), ...state.tasks] : state.tasks,
-    selectedTaskId: state.selectedTaskId || state.pendingReplay?.id || state.tasks[0]?.id || ""
+    tasks: state.tasks,
+    selectedTaskId: state.selectedTaskId || state.tasks[0]?.id || ""
   };
 }
 

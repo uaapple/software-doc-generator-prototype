@@ -107,15 +107,20 @@
       </section>
     </main>
 
-    <dialog id="record-detail-dialog" class="files-dialog feedback-detail-dialog">
-      <div class="files-dialog-head">
-        <h2>驳回记录详情</h2>
-        <p id="record-detail-subtitle" class="subtitle">查看该条记录的生成信息和人工驳回信息。</p>
-      </div>
-      <div id="record-detail-content" class="files-list stack-form"></div>
-      <div class="form-actions">
-        <button id="record-detail-delete" type="button" class="danger">删除</button>
-        <button id="record-detail-close" type="button" class="secondary-button">关闭</button>
+    <dialog id="record-detail-dialog" class="record-review-dialog">
+      <div class="record-review-dialog-shell">
+        <div class="record-review-dialog-head">
+          <div class="record-review-dialog-copy">
+            <p class="record-review-dialog-kicker">Replay 审阅</p>
+            <h2 id="record-detail-title">Replay 详情</h2>
+            <div id="record-detail-subtitle" class="record-review-dialog-meta" aria-live="polite"></div>
+          </div>
+          <div class="record-review-dialog-head-actions">
+            <button id="record-detail-work-order" type="button" class="ghost-button" hidden>查看技能工单</button>
+            <button id="record-detail-close" type="button" class="secondary-button">关闭</button>
+          </div>
+        </div>
+        <div id="record-detail-content" class="record-review-dialog-body"></div>
       </div>
     </dialog>
 
@@ -176,6 +181,7 @@
     <div id="task-drawer-backdrop" class="feedback-task-backdrop" hidden></div>
 
     <script type="module" src="/feedback-pool.js"></script>
+    <script type="module" src="/task-queue-widget.js"></script>
     <script type="module" src="/feedback-widget.js"></script>
   </body>
 </html>

@@ -131,6 +131,34 @@ function collectRawWorkOrderItems(task = {}, generated = {}) {
     : [];
 }
 
+function isActionableWorkOrderItem(rawItem = {}) {
+  const action = String(rawItem.action || "").trim();
+  const conclusionType =
+    rawItem.conclusionType === "create_new" || action === "add_skill_item" ? "create_new" : "modify_existing";
+  const targetSkillCode = String(rawItem.targetSkillCode || "").trim();
+  return conclusionType === "create_new" || Boolean(targetSkillCode);
+}
+
+function normalizeValidatorSuggestion(rawSuggestion = {}) {
+  return {
+    title: String(rawSuggestion.title || "").trim(),
+    ruleText: String(rawSuggestion.ruleText || "").trim(),
+    why: String(rawSuggestion.why || "").trim()
+  };
+}
+
+function collectValidatorSuggestions(rawSuggestions = []) {
+  return Array.isArray(rawSuggestions)
+    ? rawSuggestions
+        .map((entry) => normalizeValidatorSuggestion(entry))
+        .filter((entry) => entry.title || entry.ruleText || entry.why)
+    : [];
+}
+
+function hasActionableReviewPayload(items = [], validatorSuggestions = []) {
+  return items.some((item) => isActionableWorkOrderItem(item)) || collectValidatorSuggestions(validatorSuggestions).length > 0;
+}
+
 function normalizeWorkOrderItem(rawItem = {}, task = {}) {
   const action = String(rawItem.action || "").trim();
   const conclusionType =
@@ -221,15 +249,7 @@ function buildReplayTaskWorkOrderSummary(workOrder = {}) {
 }
 
 function shouldHydrateReplayTask(task = {}) {
-  return Boolean(
-    task?.id &&
-      (
-        (Array.isArray(task.sourceRejectionIds) && task.sourceRejectionIds.length) ||
-        (Array.isArray(task.proposals) && task.proposals.length) ||
-        (Array.isArray(task.validatorSuggestions) && task.validatorSuggestions.length) ||
-        String(task.decisionSummary || "").trim()
-      )
-  );
+  return Boolean(task?.id && hasActionableReviewPayload(collectRawWorkOrderItems(task), task.validatorSuggestions || []));
 }
 
 function mergeAppliedProvenance(base = {}, extra = {}) {
@@ -303,26 +323,42 @@ export class SkillWorkOrderService {
   }
 
   async repairWorkOrderIfNeeded(workOrder = null) {
-    if (!workOrder || (workOrder.items || []).length || !workOrder.sourceTaskId) {
+    if (!workOrder) {
+      return workOrder;
+    }
+
+    if (hasActionableReviewPayload(workOrder.items || [], workOrder.validatorSuggestions || []) || !workOrder.sourceTaskId) {
       return workOrder;
     }
 
     const task = await readJson(getReplayTaskPath(workOrder.sourceTaskId));
     if (!task) {
-      return workOrder;
+      return null;
+    }
+
+    if (!shouldHydrateReplayTask(task)) {
+      return null;
     }
 
     const items = collectRawWorkOrderItems(task)
       .map((entry) => normalizeWorkOrderItem(entry, task))
       .filter((entry) => entry.conclusionType === "create_new" || entry.targetSkillCode);
-    if (!items.length) {
-      return workOrder;
+    const validatorSuggestions = collectValidatorSuggestions(task.validatorSuggestions || []);
+    if (!items.length && !validatorSuggestions.length) {
+      return null;
     }
 
     workOrder.items = items;
-    workOrder.itemStats = computeItemStats(items, workOrder.validatorSuggestions || []);
-    workOrder.decisionSummary = buildDecisionSummary(workOrder, items);
-    workOrder.status = computeWorkOrderStatus(items);
+    workOrder.validatorSuggestions = validatorSuggestions;
+    workOrder.itemStats = computeItemStats(workOrder.items || [], workOrder.validatorSuggestions || []);
+    workOrder.decisionSummary = buildDecisionSummary(
+      {
+        decisionSummary: task.decisionSummary || workOrder.decisionSummary || "",
+        summary: task.summary || workOrder.summary || ""
+      },
+      workOrder.items || []
+    );
+    workOrder.status = computeWorkOrderStatus(workOrder.items || []);
     workOrder.updatedAt = now();
     await writeJson(getWorkOrderPath(workOrder.id), workOrder);
     return workOrder;
@@ -377,13 +413,7 @@ export class SkillWorkOrderService {
     const items = collectRawWorkOrderItems(task, generated)
       .map((entry) => normalizeWorkOrderItem(entry, task))
       .filter((entry) => entry.conclusionType === "create_new" || entry.targetSkillCode);
-    const validatorSuggestions = Array.isArray(generated.validatorSuggestions)
-      ? generated.validatorSuggestions.map((entry) => ({
-          title: String(entry.title || "").trim(),
-          ruleText: String(entry.ruleText || "").trim(),
-          why: String(entry.why || "").trim()
-        })).filter((entry) => entry.title || entry.ruleText || entry.why)
-      : [];
+    const validatorSuggestions = collectValidatorSuggestions(generated.validatorSuggestions);
     const status = computeWorkOrderStatus(items);
     const workOrder = {
       id: String(options.workOrderId || "").trim() || randomUUID(),

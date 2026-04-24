@@ -156,7 +156,8 @@ export class ReplayLabService {
       moduleId: templateTask.moduleId || "",
       referenceAssetIds: templateTask.referenceAssetIds || [],
       llmProfileId,
-      forceRuleIndexRefresh: true
+      forceRuleIndexRefresh: true,
+      asyncExecution: true
     });
     const rerunWorkOrder = rerunTask.workOrderId
       ? await this.skillWorkOrderService.getWorkOrder(rerunTask.workOrderId)

@@ -11,7 +11,12 @@ const state = {
   validationProfileId: "",
   selectedAssetIds: new Set(),
   validationTask: null,
-  validationPollTimer: null
+  validationPollTimer: null,
+  latestRunPollTimer: null,
+  replayTaskPanelState: {
+    progress: {},
+    runtime: {}
+  }
 };
 
 const pageStatusRoot = document.querySelector("#page-status");
@@ -45,11 +50,18 @@ rerunButton.addEventListener("click", handleRerun);
 startValidationButton.addEventListener("click", handleValidationStart);
 validationAssetsRoot.addEventListener("change", handleAssetToggle);
 workOrderReviewRoot.addEventListener("click", handleWorkOrderAction);
+compareOverviewRoot.addEventListener("click", handleReplayTaskPanelToggle);
+resultOverviewRoot.addEventListener("click", handleReplayTaskPanelToggle);
+window.addEventListener("beforeunload", () => {
+  clearValidationPolling();
+  clearLatestRunPolling();
+});
 
 await bootstrap(false);
 
 async function bootstrap(force = false) {
   clearValidationPolling();
+  clearLatestRunPolling();
   try {
     if (force) {
       setStatus("正在刷新 Replay Lab 数据...");
@@ -90,6 +102,7 @@ async function loadTemplate(taskId) {
   const payload = await request(`/api/replay-lab/templates/${encodeURIComponent(taskId)}`);
   state.template = payload;
   state.latestRun = null;
+  clearLatestRunPolling();
   state.validationTask = null;
   state.rerunProfileId = state.rerunProfileId || payload.templateTask?.llmProfileId || state.llmMeta?.defaultProfileId || "";
   state.validationProfileId = state.validationProfileId || state.rerunProfileId || state.llmMeta?.defaultProfileId || "";
@@ -104,6 +117,7 @@ async function loadRun(taskId) {
   state.latestRun = payload;
   syncRunQuery(taskId);
   renderAll();
+  syncLatestRunPolling();
   setStatus("最新重跑结果已刷新。");
 }
 
@@ -151,6 +165,8 @@ function renderProfileOptions() {
 
 function renderTemplateSummary() {
   const templateTask = state.template?.templateTaskSummary;
+  const templateArtifact = summarizeReplayTaskArtifacts(state.template?.templateTask);
+  const templateRuntime = getReplayTaskRuntimeSummary(state.template?.templateTask);
   if (!templateTask) {
     templateSummaryRoot.innerHTML = '<div class="empty-state">请选择一个模板任务。</div>';
     return;
@@ -163,7 +179,9 @@ function renderTemplateSummary() {
     metaItem("层级约束", templateTask.materialPackSummary?.targetLayerConstraint || "-"),
     metaItem("结论摘要", templateTask.decisionSummary || templateTask.summary || "-"),
     metaItem("Layer Skill 数", String(templateTask.materialPackSummary?.layerSkillCount || templateTask.materialPackSummary?.candidateSkillCount || 0)),
-    metaItem("参考文件数", String(templateTask.materialPackSummary?.referenceAssetCount || 0))
+    metaItem("参考文件数", String(templateTask.materialPackSummary?.referenceAssetCount || 0)),
+    templateArtifact ? metaItem("产物摘要", templateArtifact) : "",
+    templateRuntime ? metaItem("运行摘要", templateRuntime) : ""
   ].join("");
 }
 
@@ -209,7 +227,14 @@ function renderValidationContext() {
     metaItem("工程", validation.projectName || "-"),
     metaItem("模块", validation.moduleName || "-"),
     metaItem("文档类型", validation.documentType || "software_requirement"),
-    metaItem("初始化状态", validation.initialization?.hasModuleProfile ? "module skill ready" : "需检查初始化")
+    metaItem(
+      "初始化状态",
+      validation.initialization?.hasScopedModuleSkill
+        ? "doc type scoped skill ready"
+        : validation.initialization?.usesLegacyGlobalFallback
+          ? "legacy global fallback"
+          : "需检查初始化"
+    )
   ].join("");
 
   validationAssetsRoot.innerHTML = (validation.assets || []).length
@@ -268,8 +293,8 @@ function renderCompareOverview() {
   const latest = state.latestRun?.taskSummary;
 
   compareOverviewRoot.innerHTML = `
-    ${renderRunSummaryCard("原始任务", original, state.template?.templateWorkOrder)}
-    ${renderRunSummaryCard("最新重跑", latest, state.latestRun?.workOrder)}
+    ${renderRunSummaryCard("原始任务", original, state.template?.templateWorkOrder, state.template?.templateTask)}
+    ${renderRunSummaryCard("最新重跑", latest, state.latestRun?.workOrder, state.latestRun?.task)}
   `;
 }
 
@@ -590,7 +615,7 @@ async function refreshTaskList() {
   renderTemplateOptions();
 }
 
-function renderRunSummaryCard(label, taskSummary, workOrder) {
+function renderRunSummaryCard(label, taskSummary, workOrder, fullTask = null) {
   if (!taskSummary) {
     return `
       <article class="compare-card">
@@ -613,6 +638,9 @@ function renderRunSummaryCard(label, taskSummary, workOrder) {
         ${metaItem("参考文件", String(taskSummary.materialPackSummary?.referenceAssetCount || 0))}
         ${metaItem("工单状态", workOrder ? formatWorkOrderStatus(workOrder.status || "") : taskSummary.workOrderSummary?.status || "-")}
       </div>
+      ${renderReplayTaskProgressPanel(fullTask || taskSummary, `${label}:progress`)}
+      ${renderReplayTaskRuntimePanel(fullTask || taskSummary, `${label}:runtime`)}
+      ${renderReplayTaskArtifactPanel(fullTask || taskSummary)}
     </article>
   `;
 }
@@ -653,6 +681,9 @@ function renderProposalCard(label, task = {}) {
         ${metaItem("Validator Suggestions", String(validatorCount))}
         ${metaItem("工单", task?.workOrderId || "-")}
       </div>
+      ${renderReplayTaskProgressPanel(task, `${label}:result:progress`)}
+      ${renderReplayTaskRuntimePanel(task, `${label}:result:runtime`)}
+      ${renderReplayTaskArtifactPanel(task)}
     </article>
   `;
 }
@@ -743,10 +774,500 @@ function formatTaskOption(task = {}) {
   return `${task.moduleName || "未指定模块"} · ${task.id} · ${formatDateTime(task.updatedAt || task.createdAt)}`;
 }
 
+function describeReplayTaskStage(task = {}) {
+  const normalizedStatus = normalizeReplayTaskStatus(task.taskStatus || task.status || "");
+  const { agent, progress } = getReplayTaskRuntimeSource(task);
+  let stageKey = String(progress?.stage || "").trim();
+  if (normalizedStatus === "queued") {
+    stageKey = "queued";
+  } else if (normalizedStatus === "failed") {
+    stageKey = "failed";
+  } else if (normalizedStatus === "done") {
+    stageKey = "done";
+  } else if (normalizedStatus === "running" && agent?.status === "completed") {
+    stageKey = "post_process";
+  } else if (!stageKey && normalizedStatus === "running") {
+    stageKey = "replay_proposal_generate";
+  }
+
+  const mapping = {
+    queued: {
+      label: "已排队",
+      message: "Replay 任务已进入后端队列，等待开始处理。",
+      tone: "queued"
+    },
+    artifact_prepare: {
+      label: "正在准备上下文",
+      message: "后端正在生成 manifest、task brief、effective skill 和参考资产文件。",
+      tone: "running"
+    },
+    replay_proposal_generate: {
+      label: "Hermes 生成中",
+      message: "Hermes 正在读取 replay 上下文文件并生成 Skill 优化建议。",
+      tone: "running"
+    },
+    post_process: {
+      label: "正在整理提案与工单",
+      message: "Hermes 已返回结果，后端正在整理 proposal 和 skill work order。",
+      tone: "running"
+    },
+    done: {
+      label: "已完成",
+      message: "Replay 提案和关联工单已生成完成。",
+      tone: "done"
+    },
+    failed: {
+      label: "失败",
+      message: "Replay 任务执行失败，请查看运行日志和错误摘要。",
+      tone: "failed"
+    }
+  };
+  const presentation = mapping[stageKey] || { label: stageKey || "处理中", message: "", tone: "running" };
+  const meta = getReplayTaskRuntimeMeta(task);
+  return {
+    key: stageKey,
+    tone: presentation.tone,
+    label: progress?.label || presentation.label,
+    message: getReplayTaskRuntimeSummary(task) || progress?.message || presentation.message,
+    elapsed: meta.find((item) => item.label === "已运行")?.value || "",
+    updatedAt: meta.find((item) => item.label === "最近更新")?.value || formatDateTime(task.updatedAt || task.createdAt)
+  };
+}
+
 function formatReplayTaskStatus(status = "") {
-  if (status === "done") return "已完成";
-  if (status === "failed") return "失败";
+  const normalized = normalizeReplayTaskStatus(status);
+  if (normalized === "queued") return "排队中";
+  if (normalized === "running") return "处理中";
+  if (normalized === "done") return "已完成";
+  if (normalized === "failed") return "失败";
+  if (normalized === "cancelled") return "已取消";
   return status || "未知";
+}
+
+function normalizeReplayTaskStatus(status = "") {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (["queued", "pending", "created"].includes(normalized)) return "queued";
+  if (["running", "processing", "in_progress"].includes(normalized)) return "running";
+  if (["done", "completed", "succeeded", "success"].includes(normalized)) return "done";
+  if (["failed", "error"].includes(normalized)) return "failed";
+  if (["cancelled", "canceled"].includes(normalized)) return "cancelled";
+  return normalized;
+}
+
+function isReplayTaskActive(status = "") {
+  return ["queued", "running"].includes(normalizeReplayTaskStatus(status));
+}
+
+function firstNonEmptyString(...values) {
+  return values.map((value) => String(value || "").trim()).find(Boolean) || "";
+}
+
+function formatRuntimeElapsed(value) {
+  const elapsedMs = Number(value || 0) || 0;
+  if (!elapsedMs) return "";
+  const seconds = Math.round(elapsedMs / 1000);
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const remainSeconds = seconds % 60;
+  return remainSeconds ? `${minutes} 分 ${remainSeconds} 秒` : `${minutes} 分`;
+}
+
+function safeBasename(value = "") {
+  const parts = String(value || "").trim().split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+
+function getReplayTaskRuntimeSource(task = {}) {
+  return {
+    runtime: task.runtime && typeof task.runtime === "object" ? task.runtime : null,
+    runtimeInfo: task.runtimeInfo && typeof task.runtimeInfo === "object" ? task.runtimeInfo : null,
+    runtimeSummary: task.runtimeSummary && typeof task.runtimeSummary === "object" ? task.runtimeSummary : null,
+    agent: task.debug?.agent && typeof task.debug.agent === "object" ? task.debug.agent : null,
+    progress: task.progress && typeof task.progress === "object" ? task.progress : null
+  };
+}
+
+function getReplayTaskRuntimeSummary(task = {}) {
+  const { runtime, runtimeInfo, runtimeSummary, agent, progress } = getReplayTaskRuntimeSource(task);
+  return firstNonEmptyString(
+    runtimeSummary?.message,
+    runtimeSummary?.summary,
+    runtimeInfo?.message,
+    runtimeInfo?.summary,
+    runtime?.message,
+    runtime?.summary,
+    progress?.message,
+    agent?.stderrExcerpt,
+    agent?.stdoutExcerpt
+  );
+}
+
+function getReplayTaskRuntimeMeta(task = {}) {
+  const { runtime, runtimeInfo, runtimeSummary, agent, progress } = getReplayTaskRuntimeSource(task);
+  const tokenUsage = runtime?.tokenUsage || runtimeInfo?.tokenUsage || runtimeSummary?.tokenUsage || agent?.tokenUsage || null;
+  return [
+    ["阶段", firstNonEmptyString(runtimeSummary?.stageLabel, runtimeSummary?.stage, runtimeInfo?.stageLabel, runtimeInfo?.stage, runtime?.stageLabel, runtime?.stage, progress?.label, progress?.stage)],
+    ["队列位置", runtimeSummary?.queuePosition ?? runtimeInfo?.queuePosition ?? runtime?.queuePosition ?? runtimeSummary?.position ?? runtimeInfo?.position ?? runtime?.position ?? ""],
+    ["会话", firstNonEmptyString(runtimeSummary?.sessionId, runtimeInfo?.sessionId, runtime?.sessionId, agent?.sessionId)],
+    ["传输", firstNonEmptyString(runtimeSummary?.transport, runtimeInfo?.transport, runtime?.transport, agent?.transport)],
+    ["已运行", formatRuntimeElapsed(runtimeSummary?.elapsedMs ?? runtimeInfo?.elapsedMs ?? runtime?.elapsedMs ?? agent?.elapsedMs)],
+    ["最近更新", firstNonEmptyString(runtimeSummary?.updatedAt, runtimeInfo?.updatedAt, runtime?.updatedAt, agent?.lastEventAt, task.updatedAt)],
+    ["总 Token", tokenUsage?.totalTokens ? String(tokenUsage.totalTokens) : ""]
+  ]
+    .filter(([, value]) => value !== "" && value != null)
+    .map(([label, value]) => `${label}：${value}`);
+}
+
+function normalizeReplayArtifactFile(item = {}) {
+  if (!item || typeof item !== "object") return null;
+  const pathValue = firstNonEmptyString(
+    item.absolutePath,
+    item.path,
+    item.filePath,
+    item.chunkPath,
+    item.manifestPath,
+    item.skillManifestPath,
+    item.skillBundlePath
+  );
+  const name = firstNonEmptyString(item.fileName, item.originalName, item.title, safeBasename(pathValue), item.assetId, item.id);
+  const role = firstNonEmptyString(item.fileRole, item.role, item.kind, item.type);
+  const extra = [];
+  if (item.itemCount) extra.push(`${Number(item.itemCount || 0)} items`);
+  if (item.assetId) extra.push(`asset ${item.assetId}`);
+  if (!name && !pathValue) return null;
+  return {
+    key: [pathValue, name, role].filter(Boolean).join("|"),
+    name,
+    role,
+    path: pathValue,
+    extra: extra.join(" · ")
+  };
+}
+
+function getReplayTaskArtifactInfo(task = {}) {
+  const sources = [
+    task.artifact,
+    task.artifacts,
+    task.outputArtifact,
+    task.outputArtifacts,
+    task.runtime?.artifact,
+    task.runtimeInfo?.artifact,
+    task.runtimeSummary?.artifact,
+    task.debug?.artifacts
+  ].filter((source) => source && typeof source === "object");
+  const taskSkillBundle = task.debug?.artifacts?.taskSkillBundle || null;
+  const seen = new Set();
+  const files = [];
+  let manifestPath = "";
+
+  const pushFile = (candidate) => {
+    const normalized = normalizeReplayArtifactFile(candidate);
+    if (!normalized || seen.has(normalized.key)) return;
+    seen.add(normalized.key);
+    files.push(normalized);
+  };
+
+  for (const source of sources) {
+    manifestPath ||= firstNonEmptyString(
+      source.manifestPath,
+      source.assetManifestPath,
+      source.artifactManifestPath,
+      source.fileManifestPath,
+      source.outputManifestPath,
+      source.skillManifestPath
+    );
+    [
+      source.files,
+      source.fileList,
+      source.artifactFiles,
+      source.outputFiles,
+      source.assets,
+      source.assetManifest
+    ]
+      .filter(Array.isArray)
+      .forEach((list) => list.forEach(pushFile));
+  }
+
+  manifestPath ||= firstNonEmptyString(taskSkillBundle?.skillManifestPath, taskSkillBundle?.skillBundlePath);
+  (taskSkillBundle?.chunks || []).forEach(pushFile);
+
+  return {
+    manifestPath,
+    files
+  };
+}
+
+function summarizeReplayTaskArtifacts(task = {}) {
+  const artifactInfo = getReplayTaskArtifactInfo(task);
+  const summary = [];
+  if (artifactInfo.files.length) {
+    summary.push(`产物 ${artifactInfo.files.length} 个`);
+  }
+  if (artifactInfo.manifestPath) {
+    summary.push(`manifest ${safeBasename(artifactInfo.manifestPath) || artifactInfo.manifestPath}`);
+  }
+  return summary.join(" · ");
+}
+
+function renderReplayTaskProgressPanel(task = {}, panelKey = "") {
+  if (!task?.id) return "";
+  const stage = describeReplayTaskStage(task);
+  const timeline = Array.isArray(task.timeline) ? [...task.timeline].reverse() : [];
+  const shouldCollapse = timeline.length > 3;
+  const isExpanded = Boolean(state.replayTaskPanelState.progress[panelKey]);
+  const visibleTimeline = isExpanded || !shouldCollapse ? timeline : timeline.slice(0, 3);
+  const hiddenCount = Math.max(0, timeline.length - visibleTimeline.length);
+
+  return `
+    <div class="lab-running-shell">
+      <strong class="lab-running-title">执行进度</strong>
+      <div class="lab-running-stage-summary">
+        <span class="mini-pill ${escapeHtml(stage.tone)}">${escapeHtml(stage.label)}</span>
+        <p>${escapeHtml(stage.message || "任务已启动，正在持续写入执行进度。")}</p>
+        <div class="lab-running-meta">
+          <span>${escapeHtml(`最近更新 ${stage.updatedAt}`)}</span>
+          ${stage.elapsed ? `<span>${escapeHtml(`已运行 ${stage.elapsed}`)}</span>` : ""}
+        </div>
+      </div>
+      ${
+        shouldCollapse
+          ? `<div class="timeline-toggle-row">
+              <span class="timeline-toggle-hint">${
+                isExpanded ? "已展开全部执行历史。" : `默认只显示最近 3 条更新，隐藏 ${hiddenCount} 条。`
+              }</span>
+              <button
+                type="button"
+                class="secondary-button timeline-toggle-button"
+                data-toggle-replay-lab-progress="${escapeHtml(panelKey)}"
+              >
+                ${isExpanded ? "只看最近进度" : "展开全部进度"}
+              </button>
+            </div>`
+          : ""
+      }
+      <div class="lab-running-timeline">
+        ${
+          visibleTimeline.length
+            ? visibleTimeline
+                .map(
+                  (entry) => `
+                    <article class="lab-running-item ${escapeHtml(entry.level || "info")}">
+                      <time>${escapeHtml(formatDateTime(entry.at))}</time>
+                      <strong>${escapeHtml(entry.label || describeReplayTaskStage({ progress: { stage: entry.stage } }).label || "进度更新")}</strong>
+                      <div>${escapeHtml(entry.message || "")}</div>
+                    </article>
+                  `
+                )
+                .join("")
+            : '<div class="empty-state">当前还没有写入阶段时间线。</div>'
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderReplayTaskRuntimePanel(task = {}, panelKey = "") {
+  if (!task?.id) return "";
+  const events = Array.isArray(task.runtimeEvents) ? [...task.runtimeEvents].reverse() : [];
+  const meta = getReplayTaskRuntimeMeta(task);
+  const shouldCollapse = events.length > 3;
+  const isExpanded = Boolean(state.replayTaskPanelState.runtime[panelKey]);
+  const visibleEvents = isExpanded || !shouldCollapse ? events : events.slice(0, 3);
+  const hiddenCount = Math.max(0, events.length - visibleEvents.length);
+
+  return `
+    <div class="lab-running-shell lab-running-runtime">
+      <strong class="lab-running-title">Agent 运行日志</strong>
+      ${
+        meta.length
+          ? `<div class="lab-meta-list">
+              ${meta.map((item) => metaItem(item.label, item.value)).join("")}
+            </div>`
+          : ""
+      }
+      ${
+        shouldCollapse
+          ? `<div class="timeline-toggle-row">
+              <span class="timeline-toggle-hint">${
+                isExpanded ? "已展开全部运行日志。" : `默认只显示最近 3 条日志，隐藏 ${hiddenCount} 条。`
+              }</span>
+              <button
+                type="button"
+                class="secondary-button timeline-toggle-button"
+                data-toggle-replay-lab-runtime="${escapeHtml(panelKey)}"
+              >
+                ${isExpanded ? "只看最近日志" : "展开全部日志"}
+              </button>
+            </div>`
+          : ""
+      }
+      <div class="lab-running-timeline">
+        ${
+          visibleEvents.length
+            ? visibleEvents
+                .map((event) => {
+                  const metaItems = [
+                    event.status ? `status: ${event.status}` : "",
+                    event.sessionId ? `session: ${event.sessionId}` : "",
+                    event.elapsedMs ? `耗时 ${Math.round(Number(event.elapsedMs || 0) / 1000)} 秒` : "",
+                    event.tokenUsage?.totalTokens ? `tokens ${event.tokenUsage.totalTokens}` : ""
+                  ].filter(Boolean);
+                  const stage = describeReplayTaskStage({ progress: { stage: event.stepType } });
+                  return `
+                    <article class="lab-running-item ${escapeHtml(event.level || "info")}">
+                      <time>${escapeHtml(formatDateTime(event.at))}</time>
+                      <strong>${escapeHtml(event.label || stage.label || "Agent 运行事件")}</strong>
+                      <div>${escapeHtml(event.message || stage.message || "")}</div>
+                      ${
+                        metaItems.length
+                          ? `<div class="lab-running-item-meta">${metaItems.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`
+                          : ""
+                      }
+                      ${
+                        event.stdoutExcerpt || event.stderrExcerpt
+                          ? `<details>
+                              <summary>查看输出摘要</summary>
+                              ${event.stdoutExcerpt ? `<pre>${escapeHtml(event.stdoutExcerpt)}</pre>` : ""}
+                              ${event.stderrExcerpt ? `<pre>${escapeHtml(event.stderrExcerpt)}</pre>` : ""}
+                            </details>`
+                          : ""
+                      }
+                    </article>
+                  `;
+                })
+                .join("")
+            : '<div class="empty-state">当前还没有写入 Agent 运行日志。</div>'
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderReplayTaskArtifactPanel(task = {}) {
+  const artifactInfo = getReplayTaskArtifactInfo(task);
+  if (!artifactInfo.manifestPath && !artifactInfo.files.length) return "";
+  const previewFiles = artifactInfo.files.slice(0, 4);
+  const remainingFiles = artifactInfo.files.slice(4);
+  return `
+    <div class="lab-running-shell">
+      <strong class="lab-running-title">上下文文件 / 产物文件</strong>
+      <div class="lab-text-block">
+        <strong>${escapeHtml(artifactInfo.manifestPath ? "Manifest 已就绪" : "上下文文件已准备")}</strong>
+        <pre>${escapeHtml(
+          [
+            artifactInfo.manifestPath ? `Manifest：${artifactInfo.manifestPath}` : "",
+            artifactInfo.files.length ? `文件数量：${artifactInfo.files.length}` : ""
+          ]
+            .filter(Boolean)
+            .join("\n")
+        )}</pre>
+      </div>
+      ${
+        previewFiles.length
+          ? `<div class="lab-meta-list">
+              ${previewFiles
+                .map((file) => metaItem(file.name || safeBasename(file.path) || "-", [file.role, file.extra, file.path].filter(Boolean).join(" · ") || "-"))
+                .join("")}
+            </div>`
+          : ""
+      }
+      ${
+        remainingFiles.length
+          ? `<details class="raw-panel">
+              <summary>展开全部上下文文件（${remainingFiles.length} 个）</summary>
+              <pre>${escapeHtml(
+                remainingFiles
+                  .map((file) => [file.name || safeBasename(file.path), file.role ? `(${file.role})` : "", file.path ? `-> ${file.path}` : "", file.extra ? `· ${file.extra}` : ""]
+                    .join(" ")
+                    .replace(/\s+/g, " ")
+                    .trim())
+                  .join("\n")
+              )}</pre>
+            </details>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderRuntimeNotice(task = {}) {
+  const summary = getReplayTaskRuntimeSummary(task);
+  const meta = getReplayTaskRuntimeMeta(task);
+  if (!summary && !meta.length) return "";
+  return `
+    <div class="lab-text-block">
+      <strong>运行信息</strong>
+      <pre>${escapeHtml([summary, ...meta].filter(Boolean).join("\n"))}</pre>
+    </div>
+  `;
+}
+
+function renderArtifactNotice(task = {}) {
+  const artifactInfo = getReplayTaskArtifactInfo(task);
+  if (!artifactInfo.manifestPath && !artifactInfo.files.length) return "";
+  return `
+    <div class="lab-text-block">
+      <strong>产物文件</strong>
+      <pre>${escapeHtml([
+        artifactInfo.manifestPath ? `Manifest：${artifactInfo.manifestPath}` : "",
+        ...artifactInfo.files.map((file) =>
+          [file.name || safeBasename(file.path), file.role ? `(${file.role})` : "", file.path ? `-> ${file.path}` : "", file.extra ? `· ${file.extra}` : ""]
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim()
+        )
+      ].filter(Boolean).join("\n"))}</pre>
+    </div>
+  `;
+}
+
+function handleReplayTaskPanelToggle(event) {
+  const progressToggle = event.target.closest("[data-toggle-replay-lab-progress]");
+  if (progressToggle) {
+    const key = progressToggle.dataset.toggleReplayLabProgress || "";
+    state.replayTaskPanelState.progress[key] = !state.replayTaskPanelState.progress[key];
+    renderCompareOverview();
+    renderResultOverview();
+    return;
+  }
+
+  const runtimeToggle = event.target.closest("[data-toggle-replay-lab-runtime]");
+  if (runtimeToggle) {
+    const key = runtimeToggle.dataset.toggleReplayLabRuntime || "";
+    state.replayTaskPanelState.runtime[key] = !state.replayTaskPanelState.runtime[key];
+    renderCompareOverview();
+    renderResultOverview();
+  }
+}
+
+function syncLatestRunPolling() {
+  const runTask = state.latestRun?.task;
+  if (!runTask?.id || !isReplayTaskActive(runTask.taskStatus || runTask.status || "")) {
+    clearLatestRunPolling();
+    return;
+  }
+  if (state.latestRunPollTimer) return;
+  state.latestRunPollTimer = window.setTimeout(async () => {
+    state.latestRunPollTimer = null;
+    try {
+      await loadRun(runTask.id);
+      await refreshTaskList();
+      if (isReplayTaskActive(state.latestRun?.task?.taskStatus || state.latestRun?.task?.status || "")) {
+        setStatus("最新重跑任务仍在处理中，页面会自动刷新。");
+      }
+    } catch (error) {
+      setStatus(`刷新最新重跑任务失败：${error.message}`, true);
+    } finally {
+      syncLatestRunPolling();
+    }
+  }, 2500);
+}
+
+function clearLatestRunPolling() {
+  if (state.latestRunPollTimer) {
+    window.clearTimeout(state.latestRunPollTimer);
+    state.latestRunPollTimer = null;
+  }
 }
 
 function formatWorkOrderStatus(status = "") {

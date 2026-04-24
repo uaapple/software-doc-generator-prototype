@@ -301,6 +301,95 @@ form.card,
   min-height: 72px;
 }
 
+.manual-title-outline-card {
+  margin: 0 0 16px;
+  padding: 22px;
+  background: linear-gradient(180deg, var(--surface), #fbfdff);
+}
+
+.manual-title-outline-summary {
+  margin-bottom: 8px;
+}
+
+.manual-title-outline-status {
+  margin-bottom: 14px;
+}
+
+.manual-title-outline-root {
+  display: grid;
+  gap: 14px;
+}
+
+.manual-title-outline-section {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-alt);
+}
+
+.manual-title-outline-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.manual-title-outline-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.manual-title-outline-section-title strong {
+  font-size: 16px;
+}
+
+.manual-title-outline-items {
+  display: grid;
+  gap: 10px;
+}
+
+.manual-title-outline-item {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.manual-title-outline-item label {
+  margin-bottom: 0;
+}
+
+.manual-title-outline-item-actions,
+.manual-title-outline-section-actions,
+.outline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.manual-title-outline-item-actions button,
+.manual-title-outline-section-actions button,
+.outline-actions button {
+  width: auto;
+  min-width: 104px;
+}
+
+.manual-title-outline-item input[aria-invalid="true"],
+.manual-title-outline-section input[aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(181, 72, 67, 0.12);
+}
+
+.manual-title-outline-status.error {
+  color: var(--danger);
+}
+
 .section-index {
   display: inline-flex;
   align-items: center;
@@ -685,6 +774,20 @@ button.danger {
   gap: 12px;
   padding: 18px 22px 22px;
   overflow: auto;
+}
+
+.asset-preview-content {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f3f7fb 100%);
+  color: var(--ink);
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .file-item {
@@ -1094,11 +1197,336 @@ button.danger {
 .feedback-record-reason {
   color: var(--ink-soft);
   line-height: 1.5;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
 }
 
-.feedback-detail-dialog,
+.record-review-dialog {
+  width: min(1320px, calc(100vw - 32px));
+  max-width: 1320px;
+  max-height: calc(100vh - 24px);
+  padding: 0;
+  border: none;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 250, 255, 0.98)),
+    radial-gradient(circle at top right, rgba(73, 132, 200, 0.16), rgba(73, 132, 200, 0) 34%);
+  box-shadow: 0 28px 72px rgba(11, 35, 65, 0.28);
+  overflow: hidden;
+}
+
+.record-review-dialog::backdrop {
+  background: rgba(10, 28, 52, 0.44);
+}
+
+.record-review-dialog-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: calc(100vh - 24px);
+}
+
+.record-review-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid rgba(213, 225, 238, 0.92);
+  background:
+    linear-gradient(135deg, rgba(246, 250, 255, 0.98), rgba(255, 255, 255, 0.92)),
+    radial-gradient(circle at top right, rgba(19, 81, 151, 0.08), rgba(19, 81, 151, 0) 42%);
+}
+
+.record-review-dialog-copy {
+  min-width: 0;
+}
+
+.record-review-dialog-kicker,
+.record-review-section-kicker {
+  margin: 0 0 6px;
+  color: var(--brand);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.record-review-dialog-head h2,
+.record-review-summary-card h3,
+.record-review-side-card h3,
+.record-review-support-card h3,
+.record-review-section-head h3 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.record-review-dialog-head h2 {
+  font-size: 32px;
+  line-height: 1.08;
+}
+
+.record-review-dialog-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.record-review-dialog-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(205, 219, 234, 0.92);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.record-review-dialog-meta-item strong {
+  color: var(--brand);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.record-review-dialog-head-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.record-review-dialog-body {
+  overflow: auto;
+  padding: 24px 28px 28px;
+  background: linear-gradient(180deg, #f7fbff 0%, #eef4fb 100%);
+}
+
+.record-review-layout,
+.record-review-primary,
+.record-review-sidebar,
+.record-review-section {
+  display: grid;
+  gap: 18px;
+}
+
+.record-review-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.82fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.record-review-summary-card,
+.record-review-side-card,
+.record-review-proposal-card,
+.record-review-suggestion-card,
+.record-review-support-card,
+.record-review-empty-card {
+  border: 1px solid rgba(210, 223, 237, 0.96);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 30px rgba(15, 41, 74, 0.08);
+}
+
+.record-review-summary-card,
+.record-review-side-card,
+.record-review-proposal-card,
+.record-review-support-card {
+  padding: 20px 22px;
+}
+
+.record-review-summary-card,
+.record-review-side-card,
+.record-review-support-card,
+.record-review-suggestion-card,
+.record-review-proposal-card {
+  display: grid;
+  gap: 16px;
+}
+
+.record-review-summary-card.is-empty {
+  border-color: rgba(192, 144, 65, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 251, 244, 0.98), rgba(255, 255, 255, 0.98)),
+    radial-gradient(circle at top right, rgba(193, 120, 25, 0.1), transparent 36%);
+}
+
+.record-review-proposal-card.is-highlight {
+  border-color: rgba(19, 81, 151, 0.22);
+  background:
+    linear-gradient(180deg, rgba(244, 249, 255, 0.98), rgba(255, 255, 255, 0.96)),
+    radial-gradient(circle at top right, rgba(19, 81, 151, 0.1), rgba(19, 81, 151, 0) 36%);
+}
+
+.record-review-section-head,
+.record-review-proposal-head,
+.record-review-history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.record-review-proposal-head h4 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.record-review-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.record-review-meta-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(220, 230, 242, 0.96);
+  background: #f8fbff;
+}
+
+.record-review-meta-item span {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.record-review-meta-item strong {
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.record-review-text-panel {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid rgba(219, 229, 241, 0.94);
+  border-radius: 16px;
+  background: #fbfdff;
+}
+
+.record-review-text-panel.is-muted {
+  background: #f5f8fc;
+}
+
+.record-review-text-panel.is-compact {
+  gap: 8px;
+}
+
+.record-review-panel-label {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.record-review-rich-text,
+.record-review-empty-copy {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.72;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.record-review-empty-copy,
+.record-review-footnote,
+.record-review-placeholder,
+.record-review-history-item p,
+.record-review-trace-item span {
+  color: var(--ink-soft);
+}
+
+.record-review-footnote,
+.record-review-history-item p {
+  margin: 0;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.record-review-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.record-review-suggestion-list,
+.record-review-proposal-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.record-review-suggestion-list {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.record-review-suggestion-card {
+  padding: 18px 20px;
+}
+
+.record-review-suggestion-card strong,
+.record-review-trace-item strong,
+.record-review-history-head strong {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.record-review-proposal-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.record-review-empty-card {
+  padding: 18px 20px;
+  color: var(--ink-soft);
+}
+
+.record-review-support-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.record-review-support-card.is-wide {
+  grid-column: 1 / -1;
+}
+
+.record-review-trace-list,
+.record-review-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.record-review-trace-item,
+.record-review-history-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(221, 231, 241, 0.96);
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.record-review-history-item.is-selected {
+  border-color: rgba(19, 81, 151, 0.22);
+  background:
+    linear-gradient(180deg, rgba(244, 249, 255, 0.98), rgba(248, 251, 255, 0.96)),
+    radial-gradient(circle at top right, rgba(19, 81, 151, 0.08), rgba(19, 81, 151, 0) 32%);
+}
+
 .replay-dialog {
-  width: min(1120px, calc(100% - 32px));
+  width: min(1180px, calc(100vw - 32px));
   border: none;
   border-radius: 18px;
   padding: 0;
@@ -1106,7 +1534,6 @@ button.danger {
 }
 
 .replay-dialog {
-  width: min(1180px, calc(100vw - 32px));
   min-height: min(680px, calc(100vh - 24px));
   max-height: calc(100vh - 24px);
   height: var(--replay-dialog-height, min(88vh, 920px));
@@ -1424,6 +1851,22 @@ button.danger {
     grid-template-columns: 1fr;
   }
 
+  .record-review-hero,
+  .record-review-support-grid,
+  .record-review-meta-grid,
+  .record-review-proposal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .record-review-dialog-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .record-review-dialog-head-actions {
+    justify-content: flex-start;
+  }
+
   .feedback-filter-sidebar {
     grid-template-columns: 1fr;
     padding-top: 8px;
@@ -1473,6 +1916,37 @@ button.danger {
     min-width: 0;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .record-review-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 20px;
+  }
+
+  .record-review-dialog-shell {
+    max-height: calc(100vh - 16px);
+  }
+
+  .record-review-dialog-head {
+    padding: 20px 18px 16px;
+  }
+
+  .record-review-dialog-head h2 {
+    font-size: 26px;
+  }
+
+  .record-review-dialog-meta {
+    gap: 8px;
+  }
+
+  .record-review-dialog-meta-item {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .record-review-dialog-body {
+    padding: 18px 16px 20px;
   }
 
   .feedback-task-drawer {
@@ -1576,23 +2050,63 @@ button.danger {
 
 .compact-record-table .feedback-record-table-head,
 .compact-record-table .feedback-record-row {
-  grid-template-columns: 150px minmax(240px, 1.4fr) 150px 120px 130px minmax(300px, 1.6fr) 136px;
+  grid-template-columns: 140px minmax(176px, 1.05fr) 132px 104px 116px minmax(180px, 1.1fr) minmax(220px, 236px);
+  gap: 10px;
 }
 
 .compact-record-table .feedback-record-row {
-  min-height: 82px;
+  min-height: 110px;
+  padding: 14px 16px;
+}
+
+.compact-record-table .feedback-record-reason {
+  align-self: stretch;
+  padding: 12px 14px;
+  border: 1px solid rgba(184, 204, 225, 0.78);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.98), rgba(238, 244, 251, 0.96));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: calc(1.6em * 4 + 24px);
+  position: relative;
+}
+
+.compact-record-table .feedback-record-reason::after {
+  content: "";
+  position: absolute;
+  inset: auto 1px 1px 1px;
+  height: 24px;
+  border-radius: 0 0 15px 15px;
+  background: linear-gradient(180deg, rgba(238, 244, 251, 0), rgba(238, 244, 251, 0.98));
+  pointer-events: none;
 }
 
 .feedback-record-actions {
   display: flex;
+  align-self: stretch;
+  justify-self: end;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  flex-wrap: wrap;
+  min-width: 152px;
 }
 
 .feedback-record-actions .ghost-button,
 .feedback-record-actions .danger {
-  min-width: 112px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.feedback-record-actions .ghost-button {
+  min-width: 118px;
+}
+
+.feedback-record-actions .subtle-danger {
+  min-width: 72px;
+  color: var(--danger);
+  border: 1px solid rgba(181, 72, 67, 0.28);
+  background: var(--danger-soft);
 }
 
 @media (max-width: 1280px) {
@@ -1602,7 +2116,7 @@ button.danger {
 
   .compact-record-table .feedback-record-table-head,
   .compact-record-table .feedback-record-row {
-    grid-template-columns: 140px minmax(220px, 1.15fr) 140px 110px 120px minmax(220px, 1.3fr) 120px;
+    grid-template-columns: 128px minmax(156px, 0.95fr) 118px 96px 106px minmax(164px, 1fr) minmax(202px, 216px);
   }
 }
 
@@ -1617,6 +2131,7 @@ button.danger {
     grid-template-columns: 1fr;
     gap: 12px;
     padding: 14px;
+    min-height: 0;
   }
 
   .compact-record-table .feedback-record-button {
@@ -1632,6 +2147,7 @@ button.danger {
 
   .feedback-record-actions {
     justify-content: flex-start;
+    min-width: 0;
   }
 }
 
