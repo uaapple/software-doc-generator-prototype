@@ -1162,6 +1162,22 @@ function inferReplayRuleIntent(targetKind = "") {
   return "补充文档类型校验规则。";
 }
 
+function buildReplayChangeSummary(item = {}, conclusionType = "") {
+  const explicit = String(item.changeSummary || "").trim();
+  if (explicit) return explicit;
+  const title = String(item.title || item.newRuleDraft?.title || "").trim();
+  if (title) return title;
+  const whyChange = String(item.whyChange || "").trim();
+  if (whyChange) return whyChange;
+  const fallbackReason = String(item.fallbackReason || item.rationale || "").trim();
+  if (fallbackReason) {
+    return conclusionType === "create_new"
+      ? `新增技能条目以处理：${fallbackReason}`
+      : `修改技能条目以处理：${fallbackReason}`;
+  }
+  return conclusionType === "create_new" ? "新增技能条目" : "修改已有技能条目";
+}
+
 function normalizeReplayProposalItem(item = {}, index = 0, hint = {}) {
   let action = normalizeReplayAction(item.action || "", "modify_skill_item");
   const candidateSkillCode = String(item.targetSkillCode || item.targetRuleId || "").trim();
@@ -1209,6 +1225,7 @@ function normalizeReplayProposalItem(item = {}, index = 0, hint = {}) {
     kind: targetKind,
     targetFile: String(item.targetFile || candidate?.targetFile || mapReplayKindToTargetFile(targetKind)).trim(),
     title,
+    changeSummary: buildReplayChangeSummary(item, conclusionType),
     fallbackReason,
     whyCurrent: String(item.whyCurrent || "").trim() || "当前 skill 约束未覆盖这类回投问题。",
     whyChange: String(item.whyChange || "").trim() || "补充更明确的 atomic skill 约束后，可减少同类问题再次出现。",
@@ -1253,6 +1270,7 @@ function buildFallbackReplayProposalItem(hint = {}) {
         targetProfileKey: candidate.targetProfileKey || candidate.profileKey || hint.targetProfileKey,
         targetKind: candidate.targetKind || candidate.kind || hint.targetKind,
         title: `${candidate.title || title}（补充修订）`,
+        changeSummary: `修改「${candidate.title || candidate.skillCode || candidate.ruleId || title}」，补充本次驳回暴露的边界约束。`,
         fallbackReason: hint.fallbackReason,
         whyCurrent: "当前命中的 atomic skill 尚未把这类问题沉淀成明确边界。",
         whyChange: "补充对应约束后，可降低同类回投再次发生的概率。",
@@ -1272,6 +1290,7 @@ function buildFallbackReplayProposalItem(hint = {}) {
       targetProfileKey: hint.targetProfileKey,
       targetKind: hint.targetKind,
       title,
+      changeSummary: `新增「${title}」，沉淀本次驳回暴露的边界约束。`,
       fallbackReason: hint.fallbackReason,
       whyCurrent: "当前 skill 快照中没有足以承接该问题的 atomic skill。",
       whyChange: "新增对应 atomic skill 后，可把该问题沉淀为可复用规则。",
@@ -1359,6 +1378,7 @@ function buildReplayProposalPrompt(payload = {}) {
             kind: "validation_rule",
             targetFile: "requirement_validation.md",
             title: "Replay proposal title",
+            changeSummary: "One sentence reviewer-facing change summary",
             fallbackReason: "Why this proposal is needed",
             whyCurrent: "Why current skill missed the issue",
             whyChange: "Why the change prevents recurrence",
@@ -1381,6 +1401,8 @@ function buildReplayProposalPrompt(payload = {}) {
     "- `modify_existing` items must use `targetSkillCode` from `layerSkillInventory` or `candidateSkillInventory` in `manifest.json`.",
     "- If no existing skill fits, output `create_new` with `action = add_skill_item` and an empty `targetSkillCode`.",
     "- `targetKind` must stay within `taskContext.allowedKindsForReplay` when that list is present.",
+    "- `changeSummary` must be one concise reviewer-facing sentence that says what to add or modify.",
+    "- `fallbackReason` must only describe the rejection reason; do not use it as the change summary.",
     "- `afterContent` must be reusable atomic skill text, not a one-off edit instruction for a single rejected requirement.",
     "- Produce at least one executable replay proposal item whenever replay rejection records exist."
   ].join("\n");

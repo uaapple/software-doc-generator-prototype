@@ -1178,6 +1178,7 @@ const tests = [
                           targetKind: "validation_rule",
                           targetInsertionHint: "在人工样例对齐优先规则后添加补充说明",
                           title: "充电截止SOC记忆需求边界校验",
+                          changeSummary: "修改现有人工样例边界规则，禁止代码侧保护/回退逻辑混入充电截止SOC记忆需求。",
                           fallbackReason: "需强化现有规则对人工范例边界的严格遵循",
                           whyCurrent: "当前规则未明确禁止代码侧推断逻辑混入需求正文。",
                           whyChange: "补充边界校验后可避免再度越界扩写。",
@@ -1198,6 +1199,7 @@ const tests = [
                           targetKind: "validation_rule",
                           targetInsertionHint: "作为充电管理模块的专属验证规则",
                           title: "充电管理需求正文边界校验",
+                          changeSummary: "新增充电管理模块级校验规则，约束需求正文不得混入代码侧保护/回退逻辑。",
                           fallbackReason: "需要针对充电管理领域新增特定规则，防止代码细节混入需求正文",
                           whyCurrent: "现有通用规则未能充分约束充电管理领域中代码细节混入需求正文的问题。",
                           whyChange: "新增模块级规则后可直接沉淀为模块工单。",
@@ -1288,10 +1290,12 @@ const tests = [
           assert.equal(proposal.items.length, 2);
           assert.equal(proposal.items[0].action, "modify_skill_item");
           assert.equal(proposal.items[0].targetSkillCode, "DOC-software_requirement-writing_rule-002");
+          assert.match(proposal.items[0].changeSummary, /修改现有人工样例边界规则/);
           assert.deepEqual(proposal.items[0].evidenceRefs, ["rej-1"]);
 
           assert.equal(proposal.items[1].action, "add_skill_item");
           assert.equal(proposal.items[1].conclusionType, "create_new");
+          assert.match(proposal.items[1].changeSummary, /新增充电管理模块级校验规则/);
           assert.equal(proposal.items[1].targetSkillCode, "");
           assert.equal(proposal.items[1].targetLayer, "module");
           assert.equal(proposal.items[1].targetProfileKey, "charging_management");
@@ -1333,6 +1337,7 @@ const tests = [
                       targetFile: "requirement_validation.md",
                       targetInsertionHint: "追加在模块边界规则之后",
                       title: "充电管理需求正文边界校验",
+                      changeSummary: "修改现有模块校验规则，补充人工范例边界约束。",
                       fallbackReason: "当前规则没有拦住代码侧回退逻辑",
                       whyCurrent: "现有规则缺少人工范例边界约束。",
                       whyChange: "补齐边界约束后可减少越界扩写。",
@@ -1420,10 +1425,12 @@ const tests = [
         assert.equal(response.artifact.items[0].action, "modify_skill_item");
         assert.equal(response.artifact.items[0].targetLayer, "module");
         assert.equal(response.artifact.items[0].targetProfileKey, "charging_management");
+        assert.equal(response.artifact.items[0].changeSummary, "修改现有模块校验规则，补充人工范例边界约束。");
         assert.deepEqual(response.artifact.items[0].evidenceRefs, ["rej-1"]);
 
         const prompt = invocations[0].args[2];
         assert.match(prompt, /replay_proposal_generate/);
+        assert.match(prompt, /changeSummary/);
         assert.match(prompt, /manifest\.json/);
         assert.match(prompt, /task-brief\.md/);
         assert.match(prompt, /"replayContext"/);
@@ -6266,6 +6273,7 @@ const tests = [
         assert.equal(workOrder.items[0].scopeDecision, "module");
         assert.equal(workOrder.items[0].reviewReadiness, "ready_to_apply");
         assert.equal(workOrder.items[0].isParaphraseOfRejection, false);
+        assert.equal(workOrder.items[0].changeSummary, "充电截止SOC记忆类需求边界约束");
         assert.match(workOrder.items[0].afterContent, /充电截止SOC相关的记忆类需求/);
       });
     }
@@ -6337,8 +6345,54 @@ const tests = [
 
         assert.equal(workOrder.items.length, 2);
         assert.equal(workOrder.items[0].conclusionType, "modify_existing");
+        assert.equal(workOrder.items[0].changeSummary, "无依据扩写校验（补充修订）");
         assert.equal(workOrder.items[1].conclusionType, "create_new");
+        assert.equal(workOrder.items[1].changeSummary, "充电截止SOC记忆类需求边界约束");
         assert.equal(workOrder.itemStats.total, 2);
+      });
+    }
+  },
+  {
+    name: "Skill work order hydrates change summary for legacy persisted items",
+    run: async () => {
+      await withTempConfig(async () => {
+        const workOrderService = new SkillWorkOrderService();
+        const workOrderId = "legacy-change-summary-work-order";
+        await fs.writeFile(
+          path.join(config.skillWorkOrderStoreDir, `${workOrderId}.json`),
+          JSON.stringify(
+            {
+              id: workOrderId,
+              title: "Legacy work order",
+              sourceTaskId: "",
+              status: "pending_review",
+              itemStats: { total: 1 },
+              validatorSuggestions: [],
+              items: [
+                {
+                  itemId: "legacy-item-1",
+                  title: "旧规则补充修订",
+                  conclusionType: "modify_existing",
+                  action: "modify_skill_item",
+                  targetSkillCode: "DOC-software_requirement-validation_rule-010",
+                  targetLayer: "docType",
+                  targetProfileKey: "software_requirement",
+                  targetKind: "validation_rule",
+                  beforeContent: "旧内容",
+                  afterContent: "新内容",
+                  evidenceRefs: []
+                }
+              ]
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        const workOrder = await workOrderService.getWorkOrder(workOrderId);
+
+        assert.equal(workOrder.items[0].changeSummary, "旧规则补充修订");
       });
     }
   },
@@ -7814,6 +7868,26 @@ const tests = [
       assert.ok(stylesheet.includes(".lab-running-shell"));
       assert.ok(stylesheet.includes(".lab-running-timeline"));
       assert.ok(stylesheet.includes(".lab-running-runtime"));
+    }
+  },
+  {
+    name: "Skill work order detail source prioritizes reviewer change summary",
+    run: async () => {
+      const script = await fs.readFile(path.join(config.rootDir, "public", "skill-management.js"), "utf8");
+      const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "skill-management.css"), "utf8");
+
+      assert.ok(script.includes("修改意见"));
+      assert.ok(script.includes("原技能写法"));
+      assert.ok(script.includes("建议写法"));
+      assert.ok(script.includes("被驳回内容"));
+      assert.ok(script.includes("驳回说明"));
+      assert.ok(script.includes("预期写法"));
+      assert.ok(script.includes("当前无原技能，新建技能条目"));
+      assert.ok(script.indexOf("修改意见") < script.indexOf("原技能写法"));
+      assert.ok(script.indexOf("原技能写法") < script.indexOf("建议写法"));
+      assert.ok(stylesheet.includes(".work-order-change-summary"));
+      assert.ok(stylesheet.includes(".work-order-diff-stack"));
+      assert.ok(stylesheet.includes(".work-order-evidence-grid"));
     }
   },
   {

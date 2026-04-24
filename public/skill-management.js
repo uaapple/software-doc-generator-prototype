@@ -1014,6 +1014,8 @@ function renderWorkOrderDetail() {
     return
   }
 
+  const allEvidence = (workOrder.items || []).flatMap((item) => item.evidenceRefs || [])
+
   workOrderDetailRoot.className = "work-order-detail"
   workOrderDetailRoot.innerHTML = `
     <section class="work-order-section">
@@ -1027,35 +1029,39 @@ function renderWorkOrderDetail() {
           ${workOrder.status !== "closed" ? `<button type="button" class="secondary-button" data-work-order-close="${workOrder.id}">关闭工单</button>` : ""}
         </div>
       </div>
+    </section>
+
+    <section class="work-order-section">
+      <div class="work-order-section-head">
+        <div>
+          <h4>修改意见</h4>
+          <p class="summary">按条审阅 replay 建议：先看修改意见，再对照原技能写法与建议写法。</p>
+        </div>
+        <span class="mini-pill subtle">${escapeHtml(String(workOrder.itemStats?.total || (workOrder.items || []).length || 0))} 条</span>
+      </div>
+      <div class="work-order-items">
+        ${(workOrder.items || []).map(renderWorkOrderItemCard).join("")}
+      </div>
+    </section>
+
+    <details class="work-order-disclosure">
+      <summary>任务背景与来源</summary>
       <div class="work-order-meta-grid">
         ${renderWorkOrderMetaItem("来源 fallback 任务", workOrder.sourceTaskId || "-")}
         ${renderWorkOrderMetaItem("模块 / 文档类型", `${workOrder.moduleName || "-"} / ${workOrder.documentType || "-"}`)}
         ${renderWorkOrderMetaItem("模型", workOrder.llmProfile?.label || workOrder.llmProfile?.id || "本地回放")}
         ${renderWorkOrderMetaItem("skill snapshot", workOrder.effectiveSkillSnapshot?.hash || "-")}
-      </div>
-    </section>
-
-    <section class="work-order-section">
-      <h4>任务背景</h4>
-      <div class="work-order-meta-grid">
         ${renderWorkOrderMetaItem("工单摘要", workOrder.summary || "-")}
         ${renderWorkOrderMetaItem("命中 profile", (workOrder.effectiveSkillSnapshot?.selectedProfiles || []).map((item) => `${item.kind}:${item.key}`).join(" -> ") || "-")}
       </div>
-    </section>
+    </details>
 
-    <section class="work-order-section">
-      <h4>问题上下文</h4>
+    <details class="work-order-disclosure">
+      <summary>驳回记录概览</summary>
       <div class="work-order-evidence-list">
-        ${(workOrder.items || []).flatMap((item) => item.evidenceRefs || []).slice(0, 6).map(renderWorkOrderEvidenceItem).join("") || '<div class="empty-state">当前没有附带证据片段。</div>'}
+        ${allEvidence.slice(0, 6).map(renderWorkOrderEvidenceItem).join("") || '<div class="empty-state">当前没有附带证据片段。</div>'}
       </div>
-    </section>
-
-    <section class="work-order-section">
-      <h4>修改项列表</h4>
-      <div class="work-order-items">
-        ${(workOrder.items || []).map(renderWorkOrderItemCard).join("")}
-      </div>
-    </section>
+    </details>
 
     ${(workOrder.validatorSuggestions || []).length ? `
       <section class="work-order-section">
@@ -1084,63 +1090,82 @@ function renderWorkOrderMetaItem(label, value) {
 }
 
 function renderWorkOrderEvidenceItem(item = {}) {
-  const excerpt = item.outputSnapshot?.requirementText || item.reasonText || item.expectedNote || ""
+  const rejectedTitle = item.outputSnapshot?.title || item.requirementCode || item.refId || "被驳回内容"
+  const rejectedText = item.outputSnapshot?.requirementText || "无被驳回正文快照"
   return `
     <article class="work-order-evidence-item">
       <div class="inline-meta-row">
         <strong>${escapeHtml(item.requirementCode || item.refId || "证据")}</strong>
         <span class="mini-pill subtle">${escapeHtml(item.reasonCategory || "rejection")}</span>
       </div>
-      <p>${escapeHtml(item.reasonText || "")}</p>
-      <p class="summary">${escapeHtml(excerpt || "无附加片段")}</p>
+      <div class="work-order-evidence-grid">
+        ${renderWorkOrderEvidenceBlock("被驳回内容", `${rejectedTitle}\n${rejectedText}`)}
+        ${renderWorkOrderEvidenceBlock("驳回说明", item.reasonText || "未填写")}
+        ${renderWorkOrderEvidenceBlock("预期写法", item.expectedNote || "未填写")}
+      </div>
     </article>
+  `
+}
+
+function renderWorkOrderEvidenceBlock(label, value) {
+  return `
+    <div class="work-order-evidence-block">
+      <span>${escapeHtml(label)}</span>
+      <p>${escapeHtml(value || "-")}</p>
+    </div>
   `
 }
 
 function renderWorkOrderItemCard(item = {}) {
   const edited = item.editedPayload || {}
   const draftContent = edited.afterContent || edited.recommendedSkillText || item.afterContent || item.recommendedSkillText || ""
+  const changeSummary = item.changeSummary || item.title || item.whyChange || item.fallbackReason || ""
+  const beforeContent = item.beforeContent || (item.conclusionType === "create_new" ? "当前无原技能，新建技能条目。" : "无")
   return `
     <article class="work-order-item-card">
       <div class="detail-header-row">
         <div>
+          <div class="inline-meta-row">
+            <span class="mini-pill ${item.conclusionType === "create_new" ? "success" : "subtle"}">${escapeHtml(formatWorkOrderActionLabel(item))}</span>
+            <span class="work-order-code">${escapeHtml(item.targetSkillCode || "新增技能条目")}</span>
+          </div>
           <strong>${escapeHtml(item.title || item.itemId)}</strong>
-          <p class="summary">${escapeHtml(item.fallbackReason || item.whyChange || "")}</p>
         </div>
         <span class="mini-pill ${statusTone(item.reviewStatus)}">${escapeHtml(formatWorkOrderItemStatus(item.reviewStatus))}</span>
       </div>
-      <div class="work-order-meta-grid">
-        ${renderWorkOrderMetaItem("结论类型", item.conclusionType === "create_new" ? "新增技能条目" : "修改已有技能条目")}
-        ${renderWorkOrderMetaItem("命中的 skill", item.targetSkillCode || "新增")}
-        ${renderWorkOrderMetaItem("层级 / profile / kind", `${item.targetLayer || "-"} / ${item.targetProfileKey || "-"} / ${item.targetKind || "-"}`)}
-        ${renderWorkOrderMetaItem("原文为什么", item.whyCurrent || "-")}
+      <div class="work-order-change-summary">
+        <span>修改意见</span>
+        <p>${escapeHtml(changeSummary || "暂无修改意见")}</p>
       </div>
-      <div class="work-order-meta-grid">
-        ${renderWorkOrderMetaItem("修改后为什么", item.whyChange || "-")}
-        ${renderWorkOrderMetaItem("插入提示", item.targetInsertionHint || "-")}
-      </div>
-      <div class="work-order-meta-grid">
-        ${renderWorkOrderMetaItem("层级判断", formatScopeDecision(item.scopeDecision || ""))}
-        ${renderWorkOrderMetaItem("层级原因", item.scopeReason || "-")}
-        ${renderWorkOrderMetaItem("抽象度", item.abstractionScore ? `${item.abstractionScore.toFixed(2)} / 1.00` : "-")}
-        ${renderWorkOrderMetaItem("复用判断", formatReuseJudgement(item.reuseJudgement || ""))}
-        ${renderWorkOrderMetaItem("是否像驳回改写", item.isParaphraseOfRejection ? "是" : "否")}
-        ${renderWorkOrderMetaItem("可应用性", formatReviewReadiness(item.reviewReadiness || ""))}
-      </div>
-      ${item.ruleIntent ? `
-        <div class="work-order-section">
-          <strong>规则目的</strong>
-          <p class="summary">${escapeHtml(item.ruleIntent)}</p>
+      <div class="work-order-diff-stack">
+        <div class="work-order-diff-block before">
+          <span>原技能写法</span>
+          <pre>${escapeHtml(beforeContent)}</pre>
         </div>
-      ` : ""}
-      <label>
-        修改后内容
-        <textarea rows="6" name="afterContent">${escapeHtml(draftContent)}</textarea>
-      </label>
-      <div class="work-order-section">
-        <strong>修改前内容</strong>
-        <pre>${escapeHtml(item.beforeContent || "无")}</pre>
+        <label class="work-order-diff-block after">
+          <span>建议写法</span>
+          <textarea rows="7" name="afterContent">${escapeHtml(draftContent)}</textarea>
+        </label>
       </div>
+      <div class="work-order-evidence-list compact">
+        ${(item.evidenceRefs || []).map(renderWorkOrderEvidenceItem).join("") || '<div class="empty-state">当前修改项没有关联驳回记录。</div>'}
+      </div>
+      <details class="work-order-item-details">
+        <summary>审阅辅助信息</summary>
+        <div class="work-order-meta-grid">
+          ${renderWorkOrderMetaItem("层级 / profile / kind", `${item.targetLayer || "-"} / ${item.targetProfileKey || "-"} / ${item.targetKind || "-"}`)}
+          ${renderWorkOrderMetaItem("当前问题", item.whyCurrent || "-")}
+          ${renderWorkOrderMetaItem("修改收益", item.whyChange || "-")}
+          ${renderWorkOrderMetaItem("插入提示", item.targetInsertionHint || "-")}
+          ${renderWorkOrderMetaItem("层级判断", formatScopeDecision(item.scopeDecision || ""))}
+          ${renderWorkOrderMetaItem("层级原因", item.scopeReason || "-")}
+          ${renderWorkOrderMetaItem("抽象度", item.abstractionScore ? `${item.abstractionScore.toFixed(2)} / 1.00` : "-")}
+          ${renderWorkOrderMetaItem("复用判断", formatReuseJudgement(item.reuseJudgement || ""))}
+          ${renderWorkOrderMetaItem("是否像驳回改写", item.isParaphraseOfRejection ? "是" : "否")}
+          ${renderWorkOrderMetaItem("可应用性", formatReviewReadiness(item.reviewReadiness || ""))}
+          ${item.ruleIntent ? renderWorkOrderMetaItem("规则目的", item.ruleIntent) : ""}
+        </div>
+      </details>
       <div class="work-order-inline-actions">
         ${item.targetSkillCode ? `<button type="button" class="secondary-button" data-work-order-jump-skill="${escapeHtml(item.targetSkillCode)}">查看命中技能</button>` : ""}
         ${item.reviewStatus !== "applied" ? `
@@ -2356,6 +2381,10 @@ function formatWorkOrderItemStatus(status = "") {
     applied: "已应用"
   }
   return labels[status] || status || "未知"
+}
+
+function formatWorkOrderActionLabel(item = {}) {
+  return item.conclusionType === "create_new" ? "新增技能条目" : "修改已有技能条目"
 }
 
 function formatScopeDecision(scope = "") {

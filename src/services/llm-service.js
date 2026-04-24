@@ -883,6 +883,8 @@ function buildReplaySystemPrompt() {
     "afterContent 必须是可复用的 atomic skill 正文，不要只是把驳回说明换一种语气重写。",
     "skill 修改建议正文应使用可复用、与具体上传文件名无关的表达；不要在 afterContent 中引用具体参考资产文件名（例如 Chrg.c），应改写为“代码证据”“实现证据”“参考资产”等抽象说法。",
     "如果当前案例只适合沉淀为模块规则，请把正文抽象成“某类需求在什么条件下不得补写什么内容”的规则，而不是“请把某条结果改成什么”。",
+    "changeSummary 必须用一句话写清楚给 reviewer 看的核心修改意见，例如“把原规则补充为禁止将代码侧回退逻辑混入记忆类需求”。",
+    "fallbackReason 只写驳回原因，不要把它当成修改意见；修改意见必须写在 changeSummary。",
     "beforeContent 应表示当前 skill 原文或当前能力边界；afterContent 应表示建议修改后的 atomic skill 正文。",
     "whyCurrent 必须说明当前 skill 为什么没拦住问题；whyChange 必须说明修改后为什么能避免同类问题。",
     "validatorSuggestions 只做只读建议，不进入自动应用链路。",
@@ -1140,6 +1142,7 @@ function buildReplayContextText(item = {}, materialPack = {}) {
   return [
     materialPack.moduleContext?.moduleName,
     materialPack.moduleContext?.moduleSkillKey,
+    item.changeSummary,
     item.title,
     item.fallbackReason,
     item.whyCurrent,
@@ -1158,6 +1161,22 @@ function buildReplayContextText(item = {}, materialPack = {}) {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function buildReplayChangeSummary(item = {}, conclusionType = "") {
+  const explicit = String(item.changeSummary || "").trim();
+  if (explicit) return explicit;
+  const title = String(item.title || item.newRuleDraft?.title || "").trim();
+  if (title) return title;
+  const whyChange = String(item.whyChange || "").trim();
+  if (whyChange) return whyChange;
+  const fallbackReason = String(item.fallbackReason || item.rationale || "").trim();
+  if (fallbackReason) {
+    return conclusionType === "create_new"
+      ? `新增技能条目以处理：${fallbackReason}`
+      : `修改技能条目以处理：${fallbackReason}`;
+  }
+  return conclusionType === "create_new" ? "新增技能条目" : "修改已有技能条目";
 }
 
 function looksLikeChargingSocMemoryBoundaryCase(item = {}, materialPack = {}) {
@@ -1552,6 +1571,7 @@ function buildFallbackReplayProposal(materialPack = {}) {
         kind: target.kind,
         targetFile: target.targetFile || mapReplayKindToTargetFile(target.kind),
         title: `${target.title}（补充修订）`,
+        changeSummary: `修改「${target.title || target.skillCode}」，补充本次驳回暴露的边界约束。`,
         fallbackReason: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
         whyCurrent: "当前命中的 atomic skill 没有把这类驳回问题约束成明确、可执行的写法边界。",
         whyChange: "补上更具体的边界规则后，可以避免同类 fallback 再次出现。",
@@ -1577,6 +1597,7 @@ function buildFallbackReplayProposal(materialPack = {}) {
         kind: inferred.kind,
         targetFile: mapReplayKindToTargetFile(inferred.kind),
         title,
+        changeSummary: `新增「${title}」，沉淀本次驳回暴露的边界约束。`,
         fallbackReason: areaRecords.map((item) => item.reasonText).filter(Boolean).slice(0, 3).join("; "),
         whyCurrent: "当前 skill 快照中没有找到足以覆盖该问题的现成 atomic skill。",
         whyChange: "新增对应 atomic skill 后，可把这类问题沉淀到明确的模块/文档规则中。",
@@ -1788,6 +1809,7 @@ function normalizeReplayProposalItem(item, index, validIds, refAliasMap, candida
     kind,
     targetFile,
     title,
+    changeSummary: buildReplayChangeSummary(item, conclusionType),
     fallbackReason: String(item.fallbackReason || item.rationale || "").trim(),
     whyCurrent: String(item.whyCurrent || "").trim(),
     whyChange: String(item.whyChange || "").trim(),
@@ -1900,6 +1922,7 @@ const replayProposalSchema = {
           targetInsertionHint: { type: "string" },
           kind: { type: "string" },
           title: { type: "string" },
+          changeSummary: { type: "string" },
           fallbackReason: { type: "string" },
           whyCurrent: { type: "string" },
           whyChange: { type: "string" },
@@ -1949,6 +1972,7 @@ const replayProposalSchema = {
           "targetKind",
           "targetInsertionHint",
           "title",
+          "changeSummary",
           "fallbackReason",
           "whyCurrent",
           "whyChange",

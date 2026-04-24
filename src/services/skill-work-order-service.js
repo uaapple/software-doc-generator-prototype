@@ -159,6 +159,33 @@ function hasActionableReviewPayload(items = [], validatorSuggestions = []) {
   return items.some((item) => isActionableWorkOrderItem(item)) || collectValidatorSuggestions(validatorSuggestions).length > 0;
 }
 
+function buildChangeSummary(rawItem = {}, conclusionType = "") {
+  const explicit = String(rawItem.changeSummary || "").trim();
+  if (explicit) return explicit;
+  const title = String(rawItem.title || rawItem.newRuleDraft?.title || "").trim();
+  if (title) return title;
+  const whyChange = String(rawItem.whyChange || "").trim();
+  if (whyChange) return whyChange;
+  const fallbackReason = String(rawItem.fallbackReason || rawItem.rationale || "").trim();
+  if (fallbackReason) {
+    return conclusionType === "create_new"
+      ? `新增技能条目以处理：${fallbackReason}`
+      : `修改技能条目以处理：${fallbackReason}`;
+  }
+  return conclusionType === "create_new" ? "新增技能条目" : "修改已有技能条目";
+}
+
+function hydrateWorkOrderCompatibility(workOrder = null) {
+  if (!workOrder) return workOrder;
+  workOrder.items = Array.isArray(workOrder.items)
+    ? workOrder.items.map((item) => ({
+        ...item,
+        changeSummary: buildChangeSummary(item, item.conclusionType)
+      }))
+    : [];
+  return workOrder;
+}
+
 function normalizeWorkOrderItem(rawItem = {}, task = {}) {
   const action = String(rawItem.action || "").trim();
   const conclusionType =
@@ -167,6 +194,7 @@ function normalizeWorkOrderItem(rawItem = {}, task = {}) {
     itemId: randomUUID(),
     proposalItemId: rawItem.proposalItemId || "",
     title: String(rawItem.title || "").trim(),
+    changeSummary: buildChangeSummary(rawItem, conclusionType),
     conclusionType,
     targetSkillCode: String(rawItem.targetSkillCode || "").trim(),
     targetLayer: String(rawItem.targetLayer || "").trim(),
@@ -324,11 +352,11 @@ export class SkillWorkOrderService {
 
   async repairWorkOrderIfNeeded(workOrder = null) {
     if (!workOrder) {
-      return workOrder;
+      return hydrateWorkOrderCompatibility(workOrder);
     }
 
     if (hasActionableReviewPayload(workOrder.items || [], workOrder.validatorSuggestions || []) || !workOrder.sourceTaskId) {
-      return workOrder;
+      return hydrateWorkOrderCompatibility(workOrder);
     }
 
     const task = await readJson(getReplayTaskPath(workOrder.sourceTaskId));
@@ -361,7 +389,7 @@ export class SkillWorkOrderService {
     workOrder.status = computeWorkOrderStatus(workOrder.items || []);
     workOrder.updatedAt = now();
     await writeJson(getWorkOrderPath(workOrder.id), workOrder);
-    return workOrder;
+    return hydrateWorkOrderCompatibility(workOrder);
   }
 
   async ensureWorkOrderForReplayTask(task = {}, existingWorkOrdersById = new Map()) {
@@ -443,7 +471,7 @@ export class SkillWorkOrderService {
     };
 
     await writeJson(getWorkOrderPath(workOrder.id), workOrder);
-    return workOrder;
+    return hydrateWorkOrderCompatibility(workOrder);
   }
 
   async reviewItem(workOrderId, itemId, payload = {}) {

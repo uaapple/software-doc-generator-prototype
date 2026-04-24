@@ -308,6 +308,9 @@ function buildReplayFallbackProposal(manifest = {}, taskBrief = "", options = {}
       targetKind: String(candidate?.kind || candidate?.targetKind || targetKind).trim() || targetKind,
       targetInsertionHint: String(candidate?.targetFile || mapReplayKindToTargetFile(targetKind)).trim(),
       title: `${titleBase}补充规则`,
+      changeSummary: candidate
+        ? `修改「${candidate.title || candidate.skillCode || candidate.ruleId || titleBase}」，补充本次驳回暴露的边界约束。`
+        : `新增「${titleBase}补充规则」，沉淀本次驳回暴露的边界约束。`,
       fallbackReason: String(firstRecord?.reasonText || "").trim(),
       whyCurrent: "当前有效技能未能稳定拦截这组驳回案例。",
       whyChange: "补充或修订同层规则后，可减少同类问题再次出现。",
