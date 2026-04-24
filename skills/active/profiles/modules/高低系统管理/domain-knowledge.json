@@ -140,15 +140,32 @@
     {
       "domain": "embedded_vcu",
       "subdomain": "高低系统管理",
+      "sectionHints": [
+        "5.1.1.1 本地KL15上高压"
+      ],
       "writingPattern": "基于状态机的功能需求描述",
-      "targetStyle": "软件需求条目"
+      "targetStyle": "软件需求条目",
+      "sourceBasis": [
+        "system-requirements-example-hv-lv-system-management.md",
+        "HvCoorn.pdf"
+      ]
     },
     {
       "domain": "embedded_vcu",
       "documentType": "detail_design",
       "subdomain": "高低系统管理",
+      "sectionHints": [
+        "KeyOn上高压",
+        "KeyOn高压请求标志位",
+        "本地KL15上高压建立流程"
+      ],
       "writingPattern": "功能主题 -> 请求标志位或流程对象 -> 激活条件 -> 锁存/复位 -> 阈值与状态范围 -> 补充说明",
-      "targetStyle": "可审核的详细设计条目，保留工程信号与标定量，不写成软件需求摘要。"
+      "targetStyle": "可审核的详细设计条目，保留工程信号与标定量，不写成软件需求摘要。",
+      "sourceBasis": [
+        "高低系统管理系统需求",
+        "高低系统管理详细设计整理稿",
+        "HvCoorn模型/代码"
+      ]
     }
   ],
   "antiPatterns": [

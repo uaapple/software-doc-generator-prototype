@@ -1,12 +1,12 @@
 {
   "version": 1,
   "generationPriorities": [
-    "优先输出符合人工软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
-    "对已经有人工样例锚点的主题，优先复现样例中的主条目边界、顺序和对象拆分，再补充阈值、引用和恢复路径。",
+    "优先输出符合软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
+    "对系统需求已经明确主条目边界的主题，优先保留系统需求中的主条目边界、顺序和对象关系，再补充阈值、引用和恢复路径。",
     "在充电管理、高低系统管理、高压能量管理等主题中，先输出核心主线条目，再决定是否追加补充主题。",
     "优先保留输入中的正式信号名、需求编号、状态值和模式名，不要为了顺口改写成模糊概念。",
-    "当没有完全同构的人工样例时，优先复用最接近样本的章节骨架与句式，而不是重新发明新的写法。",
-    "若系统需求、软件需求样例与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。"
+    "当系统需求没有给出完全同构的结构时，优先复用当前领域已经稳定的章节骨架与句式，而不是重新发明新的写法。",
+    "若系统需求与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。"
   ],
   "examples": [
     {
@@ -81,26 +81,70 @@
     {
       "domain": "embedded_vcu",
       "subdomain": "扭矩干预",
+      "sectionHints": [
+        "扭矩干预功能",
+        "ESC前轴扭矩干预",
+        "ESC后轴扭矩干预"
+      ],
       "writingPattern": "优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。",
-      "targetStyle": "输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。"
+      "targetStyle": "输出应接近工程内稳定的软件需求条目写法，而不是系统需求摘要。",
+      "sourceBasis": [
+        "input/20260404/software-requirement-writing-rules-vcu.md",
+        "input/20260404/system-requirements-example-torque-intervention.md",
+        "input/20260404/software-design-requirements-example-esc-torque-intervention.md"
+      ]
     },
     {
       "domain": "embedded_vcu",
       "subdomain": "充电管理",
+      "sectionHints": [
+        "充电管理",
+        "充电过程",
+        "堵转加热模式",
+        "充电截止SOC",
+        "充电截止SOC记忆"
+      ],
       "writingPattern": "优先按充电过程下的控制主题拆条；先写进入请求与撤销，再写截止停止，再写记忆与恢复。",
-      "targetStyle": "输出应显式写出输入条件、动作、停止条件和恢复路径，但不要把内部实现细节抬升为新的主条目。"
+      "targetStyle": "输出应显式写出输入条件、动作、停止条件和恢复路径，但不要把内部实现细节抬升为新的主条目。",
+      "sourceBasis": [
+        "input/20260411/AI case_ITK_20260411.docx",
+        "skills/active/profiles/modules/充电管理/domain-knowledge.json",
+        "skills/active/profiles/modules/充电管理/examples/good_examples.md"
+      ]
     },
     {
       "domain": "embedded_vcu",
       "subdomain": "高低系统管理",
+      "sectionHints": [
+        "高低系统管理",
+        "本地KL15上高压",
+        "高压建立流程",
+        "高压Ready判定"
+      ],
       "writingPattern": "围绕高压请求激活、主回路建立、附件使能和Ready判定组织软件需求，不要把整个状态机直接摊平成实现步骤。",
-      "targetStyle": "输出应体现请求条件、执行动作、完成判据和退出条件，保持功能需求语气。"
+      "targetStyle": "输出应体现请求条件、执行动作、完成判据和退出条件，保持功能需求语气。",
+      "sourceBasis": [
+        "input/20260411/AI case_ITK_20260411.docx",
+        "skills/active/profiles/modules/高低系统管理/domain-knowledge.json",
+        "input/20260411/HvCoorn.pdf"
+      ]
     },
     {
       "domain": "embedded_vcu",
       "subdomain": "高压能量管理",
+      "sectionHints": [
+        "高压能量管理",
+        "电池可用充放功率计算",
+        "单体保护",
+        "峰值功率"
+      ],
       "writingPattern": "优先保持五条核心主线：可用放电功率、放电单体保护、可用充电功率、充电单体保护、峰值可用放电功率。",
-      "targetStyle": "输出应保留功率源、阈值、预留功率、查表限制和前序需求引用，不要泛化成总纲说明。"
+      "targetStyle": "输出应保留功率源、阈值、预留功率、查表限制和前序需求引用，不要泛化成总纲说明。",
+      "sourceBasis": [
+        "input/20260411/AI case_ITK_20260411.docx",
+        "skills/active/profiles/modules/高压能量管理/domain-knowledge.json",
+        "input/20260411/PwrLimBatt.pdf"
+      ]
     }
   ],
   "antiPatterns": [

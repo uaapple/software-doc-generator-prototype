@@ -165,7 +165,6 @@
         "<AC充电联接OK标志位>",
         "<AC充电充满标志位>"
       ],
-      "references": [],
       "canonicalBranches": [
         "退出标志位为0",
         "电池状态位为0",
@@ -192,7 +191,6 @@
         "<DC充电联接OK标志位>",
         "<DC充电充满标志位>"
       ],
-      "references": [],
       "canonicalBranches": [
         "退出标志位为0",
         "电池状态位为0",

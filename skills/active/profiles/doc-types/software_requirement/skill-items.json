@@ -22,8 +22,8 @@
       "layer": "docType",
       "profileKey": "software_requirement",
       "kind": "writing_rule",
-      "title": "人工样例对齐优先",
-      "content": "当输入同时包含人工软件需求样例、系统需求和代码证据时，优先对齐人工样例已经稳定下来的主题边界、主题顺序和句式，再用其余证据补齐缺失条件。",
+      "title": "源需求主线优先",
+      "content": "当输入包含系统需求和代码证据时，优先依据系统需求已经明确的主题边界、主题顺序和生命周期主线组织需求，再用代码证据补齐缺失条件。",
       "order": 2,
       "status": "active",
       "sectionKey": "写作定位"
@@ -254,7 +254,7 @@
       "profileKey": "software_requirement",
       "kind": "generation_priority",
       "title": "软件需求优先级 1",
-      "content": "优先输出符合人工软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
+      "content": "优先输出符合软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
       "order": 23,
       "status": "active",
       "sectionKey": "default"
@@ -265,7 +265,7 @@
       "profileKey": "software_requirement",
       "kind": "generation_priority",
       "title": "软件需求优先级 2",
-      "content": "对已经有人工样例锚点的主题，优先复现样例中的主条目边界、顺序和对象拆分，再补充阈值、引用和恢复路径。",
+      "content": "对系统需求已经明确主条目边界的主题，优先保留系统需求中的主条目边界、顺序和对象关系，再补充阈值、引用和恢复路径。",
       "order": 24,
       "status": "active",
       "sectionKey": "default"
@@ -298,7 +298,7 @@
       "profileKey": "software_requirement",
       "kind": "generation_priority",
       "title": "软件需求优先级 5",
-      "content": "当没有完全同构的人工样例时，优先复用最接近样本的章节骨架与句式，而不是重新发明新的写法。",
+      "content": "当系统需求没有给出完全同构的结构时，优先复用当前领域已经稳定的章节骨架与句式，而不是重新发明新的写法。",
       "order": 27,
       "status": "active",
       "sectionKey": "default"
@@ -309,7 +309,7 @@
       "profileKey": "software_requirement",
       "kind": "generation_priority",
       "title": "软件需求优先级 6",
-      "content": "若系统需求、软件需求样例与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。",
+      "content": "若系统需求与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。",
       "order": 28,
       "status": "active",
       "sectionKey": "default"
@@ -442,7 +442,7 @@
           "ESC后轴扭矩干预"
         ],
         "writingPattern": "优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。",
-        "targetStyle": "输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。",
+        "targetStyle": "输出应接近工程内稳定的软件需求条目写法，而不是系统需求摘要。",
         "sourceBasis": [
           "input/20260404/software-requirement-writing-rules-vcu.md",
           "input/20260404/system-requirements-example-torque-intervention.md",

@@ -1,8 +1,33 @@
 [
   {
-    "id": "b163dc36-e182-4f3a-877d-bb01156e0884",
+    "id": "5556e1e6-5bb8-489c-8426-6eee6fbb3097",
+    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::8afaa2a2-d578-4bed-9ebb-38f5522589e8::coverage_gap::后处理泛化|退出分支缺失|重新允许条件不清::writing::module::bundle-base",
+    "title": "覆盖缺失 / 写作规则 / Module",
+    "reasonCategory": "coverage_gap",
+    "reasonTags": [
+      "后处理泛化",
+      "退出分支缺失",
+      "重新允许条件不清"
+    ],
+    "targetArea": "writing",
+    "targetLayerConstraint": "module",
+    "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
+    "projectName": "VCU",
+    "moduleId": "8afaa2a2-d578-4bed-9ebb-38f5522589e8",
+    "moduleName": "低压能量管理",
+    "memberIds": [
+      "049b4409-1668-49ed-b85e-dc048768ab1b"
+    ],
+    "stats": {
+      "count": 1,
+      "replayedCount": 1
+    },
+    "status": "active"
+  },
+  {
+    "id": "49d9ac45-e3b9-4257-8dc7-1d5cca6509d9",
     "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb::coverage_gap::代码约束提取不足|前置条件缺失|来源利用不充分::validation::module::bundle-base",
-    "title": "Coverage Gap / Validation / Module",
+    "title": "覆盖缺失 / 校验规则 / Module",
     "reasonCategory": "coverage_gap",
     "reasonTags": [
       "代码约束提取不足",
@@ -10,6 +35,7 @@
       "来源利用不充分"
     ],
     "targetArea": "validation",
+    "targetLayerConstraint": "module",
     "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
     "projectName": "VCU",
     "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
@@ -21,13 +47,12 @@
       "count": 1,
       "replayedCount": 1
     },
-    "status": "active",
-    "targetLayerConstraint": "module"
+    "status": "active"
   },
   {
-    "id": "046e7f29-06cb-42ff-b69c-e42fb40f8b20",
-    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb::coverage_gap::来源不足|过度推断|需求边界漂移::validation::bundle-base",
-    "title": "覆盖缺失 / 校验规则",
+    "id": "80d18256-bd39-468f-bc3d-d3063368c501",
+    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb::coverage_gap::来源不足|过度推断|需求边界漂移::validation::docType::bundle-base",
+    "title": "覆盖缺失 / 校验规则 / DocType",
     "reasonCategory": "coverage_gap",
     "reasonTags": [
       "来源不足",
@@ -35,6 +60,7 @@
       "需求边界漂移"
     ],
     "targetArea": "validation",
+    "targetLayerConstraint": "docType",
     "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
     "projectName": "VCU",
     "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",

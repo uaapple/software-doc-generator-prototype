@@ -1,9 +1,9 @@
 {
   "bundleId": "bundle-base",
-  "ruleIndexVersion": "registry-1776762825080",
-  "importedAt": "2026-04-21T09:13:45.080Z",
+  "ruleIndexVersion": "registry-1777010632870",
+  "importedAt": "2026-04-24T06:03:52.870Z",
   "skillDir": "skills/active",
-  "sourceFingerprint": "a805af12822e15c29532870353fbeb9aa3b0cccd",
+  "sourceFingerprint": "9b536b7d0f739ec8738713f1408d041eb4a0eead",
   "rules": [
     {
       "id": "GEN-generic-extraction_rule-001",
@@ -3894,8 +3894,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-writing_rule-002",
@@ -3922,8 +3922,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-writing_rule-003",
@@ -3950,8 +3950,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-writing_rule-004",
@@ -3978,8 +3978,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-writing_rule-005",
@@ -4006,8 +4006,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-writing_rule-006",
@@ -4034,8 +4034,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-extraction_rule-001",
@@ -4062,8 +4062,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-extraction_rule-002",
@@ -4090,8 +4090,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-extraction_rule-003",
@@ -4118,8 +4118,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-extraction_rule-004",
@@ -4146,8 +4146,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-extraction_rule-005",
@@ -4174,8 +4174,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-validation_rule-001",
@@ -4202,8 +4202,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-validation_rule-002",
@@ -4230,8 +4230,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-validation_rule-003",
@@ -4258,8 +4258,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-validation_rule-004",
@@ -4286,8 +4286,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-validation_rule-005",
@@ -4314,8 +4314,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-generation_priority-001",
@@ -4342,8 +4342,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-generation_priority-002",
@@ -4370,8 +4370,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-generation_priority-003",
@@ -4398,8 +4398,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-generation_priority-004",
@@ -4426,8 +4426,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-rule_hint-001",
@@ -4454,8 +4454,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.412Z",
-      "updatedAt": "2026-04-20T08:46:51.412Z"
+      "createdAt": "2026-04-24T05:59:18.386Z",
+      "updatedAt": "2026-04-24T05:59:18.386Z"
     },
     {
       "id": "DOC-detail_design-document_blueprint_section-001",
@@ -4482,8 +4482,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-document_blueprint_section-002",
@@ -4510,8 +4510,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-document_blueprint_section-003",
@@ -4538,8 +4538,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-document_blueprint_section-004",
@@ -4566,8 +4566,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-document_blueprint_section-005",
@@ -4594,8 +4594,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-document_blueprint_policy-001",
@@ -4622,8 +4622,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-document_blueprint_policy-002",
@@ -4650,8 +4650,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-document_blueprint_policy-003",
@@ -4678,8 +4678,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-extraction_rule-006",
@@ -4706,8 +4706,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-detail_design-validation_rule-006",
@@ -4734,8 +4734,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/detail_design/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.413Z",
-      "updatedAt": "2026-04-20T08:46:51.413Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-001",
@@ -4762,8 +4762,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-002",
@@ -4776,8 +4776,8 @@
       "profileKey": "software_requirement",
       "documentTypeScope": "software_requirement",
       "kind": "writing_rule",
-      "title": "人工样例对齐优先",
-      "content": "当输入同时包含人工软件需求样例、系统需求和代码证据时，优先对齐人工样例已经稳定下来的主题边界、主题顺序和句式，再用其余证据补齐缺失条件。",
+      "title": "源需求主线优先",
+      "content": "当输入包含系统需求和代码证据时，优先依据系统需求已经明确的主题边界、主题顺序和生命周期主线组织需求，再用代码证据补齐缺失条件。",
       "sectionKey": "写作定位",
       "status": "active",
       "version": 1,
@@ -4790,8 +4790,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-003",
@@ -4818,8 +4818,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-004",
@@ -4846,8 +4846,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-005",
@@ -4874,8 +4874,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-006",
@@ -4902,8 +4902,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-007",
@@ -4930,8 +4930,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-008",
@@ -4958,8 +4958,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-009",
@@ -4986,8 +4986,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-010",
@@ -5014,8 +5014,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-011",
@@ -5042,8 +5042,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-writing_rule-012",
@@ -5070,8 +5070,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-001",
@@ -5098,8 +5098,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-002",
@@ -5126,8 +5126,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-003",
@@ -5154,8 +5154,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-004",
@@ -5182,8 +5182,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-005",
@@ -5210,8 +5210,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-006",
@@ -5238,8 +5238,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-007",
@@ -5266,8 +5266,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-008",
@@ -5294,8 +5294,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-009",
@@ -5322,8 +5322,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-validation_rule-010",
@@ -5350,8 +5350,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-001",
@@ -5365,7 +5365,7 @@
       "documentTypeScope": "software_requirement",
       "kind": "generation_priority",
       "title": "软件需求优先级 1",
-      "content": "优先输出符合人工软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
+      "content": "优先输出符合软件需求条目风格的内容，再考虑补充说明，不要先生成详细设计化的过程描述。",
       "sectionKey": "default",
       "status": "active",
       "version": 1,
@@ -5378,8 +5378,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-002",
@@ -5393,7 +5393,7 @@
       "documentTypeScope": "software_requirement",
       "kind": "generation_priority",
       "title": "软件需求优先级 2",
-      "content": "对已经有人工样例锚点的主题，优先复现样例中的主条目边界、顺序和对象拆分，再补充阈值、引用和恢复路径。",
+      "content": "对系统需求已经明确主条目边界的主题，优先保留系统需求中的主条目边界、顺序和对象关系，再补充阈值、引用和恢复路径。",
       "sectionKey": "default",
       "status": "active",
       "version": 1,
@@ -5406,8 +5406,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-003",
@@ -5434,8 +5434,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-004",
@@ -5462,8 +5462,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-005",
@@ -5477,7 +5477,7 @@
       "documentTypeScope": "software_requirement",
       "kind": "generation_priority",
       "title": "软件需求优先级 5",
-      "content": "当没有完全同构的人工样例时，优先复用最接近样本的章节骨架与句式，而不是重新发明新的写法。",
+      "content": "当系统需求没有给出完全同构的结构时，优先复用当前领域已经稳定的章节骨架与句式，而不是重新发明新的写法。",
       "sectionKey": "default",
       "status": "active",
       "version": 1,
@@ -5490,8 +5490,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-generation_priority-006",
@@ -5505,7 +5505,7 @@
       "documentTypeScope": "software_requirement",
       "kind": "generation_priority",
       "title": "软件需求优先级 6",
-      "content": "若系统需求、软件需求样例与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。",
+      "content": "若系统需求与代码证据存在层次差异，软件需求层的输出应聚焦可审核的功能条目，不要下沉到实现细节。",
       "sectionKey": "default",
       "status": "active",
       "version": 1,
@@ -5518,8 +5518,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-good_example-001",
@@ -5546,8 +5546,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-good_example-002",
@@ -5574,8 +5574,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-good_example-003",
@@ -5602,8 +5602,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-good_example-004",
@@ -5630,8 +5630,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.387Z",
+      "updatedAt": "2026-04-24T05:59:18.387Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-001",
@@ -5645,7 +5645,7 @@
       "documentTypeScope": "software_requirement",
       "kind": "rule_hint",
       "title": "扭矩干预 rule hint",
-      "content": "在 embedded_vcu / 扭矩干预 范围内，优先关注 扭矩干预功能、ESC前轴扭矩干预、ESC后轴扭矩干预。写作时采用 优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。。目标风格保持 输出应接近人工软件需求/设计样例的条目写法，而不是系统需求摘要。。可以优先参考 input/20260404/software-requirement-writing-rules-vcu.md、input/20260404/system-requirements-example-torque-intervention.md、input/20260404/software-design-requirements-example-esc-torque-intervention.md。",
+      "content": "在 embedded_vcu / 扭矩干预 范围内，优先关注 扭矩干预功能、ESC前轴扭矩干预、ESC后轴扭矩干预。写作时采用 优先按前轴/后轴对称拆分，先写激活判断，再写扭矩计算；显式保留优先级、阈值、active/inactive 和内部引用。。目标风格保持 输出应接近工程内稳定的软件需求条目写法，而不是系统需求摘要。。可以优先参考 input/20260404/software-requirement-writing-rules-vcu.md、input/20260404/system-requirements-example-torque-intervention.md、input/20260404/software-design-requirements-example-esc-torque-intervention.md。",
       "sectionKey": "default",
       "status": "active",
       "version": 1,
@@ -5658,8 +5658,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-002",
@@ -5686,8 +5686,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-003",
@@ -5714,8 +5714,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-rule_hint-004",
@@ -5742,8 +5742,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-001",
@@ -5770,8 +5770,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-002",
@@ -5798,8 +5798,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-003",
@@ -5826,8 +5826,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-004",
@@ -5854,8 +5854,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-005",
@@ -5882,8 +5882,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOC-software_requirement-anti_pattern-006",
@@ -5910,8 +5910,8 @@
         "legacySource": "",
         "registryPath": "profiles/doc-types/software_requirement/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.416Z",
-      "updatedAt": "2026-04-20T08:46:51.416Z"
+      "createdAt": "2026-04-24T05:59:18.388Z",
+      "updatedAt": "2026-04-24T05:59:18.388Z"
     },
     {
       "id": "DOM-embedded_vcu-source_policy_setting-001",
@@ -6698,6 +6698,566 @@
       "updatedAt": "2026-04-16T07:26:49.694Z"
     },
     {
+      "id": "MOD-低压能量管理-generation_priority-001",
+      "ruleId": "MOD-低压能量管理-generation_priority-001",
+      "skillCode": "MOD-低压能量管理-generation_priority-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 1",
+      "content": "优先按智能补电的生命周期组织模块知识，先覆盖唤醒/待机场景门槛，再覆盖激活、维持、退出、复位/重新允许与休眠协同。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.730Z",
+      "updatedAt": "2026-04-22T17:13:24.730Z"
+    },
+    {
+      "id": "MOD-低压能量管理-generation_priority-002",
+      "ruleId": "MOD-低压能量管理-generation_priority-002",
+      "skillCode": "MOD-低压能量管理-generation_priority-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 2",
+      "content": "优先复用“前置场景+全部条件+任一子条件+状态置位+后续动作/保持动作”的软件需求表达框架，确保激活、退出、复位语义彼此独立。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.730Z",
+      "updatedAt": "2026-04-22T17:13:24.730Z"
+    },
+    {
+      "id": "MOD-低压能量管理-generation_priority-003",
+      "ruleId": "MOD-低压能量管理-generation_priority-003",
+      "skillCode": "MOD-低压能量管理-generation_priority-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 3",
+      "content": "优先保留系统需求与参考软件需求中的标准信号名、状态值、阈值、比较符、时间窗和单位，特别是KL15/电源档位、高压连接状态、BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、失败计数、20分钟、15s、2小时等。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-generation_priority-004",
+      "ruleId": "MOD-低压能量管理-generation_priority-004",
+      "skillCode": "MOD-低压能量管理-generation_priority-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 4",
+      "content": "优先同时写清状态输出与系统动作，尤其关注VCU_IntelligentChgSt、VCCM_SOCWU_Ena、上高压/下高压、网络休眠和控制器休眠的联动关系。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-generation_priority-005",
+      "ruleId": "MOD-低压能量管理-generation_priority-005",
+      "skillCode": "MOD-低压能量管理-generation_priority-005",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 5",
+      "content": "优先覆盖异常和边界退出路径，包括连续补电失败计数达到上限、动力电池SOC过低、DCDC反馈超时、信号丢失后的回退判断，以及退出后的计数清零/保持/+1规则。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-rule_hint-001",
+      "ruleId": "MOD-低压能量管理-rule_hint-001",
+      "skillCode": "MOD-低压能量管理-rule_hint-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "rule_hint",
+      "title": "低压能量管理 rule hint",
+      "content": "对激活类需求，优先写成“当前置场景成立且满足以下全部条件时，智能补电激活”；其中条件组中的监测量可再拆分为任一子条件。对退出类需求，若源系统需求在同一标题下已经按退出原因展开，则软件需求必须保留该标题不变，并在同一条需求内部按退出原因逐分支展开：先写各退出子条件，再分别写清该分支对应的退出后动作、VCCM_SOCWU_Ena 状态、失败计数清零/保持/+1规则、是否执行下高压、是否允许网络/控制器休眠，以及重新允许激活的条件；不得把多个退出原因压缩成“满足任一条件则退出”后再用统一后处理概括。仅当源需求本身未给出分支化后处理时，才可使用通用“当满足以下任一条件时，智能补电退出”的句式。若存在未满足条件场景，应补写保持当前状态不变、置0或不触发的路径。对 OCR 不清晰但可确认主干语义的恢复条件，应保守保留已确认部分，并避免臆造未识别内容。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#ruleHints",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-24T05:59:18.641Z"
+    },
+    {
+      "id": "MOD-低压能量管理-rule_hint-002",
+      "ruleId": "MOD-低压能量管理-rule_hint-002",
+      "skillCode": "MOD-低压能量管理-rule_hint-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "rule_hint",
+      "title": "低压能量管理 rule hint",
+      "content": "在 embedded_vcu / 低压能量管理 范围内，优先关注 低压蓄电池补电触发阈值表达、失败计数与超时窗口表达、唤醒使能输出表达。写作时采用 阈值类内容应保持“信号名+比较符+阈值+单位/枚举语义”的原样表达，例如BMS2_N_SOC>10%、EBS_SOC≤70%、EBS_SOC_STATE<10%或指定枚举值、EBS_U_BATT<或≤11.8V，以及20分钟、15s、2小时等时间窗；如为可标定项或TBD，应显式保留“默认值/约为/可标定/TBD”属性，不得擅自固化或替换。。目标风格保持 精确、可验证的软件需求风格，强调边界方向、单位和标定属性。。可以优先参考 系统需求、参考软件需求、相关既有技能规则。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#ruleHints",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-rule_hint-003",
+      "ruleId": "MOD-低压能量管理-rule_hint-003",
+      "skillCode": "MOD-低压能量管理-rule_hint-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "rule_hint",
+      "title": "低压能量管理 rule hint",
+      "content": "在 embedded_vcu / 低压能量管理 范围内，优先关注 高压流程协同、休眠生命周期协同。写作时采用 可借鉴相关代码体现出的初始化、唤醒、待机、退出和休眠生命周期结构来组织章节，但需求文本只保留生命周期语义，不直接引入代码状态机节点名、函数名、临时变量名或分支名。若需描述与高压流程的关系，应写成功能级动作，如执行上高压流程、执行下高压流程、允许网络休眠、允许控制器休眠。。目标风格保持 需求级生命周期表达，强调功能协同，不暴露实现细节。。可以优先参考 系统需求、参考软件需求、相关代码语义、相关既有技能规则。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#ruleHints",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-anti_pattern-001",
+      "ruleId": "MOD-低压能量管理-anti_pattern-001",
+      "skillCode": "MOD-低压能量管理-anti_pattern-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 1",
+      "content": "不要把HvCoorn.c中的函数名、局部变量名、布尔中间量、状态机分支名或判断顺序直接改写成软件需求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-anti_pattern-002",
+      "ruleId": "MOD-低压能量管理-anti_pattern-002",
+      "skillCode": "MOD-低压能量管理-anti_pattern-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 2",
+      "content": "不要把激活条件、退出条件、退出后动作、失败计数处理和复位条件压缩在同一长句中；每条规则只承载一个主要目的。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-anti_pattern-003",
+      "ruleId": "MOD-低压能量管理-anti_pattern-003",
+      "skillCode": "MOD-低压能量管理-anti_pattern-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 3",
+      "content": "不要混合系统需求与参考软件需求中不一致的阈值、比较符、状态值或边界条件后再生成新规则；存在差异时应回到单一事实来源并显式对齐。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-anti_pattern-004",
+      "ruleId": "MOD-低压能量管理-anti_pattern-004",
+      "skillCode": "MOD-低压能量管理-anti_pattern-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 4",
+      "content": "不要遗漏否则路径、恢复条件、重新进入条件或超时撤销条件，尤其是激活判断、模式进入和停止控制类需求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "id": "MOD-低压能量管理-anti_pattern-005",
+      "ruleId": "MOD-低压能量管理-anti_pattern-005",
+      "skillCode": "MOD-低压能量管理-anti_pattern-005",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 5",
+      "content": "不要依据OCR不清晰内容、裁切片段或代码猜测补全缺失阈值、状态名或时序要求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "id": "MOD-低压能量管理-anti_pattern-006",
+      "ruleId": "MOD-低压能量管理-anti_pattern-006",
+      "skillCode": "MOD-低压能量管理-anti_pattern-006",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 6",
+      "content": "不要只写条件不写状态输出与系统动作，也不要只写上高压/休眠动作而省略对应的功能状态位和使能信号。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "id": "MOD-低压能量管理-source_policy_setting-001",
+      "ruleId": "MOD-低压能量管理-source_policy_setting-001",
+      "skillCode": "MOD-低压能量管理-source_policy_setting-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "source_policy_setting",
+      "title": "source policy preferredFunctionSection",
+      "content": "优先功能章节固定为“低压能量管理”，生成时优先围绕该功能主题组织正文。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.preferredFunctionSection",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "id": "MOD-低压能量管理-source_policy_setting-002",
+      "ruleId": "MOD-低压能量管理-source_policy_setting-002",
+      "skillCode": "MOD-低压能量管理-source_policy_setting-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "source_policy_setting",
+      "title": "source policy preferredSubsections",
+      "content": "优先子章节包括 智能补电生命周期、智能补电激活与退出判断、智能补电复位与休眠协同，生成时尽量按这些稳定主题落位。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.preferredSubsections",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "id": "MOD-低压能量管理-source_policy_setting-003",
+      "ruleId": "MOD-低压能量管理-source_policy_setting-003",
+      "skillCode": "MOD-低压能量管理-source_policy_setting-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "source_policy_setting",
+      "title": "source policy coreFirst",
+      "content": "优先先铺开核心章节和核心规则，再补充外围内容。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.coreFirst",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "id": "MOD-低压能量管理-source_policy_setting-004",
+      "ruleId": "MOD-低压能量管理-source_policy_setting-004",
+      "skillCode": "MOD-低压能量管理-source_policy_setting-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "source_policy_setting",
+      "title": "source policy preferSymmetricExpansion",
+      "content": "优先按对象或轴对称展开章节和需求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.preferSymmetricExpansion",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "id": "MOD-低压能量管理-source_policy_setting-005",
+      "ruleId": "MOD-低压能量管理-source_policy_setting-005",
+      "skillCode": "MOD-低压能量管理-source_policy_setting-005",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "source_policy_setting",
+      "title": "source policy preferObjectSpecificRequirements",
+      "content": "优先写面向具体对象的需求，而不是泛化描述。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.preferObjectSpecificRequirements",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "id": "MOD-低压能量管理-source_policy_setting-006",
+      "ruleId": "MOD-低压能量管理-source_policy_setting-006",
+      "skillCode": "MOD-低压能量管理-source_policy_setting-006",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "",
+      "kind": "source_policy_setting",
+      "title": "source policy discourageGenericScatterRequirements",
+      "content": "避免把需求打散成泛化、零散的条目。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.discourageGenericScatterRequirements",
+        "registryPath": "profiles/modules/低压能量管理/skill-items.json"
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
       "id": "MOD-充电管理-generation_priority-001",
       "ruleId": "MOD-充电管理-generation_priority-001",
       "skillCode": "MOD-充电管理-generation_priority-001",
@@ -7002,8 +7562,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.386Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-generation_priority-005",
@@ -7030,8 +7590,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-generation_priority-006",
@@ -7058,8 +7618,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-generation_priority-007",
@@ -7086,8 +7646,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-rule_hint-002",
@@ -7114,8 +7674,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-good_example-004",
@@ -7142,8 +7702,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-good_example-005",
@@ -7170,8 +7730,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-good_example-006",
@@ -7198,8 +7758,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-anti_pattern-004",
@@ -7226,8 +7786,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-anti_pattern-005",
@@ -7254,8 +7814,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-anti_pattern-006",
@@ -7282,8 +7842,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-source_alias-001",
@@ -7310,8 +7870,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.388Z",
-      "updatedAt": "2026-04-20T08:46:51.388Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-source_alias-002",
@@ -7338,8 +7898,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-source_alias-003",
@@ -7366,8 +7926,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-source_alias-004",
@@ -7394,8 +7954,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-source_alias-005",
@@ -7422,8 +7982,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-source_alias-006",
@@ -7450,8 +8010,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-normalization_rule-001",
@@ -7478,8 +8038,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-normalization_rule-002",
@@ -7506,8 +8066,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-forbidden_expansion-001",
@@ -7534,8 +8094,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-充电管理-forbidden_expansion-002",
@@ -7562,8 +8122,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/充电管理/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.389Z",
-      "updatedAt": "2026-04-20T08:46:51.389Z"
+      "createdAt": "2026-04-24T05:59:18.390Z",
+      "updatedAt": "2026-04-24T05:59:18.390Z"
     },
     {
       "id": "MOD-扭矩干预-bad_example-001",
@@ -8178,8 +8738,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-002",
@@ -8234,8 +8794,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-003",
@@ -8290,8 +8850,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-004",
@@ -8346,8 +8906,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-005",
@@ -8402,8 +8962,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-006",
@@ -8458,8 +9018,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-anti_pattern-007",
@@ -8514,8 +9074,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-source_policy_setting-001",
@@ -8570,8 +9130,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-source_policy_setting-002",
@@ -8626,8 +9186,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-source_policy_setting-003",
@@ -8682,8 +9242,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-code_style_prefix-001",
@@ -8738,8 +9298,8 @@
         "legacySource": "",
         "registryPath": "profiles/modules/扭矩干预/skill-items.json"
       },
-      "createdAt": "2026-04-20T08:46:51.420Z",
-      "updatedAt": "2026-04-20T08:46:51.420Z"
+      "createdAt": "2026-04-24T05:59:18.391Z",
+      "updatedAt": "2026-04-24T05:59:18.391Z"
     },
     {
       "id": "MOD-扭矩干预-code_style_prefix-002",
@@ -9274,6 +9834,342 @@
       "updatedAt": "2026-04-16T07:26:49.700Z"
     },
     {
+      "id": "MOD-扭矩干预-normalization_rule-002",
+      "ruleId": "MOD-扭矩干预-normalization_rule-002",
+      "skillCode": "MOD-扭矩干预-normalization_rule-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "normalization_rule",
+      "title": "normalization rule 2",
+      "content": "出现“主动制动（AEB/CDP/ABS/EBD）”时，统一写作“主动制动（AEB/CDP）”。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-normalization_rule-003",
+      "ruleId": "MOD-扭矩干预-normalization_rule-003",
+      "skillCode": "MOD-扭矩干预-normalization_rule-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "normalization_rule",
+      "title": "normalization rule 3",
+      "content": "；4. 前轴CCO/ISA扭矩请求有效",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-normalization_rule-004",
+      "ruleId": "MOD-扭矩干预-normalization_rule-004",
+      "skillCode": "MOD-扭矩干预-normalization_rule-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "normalization_rule",
+      "title": "normalization rule 4",
+      "content": "；4. 后轴CCO/ISA扭矩请求有效",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-forbidden_expansion-001",
+      "ruleId": "MOD-扭矩干预-forbidden_expansion-001",
+      "skillCode": "MOD-扭矩干预-forbidden_expansion-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion activation_flag_logic",
+      "content": "涉及 activation_flag_logic 时，不要额外扩写 CCO、ISA。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.forbiddenExpansions",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-forbidden_expansion-002",
+      "ruleId": "MOD-扭矩干预-forbidden_expansion-002",
+      "skillCode": "MOD-扭矩干预-forbidden_expansion-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion torque_calculation_logic",
+      "content": "涉及 torque_calculation_logic 时，不要额外扩写 ABS、EBD、CCO、ISA。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.forbiddenExpansions",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-document_blueprint_section-001",
+      "ruleId": "MOD-扭矩干预-document_blueprint_section-001",
+      "skillCode": "MOD-扭矩干预-document_blueprint_section-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_section",
+      "title": "preferred function section 扭矩干预功能",
+      "content": "文档蓝图中，作为优先功能章节“扭矩干预功能”。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.preferredFunctionSection",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-document_blueprint_section-002",
+      "ruleId": "MOD-扭矩干预-document_blueprint_section-002",
+      "skillCode": "MOD-扭矩干预-document_blueprint_section-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_section",
+      "title": "preferred subsection ESC前轴扭矩干预",
+      "content": "文档蓝图中，作为优先子章节“ESC前轴扭矩干预”。该章节主要承载 activation_flag_logic、torque_calculation_logic 类需求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.preferredSubsections",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-document_blueprint_section-003",
+      "ruleId": "MOD-扭矩干预-document_blueprint_section-003",
+      "skillCode": "MOD-扭矩干预-document_blueprint_section-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_section",
+      "title": "preferred subsection ESC后轴扭矩干预",
+      "content": "文档蓝图中，作为优先子章节“ESC后轴扭矩干预”。该章节主要承载 activation_flag_logic、torque_calculation_logic 类需求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.preferredSubsections",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-document_blueprint_policy-001",
+      "ruleId": "MOD-扭矩干预-document_blueprint_policy-001",
+      "skillCode": "MOD-扭矩干预-document_blueprint_policy-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy coreFirst",
+      "content": "优先先铺开核心章节和核心规则，再补充外围内容。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-document_blueprint_policy-002",
+      "ruleId": "MOD-扭矩干预-document_blueprint_policy-002",
+      "skillCode": "MOD-扭矩干预-document_blueprint_policy-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy preferSymmetricExpansion",
+      "content": "优先按对象或轴对称展开章节和需求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-document_blueprint_policy-003",
+      "ruleId": "MOD-扭矩干预-document_blueprint_policy-003",
+      "skillCode": "MOD-扭矩干预-document_blueprint_policy-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy preferObjectSpecificRequirements",
+      "content": "优先写面向具体对象的需求，而不是泛化描述。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "id": "MOD-扭矩干预-document_blueprint_policy-004",
+      "ruleId": "MOD-扭矩干预-document_blueprint_policy-004",
+      "skillCode": "MOD-扭矩干预-document_blueprint_policy-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy discourageGenericScatterRequirements",
+      "content": "避免把需求打散成泛化、零散的条目。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "registryPath": "profiles/modules/扭矩干预/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
       "id": "MOD-高低系统管理-generation_priority-001",
       "ruleId": "MOD-高低系统管理-generation_priority-001",
       "skillCode": "MOD-高低系统管理-generation_priority-001",
@@ -9496,6 +10392,594 @@
       },
       "createdAt": "2026-04-16T07:26:49.708Z",
       "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-001",
+      "ruleId": "MOD-高低系统管理-anti_pattern-001",
+      "skillCode": "MOD-高低系统管理-anti_pattern-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 1",
+      "content": "不要将整个模型状态机作为一个主题，应拆解为具体功能条目",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-002",
+      "ruleId": "MOD-高低系统管理-anti_pattern-002",
+      "skillCode": "MOD-高低系统管理-anti_pattern-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 2",
+      "content": "不要忽略人工范例中的具体需求ID（如CheryVCU-1123）",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-003",
+      "ruleId": "MOD-高低系统管理-anti_pattern-003",
+      "skillCode": "MOD-高低系统管理-anti_pattern-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 3",
+      "content": "不要将诊断、配置等支撑逻辑提升为核心主题",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-004",
+      "ruleId": "MOD-高低系统管理-anti_pattern-004",
+      "skillCode": "MOD-高低系统管理-anti_pattern-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 4",
+      "content": "不要使用代码变量名直接作为章节标题",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-005",
+      "ruleId": "MOD-高低系统管理-anti_pattern-005",
+      "skillCode": "MOD-高低系统管理-anti_pattern-005",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 5",
+      "content": "不要将整段原文直接贴入examples，应压缩为规范需求表达",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-006",
+      "ruleId": "MOD-高低系统管理-anti_pattern-006",
+      "skillCode": "MOD-高低系统管理-anti_pattern-006",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 6",
+      "content": "不要写成“步骤如下”或“a) b) c)”这种说明文风格",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#antiPatterns",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-document_blueprint_section-001",
+      "ruleId": "MOD-高低系统管理-document_blueprint_section-001",
+      "skillCode": "MOD-高低系统管理-document_blueprint_section-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_section",
+      "title": "preferred function section 本地KL15上高压",
+      "content": "文档蓝图中，作为优先功能章节“本地KL15上高压”。建议章节编号使用 5.1.1.1。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.preferredFunctionSection",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-document_blueprint_section-002",
+      "ruleId": "MOD-高低系统管理-document_blueprint_section-002",
+      "skillCode": "MOD-高低系统管理-document_blueprint_section-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_section",
+      "title": "preferred subsection 本地KL15上高压",
+      "content": "文档蓝图中，作为优先子章节“本地KL15上高压”。建议章节编号使用 5.1.1.1。该章节主要承载 Functional 类需求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.preferredSubsections",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-document_blueprint_policy-001",
+      "ruleId": "MOD-高低系统管理-document_blueprint_policy-001",
+      "skillCode": "MOD-高低系统管理-document_blueprint_policy-001",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy coreFirst",
+      "content": "优先先铺开核心章节和核心规则，再补充外围内容。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-document_blueprint_policy-002",
+      "ruleId": "MOD-高低系统管理-document_blueprint_policy-002",
+      "skillCode": "MOD-高低系统管理-document_blueprint_policy-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy preferSymmetricExpansion",
+      "content": "优先按对象或轴对称展开章节和需求。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-document_blueprint_policy-003",
+      "ruleId": "MOD-高低系统管理-document_blueprint_policy-003",
+      "skillCode": "MOD-高低系统管理-document_blueprint_policy-003",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy preferObjectSpecificRequirements",
+      "content": "优先写面向具体对象的需求，而不是泛化描述。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-document_blueprint_policy-004",
+      "ruleId": "MOD-高低系统管理-document_blueprint_policy-004",
+      "skillCode": "MOD-高低系统管理-document_blueprint_policy-004",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy discourageGenericScatterRequirements",
+      "content": "避免把需求打散成泛化、零散的条目。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "profiles/modules/高低系统管理/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-16T07:26:49.708Z",
+      "updatedAt": "2026-04-16T07:26:49.708Z"
+    },
+    {
+      "id": "MOD-高低系统管理-generation_priority-006",
+      "ruleId": "MOD-高低系统管理-generation_priority-006",
+      "skillCode": "MOD-高低系统管理-generation_priority-006",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 6",
+      "content": "先围绕“KeyOn上高压”保留稳定对象拆分，再展开实现细节，不先生成泛化状态机总述。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
+    },
+    {
+      "id": "MOD-高低系统管理-generation_priority-007",
+      "ruleId": "MOD-高低系统管理-generation_priority-007",
+      "skillCode": "MOD-高低系统管理-generation_priority-007",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 7",
+      "content": "对“请求标志位”类设计点，优先写激活、锁存、复位、状态范围，再补SOC或功率阈值等使能条件。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
+    },
+    {
+      "id": "MOD-高低系统管理-generation_priority-008",
+      "ruleId": "MOD-高低系统管理-generation_priority-008",
+      "skillCode": "MOD-高低系统管理-generation_priority-008",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "generation_priority",
+      "title": "generation priority 8",
+      "content": "代码细节只能细化“本地KL15上高压请求激活判断”和“本地KL15上高压建立流程”这两个已存在主题，不新增V2L、防盗、诊断为主章节。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
+    },
+    {
+      "id": "MOD-高低系统管理-rule_hint-002",
+      "ruleId": "MOD-高低系统管理-rule_hint-002",
+      "skillCode": "MOD-高低系统管理-rule_hint-002",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "rule_hint",
+      "title": "hv-lv system management detail design rule hint",
+      "content": "在 embedded_vcu / detail_design / 高低系统管理 范围内，优先关注 KeyOn上高压、KeyOn高压请求标志位、本地KL15上高压建立流程。写作时采用 功能主题 -> 请求标志位或流程对象 -> 激活条件 -> 锁存/复位 -> 阈值与状态范围 -> 补充说明。目标风格保持 可审核的详细设计条目，保留工程信号与标定量，不写成软件需求摘要。。可以优先参考 高低系统管理系统需求、高低系统管理详细设计整理稿、HvCoorn模型/代码。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
+    },
+    {
+      "id": "MOD-高低系统管理-good_example-003",
+      "ruleId": "MOD-高低系统管理-good_example-003",
+      "skillCode": "MOD-高低系统管理-good_example-003",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "KeyOn高压请求标志位",
+      "content": "以下条件同时满足，则激活[KeyOn高压请求标志位]：1. <整车电源模式>为0x1：On，TurnOnDelay一定时间tiKeyOnDly出现上升沿，则激活并锁存；2. <电池SOC>大于等于pctBatSOCLim4Shut或<电池最大放电功率>大于等于pwrBatDChrgLim4Shut。若<高压下电指令>为1且TurnOnDelay一定时间tiPwrOffDly4RstKeyOn，或<整车电源模式>为0x0：off，或当前时刻<高压系统状态>在115~130之间出现上升沿，则Reset。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
+    },
+    {
+      "id": "MOD-高低系统管理-good_example-004",
+      "ruleId": "MOD-高低系统管理-good_example-004",
+      "skillCode": "MOD-高低系统管理-good_example-004",
+      "bundleId": "bundle-base",
+      "targetFile": "examples/good_examples.md",
+      "targetArea": "examples",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "good_example",
+      "title": "本地KL15上高压建立流程",
+      "content": "当本地KL15上高压请求成立且整车存在高压需求时，HCU应向BMS发送高压连通请求，由BMS执行预充并闭合主高压回路。HCU应结合主回路正负继电器状态、MCU母线电压和ISG母线电压联合判断高压回路是否连通；当高压回路连通后，请求高压附件使能，并请求DCDC进入Buck状态；当DCDC进入Buck且高压系统满足Ready判定条件后，置HvReady有效。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-007",
+      "ruleId": "MOD-高低系统管理-anti_pattern-007",
+      "skillCode": "MOD-高低系统管理-anti_pattern-007",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 7",
+      "content": "不要把“请求激活判断”和“高压建立流程”合并成一个泛化章节。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-008",
+      "ruleId": "MOD-高低系统管理-anti_pattern-008",
+      "skillCode": "MOD-高低系统管理-anti_pattern-008",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 8",
+      "content": "不要只写激活条件而漏掉锁存、复位、状态范围和阈值。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
+    },
+    {
+      "id": "MOD-高低系统管理-anti_pattern-009",
+      "ruleId": "MOD-高低系统管理-anti_pattern-009",
+      "skillCode": "MOD-高低系统管理-anti_pattern-009",
+      "bundleId": "bundle-base",
+      "targetFile": "domain-knowledge.json",
+      "targetArea": "domain_knowledge",
+      "layer": "module",
+      "profileKey": "高低系统管理",
+      "documentTypeScope": "",
+      "kind": "anti_pattern",
+      "title": "anti pattern 9",
+      "content": "不要把HvCoorn局部变量或代码块名直接抬升为新的一级主题。",
+      "sectionKey": "default",
+      "status": "active",
+      "version": 1,
+      "sourceType": "registry",
+      "sourceRef": {
+        "migratedFromRuleId": "",
+        "createdFromCaseIds": [],
+        "createdFromProposalId": "",
+        "replayTaskId": "",
+        "legacySource": "",
+        "registryPath": "profiles/modules/高低系统管理/skill-items.json"
+      },
+      "createdAt": "2026-04-24T05:59:18.392Z",
+      "updatedAt": "2026-04-24T05:59:18.392Z"
     },
     {
       "id": "MOD-高压能量管理-generation_priority-001",

@@ -96,6 +96,17 @@
       }
     },
     "modules": {
+      "低压能量管理": {
+        "displayName": "低压能量管理",
+        "documentTypeScope": "",
+        "status": "active",
+        "registry": "profiles/modules/低压能量管理/skill-items.json",
+        "files": {
+          "domain-knowledge.json": [
+            "profiles/modules/低压能量管理/domain-knowledge.json"
+          ]
+        }
+      },
       "充电管理": {
         "displayName": "充电管理",
         "documentTypeScope": "",

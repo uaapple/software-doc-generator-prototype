@@ -1,0 +1,547 @@
+{
+  "version": 1,
+  "layer": "module",
+  "profileKey": "低压能量管理",
+  "displayName": "低压能量管理",
+  "documentTypeScope": "",
+  "status": "active",
+  "items": [
+    {
+      "skillCode": "MOD-低压能量管理-generation_priority-001",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "generation_priority",
+      "title": "generation priority 1",
+      "content": "优先按智能补电的生命周期组织模块知识，先覆盖唤醒/待机场景门槛，再覆盖激活、维持、退出、复位/重新允许与休眠协同。",
+      "order": 1,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.730Z",
+      "updatedAt": "2026-04-22T17:13:24.730Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-generation_priority-002",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "generation_priority",
+      "title": "generation priority 2",
+      "content": "优先复用“前置场景+全部条件+任一子条件+状态置位+后续动作/保持动作”的软件需求表达框架，确保激活、退出、复位语义彼此独立。",
+      "order": 2,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.730Z",
+      "updatedAt": "2026-04-22T17:13:24.730Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-generation_priority-003",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "generation_priority",
+      "title": "generation priority 3",
+      "content": "优先保留系统需求与参考软件需求中的标准信号名、状态值、阈值、比较符、时间窗和单位，特别是KL15/电源档位、高压连接状态、BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、失败计数、20分钟、15s、2小时等。",
+      "order": 3,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-generation_priority-004",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "generation_priority",
+      "title": "generation priority 4",
+      "content": "优先同时写清状态输出与系统动作，尤其关注VCU_IntelligentChgSt、VCCM_SOCWU_Ena、上高压/下高压、网络休眠和控制器休眠的联动关系。",
+      "order": 4,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-generation_priority-005",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "generation_priority",
+      "title": "generation priority 5",
+      "content": "优先覆盖异常和边界退出路径，包括连续补电失败计数达到上限、动力电池SOC过低、DCDC反馈超时、信号丢失后的回退判断，以及退出后的计数清零/保持/+1规则。",
+      "order": 5,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-rule_hint-001",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "rule_hint",
+      "title": "低压能量管理 rule hint",
+      "content": "在 embedded_vcu / 低压能量管理 范围内，优先关注 智能补电唤醒与场景门槛、智能补电激活判断、智能补电维持与状态输出、智能补电退出判断、智能补电退出后动作与失败计数处理、智能补电复位/重新允许条件、网络休眠与控制器休眠协同。写作时采用 对激活类需求，优先写成“当VCU被唤醒且电源档位/高压连接状态满足前置场景时，若满足以下全部条件，则智能补电激活并执行上高压流程；其中条件组中的监测量可再拆分为任一子条件”。对退出类需求，优先写成“当满足以下任一条件时，智能补电退出”；退出后的下高压、唤醒使能撤销、失败计数清零/保持/+1、网络或控制器休眠动作应单独成句。对复位类需求，应单独定义重新允许激活的时间窗或状态恢复条件，不与退出判定混写。若存在未满足条件场景，应补写否则保持原状态、置0或不触发的路径。。目标风格保持 面向嵌入式VCU的软件需求条目风格，条件层次清晰、状态与动作并列、比较符和阈值明确、避免实现化叙述。。可以优先参考 系统需求、参考软件需求、相关既有技能规则。",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "subdomain": "低压能量管理",
+        "sectionHints": [
+          "智能补电唤醒与场景门槛",
+          "智能补电激活判断",
+          "智能补电维持与状态输出",
+          "智能补电退出判断",
+          "智能补电退出后动作与失败计数处理",
+          "智能补电复位/重新允许条件",
+          "网络休眠与控制器休眠协同"
+        ],
+        "writingPattern": "对激活类需求，优先写成“当VCU被唤醒且电源档位/高压连接状态满足前置场景时，若满足以下全部条件，则智能补电激活并执行上高压流程；其中条件组中的监测量可再拆分为任一子条件”。对退出类需求，优先写成“当满足以下任一条件时，智能补电退出”；退出后的下高压、唤醒使能撤销、失败计数清零/保持/+1、网络或控制器休眠动作应单独成句。对复位类需求，应单独定义重新允许激活的时间窗或状态恢复条件，不与退出判定混写。若存在未满足条件场景，应补写否则保持原状态、置0或不触发的路径。",
+        "targetStyle": "面向嵌入式VCU的软件需求条目风格，条件层次清晰、状态与动作并列、比较符和阈值明确、避免实现化叙述。",
+        "sourceBasis": [
+          "系统需求",
+          "参考软件需求",
+          "相关既有技能规则"
+        ]
+      },
+      "order": 6,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#ruleHints"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-rule_hint-002",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "rule_hint",
+      "title": "低压能量管理 rule hint",
+      "content": "在 embedded_vcu / 低压能量管理 范围内，优先关注 低压蓄电池补电触发阈值表达、失败计数与超时窗口表达、唤醒使能输出表达。写作时采用 阈值类内容应保持“信号名+比较符+阈值+单位/枚举语义”的原样表达，例如BMS2_N_SOC>10%、EBS_SOC≤70%、EBS_SOC_STATE<10%或指定枚举值、EBS_U_BATT<或≤11.8V，以及20分钟、15s、2小时等时间窗；如为可标定项或TBD，应显式保留“默认值/约为/可标定/TBD”属性，不得擅自固化或替换。。目标风格保持 精确、可验证的软件需求风格，强调边界方向、单位和标定属性。。可以优先参考 系统需求、参考软件需求、相关既有技能规则。",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "subdomain": "低压能量管理",
+        "sectionHints": [
+          "低压蓄电池补电触发阈值表达",
+          "失败计数与超时窗口表达",
+          "唤醒使能输出表达"
+        ],
+        "writingPattern": "阈值类内容应保持“信号名+比较符+阈值+单位/枚举语义”的原样表达，例如BMS2_N_SOC>10%、EBS_SOC≤70%、EBS_SOC_STATE<10%或指定枚举值、EBS_U_BATT<或≤11.8V，以及20分钟、15s、2小时等时间窗；如为可标定项或TBD，应显式保留“默认值/约为/可标定/TBD”属性，不得擅自固化或替换。",
+        "targetStyle": "精确、可验证的软件需求风格，强调边界方向、单位和标定属性。",
+        "sourceBasis": [
+          "系统需求",
+          "参考软件需求",
+          "相关既有技能规则"
+        ]
+      },
+      "order": 7,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#ruleHints"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-rule_hint-003",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "rule_hint",
+      "title": "低压能量管理 rule hint",
+      "content": "在 embedded_vcu / 低压能量管理 范围内，优先关注 高压流程协同、休眠生命周期协同。写作时采用 可借鉴相关代码体现出的初始化、唤醒、待机、退出和休眠生命周期结构来组织章节，但需求文本只保留生命周期语义，不直接引入代码状态机节点名、函数名、临时变量名或分支名。若需描述与高压流程的关系，应写成功能级动作，如执行上高压流程、执行下高压流程、允许网络休眠、允许控制器休眠。。目标风格保持 需求级生命周期表达，强调功能协同，不暴露实现细节。。可以优先参考 系统需求、参考软件需求、相关代码语义、相关既有技能规则。",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "subdomain": "低压能量管理",
+        "sectionHints": [
+          "高压流程协同",
+          "休眠生命周期协同"
+        ],
+        "writingPattern": "可借鉴相关代码体现出的初始化、唤醒、待机、退出和休眠生命周期结构来组织章节，但需求文本只保留生命周期语义，不直接引入代码状态机节点名、函数名、临时变量名或分支名。若需描述与高压流程的关系，应写成功能级动作，如执行上高压流程、执行下高压流程、允许网络休眠、允许控制器休眠。",
+        "targetStyle": "需求级生命周期表达，强调功能协同，不暴露实现细节。",
+        "sourceBasis": [
+          "系统需求",
+          "参考软件需求",
+          "相关代码语义",
+          "相关既有技能规则"
+        ]
+      },
+      "order": 8,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#ruleHints"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-anti_pattern-001",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "anti_pattern",
+      "title": "anti pattern 1",
+      "content": "不要把HvCoorn.c中的函数名、局部变量名、布尔中间量、状态机分支名或判断顺序直接改写成软件需求。",
+      "order": 9,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-anti_pattern-002",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "anti_pattern",
+      "title": "anti pattern 2",
+      "content": "不要把激活条件、退出条件、退出后动作、失败计数处理和复位条件压缩在同一长句中；每条规则只承载一个主要目的。",
+      "order": 10,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-anti_pattern-003",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "anti_pattern",
+      "title": "anti pattern 3",
+      "content": "不要混合系统需求与参考软件需求中不一致的阈值、比较符、状态值或边界条件后再生成新规则；存在差异时应回到单一事实来源并显式对齐。",
+      "order": 11,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-anti_pattern-004",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "anti_pattern",
+      "title": "anti pattern 4",
+      "content": "不要遗漏否则路径、恢复条件、重新进入条件或超时撤销条件，尤其是激活判断、模式进入和停止控制类需求。",
+      "order": 12,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.731Z",
+      "updatedAt": "2026-04-22T17:13:24.731Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-anti_pattern-005",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "anti_pattern",
+      "title": "anti pattern 5",
+      "content": "不要依据OCR不清晰内容、裁切片段或代码猜测补全缺失阈值、状态名或时序要求。",
+      "order": 13,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-anti_pattern-006",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "anti_pattern",
+      "title": "anti pattern 6",
+      "content": "不要只写条件不写状态输出与系统动作，也不要只写上高压/休眠动作而省略对应的功能状态位和使能信号。",
+      "order": 14,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#antiPatterns"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-source_policy_setting-001",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "source_policy_setting",
+      "title": "source policy preferredFunctionSection",
+      "content": "优先功能章节固定为“低压能量管理”，生成时优先围绕该功能主题组织正文。",
+      "structuredPayload": {
+        "key": "preferredFunctionSection",
+        "value": {
+          "title": "低压能量管理"
+        }
+      },
+      "order": 15,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.preferredFunctionSection"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-source_policy_setting-002",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "source_policy_setting",
+      "title": "source policy preferredSubsections",
+      "content": "优先子章节包括 智能补电生命周期、智能补电激活与退出判断、智能补电复位与休眠协同，生成时尽量按这些稳定主题落位。",
+      "structuredPayload": {
+        "key": "preferredSubsections",
+        "value": [
+          {
+            "title": "智能补电生命周期",
+            "coreRequirementTypes": [
+              "software_requirement"
+            ]
+          },
+          {
+            "title": "智能补电激活与退出判断",
+            "coreRequirementTypes": [
+              "software_requirement"
+            ]
+          },
+          {
+            "title": "智能补电复位与休眠协同",
+            "coreRequirementTypes": [
+              "software_requirement"
+            ]
+          }
+        ]
+      },
+      "order": 16,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.preferredSubsections"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-source_policy_setting-003",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "source_policy_setting",
+      "title": "source policy coreFirst",
+      "content": "优先先铺开核心章节和核心规则，再补充外围内容。",
+      "structuredPayload": {
+        "key": "coreFirst",
+        "value": true
+      },
+      "order": 17,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.coreFirst"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-source_policy_setting-004",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "source_policy_setting",
+      "title": "source policy preferSymmetricExpansion",
+      "content": "优先按对象或轴对称展开章节和需求。",
+      "structuredPayload": {
+        "key": "preferSymmetricExpansion",
+        "value": true
+      },
+      "order": 18,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.preferSymmetricExpansion"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-source_policy_setting-005",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "source_policy_setting",
+      "title": "source policy preferObjectSpecificRequirements",
+      "content": "优先写面向具体对象的需求，而不是泛化描述。",
+      "structuredPayload": {
+        "key": "preferObjectSpecificRequirements",
+        "value": true
+      },
+      "order": 19,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.preferObjectSpecificRequirements"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    },
+    {
+      "skillCode": "MOD-低压能量管理-source_policy_setting-006",
+      "layer": "module",
+      "profileKey": "低压能量管理",
+      "documentTypeScope": "software_requirement",
+      "kind": "source_policy_setting",
+      "title": "source policy discourageGenericScatterRequirements",
+      "content": "避免把需求打散成泛化、零散的条目。",
+      "structuredPayload": {
+        "key": "discourageGenericScatterRequirements",
+        "value": true
+      },
+      "order": 20,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/低压能量管理/domain-knowledge.json#sourceOfTruthPolicy.discourageGenericScatterRequirements"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-22T17:13:24.732Z",
+      "updatedAt": "2026-04-22T17:13:24.732Z"
+    }
+  ]
+}

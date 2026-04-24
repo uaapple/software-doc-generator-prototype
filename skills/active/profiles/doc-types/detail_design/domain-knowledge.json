@@ -11,8 +11,20 @@
     {
       "domain": "embedded_vcu",
       "documentType": "detail_design",
+      "sectionHints": [
+        "功能概述",
+        "状态判断",
+        "计算逻辑",
+        "补充说明",
+        "边界限制"
+      ],
       "writingPattern": "功能主题 -> 对象拆分 -> 分支计算 -> 其中/注 -> 限制说明",
-      "targetStyle": "可审核的详细设计条目，不是软件需求摘要，也不是源码注释翻译。"
+      "targetStyle": "可审核的详细设计条目，不是软件需求摘要，也不是源码注释翻译。",
+      "sourceBasis": [
+        "系统需求",
+        "模型代码/模型文档",
+        "模块样例"
+      ]
     }
   ],
   "antiPatterns": [],
