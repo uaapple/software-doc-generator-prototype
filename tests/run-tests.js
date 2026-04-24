@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import os from "node:os";
+import { promisify } from "node:util";
 import { config } from "../src/config.js";
 import { createApp } from "../src/app.js";
 import { CExtractor } from "../src/services/c-extractor.js";
@@ -16,6 +18,7 @@ import { LlmProfileService } from "../src/services/llm-profile-service.js";
 import { ProjectService } from "../src/services/project-service.js";
 import { RejectionService } from "../src/services/rejection-service.js";
 import { ReplayTaskService } from "../src/services/replay-task-service.js";
+import { ReplayArtifactService } from "../src/services/replay-artifact-service.js";
 import { SkillRuleService } from "../src/services/skill-rule-service.js";
 import { PipelineService } from "../src/services/pipeline-service.js";
 import { ModuleSkillService } from "../src/services/module-skill-service.js";
@@ -26,6 +29,10 @@ import { ReplayLabService } from "../src/services/replay-lab-service.js";
 import { FeedbackTicketService } from "../src/services/feedback-ticket-service.js";
 import { createHermesApp } from "../src/hermes-app.js";
 import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
+import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
+import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
+
+const execFileAsync = promisify(execFile);
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -51,6 +58,7 @@ async function withTempConfig(run) {
     activeSkillDir: path.join(tempDir, "skills", "active"),
     skillBundleDir: path.join(tempDir, "skills", "bundles"),
     generationTaskArtifactDir: path.join(tempDir, "data", "generation-task-artifacts"),
+    replayTaskArtifactDir: path.join(tempDir, "data", "replay-task-artifacts"),
     dataDir: path.join(tempDir, "data"),
     skillDatabasePath: path.join(tempDir, "data", "skills.sqlite"),
     projectStoreDir: path.join(tempDir, "data", "projects"),
@@ -75,19 +83,20 @@ async function withTempConfig(run) {
     templateDir: path.join(tempDir, "templates"),
     templatePath: path.join(tempDir, "templates", "software-requirement-template.json"),
     skillDir: path.join(tempDir, "skills", "active"),
-    hermes: {
-      transport: "api",
-      host: "127.0.0.1",
-      port: 0,
-      baseURL: "http://127.0.0.1:0",
+      hermes: {
+        transport: "api",
+        host: "127.0.0.1",
+        port: 0,
+        baseURL: "http://127.0.0.1:0",
       command: "hermes",
       workdir: tempDir,
-      timeoutMs: 2000,
-      stepTimeoutMs: {
-        anchor_index_build: 2000,
-        outline_build: 2000,
-        content_generate: 4000
-      },
+        timeoutMs: 2000,
+        stepTimeoutMs: {
+          replay_proposal_generate: 4000,
+          anchor_index_build: 2000,
+          outline_build: 2000,
+          content_generate: 4000
+        },
       maxTurns: 8,
       maxRecalledAtoms: 24,
       maxOutlineSections: 6,
@@ -157,6 +166,129 @@ async function seedFixtureFiles(tempDir) {
   await fs.writeFile(path.join(tempDir, "templates", "software-requirement-template.json"), JSON.stringify({ name: "default-template", language: "zh-CN", requirementIdPrefix: "SWR", sections: [{ title: "????", type: "functional", maxItems: 4, verificationHint: "??????????????????" }] }, null, 2), "utf8");
   await fs.writeFile(path.join(tempDir, "templates", "detail-design-template.json"), JSON.stringify({ name: "detail-design-template", language: "zh-CN", requirementIdPrefix: "SDD", sections: [{ title: "????", type: "functional", maxItems: 3, verificationHint: "?????????????" }] }, null, 2), "utf8");
   await fs.writeFile(path.join(tempDir, "templates", "hil-test-case-template.json"), JSON.stringify({ name: "hil-test-case-template", language: "zh-CN", requirementIdPrefix: "HIL", sections: [{ title: "HIL ????", type: "functional", maxItems: 3, verificationHint: "????????????????????" }] }, null, 2), "utf8");
+}
+
+function escapeXml(value = "") {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function columnName(index) {
+  let value = index + 1;
+  let name = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    value = Math.floor((value - 1) / 26);
+  }
+  return name;
+}
+
+function buildSheetXml(rows = []) {
+  const body = rows
+    .map((row, rowIndex) => {
+      const cells = row
+        .map((value, columnIndex) => {
+          const ref = `${columnName(columnIndex)}${rowIndex + 1}`;
+          return `<c r="${ref}" t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`;
+        })
+        .join("");
+      return `<row r="${rowIndex + 1}">${cells}</row>`;
+    })
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${body}</sheetData>
+</worksheet>`;
+}
+
+async function createMinimalXlsx(filePath, rowsBySheet = {}) {
+  const workbookDir = await fs.mkdtemp(path.join(os.tmpdir(), "xlsx-fixture-"));
+  try {
+    await fs.mkdir(path.join(workbookDir, "_rels"), { recursive: true });
+    await fs.mkdir(path.join(workbookDir, "xl", "_rels"), { recursive: true });
+    await fs.mkdir(path.join(workbookDir, "xl", "worksheets"), { recursive: true });
+
+    const sheetEntries = Object.entries(rowsBySheet);
+    const workbookSheets = sheetEntries
+      .map(([name], index) => `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+      .join("");
+    const workbookRels = sheetEntries
+      .map(
+        ([,], index) =>
+          `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+      )
+      .join("");
+    const contentTypes = [
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+      ...sheetEntries.map(
+        ([,], index) =>
+          `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+      )
+    ].join("");
+
+    await fs.writeFile(
+      path.join(workbookDir, "[Content_Types].xml"),
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  ${contentTypes}
+</Types>`,
+      "utf8"
+    );
+
+    await fs.writeFile(
+      path.join(workbookDir, "_rels", ".rels"),
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+      "utf8"
+    );
+
+    await fs.writeFile(
+      path.join(workbookDir, "xl", "workbook.xml"),
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${workbookSheets}</sheets>
+</workbook>`,
+      "utf8"
+    );
+
+    await fs.writeFile(
+      path.join(workbookDir, "xl", "_rels", "workbook.xml.rels"),
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${workbookRels}
+</Relationships>`,
+      "utf8"
+    );
+
+    for (const [index, [, rows]] of sheetEntries.entries()) {
+      await fs.writeFile(path.join(workbookDir, "xl", "worksheets", `sheet${index + 1}.xml`), buildSheetXml(rows), "utf8");
+    }
+
+    await execFileAsync("zip", ["-rq", filePath, "."], { cwd: workbookDir });
+  } finally {
+    await fs.rm(workbookDir, { recursive: true, force: true });
+  }
+}
+
+function buildManualTitleOutline(sections = [{ sectionTitle: "智能补电", itemTitles: ["激活判断", "退出判断"] }]) {
+  return {
+    sections: sections.map((section, sectionIndex) => ({
+      sectionTitle: section.sectionTitle || `章节 ${sectionIndex + 1}`,
+      items: (section.itemTitles || []).map((itemTitle, itemIndex) => ({
+        itemTitle: itemTitle || `条目 ${itemIndex + 1}`
+      }))
+    }))
+  };
 }
 
 async function withTestServer(run) {
@@ -743,6 +875,266 @@ const tests = [
     }
   },
   {
+    name: "Replay artifact service writes expected file-driven Hermes replay artifact structure",
+    run: async () => {
+      await withTempConfig(async () => {
+        const replayArtifactService = new ReplayArtifactService();
+        const copiedAssetPath = path.join(config.uploadDir, "replay-source", "charging-helper.c");
+        await fs.mkdir(path.dirname(copiedAssetPath), { recursive: true });
+        await fs.writeFile(copiedAssetPath, "void StallHeatingHelper(void) { /* copied */ }", "utf8");
+
+        const outputDir = path.join(config.generationTaskArtifactDir, "replay-artifact-1");
+        const materialPack = {
+          targetBundleId: "bundle-base",
+          targetAreas: ["validation", "writing"],
+          targetLayerConstraint: "module",
+          targetProfileKeyConstraint: "charging_management",
+          ruleIndexVersion: "rule-index-v1",
+          moduleContext: {
+            projectId: "project-1",
+            projectName: "VCU",
+            moduleId: "module-1",
+            moduleName: "充电管理",
+            moduleSkillKey: "charging_management",
+            domain: "embedded_vcu",
+            documentType: "software_requirement"
+          },
+          rejectionSnapshots: [
+            {
+              id: "rej-1",
+              requirementCode: "SWR-100",
+              reasonCategory: "coverage_gap",
+              reasonText: "正文混入了人工范例没有的回退逻辑。",
+              expectedNote: "只保留记忆和刷新要求。",
+              outputSnapshot: {
+                title: "充电截止 SOC 记忆",
+                requirementText: "软件应记忆 SOC，并在异常时回退默认值。",
+                verificationHint: "检查记忆逻辑",
+                confidence: 0.82
+              },
+              sourceRefsSnapshot: [
+                {
+                  fileName: "system.md",
+                  location: "page:1",
+                  excerpt: "系统需求只提到下电记忆。"
+                }
+              ],
+              projectEvidenceSnapshot: [
+                {
+                  fileName: "Chrg.c",
+                  fileRole: "generated_c",
+                  location: "function",
+                  excerpt: "if (limitInvalid) { fallbackDefault(); }"
+                }
+              ]
+            }
+          ],
+          effectiveSkillSnapshot: {
+            hash: "skill-hash-1",
+            selectedProfiles: [
+              { key: "generic", kind: "generic" },
+              { key: "charging_management", kind: "module" }
+            ],
+            compiledPrompt: "这是原始生成时的 compiledPrompt",
+            compiledSkillPack: {
+              context: {
+                documentType: "software_requirement",
+                domain: "embedded_vcu",
+                moduleSkillKey: "charging_management"
+              },
+              rules: {
+                validation: [{ skillCode: "val-1", title: "禁止越界扩写" }]
+              }
+            },
+            files: {
+              "requirement_validation.md": "# 校验\n- 禁止越界扩写",
+              "examples/good_examples.md": "# 正例\n- 只写记忆行为",
+              "domain-knowledge.json": {
+                version: 1,
+                ruleHints: [{ id: "hint-1", note: "只保留人工范例边界" }]
+              }
+            }
+          },
+          layerSkillItems: [
+            {
+              skillCode: "MOD-充电管理-validation-001",
+              layer: "module",
+              profileKey: "charging_management",
+              kind: "validation_rule",
+              title: "不要引入人工范例外的回退逻辑",
+              targetFile: "requirement_validation.md",
+              content: "如果人工范例没有定义回退逻辑，则禁止在软件需求中补写默认值回退。",
+              contentSummary: "禁止补写默认值回退。",
+              whyRelevant: "module/charging_management"
+            }
+          ],
+          referenceAssets: [
+            {
+              id: "asset-1",
+              originalName: "charging-helper.c",
+              role: "generated_c",
+              relativePath: "replay-source/charging-helper.c",
+              mimeType: "text/plain",
+              preview: "void StallHeatingHelper(void) { /* copied */ }"
+            },
+            {
+              id: "asset-2",
+              originalName: "charging-example.md",
+              role: "reference_requirement_example",
+              mimeType: "text/markdown",
+              preview: "人工范例：只保留记忆和刷新要求。"
+            }
+          ]
+        };
+
+        const artifact = await replayArtifactService.buildReplayTaskArtifact({
+          outputDir,
+          task: {
+            id: "replay-task-1",
+            projectId: "project-1",
+            moduleId: "module-1",
+            projectName: "VCU",
+            moduleName: "充电管理"
+          },
+          materialPack
+        });
+
+        assert.equal(artifact.outputDir, outputDir);
+        assert.equal(artifact.manifestPath, path.join(outputDir, "manifest.json"));
+        assert.ok(artifact.writtenFiles.includes("task-brief.md"));
+        assert.ok(artifact.writtenFiles.includes("rejections.json"));
+        assert.ok(artifact.writtenFiles.includes("effective-skill-manifest.json"));
+        assert.ok(artifact.writtenFiles.includes(path.join("effective-skill", "requirement_validation.md")));
+        assert.ok(artifact.writtenFiles.some((item) => item.startsWith("reference-assets/")));
+
+        const manifest = JSON.parse(await fs.readFile(path.join(outputDir, "manifest.json"), "utf8"));
+        assert.equal(manifest.taskContext.moduleSkillKey, "charging_management");
+        assert.equal(manifest.rejectionContext.records[0].id, "rej-1");
+        assert.equal(manifest.layerSkillInventory[0].skillCode, "MOD-充电管理-validation-001");
+        assert.equal(manifest.effectiveSkillFiles[0].artifactPath.startsWith("effective-skill/"), true);
+        assert.equal(manifest.counts.rejections, 1);
+        assert.equal(manifest.counts.layerSkillItems, 1);
+        assert.equal(manifest.counts.referenceAssets, 2);
+        assert.equal(manifest.referenceAssets[0].mode, "copied");
+        assert.equal(manifest.referenceAssets[1].mode, "materialized");
+
+        const taskBrief = await fs.readFile(path.join(outputDir, "task-brief.md"), "utf8");
+        assert.match(taskBrief, /VCU/);
+        assert.match(taskBrief, /充电管理/);
+        assert.match(taskBrief, /reference assets/i);
+
+        assert.equal(
+          await fs.readFile(path.join(outputDir, "effective-skill", "requirement_validation.md"), "utf8"),
+          "# 校验\n- 禁止越界扩写"
+        );
+        assert.deepEqual(
+          JSON.parse(await fs.readFile(path.join(outputDir, "effective-skill", "domain-knowledge.json"), "utf8")),
+          {
+            version: 1,
+            ruleHints: [{ id: "hint-1", note: "只保留人工范例边界" }]
+          }
+        );
+
+        const referenceFiles = await fs.readdir(path.join(outputDir, "reference-assets"));
+        assert.ok(referenceFiles.some((name) => name.endsWith("charging-helper.c")));
+        assert.ok(referenceFiles.some((name) => name.endsWith("charging-example.md")));
+      });
+    }
+  },
+  {
+    name: "Replay artifact service truncates large replay text fields in manifests and summaries",
+    run: async () => {
+      await withTempConfig(async () => {
+        const replayArtifactService = new ReplayArtifactService();
+        const oversizedText = "X".repeat(6000);
+        const outputDir = path.join(config.generationTaskArtifactDir, "replay-artifact-2");
+        const artifact = await replayArtifactService.buildReplayTaskArtifact({
+          outputDir,
+          task: {
+            id: "replay-task-2",
+            projectId: "project-2",
+            moduleId: "module-2",
+            projectName: "VCU",
+            moduleName: "扭矩干预"
+          },
+          materialPack: {
+            targetAreas: ["validation"],
+            targetLayerConstraint: "module",
+            targetProfileKeyConstraint: "torque_intervention",
+            moduleContext: {
+              projectId: "project-2",
+              projectName: "VCU",
+              moduleId: "module-2",
+              moduleName: "扭矩干预",
+              moduleSkillKey: "torque_intervention",
+              domain: "embedded_vcu",
+              documentType: "software_requirement"
+            },
+            rejectionSnapshots: [
+              {
+                id: "rej-oversized",
+                requirementCode: "SWR-200",
+                reasonCategory: "wording_issue",
+                reasonText: oversizedText,
+                expectedNote: oversizedText,
+                outputSnapshot: {
+                  title: "大文本需求",
+                  requirementText: oversizedText
+                },
+                sourceRefsSnapshot: [],
+                projectEvidenceSnapshot: []
+              }
+            ],
+            effectiveSkillSnapshot: {
+              hash: "skill-hash-oversized",
+              selectedProfiles: [{ key: "torque_intervention", kind: "module" }],
+              compiledPrompt: oversizedText,
+              compiledSkillPack: {
+                hugeRule: oversizedText
+              },
+              files: {
+                "requirement_validation.md": "# 校验\n- 保持边界"
+              }
+            },
+            layerSkillItems: [
+              {
+                skillCode: "MOD-扭矩干预-validation-001",
+                layer: "module",
+                profileKey: "torque_intervention",
+                kind: "validation_rule",
+                title: "禁止额外扩写",
+                targetFile: "requirement_validation.md",
+                content: oversizedText
+              }
+            ],
+            referenceAssets: [
+              {
+                id: "asset-preview-only",
+                originalName: "torque-example.md",
+                role: "reference_requirement_example",
+                preview: oversizedText
+              }
+            ]
+          }
+        });
+
+        assert.equal(artifact.referenceAssets.length, 1);
+        const manifest = JSON.parse(await fs.readFile(path.join(outputDir, "manifest.json"), "utf8"));
+        const rejections = JSON.parse(await fs.readFile(path.join(outputDir, "rejections.json"), "utf8"));
+        const effectiveSkillManifest = JSON.parse(await fs.readFile(path.join(outputDir, "effective-skill-manifest.json"), "utf8"));
+        const inventory = JSON.parse(await fs.readFile(path.join(outputDir, "layer-skill-inventory.json"), "utf8"));
+
+        assert.equal(rejections.records[0].reasonText.truncated, true);
+        assert.equal(rejections.records[0].expectedNote.truncated, true);
+        assert.equal(rejections.records[0].outputSnapshot.requirementText.truncated, true);
+        assert.equal(effectiveSkillManifest.compiledPrompt.truncated, true);
+        assert.equal(effectiveSkillManifest.compiledSkillPackPreview.hugeRule.truncated, true);
+        assert.equal(inventory.items[0].contentPreview.truncated, true);
+        assert.equal(manifest.referenceAssets[0].preview.truncated, true);
+      });
+    }
+  },
+  {
     name: "Replay proposal normalization keeps actionable items from descriptive remote payload",
     run: async () => {
       await withTempConfig(async () => {
@@ -913,6 +1305,132 @@ const tests = [
       });
     }
   },
+  {
+    name: "Hermes agent client replay_proposal_generate prompt normalizes replay proposal payload",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                `${JSON.stringify({
+                  summary: "已生成 1 条回投提议。",
+                  decisionSummary: "建议修改现有模块校验规则。",
+                  rootCauses: ["多条驳回记录共同指向“coverage_gap”相关问题。"],
+                  validatorSuggestions: [],
+                  items: [
+                    {
+                      conclusionType: "modify_existing",
+                      action: "modify_skill_item",
+                      targetSkillCode: "MOD-charging_management-validation_rule-001",
+                      targetLayer: "module",
+                      targetProfileKey: "charging_management",
+                      targetKind: "validation_rule",
+                      kind: "validation_rule",
+                      targetFile: "requirement_validation.md",
+                      targetInsertionHint: "追加在模块边界规则之后",
+                      title: "充电管理需求正文边界校验",
+                      fallbackReason: "当前规则没有拦住代码侧回退逻辑",
+                      whyCurrent: "现有规则缺少人工范例边界约束。",
+                      whyChange: "补齐边界约束后可减少越界扩写。",
+                      beforeContent: "生成需求时保持软件需求风格。",
+                      afterContent: "生成需求时应优先对齐人工范例边界，不得混入代码侧推断的回退逻辑。",
+                      rationale: "强化模块边界约束。",
+                      evidenceRefs: ["CheryVCU-12147"]
+                    }
+                  ],
+                  runtime: {
+                    status: "completed",
+                    stage: "replay_proposal_generate"
+                  },
+                  artifacts: {
+                    artifactDir: "/tmp/replay-artifacts/task-001"
+                  }
+                })}\n\nsession_id: 20260423_154500_replay01\n`,
+              stderr: ""
+            };
+          }
+        });
+
+        const response = await client.executeStep({
+          taskId: "replay-cli-contract",
+          stepType: "replay_proposal_generate",
+          allowedPaths: ["/tmp/replay-artifacts/task-001"],
+          inputArtifact: {
+            replayContext: {
+              directory: "/tmp/replay-artifacts/task-001",
+              manifestFileName: "manifest.json",
+              taskBriefFileName: "task-brief.md"
+            },
+            replayManifest: {
+              taskContext: {
+                moduleSkillKey: "charging_management",
+                moduleName: "充电管理",
+                domain: "embedded_vcu",
+                documentType: "software_requirement",
+                targetAreas: ["validation"],
+                targetLayerConstraint: "module",
+                targetProfileKeyConstraint: "charging_management",
+                allowedKindsForReplay: ["validation_rule"]
+              },
+              rejectionContext: {
+                records: [
+                  {
+                    id: "rej-1",
+                    reasonCategory: "coverage_gap",
+                    reasonText: "生成结果混入了人工范例中没有的回退逻辑。",
+                    expectedNote: "请仅保留记忆和刷新要求。",
+                    targetArea: "validation"
+                  }
+                ]
+              },
+              layerSkillInventory: [
+                {
+                  skillCode: "MOD-charging_management-validation_rule-001",
+                  layer: "module",
+                  profileKey: "charging_management",
+                  kind: "validation_rule",
+                  title: "旧规则",
+                  contentSummary: "旧规则正文",
+                  targetFile: "requirement_validation.md"
+                }
+              ]
+            },
+            files: {
+              rejectionsPath: "/tmp/replay-artifacts/task-001/rejections.json",
+              effectiveSkillManifestPath: "/tmp/replay-artifacts/task-001/effective-skill-manifest.json",
+              layerSkillInventoryPath: "/tmp/replay-artifacts/task-001/layer-skill-inventory.json",
+              referenceAssetFiles: [
+                {
+                  fileName: "Chrg.c",
+                  role: "generated_c",
+                  path: "/tmp/replay-artifacts/task-001/reference-assets/001-generated_c-Chrg.c"
+                }
+              ]
+            }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(response.artifact.items.length, 1);
+        assert.equal(response.artifact.items[0].action, "modify_skill_item");
+        assert.equal(response.artifact.items[0].targetLayer, "module");
+        assert.equal(response.artifact.items[0].targetProfileKey, "charging_management");
+        assert.deepEqual(response.artifact.items[0].evidenceRefs, ["rej-1"]);
+
+        const prompt = invocations[0].args[2];
+        assert.match(prompt, /replay_proposal_generate/);
+        assert.match(prompt, /manifest\.json/);
+        assert.match(prompt, /task-brief\.md/);
+        assert.match(prompt, /"replayContext"/);
+        assert.match(prompt, /"directory": "\/tmp\/replay-artifacts\/task-001"/);
+      });
+    }
+  },
 
   {
     name: "Skill loader composes generic, document type and module profiles",
@@ -1028,6 +1546,45 @@ const tests = [
     }
   },
   {
+    name: "Software requirement doc type skill does not assume human examples during formal generation",
+    run: async () => {
+      const loader = new SkillLoader();
+      const skills = await loader.loadForContext({
+        documentType: "software_requirement",
+        domain: "embedded_vcu",
+        moduleSkillKey: "低压能量管理"
+      });
+
+      const docTypeItems = skills.__compiledSkillPack.flatItems.filter(
+        (item) =>
+          item.layer === "docType" &&
+          item.profileKey === "software_requirement" &&
+          ["writing_rule", "generation_priority", "anti_pattern", "validation_rule", "rule_hint"].includes(item.kind)
+      );
+
+      const forbiddenPhrases = [
+        "人工样例",
+        "人工案例",
+        "人工软件需求样例",
+        "样例锚点",
+        "完全同构的人工样例"
+      ];
+
+      for (const item of docTypeItems) {
+        for (const phrase of forbiddenPhrases) {
+          assert.ok(
+            !item.title.includes(phrase),
+            `${item.skillCode} title should not mention ${phrase}`
+          );
+          assert.ok(
+            !item.content.includes(phrase),
+            `${item.skillCode} should not mention ${phrase}`
+          );
+        }
+      }
+    }
+  },
+  {
     name: "Module skill service uses LLM bootstrap result when available",
     run: async () => {
       await withTempConfig(async () => {
@@ -1105,6 +1662,9 @@ const tests = [
         assert.equal(result.strategy, "llm");
         assert.equal(result.knowledge.examples[0].topic, "充电过程堵转加热模式");
         assert.equal(result.llmProfile.name, "Mock LLM");
+        assert.ok(!result.knowledge.documentBlueprint);
+        assert.equal(result.knowledge.sourceOfTruthPolicy.preferredFunctionSection.title, "充电管理");
+        assert.equal(result.knowledge.sourceOfTruthPolicy.coreFirst, true);
       });
     }
   },
@@ -1147,6 +1707,167 @@ const tests = [
 
         assert.equal(result.strategy, "rule_based");
         assert.ok(Array.isArray(result.knowledge.generationPriorities));
+      });
+    }
+  },
+  {
+    name: "Module skill service preserves other document scopes when persisting bootstrapped knowledge",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new ModuleSkillService();
+        const module = {
+          name: "Thermal Management",
+          moduleSkillKey: "thermal_management"
+        };
+        const detailKnowledge = {
+          version: 1,
+          generationPriorities: ["先写详细设计流程。"],
+          examples: [],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              sectionHints: ["详细设计状态机"],
+              writingPattern: "偏实现描述。",
+              targetStyle: "detail design"
+            }
+          ],
+          antiPatterns: ["不要漏写状态切换。"]
+        };
+        const requirementKnowledge = {
+          version: 1,
+          generationPriorities: ["先写软件需求主线。"],
+          examples: [],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              sectionHints: ["软件需求主题"],
+              writingPattern: "先写主功能。",
+              targetStyle: "software requirement"
+            }
+          ],
+          antiPatterns: ["不要混入实现细节。"]
+        };
+
+        await service.persistBootstrappedKnowledge(module, "detail_design", detailKnowledge);
+        await service.persistBootstrappedKnowledge(module, "software_requirement", requirementKnowledge);
+
+        const registry = await service.loadModuleRegistry(module.moduleSkillKey);
+        const detailItems = registry.items.filter((item) => item.documentTypeScope === "detail_design");
+        const requirementItems = registry.items.filter((item) => item.documentTypeScope === "software_requirement");
+
+        assert.ok(detailItems.length > 0);
+        assert.ok(requirementItems.length > 0);
+        assert.ok(detailItems.every((item) => item.documentTypeScope === "detail_design"));
+        assert.ok(requirementItems.every((item) => item.documentTypeScope === "software_requirement"));
+
+        const loader = new SkillLoader();
+        const requirementSkills = await loader.loadForContext({
+          documentType: "software_requirement",
+          domain: "embedded_vcu",
+          moduleSkillKey: module.moduleSkillKey
+        });
+        const detailSkills = await loader.loadForContext({
+          documentType: "detail_design",
+          domain: "embedded_vcu",
+          moduleSkillKey: module.moduleSkillKey
+        });
+
+        assert.ok(requirementSkills["domain-knowledge.json"].ruleHints.some((item) => item.targetStyle === "software requirement"));
+        assert.ok(
+          !requirementSkills["domain-knowledge.json"].ruleHints.some((item) => item.targetStyle === "detail design")
+        );
+        assert.ok(detailSkills["domain-knowledge.json"].ruleHints.some((item) => item.targetStyle === "detail design"));
+      });
+    }
+  },
+  {
+    name: "Module skill persistence materializes cold-start profiles to active skill files",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new ModuleSkillService();
+        const module = {
+          name: "Low Voltage Energy Management",
+          moduleSkillKey: "low_voltage_energy_management"
+        };
+
+        await service.persistBootstrappedKnowledge(module, "software_requirement", {
+          version: 1,
+          generationPriorities: ["优先保留模块主线。"],
+          examples: [],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              sectionHints: ["智能补电退出判断"],
+              writingPattern: "按主需求粒度组织。",
+              targetStyle: "software requirement"
+            }
+          ],
+          antiPatterns: ["不要把同一主需求拆成很多派生条。"]
+        });
+
+        const manifestPath = path.join(config.activeSkillDir, "skill-manifest.json");
+        const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+        const moduleConfig = manifest.profiles.modules.low_voltage_energy_management;
+        assert.ok(moduleConfig);
+
+        const registryPath = path.join(config.activeSkillDir, moduleConfig.registry);
+        const knowledgePath = path.join(config.activeSkillDir, moduleConfig.files["domain-knowledge.json"][0]);
+        const registry = JSON.parse(await fs.readFile(registryPath, "utf8"));
+        const knowledge = JSON.parse(await fs.readFile(knowledgePath, "utf8"));
+
+        assert.ok(registry.items.some((item) => item.kind === "generation_priority"));
+        assert.equal(knowledge.generationPriorities[0], "优先保留模块主线。");
+        assert.equal(knowledge.ruleHints[0].sectionHints[0], "智能补电退出判断");
+      });
+    }
+  },
+  {
+    name: "Module skill inspection treats legacy global module knowledge as usable fallback",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new ModuleSkillService();
+        const module = {
+          name: "Legacy Energy",
+          moduleSkillKey: "legacy_energy",
+          domain: "embedded_vcu",
+          assets: []
+        };
+        await service.registryService.saveProfileRegistry(
+          "module",
+          module.moduleSkillKey,
+          {
+            version: 1,
+            layer: "module",
+            profileKey: module.moduleSkillKey,
+            displayName: module.name,
+            documentTypeScope: "",
+            status: "active",
+            items: []
+          }
+        );
+        await service.registryService.replaceKnowledgeItems("module", module.moduleSkillKey, {
+          version: 1,
+          generationPriorities: ["通用模块规则"],
+          examples: [],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              sectionHints: ["通用主题"],
+              writingPattern: "legacy global fallback",
+              targetStyle: "shared"
+            }
+          ],
+          antiPatterns: []
+        });
+
+        const inspection = await service.inspectModule({ domain: "embedded_vcu" }, module, "hil_test_case");
+
+        assert.equal(inspection.hasModuleProfile, true);
+        assert.equal(inspection.hasUsableModuleSkill, true);
+        assert.equal(inspection.hasScopedModuleSkill, false);
+        assert.equal(inspection.usesLegacyGlobalFallback, true);
+        assert.deepEqual(inspection.missingBootstrapAssets, []);
+        assert.equal(inspection.canGenerateDirectly, true);
       });
     }
   },
@@ -1357,7 +2078,85 @@ const tests = [
         assert.equal(records[0].poolStatus, "new");
       });
     }
-  },  {
+  },
+  {
+    name: "Legacy task results without ids are normalized before structured rejection review",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+
+        const project = await projectService.createProject({ name: "Legacy Result Id Repair Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "能量管理",
+          description: "用于验证旧任务结果补 id"
+        });
+
+        await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              requirementId: "SWR-LEGACY-1",
+              title: "智能补电退出判断",
+              itemTitle: "智能补电退出判断",
+              sectionTitle: "智能补电",
+              requirementText: "软件应在满足退出条件时关闭智能补电。",
+              type: "functional",
+              confidence: 0.66,
+              verificationHint: "验证退出触发与恢复条件",
+              conflictNote: "",
+              sourceRefs: [
+                {
+                  fileName: "energy-system.md",
+                  location: "page:3",
+                  excerpt: "满足退出条件时关闭智能补电。"
+                }
+              ]
+            }
+          ]
+        });
+
+        const reloaded = await projectService.getProject(project.id);
+        const reloadedModule = reloaded.modules.find((item) => item.id === module.id);
+        const legacyTask = reloadedModule.documentSpaces.software_requirement.generationTasks[0];
+        const normalizedResultId = legacyTask.resultItems[0].id;
+
+        assert.ok(normalizedResultId);
+
+        const reviewed = await projectService.reviewTaskResult(
+          project.id,
+          module.id,
+          "software_requirement",
+          legacyTask.id,
+          normalizedResultId,
+          {
+            status: "rejected",
+            reviewer: "tester",
+            reasonCategory: "coverage_gap",
+            reasonTags: ["退出分支"],
+            reasonText: "退出分支和后处理不完整",
+            targetArea: "writing",
+            targetLayerConstraint: "module",
+            expectedNote: "保留单条主需求并补全退出分支。",
+            includeInPool: true,
+            comment: "验证旧任务结果可正常结构化驳回"
+          }
+        );
+
+        assert.equal(reviewed.id, normalizedResultId);
+        assert.equal(reviewed.review.status, "rejected");
+        assert.ok(reviewed.review.rejectionId);
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        assert.equal(records.length, 1);
+        assert.equal(records[0].sourceResultItemId, normalizedResultId);
+        assert.equal(records[0].skillContext?.targetLayerConstraint, "module");
+      });
+    }
+  },
+  {
     name: "Project service persists document type and defaults legacy projects",
     run: async () => {
       await withTempConfig(async () => {
@@ -1399,6 +2198,26 @@ const tests = [
         const list = await projectService.listProjects();
         assert.equal(list.find((item) => item.id === detailProject.id)?.documentType, "detail_design");
         assert.equal(list.find((item) => item.id === legacyProjectId)?.documentType, "software_requirement");
+      });
+    }
+  },
+  {
+    name: "Project service persists explicit cold-start module initialization mode",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Cold Start Mode Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Thermal Planning",
+          moduleSkillKey: "thermal_planning",
+          skillInitMode: "cold_start",
+          skillStatus: "draft"
+        });
+
+        assert.equal(module.skillInitMode, "cold_start");
+
+        const reloaded = await projectService.getModule(project.id, module.id);
+        assert.equal(reloaded.skillInitMode, "cold_start");
       });
     }
   },
@@ -1462,6 +2281,40 @@ const tests = [
         const refreshedProject = await projectService.getProject(project.id);
         assert.equal(refreshedProject.modules.length, 0);
         await assert.rejects(fs.access(uploadDir));
+      });
+    }
+  },
+  {
+    name: "Module asset upload decodes mojibake original names before persisting metadata",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl }) => {
+          const projectService = new ProjectService();
+          const project = await projectService.createProject({ name: "Upload Workspace" });
+          const module = await projectService.createModule(project.id, { name: "高压安全管理" });
+          const expectedName = "高压安全管理系统需求.md";
+          const mojibakeName = Buffer.from(expectedName, "utf8").toString("latin1");
+
+          const form = new FormData();
+          form.append("documentType", "software_requirement");
+          form.append("systemPdf", new Blob(["系统需求正文"], { type: "text/markdown" }), mojibakeName);
+
+          const response = await fetch(`${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets`, {
+            method: "POST",
+            body: form
+          });
+
+          assert.equal(response.status, 201);
+          const payload = await response.json();
+          assert.equal(payload.assets.length, 1);
+          assert.equal(payload.assets[0].originalName, expectedName);
+          assert.match(payload.assets[0].storedName, /高压安全管理系统需求\.md$/);
+
+          const reloadedModule = await projectService.getModule(project.id, module.id);
+          assert.equal(reloadedModule.assets.length, 1);
+          assert.equal(reloadedModule.assets[0].originalName, expectedName);
+          assert.match(reloadedModule.assets[0].storedName, /高压安全管理系统需求\.md$/);
+        });
       });
     }
   },
@@ -1694,6 +2547,160 @@ const tests = [
     }
   },
   {
+    name: "Default Hermes content_generate timeout is 600000ms",
+    run: async () => {
+      const source = await fs.readFile(new URL("../src/config.js", import.meta.url), "utf8");
+
+      assert.match(source, /content_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_CONTENT_GENERATE_MS\s*\|\|\s*600000\)/);
+    }
+  },
+  {
+    name: "Hermes agent client applies step-specific CLI timeout for document_extract_generate",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 120000,
+          stepTimeoutMs: {
+            document_extract_generate: 240000
+          },
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"targetDocumentType\":\"software_requirement\",\"title\":\"提取结果\",\"markdown\":\"# 提取结果\\n\",\"summary\":\"完成\",\"keySections\":[\"文档信息\"]}\n\nsession_id: 20260421_144500_abcd12\n",
+              stderr: ""
+            };
+          }
+        });
+
+        await client.executeStep({
+          taskId: "task-cli-timeout-document-extract",
+          stepType: "document_extract_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            project: { name: "CLI Project", documentType: "software_requirement" },
+            module: { name: "低压能量管理", domain: "embedded_vcu" },
+            targetDocumentType: "software_requirement",
+            sourceText: "图片提取输入",
+            images: []
+          },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].options.timeout, 240000);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client applies step-specific CLI timeout for module_bootstrap_generate",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 120000,
+          stepTimeoutMs: {
+            module_bootstrap_generate: 600000
+          },
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"version\":1,\"generationPriorities\":[\"优先描述主行为。\"],\"examples\":[],\"ruleHints\":[],\"antiPatterns\":[]}\n\nsession_id: 20260421_144500_abcd12\n",
+              stderr: ""
+            };
+          }
+        });
+
+        await client.executeStep({
+          taskId: "task-cli-timeout-module-bootstrap-generate",
+          stepType: "module_bootstrap_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            project: { name: "CLI Project", documentType: "software_requirement" },
+            module: { name: "低压能量管理", domain: "embedded_vcu" },
+            assets: [],
+            anchors: [],
+            analysis: {
+              summary: "模块主题分析",
+              themes: [{ title: "智能补电", anchorIds: ["anchor-1"] }]
+            },
+            recalledAtoms: []
+          },
+          skillBundlePath: "",
+          recommendedSkillCodes: [],
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].options.timeout, 600000);
+        assert.doesNotMatch(invocations[0].args[2], /"task skill bundle shortlist"/);
+        assert.match(invocations[0].args[2], /Do not include raw anchor ids, UUIDs, or runtime artifact labels inside `sourceBasis`/);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client applies step-specific CLI timeout for replay_proposal_generate",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 120000,
+          stepTimeoutMs: {
+            replay_proposal_generate: 600000
+          },
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"items\":[{\"proposalItemId\":\"proposal-1\",\"action\":\"modify_existing\",\"targetSkillCode\":\"MOD-demo-rule_hint-001\",\"targetLayer\":\"module\",\"targetProfileKey\":\"demo_module\",\"targetKind\":\"rule_hint\",\"title\":\"覆盖缺失补充规则\",\"beforeContent\":\"旧内容\",\"afterContent\":\"新内容\",\"reason\":\"补全退出分支\",\"fallbackReason\":\"补全退出分支\",\"evidenceRefs\":[\"record-1\"]}]}\n\nsession_id: 20260421_144500_abcd12\n",
+              stderr: ""
+            };
+          }
+        });
+
+        await client.executeStep({
+          taskId: "task-cli-timeout-replay-proposal",
+          stepType: "replay_proposal_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            replayManifest: {
+              taskContext: {
+                targetAreas: ["writing"],
+                targetLayerConstraint: "module",
+                targetProfileKeyConstraint: "demo_module",
+                allowedKindsForReplay: ["rule_hint"]
+              },
+              rejectionContext: {
+                records: [{ id: "record-1", reasonCategory: "coverage_gap", reasonText: "缺少退出分支" }]
+              },
+              layerSkillInventory: [{ skillCode: "MOD-demo-rule_hint-001", layer: "module", kind: "rule_hint" }]
+            }
+          },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].options.timeout, 600000);
+      });
+    }
+  },
+  {
+    name: "Default Hermes replay_proposal_generate timeout is 600000ms",
+    run: async () => {
+      const source = await fs.readFile(new URL("../src/config.js", import.meta.url), "utf8");
+
+      assert.match(
+        source,
+        /replay_proposal_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS\s*\|\|\s*600000\)/
+      );
+    }
+  },
+  {
     name: "Hermes agent client builds anchor_index_build prompt and parses anchors",
     run: async () => {
       await withTempConfig(async () => {
@@ -1766,7 +2773,7 @@ const tests = [
             invocations.push({ command, args, options });
             return {
               stdout:
-                "{\"items\":[{\"title\":\"CLI item\",\"requirementText\":\"CLI text\",\"type\":\"functional\",\"verificationHint\":\"inspect\",\"sourceAnchorIds\":[\"anchor-1\",\"anchor-2\"],\"conflictNote\":\"\"}]}\n\nsession_id: 20260421_144511_anchor02\n",
+                "{\"items\":[{\"requirementText\":\"CLI text\",\"type\":\"functional\",\"verificationHint\":\"inspect\",\"sourceAnchorIds\":[\"anchor-1\",\"anchor-2\"],\"conflictNote\":\"\"}]}\n\nsession_id: 20260421_144511_anchor02\n",
               stderr: ""
             };
           }
@@ -1800,6 +2807,8 @@ const tests = [
             ],
             recalledAtoms: [],
             outline: { sections: [{ title: "Section", objective: "Goal", anchorIds: ["anchor-1"] }] },
+            requiredTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }]),
+            requiredLeafCount: 1,
             template: { requirementIdPrefix: "SWR", sections: [] },
             skillBundle: {
               bundlePath: "/tmp/skills",
@@ -1815,8 +2824,11 @@ const tests = [
         assert.deepEqual(response.artifact.items[0].sourceAnchorIds, ["anchor-1", "anchor-2"]);
         const prompt = invocations[0].args[2];
         assert.match(prompt, /sourceAnchorIds/);
+        assert.match(prompt, /requiredTitleOutline/);
+        assert.match(prompt, /requiredLeafCount/);
         assert.match(prompt, /manifest\.json/);
         assert.match(prompt, /module_rule_1/);
+        assert.doesNotMatch(prompt, /Requirement title/);
         assert.doesNotMatch(prompt, /sourceRefs must exactly reuse/i);
       });
     }
@@ -2209,6 +3221,312 @@ const tests = [
     }
   },
   {
+    name: "Task detail frontend recognizes Hermes module bootstrap stages",
+    run: async () => {
+      const hierarchySource = await fs.readFile(new URL("../public/hierarchy.js", import.meta.url), "utf8");
+
+      assert.match(hierarchySource, /module_bootstrap/);
+      assert.match(hierarchySource, /module_bootstrap_analyze/);
+      assert.match(hierarchySource, /module_bootstrap_generate/);
+      assert.match(hierarchySource, /module_profile_persist/);
+      assert.match(hierarchySource, /正在提炼模块 Skill/);
+      assert.match(hierarchySource, /正在分析模块输入并提炼模块主题/);
+      assert.match(hierarchySource, /正在生成模块 Skill/);
+      assert.match(hierarchySource, /正在写入模块 Skill/);
+    }
+  },
+  {
+    name: "Readable requirement preview keeps decimal thresholds intact while preserving explicit ordered lists",
+    run: async () => {
+      const hierarchySource = await fs.readFile(new URL("../public/hierarchy.js", import.meta.url), "utf8");
+      const normalizeStart = hierarchySource.indexOf("function normalizeReadableRequirementText");
+      const formatStart = hierarchySource.indexOf("function formatReadableRequirementHtml");
+      const collectStart = hierarchySource.indexOf("function collectTasks");
+
+      assert.ok(normalizeStart >= 0);
+      assert.ok(formatStart > normalizeStart);
+      assert.ok(collectStart > formatStart);
+
+      const functionBlock = hierarchySource.slice(normalizeStart, collectStart);
+      const runtime = new Function(
+        "escapeHtml",
+        `${functionBlock}\nreturn { normalizeReadableRequirementText, formatReadableRequirementHtml };`
+      )((value) =>
+        String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;")
+      );
+
+      const decimalHtml = runtime.formatReadableRequirementHtml(
+        "若车辆由 ON 切换至 OFF 后持续未休眠时间 < 20 分钟，则即使检测到 EBS_U_BATT≤11.8V，软件也不应仅基于该电压条件激活智能补电。"
+      );
+      assert.ok(decimalHtml.includes("11.8V"));
+      assert.doesNotMatch(decimalHtml, /<ol class="accepted-list">/);
+
+      const orderedListHtml = runtime.formatReadableRequirementHtml("1. 条件一\n2. 条件二");
+      assert.match(orderedListHtml, /<ol class="accepted-list">/);
+      assert.match(orderedListHtml, /<li>条件一<\/li>/);
+      assert.match(orderedListHtml, /<li>条件二<\/li>/);
+    }
+  },
+  {
+    name: "Generator frontend distinguishes scoped module skill readiness states",
+    run: async () => {
+      const source = await fs.readFile(new URL("../public/generator.js", import.meta.url), "utf8");
+
+      assert.match(source, /hasScopedModuleSkill/);
+      assert.match(source, /usesLegacyGlobalFallback/);
+      assert.match(source, /doc type scoped skill ready/);
+      assert.match(source, /legacy global fallback/);
+    }
+  },
+  {
+    name: "Generator frontend shows explicit bootstrap entry for cold-start modules",
+    run: async () => {
+      const source = await fs.readFile(new URL("../public/generator.js", import.meta.url), "utf8");
+
+      assert.match(source, /module_skill_bootstrap/);
+      assert.match(source, /requiresExplicitBootstrap/);
+      assert.match(source, /开始技能冷启动/);
+      assert.match(source, /当前模块被标记为冷启动模式/);
+    }
+  },
+  {
+    name: "Software requirement generator frontend exposes two-level manual title outline editor",
+    run: async () => {
+      const html = await fs.readFile(new URL("../public/requirement-generation.html", import.meta.url), "utf8");
+      const script = await fs.readFile(new URL("../public/generator.js", import.meta.url), "utf8");
+      const moduleDetailHtml = await fs.readFile(new URL("../public/module-detail.html", import.meta.url), "utf8");
+      const hierarchySource = await fs.readFile(new URL("../public/hierarchy.js", import.meta.url), "utf8");
+
+      assert.match(html, /manual-title-outline-card/);
+      assert.match(html, /人工标题框架/);
+      assert.match(html, /新增一级标题/);
+
+      assert.match(script, /manualTitleOutline/);
+      assert.match(script, /isManualTitleOutlineVisible/);
+      assert.match(script, /manual-title-outline-add-section/);
+      assert.match(script, /move-section-up/);
+      assert.match(script, /move-item-down/);
+      assert.match(script, /LAST_STARTED_MANUAL_TITLE_OUTLINE_STORAGE_KEY/);
+      assert.match(script, /restoreLastStartedManualTitleOutline/);
+      assert.match(script, /persistLastStartedManualTitleOutline/);
+      assert.match(script, /至少需要 1 个一级标题/);
+      assert.match(script, /下至少需要 1 个二级标题/);
+      assert.match(script, /manualTitleOutlinePayload/);
+      assert.match(script, /manualTitleOutline\", JSON\.stringify\(manualTitleOutlinePayload\)/);
+
+      assert.match(hierarchySource, /groupItemsBySectionTitle/);
+      assert.match(hierarchySource, /result-section-group/);
+      assert.match(hierarchySource, /accepted-section-group/);
+      assert.match(hierarchySource, /sectionTitle/);
+      assert.match(hierarchySource, /itemTitle/);
+
+      assert.match(moduleDetailHtml, /accepted-edit-section-title/);
+      assert.match(moduleDetailHtml, /accepted-edit-item-title/);
+    }
+  },
+  {
+    name: "Software requirement generator frontend hides human example inputs during formal generation",
+    run: async () => {
+      const script = await fs.readFile(new URL("../public/generator.js", import.meta.url), "utf8");
+
+      assert.match(script, /isFormalSoftwareRequirementGeneration/);
+      assert.match(script, /reference_requirement_example/);
+      assert.match(script, /extracted_software_requirement/);
+      assert.match(script, /input\[name="referenceExample"\]/);
+      assert.match(script, /field\.hidden = true/);
+      assert.match(script, /getSelectableAssets/);
+    }
+  },
+  {
+    name: "Software requirement generator frontend submit path only uses defined manual title outline validation helpers",
+    run: async () => {
+      const script = await fs.readFile(new URL("../public/generator.js", import.meta.url), "utf8");
+
+      const referencesUndefinedValidationHelper = /(^|[^\w.])validateManualTitleOutline\(/m.test(script);
+      const definesValidationHelper = /function\s+validateManualTitleOutline\s*\(/.test(script);
+
+      assert.ok(
+        !referencesUndefinedValidationHelper || definesValidationHelper,
+        "generator submit path references validateManualTitleOutline() but does not define it"
+      );
+    }
+  },
+  {
+    name: "Task detail structured rejection collects form data before disabling form controls",
+    run: async () => {
+      const script = await fs.readFile(new URL("../public/hierarchy.js", import.meta.url), "utf8");
+      const handlerStart = script.indexOf("async function handleRejectSubmit");
+      const handlerEnd = script.indexOf("function setRejectSubmitting", handlerStart);
+      const handlerBlock = script.slice(handlerStart, handlerEnd);
+      const formDataIndex = handlerBlock.indexOf("const formData = new FormData(rejectForm);");
+      const disableIndex = handlerBlock.indexOf("setRejectSubmitting(true);");
+
+      assert.ok(formDataIndex >= 0, "handleRejectSubmit must collect FormData");
+      assert.ok(disableIndex >= 0, "handleRejectSubmit must still toggle submitting state");
+      assert.ok(
+        formDataIndex < disableIndex,
+        "handleRejectSubmit should read FormData before disabling form controls"
+      );
+    }
+  },
+  {
+    name: "Hermes module bootstrap prompt constrains generated kinds to module layer allowances",
+    run: async () => {
+      const source = await fs.readFile(new URL("../src/services/hermes-agent-client.js", import.meta.url), "utf8");
+
+      assert.match(source, /module layer allowed kinds/i);
+      assert.match(source, /document_blueprint_section/);
+      assert.match(source, /source_policy_setting/);
+      assert.match(source, /Do not output `document_blueprint_section` or `document_blueprint_policy`/);
+      assert.doesNotMatch(source, /Required JSON shape:[\s\S]*documentBlueprint/);
+    }
+  },
+  {
+    name: "Module knowledge import rewrites disallowed blueprint guidance into module-allowed kinds",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new ModuleSkillService();
+        const module = {
+          name: "High Voltage Safety",
+          moduleSkillKey: "high_voltage_safety"
+        };
+
+        await service.persistBootstrappedKnowledge(module, "software_requirement", {
+          version: 1,
+          generationPriorities: ["先写主线。"],
+          examples: [],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              subdomain: "高压安全管理",
+              sectionHints: ["绝缘检测"],
+              writingPattern: "先写主线，再写故障分支。",
+              targetStyle: "software requirement",
+              sourceBasis: ["system anchors"]
+            }
+          ],
+          antiPatterns: [],
+          documentBlueprint: {
+            preferredFunctionSection: {
+              title: "高压安全管理"
+            },
+            preferredSubsections: [
+              {
+                title: "绝缘检测",
+                coreRequirementTypes: ["software_requirement"]
+              }
+            ],
+            targetOutputPolicy: {
+              coreFirst: true
+            }
+          }
+        });
+
+        const registry = await service.registryService.loadProfileRegistry("module", module.moduleSkillKey);
+        assert.ok(!registry.items.some((item) => item.kind === "document_blueprint_section"));
+        assert.ok(!registry.items.some((item) => item.kind === "document_blueprint_policy"));
+        assert.ok(registry.items.some((item) => item.kind === "source_policy_setting" && item.structuredPayload?.key === "preferredFunctionSection"));
+        assert.ok(registry.items.some((item) => item.kind === "source_policy_setting" && item.structuredPayload?.key === "coreFirst"));
+      });
+    }
+  },
+  {
+    name: "Legacy module bootstrap LLM prompt forbids blueprint kinds for module layer generation",
+    run: async () => {
+      const source = await fs.readFile(new URL("../src/services/module-skill-bootstrap-llm-service.js", import.meta.url), "utf8");
+
+      assert.match(source, /module 层允许的 kind 只有/);
+      assert.match(source, /不要输出 documentBlueprint/);
+      assert.match(source, /ruleHints\.sectionHints、generationPriorities 或 sourceOfTruthPolicy/);
+    }
+  },
+  {
+    name: "Module create flow exposes explicit skill initialization modes",
+    run: async () => {
+      const html = await fs.readFile(new URL("../public/module-create.html", import.meta.url), "utf8");
+      const source = await fs.readFile(new URL("../public/hierarchy.js", import.meta.url), "utf8");
+
+      assert.match(html, /name="skillInitMode"/);
+      assert.match(html, /value="import_existing"/);
+      assert.match(html, /value="cold_start"/);
+      assert.match(source, /payload\.skillInitMode/);
+      assert.match(source, /候选 Module Skill/);
+      assert.match(source, /模块会以冷启动模式创建/);
+    }
+  },
+  {
+    name: "Pipeline service requires manual title outline for software requirement formal generation",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        let hermesInvoked = false;
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async () => {
+          hermesInvoked = true;
+          throw new Error("Hermes should not run when manual title outline is missing");
+        };
+
+        const project = await projectService.createProject({ name: "Manual Outline Required Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging-system.md");
+        const modelFilePath = path.join(uploadDir, "charging-model.c");
+        const referenceFilePath = path.join(uploadDir, "charging-reference.md");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+        await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+        await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging-system.md",
+              filename: "charging-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "charging-model.c",
+              filename: "charging-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 44
+            }
+          ],
+          referenceExample: [
+            {
+              originalname: "charging-reference.md",
+              filename: "charging-reference.md",
+              path: referenceFilePath,
+              mimetype: "text/markdown",
+              size: 27
+            }
+          ]
+        });
+
+        await assert.rejects(
+          () => pipelineService.generateForModule(project.id, module.id, "software_requirement", {}),
+          /manualTitleOutline|manual title outline/i
+        );
+        assert.equal(hermesInvoked, false);
+      });
+    }
+  },
+  {
     name: "Pipeline service runs software requirement generation through Hermes workflow",
     run: async () => {
       await withTempConfig(async () => {
@@ -2357,12 +3675,15 @@ const tests = [
           ]
         });
 
-        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
+        const manualTitleOutline = buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }]);
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+          manualTitleOutline
+        });
         assert.equal(result.task.status, "completed");
         assert.ok(result.task.resultItems.length >= 1);
         assert.ok(result.task.extractions.length >= 1);
         assert.ok(result.task.metrics.extractionEvidenceCount >= 1);
-        assert.equal(result.task.debug.artifacts.assetManifest.length, 3);
+        assert.equal(result.task.debug.artifacts.assetManifest.length, 2);
         assert.equal(result.task.debug.artifacts.anchors.length, 1);
         assert.ok(result.task.debug.artifacts.taskSkillBundle);
         assert.ok(result.task.debug.artifacts.taskSkillBundle.skillBundlePath);
@@ -2382,6 +3703,12 @@ const tests = [
         const contentPayload = hermesPayloads.find((payload) => payload.stepType === "content_generate");
         assert.equal(outlinePayload.skillBundlePath, skillManifestPath);
         assert.equal(contentPayload.skillBundlePath, skillManifestPath);
+        assert.ok(
+          result.task.debug.artifacts.assetManifest.every((asset) => asset.fileRole !== "reference_requirement_example")
+        );
+        assert.ok(
+          (contentPayload.inputArtifact.assets || []).every((asset) => asset.fileRole !== "reference_requirement_example")
+        );
         assert.ok(Array.isArray(outlinePayload.recommendedSkillCodes));
         assert.ok(Array.isArray(contentPayload.recommendedSkillCodes));
         assert.ok(outlinePayload.recommendedSkillCodes.length > 0);
@@ -2401,9 +3728,681 @@ const tests = [
         assert.ok(stages.includes("persist_result"));
 
         assert.deepEqual(result.task.resultItems[0].sourceAnchorIds, ["anchor-1"]);
+        assert.ok(result.task.resultItems[0].id);
+        assert.equal(result.task.resultItems[0].sectionTitle, "功能行为");
+        assert.equal(result.task.resultItems[0].itemTitle, "充电状态信号输出");
+        assert.equal(result.task.resultItems[0].title, "充电状态信号输出");
         assert.equal((result.task.resultItems[0].sourceRefs || []).length, 1);
         assert.equal(result.task.resultItems[0].sourceRefs[0].fileName, "charging-system.md");
         assert.equal(result.task.progress.stage, "completed");
+      });
+    }
+  },
+  {
+    name: "Pipeline service rejects software requirement formal generation when only human example assets are selected",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        let hermesInvoked = false;
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async () => {
+          hermesInvoked = true;
+          throw new Error("Hermes should not run when only human example assets are selected");
+        };
+
+        const project = await projectService.createProject({ name: "Reference Example Guard Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const referenceFilePath = path.join(uploadDir, "charging-reference.md");
+        await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
+
+        const attached = await projectService.attachModuleAssets(project.id, module.id, {
+          referenceExample: [
+            {
+              originalname: "charging-reference.md",
+              filename: "charging-reference.md",
+              path: referenceFilePath,
+              mimetype: "text/markdown",
+              size: 27
+            }
+          ]
+        });
+
+        await assert.rejects(
+          () =>
+            pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+              assetIds: attached.assets.map((asset) => asset.id),
+              manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }])
+            }),
+          /正式软件需求生成不会使用人工范例资产/
+        );
+        assert.equal(hermesInvoked, false);
+      });
+    }
+  },
+  {
+    name: "Pipeline service fails when Hermes content count does not match manual title outline leaves",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在充电使能时输出充电状态信号。",
+                    summary: "充电使能时输出充电状态信号。",
+                    tags: ["requirement-like"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "atom_recall") {
+            return { status: "succeeded", artifact: { items: [] } };
+          }
+          if (payload.stepType === "outline_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                summary: "充电状态输出",
+                sections: [{ title: "功能行为", objective: "描述充电状态输出行为", anchorIds: ["anchor-1"] }]
+              }
+            };
+          }
+          if (payload.stepType === "content_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    requirementText: "当充电使能时，软件应输出充电状态信号。",
+                    type: "functional",
+                    verificationHint: "验证充电使能时的状态输出。",
+                    sourceAnchorIds: ["anchor-1"],
+                    conflictNote: ""
+                  }
+                ]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Manual Outline Count Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging-system.md");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging-system.md",
+              filename: "charging-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ]
+        });
+
+        await assert.rejects(
+          () =>
+            pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+              manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["标题一", "标题二"] }])
+            }),
+          /must return exactly 2 result items/i
+        );
+      });
+    }
+  },
+  {
+    name: "Pipeline service bootstraps new module skill through Hermes before software requirement generation",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        const hermesPayloads = [];
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          hermesPayloads.push(payload);
+          if (payload.stepType === "module_bootstrap_analyze") {
+            return {
+              status: "succeeded",
+              artifact: {
+                summary: "模块冷启动分析",
+                themes: [
+                  {
+                    title: "冷却请求建立",
+                    anchorIds: ["anchor-1"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "module_bootstrap_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                version: 1,
+                generationPriorities: ["先写冷却请求主线。"],
+                examples: [],
+                ruleHints: [
+                  {
+                    domain: "embedded_vcu",
+                    sectionHints: ["冷却请求建立"],
+                    writingPattern: "先写建立，再写撤销。",
+                    targetStyle: "software requirement"
+                  }
+                ],
+                antiPatterns: ["不要混入执行器实现。"]
+              }
+            };
+          }
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在满足热管理条件时建立冷却请求。",
+                    summary: "满足热管理条件时建立冷却请求。",
+                    tags: ["requirement-like", "state"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "outline_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                summary: "冷却请求",
+                sections: [
+                  {
+                    title: "功能行为",
+                    objective: "描述冷却请求建立行为",
+                    anchorIds: ["anchor-1"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "content_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    requirementText: "当满足热管理条件时，软件应建立冷却请求。",
+                    type: "functional",
+                    verificationHint: "验证满足条件时冷却请求建立。",
+                    sourceAnchorIds: ["anchor-1"],
+                    conflictNote: ""
+                  }
+                ]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Cold Start Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Thermal Bootstrap",
+          moduleSkillKey: "thermal_bootstrap"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "thermal-system.md");
+        const modelFilePath = path.join(uploadDir, "thermal-model.c");
+        const referenceFilePath = path.join(uploadDir, "thermal-reference.md");
+        await fs.writeFile(systemFilePath, "系统应在满足热管理条件时建立冷却请求。", "utf8");
+        await fs.writeFile(modelFilePath, "void Thermal_step(void) { coolingReq = 1; }", "utf8");
+        await fs.writeFile(referenceFilePath, "软件应先写冷却请求建立，再写撤销条件。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "thermal-system.md",
+              filename: "thermal-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "thermal-model.c",
+              filename: "thermal-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 42
+            }
+          ],
+          referenceExample: [
+            {
+              originalname: "thermal-reference.md",
+              filename: "thermal-reference.md",
+              path: referenceFilePath,
+              mimetype: "text/markdown",
+              size: 27
+            }
+          ]
+        });
+
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+          manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["冷却请求建立"] }])
+        });
+        const stepTypes = hermesPayloads.map((payload) => payload.stepType);
+
+        assert.equal(result.task.status, "completed");
+        assert.ok(stepTypes.includes("module_bootstrap_analyze"));
+        assert.ok(stepTypes.includes("module_bootstrap_generate"));
+        assert.ok(stepTypes.indexOf("module_bootstrap_generate") < stepTypes.indexOf("outline_build"));
+
+        const inspection = await pipelineService.moduleSkillService.inspectModule(project, module, "software_requirement");
+        assert.equal(inspection.hasScopedModuleSkill, true);
+        assert.equal(inspection.hasUsableModuleSkill, true);
+
+        const persistedRegistry = await pipelineService.moduleSkillService.loadModuleRegistry("thermal_bootstrap");
+        assert.ok(
+          persistedRegistry.items.some(
+            (item) => item.kind === "rule_hint" && item.documentTypeScope === "software_requirement"
+          )
+        );
+
+        const stages = (result.task.timeline || []).map((entry) => entry.stage);
+        assert.ok(stages.includes("module_bootstrap"));
+        assert.ok(stages.includes("module_bootstrap_analyze"));
+        assert.ok(stages.includes("module_bootstrap_generate"));
+        assert.ok(stages.includes("module_profile_persist"));
+      });
+    }
+  },
+  {
+    name: "Pipeline service fails when Hermes cold-start bootstrap step fails",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在满足条件时触发失败路径。",
+                    summary: "满足条件时触发失败路径。",
+                    tags: ["requirement-like"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "module_bootstrap_analyze") {
+            throw new Error("Hermes cold-start analyze failed");
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Cold Start Failure Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Failure Module",
+          moduleSkillKey: "failure_module"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "failure-system.md");
+        const modelFilePath = path.join(uploadDir, "failure-model.c");
+        const referenceFilePath = path.join(uploadDir, "failure-reference.md");
+        await fs.writeFile(systemFilePath, "系统应在满足条件时触发失败路径。", "utf8");
+        await fs.writeFile(modelFilePath, "void Failure_step(void) { failureFlag = 1; }", "utf8");
+        await fs.writeFile(referenceFilePath, "优秀范例：先写失败建立，再写恢复。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "failure-system.md",
+              filename: "failure-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 20
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "failure-model.c",
+              filename: "failure-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 39
+            }
+          ],
+          referenceExample: [
+            {
+              originalname: "failure-reference.md",
+              filename: "failure-reference.md",
+              path: referenceFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ]
+        });
+
+        await assert.rejects(
+          () =>
+            pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+              manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "失败路径", itemTitles: ["失败路径建立"] }])
+            }),
+          /Hermes cold-start analyze failed/
+        );
+
+        const task = await projectService.getLatestGenerationTask(project.id, module.id, "software_requirement");
+        const stages = (task.timeline || []).map((entry) => entry.stage);
+        assert.equal(task.status, "failed");
+        assert.ok(stages.includes("module_bootstrap"));
+      });
+    }
+  },
+  {
+    name: "Pipeline service supports standalone module skill bootstrap tasks",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        const hermesPayloads = [];
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          hermesPayloads.push(payload);
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在热管理条件成立时建立冷却请求。",
+                    summary: "热管理条件成立时建立冷却请求。",
+                    tags: ["requirement-like"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "module_bootstrap_analyze") {
+            return {
+              status: "succeeded",
+              artifact: {
+                summary: "模块冷启动分析",
+                themes: [
+                  {
+                    title: "冷却请求建立",
+                    anchorIds: ["anchor-1"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "module_bootstrap_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                version: 1,
+                generationPriorities: ["先写冷却请求主线。"],
+                examples: [],
+                ruleHints: [
+                  {
+                    domain: "embedded_vcu",
+                    writingPattern: "先写建立，再写撤销。",
+                    targetStyle: "software requirement"
+                  }
+                ],
+                antiPatterns: ["不要混入执行器实现。"]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Standalone Bootstrap Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Bootstrap Module",
+          moduleSkillKey: "bootstrap_module",
+          skillInitMode: "cold_start"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "bootstrap-system.md");
+        const modelFilePath = path.join(uploadDir, "bootstrap-model.c");
+        const referenceFilePath = path.join(uploadDir, "bootstrap-reference.md");
+        await fs.writeFile(systemFilePath, "系统应在热管理条件成立时建立冷却请求。", "utf8");
+        await fs.writeFile(modelFilePath, "void Bootstrap_step(void) { coolingReq = 1; }", "utf8");
+        await fs.writeFile(referenceFilePath, "软件应先写冷却请求建立，再写撤销条件。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "bootstrap-system.md",
+              filename: "bootstrap-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "bootstrap-model.c",
+              filename: "bootstrap-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 42
+            }
+          ],
+          referenceExample: [
+            {
+              originalname: "bootstrap-reference.md",
+              filename: "bootstrap-reference.md",
+              path: referenceFilePath,
+              mimetype: "text/markdown",
+              size: 27
+            }
+          ]
+        });
+
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+          taskIntent: "module_skill_bootstrap"
+        });
+
+        assert.equal(result.task.status, "completed");
+        assert.equal(result.task.taskKind, "module_skill_bootstrap");
+        assert.equal(result.task.resultItems.length, 0);
+        assert.ok(hermesPayloads.some((payload) => payload.stepType === "module_bootstrap_analyze"));
+        assert.ok(hermesPayloads.some((payload) => payload.stepType === "module_bootstrap_generate"));
+        assert.ok(!hermesPayloads.some((payload) => payload.stepType === "outline_build"));
+
+        const inspection = await pipelineService.moduleSkillService.inspectModule(project, module, "software_requirement");
+        assert.equal(inspection.hasScopedModuleSkill, true);
+      });
+    }
+  },
+  {
+    name: "Standalone module skill bootstrap accepts extracted requirement assets as cold-start inputs",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        const hermesPayloads = [];
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          hermesPayloads.push(payload);
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在低压补电条件满足时建立补电请求。",
+                    summary: "低压补电条件满足时建立补电请求。",
+                    tags: ["requirement-like"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "module_bootstrap_analyze") {
+            return {
+              status: "succeeded",
+              artifact: {
+                summary: "低压能量管理模块冷启动分析",
+                themes: [
+                  {
+                    title: "智能补电建立与退出",
+                    anchorIds: ["anchor-1"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "module_bootstrap_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                version: 1,
+                generationPriorities: ["优先描述智能补电建立与退出主线。"],
+                examples: [],
+                ruleHints: [],
+                antiPatterns: []
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Extracted Bootstrap Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "低压能量管理",
+          moduleSkillKey: "low_voltage_energy_management",
+          skillInitMode: "cold_start"
+        });
+
+        await projectService.createExtractedModuleAsset(project.id, module.id, {
+          targetDocumentType: "system_requirement",
+          markdown: "# 低压能量管理系统需求\n\n系统应在补电条件满足时建立补电请求。"
+        });
+        await projectService.createExtractedModuleAsset(project.id, module.id, {
+          targetDocumentType: "software_requirement",
+          markdown: "# 低压能量管理软件需求\n\n软件应在补电条件满足时建立补电请求。"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const modelFilePath = path.join(uploadDir, "low-voltage-energy-model.c");
+        await fs.writeFile(modelFilePath, "void LowVoltageEnergy_step(void) { intelligentCharge = 1; }", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          generatedCode: [
+            {
+              originalname: "low-voltage-energy-model.c",
+              filename: "low-voltage-energy-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 60
+            }
+          ]
+        });
+
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+          taskIntent: "module_skill_bootstrap"
+        });
+
+        assert.equal(result.task.status, "completed");
+        assert.equal(result.task.taskKind, "module_skill_bootstrap");
+        assert.ok(hermesPayloads.some((payload) => payload.stepType === "module_bootstrap_analyze"));
+
+        const inspection = await pipelineService.moduleSkillService.inspectModule(project, module, "software_requirement");
+        assert.equal(inspection.hasScopedModuleSkill, true);
+      });
+    }
+  },
+  {
+    name: "Initialization check exposes explicit bootstrap guidance for cold-start modules",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Init Check Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "Cold Start Module",
+          moduleSkillKey: "cold_start_module",
+          skillInitMode: "cold_start"
+        });
+
+        await withTestServer(async ({ baseUrl }) => {
+          const response = await fetch(
+            `${baseUrl}/api/projects/${project.id}/modules/${module.id}/initialization-check?documentType=software_requirement`
+          );
+          assert.equal(response.status, 200);
+          const inspection = await response.json();
+
+          assert.equal(inspection.requiresExplicitBootstrap, true);
+          assert.equal(inspection.recommendedAction, "module_skill_bootstrap");
+        });
       });
     }
   },
@@ -2476,7 +4475,6 @@ const tests = [
               artifact: {
                 items: [
                   {
-                    title: "充电状态信号输出",
                     requirementText: "当充电使能时，软件应输出充电状态信号。",
                     type: "functional",
                     verificationHint: "验证充电使能时的状态输出。",
@@ -2514,7 +4512,10 @@ const tests = [
         });
 
         await assert.rejects(
-          () => pipelineService.generateForModule(project.id, module.id, "software_requirement", {}),
+          () =>
+            pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+              manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }])
+            }),
           /sourceAnchorId outside the anchor index set/
         );
 
@@ -2631,7 +4632,9 @@ const tests = [
                 },
                 anchors,
                 recalledAtoms: recallPayload.artifact.items,
-                outline: outlinePayload.artifact
+                outline: outlinePayload.artifact,
+                requiredTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }]),
+                requiredLeafCount: 1
               }
             })
           });
@@ -2705,7 +4708,10 @@ const tests = [
         });
 
         await assert.rejects(
-          () => pipelineService.generateForModule(project.id, module.id, "software_requirement", {}),
+          () =>
+            pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+              manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }])
+            }),
           /timed out/
         );
 
@@ -2723,100 +4729,469 @@ const tests = [
     name: "Project and pipeline services support module tasks and accepted result snapshots",
     run: async () => {
       await withTempConfig(async () => {
-        await withHermesServer(async ({ baseUrl }) => {
-          config.hermes.baseURL = baseUrl;
-          const bundleService = new SkillBundleService();
-          await bundleService.ensureInitialized();
-          const moduleSkillService = new ModuleSkillService();
-          assert.equal(await moduleSkillService.hasModuleProfile("charging_management"), true);
-          const projectService = new ProjectService();
-          const pipelineService = new PipelineService(projectService);
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const moduleSkillService = new ModuleSkillService();
+        assert.equal(await moduleSkillService.hasModuleProfile("charging_management"), true);
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
 
-          const project = await projectService.createProject({ name: "Workspace Project" });
-          const module = await projectService.createModule(project.id, {
-            name: "充电管理",
-            description: "负责充电状态与控制逻辑",
-            importedSkillKey: "charging_management"
-          });
-
-          const uploadDir = path.join(config.uploadDir, project.id, module.id);
-          await fs.mkdir(uploadDir, { recursive: true });
-          const systemFilePath = path.join(uploadDir, "charging.md");
-          const modelFilePath = path.join(uploadDir, "charging-model.c");
-          const referenceFilePath = path.join(uploadDir, "charging-example.md");
-          await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
-          await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
-          await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
-
-          await projectService.attachModuleAssets(project.id, module.id, {
-            systemPdf: [
-              {
-                originalname: "charging.md",
-                filename: "charging.md",
-                path: systemFilePath,
-                mimetype: "text/markdown",
-                size: 24
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在充电使能时输出充电状态信号。",
+                    summary: "充电使能时输出充电状态信号。",
+                    tags: ["requirement-like"]
+                  }
+                ]
               }
-            ],
-            generatedCode: [
-              {
-                originalname: "charging-model.c",
-                filename: "charging-model.c",
-                path: modelFilePath,
-                mimetype: "text/x-c",
-                size: 44
+            };
+          }
+          if (payload.stepType === "atom_recall") {
+            return { status: "succeeded", artifact: { items: [] } };
+          }
+          if (payload.stepType === "outline_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                summary: "充电状态输出",
+                sections: [{ title: "功能行为", objective: "描述充电状态输出行为", anchorIds: ["anchor-1"] }]
               }
-            ],
-            referenceExample: [
-              {
-                originalname: "charging-example.md",
-                filename: "charging-example.md",
-                path: referenceFilePath,
-                mimetype: "text/markdown",
-                size: 27
+            };
+          }
+          if (payload.stepType === "content_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    requirementText: "当充电使能时，软件应输出充电状态信号。",
+                    type: "functional",
+                    verificationHint: "验证充电使能时的状态输出。",
+                    sourceAnchorIds: ["anchor-1"],
+                    conflictNote: ""
+                  }
+                ]
               }
-            ]
-          });
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
 
-          const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {});
-          assert.equal(result.task.documentType, "software_requirement");
-          assert.equal(result.task.status, "completed");
-          assert.ok(result.task.resultItems.length >= 1);
-
-          const accepted = await projectService.createAcceptedItem(project.id, module.id, "software_requirement", {
-            sourceTaskId: result.task.id,
-            sourceResultItemId: result.task.resultItems[0].id,
-            requirementText: "软件应在充电使能时输出充电状态信号，并记录状态变化。"
-          });
-          assert.equal(accepted.sourceTaskId, result.task.id);
-          assert.ok(accepted.acceptedSnapshot.requirementText.length > 0);
-          assert.equal(
-            accepted.currentContent.requirementText,
-            "软件应在充电使能时输出充电状态信号，并记录状态变化。"
-          );
-
-          const updated = await projectService.updateAcceptedItem(
-            project.id,
-            module.id,
-            "software_requirement",
-            accepted.id,
-            {
-              requirementText: "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
-            }
-          );
-          assert.equal(
-            updated.currentContent.requirementText,
-            "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
-          );
-
-          const refreshedProject = await projectService.getProject(project.id);
-          const refreshedModule = refreshedProject.modules.find((item) => item.id === module.id);
-          assert.equal(refreshedModule.assets.length, 3);
-          assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks.length, 1);
-          assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks[0].status, "completed");
-          assert.equal(refreshedModule.documentSpaces.software_requirement.acceptedItems.length, 1);
-          assert.equal(refreshedModule.documentSpaces.detail_design.generationTasks.length, 0);
+        const project = await projectService.createProject({ name: "Workspace Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          description: "负责充电状态与控制逻辑",
+          importedSkillKey: "charging_management"
         });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging.md");
+        const modelFilePath = path.join(uploadDir, "charging-model.c");
+        const referenceFilePath = path.join(uploadDir, "charging-example.md");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+        await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+        await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging.md",
+              filename: "charging.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ],
+          generatedCode: [
+            {
+              originalname: "charging-model.c",
+              filename: "charging-model.c",
+              path: modelFilePath,
+              mimetype: "text/x-c",
+              size: 44
+            }
+          ],
+          referenceExample: [
+            {
+              originalname: "charging-example.md",
+              filename: "charging-example.md",
+              path: referenceFilePath,
+              mimetype: "text/markdown",
+              size: 27
+            }
+          ]
+        });
+
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+          manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }])
+        });
+        assert.equal(result.task.documentType, "software_requirement");
+        assert.equal(result.task.status, "completed");
+        assert.equal(result.task.resultItems.length, 1);
+        assert.equal(result.task.resultItems[0].sectionTitle, "功能行为");
+        assert.equal(result.task.resultItems[0].itemTitle, "充电状态信号输出");
+
+        const accepted = await projectService.createAcceptedItem(project.id, module.id, "software_requirement", {
+          sourceTaskId: result.task.id,
+          sourceResultItemId: result.task.resultItems[0].id,
+          requirementText: "软件应在充电使能时输出充电状态信号，并记录状态变化。"
+        });
+        assert.equal(accepted.sourceTaskId, result.task.id);
+        assert.ok(accepted.acceptedSnapshot.requirementText.length > 0);
+        assert.equal(accepted.currentContent.sectionTitle, "功能行为");
+        assert.equal(accepted.currentContent.itemTitle, "充电状态信号输出");
+        assert.equal(
+          accepted.currentContent.requirementText,
+          "软件应在充电使能时输出充电状态信号，并记录状态变化。"
+        );
+
+        const updated = await projectService.updateAcceptedItem(
+          project.id,
+          module.id,
+          "software_requirement",
+          accepted.id,
+          {
+            sectionTitle: "补充章节",
+            itemTitle: "补充条目",
+            requirementText: "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
+          }
+        );
+        assert.equal(updated.currentContent.sectionTitle, "补充章节");
+        assert.equal(updated.currentContent.itemTitle, "补充条目");
+        assert.equal(updated.currentContent.title, "补充条目");
+        assert.equal(
+          updated.currentContent.requirementText,
+          "软件应在充电使能时输出充电状态信号，并记录最近一次状态变化。"
+        );
+
+        const refreshedProject = await projectService.getProject(project.id);
+        const refreshedModule = refreshedProject.modules.find((item) => item.id === module.id);
+        assert.equal(refreshedModule.assets.length, 3);
+        assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks.length, 1);
+        assert.equal(refreshedModule.documentSpaces.software_requirement.generationTasks[0].status, "completed");
+        assert.equal(refreshedModule.documentSpaces.software_requirement.acceptedItems.length, 1);
+        assert.equal(refreshedModule.documentSpaces.detail_design.generationTasks.length, 0);
+      });
+    }
+  },
+  {
+    name: "Project service persists document extraction tasks and versioned extracted assets",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Extractor Project" });
+        const module = await projectService.createModule(project.id, { name: "高压能量管理" });
+
+        const task = await projectService.recordDocumentExtractionTask(project.id, module.id, {
+          targetDocumentType: "system_requirement",
+          sourceMode: "mixed",
+          status: "running",
+          progress: {
+            stage: "document_extract_prepare",
+            label: "正在准备提取任务",
+            message: "正在整理图片和文本输入。",
+            percent: 10,
+            updatedAt: new Date().toISOString()
+          }
+        });
+
+        assert.equal(task.targetDocumentType, "system_requirement");
+        assert.equal(task.sourceMode, "mixed");
+
+        const completedTask = await projectService.updateDocumentExtractionTask(project.id, module.id, task.id, {
+          status: "completed",
+          summary: "已提取系统需求"
+        });
+        assert.equal(completedTask.status, "completed");
+
+        const firstAsset = await projectService.createExtractedModuleAsset(project.id, module.id, {
+          sourceTaskId: task.id,
+          targetDocumentType: "system_requirement",
+          markdown: "# 高压能量管理-系统需求\n",
+          summary: "首次提取"
+        });
+        assert.equal(firstAsset.role, "extracted_system_requirement");
+        assert.equal(firstAsset.originalName, "高压能量管理-系统需求.md");
+
+        const secondAsset = await projectService.createExtractedModuleAsset(project.id, module.id, {
+          sourceTaskId: task.id,
+          targetDocumentType: "system_requirement",
+          markdown: "# 高压能量管理-系统需求\n\n第二版\n",
+          summary: "再次提取"
+        });
+        assert.equal(secondAsset.role, "extracted_system_requirement");
+        assert.match(secondAsset.originalName, /^高压能量管理-系统需求-\d{8}-\d{6}\.md$/);
+
+        const storedTasks = await projectService.listDocumentExtractionTasks(project.id, module.id);
+        const reloadedModule = await projectService.getModule(project.id, module.id);
+        assert.equal(storedTasks.length, 1);
+        assert.equal(storedTasks[0].id, task.id);
+        assert.equal(reloadedModule.assets.filter((item) => item.role === "extracted_system_requirement").length, 2);
+
+        await projectService.deleteDocumentExtractionTask(project.id, module.id, task.id);
+        const remainingTasks = await projectService.listDocumentExtractionTasks(project.id, module.id);
+        const retainedModule = await projectService.getModule(project.id, module.id);
+        assert.equal(remainingTasks.length, 0);
+        assert.equal(retainedModule.assets.filter((item) => item.role === "extracted_system_requirement").length, 2);
+      });
+    }
+  },
+  {
+    name: "Project service persists HIL document extraction assets with HIL naming",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Extractor HIL Project" });
+        const module = await projectService.createModule(project.id, { name: "ESC干预" });
+
+        const task = await projectService.recordDocumentExtractionTask(project.id, module.id, {
+          targetDocumentType: "hil_test_case",
+          sourceMode: "image",
+          status: "running"
+        });
+
+        const asset = await projectService.createExtractedModuleAsset(project.id, module.id, {
+          sourceTaskId: task.id,
+          targetDocumentType: "hil_test_case",
+          markdown: "# ESC干预-HIL测试用例\n\n## 用例信息\n",
+          summary: "已提取 HIL 测试用例"
+        });
+
+        assert.equal(asset.role, "extracted_hil_test_case");
+        assert.equal(asset.originalName, "ESC干预-HIL测试用例.md");
+
+        const content = await projectService.getModuleAssetContent(project.id, module.id, asset.id);
+        assert.equal(content.role, "extracted_hil_test_case");
+        assert.ok(content.content.includes("## 用例信息"));
+      });
+    }
+  },
+  {
+    name: "Spreadsheet extraction service parses Basic Report HIL rows from xlsx",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const spreadsheetPath = path.join(tempDir, "sample-hil.xlsx");
+        await createMinimalXlsx(spreadsheetPath, {
+          "Basic Report": [
+            ["ID", "Title", "precondition", "Step Description", "Expected Result"],
+            [
+              "CheryVCU-9567",
+              "ESC干预前轴激活标志位判断_前电机降扭",
+              "1. KL15上电\n2. 进入D挡",
+              "1. ESC_TqDecReqAct_F = 0x1\n2. ESC_TqDecReq_F = 3699",
+              "1. ESCWhlTq_bFrntAxleTqIntvActv = 0"
+            ]
+          ]
+        });
+
+        const service = new SpreadsheetExtractionService();
+        const result = await service.parseHilSpreadsheet(spreadsheetPath);
+
+        assert.equal(result.sheetName, "Basic Report");
+        assert.equal(result.cases.length, 1);
+        assert.equal(result.cases[0].title, "ESC干预前轴激活标志位判断_前电机降扭");
+        assert.ok(result.cases[0].precondition.includes("KL15上电"));
+        assert.ok(result.cases[0].stepDescription.includes("ESC_TqDecReqAct_F"));
+        assert.ok(result.cases[0].expectedResult.includes("ESCWhlTq_bFrntAxleTqIntvActv"));
+        assert.ok(result.normalizedText.includes("Title: ESC干预前轴激活标志位判断_前电机降扭"));
+      });
+    }
+  },
+  {
+    name: "Pipeline service extracts markdown asset through Hermes document extraction chain",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        const hermesPayloads = [];
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          hermesPayloads.push(payload);
+          if (payload.stepType === "document_extract_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                targetDocumentType: "software_requirement",
+                title: "高压安全管理软件需求",
+                markdown: "# 高压安全管理软件需求\n\n## 文档信息\n",
+                summary: "已提取软件需求",
+                keySections: ["文档信息", "章节结构", "需求条目", "提炼摘要"]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Extractor Pipeline Project" });
+        const module = await projectService.createModule(project.id, { name: "高压安全管理" });
+
+        const result = await pipelineService.extractDocumentForModule(project.id, module.id, {
+          targetDocumentType: "software_requirement",
+          sourceText: "CheryVCU-2595 - 绝缘拓展性检测",
+          imageInputs: [
+            {
+              originalName: "clip.png",
+              storedName: "clip.png",
+              mimeType: "image/png",
+              size: 128,
+              absolutePath: "/tmp/clip.png"
+            }
+          ]
+        });
+
+        assert.equal(result.task.status, "completed");
+        assert.equal(result.task.targetDocumentType, "software_requirement");
+        assert.equal(result.outputAsset.role, "extracted_software_requirement");
+        assert.equal(result.outputAsset.originalName, "高压安全管理-软件需求.md");
+        assert.ok(hermesPayloads.some((payload) => payload.stepType === "document_extract_generate"));
+      });
+    }
+  },
+  {
+    name: "Pipeline service extracts HIL markdown asset through Hermes document extraction chain",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        const hermesPayloads = [];
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          hermesPayloads.push(payload);
+          if (payload.stepType === "document_extract_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                targetDocumentType: "hil_test_case",
+                title: "ESC干预-HIL测试用例",
+                markdown: "# ESC干预-HIL测试用例\n\n## 用例信息\n",
+                summary: "已提取 HIL 测试用例",
+                keySections: ["用例信息", "前置条件", "步骤描述", "预期结果"]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Extractor HIL Pipeline Project" });
+        const module = await projectService.createModule(project.id, { name: "ESC干预" });
+
+        const result = await pipelineService.extractDocumentForModule(project.id, module.id, {
+          targetDocumentType: "hil_test_case",
+          sourceText: "SMiVCU-9567",
+          imageInputs: [
+            {
+              originalName: "hil-case.png",
+              storedName: "hil-case.png",
+              mimeType: "image/png",
+              size: 256,
+              absolutePath: "/tmp/hil-case.png"
+            }
+          ]
+        });
+
+        assert.equal(result.task.status, "completed");
+        assert.equal(result.task.targetDocumentType, "hil_test_case");
+        assert.equal(result.outputAsset.role, "extracted_hil_test_case");
+        assert.equal(result.outputAsset.originalName, "ESC干预-HIL测试用例.md");
+        assert.ok(
+          hermesPayloads.some(
+            (payload) => payload.stepType === "document_extract_generate" && payload.inputArtifact?.targetDocumentType === "hil_test_case"
+          )
+        );
+      });
+    }
+  },
+  {
+    name: "Pipeline service extracts HIL markdown asset from spreadsheet inputs through Hermes document extraction chain",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        const hermesPayloads = [];
+        const spreadsheetPath = path.join(tempDir, "sample-hil.xlsx");
+
+        await createMinimalXlsx(spreadsheetPath, {
+          "Basic Report": [
+            ["ID", "Title", "precondition", "Step Description", "Expected Result"],
+            [
+              "CheryVCU-9567",
+              "ESC干预前轴激活标志位判断_前电机降扭",
+              "1. KL15上电",
+              "1. ESC_TqDecReqAct_F = 0x1",
+              "1. ESCWhlTq_bFrntAxleTqIntvActv = 0"
+            ]
+          ]
+        });
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          hermesPayloads.push(payload);
+          if (payload.stepType === "document_extract_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                targetDocumentType: "hil_test_case",
+                title: "ESC干预-HIL测试用例",
+                markdown: "# ESC干预-HIL测试用例\n\n## 用例信息\n",
+                summary: "已根据 Excel 提取 HIL 测试用例",
+                keySections: ["用例信息", "前置条件", "步骤描述", "预期结果"]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Extractor HIL Spreadsheet Project" });
+        const module = await projectService.createModule(project.id, { name: "ESC干预" });
+
+        const result = await pipelineService.extractDocumentForModule(project.id, module.id, {
+          targetDocumentType: "hil_test_case",
+          spreadsheetInputs: [
+            {
+              originalName: "workitems.xlsx",
+              storedName: "workitems.xlsx",
+              mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              size: 1024,
+              absolutePath: spreadsheetPath
+            }
+          ]
+        });
+
+        assert.equal(result.task.status, "completed");
+        assert.equal(result.task.targetDocumentType, "hil_test_case");
+        assert.equal(result.task.sourceMode, "spreadsheet");
+        assert.equal(result.outputAsset.role, "extracted_hil_test_case");
+        const content = await projectService.getModuleAssetContent(project.id, module.id, result.outputAsset.id);
+        assert.ok(content.content.includes("## 用例总览"));
+        assert.ok(content.content.includes("| 序号 | Title | 来源ID |"));
+        assert.ok(content.content.includes("## 用例详情"));
+        assert.ok(content.content.includes("### 1. ESC干预前轴激活标志位判断_前电机降扭"));
+        assert.ok(content.content.includes("#### Precondition"));
+        assert.ok(content.content.includes("#### Step Description"));
+        assert.ok(content.content.includes("#### Expected Result"));
+        assert.ok(
+          hermesPayloads.some(
+            (payload) =>
+              payload.stepType === "document_extract_generate" &&
+              payload.inputArtifact?.targetDocumentType === "hil_test_case" &&
+              String(payload.inputArtifact?.sourceText || "").includes("Title: ESC干预前轴激活标志位判断_前电机降扭")
+          )
+        );
       });
     }
   },
@@ -3049,6 +5424,541 @@ const tests = [
         const updatedRecord = await rejectionService.getRecord(records[0].id);
         assert.equal(updatedRecord.replayCount, 1);
         assert.equal(updatedRecord.replayStatus, "proposal_ready");
+      });
+    }
+  },
+  {
+    name: "Replay task passes replay artifact directory shape into proposal generation",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay Artifact Shape Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-artifact-shape-1",
+              requirementId: "SWR-451",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.74,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-replay-artifact-shape-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "validation",
+          expectedNote: "请严格回到人工范例边界。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        let capturedPayload = null;
+        replayTaskService.hermesAgentClient.executeStep = async (payload) => {
+          capturedPayload = payload;
+          return {
+            status: "succeeded",
+            stepType: "replay_proposal_generate",
+            artifact: {
+              summary: "已生成回投提议。",
+              decisionSummary: "",
+              validatorSuggestions: [],
+              items: []
+            }
+          };
+        };
+
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id,
+          asyncExecution: true
+        });
+        await replayTaskService.activeRuns.get(replayTask.id);
+
+        assert.equal(capturedPayload.taskId, replayTask.id);
+        assert.equal(capturedPayload.stepType, "replay_proposal_generate");
+        assert.deepEqual(capturedPayload.inputArtifact.replayContext, {
+          directory: path.join(config.replayTaskArtifactDir, replayTask.id),
+          manifestFileName: "manifest.json",
+          taskBriefFileName: "task-brief.md",
+          manifestPath: path.join(config.replayTaskArtifactDir, replayTask.id, "manifest.json"),
+          taskBriefPath: path.join(config.replayTaskArtifactDir, replayTask.id, "task-brief.md")
+        });
+        assert.equal(
+          capturedPayload.inputArtifact.files.layerSkillInventoryPath,
+          path.join(config.replayTaskArtifactDir, replayTask.id, "layer-skill-inventory.json")
+        );
+        assert.equal(capturedPayload.inputArtifact.replayManifest.taskContext.moduleSkillKey, "charging_management");
+        assert.equal(capturedPayload.inputArtifact.replayManifest.rejectionContext.records[0].id, records[0].id);
+        assert.deepEqual(capturedPayload.allowedPaths, [path.join(config.replayTaskArtifactDir, replayTask.id)]);
+      });
+    }
+  },
+  {
+    name: "Replay task persists running state before proposal generation completes",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay Running Task Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-running-1",
+              requirementId: "SWR-452",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.74,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-replay-running-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "validation",
+          expectedNote: "请严格回到人工范例边界。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        let releaseExecute = null;
+        const executeBlocked = new Promise((resolve) => {
+          releaseExecute = resolve;
+        });
+        let enteredExecute = null;
+        const executeEntered = new Promise((resolve) => {
+          enteredExecute = resolve;
+        });
+
+        replayTaskService.hermesAgentClient.executeStep = async () => {
+          enteredExecute();
+          await executeBlocked;
+          return {
+            status: "succeeded",
+            stepType: "replay_proposal_generate",
+            artifact: {
+              summary: "已生成回投提议。",
+              decisionSummary: "",
+              validatorSuggestions: [],
+              items: []
+            }
+          };
+        };
+
+        const pendingTaskPromise = replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id,
+          asyncExecution: true
+        });
+
+        await executeEntered;
+        await new Promise((resolve) => setTimeout(resolve, 30));
+
+        const taskFiles = (await fs.readdir(config.replayTaskStoreDir)).filter((name) => name.endsWith(".json"));
+        assert.equal(taskFiles.length, 1);
+        const stagedTask = JSON.parse(await fs.readFile(path.join(config.replayTaskStoreDir, taskFiles[0]), "utf8"));
+        assert.equal(stagedTask.taskStatus, "running");
+        assert.match(stagedTask.summary, /Replay 正在生成 Skill 优化建议|Replay 任务已排队/);
+
+        releaseExecute();
+        const replayTask = await pendingTaskPromise;
+        await replayTaskService.activeRuns.get(replayTask.id);
+        const completedTask = await replayTaskService.getTask(replayTask.id);
+        assert.equal(completedTask.taskStatus, "done");
+      });
+    }
+  },
+  {
+    name: "Replay task list reconciles stale running tasks after backend restart",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay Stale Task Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const generationTask = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-stale-1",
+              requirementId: "SWR-553",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.74,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", generationTask.id, "result-replay-stale-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "validation",
+          expectedNote: "请严格回到人工范例边界。",
+          includeInPool: true
+        });
+
+        const [record] = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const staleAt = new Date(Date.now() - 60000).toISOString();
+        const staleTask = {
+          id: "replay-stale-task-1",
+          projectId: project.id,
+          projectName: project.name,
+          moduleId: module.id,
+          moduleName: module.name,
+          sourceRejectionIds: [record.id],
+          groupIds: [],
+          targetBundleId: "bundle-base",
+          llmProfileId: "",
+          referenceAssetIds: [],
+          taskStatus: "running",
+          materialPack: { targetAreas: ["validation"], referenceAssets: [] },
+          proposalIds: [],
+          proposals: [],
+          summary: "Replay 正在生成 Skill 优化建议",
+          decisionSummary: "",
+          validatorSuggestions: [],
+          applyResult: null,
+          progress: {
+            stage: "replay_proposal_generate",
+            label: "正在调用 Hermes 生成 Skill 优化建议",
+            message: "本机 Hermes 正在执行 replay_proposal_generate，已运行 90 秒。",
+            percent: 72
+          },
+          timeline: [
+            {
+              stage: "queued",
+              label: "任务已创建",
+              message: "Replay 任务已创建，等待 Hermes 处理。",
+              level: "info",
+              at: staleAt
+            }
+          ],
+          runtimeEvents: [
+            {
+              at: staleAt,
+              type: "agent_runtime",
+              transport: "cli",
+              stepType: "replay_proposal_generate",
+              status: "heartbeat",
+              label: "Hermes CLI 仍在运行",
+              message: "本机 Hermes 正在执行 replay_proposal_generate，已运行 90 秒。",
+              startedAt: staleAt,
+              heartbeatAt: staleAt,
+              elapsedMs: 90000
+            }
+          ],
+          debug: {
+            agent: {
+              transport: "cli",
+              status: "heartbeat",
+              currentStep: "replay_proposal_generate",
+              startedAt: staleAt,
+              lastEventAt: staleAt,
+              lastHeartbeatAt: staleAt,
+              elapsedMs: 90000,
+              sessionId: "",
+              tokenUsage: null,
+              stdoutExcerpt: "",
+              stderrExcerpt: ""
+            },
+            artifacts: {}
+          },
+          errorMessage: "",
+          errorStage: "",
+          createdAt: staleAt,
+          updatedAt: staleAt
+        };
+
+        await fs.writeFile(path.join(config.replayTaskStoreDir, `${staleTask.id}.json`), JSON.stringify(staleTask, null, 2), "utf8");
+        await rejectionService.updateRecord(record.id, {
+          replayStatus: "running",
+          replayCount: 1,
+          replayTaskIds: [staleTask.id],
+          lastReplayAt: staleAt
+        });
+
+        const [reconciledTask] = await replayTaskService.listTasks({ projectId: project.id, moduleId: module.id });
+        assert.equal(reconciledTask.taskStatus, "failed");
+        assert.equal(reconciledTask.errorStage, "service_interrupted");
+        assert.match(reconciledTask.errorMessage, /后端服务已重启|任务执行已中断/);
+        assert.equal(reconciledTask.debug?.agent?.status, "interrupted");
+        assert.equal(reconciledTask.runtimeEvents.at(-1)?.status, "failed");
+
+        const updatedRecord = await rejectionService.getRecord(record.id);
+        assert.equal(updatedRecord.replayStatus, "failed");
+        assert.equal(updatedRecord.replayCount, 1);
+        assert.deepEqual(updatedRecord.replayTaskIds, [staleTask.id]);
+      });
+    }
+  },
+  {
+    name: "Replay task can be deleted while running without reappearing in history",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay Delete Active Task Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const generationTask = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-delete-active-1",
+              requirementId: "SWR-554",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.74,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", generationTask.id, "result-replay-delete-active-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "validation",
+          expectedNote: "请严格回到人工范例边界。",
+          includeInPool: true
+        });
+
+        const [record] = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        let releaseExecute = null;
+        const executeBlocked = new Promise((resolve) => {
+          releaseExecute = resolve;
+        });
+        let enteredExecute = null;
+        const executeEntered = new Promise((resolve) => {
+          enteredExecute = resolve;
+        });
+
+        replayTaskService.hermesAgentClient.executeStep = async (_payload, runtime = {}) => {
+          if (runtime.onEvent) {
+            await runtime.onEvent({
+              at: new Date().toISOString(),
+              type: "agent_runtime",
+              transport: "cli",
+              stepType: "replay_proposal_generate",
+              status: "started",
+              label: "Hermes CLI 已启动",
+              message: "正在调用本机 Hermes 执行 replay_proposal_generate。"
+            });
+          }
+          enteredExecute();
+          await executeBlocked;
+          if (runtime.onEvent) {
+            await runtime.onEvent({
+              at: new Date().toISOString(),
+              type: "agent_runtime",
+              transport: "cli",
+              stepType: "replay_proposal_generate",
+              status: "completed",
+              label: "Hermes CLI 已完成",
+              message: "本机 Hermes 已完成 replay_proposal_generate。"
+            });
+          }
+          return {
+            status: "succeeded",
+            stepType: "replay_proposal_generate",
+            artifact: {
+              summary: "已生成回投提议。",
+              decisionSummary: "",
+              validatorSuggestions: [],
+              items: []
+            }
+          };
+        };
+
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [record.id],
+          projectId: project.id,
+          moduleId: module.id,
+          asyncExecution: true
+        });
+
+        await executeEntered;
+        const deleted = await replayTaskService.deleteTask(replayTask.id);
+        assert.equal(deleted.deleted, true);
+        assert.equal(await replayTaskService.getTask(replayTask.id), null);
+        assert.deepEqual(await replayTaskService.listTasks({ projectId: project.id, moduleId: module.id }), []);
+
+        const resetRecord = await rejectionService.getRecord(record.id);
+        assert.equal(resetRecord.replayStatus, "not_started");
+        assert.equal(resetRecord.replayCount, 0);
+        assert.deepEqual(resetRecord.replayTaskIds, []);
+
+        releaseExecute();
+        await replayTaskService.activeRuns.get(replayTask.id);
+
+        assert.equal(await replayTaskService.getTask(replayTask.id), null);
+        assert.deepEqual(await replayTaskService.listTasks({ projectId: project.id, moduleId: module.id }), []);
+      });
+    }
+  },
+  {
+    name: "Replay task preserves runtime and artifact metadata from replay proposal payloads",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const replayTaskService = new ReplayTaskService();
+
+        const project = await projectService.createProject({ name: "Replay Payload Compatibility Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "充电管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-replay-payload-1",
+              requirementId: "SWR-552",
+              title: "充电截止 SOC 记忆",
+              requirementText: "软件应记忆充电截止 SOC。",
+              type: "functional",
+              confidence: 0.74,
+              verificationHint: "检查记忆与刷新行为",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-replay-payload-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "wording_issue",
+          reasonText: "正文混入了人工范例没有的兜底逻辑",
+          targetArea: "validation",
+          expectedNote: "请严格回到人工范例边界。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        replayTaskService.hermesAgentClient.executeStep = async () => ({
+          status: "succeeded",
+          stepType: "replay_proposal_generate",
+          artifact: {
+            summary: "已生成回投提议。",
+            decisionSummary: "已保留运行时与产物元数据。",
+            validatorSuggestions: [],
+            items: [],
+            runtime: {
+              status: "completed",
+              stage: "replay_proposal_generate",
+              sessionId: "session-replay-001"
+            },
+            artifacts: {
+              artifactDir: "/tmp/replay-artifacts/task-compat",
+              files: ["selection-report.json", "read-manifest.json"]
+            }
+          }
+        });
+
+        const replayTask = await replayTaskService.createTask({
+          rejectionIds: [records[0].id],
+          projectId: project.id,
+          moduleId: module.id,
+          asyncExecution: true
+        });
+        await replayTaskService.activeRuns.get(replayTask.id);
+        const completedTask = await replayTaskService.getTask(replayTask.id);
+
+        assert.deepEqual(completedTask.runtime, {
+          status: "completed",
+          stage: "replay_proposal_generate",
+          sessionId: "session-replay-001"
+        });
+        assert.deepEqual(completedTask.artifacts, {
+          artifactDir: "/tmp/replay-artifacts/task-compat",
+          files: ["selection-report.json", "read-manifest.json"]
+        });
+
+        const persistedTask = await replayTaskService.getTask(replayTask.id);
+        assert.deepEqual(persistedTask.runtime, completedTask.runtime);
+        assert.deepEqual(persistedTask.artifacts, completedTask.artifacts);
       });
     }
   },
@@ -3661,6 +6571,148 @@ const tests = [
     }
   },
   {
+    name: "Skill work order list ignores stale empty work orders from failed replay tasks",
+    run: async () => {
+      await withTempConfig(async () => {
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const projectService = new ProjectService();
+        const rejectionService = new RejectionService();
+        const workOrderService = new SkillWorkOrderService();
+
+        const project = await projectService.createProject({ name: "Stale Empty Work Order Project" });
+        const module = await projectService.createModule(project.id, {
+          name: "低压能量管理",
+          importedSkillKey: "charging_management"
+        });
+
+        const task = await projectService.recordGenerationTask(project.id, module.id, "software_requirement", {
+          status: "completed",
+          resultItems: [
+            {
+              id: "result-stale-work-order-1",
+              requirementId: "SWR-801",
+              title: "智能补电退出判断",
+              requirementText: "软件应判断智能补电退出条件。",
+              type: "functional",
+              confidence: 0.78,
+              verificationHint: "检查退出条件覆盖。",
+              conflictNote: "",
+              sourceRefs: []
+            }
+          ],
+          traces: [],
+          conflicts: [],
+          extractions: []
+        });
+
+        await projectService.reviewTaskResult(project.id, module.id, "software_requirement", task.id, "result-stale-work-order-1", {
+          status: "rejected",
+          reviewer: "tester",
+          reasonCategory: "coverage_gap",
+          reasonText: "退出分支被压缩。",
+          targetArea: "writing",
+          expectedNote: "保留分支后的差异化处理。",
+          includeInPool: true
+        });
+
+        const records = await rejectionService.listRecords({ projectId: project.id, moduleId: module.id });
+        const createdAt = new Date().toISOString();
+        const replayTaskId = "failed-replay-task-empty";
+        const workOrderId = "stale-empty-work-order";
+
+        await fs.writeFile(
+          path.join(config.replayTaskStoreDir, `${replayTaskId}.json`),
+          JSON.stringify(
+            {
+              id: replayTaskId,
+              projectId: project.id,
+              projectName: project.name,
+              moduleId: module.id,
+              moduleName: module.name,
+              sourceRejectionIds: [records[0].id],
+              taskStatus: "failed",
+              summary: "Replay 任务异常中断",
+              decisionSummary: "",
+              validatorSuggestions: [],
+              proposals: [],
+              createdAt,
+              updatedAt: createdAt
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        await fs.writeFile(
+          path.join(config.skillWorkOrderStoreDir, `${workOrderId}.json`),
+          JSON.stringify(
+            {
+              id: workOrderId,
+              title: "低压能量管理 / software_requirement / fallback 技能修改工单",
+              sourceType: "fallback",
+              sourceTaskId: replayTaskId,
+              projectId: project.id,
+              projectName: project.name,
+              moduleId: module.id,
+              moduleName: module.name,
+              documentType: "software_requirement",
+              llmProfile: {
+                id: "profile-stale-work-order",
+                label: "profile-stale-work-order"
+              },
+              effectiveSkillSnapshot: {
+                bundleId: "bundle-base",
+                ruleIndexVersion: "",
+                hash: "",
+                selectedProfiles: [],
+                compiledPrompt: "",
+                compiledSkillPack: null,
+                files: {},
+                candidateSkillItems: []
+              },
+              status: "pending_review",
+              summary: "Replay 任务异常中断",
+              decisionSummary: "当前未识别出可直接落地的 atomic skill 修改项。",
+              itemStats: {
+                total: 0,
+                modifyExisting: 0,
+                createNew: 0,
+                validatorOnly: 0,
+                accepted: 0,
+                rejected: 0,
+                applied: 0
+              },
+              evidenceRefs: [{ type: "rejection", refId: records[0].id }],
+              validatorSuggestions: [],
+              items: [],
+              createdAt,
+              updatedAt: createdAt
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        const workOrders = await workOrderService.listWorkOrders({});
+        assert.equal(workOrders.length, 0);
+
+        const staleWorkOrder = await workOrderService.getWorkOrder(workOrderId);
+        assert.equal(staleWorkOrder, null);
+
+        await fs.rm(path.join(config.replayTaskStoreDir, `${replayTaskId}.json`), { force: true });
+
+        const workOrdersAfterTaskRemoval = await workOrderService.listWorkOrders({});
+        assert.equal(workOrdersAfterTaskRemoval.length, 0);
+
+        const staleWorkOrderAfterTaskRemoval = await workOrderService.getWorkOrder(workOrderId);
+        assert.equal(staleWorkOrderAfterTaskRemoval, null);
+      });
+    }
+  },
+  {
     name: "Skill bundle initialization preserves and restores domain knowledge",
     run: async () => {
       await withTempConfig(async () => {
@@ -3834,6 +6886,50 @@ const tests = [
     }
   },
   {
+    name: "Skill registry rebuild preserves database-only module profiles created by cold start",
+    run: async () => {
+      await withTempConfig(async () => {
+        const registryService = new SkillManagementService().registryService;
+        const moduleSkillService = new ModuleSkillService();
+        const module = {
+          name: "Low Voltage Energy Management",
+          moduleSkillKey: "low_voltage_energy_management"
+        };
+
+        await moduleSkillService.persistBootstrappedKnowledge(module, "software_requirement", {
+          version: 1,
+          generationPriorities: ["优先保留模块冷启动知识。"],
+          examples: [],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              sectionHints: ["智能补电激活判断"],
+              writingPattern: "先写场景，再写条件。",
+              targetStyle: "software requirement"
+            }
+          ],
+          antiPatterns: ["不要遗漏退出条件。"]
+        });
+
+        const manifestPath = path.join(config.activeSkillDir, "skill-manifest.json");
+        const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+        delete manifest.profiles.modules.low_voltage_energy_management;
+        await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+        await fs.rm(path.join(config.activeSkillDir, "profiles", "modules", "low_voltage_energy_management"), {
+          recursive: true,
+          force: true
+        });
+
+        await registryService.rebuildDatabaseFromFiles(config.activeSkillDir);
+
+        const restored = registryService.databaseService.loadProfileRegistry("module", module.moduleSkillKey);
+        assert.ok(restored);
+        assert.ok(restored.items.some((item) => item.kind === "generation_priority"));
+        assert.ok(restored.items.some((item) => item.kind === "rule_hint"));
+      });
+    }
+  },
+  {
     name: "Feedback ticket service stores issue detail and uploaded image metadata",
     run: async () => {
       await withTempConfig(async () => {
@@ -3988,6 +7084,132 @@ const tests = [
         assert.equal(created.content, "当前技能库参考的标准是 ISO 26262。");
         assert.equal(created.structuredPayload.key, "standard");
         assert.equal(created.structuredPayload.value, "ISO 26262");
+      });
+    }
+  },
+  {
+    name: "Source policy settings render specific readable prose for module bootstrap policies",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new ModuleSkillService();
+        const module = {
+          name: "Low Voltage Energy Management",
+          moduleSkillKey: "low_voltage_energy_management"
+        };
+
+        await service.persistBootstrappedKnowledge(module, "software_requirement", {
+          version: 1,
+          generationPriorities: [],
+          examples: [],
+          ruleHints: [],
+          antiPatterns: [],
+          sourceOfTruthPolicy: {
+            preferredFunctionSection: {
+              title: "低压能量管理 / 智能补电"
+            },
+            preferredSubsections: [
+              {
+                title: "智能补电激活判断",
+                coreRequirementTypes: ["software_requirement"]
+              },
+              {
+                title: "智能补电退出判断",
+                coreRequirementTypes: ["software_requirement"]
+              }
+            ],
+            coreFirst: true,
+            preferSymmetricExpansion: true
+          }
+        });
+
+        const registry = await service.registryService.loadProfileRegistry("module", module.moduleSkillKey);
+        const functionSection = registry.items.find((item) => item.structuredPayload?.key === "preferredFunctionSection");
+        const subsections = registry.items.find((item) => item.structuredPayload?.key === "preferredSubsections");
+        const coreFirst = registry.items.find((item) => item.structuredPayload?.key === "coreFirst");
+        const symmetric = registry.items.find((item) => item.structuredPayload?.key === "preferSymmetricExpansion");
+
+        assert.match(functionSection.content, /优先功能章节/);
+        assert.match(functionSection.content, /低压能量管理 \/ 智能补电/);
+        assert.match(subsections.content, /优先子章节/);
+        assert.match(subsections.content, /智能补电激活判断/);
+        assert.equal(coreFirst.content, "优先先铺开核心章节和核心规则，再补充外围内容。");
+        assert.equal(symmetric.content, "优先按对象或轴对称展开章节和需求。");
+      });
+    }
+  },
+  {
+    name: "Rule hint structured arrays survive knowledge import and reload",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new ModuleSkillService();
+        const module = {
+          name: "Low Voltage Energy Management",
+          moduleSkillKey: "low_voltage_energy_management"
+        };
+
+        await service.persistBootstrappedKnowledge(module, "software_requirement", {
+          version: 1,
+          generationPriorities: [],
+          examples: [],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              subdomain: "低压能量管理",
+              sectionHints: ["智能补电激活判断", "智能补电退出判断"],
+              writingPattern: "先写总前提，再写全部条件和任一条件。",
+              targetStyle: "贴近人工软件需求文档的判定类条目写法。",
+              sourceBasis: ["系统需求锚点 A", "软件需求参考锚点 B"]
+            }
+          ],
+          antiPatterns: []
+        });
+
+        const registry = await service.registryService.loadProfileRegistry("module", module.moduleSkillKey);
+        const hint = registry.items.find((item) => item.kind === "rule_hint");
+
+        assert.deepEqual(hint.structuredPayload.sectionHints, ["智能补电激活判断", "智能补电退出判断"]);
+        assert.deepEqual(hint.structuredPayload.sourceBasis, ["系统需求", "参考软件需求"]);
+      });
+    }
+  },
+  {
+    name: "Rule hint source basis strips anchor ids and runtime artifact labels during module knowledge import",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new ModuleSkillService();
+        const module = {
+          name: "Low Voltage Energy Management",
+          moduleSkillKey: "low_voltage_energy_management"
+        };
+
+        await service.persistBootstrappedKnowledge(module, "software_requirement", {
+          version: 1,
+          generationPriorities: [],
+          examples: [],
+          ruleHints: [
+            {
+              domain: "embedded_vcu",
+              subdomain: "低压能量管理",
+              sectionHints: ["智能补电激活判断"],
+              writingPattern: "先写条件，再写动作。",
+              targetStyle: "软件需求风格。",
+              sourceBasis: [
+                "系统需求锚点 11111111-1111-1111-1111-111111111111",
+                "参考软件需求锚点 22222222-2222-2222-2222-222222222222",
+                "代码语义参考锚点 33333333-3333-3333-3333-333333333333",
+                "task skill bundle recalled atoms"
+              ]
+            }
+          ],
+          antiPatterns: []
+        });
+
+        const registry = await service.registryService.loadProfileRegistry("module", module.moduleSkillKey);
+        const hint = registry.items.find((item) => item.kind === "rule_hint");
+
+        assert.deepEqual(hint.structuredPayload.sourceBasis, ["系统需求", "参考软件需求", "相关代码语义", "相关既有技能规则"]);
+        assert.doesNotMatch(hint.content, /11111111-1111-1111-1111-111111111111/);
+        assert.doesNotMatch(hint.content, /task skill bundle recalled atoms/);
       });
     }
   },
@@ -4466,14 +7688,16 @@ const tests = [
         );
 
         const rerun = await replayLabService.rerunTemplate(replayTask.id);
+        await replayLabService.replayTaskService.activeRuns.get(rerun.task.id);
+        const rerunTask = await replayLabService.replayTaskService.getTask(rerun.task.id);
         assert.notEqual(rerun.task.id, replayTask.id);
         assert.equal(rerun.templateTaskId, replayTask.id);
         assert.ok(rerun.currentPreview.ruleDiagnostics.before);
         assert.ok(rerun.currentPreview.ruleDiagnostics.after);
         assert.ok(rerun.currentPreview.ruleDiagnostics.after.counts.ruleIndex.total > 0);
-        assert.equal(rerun.task.materialPack.targetLayerConstraint, "docType");
-        assert.ok(Array.isArray(rerun.task.materialPack.layerSkillItems));
-        assert.ok(rerun.workOrder);
+        assert.equal(rerunTask.materialPack.targetLayerConstraint, "docType");
+        assert.ok(Array.isArray(rerunTask.materialPack.layerSkillItems));
+        assert.ok(["queued", "running", "done"].includes(rerun.task.taskStatus));
       });
     }
   },
@@ -4538,6 +7762,58 @@ const tests = [
         assert.equal(payload.validationContext.projectId, project.id);
         assert.equal(payload.validationContext.moduleId, module.id);
       });
+    }
+  },
+  {
+    name: "Fallback history drawer source includes running progress and agent runtime sections",
+    run: async () => {
+      const script = await fs.readFile(path.join(config.rootDir, "public", "hierarchy.js"), "utf8");
+      const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "hierarchy.css"), "utf8");
+
+      assert.ok(script.includes("执行进度"));
+      assert.ok(script.includes("Agent 运行日志"));
+      assert.ok(script.includes("data-toggle-feedback-history-progress"));
+      assert.ok(script.includes("data-toggle-feedback-history-runtime"));
+      assert.ok(script.includes("renderFeedbackHistoryProgressSection"));
+      assert.ok(script.includes("renderFeedbackHistoryRuntimeSection"));
+      assert.ok(script.includes("Token 消耗"));
+      assert.ok(script.includes("getReplayTaskEffectiveModelLabel"));
+      assert.ok(script.includes("formatReplayTokenUsageSummary"));
+      assert.ok(script.includes("getReplayTaskDisplayTitle"));
+      assert.ok(script.includes("getReplayTaskDisplaySummary"));
+      assert.ok(script.includes("compactStageSummary"));
+      assert.ok(script.includes("sortFeedbackHistoryTasks"));
+      assert.ok(script.includes("data-feedback-history-task-delete"));
+      assert.ok(script.includes("/replay-lab?runTaskId="));
+      assert.ok(script.includes("查看详情页"));
+      assert.ok(script.includes("feedback-history-card-main"));
+      assert.ok(stylesheet.includes(".feedback-history-progress-shell"));
+      assert.ok(stylesheet.includes(".feedback-history-runtime-shell"));
+      assert.ok(stylesheet.includes(".feedback-history-stage-summary"));
+      assert.ok(stylesheet.includes(".feedback-history-task-card strong"));
+      assert.ok(stylesheet.includes(".feedback-history-task-summary"));
+      assert.ok(stylesheet.includes(".feedback-history-card-head"));
+      assert.ok(stylesheet.includes(".feedback-history-card-delete"));
+      assert.ok(stylesheet.includes(".feedback-history-card-main"));
+      assert.ok(stylesheet.includes(".feedback-history-detail-actions"));
+      assert.ok(stylesheet.includes(".feedback-history-detail-link"));
+    }
+  },
+  {
+    name: "Replay Lab source includes running progress and agent runtime sections for latest run",
+    run: async () => {
+      const script = await fs.readFile(path.join(config.rootDir, "public", "replay-lab.js"), "utf8");
+      const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "replay-lab.css"), "utf8");
+
+      assert.ok(script.includes("执行进度"));
+      assert.ok(script.includes("Agent 运行日志"));
+      assert.ok(script.includes("data-toggle-replay-lab-progress"));
+      assert.ok(script.includes("data-toggle-replay-lab-runtime"));
+      assert.ok(script.includes("renderReplayTaskProgressPanel"));
+      assert.ok(script.includes("renderReplayTaskRuntimePanel"));
+      assert.ok(stylesheet.includes(".lab-running-shell"));
+      assert.ok(stylesheet.includes(".lab-running-timeline"));
+      assert.ok(stylesheet.includes(".lab-running-runtime"));
     }
   },
   {
@@ -4731,6 +8007,7 @@ const tests = [
         "project-detail.html",
         "module-create.html",
         "module-detail.html",
+        "document-extractor.html",
         "task-detail.html",
         "requirement-generation.html",
         "detail-design-generation.html",
@@ -4760,7 +8037,97 @@ const tests = [
       assert.ok(script.includes('window.location.href = "/feedback-tickets"'));
       assert.ok(script.includes("去查看工单"));
       assert.ok(script.includes("?ticket="));
+      assert.ok(script.includes("window.top === window"));
+      assert.match(stylesheet, /\.feedback-widget-root\s*\{[^}]*left:\s*20px;[^}]*bottom:\s*20px;/s);
       assert.match(stylesheet, /\.feedback-widget-dialog\s*\{[^}]*pointer-events:\s*auto/s);
+    }
+  },
+  {
+    name: "Document extractor page and module detail expose module-local extraction entry",
+    run: async () => {
+      const moduleDetailHtml = await fs.readFile(path.join(config.rootDir, "public", "module-detail.html"), "utf8");
+      const extractorHtml = await fs.readFile(path.join(config.rootDir, "public", "document-extractor.html"), "utf8");
+      const requirementHtml = await fs.readFile(path.join(config.rootDir, "public", "requirement-generation.html"), "utf8");
+      const detailHtml = await fs.readFile(path.join(config.rootDir, "public", "detail-design-generation.html"), "utf8");
+      const hilHtml = await fs.readFile(path.join(config.rootDir, "public", "hil-test-case-generation.html"), "utf8");
+      const hierarchyScript = await fs.readFile(path.join(config.rootDir, "public", "hierarchy.js"), "utf8");
+      const extractorScript = await fs.readFile(path.join(config.rootDir, "public", "document-extractor.js"), "utf8");
+      const generatorScript = await fs.readFile(path.join(config.rootDir, "public", "generator.js"), "utf8");
+      const feedbackPoolScript = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.js"), "utf8");
+
+      assert.ok(moduleDetailHtml.includes('data-workspace-tab="document_extractor"'));
+      assert.ok(moduleDetailHtml.includes('id="module-record-review-dialog"'));
+      assert.ok(moduleDetailHtml.includes('id="module-record-review-content"'));
+      assert.ok(hierarchyScript.includes('document_extractor'));
+      assert.ok(moduleDetailHtml.includes("历史任务"));
+      assert.ok(hierarchyScript.includes(".card { border-radius: 18px !important; box-shadow: none !important; }"));
+      assert.match(hierarchyScript, /function ensureTaskPolling[\s\S]*historyDrawer\?\.classList\.contains\("open"\)[\s\S]*refreshModuleTaskHistory/);
+      assert.ok(extractorHtml.includes('id="extract-form"'));
+      assert.ok(extractorHtml.includes('id="paste-zone"'));
+      assert.ok(extractorHtml.includes('id="spreadsheet-input"'));
+      assert.ok(extractorHtml.includes('id="spreadsheet-preview-list"'));
+      assert.ok(extractorHtml.includes('<option value="hil_test_case">HIL 测试用例</option>'));
+      assert.ok(extractorHtml.includes('id="asset-preview-dialog"'));
+      assert.ok(extractorHtml.includes('id="task-started-dialog"'));
+      assert.ok(extractorScript.includes("clipboardData"));
+      assert.ok(extractorScript.includes("imagePreviewList"));
+      assert.ok(extractorScript.includes("spreadsheetInput"));
+      assert.ok(extractorScript.includes("spreadsheetPreviewList"));
+      assert.ok(extractorScript.includes("handleSpreadsheetInputChange"));
+      assert.ok(extractorScript.includes("openAssetPreview"));
+      assert.ok(extractorScript.includes('documentType === "hil_test_case"'));
+      assert.ok(extractorScript.includes('role === "extracted_hil_test_case"'));
+      assert.ok(extractorScript.includes("openTaskStartedDialog"));
+      assert.ok(extractorScript.includes("document_extractor:tasks_changed"));
+      assert.ok(extractorScript.includes("syncTopNavLinks"));
+      assert.ok(generatorScript.includes("syncTopNavLinks"));
+      assert.ok(feedbackPoolScript.includes("syncTopNavLinks"));
+      assert.ok(hierarchyScript.includes("document_extractor:tasks_changed"));
+      assert.ok(hierarchyScript.includes("refreshModuleTaskHistory"));
+      assert.ok(extractorScript.includes("window.top.location.href"));
+      assert.ok(generatorScript.includes("window.top.location.href"));
+      assert.ok(feedbackPoolScript.includes("window.top.location.href"));
+      assert.ok(hierarchyScript.includes("文档提取"));
+      assert.ok(hierarchyScript.includes("documentExtractionTasks"));
+      assert.ok(hierarchyScript.includes('role === "extracted_hil_test_case"'));
+      assert.ok(generatorScript.includes('role === "extracted_hil_test_case"'));
+      assert.ok(feedbackPoolScript.includes('role === "extracted_hil_test_case"'));
+      assert.ok(requirementHtml.includes('href="/requirement-generation"'));
+      assert.ok(detailHtml.includes('href="/detail-design-generation"'));
+      assert.ok(hilHtml.includes('href="/hil-test-case-generation"'));
+    }
+  },
+  {
+    name: "Document extractor asset content API returns generated markdown for preview",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const project = await projectService.createProject({ name: "Preview Project" });
+        const module = await projectService.createModule(project.id, { name: "高压安全管理" });
+        const task = await projectService.recordDocumentExtractionTask(project.id, module.id, {
+          targetDocumentType: "software_requirement",
+          status: "completed"
+        });
+        const asset = await projectService.createExtractedModuleAsset(project.id, module.id, {
+          sourceTaskId: task.id,
+          targetDocumentType: "software_requirement",
+          markdown: "# 高压安全管理-软件需求\n\n## 文档信息\n",
+          summary: "用于预览"
+        });
+
+        await withTestServer(async ({ baseUrl }) => {
+          const response = await fetch(
+            `${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets/${asset.id}/content`
+          );
+          assert.equal(response.status, 200);
+          const payload = await response.json();
+
+          assert.equal(payload.assetId, asset.id);
+          assert.equal(payload.originalName, "高压安全管理-软件需求.md");
+          assert.equal(payload.role, "extracted_software_requirement");
+          assert.ok(payload.content.includes("## 文档信息"));
+        });
+      });
     }
   },
   {
@@ -4779,6 +8146,20 @@ const tests = [
     }
   },
   {
+    name: "Document extractor page route serves the extractor workspace",
+    run: async () => {
+      await withTestServer(async ({ baseUrl }) => {
+        const response = await fetch(`${baseUrl}/document-extractor`);
+        assert.equal(response.status, 200);
+        const html = await response.text();
+
+        assert.ok(html.includes("文档提取"));
+        assert.ok(html.includes('id="extract-form"'));
+        assert.ok(html.includes('id="paste-zone"'));
+      });
+    }
+  },
+  {
     name: "Feedback pool replay dialog exposes larger viewport and manual height controls",
     run: async () => {
       const html = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.html"), "utf8");
@@ -4792,6 +8173,183 @@ const tests = [
       assert.ok(stylesheet.includes(".replay-dialog[open]"));
       assert.ok(stylesheet.includes("resize: vertical"));
       assert.ok(stylesheet.includes(".dialog-resize-handle"));
+    }
+  },
+  {
+    name: "Feedback pool history keeps delete on task cards and opens Replay Lab from detail panel",
+    run: async () => {
+      const script = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.js"), "utf8");
+      const hierarchyScript = await fs.readFile(path.join(config.rootDir, "public", "hierarchy.js"), "utf8");
+
+      assert.ok(script.includes("data-task-delete"));
+      assert.ok(script.includes('method: "DELETE"'));
+      assert.ok(script.includes("历史任务已删除"));
+      assert.ok(script.includes("确认删除这条 Fallback 历史任务"));
+      assert.ok(script.includes("data-record-delete"));
+      assert.ok(script.includes('/api/rejections/${encodeURIComponent(recordId)}'));
+      assert.ok(script.includes("驳回记录已删除"));
+      assert.ok(script.includes("确认删除这条驳回记录"));
+      assert.ok(script.includes("const initialTaskId = query.get(\"taskId\") || \"\""));
+      assert.ok(script.includes("if (initialTaskId && state.selectedTaskId)"));
+      assert.ok(script.includes("feedback_pool:open_record_review_overlay"));
+      assert.ok(script.includes("subtitleHtml"));
+      assert.ok(script.includes("detailHtml"));
+      assert.ok(hierarchyScript.includes("openModuleRecordReviewOverlay"));
+      assert.ok(hierarchyScript.includes("moduleRecordReviewDialog.showModal"));
+      assert.ok(hierarchyScript.includes("data-feedback-history-task-delete"));
+      assert.ok(hierarchyScript.includes("deleteFeedbackHistoryTask"));
+      assert.ok(hierarchyScript.includes("Fallback 历史任务已删除"));
+      assert.ok(hierarchyScript.includes("/replay-lab?runTaskId="));
+      assert.ok(hierarchyScript.includes("查看详情页"));
+    }
+  },
+  {
+    name: "Hermes task queue runs queued work with single concurrency",
+    run: async () => {
+      const events = [];
+      let releaseFirst = null;
+      const firstCanFinish = new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+      const queue = new HermesTaskQueueService({ concurrency: 1 });
+
+      const first = queue.enqueue({
+        id: "task-1",
+        type: "generation",
+        onStart: async () => events.push("start-1"),
+        run: async () => {
+          events.push("run-1");
+          await firstCanFinish;
+          events.push("done-1");
+        }
+      });
+      const second = queue.enqueue({
+        id: "task-2",
+        type: "generation",
+        onStart: async () => events.push("start-2"),
+        run: async () => {
+          events.push("run-2");
+        }
+      });
+      const third = queue.enqueue({
+        id: "task-3",
+        type: "generation",
+        onStart: async () => events.push("start-3"),
+        run: async () => {
+          events.push("run-3");
+        }
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.deepEqual(events, ["start-1", "run-1"]);
+      assert.equal(queue.getQueuePosition("generation", "task-2"), 1);
+      assert.equal(queue.getQueuePosition("generation", "task-3"), 2);
+
+      releaseFirst();
+      await Promise.all([first, second, third]);
+      assert.deepEqual(events, ["start-1", "run-1", "done-1", "start-2", "run-2", "start-3", "run-3"]);
+    }
+  },
+  {
+    name: "Hermes task queue summarizes generation, extraction and replay tasks",
+    run: async () => {
+      const projectService = {
+        async listProjects() {
+          return [
+            {
+              id: "project-1",
+              name: "工程一",
+              modules: [
+                {
+                  id: "module-1",
+                  name: "模块一",
+                  documentSpaces: {
+                    software_requirement: {
+                      generationTasks: [
+                        {
+                          id: "gen-1",
+                          status: "queued",
+                          documentType: "software_requirement",
+                          progress: { message: "等待生成", percent: 3 },
+                          createdAt: "2026-04-24T01:00:00.000Z",
+                          updatedAt: "2026-04-24T01:00:00.000Z"
+                        }
+                      ]
+                    },
+                    detail_design: { generationTasks: [] },
+                    hil_test_case: { generationTasks: [] }
+                  },
+                  documentExtractionTasks: [
+                    {
+                      id: "extract-1",
+                      status: "running",
+                      targetDocumentType: "software_requirement",
+                      progress: { message: "正在提取", percent: 40 },
+                      createdAt: "2026-04-24T01:01:00.000Z",
+                      updatedAt: "2026-04-24T01:02:00.000Z"
+                    }
+                  ]
+                }
+              ]
+            }
+          ];
+        }
+      };
+      const replayTaskService = {
+        async listTasks() {
+          return [
+            {
+              id: "replay-1",
+              taskStatus: "done",
+              projectId: "project-1",
+              moduleId: "module-1",
+              summary: "Replay 完成",
+              createdAt: "2026-04-24T01:03:00.000Z",
+              updatedAt: "2026-04-24T01:04:00.000Z"
+            }
+          ];
+        }
+      };
+      const queue = new HermesTaskQueueService({ projectService, replayTaskService });
+      queue.enqueue({
+        id: "blocker",
+        type: "generation",
+        run: async () => new Promise(() => {})
+      });
+      queue.enqueue({
+        id: "gen-1",
+        type: "generation",
+        run: async () => null
+      });
+
+      const summaries = await queue.listTaskSummaries();
+      const ids = summaries.map((task) => task.id);
+      assert.ok(ids.includes("gen-1"));
+      assert.ok(ids.includes("extract-1"));
+      assert.ok(ids.includes("replay-1"));
+      assert.equal(summaries.find((task) => task.id === "gen-1").queuePosition, 1);
+      assert.equal(summaries.find((task) => task.id === "extract-1").detailUrl, "/projects/project-1/modules/module-1?openHistory=1&highlightTaskId=extract-1");
+      assert.equal(summaries.find((task) => task.id === "replay-1").detailUrl, "/feedback-pool?projectId=project-1&moduleId=module-1&taskId=replay-1");
+    }
+  },
+  {
+    name: "Main pages load the global task queue widget",
+    run: async () => {
+      const pages = [
+        "index.html",
+        "module-detail.html",
+        "task-detail.html",
+        "feedback-pool.html",
+        "document-extractor.html",
+        "requirement-generation.html"
+      ];
+      for (const page of pages) {
+        const html = await fs.readFile(path.join(config.rootDir, "public", page), "utf8");
+        assert.ok(html.includes('/task-queue-widget.js'), `${page} should load task queue widget`);
+      }
+      const script = await fs.readFile(path.join(config.rootDir, "public", "task-queue-widget.js"), "utf8");
+      assert.ok(script.includes("/api/task-queue"));
+      assert.ok(script.includes("任务队列"));
     }
   }
 ];
