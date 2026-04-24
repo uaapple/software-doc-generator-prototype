@@ -35,7 +35,7 @@
         </div>
         <div class="strip-actions">
           <div class="view-tabs" role="tablist" aria-label="技能管理视图">
-            <button id="registry-view-tab" type="button" class="view-tab is-active" role="tab" aria-selected="true">Atomic Skill</button>
+            <button id="registry-view-tab" type="button" class="view-tab is-active" role="tab" aria-selected="true">技能条目</button>
             <button id="work-order-view-tab" type="button" class="view-tab" role="tab" aria-selected="false">技能工单</button>
           </div>
           <button id="refresh-button" type="button" class="secondary-button">刷新列表</button>
@@ -65,7 +65,7 @@
               <span class="section-index">导航</span>
               <div>
                 <h2>Profile Rail</h2>
-                <p>左侧只负责定位 layer 与 profile，不再把所有 atomic item 一次性摊平。</p>
+                <p>左侧只负责定位 layer 与 profile，不再把所有技能条目一次性摊平。</p>
               </div>
             </div>
             <div class="profile-rail-toolbar">
@@ -121,7 +121,7 @@
               <span class="section-index">工单</span>
               <div>
                 <h2>Fallback 技能工单</h2>
-                <p>每次 fallback/replay 任务会生成一张技能工单，在这里逐条确认并直接写入 active atomic skill。</p>
+                <p>每次 fallback/replay 任务会生成一张技能工单，在这里逐条确认并直接写入 active 技能条目。</p>
               </div>
             </div>
             <div id="work-order-summary" class="skill-summary-grid"></div>
@@ -134,7 +134,7 @@
               <span class="section-index">列表</span>
               <div>
                 <h2>工单列表</h2>
-                <p>按 fallback 任务聚合，一单内可包含多条 atomic skill 修改项。</p>
+                <p>按 fallback 任务聚合，一单内可包含多条技能条目修改项。</p>
               </div>
             </div>
             <div class="work-order-filters">
@@ -169,7 +169,7 @@
       <div id="editor-drawer-body" class="skill-editor-drawer-body"></div>
     </aside>
 
-    <script type="module" src="/skill-management.js"></script>
+    <script type="module" src="/skill-management.js?v=20260424-toggle5"></script>
     <script type="module" src="/task-queue-widget.js"></script>
     <script type="module" src="/feedback-widget.js"></script>
   </body>

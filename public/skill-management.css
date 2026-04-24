@@ -5,7 +5,7 @@
   --review-max-width: 760px;
   --browser-min-width: 420px;
   --splitter-width: 14px;
-  --workspace-height: clamp(640px, calc(100vh - 252px), 1080px);
+  --workspace-height: clamp(700px, calc(100vh - 206px), 1120px);
   --pane-line: rgba(19, 81, 151, 0.1);
   --pane-glow: rgba(19, 81, 151, 0.12);
   --surface-warm: #fcfaf6;
@@ -28,6 +28,24 @@ body.drawer-open {
 
 .skill-management-page .secondary-button {
   min-height: 40px;
+}
+
+.skill-management-page .strip-actions {
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.skill-management-page .strip-actions > button,
+.skill-management-page .strip-actions .task-queue-trigger {
+  height: 44px;
+  min-height: 44px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.skill-management-page #refresh-button {
+  min-width: 148px;
 }
 
 .skill-overview-card {
@@ -72,6 +90,11 @@ body.drawer-open {
 
 .status.is-error {
   color: var(--danger);
+}
+
+#registry-view[hidden],
+#work-order-view[hidden] {
+  display: none;
 }
 
 .skill-workspace {
@@ -565,7 +588,7 @@ body.drawer-open {
   border: 1px solid rgba(19, 81, 151, 0.12);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.98));
-  padding: 12px 14px;
+  padding: 14px 16px 13px;
   color: inherit;
   text-align: left;
 }
@@ -581,35 +604,37 @@ body.drawer-open {
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .item-card-code {
   display: inline-flex;
-  margin-bottom: 4px;
-  color: var(--ink-soft);
-  font-size: 12px;
+  color: rgba(95, 114, 136, 0.74);
+  font-size: 11px;
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-weight: 700;
 }
 
 .item-card-title {
-  display: block;
+  display: none;
   font-weight: 700;
   color: var(--ink);
 }
 
 .item-card-preview {
   margin: 0;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.45;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.58;
 }
 
 .item-card-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
+  opacity: 0.82;
 }
 
 .search-result-head {
@@ -1259,24 +1284,39 @@ button[disabled] {
 
 .view-tabs {
   display: inline-flex;
-  gap: 10px;
-  margin-right: 12px;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+  padding: 4px;
+  border: 1px solid rgba(19, 81, 151, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .view-tab {
-  border: 1px solid var(--line-soft);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.75);
-  color: var(--ink-soft);
+  min-width: 96px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
   font-weight: 700;
-  padding: 10px 16px;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .view-tab.is-active {
-  background: var(--brand);
+  background: linear-gradient(135deg, var(--brand), var(--brand-strong));
   border-color: var(--brand);
   color: #fff;
+  box-shadow: 0 8px 16px rgba(19, 81, 151, 0.16);
+}
+
+.view-tab:focus-visible {
+  outline: 2px solid rgba(19, 81, 151, 0.36);
+  outline-offset: 2px;
 }
 
 .work-order-view {

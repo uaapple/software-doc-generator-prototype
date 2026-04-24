@@ -38,6 +38,7 @@ const state = {
   selectedProfileId: "",
   selectedSkillCode: "",
   selectedKind: "",
+  isItemSelectionCollapsed: false,
   itemQuery: "",
   workOrders: [],
   workOrderDetail: null,
@@ -379,6 +380,7 @@ async function handleRailClick(event) {
   state.selectedProfileId = nextProfileId
   state.selectedSkillCode = ""
   state.selectedKind = ""
+  state.isItemSelectionCollapsed = false
   state.itemQuery = ""
   itemQueryInput.value = ""
   syncSelection()
@@ -454,10 +456,21 @@ async function handleBrowserClick(event) {
     if (!kind || !items.length) return
 
     const before = selectionStamp()
+    const isOpenKind = !state.itemQuery && (kindButton.classList.contains("is-active") || Boolean(kindButton.closest(".kind-bucket.is-active")))
+    if (isOpenKind) {
+      state.selectedKind = ""
+      state.selectedSkillCode = ""
+      state.isItemSelectionCollapsed = true
+      state.detailItem = null
+      renderWorkspace()
+      return
+    }
+
     state.itemQuery = ""
     itemQueryInput.value = ""
     state.selectedKind = kind
     state.selectedSkillCode = items[0].skillCode
+    state.isItemSelectionCollapsed = false
     syncSelection()
     renderWorkspace()
     if (before !== selectionStamp()) {
@@ -473,8 +486,18 @@ async function handleBrowserClick(event) {
     if (!nextSkillCode || !selectedItem) return
 
     const before = selectionStamp()
-    state.selectedSkillCode = nextSkillCode
     state.selectedKind = selectedItem.kind
+    const isOpenItem = state.selectedSkillCode === nextSkillCode || itemButton.classList.contains("is-selected")
+    if (isOpenItem) {
+      state.selectedSkillCode = ""
+      state.isItemSelectionCollapsed = true
+      state.detailItem = null
+      renderWorkspace()
+      return
+    }
+
+    state.selectedSkillCode = nextSkillCode
+    state.isItemSelectionCollapsed = false
     syncSelection()
     renderWorkspace()
     if (before !== selectionStamp()) {
@@ -502,7 +525,7 @@ async function handleReviewClick(event) {
   const reloadButton = event.target.closest("[data-reload-item]")
   if (reloadButton) {
     await loadSelection()
-    setPageStatus("当前 skill item 已重新加载。")
+    setPageStatus("当前技能条目已重新加载。")
     return
   }
 
@@ -530,7 +553,7 @@ async function handleReviewClick(event) {
   if (deleteButton) {
     const skillCode = String(deleteButton.dataset.deleteItem || "")
     if (!skillCode) return
-    const confirmed = window.confirm(`确认删除 ${skillCode} 吗？这会删除该 atomic skill item。`)
+    const confirmed = window.confirm(`确认删除 ${skillCode} 吗？这会删除该技能条目。`)
     if (!confirmed) return
 
     try {
@@ -592,7 +615,7 @@ async function handleEditorSubmit(event) {
     layer: form.elements.namedItem("layer")?.value || getSelectedProfileSummary()?.type || "module",
     profileKey: form.elements.namedItem("profileKey")?.value?.trim() || getSelectedProfileSummary()?.key || "generic",
     kind: form.elements.namedItem("kind")?.value || state.selectedKind || "writing_rule",
-    title: form.elements.namedItem("title")?.value?.trim() || "Skill Item",
+    title: form.elements.namedItem("title")?.value?.trim() || "技能条目",
     status: form.elements.namedItem("status")?.value || "active",
     content: form.elements.namedItem("content")?.value || ""
   }
@@ -603,7 +626,7 @@ async function handleEditorSubmit(event) {
       payload.structuredPayload = structuredPayload
     }
 
-    setPageStatus(state.editorMode === "create" ? "正在创建 skill item..." : "正在保存 skill item...")
+    setPageStatus(state.editorMode === "create" ? "正在创建技能条目..." : "正在保存技能条目...")
 
     const saved =
       state.editorMode === "create"
@@ -747,7 +770,7 @@ async function loadSelection() {
     state.detailItem = await request(`/api/skill-items/${encodeURIComponent(state.selectedSkillCode)}`)
   } catch (error) {
     state.detailItem = null
-    setPageStatus(`加载 skill item 详情失败：${error.message}`, true)
+    setPageStatus(`加载技能条目详情失败：${error.message}`, true)
   }
 
   renderWorkspace()
@@ -779,6 +802,7 @@ function syncSelection() {
     state.selectedProfileId = ""
     state.selectedSkillCode = ""
     state.selectedKind = ""
+    state.isItemSelectionCollapsed = false
     state.detailProfile = null
     state.detailItem = null
     return
@@ -792,22 +816,31 @@ function syncSelection() {
   if (!items.length) {
     state.selectedSkillCode = ""
     state.selectedKind = ""
+    state.isItemSelectionCollapsed = false
   } else if (state.itemQuery) {
     const matched = items.filter((item) => itemMatchesQuery(item, state.itemQuery))
     if (!matched.length) {
       state.selectedSkillCode = ""
       state.selectedKind = state.selectedKind && items.some((item) => item.kind === state.selectedKind) ? state.selectedKind : getOrderedKinds(items)[0] || ""
     } else {
-      if (!matched.some((item) => item.skillCode === state.selectedSkillCode)) {
+      if (state.isItemSelectionCollapsed) {
+        state.selectedSkillCode = ""
+        state.selectedKind = state.selectedKind && matched.some((item) => item.kind === state.selectedKind) ? state.selectedKind : matched[0].kind
+      } else if (!matched.some((item) => item.skillCode === state.selectedSkillCode)) {
         state.selectedSkillCode = matched[0].skillCode
       }
       state.selectedKind = matched.find((item) => item.skillCode === state.selectedSkillCode)?.kind || matched[0].kind
     }
   } else {
-    if (!items.some((item) => item.skillCode === state.selectedSkillCode)) {
+    if (state.isItemSelectionCollapsed) {
+      state.selectedSkillCode = ""
+      state.selectedKind = state.selectedKind && items.some((item) => item.kind === state.selectedKind) ? state.selectedKind : ""
+    } else if (!items.some((item) => item.skillCode === state.selectedSkillCode)) {
       state.selectedSkillCode = items[0].skillCode
+      state.selectedKind = items[0].kind
+    } else {
+      state.selectedKind = items.find((item) => item.skillCode === state.selectedSkillCode)?.kind || getOrderedKinds(items)[0] || ""
     }
-    state.selectedKind = items.find((item) => item.skillCode === state.selectedSkillCode)?.kind || getOrderedKinds(items)[0] || ""
   }
 
   if (previousProfileId !== state.selectedProfileId) {
@@ -899,7 +932,7 @@ function renderSummary() {
   const counts = state.payload.summary?.countsByType || {}
   const cards = [
     { label: "Profiles", value: state.payload.summary?.total || 0 },
-    { label: "Skill Items", value: state.payload.summary?.itemTotal || 0 },
+    { label: "技能条目", value: state.payload.summary?.itemTotal || 0 },
     { label: "异常 Profile", value: state.payload.summary?.abnormalCount || 0 },
     { label: "Generic", value: counts.generic || 0 },
     { label: "Doc Type", value: counts.docType || 0 },
@@ -1077,7 +1110,7 @@ function renderWorkOrderItemCard(item = {}) {
         <span class="mini-pill ${statusTone(item.reviewStatus)}">${escapeHtml(formatWorkOrderItemStatus(item.reviewStatus))}</span>
       </div>
       <div class="work-order-meta-grid">
-        ${renderWorkOrderMetaItem("结论类型", item.conclusionType === "create_new" ? "新增 atomic skill" : "修改已有 atomic skill")}
+        ${renderWorkOrderMetaItem("结论类型", item.conclusionType === "create_new" ? "新增技能条目" : "修改已有技能条目")}
         ${renderWorkOrderMetaItem("命中的 skill", item.targetSkillCode || "新增")}
         ${renderWorkOrderMetaItem("层级 / profile / kind", `${item.targetLayer || "-"} / ${item.targetProfileKey || "-"} / ${item.targetKind || "-"}`)}
         ${renderWorkOrderMetaItem("原文为什么", item.whyCurrent || "-")}
@@ -1166,7 +1199,7 @@ function renderItemBrowserChrome() {
       <div class="workspace-empty">
         <div>
           <h3>先选一个 Profile</h3>
-          <p>左侧 rail 用来定位 profile。选中后，中间区域会按 kind 分桶浏览 atomic skill。</p>
+          <p>左侧 rail 用来定位 profile。选中后，中间区域会按 kind 分桶浏览技能条目。</p>
         </div>
       </div>
     `
@@ -1182,7 +1215,7 @@ function renderItemBrowserChrome() {
       <div>
         <p class="browser-breadcrumb">${escapeHtml(layerLabel(profile.type))} / ${escapeHtml(profile.key)}</p>
         <h2>${escapeHtml(profile.displayName)}</h2>
-        <p>${escapeHtml(profile.abnormal ? "当前 profile 的数据库真源与已导出的兼容文件可能不一致，建议先确认右侧“兼容字段 / 调试信息”里的导出映射。" : "当前 profile 作为 skill 容器存在，真正的审阅对象是下面分桶展示的 atomic skill items。")}</p>
+        <p>${escapeHtml(profile.abnormal ? "当前 profile 的数据库真源与已导出的兼容文件可能不一致，建议先确认右侧“兼容字段 / 调试信息”里的导出映射。" : "当前 profile 作为 skill 容器存在，真正的审阅对象是下面分桶展示的技能条目。")}</p>
         <div class="browser-metrics">
           <span class="browser-metric-chip">${profile.metrics.itemCount} items</span>
           <span class="browser-metric-chip">${profile.metrics.fileCount} files</span>
@@ -1196,7 +1229,7 @@ function renderItemBrowserChrome() {
         </div>
       </div>
       <div class="browser-actions">
-        <button type="button" data-open-editor="create">新增 Skill Item</button>
+        <button type="button" data-open-editor="create">新增技能条目</button>
         <button type="button" class="secondary-button" data-materialize-registry="true">导出兼容文件</button>
         <button type="button" class="secondary-button" data-reload-profile="true">重新加载</button>
         <button
@@ -1226,9 +1259,9 @@ function renderItemBrowser() {
       <div class="workspace-empty">
         <div>
           <h3>这个 Profile 还是空的</h3>
-          <p>可以先创建第一条 atomic skill，再在右侧持续审阅和微调。</p>
+          <p>可以先创建第一条技能条目，再在右侧持续审阅和微调。</p>
           <div class="empty-action-row">
-            <button type="button" data-open-editor="create">新增第一条 Skill Item</button>
+            <button type="button" data-open-editor="create">新增第一条技能条目</button>
           </div>
         </div>
       </div>
@@ -1247,7 +1280,7 @@ function renderItemBrowser() {
       <div class="search-result-head">
         <div>
           <h3>搜索结果</h3>
-          <p class="review-section-copy">当前 profile 下匹配到 ${matched.length} 条 atomic skill。</p>
+          <p class="review-section-copy">当前 profile 下匹配到 ${matched.length} 条技能条目。</p>
         </div>
         <button type="button" class="secondary-button" data-clear-item-query="true">清空搜索</button>
       </div>
@@ -1291,7 +1324,7 @@ function renderReviewPane() {
       <div class="workspace-empty">
         <div>
           <h3>右侧审阅区待命中</h3>
-          <p>先从左侧选中一个 profile，再从中间选一条 atomic skill，右侧会始终保持在当前视口里给你看详情。</p>
+          <p>先从左侧选中一个 profile，再从中间选一条技能条目，右侧会始终保持在当前视口里给你看详情。</p>
         </div>
       </div>
     `
@@ -1302,8 +1335,8 @@ function renderReviewPane() {
     reviewPaneRoot.innerHTML = `
       <div class="workspace-empty">
         <div>
-          <h3>当前搜索没有命中 item</h3>
-          <p>中间区域已经切到搜索结果模式。你可以更换关键词，或者清空搜索回到 kind 审阅流。</p>
+          <h3>条目已收起</h3>
+          <p>再次点击中间列表里的技能条目即可展开详情，也可以清空搜索回到 kind 审阅流。</p>
         </div>
       </div>
     `
@@ -1315,10 +1348,34 @@ function renderReviewPane() {
       <div class="workspace-empty">
         <div>
           <h3>${escapeHtml(profile.displayName)}</h3>
-          <p>当前 profile 还没有 atomic skill。建议先创建第一条，再用右侧作为固定审阅面板。</p>
+          <p>当前 profile 还没有技能条目。建议先创建第一条，再用右侧作为固定审阅面板。</p>
           <div class="empty-action-row">
-            <button type="button" data-open-editor="create">新增 Skill Item</button>
+            <button type="button" data-open-editor="create">新增技能条目</button>
           </div>
+        </div>
+      </div>
+    `
+    return
+  }
+
+  if (!state.selectedKind) {
+    reviewPaneRoot.innerHTML = `
+      <div class="workspace-empty">
+        <div>
+          <h3>条目组已收起</h3>
+          <p>点击中间区域的 kind 桶可以展开对应技能条目。</p>
+        </div>
+      </div>
+    `
+    return
+  }
+
+  if (!state.selectedSkillCode) {
+    reviewPaneRoot.innerHTML = `
+      <div class="workspace-empty">
+        <div>
+          <h3>条目已收起</h3>
+          <p>再次点击中间列表里的技能条目即可展开详情。</p>
         </div>
       </div>
     `
@@ -1347,7 +1404,7 @@ function renderReviewPane() {
     <div class="review-shell">
       <div class="review-head">
         <div>
-          <p class="review-eyebrow">Atomic Skill Review</p>
+          <p class="review-eyebrow">技能条目审核</p>
           <h2>${escapeHtml(item.title)}</h2>
           <p>${escapeHtml(item.skillCode)} · ${escapeHtml(kindLabel(item.kind))} · ${escapeHtml(layerLabel(item.layer))} / ${escapeHtml(item.profileKey)}</p>
         </div>
@@ -1375,7 +1432,6 @@ function renderReviewPane() {
           <div>
             <p class="review-section-kicker">核心内容</p>
             <h3>原子技能正文</h3>
-            <p class="review-section-copy">右侧默认就看这一条正文。上面的类型和基本信息只负责说明这条技能是什么，真正要读的内容在下面。</p>
           </div>
         </div>
         ${renderPrimaryContent(item)}
@@ -1423,7 +1479,7 @@ function renderEditorDrawer() {
     <div class="editor-drawer-head">
       <div>
         <p class="review-eyebrow">${state.editorMode === "create" ? "Create" : "Edit"} Drawer</p>
-        <h2>${escapeHtml(state.editorMode === "create" ? "新增 Skill Item" : `编辑 ${item?.title || "Skill Item"}`)}</h2>
+        <h2>${escapeHtml(state.editorMode === "create" ? "新增技能条目" : `编辑 ${item?.title || "技能条目"}`)}</h2>
         <p>${escapeHtml(state.editorMode === "create" ? "抽屉只负责修改，不打断主审阅画布。" : `当前正在编辑 ${item?.skillCode || ""}`)}</p>
       </div>
       <button type="button" class="secondary-button" data-close-editor="true">关闭</button>
@@ -1543,7 +1599,7 @@ function renderEditorDrawer() {
       </div>
 
       <div class="editor-footer">
-        <button type="submit">${state.editorMode === "create" ? "创建 Skill Item" : "保存 Skill Item"}</button>
+        <button type="submit">${state.editorMode === "create" ? "创建技能条目" : "保存技能条目"}</button>
         <button type="button" class="secondary-button" data-close-editor="true">取消</button>
       </div>
     </form>
@@ -1594,21 +1650,19 @@ function renderKindBucket(kind, items) {
       ${
         isActive
           ? `<div class="kind-bucket-body">${items.map((item) => renderItemCard(item)).join("")}</div>`
-          : `<div class="kind-bucket-note">点击进入这个 kind 桶，并将右侧审阅面板对准其中第一条 atomic skill。</div>`
+          : `<div class="kind-bucket-note">点击进入这个 kind 桶，并将右侧审阅面板对准其中第一条技能条目。</div>`
       }
     </article>
   `
 }
 
 function renderItemCard(item, options = {}) {
+  const statusLabel = options.searchMode ? kindLabel(item.kind) : item.status || "active"
   return `
-    <button type="button" class="item-card ${state.selectedSkillCode === item.skillCode ? "is-selected" : ""}" data-select-item="${escapeHtml(item.skillCode)}">
+    <button type="button" class="item-card ${state.selectedSkillCode === item.skillCode ? "is-selected" : ""}" data-select-item="${escapeHtml(item.skillCode)}" aria-pressed="${state.selectedSkillCode === item.skillCode ? "true" : "false"}">
       <div class="item-card-top">
-        <div>
-          <span class="item-card-code">${escapeHtml(item.skillCode)}</span>
-          <span class="item-card-title">${escapeHtml(item.title)}</span>
-        </div>
-        <span class="mini-pill subtle">${escapeHtml(options.searchMode ? kindLabel(item.kind) : item.status || "active")}</span>
+        <span class="item-card-code">${escapeHtml(item.skillCode)}</span>
+        <span class="mini-pill subtle">${escapeHtml(statusLabel)}</span>
       </div>
       <p class="item-card-preview">${escapeHtml(buildPreview(item))}</p>
       <div class="item-card-meta">
@@ -1625,10 +1679,6 @@ function renderPrimaryContent(item) {
   const derivedFromStructured = !String(item?.content || "").trim() && hasStructuredPayload(item)
   return `
     <article class="primary-content-card">
-      <div class="primary-content-banner">
-        <span class="mini-pill">${derivedFromStructured ? "正文预览" : "实际内容"}</span>
-        <strong>${derivedFromStructured ? "当前这条正文是由兼容字段自动整理出来的可读版本" : "这里展示的是当前 atomic skill 会直接参与生成或约束判断的核心内容"}</strong>
-      </div>
       <pre class="reading-block reading-block-emphasis">${escapeHtml(readableText || "当前没有可展示的规则内容。")}</pre>
     </article>
   `
@@ -1924,7 +1974,7 @@ function buildPreview(item) {
     .replace(/\s+/g, " ")
     .trim()
   if (!base) return "暂无内容预览。"
-  return base.length > 112 ? `${base.slice(0, 112)}...` : base
+  return base.length > 180 ? `${base.slice(0, 180)}...` : base
 }
 
 function isTextTruthKind(kind = "") {
@@ -2374,7 +2424,7 @@ async function submitWorkOrderItemAction(itemId, reviewStatus, useEditedContent,
       body: JSON.stringify({ appliedBy: "web-ui" })
     })
     await refreshAll(false)
-    setPageStatus("修改项已应用到 active atomic skill。")
+    setPageStatus("修改项已应用到 active 技能条目。")
   } catch (error) {
     setPageStatus(`应用技能工单失败：${error.message}`, true)
   }

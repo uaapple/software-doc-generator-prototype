@@ -13,6 +13,13 @@
   white-space: nowrap;
 }
 
+.skill-management-page .task-queue-trigger {
+  padding: 0 14px;
+  border-color: rgba(19, 81, 151, 0.22);
+  color: var(--ink);
+  box-shadow: 0 4px 12px rgba(21, 55, 96, 0.06);
+}
+
 .task-queue-host {
   align-items: center;
 }
