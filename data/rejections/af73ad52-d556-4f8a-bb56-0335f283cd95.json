@@ -1,15 +1,15 @@
 {
-  "id": "049b4409-1668-49ed-b85e-dc048768ab1b",
+  "id": "af73ad52-d556-4f8a-bb56-0335f283cd95",
   "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
   "projectName": "VCU",
   "moduleId": "8afaa2a2-d578-4bed-9ebb-38f5522589e8",
   "moduleName": "低压能量管理",
   "documentType": "software_requirement",
-  "requirementId": "81d455ef-cb9f-4852-88d4-ec8d9556a85a",
-  "sourceTaskId": "b63b617c-c823-4a86-98c1-5951f4563ff6",
-  "sourceResultItemId": "81d455ef-cb9f-4852-88d4-ec8d9556a85a",
+  "requirementId": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
+  "sourceTaskId": "9e19be91-3acf-4e88-ae87-77f0fb4dcd94",
+  "sourceResultItemId": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
   "generationContext": {
-    "generatedAt": "b63b617c-c823-4a86-98c1-5951f4563ff6",
+    "generatedAt": "9e19be91-3acf-4e88-ae87-77f0fb4dcd94",
     "llmProfile": {
       "id": "20b11d97-48b6-4c36-b474-3ad13115d53f",
       "provider": "hermes_cli",
@@ -23,20 +23,18 @@
   "reviewStatus": "rejected",
   "reasonCategory": "coverage_gap",
   "reasonTags": [
-    "退出分支缺失",
-    "后处理泛化",
-    "重新允许条件不清"
+    "参考软件需求退出分支缺失；后处理覆盖不足"
   ],
-  "reasonText": "当前“智能补电退出判断”写得过于概括，只保留了“补电失败计数≥3”和“BMS2_N_SOC≤10%”两类退出条件，未保留退出场景内部更细的分支逻辑和分支后的差异化处理，导致需求表达不够完整，也不利于后续实现和验证。\n\n具体问题有两点：\n1. 退出条件覆盖不充分。当前条目没有体现不同退出原因下的更细场景和判定分支，信息量相比原始需求明显缩水。\n2. 退出后处理被泛化了。不同退出原因对应的失败计数处理、VCCM_SOCWU_Ena 状态、是否下高压、是否休眠、以及重新允许激活的条件，本来应按分支分别表达，当前版本被压成了统一描述。",
+  "reasonText": "当前“智能补电退出判断”只覆盖了系统需求中补电失败计数≥3、BMS2_N_SOC≤10%两个关闭原因，虽然已分别写出VCCM_SOCWU_Ena、网络唤醒关闭、整车休眠和部分重新允许条件，但对输入代码文件中体现的智能补电退出/下高压/休眠相关分支覆盖不足。\n\n从代码语义看，智能补电退出不应只由系统需求中的两个关闭条件构成，还应结合代码中与下高压、主动唤醒关闭、网络管理、控制器休眠、故障退出、超时退出、DCDC反馈异常、蓄电池电压异常等相关判断，补全退出分支及退出后的差异化处理。当前结果把代码侧可见的退出路径压缩成了两个系统需求关闭场景，导致退出条件和退出后动作覆盖不完整，不利于后续实现和验证。",
   "severity": "medium",
-  "expectedNote": "保持“智能补电退出判断”这个标题不变，但在同一条需求内部补全各退出分支，并按退出原因分别写清退出后动作和重新允许条件，不要再压缩成“满足任一条件则退出”的概括句。",
+  "expectedNote": "保持标题为“智能补电退出判断”，以系统需求为主线，并结合输入代码文件中可确认的智能补电退出、下高压、主动唤醒关闭、网络休眠、控制器休眠、故障/超时/反馈异常等语义，补全退出分支。每个分支应分别写清退出条件、退出后动作、补电失败次数清零/保持/+1规则、VCCM_SOCWU_Ena状态、是否执行下高压、是否允许网络/控制器休眠，以及重新允许激活或功能重置条件。无法从系统需求或代码中确认的阈值、状态名或恢复条件不要臆造。",
   "targetLayerConstraint": "module",
   "outputSnapshot": {
     "title": "智能补电退出判断",
-    "requirementText": "软件应在KL15=OFF且高压未连接时，对智能补电退出进行判断。当满足以下任一条件时，软件应关闭智能补电并禁止再次激活：连续补电失败计数≥3，或BMS2_N_SOC≤10%。智能补电关闭后，软件应发送VCCM_SOCWU_Ena=Disabled给EBS，关闭主动唤醒功能，并停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，使整车进入休眠。若关闭原因为连续补电失败计数≥3，则当KL15由OFF进入ON时，软件应将VCCM_SOCWU_Ena恢复为Enabled并清除补电失败计数；若关闭原因为BMS2_N_SOC≤10%，则当检测到BMS2_N_SOC>10.5%时，软件应将VCCM_SOCWU_Ena恢复为Enabled。若退出条件均不满足，软件应保持智能补电当前状态不变。",
+    "requirementText": "软件应对智能补电执行退出判断。当KL15关闭且高压未连接时，若连续补电失败计数≥3，则应关闭智能补电功能且不再激活，并发送VCCM_SOCWU_Ena=Disabled给EBS；EBS收到后应关闭主动唤醒功能，VCU应停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，并允许整车休眠。当KL15由OFF进入ON或者执行源需求中记载但OCR未完全识别的功能重置条件后，软件应将VCCM_SOCWU_Ena置为Enabled，并同时清除补电失败次数。当KL15关闭且高压未连接时，若BMS2_N_SOC≤10%，则软件应关闭智能补电功能且不再激活，并发送VCCM_SOCWU_Ena=Disabled给EBS；EBS收到后应关闭主动唤醒功能，VCU应停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，并允许整车休眠；当HCU检测到BMS2_N_SOC>10.5%时，软件应将VCCM_SOCWU_Ena置为Enabled。若上述退出条件均不满足，则软件应保持当前智能补电状态不变。",
     "type": "functional",
     "verificationHint": "通过功能测试验证输入触发与输出响应",
-    "conflictNote": "系统需求原文中“KL15由OFF进入ON或者[不清晰]功能重置”存在OCR不清晰片段；本条仅采用可明确识别的“KL15由OFF进入ON”作为恢复条件，未扩写无法确认的附加复位条件。",
+    "conflictNote": "源系统需求中“KL15由OFF进入ON或者[不清晰]功能重置”存在OCR不清晰片段，已仅保留可确认的复位语义，未对未识别内容做扩写。",
     "documentType": "software_requirement",
     "conflicts": [],
     "traces": [
@@ -44,55 +42,67 @@
         "fileName": "低压能量管理-系统需求.md",
         "location": "page:1",
         "excerpt": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinement case / run 摘要。\n\n## 章节信息\n1. CheryVCU-1271 - 智能补电功能触发\n2. CheryVCU-1262 - 智能补电功能关闭\n\n## 需求条目\n### CheryVCU-1271 - 智能补电功能触发\n当满足如下全部条件时，HCU判断智能补电功能激活\n1、KL15为OFF；\n2、高压未连接；\n3、连续补电失败计数＜3；\n4、BMS2_N_SOC＞10%\n5、EBS_SOC≤70% && EBS_SOC_STATE＜10%或者EBS_U_BATT＜11.8V\n\n车辆由ON到OFF，车辆未休眠，检测到EBS_SOC≤70%EBS_SOC_state=0x2，进行智能补电；\n\n车辆由ON到OFF，车辆未休眠，20分钟内，检测到EBS_U_BATT≤11.8V，不智能补电；车辆持续未休眠20分钟后，检测到\nEBS_U_BATT≤11.8V，进行智能补电（主要应对电源OFF后热管理后运行拉低蓄电池电压情况）。\n\n状态：released\n\n### CheryVCU-1262 - 智能补电功能关闭\n满足如下全部条件时，智能补电功能关闭，不再激活\n1、KL15关闭；\n2、高压未连接\n3、满足如下任一条件\n3.1、补电失败计数≥3；\n3.2、BMS2_N_SOC≤10%；\n\n关闭后\n1、如果HCU判断满足3.1，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠；\nKL15由OFF进入ON或者[不清晰]功能重置，VCCM_SOCWU_Ena= Enabled； 同时清除补电失败次数；\n\n2、如果HCU判断满足3.2，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠； HCU检测到BMS2_N_SOC＞10.5%，VCCM_SOCWU_Ena=\nEnabled。\n\n状态：released\n\n## 提炼摘要\n- 提取到 2 条系统需求：智能补电功能触发、智能补电功能关闭。\n- 关键阈值与信号包括：BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、VCCM_SOCWU_Ena。\n- 图片中“KL15由OFF进入ON或者[不清晰]功能重置”存在局部识别不清，已按原规则保守标注为[不清晰]。",
-        "requirementCode": ""
-      },
-      {
-        "fileName": "HvCoorn.c",
-        "location": "condition",
-        "excerpt": "条件分支: HvCoorn_bHVReq2DCBuck",
-        "requirementCode": ""
+        "requirementCode": "a6a14829-1ea3-47c8-a86f-180a176a007e"
       },
       {
         "fileName": "HvCoorn.c",
         "location": "function",
-        "excerpt": "函数 if(HvCoorn_bHvOnReq)",
-        "requirementCode": ""
+        "excerpt": "函数 if(rtb_TmpSignalConversionAticbms_ <= HvCoorn_pctVehShowLoSocInhbOnLowr_C)",
+        "requirementCode": "a6a14829-1ea3-47c8-a86f-180a176a007e"
+      },
+      {
+        "fileName": "HvCoorn.c",
+        "location": "function",
+        "excerpt": "函数 if(HvCoorn_ARID_DEF.timer >= 10.0)",
+        "requirementCode": "a6a14829-1ea3-47c8-a86f-180a176a007e"
+      },
+      {
+        "fileName": "HvCoorn.c",
+        "location": "condition",
+        "excerpt": "条件分支: HvCoorn_ARID_DEF.temporalCounter_i1 >= 1",
+        "requirementCode": "a6a14829-1ea3-47c8-a86f-180a176a007e"
+      },
+      {
+        "fileName": "HvCoorn.c",
+        "location": "function",
+        "excerpt": "函数 if(HvCoorn_bInit2AftRun)",
+        "requirementCode": "a6a14829-1ea3-47c8-a86f-180a176a007e"
       },
       {
         "fileName": "低压能量管理-系统需求.md",
         "location": "page:1",
         "excerpt": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinement case / run 摘要。\n\n## 章节信息\n1. CheryVCU-1271 - 智能补电功能触发\n2. CheryVCU-1262 - 智能补电功能关闭\n\n## 需求条目\n### CheryVCU-1271 - 智能补电功能触发\n当满足如下全部条件时，HCU判断智能补电功能激活\n1、KL15为OFF；\n2、高压未连接；\n3、连续补电失败计数＜3；\n4、BMS2_N_SOC＞10%\n5、EBS_SOC≤70% && EBS_SOC_STATE＜10%或者EBS_U_BATT＜11.8V\n\n车辆由ON到OFF，车辆未休眠，检测到EBS_SOC≤70%EBS_SOC_state=0x2，进行智能补电；\n\n车辆由ON到OFF，车辆未休眠，20分钟内，检测到EBS_U_BATT≤11.8V，不智能补电；车辆持续未休眠20分钟后，检测到\nEBS_U_BATT≤11.8V，进行智能补电（主要应对电源OFF后热管理后运行拉低蓄电池电压情况）。\n\n状态：released\n\n### CheryVCU-1262 - 智能补电功能关闭\n满足如下全部条件时，智能补电功能关闭，不再激活\n1、KL15关闭；\n2、高压未连接\n3、满足如下任一条件\n3.1、补电失败计数≥3；\n3.2、BMS2_N_SOC≤10%；\n\n关闭后\n1、如果HCU判断满足3.1，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠；\nKL15由OFF进入ON或者[不清晰]功能重置，VCCM_SOCWU_Ena= Enabled； 同时清除补电失败次数；\n\n2、如果HCU判断满足3.2，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠； HCU检测到BMS2_N_SOC＞10.5%，VCCM_SOCWU_Ena=\nEnabled。\n\n状态：released\n\n## 提炼摘要\n- 提取到 2 条系统需求：智能补电功能触发、智能补电功能关闭。\n- 关键阈值与信号包括：BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、VCCM_SOCWU_Ena。\n- 图片中“KL15由OFF进入ON或者[不清晰]功能重置”存在局部识别不清，已按原规则保守标注为[不清晰]。",
-        "requirementCode": ""
+        "requirementCode": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da"
+      },
+      {
+        "fileName": "HvCoorn.c",
+        "location": "function",
+        "excerpt": "函数 if(!rtb_RelationalOperator)",
+        "requirementCode": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da"
       },
       {
         "fileName": "HvCoorn.c",
         "location": "condition",
-        "excerpt": "条件分支: HvCoorn_bEmgcyShutDownReq",
-        "requirementCode": ""
+        "excerpt": "条件分支: !HvCoorn_bStartUpReq",
+        "requirementCode": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da"
       },
       {
         "fileName": "HvCoorn.c",
-        "location": "condition",
-        "excerpt": "条件分支: HvCoorn_bMindChag2ShutHV",
-        "requirementCode": ""
+        "location": "function",
+        "excerpt": "函数 if(HvCoorn_bShutDisCh2ShutErr)",
+        "requirementCode": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da"
       },
       {
         "fileName": "HvCoorn.c",
-        "location": "condition",
-        "excerpt": "条件分支: HvCoorn_bShutHV2ShutDisCh",
-        "requirementCode": ""
+        "location": "function",
+        "excerpt": "函数 if(HvCoorn_bNetMan2PwrShut)",
+        "requirementCode": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da"
       },
       {
         "fileName": "HvCoorn.c",
-        "location": "condition",
-        "excerpt": "条件分支: HvCoorn_bShutDisCh2ShutECU",
-        "requirementCode": ""
-      },
-      {
-        "fileName": "HvCoorn.c",
-        "location": "condition",
-        "excerpt": "条件分支: HvCoorn_bShutECU2AftRun",
-        "requirementCode": ""
+        "location": "function",
+        "excerpt": "函数 if(HvCoorn_bWake2NetMan)",
+        "requirementCode": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da"
       }
     ]
   },
@@ -106,32 +116,32 @@
     {
       "fileName": "HvCoorn.c",
       "fileRole": "generated_c",
-      "location": "condition",
-      "excerpt": "条件分支: HvCoorn_bEmgcyShutDownReq"
+      "location": "function",
+      "excerpt": "函数 if(!rtb_RelationalOperator)"
     },
     {
       "fileName": "HvCoorn.c",
       "fileRole": "generated_c",
       "location": "condition",
-      "excerpt": "条件分支: HvCoorn_bMindChag2ShutHV"
+      "excerpt": "条件分支: !HvCoorn_bStartUpReq"
     },
     {
       "fileName": "HvCoorn.c",
       "fileRole": "generated_c",
-      "location": "condition",
-      "excerpt": "条件分支: HvCoorn_bShutHV2ShutDisCh"
+      "location": "function",
+      "excerpt": "函数 if(HvCoorn_bShutDisCh2ShutErr)"
     },
     {
       "fileName": "HvCoorn.c",
       "fileRole": "generated_c",
-      "location": "condition",
-      "excerpt": "条件分支: HvCoorn_bShutDisCh2ShutECU"
+      "location": "function",
+      "excerpt": "函数 if(HvCoorn_bNetMan2PwrShut)"
     },
     {
       "fileName": "HvCoorn.c",
       "fileRole": "generated_c",
-      "location": "condition",
-      "excerpt": "条件分支: HvCoorn_bShutECU2AftRun"
+      "location": "function",
+      "excerpt": "函数 if(HvCoorn_bWake2NetMan)"
     }
   ],
   "projectEvidenceSnapshot": [
@@ -222,46 +232,16 @@
   },
   "skillContext": {
     "activeBundleId": "bundle-base",
-    "ruleIndexVersion": "registry-1776913033254",
-    "targetArea": "writing",
+    "ruleIndexVersion": "registry-1777010632870",
+    "targetArea": "validation",
     "targetLayerConstraint": "module",
     "targetProfileKeyConstraint": "低压能量管理",
     "relevantRules": [
       {
-        "ruleId": "MOD-低压能量管理-generation_priority-001",
-        "title": "generation priority 1",
-        "targetFile": "domain-knowledge.json",
-        "content": "优先按智能补电的生命周期组织模块知识，先覆盖唤醒/待机场景门槛，再覆盖激活、维持、退出、复位/重新允许与休眠协同。"
-      },
-      {
-        "ruleId": "MOD-低压能量管理-generation_priority-002",
-        "title": "generation priority 2",
-        "targetFile": "domain-knowledge.json",
-        "content": "优先复用“前置场景+全部条件+任一子条件+状态置位+后续动作/保持动作”的软件需求表达框架，确保激活、退出、复位语义彼此独立。"
-      },
-      {
-        "ruleId": "MOD-低压能量管理-generation_priority-003",
-        "title": "generation priority 3",
-        "targetFile": "domain-knowledge.json",
-        "content": "优先保留系统需求与参考软件需求中的标准信号名、状态值、阈值、比较符、时间窗和单位，特别是KL15/电源档位、高压连接状态、BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、失败计数、20分钟、15s、2小时等。"
-      },
-      {
-        "ruleId": "MOD-低压能量管理-generation_priority-004",
-        "title": "generation priority 4",
-        "targetFile": "domain-knowledge.json",
-        "content": "优先同时写清状态输出与系统动作，尤其关注VCU_IntelligentChgSt、VCCM_SOCWU_Ena、上高压/下高压、网络休眠和控制器休眠的联动关系。"
-      },
-      {
-        "ruleId": "MOD-低压能量管理-generation_priority-005",
-        "title": "generation priority 5",
-        "targetFile": "domain-knowledge.json",
-        "content": "优先覆盖异常和边界退出路径，包括连续补电失败计数达到上限、动力电池SOC过低、DCDC反馈超时、信号丢失后的回退判断，以及退出后的计数清零/保持/+1规则。"
-      },
-      {
         "ruleId": "MOD-低压能量管理-rule_hint-001",
         "title": "低压能量管理 rule hint",
         "targetFile": "domain-knowledge.json",
-        "content": "在 embedded_vcu / 低压能量管理 范围内，优先关注 智能补电唤醒与场景门槛、智能补电激活判断、智能补电维持与状态输出、智能补电退出判断、智能补电退出后动作与失败计数处理、智能补电复位/重新允许条件、网络休眠与控制器休眠协同。写作时采用 对激活类需求，优先写成“当VCU被唤醒且电源档位/高压连接状态满足前置场景时，若满足以下全部条件，则智能补电激活并执行上高压流程；其中条件组中的监测量可再拆分为任一子条件”。对退出类需求，优先写成“当满足以下任一条件时，智能补电退出”；退出后的下高压、唤醒使能撤销、失败计数清零/保持/+1、网络或控制器休眠动作应单独成句。对复位类需求，应单独定义重新允许激活的时间窗或状态恢复条件，不与退出判定混写。若存在未满足条件场景，应补写否则保持原状态、置0或不触发的路径。。目标风格保持 面向嵌入式VCU的软件需求条目风格，条件层次清晰、状态与动作并列、比较符和阈值明确、避免实现化叙述。。可以优先参考 系统需求、参考软件需求、相关既有技能规则。"
+        "content": "对激活类需求，优先写成“当前置场景成立且满足以下全部条件时，智能补电激活”；其中条件组中的监测量可再拆分为任一子条件。对退出类需求，若源系统需求在同一标题下已经按退出原因展开，则软件需求必须保留该标题不变，并在同一条需求内部按退出原因逐分支展开：先写各退出子条件，再分别写清该分支对应的退出后动作、VCCM_SOCWU_Ena 状态、失败计数清零/保持/+1规则、是否执行下高压、是否允许网络/控制器休眠，以及重新允许激活的条件；不得把多个退出原因压缩成“满足任一条件则退出”后再用统一后处理概括。仅当源需求本身未给出分支化后处理时，才可使用通用“当满足以下任一条件时，智能补电退出”的句式。若存在未满足条件场景，应补写保持当前状态不变、置0或不触发的路径。对 OCR 不清晰但可确认主干语义的恢复条件，应保守保留已确认部分，并避免臆造未识别内容。"
       },
       {
         "ruleId": "MOD-低压能量管理-rule_hint-002",
@@ -274,17 +254,53 @@
         "title": "低压能量管理 rule hint",
         "targetFile": "domain-knowledge.json",
         "content": "在 embedded_vcu / 低压能量管理 范围内，优先关注 高压流程协同、休眠生命周期协同。写作时采用 可借鉴相关代码体现出的初始化、唤醒、待机、退出和休眠生命周期结构来组织章节，但需求文本只保留生命周期语义，不直接引入代码状态机节点名、函数名、临时变量名或分支名。若需描述与高压流程的关系，应写成功能级动作，如执行上高压流程、执行下高压流程、允许网络休眠、允许控制器休眠。。目标风格保持 需求级生命周期表达，强调功能协同，不暴露实现细节。。可以优先参考 系统需求、参考软件需求、相关代码语义、相关既有技能规则。"
+      },
+      {
+        "ruleId": "MOD-低压能量管理-anti_pattern-001",
+        "title": "anti pattern 1",
+        "targetFile": "domain-knowledge.json",
+        "content": "不要把HvCoorn.c中的函数名、局部变量名、布尔中间量、状态机分支名或判断顺序直接改写成软件需求。"
+      },
+      {
+        "ruleId": "MOD-低压能量管理-anti_pattern-002",
+        "title": "anti pattern 2",
+        "targetFile": "domain-knowledge.json",
+        "content": "不要把激活条件、退出条件、退出后动作、失败计数处理和复位条件压缩在同一长句中；每条规则只承载一个主要目的。"
+      },
+      {
+        "ruleId": "MOD-低压能量管理-anti_pattern-003",
+        "title": "anti pattern 3",
+        "targetFile": "domain-knowledge.json",
+        "content": "不要混合系统需求与参考软件需求中不一致的阈值、比较符、状态值或边界条件后再生成新规则；存在差异时应回到单一事实来源并显式对齐。"
+      },
+      {
+        "ruleId": "MOD-低压能量管理-anti_pattern-004",
+        "title": "anti pattern 4",
+        "targetFile": "domain-knowledge.json",
+        "content": "不要遗漏否则路径、恢复条件、重新进入条件或超时撤销条件，尤其是激活判断、模式进入和停止控制类需求。"
+      },
+      {
+        "ruleId": "MOD-低压能量管理-anti_pattern-005",
+        "title": "anti pattern 5",
+        "targetFile": "domain-knowledge.json",
+        "content": "不要依据OCR不清晰内容、裁切片段或代码猜测补全缺失阈值、状态名或时序要求。"
+      },
+      {
+        "ruleId": "MOD-低压能量管理-anti_pattern-006",
+        "title": "anti pattern 6",
+        "targetFile": "domain-knowledge.json",
+        "content": "不要只写条件不写状态输出与系统动作，也不要只写上高压/休眠动作而省略对应的功能状态位和使能信号。"
       }
     ]
   },
   "poolStatus": "new",
-  "groupId": "92a97c50-f0e4-4cf5-b3de-94cff8102c3c",
+  "groupId": "93975b98-b9d1-4d93-a04d-17e95572ac98",
   "replayStatus": "proposal_ready",
   "replayCount": 1,
   "replayTaskIds": [
-    "e3df51e3-74b4-4850-b696-3191687f71d8"
+    "44261f82-b6c9-4981-b5ce-f128a0f750e9"
   ],
-  "lastReplayAt": "2026-04-23T08:35:16.097Z",
-  "createdAt": "2026-04-23T07:51:26.450Z",
-  "updatedAt": "2026-04-24T08:10:23.924Z"
+  "lastReplayAt": "2026-04-24T08:04:30.690Z",
+  "createdAt": "2026-04-24T08:03:47.885Z",
+  "updatedAt": "2026-04-24T08:10:23.922Z"
 }

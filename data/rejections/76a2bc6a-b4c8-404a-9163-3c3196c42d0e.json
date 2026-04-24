@@ -146,7 +146,7 @@
     "relevantRules": []
   },
   "poolStatus": "new",
-  "groupId": "80d18256-bd39-468f-bc3d-d3063368c501",
+  "groupId": "40184d98-d2c8-4a83-95f8-268bbc1e4584",
   "replayStatus": "proposal_ready",
   "replayCount": 5,
   "replayTaskIds": [
@@ -158,5 +158,5 @@
   ],
   "lastReplayAt": "2026-04-17T12:25:38.409Z",
   "createdAt": "2026-04-16T20:46:37.642Z",
-  "updatedAt": "2026-04-24T06:17:15.867Z"
+  "updatedAt": "2026-04-24T08:10:23.923Z"
 }

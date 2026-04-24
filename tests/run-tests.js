@@ -8251,6 +8251,19 @@ const tests = [
     }
   },
   {
+    name: "Task detail page route supports document space task urls",
+    run: async () => {
+      await withTestServer(async ({ baseUrl }) => {
+        const response = await fetch(`${baseUrl}/projects/project-1/modules/module-1/spaces/software_requirement/tasks/task-1`);
+        assert.equal(response.status, 200);
+        const html = await response.text();
+
+        assert.ok(html.includes('data-page="task-detail"'));
+        assert.ok(html.includes('id="task-title"'));
+      });
+    }
+  },
+  {
     name: "Feedback pool replay dialog exposes larger viewport and manual height controls",
     run: async () => {
       const html = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.html"), "utf8");

@@ -148,7 +148,7 @@
     "targetProfileKeyConstraint": "充电管理"
   },
   "poolStatus": "new",
-  "groupId": "49d9ac45-e3b9-4257-8dc7-1d5cca6509d9",
+  "groupId": "62c637c4-0607-4d66-af0c-996f2890fb2b",
   "replayStatus": "proposal_ready",
   "replayCount": 1,
   "replayTaskIds": [
@@ -156,6 +156,6 @@
   ],
   "lastReplayAt": "2026-04-19T16:24:28.170Z",
   "createdAt": "2026-04-19T16:04:30.574Z",
-  "updatedAt": "2026-04-24T06:17:15.866Z",
+  "updatedAt": "2026-04-24T08:10:23.923Z",
   "targetLayerConstraint": "module"
 }

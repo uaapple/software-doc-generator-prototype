@@ -1,22 +1,20 @@
 [
   {
-    "id": "5556e1e6-5bb8-489c-8426-6eee6fbb3097",
-    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::8afaa2a2-d578-4bed-9ebb-38f5522589e8::coverage_gap::后处理泛化|退出分支缺失|重新允许条件不清::writing::module::bundle-base",
-    "title": "覆盖缺失 / 写作规则 / Module",
+    "id": "93975b98-b9d1-4d93-a04d-17e95572ac98",
+    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::8afaa2a2-d578-4bed-9ebb-38f5522589e8::coverage_gap::参考软件需求退出分支缺失；后处理覆盖不足::validation::module::bundle-base",
+    "title": "覆盖缺失 / 校验规则 / Module",
     "reasonCategory": "coverage_gap",
     "reasonTags": [
-      "后处理泛化",
-      "退出分支缺失",
-      "重新允许条件不清"
+      "参考软件需求退出分支缺失；后处理覆盖不足"
     ],
-    "targetArea": "writing",
+    "targetArea": "validation",
     "targetLayerConstraint": "module",
     "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
     "projectName": "VCU",
     "moduleId": "8afaa2a2-d578-4bed-9ebb-38f5522589e8",
     "moduleName": "低压能量管理",
     "memberIds": [
-      "049b4409-1668-49ed-b85e-dc048768ab1b"
+      "af73ad52-d556-4f8a-bb56-0335f283cd95"
     ],
     "stats": {
       "count": 1,
@@ -25,7 +23,32 @@
     "status": "active"
   },
   {
-    "id": "49d9ac45-e3b9-4257-8dc7-1d5cca6509d9",
+    "id": "40184d98-d2c8-4a83-95f8-268bbc1e4584",
+    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb::coverage_gap::来源不足|过度推断|需求边界漂移::validation::docType::bundle-base",
+    "title": "覆盖缺失 / 校验规则 / DocType",
+    "reasonCategory": "coverage_gap",
+    "reasonTags": [
+      "来源不足",
+      "过度推断",
+      "需求边界漂移"
+    ],
+    "targetArea": "validation",
+    "targetLayerConstraint": "docType",
+    "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
+    "projectName": "VCU",
+    "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
+    "moduleName": "充电管理",
+    "memberIds": [
+      "76a2bc6a-b4c8-404a-9163-3c3196c42d0e"
+    ],
+    "stats": {
+      "count": 1,
+      "replayedCount": 1
+    },
+    "status": "active"
+  },
+  {
+    "id": "62c637c4-0607-4d66-af0c-996f2890fb2b",
     "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb::coverage_gap::代码约束提取不足|前置条件缺失|来源利用不充分::validation::module::bundle-base",
     "title": "覆盖缺失 / 校验规则 / Module",
     "reasonCategory": "coverage_gap",
@@ -50,23 +73,23 @@
     "status": "active"
   },
   {
-    "id": "80d18256-bd39-468f-bc3d-d3063368c501",
-    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb::coverage_gap::来源不足|过度推断|需求边界漂移::validation::docType::bundle-base",
-    "title": "覆盖缺失 / 校验规则 / DocType",
+    "id": "92a97c50-f0e4-4cf5-b3de-94cff8102c3c",
+    "groupKey": "1870d5b2-1df7-4dbb-8012-17713c8a4651::8afaa2a2-d578-4bed-9ebb-38f5522589e8::coverage_gap::后处理泛化|退出分支缺失|重新允许条件不清::writing::module::bundle-base",
+    "title": "覆盖缺失 / 写作规则 / Module",
     "reasonCategory": "coverage_gap",
     "reasonTags": [
-      "来源不足",
-      "过度推断",
-      "需求边界漂移"
+      "后处理泛化",
+      "退出分支缺失",
+      "重新允许条件不清"
     ],
-    "targetArea": "validation",
-    "targetLayerConstraint": "docType",
+    "targetArea": "writing",
+    "targetLayerConstraint": "module",
     "projectId": "1870d5b2-1df7-4dbb-8012-17713c8a4651",
     "projectName": "VCU",
-    "moduleId": "5e95495b-4a75-4c4d-bbb8-cda3ca5dc8eb",
-    "moduleName": "充电管理",
+    "moduleId": "8afaa2a2-d578-4bed-9ebb-38f5522589e8",
+    "moduleName": "低压能量管理",
     "memberIds": [
-      "76a2bc6a-b4c8-404a-9163-3c3196c42d0e"
+      "049b4409-1668-49ed-b85e-dc048768ab1b"
     ],
     "stats": {
       "count": 1,

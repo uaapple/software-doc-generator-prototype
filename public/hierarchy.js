@@ -1452,11 +1452,10 @@ function renderTaskList(module, projectId, pendingGeneration = null) {
 }
 
 async function renderTaskDetailPage() {
-  const projectId = getPathPart(1);
-  const moduleId = getPathPart(3);
-  const taskId = getPathPart(5);
+  const pathInfo = parseTaskDetailPath();
+  const { projectId, moduleId, taskId, pathDocumentType } = pathInfo;
   const params = new URLSearchParams(window.location.search);
-  const preferredDocumentType = params.get("documentType");
+  const preferredDocumentType = params.get("documentType") || pathDocumentType;
   const highlightedResultItemId = params.get("resultItemId");
   const [project, module] = await Promise.all([
     request(`/api/projects/${projectId}`),
@@ -2921,6 +2920,28 @@ function findTaskInModule(module, taskId, preferredDocumentType = "") {
 function getPathPart(index) {
   const parts = window.location.pathname.split("/").filter(Boolean);
   return parts[index] || "";
+}
+
+function parseTaskDetailPath() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const projectId = parts[1] || "";
+  const moduleId = parts[3] || "";
+  const spacesIndex = parts.indexOf("spaces");
+  if (spacesIndex >= 0) {
+    return {
+      projectId,
+      moduleId,
+      pathDocumentType: parts[spacesIndex + 1] || "",
+      taskId: parts[spacesIndex + 3] || ""
+    };
+  }
+
+  return {
+    projectId,
+    moduleId,
+    pathDocumentType: "",
+    taskId: parts[5] || ""
+  };
 }
 
 async function request(url, options = {}) {

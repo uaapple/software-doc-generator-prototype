@@ -211,6 +211,9 @@ export async function createApp() {
   app.get("/projects/:projectId/modules/:moduleId", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "module-detail.html"));
   });
+  app.get("/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/:taskId", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "task-detail.html"));
+  });
   app.get("/projects/:projectId/modules/:moduleId/tasks/:taskId", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "task-detail.html"));
   });

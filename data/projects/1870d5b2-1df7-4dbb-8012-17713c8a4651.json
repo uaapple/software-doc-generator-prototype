@@ -18867,6 +18867,3097 @@
           "documentType": "software_requirement",
           "generationTasks": [
             {
+              "id": "9e19be91-3acf-4e88-ae87-77f0fb4dcd94",
+              "moduleId": "8afaa2a2-d578-4bed-9ebb-38f5522589e8",
+              "documentType": "software_requirement",
+              "taskKind": "generation",
+              "status": "completed",
+              "createdAt": "2026-04-24T07:42:00.509Z",
+              "updatedAt": "2026-04-24T08:03:47.889Z",
+              "inputAssetIds": [
+                "5e91218f-e74d-4444-865d-93dc741c48c1",
+                "6546a63b-8ef2-428a-b422-d0de89a7334f"
+              ],
+              "uploadedAssetIds": [],
+              "manualTitleOutline": {
+                "sections": [
+                  {
+                    "sectionTitle": "智能补电",
+                    "items": [
+                      {
+                        "itemTitle": "智能补电激活判断"
+                      },
+                      {
+                        "itemTitle": "智能补电退出判断"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "resultItems": [
+                {
+                  "title": "智能补电激活判断",
+                  "requirementText": "软件应对智能补电执行激活判断。当车辆处于由ON到OFF且车辆未休眠的前置场景，且同时满足KL15=OFF、高压未连接、连续补电失败计数<3、BMS2_N_SOC>10%时，若满足以下任一子条件，则应判定智能补电功能激活并进入智能补电流程：1) EBS_SOC≤70%且EBS_SOC_STATE<10%；2) 车辆持续未休眠时间≥20分钟且EBS_U_BATT≤11.8V。在车辆由ON到OFF且车辆未休眠场景下，检测到EBS_SOC≤70%且EBS_SOC_STATE=0x2时，软件亦应判定智能补电功能激活。若车辆持续未休眠时间<20分钟且仅检测到EBS_U_BATT≤11.8V，则软件不应激活智能补电，并应保持智能补电未激活状态。",
+                  "type": "functional",
+                  "verificationHint": "通过功能测试验证输入触发与输出响应",
+                  "sourceAnchorIds": [
+                    "dc23670b-b572-4438-bcd4-5fa9a40a752f",
+                    "ddf3140f-f1d2-4be6-afb2-77ffc2e4d04b",
+                    "5624fe41-0462-40c0-9740-9e9242184393",
+                    "d2356556-3b8c-4074-b89d-22d56957c69f",
+                    "59e049ff-c517-4dc8-987e-a271ed44133f"
+                  ],
+                  "conflictNote": "",
+                  "id": "a6a14829-1ea3-47c8-a86f-180a176a007e",
+                  "sectionTitle": "智能补电",
+                  "itemTitle": "智能补电激活判断",
+                  "sourceRefs": [
+                    {
+                      "fileName": "低压能量管理-系统需求.md",
+                      "fileRole": "extracted_system_requirement",
+                      "location": "page:1",
+                      "excerpt": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinement case / run 摘要。\n\n## 章节信息\n1. CheryVCU-1271 - 智能补电功能触发\n2. CheryVCU-1262 - 智能补电功能关闭\n\n## 需求条目\n### CheryVCU-1271 - 智能补电功能触发\n当满足如下全部条件时，HCU判断智能补电功能激活\n1、KL15为OFF；\n2、高压未连接；\n3、连续补电失败计数＜3；\n4、BMS2_N_SOC＞10%\n5、EBS_SOC≤70% && EBS_SOC_STATE＜10%或者EBS_U_BATT＜11.8V\n\n车辆由ON到OFF，车辆未休眠，检测到EBS_SOC≤70%EBS_SOC_state=0x2，进行智能补电；\n\n车辆由ON到OFF，车辆未休眠，20分钟内，检测到EBS_U_BATT≤11.8V，不智能补电；车辆持续未休眠20分钟后，检测到\nEBS_U_BATT≤11.8V，进行智能补电（主要应对电源OFF后热管理后运行拉低蓄电池电压情况）。\n\n状态：released\n\n### CheryVCU-1262 - 智能补电功能关闭\n满足如下全部条件时，智能补电功能关闭，不再激活\n1、KL15关闭；\n2、高压未连接\n3、满足如下任一条件\n3.1、补电失败计数≥3；\n3.2、BMS2_N_SOC≤10%；\n\n关闭后\n1、如果HCU判断满足3.1，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠；\nKL15由OFF进入ON或者[不清晰]功能重置，VCCM_SOCWU_Ena= Enabled； 同时清除补电失败次数；\n\n2、如果HCU判断满足3.2，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠； HCU检测到BMS2_N_SOC＞10.5%，VCCM_SOCWU_Ena=\nEnabled。\n\n状态：released\n\n## 提炼摘要\n- 提取到 2 条系统需求：智能补电功能触发、智能补电功能关闭。\n- 关键阈值与信号包括：BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、VCCM_SOCWU_Ena。\n- 图片中“KL15由OFF进入ON或者[不清晰]功能重置”存在局部识别不清，已按原规则保守标注为[不清晰]。"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAticbms_ <= HvCoorn_pctVehShowLoSocInhbOnLowr_C)"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_ARID_DEF.timer >= 10.0)"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_ARID_DEF.temporalCounter_i1 >= 1"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bInit2AftRun)"
+                    }
+                  ]
+                },
+                {
+                  "title": "智能补电退出判断",
+                  "requirementText": "软件应对智能补电执行退出判断。当KL15关闭且高压未连接时，若连续补电失败计数≥3，则应关闭智能补电功能且不再激活，并发送VCCM_SOCWU_Ena=Disabled给EBS；EBS收到后应关闭主动唤醒功能，VCU应停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，并允许整车休眠。当KL15由OFF进入ON或者执行源需求中记载但OCR未完全识别的功能重置条件后，软件应将VCCM_SOCWU_Ena置为Enabled，并同时清除补电失败次数。当KL15关闭且高压未连接时，若BMS2_N_SOC≤10%，则软件应关闭智能补电功能且不再激活，并发送VCCM_SOCWU_Ena=Disabled给EBS；EBS收到后应关闭主动唤醒功能，VCU应停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，并允许整车休眠；当HCU检测到BMS2_N_SOC>10.5%时，软件应将VCCM_SOCWU_Ena置为Enabled。若上述退出条件均不满足，则软件应保持当前智能补电状态不变。",
+                  "type": "functional",
+                  "verificationHint": "通过功能测试验证输入触发与输出响应",
+                  "sourceAnchorIds": [
+                    "dc23670b-b572-4438-bcd4-5fa9a40a752f",
+                    "915eef71-f1ce-4bc5-8efc-abfb16c5b25b",
+                    "53724f81-b9ef-4784-918d-15654f19f110",
+                    "9ec3b31b-d9e4-4ba4-95d3-8c6a294e9a92",
+                    "75e5f546-db20-4fb5-b6eb-b61862332230",
+                    "51483602-7961-4d04-a7bb-760ac3009815"
+                  ],
+                  "conflictNote": "源系统需求中“KL15由OFF进入ON或者[不清晰]功能重置”存在OCR不清晰片段，已仅保留可确认的复位语义，未对未识别内容做扩写。",
+                  "id": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
+                  "sectionTitle": "智能补电",
+                  "itemTitle": "智能补电退出判断",
+                  "sourceRefs": [
+                    {
+                      "fileName": "低压能量管理-系统需求.md",
+                      "fileRole": "extracted_system_requirement",
+                      "location": "page:1",
+                      "excerpt": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinement case / run 摘要。\n\n## 章节信息\n1. CheryVCU-1271 - 智能补电功能触发\n2. CheryVCU-1262 - 智能补电功能关闭\n\n## 需求条目\n### CheryVCU-1271 - 智能补电功能触发\n当满足如下全部条件时，HCU判断智能补电功能激活\n1、KL15为OFF；\n2、高压未连接；\n3、连续补电失败计数＜3；\n4、BMS2_N_SOC＞10%\n5、EBS_SOC≤70% && EBS_SOC_STATE＜10%或者EBS_U_BATT＜11.8V\n\n车辆由ON到OFF，车辆未休眠，检测到EBS_SOC≤70%EBS_SOC_state=0x2，进行智能补电；\n\n车辆由ON到OFF，车辆未休眠，20分钟内，检测到EBS_U_BATT≤11.8V，不智能补电；车辆持续未休眠20分钟后，检测到\nEBS_U_BATT≤11.8V，进行智能补电（主要应对电源OFF后热管理后运行拉低蓄电池电压情况）。\n\n状态：released\n\n### CheryVCU-1262 - 智能补电功能关闭\n满足如下全部条件时，智能补电功能关闭，不再激活\n1、KL15关闭；\n2、高压未连接\n3、满足如下任一条件\n3.1、补电失败计数≥3；\n3.2、BMS2_N_SOC≤10%；\n\n关闭后\n1、如果HCU判断满足3.1，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠；\nKL15由OFF进入ON或者[不清晰]功能重置，VCCM_SOCWU_Ena= Enabled； 同时清除补电失败次数；\n\n2、如果HCU判断满足3.2，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠； HCU检测到BMS2_N_SOC＞10.5%，VCCM_SOCWU_Ena=\nEnabled。\n\n状态：released\n\n## 提炼摘要\n- 提取到 2 条系统需求：智能补电功能触发、智能补电功能关闭。\n- 关键阈值与信号包括：BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、VCCM_SOCWU_Ena。\n- 图片中“KL15由OFF进入ON或者[不清晰]功能重置”存在局部识别不清，已按原规则保守标注为[不清晰]。"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(!rtb_RelationalOperator)"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: !HvCoorn_bStartUpReq"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bShutDisCh2ShutErr)"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bNetMan2PwrShut)"
+                    },
+                    {
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bWake2NetMan)"
+                    }
+                  ],
+                  "review": {
+                    "status": "rejected",
+                    "reviewer": "当前用户",
+                    "comment": "在任务详情页中人工驳回",
+                    "reasonCategory": "coverage_gap",
+                    "reasonTags": [
+                      "参考软件需求退出分支缺失；后处理覆盖不足"
+                    ],
+                    "reasonText": "当前“智能补电退出判断”只覆盖了系统需求中补电失败计数≥3、BMS2_N_SOC≤10%两个关闭原因，虽然已分别写出VCCM_SOCWU_Ena、网络唤醒关闭、整车休眠和部分重新允许条件，但对输入代码文件中体现的智能补电退出/下高压/休眠相关分支覆盖不足。\n\n从代码语义看，智能补电退出不应只由系统需求中的两个关闭条件构成，还应结合代码中与下高压、主动唤醒关闭、网络管理、控制器休眠、故障退出、超时退出、DCDC反馈异常、蓄电池电压异常等相关判断，补全退出分支及退出后的差异化处理。当前结果把代码侧可见的退出路径压缩成了两个系统需求关闭场景，导致退出条件和退出后动作覆盖不完整，不利于后续实现和验证。",
+                    "targetArea": "validation",
+                    "severity": "medium",
+                    "expectedNote": "保持标题为“智能补电退出判断”，以系统需求为主线，并结合输入代码文件中可确认的智能补电退出、下高压、主动唤醒关闭、网络休眠、控制器休眠、故障/超时/反馈异常等语义，补全退出分支。每个分支应分别写清退出条件、退出后动作、补电失败次数清零/保持/+1规则、VCCM_SOCWU_Ena状态、是否执行下高压、是否允许网络/控制器休眠，以及重新允许激活或功能重置条件。无法从系统需求或代码中确认的阈值、状态名或恢复条件不要臆造。",
+                    "targetLayerConstraint": "module",
+                    "includeInPool": true,
+                    "rejectionId": "af73ad52-d556-4f8a-bb56-0335f283cd95",
+                    "updatedAt": "2026-04-24T08:03:47.765Z"
+                  }
+                }
+              ],
+              "extractions": [
+                {
+                  "fileId": "5e91218f-e74d-4444-865d-93dc741c48c1",
+                  "fileName": "低压能量管理-系统需求.md",
+                  "fileRole": "system_pdf",
+                  "summary": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinemen",
+                  "evidence": [
+                    {
+                      "id": "dc23670b-b572-4438-bcd4-5fa9a40a752f",
+                      "fileId": "5e91218f-e74d-4444-865d-93dc741c48c1",
+                      "fileName": "低压能量管理-系统需求.md",
+                      "fileRole": "extracted_system_requirement",
+                      "location": "page:1",
+                      "excerpt": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinement case / run 摘要。\n\n## 章节信息\n1. CheryVCU-1271 - 智能补电功能触发\n2. CheryVCU-1262 - 智能补电功能关闭\n\n## 需求条目\n### CheryVCU-1271 - 智能补电功能触发\n当满足如下全部条件时，HCU判断智能补电功能激活\n1、KL15为OFF；\n2、高压未连接；\n3、连续补电失败计数＜3；\n4、BMS2_N_SOC＞10%\n5、EBS_SOC≤70% && EBS_SOC_STATE＜10%或者EBS_U_BATT＜11.8V\n\n车辆由ON到OFF，车辆未休眠，检测到EBS_SOC≤70%EBS_SOC_state=0x2，进行智能补电；\n\n车辆由ON到OFF，车辆未休眠，20分钟内，检测到EBS_U_BATT≤11.8V，不智能补电；车辆持续未休眠20分钟后，检测到\nEBS_U_BATT≤11.8V，进行智能补电（主要应对电源OFF后热管理后运行拉低蓄电池电压情况）。\n\n状态：released\n\n### CheryVCU-1262 - 智能补电功能关闭\n满足如下全部条件时，智能补电功能关闭，不再激活\n1、KL15关闭；\n2、高压未连接\n3、满足如下任一条件\n3.1、补电失败计数≥3；\n3.2、BMS2_N_SOC≤10%；\n\n关闭后\n1、如果HCU判断满足3.1，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠；\nKL15由OFF进入ON或者[不清晰]功能重置，VCCM_SOCWU_Ena= Enabled； 同时清除补电失败次数；\n\n2、如果HCU判断满足3.2，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠； HCU检测到BMS2_N_SOC＞10.5%，VCCM_SOCWU_Ena=\nEnabled。\n\n状态：released\n\n## 提炼摘要\n- 提取到 2 条系统需求：智能补电功能触发、智能补电功能关闭。\n- 关键阈值与信号包括：BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、VCCM_SOCWU_Ena。\n- 图片中“KL15由OFF进入ON或者[不清晰]功能重置”存在局部识别不清，已按原规则保守标注为[不清晰]。",
+                      "tags": [
+                        "state",
+                        "timing",
+                        "threshold",
+                        "requirement-like"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                  "fileName": "HvCoorn.c",
+                  "fileRole": "generated_c",
+                  "summary": "函数 look1_is8lftf_binlca(sint8 u0, const sint8 bp0[], const float32 table[], uint32 maxIndex)",
+                  "evidence": [
+                    {
+                      "id": "720deed5-82fc-40e3-abcd-62fbdea4f234",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 look1_is8lftf_binlca(sint8 u0, const sint8 bp0[], const float32 table[], uint32 maxIndex)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "d39db3f5-9606-4cdd-87c6-da0fc7890904",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(u0 < bp0[maxIndex])",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "f1e0c86a-2660-426a-bff4-d709c5d2ae3b",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 HvCoorn_Normal(const boolean *LogicalOperator6, uint8 *HvCoorn_stHVP_f)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "70b4717b-503f-424e-b3f6-ed73bda5722c",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_ARID_DEF.is_SystemReady == HvCoorn_IN_SystemReady)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "458c6a8b-2fbd-483c-b041-b5d47f448a87",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bMindChag2Rdy)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "60437f79-db1f-492f-8316-2e1da81dfa4a",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bStartUpReq)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "9ec3b31b-d9e4-4ba4-95d3-8c6a294e9a92",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bShutDisCh2ShutErr)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "9d692e94-8293-429f-8f0e-894c3e98f57a",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bShutECU2Comm)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "d9dad591-346f-4252-be80-b791b93ffa20",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bDCBuck2Shtdwn)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "85b4e512-3261-41b4-b73b-16a897ee18a8",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHVReq2ShutDown)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "3c7a1906-80b0-47de-9ed1-15d722755474",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bComm2ShutECU)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "028f564b-088c-4a21-acbe-94a1a0216f31",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator || rtb_LogicalOperator2)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "c09ad913-0f49-4d78-b2c2-d67db8e9eece",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_ox || false)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "793266a4-d7b8-4b88-be28-cb451bca648f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "6da80153-07f6-45d0-8e33-70b99141475a",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_ox)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "915eef71-f1ce-4bc5-8efc-abfb16c5b25b",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(!rtb_RelationalOperator)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "ddf3140f-f1d2-4be6-afb2-77ffc2e4d04b",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAticbms_ <= HvCoorn_pctVehShowLoSocInhbOnLowr_C)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "a97f83be-6dad-4e07-85b4-78de2d1ed508",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_gi)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "7fb2a768-a6bb-454d-8f76-523a4c31e11f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_DataTypeConversion_jq < -32768)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "6218f306-1ba9-4e43-8f3b-2f5a411dbb8e",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_bGearOk)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "b5b19168-e5f9-4aa4-8de2-bd6039f599fa",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_AND1_al)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "5e13154c-9232-450a-8231-76454587292f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_Equal12_a)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "f2593e15-7ca7-4512-97ea-cc0ea66c1203",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_iq)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "9f2200f7-e143-4f43-b9af-52736009da62",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_e2)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "4f22a11a-722e-4060-a42a-d65c1dc2b994",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_ce_idx_0)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "039cdc8c-9956-48c3-b627-35170150ca0c",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_ce_idx_1)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "15f05ced-edba-4681-ac41-cb0e4aa0211b",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_AND7_j)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "b58bbf82-2f72-4e26-9497-ec4da96a30a5",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_f)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "13b6513e-a622-4c33-8472-c92d033695bb",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(VCCM_flg_Allow_Antitheft && rtb_TmpSignalConversionAtidi_bK)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "85408cd3-054e-4be8-a4ad-02be10f2ed65",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(authsuccess || rtb_AND14_l)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "5624fe41-0462-40c0-9740-9e9242184393",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_ARID_DEF.timer >= 10.0)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "77c37a3f-3421-47c4-8c40-054ec9f8c470",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(authfailed || rtb_Equal3_a)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "50173414-ec5e-4d35-93ca-27c93cea6c9f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_AND14_l)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "92a29691-8f58-43f1-b4e7-06e67114da24",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_gn)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "ba9bb473-d8a3-44db-857d-269bc0df4c8e",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_AND8_k)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "b6b871ef-35bd-4b48-8539-0fff141c9f92",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_AND26_o)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "3d576f12-484b-4b03-ad59-a520413c0257",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_DataTypeConversion_jq < -128)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "59e049ff-c517-4dc8-987e-a271ed44133f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bInit2AftRun)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "75e5f546-db20-4fb5-b6eb-b61862332230",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bNetMan2PwrShut)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "aaa1f668-a176-42e3-8ba3-471b3efe2220",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bAftRun2NetMan)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "51483602-7961-4d04-a7bb-760ac3009815",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bWake2NetMan)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "cf74ac2d-5be4-472c-8727-ea8743a51235",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bDCBuck2EngStrt)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "f9b3dafc-1b56-497e-991a-f22c2bed0de4",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bEngStrt2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "dd33b3a4-8bef-480d-a9fc-9b19b1940334",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHvCnt2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "95525b8e-a645-47e4-a578-9d3847201ade",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHvCnt2EngStrt)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "8d32f0c9-8d9b-43de-affe-19fe912331c8",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHvDisb2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "1acbb89a-8705-4e59-a194-71eaa03921b2",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHvInit2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "16c39fa3-66fd-4c97-b73d-a08b6e582731",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHvInit2EngStrt)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "38abfd14-9efb-42f0-93b9-d9f2126b0c65",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHvDcnct2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "d5118c95-40a8-4843-9f8f-963b18c55e20",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHvReq2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "059c1ffb-a4ed-4ac9-b123-ed3cfc0bf95f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtEngS_n && rtb_TmpSignalConversionAtEngStr && HvCoorn_bHvOnReq && rtb_TmpSignalConversionAtChr_kb && rtb_TmpSignalConversionAtHybCoo)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "a1a7b55c-c7b6-4a65-bd83-0be1e0af7873",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bHvOnReq)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "85113409-d8ea-404b-a979-486e4deab1db",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_RelationalOperator_no)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "cc132fe3-333d-49aa-bb88-ad2741b3f835",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bRMCUPlsHeatgActvRaw)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "e93b3976-21ca-4ac5-816e-b2b1460bcf92",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bRMCUStalHeatgActvRaw)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "c21fd8c7-3393-470e-991e-80bfecedea9c",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(HvCoorn_bVoltModStbReq)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "a983fac7-fc7c-4be8-a73e-767b5ee265a9",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtVehC_i)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "74cca735-bff3-4a50-b5c7-28d042813be5",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 if(i < -32768)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "id": "ca4ec3a2-aadc-4d7f-92e5-8aa4fa076118",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "excerpt": "函数 HvCoorn_Init(void)",
+                      "tags": [
+                        "function",
+                        "lifecycle"
+                      ]
+                    },
+                    {
+                      "id": "0c9adf37-f4ce-4738-8912-ee01d38bea52",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: u0 <= bp0[0U]",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "612daed5-c1c0-4b9f-8f34-1b628d20ca90",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: u0 < bp0[bpIdx]",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "79c0776a-5f6c-4ad4-8355-cf032baf365c",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: iLeft == maxIndex",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "fcc219e1-d331-475a-b8e2-f308e0032f5b",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bEmgcyShutDownReq",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "7f9d39b6-4c92-417a-bac4-1164e2973947",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (!HvCoorn_bStartUpReq) && (*LogicalOperator6) && HvCoorn_bAPUNotRdy",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "936bcb13-aa69-4ca9-a40a-863891cc640d",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bRdy2RdyWait",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "940b3f7d-8ab6-4b4f-bf25-3d975e3e2717",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bRdyWait2Rdy",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "53724f81-b9ef-4784-918d-15654f19f110",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: !HvCoorn_bStartUpReq",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "64abb2ab-828a-4c27-aa4f-7b99c46a035f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bMindChag2ShutHV",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "d2356556-3b8c-4074-b89d-22d56957c69f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_ARID_DEF.temporalCounter_i1 >= 1",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "d84cc6c0-8ca1-474d-adf2-179d08f05c12",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bShutHV2ShutDisCh",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "e53bb9cf-519a-417a-82e2-f247883c3e9a",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bShutDisCh2ShutECU",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "0fe67c9e-2ce9-48c5-aff5-88ea32315a19",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bShutECU2AftRun",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "8aab201b-94bc-492b-9add-dd9adb6b8f76",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bDCBuck2Rdy",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "3d7f7765-d3ec-423d-bee2-3337cd7ac591",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bHVReq2DCBuck",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "67a861fe-e515-43eb-9104-0bd9c2662d2f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bComm2HVReq",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "efa9e975-f472-47c9-91be-d56fb6586123",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bHvRlyClsJudgByMod_C",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "cef38bc4-a1da-4883-9c44-aa4f3f2c62c1",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: HvCoorn_bHvilChkgEna_C && ((rtb_TmpSignalConversionAticbm_d == ((uint8)0U)",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "53be04cb-762c-44ed-9750-7496cdd9d63c",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: (rtb_ShiftArithmetic7 != ((uint8)1U)",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "f17ba8c4-5c75-4081-8230-9218f0556789",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtVehC_i",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "id": "d7469821-413f-49b4-9801-42135a76c69f",
+                      "fileId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "excerpt": "条件分支: rtb_RelationalOperator",
+                      "tags": [
+                        "condition"
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "traces": [
+                {
+                  "requirementId": "a6a14829-1ea3-47c8-a86f-180a176a007e",
+                  "fileName": "低压能量管理-系统需求.md",
+                  "location": "page:1",
+                  "excerpt": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinement case / run 摘要。\n\n## 章节信息\n1. CheryVCU-1271 - 智能补电功能触发\n2. CheryVCU-1262 - 智能补电功能关闭\n\n## 需求条目\n### CheryVCU-1271 - 智能补电功能触发\n当满足如下全部条件时，HCU判断智能补电功能激活\n1、KL15为OFF；\n2、高压未连接；\n3、连续补电失败计数＜3；\n4、BMS2_N_SOC＞10%\n5、EBS_SOC≤70% && EBS_SOC_STATE＜10%或者EBS_U_BATT＜11.8V\n\n车辆由ON到OFF，车辆未休眠，检测到EBS_SOC≤70%EBS_SOC_state=0x2，进行智能补电；\n\n车辆由ON到OFF，车辆未休眠，20分钟内，检测到EBS_U_BATT≤11.8V，不智能补电；车辆持续未休眠20分钟后，检测到\nEBS_U_BATT≤11.8V，进行智能补电（主要应对电源OFF后热管理后运行拉低蓄电池电压情况）。\n\n状态：released\n\n### CheryVCU-1262 - 智能补电功能关闭\n满足如下全部条件时，智能补电功能关闭，不再激活\n1、KL15关闭；\n2、高压未连接\n3、满足如下任一条件\n3.1、补电失败计数≥3；\n3.2、BMS2_N_SOC≤10%；\n\n关闭后\n1、如果HCU判断满足3.1，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠；\nKL15由OFF进入ON或者[不清晰]功能重置，VCCM_SOCWU_Ena= Enabled； 同时清除补电失败次数；\n\n2、如果HCU判断满足3.2，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠； HCU检测到BMS2_N_SOC＞10.5%，VCCM_SOCWU_Ena=\nEnabled。\n\n状态：released\n\n## 提炼摘要\n- 提取到 2 条系统需求：智能补电功能触发、智能补电功能关闭。\n- 关键阈值与信号包括：BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、VCCM_SOCWU_Ena。\n- 图片中“KL15由OFF进入ON或者[不清晰]功能重置”存在局部识别不清，已按原规则保守标注为[不清晰]。"
+                },
+                {
+                  "requirementId": "a6a14829-1ea3-47c8-a86f-180a176a007e",
+                  "fileName": "HvCoorn.c",
+                  "location": "function",
+                  "excerpt": "函数 if(rtb_TmpSignalConversionAticbms_ <= HvCoorn_pctVehShowLoSocInhbOnLowr_C)"
+                },
+                {
+                  "requirementId": "a6a14829-1ea3-47c8-a86f-180a176a007e",
+                  "fileName": "HvCoorn.c",
+                  "location": "function",
+                  "excerpt": "函数 if(HvCoorn_ARID_DEF.timer >= 10.0)"
+                },
+                {
+                  "requirementId": "a6a14829-1ea3-47c8-a86f-180a176a007e",
+                  "fileName": "HvCoorn.c",
+                  "location": "condition",
+                  "excerpt": "条件分支: HvCoorn_ARID_DEF.temporalCounter_i1 >= 1"
+                },
+                {
+                  "requirementId": "a6a14829-1ea3-47c8-a86f-180a176a007e",
+                  "fileName": "HvCoorn.c",
+                  "location": "function",
+                  "excerpt": "函数 if(HvCoorn_bInit2AftRun)"
+                },
+                {
+                  "requirementId": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
+                  "fileName": "低压能量管理-系统需求.md",
+                  "location": "page:1",
+                  "excerpt": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinement case / run 摘要。\n\n## 章节信息\n1. CheryVCU-1271 - 智能补电功能触发\n2. CheryVCU-1262 - 智能补电功能关闭\n\n## 需求条目\n### CheryVCU-1271 - 智能补电功能触发\n当满足如下全部条件时，HCU判断智能补电功能激活\n1、KL15为OFF；\n2、高压未连接；\n3、连续补电失败计数＜3；\n4、BMS2_N_SOC＞10%\n5、EBS_SOC≤70% && EBS_SOC_STATE＜10%或者EBS_U_BATT＜11.8V\n\n车辆由ON到OFF，车辆未休眠，检测到EBS_SOC≤70%EBS_SOC_state=0x2，进行智能补电；\n\n车辆由ON到OFF，车辆未休眠，20分钟内，检测到EBS_U_BATT≤11.8V，不智能补电；车辆持续未休眠20分钟后，检测到\nEBS_U_BATT≤11.8V，进行智能补电（主要应对电源OFF后热管理后运行拉低蓄电池电压情况）。\n\n状态：released\n\n### CheryVCU-1262 - 智能补电功能关闭\n满足如下全部条件时，智能补电功能关闭，不再激活\n1、KL15关闭；\n2、高压未连接\n3、满足如下任一条件\n3.1、补电失败计数≥3；\n3.2、BMS2_N_SOC≤10%；\n\n关闭后\n1、如果HCU判断满足3.1，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠；\nKL15由OFF进入ON或者[不清晰]功能重置，VCCM_SOCWU_Ena= Enabled； 同时清除补电失败次数；\n\n2、如果HCU判断满足3.2，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠； HCU检测到BMS2_N_SOC＞10.5%，VCCM_SOCWU_Ena=\nEnabled。\n\n状态：released\n\n## 提炼摘要\n- 提取到 2 条系统需求：智能补电功能触发、智能补电功能关闭。\n- 关键阈值与信号包括：BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、VCCM_SOCWU_Ena。\n- 图片中“KL15由OFF进入ON或者[不清晰]功能重置”存在局部识别不清，已按原规则保守标注为[不清晰]。"
+                },
+                {
+                  "requirementId": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
+                  "fileName": "HvCoorn.c",
+                  "location": "function",
+                  "excerpt": "函数 if(!rtb_RelationalOperator)"
+                },
+                {
+                  "requirementId": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
+                  "fileName": "HvCoorn.c",
+                  "location": "condition",
+                  "excerpt": "条件分支: !HvCoorn_bStartUpReq"
+                },
+                {
+                  "requirementId": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
+                  "fileName": "HvCoorn.c",
+                  "location": "function",
+                  "excerpt": "函数 if(HvCoorn_bShutDisCh2ShutErr)"
+                },
+                {
+                  "requirementId": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
+                  "fileName": "HvCoorn.c",
+                  "location": "function",
+                  "excerpt": "函数 if(HvCoorn_bNetMan2PwrShut)"
+                },
+                {
+                  "requirementId": "a97a1ec7-fa17-4c88-99ff-f9c42fc7f7da",
+                  "fileName": "HvCoorn.c",
+                  "location": "function",
+                  "excerpt": "函数 if(HvCoorn_bWake2NetMan)"
+                }
+              ],
+              "conflicts": [],
+              "llmProfile": {
+                "id": "20b11d97-48b6-4c36-b474-3ad13115d53f",
+                "provider": "hermes_cli",
+                "name": "Installed Hermes CLI",
+                "model": "configured-in-hermes",
+                "baseURL": "",
+                "executionMode": "hermes_agent_cli",
+                "agentEndpoint": "hermes"
+              },
+              "summary": "通过 Hermes + Installed Hermes CLI 生成 2 条软件需求",
+              "auditLog": [],
+              "progress": {
+                "stage": "completed",
+                "label": "任务已完成",
+                "message": "Hermes 已生成 2 条软件需求，可开始审核。",
+                "percent": 100,
+                "current": 2,
+                "total": 2,
+                "updatedAt": "2026-04-24T07:43:48.778Z"
+              },
+              "timeline": [
+                {
+                  "at": "2026-04-24T07:42:00.500Z",
+                  "stage": "queued",
+                  "label": "任务已启动",
+                  "message": "任务已创建，等待后台开始处理 2 个输入资产。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:00.530Z",
+                  "stage": "queued",
+                  "label": "任务开始执行",
+                  "message": "任务已从 Hermes 队列取出，开始后台处理。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:00.664Z",
+                  "stage": "task_init",
+                  "label": "初始化任务上下文",
+                  "message": "已开始准备 Hermes 软件需求生成任务。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:01.149Z",
+                  "stage": "task_init",
+                  "label": "资产清单已准备",
+                  "message": "asset manifest 与 task skill bundle 已生成，共 2 个输入资产。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:01.180Z",
+                  "stage": "effective_skill_resolve",
+                  "label": "解析生效技能",
+                  "message": "已完成 software_requirement skill inventory 解析，并生成 task skill bundle，命中 228 条 atom。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:01.327Z",
+                  "stage": "anchor_index_build",
+                  "label": "构建引用锚点",
+                  "message": "已完成锚点构建，得到 81 条结构化 anchor。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:01.372Z",
+                  "stage": "atom_recall",
+                  "label": "生成推荐技能短名单",
+                  "message": "已生成推荐 skill shortlist，共 24 条候选 atom。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:01.393Z",
+                  "stage": "outline_build",
+                  "label": "正在调用 Hermes 读取 Skill 清单并生成提纲",
+                  "message": "已开始调用 本机 Hermes CLI 执行 读取 Skill 清单并生成提纲。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:37.494Z",
+                  "stage": "outline_build",
+                  "label": "生成需求提纲",
+                  "message": "提纲生成完成，Hermes 已基于 task skill bundle 覆盖 6 个主题。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:42:37.517Z",
+                  "stage": "content_generate",
+                  "label": "正在调用 Hermes 补读 Skill 正文并生成正式内容",
+                  "message": "已开始调用 本机 Hermes CLI 执行 补读 Skill 正文并生成正式内容。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:43:48.640Z",
+                  "stage": "content_generate",
+                  "label": "生成软件需求",
+                  "message": "内容生成完成，得到 2 条候选结果。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:43:48.669Z",
+                  "stage": "reference_resolve",
+                  "label": "回填来源引用",
+                  "message": "开始将 sourceAnchorIds 反解为前端兼容的 sourceRefs。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:43:48.738Z",
+                  "stage": "rule_validate",
+                  "label": "规则校验",
+                  "message": "已完成规则校验，得到 11 条追溯信息和 0 个冲突。",
+                  "level": "info"
+                },
+                {
+                  "at": "2026-04-24T07:43:48.778Z",
+                  "stage": "persist_result",
+                  "label": "保存结果",
+                  "message": "任务结果已写入模块工作区，可在历史任务中查看详情。",
+                  "level": "info"
+                }
+              ],
+              "metrics": {
+                "extractionFileCount": 2,
+                "extractionEvidenceCount": 81,
+                "llmDurationMs": 0,
+                "generatedItemCount": 2,
+                "conflictCount": 0
+              },
+              "debug": {
+                "updatedAt": "2026-04-24T07:43:48.711Z",
+                "llm": {
+                  "requestModel": "",
+                  "requestProvider": "",
+                  "rawResponseText": "",
+                  "rawResponseLength": 0,
+                  "rawResponseTruncated": false,
+                  "parsedTopLevelKeys": [],
+                  "rawItemCount": 0
+                },
+                "postProcess": {
+                  "lastStage": "reference_resolve_completed",
+                  "normalizeResultItemsMs": 0,
+                  "applyPoliciesMs": 0,
+                  "validationMs": 0,
+                  "saveMs": 0,
+                  "totalAfterModelMs": 0
+                },
+                "agent": {
+                  "transport": "cli",
+                  "currentStep": "content_generate",
+                  "status": "completed",
+                  "startedAt": "2026-04-24T07:42:37.529Z",
+                  "lastHeartbeatAt": "2026-04-24T07:43:48.578Z",
+                  "lastEventAt": "2026-04-24T07:43:48.578Z",
+                  "sessionId": "20260424_154239_307f7f",
+                  "stdoutExcerpt": "{\"items\":[{\"requirementText\":\"软件应对智能补电执行激活判断。当车辆处于由ON到OFF且车辆未休眠的前置场景，且同时满足KL15=OFF、高压未连接、连续补电失败计数<3、BMS2_N_SOC>10%时，若满足以下任一子条件，则应判定智能补电功能激活并进入智能补电流程：1) EBS_SOC≤70%且EBS_SOC_STATE<10%；2) 车辆持续未休眠时间≥20分钟且EBS_U_BATT≤11.8V。在车辆由ON到OFF且车辆未休眠场景下，检测到EBS_SOC≤70%且EBS_SOC_STATE=0x2时，软件亦应判定智能补电功能激活。若车辆持续未休眠时间<20分钟且仅检测到EBS_U_BATT≤11.8V，则软件不应激活智能补电，并应保持智能补电未激活状态。\",\"type\":\"functional\",\"verificationHint\":\"通过功能测试验证输入触发与输出响应\",\"sourceAnchorIds\":[\"dc23670b-b572-4438-bcd4-5fa9a40a752f\",\"ddf3140f-f1d2-4be6-afb2-77ffc2e4d04b\",\"5624fe41-0462-40c0-9740-9e9242184393\",\"d2356556-3b8c-4074-b89d-22d56957c69f\",\"59e049ff-c517-4dc8-987e-a271ed44133f\"],\"conflictNote\":\"\"},{\"requirementText\":\"软件应对智能补电执行退出判断。当KL15关闭且高压未连接时，若连续补电失败计数≥3，则应关闭智能补电功能且不再激活，并发送VCCM_SOCWU_Ena=Disabled给EBS；EBS收到后应关闭主动唤醒功能，VCU应停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，并允许整车休眠。当KL15由OFF进入ON或者执行源需求中记载但OCR未完全识别的功能重置条件后，软件应将VCCM_SOCWU_Ena置为Enabled，并同时清除补电失败次数。当KL15关闭且高压未连接时，若BMS2_N_SOC≤10%，则软件应关闭智能补电功能且不再激活，并发送VCCM_SOCWU_Ena=Disabled给EBS；EBS收到后应关闭主动唤醒功能，VCU应停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，并允许整车休眠；当HCU检测到BMS2_N_SOC>10.5%时，软件应将VCCM_SOCWU_Ena置为Enabled。若上述退出条件均不满足，则软件应保持当前智能补电状态不变。\",\"type\":\"functional\",\"verificationHint\":\"通过功能测试验证输入触发与输出响应\",\"sourceAnchorIds\":[\"dc23670b-b572-4438-bcd4-5fa9a40a752f\",\"915eef71-f1ce-4bc5-8efc-abfb16c5b25b\",\"53724f81-b9ef-4784-918d-15654f19f110\",\"9ec3b31b-d9e4-4ba4-95d3-8c6a294e9a92\",\"75e5f546-db20-4fb5-b6eb-b61862332230\",\"51483602-7961-4d04-a7bb-760ac3009815\"],\"conflictNote\":\"源系统需求中“KL15由OFF进入ON或者[不清晰]功能重置”存在OCR不清晰片段，已仅保留可确认的复位语义，未对未识别内容做扩写。\"}]}",
+                  "stderrExcerpt": "",
+                  "elapsedMs": 71049,
+                  "tokenUsage": {
+                    "model": "gpt-5.4",
+                    "inputTokens": 80906,
+                    "outputTokens": 3371,
+                    "cacheReadTokens": 2560,
+                    "cacheWriteTokens": 0,
+                    "reasoningTokens": 1786,
+                    "totalTokens": 86837,
+                    "estimatedCostUsd": 0,
+                    "actualCostUsd": 0,
+                    "costStatus": "included",
+                    "contextTokens": 0,
+                    "contextLength": 0,
+                    "contextPercent": null
+                  }
+                },
+                "artifacts": {
+                  "assetManifest": [
+                    {
+                      "assetId": "5e91218f-e74d-4444-865d-93dc741c48c1",
+                      "fileName": "低压能量管理-系统需求.md",
+                      "fileRole": "system_pdf",
+                      "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/低压能量管理-系统需求.md"
+                    },
+                    {
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "absolutePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/uploads/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/1776851808183-HvCoorn.c"
+                    }
+                  ],
+                  "anchors": [
+                    {
+                      "anchorId": "dc23670b-b572-4438-bcd4-5fa9a40a752f",
+                      "assetId": "5e91218f-e74d-4444-865d-93dc741c48c1",
+                      "fileName": "低压能量管理-系统需求.md",
+                      "fileRole": "extracted_system_requirement",
+                      "location": "page:1",
+                      "anchorType": "requirement_clause",
+                      "excerpt": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinement case / run 摘要。\n\n## 章节信息\n1. CheryVCU-1271 - 智能补电功能触发\n2. CheryVCU-1262 - 智能补电功能关闭\n\n## 需求条目\n### CheryVCU-1271 - 智能补电功能触发\n当满足如下全部条件时，HCU判断智能补电功能激活\n1、KL15为OFF；\n2、高压未连接；\n3、连续补电失败计数＜3；\n4、BMS2_N_SOC＞10%\n5、EBS_SOC≤70% && EBS_SOC_STATE＜10%或者EBS_U_BATT＜11.8V\n\n车辆由ON到OFF，车辆未休眠，检测到EBS_SOC≤70%EBS_SOC_state=0x2，进行智能补电；\n\n车辆由ON到OFF，车辆未休眠，20分钟内，检测到EBS_U_BATT≤11.8V，不智能补电；车辆持续未休眠20分钟后，检测到\nEBS_U_BATT≤11.8V，进行智能补电（主要应对电源OFF后热管理后运行拉低蓄电池电压情况）。\n\n状态：released\n\n### CheryVCU-1262 - 智能补电功能关闭\n满足如下全部条件时，智能补电功能关闭，不再激活\n1、KL15关闭；\n2、高压未连接\n3、满足如下任一条件\n3.1、补电失败计数≥3；\n3.2、BMS2_N_SOC≤10%；\n\n关闭后\n1、如果HCU判断满足3.1，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠；\nKL15由OFF进入ON或者[不清晰]功能重置，VCCM_SOCWU_Ena= Enabled； 同时清除补电失败次数；\n\n2、如果HCU判断满足3.2，HCU发送主动唤醒使能状态信号VCCM_SOCWU_Ena=Disabled给EBS，EBS收到后关闭主动唤醒功能，\nVCCM停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，整车休眠； HCU检测到BMS2_N_SOC＞10.5%，VCCM_SOCWU_Ena=\nEnabled。\n\n状态：released\n\n## 提炼摘要\n- 提取到 2 条系统需求：智能补电功能触发、智能补电功能关闭。\n- 关键阈值与信号包括：BMS2_N_SOC、EBS_SOC、EBS_SOC_STATE、EBS_U_BATT、VCCM_SOCWU_Ena。\n- 图片中“KL15由OFF进入ON或者[不清晰]功能重置”存在局部识别不清，已按原规则保守标注为[不清晰]。",
+                      "summary": "# 低压能量管理系统需求\n\n## 文档信息\n- 项目名称：VCU / 低压能量管理\n- 文档类型：system_requirement\n- 语言：zh-CN\n- 来源：上传图片提取\n- 说明：迁移自旧版 Torque Intervention Trial，并附带 2026-04-04 的 Skill Refinemen",
+                      "tags": [
+                        "state",
+                        "timing",
+                        "threshold",
+                        "requirement-like"
+                      ]
+                    },
+                    {
+                      "anchorId": "720deed5-82fc-40e3-abcd-62fbdea4f234",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 look1_is8lftf_binlca(sint8 u0, const sint8 bp0[], const float32 table[], uint32 maxIndex)",
+                      "summary": "函数 look1_is8lftf_binlca(sint8 u0, const sint8 bp0[], const float32 table[], uint32 maxIndex)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "d39db3f5-9606-4cdd-87c6-da0fc7890904",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(u0 < bp0[maxIndex])",
+                      "summary": "函数 if(u0 < bp0[maxIndex])",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "f1e0c86a-2660-426a-bff4-d709c5d2ae3b",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 HvCoorn_Normal(const boolean *LogicalOperator6, uint8 *HvCoorn_stHVP_f)",
+                      "summary": "函数 HvCoorn_Normal(const boolean *LogicalOperator6, uint8 *HvCoorn_stHVP_f)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "70b4717b-503f-424e-b3f6-ed73bda5722c",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_ARID_DEF.is_SystemReady == HvCoorn_IN_SystemReady)",
+                      "summary": "函数 if(HvCoorn_ARID_DEF.is_SystemReady == HvCoorn_IN_SystemReady)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "458c6a8b-2fbd-483c-b041-b5d47f448a87",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bMindChag2Rdy)",
+                      "summary": "函数 if(HvCoorn_bMindChag2Rdy)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "60437f79-db1f-492f-8316-2e1da81dfa4a",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bStartUpReq)",
+                      "summary": "函数 if(HvCoorn_bStartUpReq)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "9ec3b31b-d9e4-4ba4-95d3-8c6a294e9a92",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bShutDisCh2ShutErr)",
+                      "summary": "函数 if(HvCoorn_bShutDisCh2ShutErr)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "9d692e94-8293-429f-8f0e-894c3e98f57a",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bShutECU2Comm)",
+                      "summary": "函数 if(HvCoorn_bShutECU2Comm)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "d9dad591-346f-4252-be80-b791b93ffa20",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bDCBuck2Shtdwn)",
+                      "summary": "函数 if(HvCoorn_bDCBuck2Shtdwn)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "85b4e512-3261-41b4-b73b-16a897ee18a8",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHVReq2ShutDown)",
+                      "summary": "函数 if(HvCoorn_bHVReq2ShutDown)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "3c7a1906-80b0-47de-9ed1-15d722755474",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bComm2ShutECU)",
+                      "summary": "函数 if(HvCoorn_bComm2ShutECU)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "028f564b-088c-4a21-acbe-94a1a0216f31",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator || rtb_LogicalOperator2)",
+                      "summary": "函数 if(rtb_RelationalOperator || rtb_LogicalOperator2)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "c09ad913-0f49-4d78-b2c2-d67db8e9eece",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_ox || false)",
+                      "summary": "函数 if(rtb_RelationalOperator_ox || false)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "793266a4-d7b8-4b88-be28-cb451bca648f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator)",
+                      "summary": "函数 if(rtb_RelationalOperator)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "6da80153-07f6-45d0-8e33-70b99141475a",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_ox)",
+                      "summary": "函数 if(rtb_RelationalOperator_ox)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "915eef71-f1ce-4bc5-8efc-abfb16c5b25b",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(!rtb_RelationalOperator)",
+                      "summary": "函数 if(!rtb_RelationalOperator)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "ddf3140f-f1d2-4be6-afb2-77ffc2e4d04b",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAticbms_ <= HvCoorn_pctVehShowLoSocInhbOnLowr_C)",
+                      "summary": "函数 if(rtb_TmpSignalConversionAticbms_ <= HvCoorn_pctVehShowLoSocInhbOnLowr_C)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "a97f83be-6dad-4e07-85b4-78de2d1ed508",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_gi)",
+                      "summary": "函数 if(rtb_RelationalOperator_gi)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "7fb2a768-a6bb-454d-8f76-523a4c31e11f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_DataTypeConversion_jq < -32768)",
+                      "summary": "函数 if(rtb_DataTypeConversion_jq < -32768)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "6218f306-1ba9-4e43-8f3b-2f5a411dbb8e",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_bGearOk)",
+                      "summary": "函数 if(rtb_bGearOk)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "b5b19168-e5f9-4aa4-8de2-bd6039f599fa",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_AND1_al)",
+                      "summary": "函数 if(rtb_AND1_al)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "5e13154c-9232-450a-8231-76454587292f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_Equal12_a)",
+                      "summary": "函数 if(rtb_Equal12_a)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "f2593e15-7ca7-4512-97ea-cc0ea66c1203",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_iq)",
+                      "summary": "函数 if(rtb_RelationalOperator_iq)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "9f2200f7-e143-4f43-b9af-52736009da62",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_e2)",
+                      "summary": "函数 if(rtb_RelationalOperator_e2)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "4f22a11a-722e-4060-a42a-d65c1dc2b994",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_ce_idx_0)",
+                      "summary": "函数 if(rtb_RelationalOperator_ce_idx_0)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "039cdc8c-9956-48c3-b627-35170150ca0c",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_ce_idx_1)",
+                      "summary": "函数 if(rtb_RelationalOperator_ce_idx_1)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "15f05ced-edba-4681-ac41-cb0e4aa0211b",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_AND7_j)",
+                      "summary": "函数 if(rtb_AND7_j)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "b58bbf82-2f72-4e26-9497-ec4da96a30a5",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_f)",
+                      "summary": "函数 if(rtb_RelationalOperator_f)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "13b6513e-a622-4c33-8472-c92d033695bb",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(VCCM_flg_Allow_Antitheft && rtb_TmpSignalConversionAtidi_bK)",
+                      "summary": "函数 if(VCCM_flg_Allow_Antitheft && rtb_TmpSignalConversionAtidi_bK)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "85408cd3-054e-4be8-a4ad-02be10f2ed65",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(authsuccess || rtb_AND14_l)",
+                      "summary": "函数 if(authsuccess || rtb_AND14_l)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "5624fe41-0462-40c0-9740-9e9242184393",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_ARID_DEF.timer >= 10.0)",
+                      "summary": "函数 if(HvCoorn_ARID_DEF.timer >= 10.0)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "77c37a3f-3421-47c4-8c40-054ec9f8c470",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(authfailed || rtb_Equal3_a)",
+                      "summary": "函数 if(authfailed || rtb_Equal3_a)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "50173414-ec5e-4d35-93ca-27c93cea6c9f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_AND14_l)",
+                      "summary": "函数 if(rtb_AND14_l)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "92a29691-8f58-43f1-b4e7-06e67114da24",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_gn)",
+                      "summary": "函数 if(rtb_RelationalOperator_gn)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "ba9bb473-d8a3-44db-857d-269bc0df4c8e",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_AND8_k)",
+                      "summary": "函数 if(rtb_AND8_k)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "b6b871ef-35bd-4b48-8539-0fff141c9f92",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_AND26_o)",
+                      "summary": "函数 if(rtb_AND26_o)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "3d576f12-484b-4b03-ad59-a520413c0257",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_DataTypeConversion_jq < -128)",
+                      "summary": "函数 if(rtb_DataTypeConversion_jq < -128)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "59e049ff-c517-4dc8-987e-a271ed44133f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bInit2AftRun)",
+                      "summary": "函数 if(HvCoorn_bInit2AftRun)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "75e5f546-db20-4fb5-b6eb-b61862332230",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bNetMan2PwrShut)",
+                      "summary": "函数 if(HvCoorn_bNetMan2PwrShut)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "aaa1f668-a176-42e3-8ba3-471b3efe2220",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bAftRun2NetMan)",
+                      "summary": "函数 if(HvCoorn_bAftRun2NetMan)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "51483602-7961-4d04-a7bb-760ac3009815",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bWake2NetMan)",
+                      "summary": "函数 if(HvCoorn_bWake2NetMan)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "cf74ac2d-5be4-472c-8727-ea8743a51235",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bDCBuck2EngStrt)",
+                      "summary": "函数 if(HvCoorn_bDCBuck2EngStrt)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "f9b3dafc-1b56-497e-991a-f22c2bed0de4",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bEngStrt2Dft)",
+                      "summary": "函数 if(HvCoorn_bEngStrt2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "dd33b3a4-8bef-480d-a9fc-9b19b1940334",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHvCnt2Dft)",
+                      "summary": "函数 if(HvCoorn_bHvCnt2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "95525b8e-a645-47e4-a578-9d3847201ade",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHvCnt2EngStrt)",
+                      "summary": "函数 if(HvCoorn_bHvCnt2EngStrt)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "8d32f0c9-8d9b-43de-affe-19fe912331c8",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHvDisb2Dft)",
+                      "summary": "函数 if(HvCoorn_bHvDisb2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "1acbb89a-8705-4e59-a194-71eaa03921b2",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHvInit2Dft)",
+                      "summary": "函数 if(HvCoorn_bHvInit2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "16c39fa3-66fd-4c97-b73d-a08b6e582731",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHvInit2EngStrt)",
+                      "summary": "函数 if(HvCoorn_bHvInit2EngStrt)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "38abfd14-9efb-42f0-93b9-d9f2126b0c65",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHvDcnct2Dft)",
+                      "summary": "函数 if(HvCoorn_bHvDcnct2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "d5118c95-40a8-4843-9f8f-963b18c55e20",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHvReq2Dft)",
+                      "summary": "函数 if(HvCoorn_bHvReq2Dft)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "059c1ffb-a4ed-4ac9-b123-ed3cfc0bf95f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtEngS_n && rtb_TmpSignalConversionAtEngStr && HvCoorn_bHvOnReq && rtb_TmpSignalConversionAtChr_kb && rtb_TmpSignalConversionAtHybCoo)",
+                      "summary": "函数 if(rtb_TmpSignalConversionAtEngS_n && rtb_TmpSignalConversionAtEngStr && HvCoorn_bHvOnReq && rtb_TmpSignalConversionAtChr_kb && rtb_TmpSignalConversionAtHybC",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "a1a7b55c-c7b6-4a65-bd83-0be1e0af7873",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bHvOnReq)",
+                      "summary": "函数 if(HvCoorn_bHvOnReq)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "85113409-d8ea-404b-a979-486e4deab1db",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_RelationalOperator_no)",
+                      "summary": "函数 if(rtb_RelationalOperator_no)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "cc132fe3-333d-49aa-bb88-ad2741b3f835",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bRMCUPlsHeatgActvRaw)",
+                      "summary": "函数 if(HvCoorn_bRMCUPlsHeatgActvRaw)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "e93b3976-21ca-4ac5-816e-b2b1460bcf92",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bRMCUStalHeatgActvRaw)",
+                      "summary": "函数 if(HvCoorn_bRMCUStalHeatgActvRaw)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "c21fd8c7-3393-470e-991e-80bfecedea9c",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(HvCoorn_bVoltModStbReq)",
+                      "summary": "函数 if(HvCoorn_bVoltModStbReq)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "a983fac7-fc7c-4be8-a73e-767b5ee265a9",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(rtb_TmpSignalConversionAtVehC_i)",
+                      "summary": "函数 if(rtb_TmpSignalConversionAtVehC_i)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "74cca735-bff3-4a50-b5c7-28d042813be5",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 if(i < -32768)",
+                      "summary": "函数 if(i < -32768)",
+                      "tags": [
+                        "function"
+                      ]
+                    },
+                    {
+                      "anchorId": "ca4ec3a2-aadc-4d7f-92e5-8aa4fa076118",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "function",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "函数 HvCoorn_Init(void)",
+                      "summary": "函数 HvCoorn_Init(void)",
+                      "tags": [
+                        "function",
+                        "lifecycle"
+                      ]
+                    },
+                    {
+                      "anchorId": "0c9adf37-f4ce-4738-8912-ee01d38bea52",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: u0 <= bp0[0U]",
+                      "summary": "条件分支: u0 <= bp0[0U]",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "612daed5-c1c0-4b9f-8f34-1b628d20ca90",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: u0 < bp0[bpIdx]",
+                      "summary": "条件分支: u0 < bp0[bpIdx]",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "79c0776a-5f6c-4ad4-8355-cf032baf365c",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: iLeft == maxIndex",
+                      "summary": "条件分支: iLeft == maxIndex",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "fcc219e1-d331-475a-b8e2-f308e0032f5b",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bEmgcyShutDownReq",
+                      "summary": "条件分支: HvCoorn_bEmgcyShutDownReq",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "7f9d39b6-4c92-417a-bac4-1164e2973947",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: (!HvCoorn_bStartUpReq) && (*LogicalOperator6) && HvCoorn_bAPUNotRdy",
+                      "summary": "条件分支: (!HvCoorn_bStartUpReq) && (*LogicalOperator6) && HvCoorn_bAPUNotRdy",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "936bcb13-aa69-4ca9-a40a-863891cc640d",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bRdy2RdyWait",
+                      "summary": "条件分支: HvCoorn_bRdy2RdyWait",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "940b3f7d-8ab6-4b4f-bf25-3d975e3e2717",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bRdyWait2Rdy",
+                      "summary": "条件分支: HvCoorn_bRdyWait2Rdy",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "53724f81-b9ef-4784-918d-15654f19f110",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: !HvCoorn_bStartUpReq",
+                      "summary": "条件分支: !HvCoorn_bStartUpReq",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "64abb2ab-828a-4c27-aa4f-7b99c46a035f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bMindChag2ShutHV",
+                      "summary": "条件分支: HvCoorn_bMindChag2ShutHV",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "d2356556-3b8c-4074-b89d-22d56957c69f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_ARID_DEF.temporalCounter_i1 >= 1",
+                      "summary": "条件分支: HvCoorn_ARID_DEF.temporalCounter_i1 >= 1",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "d84cc6c0-8ca1-474d-adf2-179d08f05c12",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bShutHV2ShutDisCh",
+                      "summary": "条件分支: HvCoorn_bShutHV2ShutDisCh",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "e53bb9cf-519a-417a-82e2-f247883c3e9a",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bShutDisCh2ShutECU",
+                      "summary": "条件分支: HvCoorn_bShutDisCh2ShutECU",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "0fe67c9e-2ce9-48c5-aff5-88ea32315a19",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bShutECU2AftRun",
+                      "summary": "条件分支: HvCoorn_bShutECU2AftRun",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "8aab201b-94bc-492b-9add-dd9adb6b8f76",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bDCBuck2Rdy",
+                      "summary": "条件分支: HvCoorn_bDCBuck2Rdy",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "3d7f7765-d3ec-423d-bee2-3337cd7ac591",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bHVReq2DCBuck",
+                      "summary": "条件分支: HvCoorn_bHVReq2DCBuck",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "67a861fe-e515-43eb-9104-0bd9c2662d2f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bComm2HVReq",
+                      "summary": "条件分支: HvCoorn_bComm2HVReq",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "efa9e975-f472-47c9-91be-d56fb6586123",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bHvRlyClsJudgByMod_C",
+                      "summary": "条件分支: HvCoorn_bHvRlyClsJudgByMod_C",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "cef38bc4-a1da-4883-9c44-aa4f3f2c62c1",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: HvCoorn_bHvilChkgEna_C && ((rtb_TmpSignalConversionAticbm_d == ((uint8)0U)",
+                      "summary": "条件分支: HvCoorn_bHvilChkgEna_C && ((rtb_TmpSignalConversionAticbm_d == ((uint8)0U)",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "53be04cb-762c-44ed-9750-7496cdd9d63c",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: (rtb_ShiftArithmetic7 != ((uint8)1U)",
+                      "summary": "条件分支: (rtb_ShiftArithmetic7 != ((uint8)1U)",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "f17ba8c4-5c75-4081-8230-9218f0556789",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: rtb_TmpSignalConversionAtVehC_i",
+                      "summary": "条件分支: rtb_TmpSignalConversionAtVehC_i",
+                      "tags": [
+                        "condition"
+                      ]
+                    },
+                    {
+                      "anchorId": "d7469821-413f-49b4-9801-42135a76c69f",
+                      "assetId": "6546a63b-8ef2-428a-b422-d0de89a7334f",
+                      "fileName": "HvCoorn.c",
+                      "fileRole": "generated_c",
+                      "location": "condition",
+                      "anchorType": "asset_excerpt",
+                      "excerpt": "条件分支: rtb_RelationalOperator",
+                      "summary": "条件分支: rtb_RelationalOperator",
+                      "tags": [
+                        "condition"
+                      ]
+                    }
+                  ],
+                  "taskSkillBundle": {
+                    "skillBundlePath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle",
+                    "skillManifestPath": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skill-manifest.json",
+                    "recommendedSkillCodes": [
+                      "MOD-低压能量管理-rule_hint-002",
+                      "MOD-低压能量管理-generation_priority-003",
+                      "MOD-低压能量管理-rule_hint-001",
+                      "MOD-低压能量管理-generation_priority-004",
+                      "MOD-低压能量管理-rule_hint-003",
+                      "MOD-低压能量管理-generation_priority-001",
+                      "MOD-低压能量管理-generation_priority-002",
+                      "MOD-低压能量管理-generation_priority-005",
+                      "MOD-低压能量管理-anti_pattern-001",
+                      "MOD-低压能量管理-anti_pattern-002",
+                      "MOD-低压能量管理-anti_pattern-003",
+                      "MOD-低压能量管理-anti_pattern-004",
+                      "MOD-低压能量管理-anti_pattern-005",
+                      "MOD-低压能量管理-anti_pattern-006",
+                      "MOD-低压能量管理-source_policy_setting-001",
+                      "MOD-低压能量管理-source_policy_setting-002",
+                      "MOD-低压能量管理-source_policy_setting-003",
+                      "MOD-低压能量管理-source_policy_setting-004",
+                      "MOD-低压能量管理-source_policy_setting-005",
+                      "MOD-低压能量管理-source_policy_setting-006",
+                      "DOC-software_requirement-rule_hint-001",
+                      "DOC-software_requirement-good_example-004",
+                      "DOC-software_requirement-rule_hint-003",
+                      "DOM-embedded_vcu-source_policy_setting-001"
+                    ],
+                    "effectiveSkillCount": 228,
+                    "chunks": [
+                      {
+                        "kind": "extraction_rule",
+                        "title": "extraction_rule bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/extraction_rule.json",
+                        "itemCount": 28
+                      },
+                      {
+                        "kind": "writing_rule",
+                        "title": "writing_rule bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/writing_rule.json",
+                        "itemCount": 72
+                      },
+                      {
+                        "kind": "source_policy_setting",
+                        "title": "source_policy_setting bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/source_policy_setting.json",
+                        "itemCount": 9
+                      },
+                      {
+                        "kind": "generation_priority",
+                        "title": "generation_priority bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/generation_priority.json",
+                        "itemCount": 16
+                      },
+                      {
+                        "kind": "code_style_prefix",
+                        "title": "code_style_prefix bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/code_style_prefix.json",
+                        "itemCount": 4
+                      },
+                      {
+                        "kind": "rule_hint",
+                        "title": "rule_hint bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/rule_hint.json",
+                        "itemCount": 8
+                      },
+                      {
+                        "kind": "source_alias",
+                        "title": "source_alias bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/source_alias.json",
+                        "itemCount": 15
+                      },
+                      {
+                        "kind": "anti_pattern",
+                        "title": "anti_pattern bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/anti_pattern.json",
+                        "itemCount": 18
+                      },
+                      {
+                        "kind": "validation_rule",
+                        "title": "validation_rule bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/validation_rule.json",
+                        "itemCount": 40
+                      },
+                      {
+                        "kind": "normalization_rule",
+                        "title": "normalization_rule bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/normalization_rule.json",
+                        "itemCount": 4
+                      },
+                      {
+                        "kind": "forbidden_expansion",
+                        "title": "forbidden_expansion bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/forbidden_expansion.json",
+                        "itemCount": 2
+                      },
+                      {
+                        "kind": "good_example",
+                        "title": "good_example bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/good_example.json",
+                        "itemCount": 8
+                      },
+                      {
+                        "kind": "bad_example",
+                        "title": "bad_example bundle",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-kind/bad_example.json",
+                        "itemCount": 4
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 1",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-001.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 2",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-002.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 3",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-003.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 4",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-004.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 5",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-005.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 6",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-006.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 7",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-007.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 8",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-008.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 9",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-009.json",
+                        "itemCount": 24
+                      },
+                      {
+                        "kind": "",
+                        "title": "Skill chunk 10",
+                        "path": "/Users/guanzhengyang/Documents/software-doc-generator-prototype/data/generation-task-artifacts/1870d5b2-1df7-4dbb-8012-17713c8a4651/8afaa2a2-d578-4bed-9ebb-38f5522589e8/9e19be91-3acf-4e88-ae87-77f0fb4dcd94/skill-bundle/skills/by-chunk/chunk-010.json",
+                        "itemCount": 12
+                      }
+                    ]
+                  }
+                },
+                "lastError": null,
+                "events": [
+                  {
+                    "at": "2026-04-24T07:42:01.413Z",
+                    "stage": "outline_build",
+                    "label": "已启动本机 Hermes CLI",
+                    "message": "正在调用本机 Hermes 执行 outline_build。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "started",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "",
+                    "elapsedMs": 0,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:06.440Z",
+                    "stage": "outline_build",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 outline_build，已运行 5 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "2026-04-24T07:42:06.430Z",
+                    "elapsedMs": 5026,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:11.460Z",
+                    "stage": "outline_build",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 outline_build，已运行 10 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "2026-04-24T07:42:11.426Z",
+                    "elapsedMs": 10022,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:16.459Z",
+                    "stage": "outline_build",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 outline_build，已运行 15 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "2026-04-24T07:42:16.427Z",
+                    "elapsedMs": 15023,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:21.468Z",
+                    "stage": "outline_build",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 outline_build，已运行 20 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "2026-04-24T07:42:21.432Z",
+                    "elapsedMs": 20028,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:26.459Z",
+                    "stage": "outline_build",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 outline_build，已运行 25 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "2026-04-24T07:42:26.428Z",
+                    "elapsedMs": 25024,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:31.449Z",
+                    "stage": "outline_build",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 outline_build，已运行 30 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "2026-04-24T07:42:31.428Z",
+                    "elapsedMs": 30024,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:36.464Z",
+                    "stage": "outline_build",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 outline_build，已运行 35 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "2026-04-24T07:42:36.433Z",
+                    "elapsedMs": 35029,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:37.458Z",
+                    "stage": "outline_build",
+                    "label": "Hermes CLI 已返回",
+                    "message": "本机 Hermes 已完成 outline_build，input 50465, output 1350, total 54375。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "completed",
+                    "transport": "cli",
+                    "stepType": "outline_build",
+                    "sessionId": "20260424_154203_9e25c4",
+                    "startedAt": "2026-04-24T07:42:01.404Z",
+                    "heartbeatAt": "2026-04-24T07:42:37.447Z",
+                    "elapsedMs": 36043,
+                    "tokenUsage": {
+                      "model": "gpt-5.4",
+                      "inputTokens": 50465,
+                      "outputTokens": 1350,
+                      "cacheReadTokens": 2560,
+                      "cacheWriteTokens": 0,
+                      "reasoningTokens": 403,
+                      "totalTokens": 54375,
+                      "estimatedCostUsd": 0,
+                      "actualCostUsd": 0,
+                      "costStatus": "included",
+                      "contextTokens": 0,
+                      "contextLength": 0,
+                      "contextPercent": null
+                    },
+                    "stdoutExcerpt": "{\"summary\":\"The outline should prioritize low-voltage energy management functional requirements from the system requirement clause, then refine them into clear trigger, inhibit, timing, signal-threshold, and state-transition sections, using HvCoorn anchors only as supporting implementation-derived cues for state/condition naming and temporal decomposition while keeping the result at software-requirement level rather than design level.\",\"sections\":[{\"title\":\"Functional behavior\",\"objective\":\"Define the core smart charging behavior and the primary functional scope, centered on when the low-voltage energy management function shall activate or be considered in scope.\",\"anchorIds\":[\"dc23670b-b572-4438-bcd4-5fa9a40a752f\",\"f1e0c86a-2660-426a-bff4-d709c5d2ae3b\",\"ca4ec3a2-aadc-4d7f-92e5-8aa4fa076118\"]},{\"title\":\"Activation preconditions\",\"objective\":\"Break the activation logic into explicit conjunctive entry conditions, including vehicle power state, high-voltage connection status, retry-count gating, and SOC/voltage thresholds.\",\"anchorIds\":[\"dc23670b-b572-4438-bcd4-5fa9a40a752f\",\"793266a4-d7b8-4b88-be28-cb451bca648f\",\"ddf3140f-f1d2-4be6-afb2-77ffc2e4d04b\",\"d7469821-413f-49b4-9801-42135a76c69f\"]},{\"title\":\"Inhibit and deactivation rules\",\"objective\":\"Capture conditions under which smart charging shall not start, shall be suppressed, or shall be closed, including short-term inhibition windows and repeated-failure limits.\",\"anchorIds\":[\"dc23670b-b572-4438-bcd4-5fa9a40a752f\",\"915eef71-f1ce-4bc5-8efc-abfb16c5b25b\",\"53724f81-b9ef-4784-918d-15654f19f110\",\"9ec3b31b-d9e4-4ba4-95d3-8c6a294e9a92\"]},{\"title\":\"Timing and persistence behavior\",\"objective\":\"State temporal requirements explicitly, especially the ON-to-OFF transition context, non-sleep persistence, 20-minute window handling, and any minimum timer-based decisions.\",\"anchorIds\":[\"dc23670b-b572-4438-bcd4-5fa9a40a752f\",\"5624fe41-0462-40c0-9740-9e9242184393\",\"d2356556-3b8c-4074-b89d-22d56957c69f\",\"d84cc6c0-8ca1-474d-adf2-179d08...",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:37.540Z",
+                    "stage": "content_generate",
+                    "label": "已启动本机 Hermes CLI",
+                    "message": "正在调用本机 Hermes 执行 content_generate。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "started",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "",
+                    "elapsedMs": 0,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:42.585Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 5 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:42:42.555Z",
+                    "elapsedMs": 5026,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:47.639Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 10 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:42:47.556Z",
+                    "elapsedMs": 10027,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:52.578Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 15 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:42:52.557Z",
+                    "elapsedMs": 15028,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:42:57.586Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 20 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:42:57.557Z",
+                    "elapsedMs": 20028,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:02.595Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 25 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:02.560Z",
+                    "elapsedMs": 25031,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:07.588Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 30 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:07.559Z",
+                    "elapsedMs": 30030,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:12.596Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 35 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:12.561Z",
+                    "elapsedMs": 35032,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:17.606Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 40 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:17.562Z",
+                    "elapsedMs": 40033,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:22.621Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 45 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:22.564Z",
+                    "elapsedMs": 45035,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:27.593Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 50 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:27.564Z",
+                    "elapsedMs": 50035,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:32.593Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 55 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:32.564Z",
+                    "elapsedMs": 55035,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:37.596Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 60 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:37.565Z",
+                    "elapsedMs": 60036,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:42.589Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 65 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:42.566Z",
+                    "elapsedMs": 65037,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:47.617Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 仍在运行",
+                    "message": "本机 Hermes 正在执行 content_generate，已运行 70 秒。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "heartbeat",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:47.569Z",
+                    "elapsedMs": 70040,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:48.588Z",
+                    "stage": "content_generate",
+                    "label": "Hermes CLI 已返回",
+                    "message": "本机 Hermes 已完成 content_generate，input 80906, output 3371, total 86837。",
+                    "level": "info",
+                    "type": "agent_runtime",
+                    "status": "completed",
+                    "transport": "cli",
+                    "stepType": "content_generate",
+                    "sessionId": "20260424_154239_307f7f",
+                    "startedAt": "2026-04-24T07:42:37.529Z",
+                    "heartbeatAt": "2026-04-24T07:43:48.578Z",
+                    "elapsedMs": 71049,
+                    "tokenUsage": {
+                      "model": "gpt-5.4",
+                      "inputTokens": 80906,
+                      "outputTokens": 3371,
+                      "cacheReadTokens": 2560,
+                      "cacheWriteTokens": 0,
+                      "reasoningTokens": 1786,
+                      "totalTokens": 86837,
+                      "estimatedCostUsd": 0,
+                      "actualCostUsd": 0,
+                      "costStatus": "included",
+                      "contextTokens": 0,
+                      "contextLength": 0,
+                      "contextPercent": null
+                    },
+                    "stdoutExcerpt": "{\"items\":[{\"requirementText\":\"软件应对智能补电执行激活判断。当车辆处于由ON到OFF且车辆未休眠的前置场景，且同时满足KL15=OFF、高压未连接、连续补电失败计数<3、BMS2_N_SOC>10%时，若满足以下任一子条件，则应判定智能补电功能激活并进入智能补电流程：1) EBS_SOC≤70%且EBS_SOC_STATE<10%；2) 车辆持续未休眠时间≥20分钟且EBS_U_BATT≤11.8V。在车辆由ON到OFF且车辆未休眠场景下，检测到EBS_SOC≤70%且EBS_SOC_STATE=0x2时，软件亦应判定智能补电功能激活。若车辆持续未休眠时间<20分钟且仅检测到EBS_U_BATT≤11.8V，则软件不应激活智能补电，并应保持智能补电未激活状态。\",\"type\":\"functional\",\"verificationHint\":\"通过功能测试验证输入触发与输出响应\",\"sourceAnchorIds\":[\"dc23670b-b572-4438-bcd4-5fa9a40a752f\",\"ddf3140f-f1d2-4be6-afb2-77ffc2e4d04b\",\"5624fe41-0462-40c0-9740-9e9242184393\",\"d2356556-3b8c-4074-b89d-22d56957c69f\",\"59e049ff-c517-4dc8-987e-a271ed44133f\"],\"conflictNote\":\"\"},{\"requirementText\":\"软件应对智能补电执行退出判断。当KL15关闭且高压未连接时，若连续补电失败计数≥3，则应关闭智能补电功能且不再激活，并发送VCCM_SOCWU_Ena=Disabled给EBS；EBS收到后应关闭主动唤醒功能，VCU应停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，并允许整车休眠。当KL15由OFF进入ON或者执行源需求中记载但OCR未完全识别的功能重置条件后，软件应将VCCM_SOCWU_Ena置为Enabled，并同时清除补电失败次数。当KL15关闭且高压未连接时，若BMS2_N_SOC≤10%，则软件应关闭智能补电功能且不再激活，并发送VCCM_SOCWU_Ena=Disabled给EBS；EBS收到后应关闭主动唤醒功能，VCU应停止向ZCU_L、BMS、MCU、IPU发送网络唤醒信号，并允许整车休眠；当HCU检测到BMS2_N_SOC>10.5%时，软件应将VCCM_SOCWU_Ena置为Enabled。若上述退出条件均不满足，则软件应保持当前智能补电状态不变。\",\"type\":\"functional\",\"verificationHint\":\"通过功能测试验证输入触发与输出响应\",\"sourceAnchorIds\":[\"dc23670b-b572-4438-bcd4-5fa9a40a752f\",\"915eef71-f1ce-4bc5-8efc-abfb16c5b25b\",\"53724f81-b9ef-4784-918d-15654f19f110\",\"9ec3b31b-d9e4-4ba4-95d3-8c6a294e9a92\",\"75e5f546-db20-4fb5-b6eb-b61862332230\",\"51483602-7961-4d04-a7bb-760ac3009815\"],\"conflictNote\":\"源系统需求中“KL15由OFF进入ON或者[不清晰]功能重置”存在OCR不清晰片段，已仅保留可确认的复位语义，未对未识别内容做扩写。\"}]}",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:48.613Z",
+                    "stage": "content_generate_returned",
+                    "label": "Hermes 已返回结果",
+                    "message": "已收到 2 条候选软件需求正文，准备进行结果校验。",
+                    "level": "info",
+                    "type": "",
+                    "status": "",
+                    "transport": "",
+                    "stepType": "",
+                    "sessionId": "",
+                    "startedAt": "",
+                    "heartbeatAt": "",
+                    "elapsedMs": 0,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:48.640Z",
+                    "stage": "result_items_validated",
+                    "label": "结果校验通过",
+                    "message": "候选结果已通过 sourceAnchorIds 与结构校验，共 2 条。",
+                    "level": "info",
+                    "type": "",
+                    "status": "",
+                    "transport": "",
+                    "stepType": "",
+                    "sessionId": "",
+                    "startedAt": "",
+                    "heartbeatAt": "",
+                    "elapsedMs": 0,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  },
+                  {
+                    "at": "2026-04-24T07:43:48.711Z",
+                    "stage": "reference_resolve",
+                    "label": "引用回填完成",
+                    "message": "已将 2 条结果的 sourceAnchorIds 解析为 sourceRefs。",
+                    "level": "info",
+                    "type": "",
+                    "status": "",
+                    "transport": "",
+                    "stepType": "",
+                    "sessionId": "",
+                    "startedAt": "",
+                    "heartbeatAt": "",
+                    "elapsedMs": 0,
+                    "tokenUsage": null,
+                    "stdoutExcerpt": "",
+                    "stderrExcerpt": ""
+                  }
+                ]
+              },
+              "errorMessage": ""
+            },
+            {
               "id": "b63b617c-c823-4a86-98c1-5951f4563ff6",
               "moduleId": "8afaa2a2-d578-4bed-9ebb-38f5522589e8",
               "documentType": "software_requirement",
@@ -52768,10 +55859,220 @@
           "at": "2026-04-23T07:51:26.454Z",
           "action": "task_result_reviewed",
           "detail": "软件需求结果已审核"
+        },
+        {
+          "at": "2026-04-24T07:42:00.510Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已生成"
+        },
+        {
+          "at": "2026-04-24T07:42:00.530Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:00.664Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:01.149Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:01.180Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:01.327Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:01.372Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:01.393Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:01.413Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:06.440Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:11.460Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:16.459Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:21.469Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:26.460Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:31.449Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:36.464Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:37.458Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:37.494Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:37.517Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:37.540Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:42.585Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:47.639Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:52.578Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:42:57.586Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:02.596Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:07.588Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:12.596Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:17.607Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:22.621Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:27.593Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:32.593Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:37.596Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:42.589Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:47.617Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:48.588Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:48.613Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:48.640Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:48.669Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:48.711Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:48.738Z",
+          "action": "task_updated",
+          "detail": "软件需求任务状态已更新"
+        },
+        {
+          "at": "2026-04-24T07:43:48.778Z",
+          "action": "requirements_generated",
+          "detail": "软件需求任务已完成"
+        },
+        {
+          "at": "2026-04-24T08:03:47.889Z",
+          "action": "task_result_reviewed",
+          "detail": "软件需求结果已审核"
         }
       ],
       "createdAt": "2026-04-22T08:56:53.682Z",
-      "updatedAt": "2026-04-23T07:51:26.454Z"
+      "updatedAt": "2026-04-24T08:03:47.889Z"
     },
     {
       "id": "25a788c8-178b-4a1b-a42e-cc5a4228f82a",
@@ -54416,10 +57717,15 @@
       "at": "2026-04-23T07:19:11.844Z",
       "action": "module_extracted_asset_created",
       "detail": "V2L 已新增提取资产：V2L-软件需求.md"
+    },
+    {
+      "at": "2026-04-24T07:42:00.510Z",
+      "action": "module_task_generated",
+      "detail": "低压能量管理 / 软件需求 已新增任务"
     }
   ],
   "createdAt": "2026-04-14T06:39:33.852Z",
-  "updatedAt": "2026-04-23T07:51:26.455Z",
+  "updatedAt": "2026-04-24T08:03:47.890Z",
   "migrationMeta": {
     "kind": "legacy-workspace-demo",
     "migratedAt": "2026-04-14T06:39:33.853Z",
