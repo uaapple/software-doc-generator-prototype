@@ -7854,6 +7854,23 @@ const tests = [
     }
   },
   {
+    name: "Feedback pool task drawer keeps history cards out of primary button styling",
+    run: async () => {
+      const html = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.html"), "utf8");
+      const script = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.js"), "utf8");
+      const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "app.css"), "utf8");
+
+      assert.ok(html.includes('id="task-drawer"'));
+      assert.ok(html.includes('id="close-task-drawer"'));
+      assert.ok(script.includes("feedback-task-card"));
+      assert.ok(stylesheet.includes(".secondary-button"));
+      assert.ok(stylesheet.includes(".feedback-task-card strong"));
+      assert.ok(stylesheet.includes(".feedback-task-card .list-card-meta"));
+      assert.ok(stylesheet.includes(".feedback-task-card.is-selected"));
+      assert.ok(stylesheet.includes(".feedback-task-detail .detail-card"));
+    }
+  },
+  {
     name: "Replay Lab source includes running progress and agent runtime sections for latest run",
     run: async () => {
       const script = await fs.readFile(path.join(config.rootDir, "public", "replay-lab.js"), "utf8");

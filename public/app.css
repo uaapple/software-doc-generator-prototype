@@ -257,6 +257,22 @@ button {
   background: linear-gradient(135deg, var(--brand), var(--brand-strong));
 }
 
+.secondary-button,
+.ghost-button {
+  color: var(--ink);
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.ghost-button {
+  color: var(--brand);
+}
+
+.secondary-button:hover,
+.ghost-button:hover {
+  background: var(--surface-alt);
+}
+
 .hero-link.secondary {
   color: var(--ink);
   border: 1px solid var(--line);
@@ -1696,8 +1712,71 @@ button.danger {
   overflow: auto;
 }
 
+.feedback-task-list {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding-right: 4px;
+}
+
 .feedback-task-card {
+  display: grid;
+  width: 100%;
+  min-height: auto;
+  gap: 8px;
+  justify-content: stretch;
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-alt);
+  color: var(--ink);
   text-align: left;
+  box-shadow: none;
+}
+
+.feedback-task-card:hover {
+  background: #fff;
+}
+
+.feedback-task-card.is-selected {
+  border-color: rgba(19, 81, 151, 0.34);
+  background:
+    radial-gradient(circle at top right, rgba(19, 81, 151, 0.08), transparent 30%),
+    #fff;
+  box-shadow: 0 10px 22px rgba(13, 40, 74, 0.08);
+}
+
+.feedback-task-card strong {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.feedback-task-card p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.feedback-task-card .list-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.feedback-task-card .inline-hint {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .feedback-task-card.is-pending {
@@ -1722,6 +1801,23 @@ button.danger {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.feedback-task-detail .detail-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.feedback-task-detail-card h3 {
+  margin-bottom: 0;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.feedback-task-detail-card > p {
+  margin-bottom: 0;
 }
 
 .feedback-task-detail-card-pending {
