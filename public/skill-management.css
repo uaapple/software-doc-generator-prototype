@@ -1651,6 +1651,21 @@ button[disabled] {
   gap: 12px;
 }
 
+.skill-version-diff-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.skill-version-filter {
+  display: grid;
+  gap: 6px;
+  max-width: 260px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .skill-version-change-item {
   background: rgba(247, 250, 255, 0.88);
 }
@@ -1661,9 +1676,52 @@ button[disabled] {
   overflow-wrap: anywhere;
 }
 
+.skill-version-diff-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.skill-version-diff-grid > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.skill-version-diff-grid span {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.skill-version-diff-grid pre {
+  min-height: 112px;
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 960px) {
   .work-order-workspace,
   .skill-version-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .skill-version-diff-summary,
+  .skill-version-diff-grid {
     grid-template-columns: 1fr;
   }
 

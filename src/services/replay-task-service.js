@@ -1560,11 +1560,13 @@ export class ReplayTaskService {
       )
     });
 
+    const defaultCandidate = await this.skillBundleService.getDefaultCandidateBundle();
     const candidateBundle = await this.skillBundleService.createCandidateBundle({
       baseBundleId: activeBundle?.id || task.targetBundleId,
       proposalItems: acceptedItems,
       replayTaskId: task.id,
-      createdFromCaseIds: []
+      createdFromCaseIds: [],
+      targetBundleId: defaultCandidate?.id || ""
     });
 
     task.applyResult = {

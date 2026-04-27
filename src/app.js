@@ -100,33 +100,53 @@ export async function createApp() {
   await llmProfileService.ensureInitialized();
   await projectService.recoverStaleGenerationTasks();
 
-  async function resolveSkillItemWriteDir(req) {
-    const targetBundleId = String(req.body?.targetBundleId || req.query?.targetBundleId || "").trim();
-    const directMode = String(config.skillVersioning?.directActiveSkillItemWrites || "allow").trim();
-    if (!targetBundleId) {
-      if (directMode === "block" || directMode === "blocked") {
-        throw createHttpError(
-          "Direct active skill edits are disabled; provide a candidate targetBundleId.",
-          409,
-          "direct_active_skill_write_blocked"
-        );
+  function requestField(req, ...keys) {
+    for (const key of keys) {
+      const value = req.body?.[key] ?? req.query?.[key];
+      if (value !== undefined && value !== null && String(value).trim()) {
+        return String(value).trim();
       }
-      return config.activeSkillDir;
     }
+    return "";
+  }
 
-    const bundle = await skillBundleService.getBundle(targetBundleId);
+  async function resolveSkillReadTarget(req) {
+    const requestedBundleId = requestField(req, "bundleId", "targetBundleId");
+    const bundle = requestedBundleId
+      ? await skillBundleService.getBundle(requestedBundleId)
+      : await skillBundleService.getDefaultCandidateBundle();
     if (!bundle) {
-      throw createHttpError("Skill bundle not found", 404, "skill_bundle_not_found", { targetBundleId });
+      throw createHttpError("Skill bundle not found", 404, "skill_bundle_not_found", { bundleId: requestedBundleId });
     }
-    if ((directMode === "block" || directMode === "blocked") && bundle.status === "active") {
+    return {
+      bundle,
+      skillDir: await skillBundleService.getSkillDir(bundle.id)
+    };
+  }
+
+  async function resolveSkillItemWriteTarget(req) {
+    const requestedBundleId = requestField(req, "targetBundleId", "bundleId");
+    const bundle = requestedBundleId
+      ? await skillBundleService.getBundle(requestedBundleId)
+      : await skillBundleService.getDefaultCandidateBundle();
+    if (!bundle) {
+      throw createHttpError("Skill bundle not found", 404, "skill_bundle_not_found", { bundleId: requestedBundleId });
+    }
+    if (bundle.status !== "candidate") {
       throw createHttpError(
-        "Direct active skill edits are disabled; targetBundleId must point to a candidate bundle.",
+        "Skill item writes must target a candidate bundle.",
         409,
         "direct_active_skill_write_blocked",
-        { targetBundleId }
+        { targetBundleId: bundle.id, status: bundle.status }
       );
     }
-    return skillBundleService.getSkillDir(targetBundleId);
+    return {
+      bundle,
+      skillDir: await skillBundleService.getSkillDir(bundle.id),
+      sourceType: requestField(req, "changeSourceType", "sourceType") || "api_skill_edit",
+      sourceId: requestField(req, "changeSourceId", "sourceId"),
+      createdBy: requestField(req, "createdBy", "updatedBy", "deletedBy", "reorderedBy") || "api"
+    };
   }
 
   const upload = multer({
@@ -1082,9 +1102,14 @@ export async function createApp() {
     }
   });
 
-  app.get("/api/skill-management", async (_req, res, next) => {
+  app.get("/api/skill-management", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.listSkills());
+      const target = await resolveSkillReadTarget(req);
+      const payload = await skillManagementService.listSkills(target.skillDir);
+      res.json({
+        ...payload,
+        skillBundle: target.bundle
+      });
     } catch (error) {
       next(error);
     }
@@ -1092,7 +1117,12 @@ export async function createApp() {
 
   app.get("/api/skill-management/:type/:key", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.getSkillDetail(req.params.type, req.params.key));
+      const target = await resolveSkillReadTarget(req);
+      const payload = await skillManagementService.getSkillDetail(req.params.type, req.params.key, target.skillDir);
+      res.json({
+        ...payload,
+        skillBundle: target.bundle
+      });
     } catch (error) {
       next(error);
     }
@@ -1100,7 +1130,8 @@ export async function createApp() {
 
   app.put("/api/skill-management/:type/:key", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.updateSkill(req.params.type, req.params.key, req.body || {}));
+      const target = await resolveSkillItemWriteTarget(req);
+      res.json(await skillManagementService.updateSkill(req.params.type, req.params.key, req.body || {}, target.skillDir));
     } catch (error) {
       next(error);
     }
@@ -1108,7 +1139,8 @@ export async function createApp() {
 
   app.delete("/api/skill-management/:type/:key", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.deleteSkill(req.params.type, req.params.key));
+      const target = await resolveSkillItemWriteTarget(req);
+      res.json(await skillManagementService.deleteSkill(req.params.type, req.params.key, target.skillDir));
     } catch (error) {
       next(error);
     }
@@ -1116,16 +1148,22 @@ export async function createApp() {
 
   app.get("/api/skill-items", async (req, res, next) => {
     try {
-      res.json(
-        await skillManagementService.listSkillItems({
+      const target = await resolveSkillReadTarget(req);
+      const payload = await skillManagementService.listSkillItems(
+        {
           layer: req.query.layer || "",
           profileKey: req.query.profileKey || "",
           kind: req.query.kind || "",
           query: req.query.query || "",
           documentTypeScope: req.query.documentTypeScope || "",
           includeDeprecated: req.query.includeDeprecated === "true"
-        })
+        },
+        target.skillDir
       );
+      res.json({
+        ...payload,
+        skillBundle: target.bundle
+      });
     } catch (error) {
       next(error);
     }
@@ -1133,7 +1171,12 @@ export async function createApp() {
 
   app.get("/api/skill-items/:skillCode", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.getSkillItem(req.params.skillCode));
+      const target = await resolveSkillReadTarget(req);
+      const payload = await skillManagementService.getSkillItem(req.params.skillCode, target.skillDir);
+      res.json({
+        ...payload,
+        skillBundle: target.bundle
+      });
     } catch (error) {
       next(error);
     }
@@ -1141,8 +1184,17 @@ export async function createApp() {
 
   app.post("/api/skill-items", async (req, res, next) => {
     try {
-      const skillDir = await resolveSkillItemWriteDir(req);
-      res.status(201).json(await skillManagementService.createSkillItem(req.body || {}, skillDir));
+      const target = await resolveSkillItemWriteTarget(req);
+      const saved = await skillManagementService.createSkillItem(req.body || {}, target.skillDir);
+      await skillBundleService.recordCandidateChange(target.bundle.id, {
+        sourceType: target.sourceType,
+        sourceId: target.sourceId,
+        createdBy: target.createdBy,
+        operation: "create",
+        skillCode: saved.skillCode,
+        afterSnapshot: saved
+      });
+      res.status(201).json(saved);
     } catch (error) {
       next(error);
     }
@@ -1150,8 +1202,19 @@ export async function createApp() {
 
   app.patch("/api/skill-items/:skillCode", async (req, res, next) => {
     try {
-      const skillDir = await resolveSkillItemWriteDir(req);
-      res.json(await skillManagementService.updateSkillItem(req.params.skillCode, req.body || {}, skillDir));
+      const target = await resolveSkillItemWriteTarget(req);
+      const before = (await skillManagementService.getSkillItem(req.params.skillCode, target.skillDir)).item;
+      const saved = await skillManagementService.updateSkillItem(req.params.skillCode, req.body || {}, target.skillDir);
+      await skillBundleService.recordCandidateChange(target.bundle.id, {
+        sourceType: target.sourceType,
+        sourceId: target.sourceId,
+        createdBy: target.createdBy,
+        operation: "update",
+        skillCode: saved.skillCode,
+        beforeSnapshot: before,
+        afterSnapshot: saved
+      });
+      res.json(saved);
     } catch (error) {
       next(error);
     }
@@ -1159,8 +1222,19 @@ export async function createApp() {
 
   app.delete("/api/skill-items/:skillCode", async (req, res, next) => {
     try {
-      const skillDir = await resolveSkillItemWriteDir(req);
-      res.json(await skillManagementService.deleteSkillItem(req.params.skillCode, skillDir));
+      const target = await resolveSkillItemWriteTarget(req);
+      const before = (await skillManagementService.getSkillItem(req.params.skillCode, target.skillDir)).item;
+      const removed = await skillManagementService.deleteSkillItem(req.params.skillCode, target.skillDir);
+      await skillBundleService.recordCandidateChange(target.bundle.id, {
+        sourceType: target.sourceType,
+        sourceId: target.sourceId,
+        createdBy: target.createdBy,
+        operation: "delete",
+        skillCode: before.skillCode,
+        beforeSnapshot: before,
+        afterSnapshot: null
+      });
+      res.json(removed);
     } catch (error) {
       next(error);
     }
@@ -1168,24 +1242,55 @@ export async function createApp() {
 
   app.post("/api/skill-items/:skillCode/reorder", async (req, res, next) => {
     try {
-      const skillDir = await resolveSkillItemWriteDir(req);
-      res.json(await skillManagementService.reorderSkillItem(req.params.skillCode, req.body || {}, skillDir));
+      const target = await resolveSkillItemWriteTarget(req);
+      const beforeDetail = await skillManagementService.getSkillItem(req.params.skillCode, target.skillDir);
+      const beforeOrder = {
+        skillCode: beforeDetail.item.skillCode,
+        layer: beforeDetail.item.layer,
+        profileKey: beforeDetail.item.profileKey,
+        kind: beforeDetail.item.kind,
+        order: beforeDetail.item.order,
+        siblingOrder: (beforeDetail.siblings || []).map((item) => item.skillCode)
+      };
+      const saved = await skillManagementService.reorderSkillItem(req.params.skillCode, req.body || {}, target.skillDir);
+      const afterDetail = await skillManagementService.getSkillItem(req.params.skillCode, target.skillDir);
+      const afterOrder = {
+        skillCode: afterDetail.item.skillCode,
+        layer: afterDetail.item.layer,
+        profileKey: afterDetail.item.profileKey,
+        kind: afterDetail.item.kind,
+        order: afterDetail.item.order,
+        siblingOrder: (afterDetail.siblings || []).map((item) => item.skillCode)
+      };
+      await skillBundleService.recordCandidateChange(target.bundle.id, {
+        sourceType: target.sourceType,
+        sourceId: target.sourceId,
+        createdBy: target.createdBy,
+        operation: "reorder",
+        skillCode: saved.skillCode,
+        beforeSnapshot: beforeOrder,
+        afterSnapshot: afterOrder,
+        changedFields: ["order"]
+      });
+      res.json(saved);
     } catch (error) {
       next(error);
     }
   });
 
-  app.post("/api/skill-registry/materialize", async (_req, res, next) => {
+  app.post("/api/skill-registry/materialize", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.exportCompatibilityFiles());
+      const target = await resolveSkillItemWriteTarget(req);
+      res.json(await skillManagementService.exportCompatibilityFiles(target.skillDir));
     } catch (error) {
       next(error);
     }
   });
 
-  app.post("/api/skill-export/compatibility", async (_req, res, next) => {
+  app.post("/api/skill-export/compatibility", async (req, res, next) => {
     try {
-      res.json(await skillManagementService.exportCompatibilityFiles());
+      const target = await resolveSkillItemWriteTarget(req);
+      res.json(await skillManagementService.exportCompatibilityFiles(target.skillDir));
     } catch (error) {
       next(error);
     }
@@ -1211,8 +1316,9 @@ export async function createApp() {
   app.get("/api/skill-bundles", async (_req, res, next) => {
     try {
       const activeBundle = await skillBundleService.getActiveBundle();
+      const defaultCandidateBundle = await skillBundleService.getDefaultCandidateBundle();
       const bundles = await skillBundleService.listBundles();
-      res.json({ activeBundle, bundles });
+      res.json({ activeBundle, defaultCandidateBundle, bundles });
     } catch (error) {
       next(error);
     }

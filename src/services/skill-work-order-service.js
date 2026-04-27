@@ -688,9 +688,16 @@ export class SkillWorkOrderService {
       workOrderId,
       workOrderItemId: itemId,
       sourceTaskId: workOrder.sourceTaskId,
-      mode: item.appliedChange.mode,
+      sourceType: "work_order",
+      sourceId: itemId,
+      operation: item.appliedChange.mode,
       skillCode: appliedSkillCode,
+      layer: afterSnapshot?.layer || targetLayer,
+      profileKey: afterSnapshot?.profileKey || targetProfileKey,
+      kind: afterSnapshot?.kind || targetKind,
       title,
+      beforeSnapshot,
+      afterSnapshot: cloneJson(afterSnapshot),
       stagedBy,
       stagedAt
     });

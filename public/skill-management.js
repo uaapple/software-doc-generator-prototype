@@ -54,7 +54,8 @@ const state = {
   workOrderFilters: {
     status: "",
     documentType: ""
-  }
+  },
+  bundleChangeSourceFilter: "all"
 }
 
 const refreshButton = document.querySelector("#refresh-button")
@@ -118,6 +119,7 @@ workOrderDetailRoot?.addEventListener("click", handleWorkOrderDetailClick)
 workOrderDetailRoot?.addEventListener("submit", handleWorkOrderDetailSubmit)
 skillVersionListRoot?.addEventListener("click", handleSkillVersionListClick)
 skillVersionDetailRoot?.addEventListener("click", handleSkillVersionDetailClick)
+skillVersionDetailRoot?.addEventListener("change", handleSkillVersionDetailChange)
 editorBackdrop.addEventListener("click", () => closeEditor())
 editorDrawerBody.addEventListener("click", handleDrawerClick)
 editorDrawerBody.addEventListener("change", handleDrawerChange)
@@ -334,8 +336,8 @@ async function refreshAll(showHint = false) {
     if (showHint) {
       setPageStatus(formatRefreshStatus("loading"))
     }
-    state.payload = await request("/api/skill-management")
     state.bundlePayload = await request("/api/skill-bundles")
+    state.payload = await request(buildBundleScopedUrl("/api/skill-management"))
     state.workOrders = await request(buildWorkOrderListUrl()).then((payload) => payload.workOrders || [])
     syncSelection()
     syncWorkOrderSelection()
@@ -447,7 +449,10 @@ async function handleBrowserClick(event) {
     if (!confirmed) return
 
     try {
-      await request(`/api/skill-management/${encodeURIComponent(profile.type)}/${encodeURIComponent(profile.key)}`, {
+      await request(buildBundleScopedUrl(`/api/skill-management/${encodeURIComponent(profile.type)}/${encodeURIComponent(profile.key)}`, getEditingBundleId(), {
+        changeSourceType: "manual_skill_edit",
+        deletedBy: "web-ui"
+      }), {
         method: "DELETE"
       })
       state.selectedProfileId = ""
@@ -457,7 +462,7 @@ async function handleBrowserClick(event) {
       state.detailItem = null
       closeEditor()
       await refreshAll(false)
-      setPageStatus(`已删除 ${profile.key} profile。`)
+      setPageStatus(`已将 ${profile.key} profile 删除加入候选版本。`)
     } catch (error) {
       setPageStatus(`删除失败：${error.message}`, true)
     }
@@ -559,11 +564,16 @@ async function handleReviewClick(event) {
       await request(`/api/skill-items/${encodeURIComponent(skillCode)}/reorder`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ direction })
+        body: JSON.stringify({
+          direction,
+          targetBundleId: getEditingBundleId(),
+          changeSourceType: "manual_skill_edit",
+          reorderedBy: "web-ui"
+        })
       })
       state.selectedSkillCode = skillCode
       await refreshAll(false)
-      setPageStatus(`已${direction === "up" ? "上移" : "下移"} ${skillCode}。`)
+      setPageStatus(`已将 ${skillCode} ${direction === "up" ? "上移" : "下移"}加入候选版本。`)
     } catch (error) {
       setPageStatus(`排序失败：${error.message}`, true)
     }
@@ -578,12 +588,15 @@ async function handleReviewClick(event) {
     if (!confirmed) return
 
     try {
-      await request(`/api/skill-items/${encodeURIComponent(skillCode)}`, { method: "DELETE" })
+      await request(buildBundleScopedUrl(`/api/skill-items/${encodeURIComponent(skillCode)}`, getEditingBundleId(), {
+        changeSourceType: "manual_skill_edit",
+        deletedBy: "web-ui"
+      }), { method: "DELETE" })
       state.selectedSkillCode = ""
       state.detailItem = null
       closeEditor()
       await refreshAll(false)
-      setPageStatus(`已删除 ${skillCode}。`)
+      setPageStatus(`已将删除 ${skillCode} 加入候选版本。`)
     } catch (error) {
       setPageStatus(`删除失败：${error.message}`, true)
     }
@@ -638,7 +651,11 @@ async function handleEditorSubmit(event) {
     kind: form.elements.namedItem("kind")?.value || state.selectedKind || "writing_rule",
     title: form.elements.namedItem("title")?.value?.trim() || "技能条目",
     status: form.elements.namedItem("status")?.value || "active",
-    content: form.elements.namedItem("content")?.value || ""
+    content: form.elements.namedItem("content")?.value || "",
+    targetBundleId: getEditingBundleId(),
+    changeSourceType: "manual_skill_edit",
+    createdBy: "web-ui",
+    updatedBy: "web-ui"
   }
 
   try {
@@ -647,7 +664,7 @@ async function handleEditorSubmit(event) {
       payload.structuredPayload = structuredPayload
     }
 
-    setPageStatus(state.editorMode === "create" ? "正在创建技能条目..." : "正在保存技能条目...")
+    setPageStatus(state.editorMode === "create" ? "正在将新技能加入候选版本..." : "正在将技能改动加入候选版本...")
 
     const saved =
       state.editorMode === "create"
@@ -670,7 +687,7 @@ async function handleEditorSubmit(event) {
     itemQueryInput.value = ""
     closeEditor(false)
     await refreshAll(false)
-    setPageStatus(`已保存 ${saved.skillCode}。`)
+    setPageStatus(`已将 ${saved.skillCode} 加入候选版本。`)
   } catch (error) {
     setPageStatus(`保存失败：${error.message}`, true)
   }
@@ -766,6 +783,7 @@ async function handleSkillVersionListClick(event) {
   const button = event.target.closest("[data-select-bundle]")
   if (!button) return
   state.selectedBundleId = button.dataset.selectBundle || ""
+  state.bundleChangeSourceFilter = "all"
   const nextUrl = new URL(window.location.href)
   nextUrl.searchParams.set("view", "skill-versions")
   if (state.selectedBundleId) {
@@ -792,6 +810,13 @@ async function handleSkillVersionDetailClick(event) {
   }
 }
 
+function handleSkillVersionDetailChange(event) {
+  const sourceFilter = event.target.closest("[data-bundle-change-source-filter]")
+  if (!sourceFilter) return
+  state.bundleChangeSourceFilter = sourceFilter.value || "all"
+  renderSkillVersionDetail()
+}
+
 async function submitBundleAction(bundleId, action) {
   if (!bundleId || !action) return
   const endpointByAction = {
@@ -809,6 +834,10 @@ async function submitBundleAction(bundleId, action) {
       state.selectedBundleId = result.id
     }
     await refreshAll(false)
+    if (action === "release" && getDefaultCandidateBundle()?.id) {
+      state.selectedBundleId = getDefaultCandidateBundle().id
+      renderSkillVersionWorkspace()
+    }
     setPageStatus(action === "release" ? "候选技能版本已发布。" : action === "rollback" ? "已回滚到选定技能版本。" : "已 fork 出新的候选技能版本。")
   } catch (error) {
     setPageStatus(`技能版本操作失败：${error.message}`, true)
@@ -825,7 +854,7 @@ async function loadSelection() {
   }
 
   try {
-    state.detailProfile = await request(`/api/skill-management/${encodeURIComponent(profile.type)}/${encodeURIComponent(profile.key)}`)
+    state.detailProfile = await request(buildBundleScopedUrl(`/api/skill-management/${encodeURIComponent(profile.type)}/${encodeURIComponent(profile.key)}`))
   } catch (error) {
     state.detailProfile = null
     state.detailItem = null
@@ -841,7 +870,7 @@ async function loadSelection() {
   }
 
   try {
-    state.detailItem = await request(`/api/skill-items/${encodeURIComponent(state.selectedSkillCode)}`)
+    state.detailItem = await request(buildBundleScopedUrl(`/api/skill-items/${encodeURIComponent(state.selectedSkillCode)}`))
   } catch (error) {
     state.detailItem = null
     setPageStatus(`加载技能条目详情失败：${error.message}`, true)
@@ -996,6 +1025,31 @@ function getActiveBundle() {
   return state.bundlePayload?.activeBundle || null
 }
 
+function getDefaultCandidateBundle() {
+  return state.bundlePayload?.defaultCandidateBundle || null
+}
+
+function getEditingBundle() {
+  return getDefaultCandidateBundle() || getActiveBundle()
+}
+
+function getEditingBundleId() {
+  return getEditingBundle()?.id || ""
+}
+
+function buildBundleScopedUrl(pathname, bundleId = getEditingBundleId(), params = {}) {
+  const url = new URL(pathname, window.location.origin)
+  if (bundleId) {
+    url.searchParams.set("bundleId", bundleId)
+  }
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      url.searchParams.set(key, String(value).trim())
+    }
+  }
+  return `${url.pathname}${url.search}`
+}
+
 function syncBundleSelection() {
   const bundles = getSkillBundles()
   if (!bundles.length) {
@@ -1003,7 +1057,7 @@ function syncBundleSelection() {
     return
   }
   if (!bundles.some((bundle) => bundle.id === state.selectedBundleId)) {
-    state.selectedBundleId = getActiveBundle()?.id || bundles[0].id
+    state.selectedBundleId = getDefaultCandidateBundle()?.id || getActiveBundle()?.id || bundles[0].id
   }
 }
 
@@ -1046,10 +1100,12 @@ function renderSummary() {
   }
 
   const counts = state.payload.summary?.countsByType || {}
+  const editingBundle = getEditingBundle()
   const cards = [
     { label: "Profiles", value: state.payload.summary?.total || 0 },
     { label: "技能条目", value: state.payload.summary?.itemTotal || 0 },
     { label: "异常 Profile", value: state.payload.summary?.abnormalCount || 0 },
+    { label: "编辑目标", value: editingBundle?.status === "candidate" ? "Candidate" : editingBundle?.status || "-" },
     { label: "Generic", value: counts.generic || 0 },
     { label: "Doc Type", value: counts.docType || 0 },
     { label: "Domain", value: counts.domain || 0 },
@@ -1067,7 +1123,7 @@ function renderSummary() {
     )
     .join("")
 
-  sourceMetaRoot.textContent = `当前来源：${state.payload.activeSource?.skillDir || "-"} · manifest：${state.payload.activeSource?.manifestPath || "-"}`
+  sourceMetaRoot.textContent = `当前编辑目标：${editingBundle?.version || editingBundle?.id || "-"} · 基于 active：${editingBundle?.baseBundleId || getActiveBundle()?.id || "-"} · manifest：${state.payload.activeSource?.manifestPath || "-"}`
 }
 
 function renderMetric(label, value) {
@@ -1310,12 +1366,16 @@ function renderSkillVersionSummary() {
   if (!skillVersionSummaryRoot) return
   const bundles = getSkillBundles()
   const active = getActiveBundle()
+  const defaultCandidate = getDefaultCandidateBundle()
+  const diff = defaultCandidate?.diffSummary || {}
   const countByStatus = (status) => bundles.filter((bundle) => bundle.status === status).length
   skillVersionSummaryRoot.innerHTML = `
     ${renderMetric("Active", active?.version || active?.id || "-")}
-    ${renderMetric("Candidate", countByStatus("candidate"))}
-    ${renderMetric("Archived", countByStatus("archived"))}
-    ${renderMetric("Rolled Back", countByStatus("rolled_back"))}
+    ${renderMetric("Default Candidate", defaultCandidate?.version || defaultCandidate?.id || "-")}
+    ${renderMetric("候选变更", diff.total || 0)}
+    ${renderMetric("新增 / 修改", `${diff.create || 0} / ${diff.update || 0}`)}
+    ${renderMetric("删除 / 排序", `${diff.delete || 0} / ${diff.reorder || 0}`)}
+    ${renderMetric("历史版本", countByStatus("archived") + countByStatus("rolled_back"))}
   `
 }
 
@@ -1327,17 +1387,22 @@ function renderSkillVersionList() {
     return
   }
   skillVersionListRoot.innerHTML = bundles
-    .map((bundle) => `
+    .map((bundle) => {
+      const diff = bundle.diffSummary || {}
+      const isDefaultCandidate = getDefaultCandidateBundle()?.id === bundle.id
+      return `
       <button type="button" class="skill-version-list-card ${bundle.id === state.selectedBundleId ? "is-selected" : ""}" data-select-bundle="${escapeHtml(bundle.id)}">
         <div class="inline-meta-row">
           <span class="mini-pill ${statusTone(bundle.status)}">${escapeHtml(formatBundleStatus(bundle.status))}</span>
+          ${isDefaultCandidate ? '<span class="mini-pill warning">默认候选</span>' : ""}
           <span>${escapeHtml(formatDate(bundle.updatedAt || bundle.createdAt))}</span>
         </div>
         <strong>${escapeHtml(bundle.version || bundle.id)}</strong>
         <span class="work-order-code">${escapeHtml(bundle.id)}</span>
         <p>${escapeHtml(bundle.changeSummary || "无变更摘要")}</p>
+        ${bundle.status === "candidate" ? `<p class="summary">${escapeHtml(String(diff.total || 0))} 条原子变更</p>` : ""}
       </button>
-    `)
+    `})
     .join("")
 }
 
@@ -1352,7 +1417,12 @@ function renderSkillVersionDetail() {
 
   const isCandidate = bundle.status === "candidate"
   const canRollback = ["archived", "rolled_back"].includes(bundle.status)
-  const stagedChanges = bundle.stagedChanges || []
+  const changeEntries = bundle.changeEntries || bundle.stagedChanges || []
+  const diff = bundle.diffSummary || {}
+  const sourceTypes = Array.from(new Set(changeEntries.map((entry) => entry.sourceType || "unknown"))).sort()
+  const visibleChanges = state.bundleChangeSourceFilter === "all"
+    ? changeEntries
+    : changeEntries.filter((entry) => (entry.sourceType || "unknown") === state.bundleChangeSourceFilter)
   skillVersionDetailRoot.className = "skill-version-detail"
   skillVersionDetailRoot.innerHTML = `
     <section class="skill-version-section">
@@ -1366,7 +1436,7 @@ function renderSkillVersionDetail() {
           <p class="summary">${escapeHtml(bundle.changeSummary || "暂无变更摘要")}</p>
         </div>
         <div class="work-order-inline-actions">
-          ${isCandidate ? `<button type="button" data-bundle-release="${escapeHtml(bundle.id)}">发布</button>` : ""}
+          ${isCandidate && bundle.id === getDefaultCandidateBundle()?.id ? `<button type="button" data-bundle-release="${escapeHtml(bundle.id)}">发布</button>` : ""}
           ${canRollback ? `<button type="button" class="secondary-button" data-bundle-rollback="${escapeHtml(bundle.id)}">回滚到此版本</button>` : ""}
           <button type="button" class="secondary-button" data-bundle-fork="${escapeHtml(bundle.id)}">Fork 候选</button>
         </div>
@@ -1380,32 +1450,61 @@ function renderSkillVersionDetail() {
         ${renderWorkOrderMetaItem("Rule Index", bundle.ruleIndexVersion || "-")}
         ${renderWorkOrderMetaItem("SQLite Snapshot", bundle.sqliteSnapshotPath || "-")}
         ${renderWorkOrderMetaItem("来源", bundle.sourceType || "-")}
+        ${renderWorkOrderMetaItem("默认候选", bundle.id === getDefaultCandidateBundle()?.id ? "是" : "否")}
       </div>
     </section>
     <section class="skill-version-section">
       <div class="work-order-section-head">
         <div>
-          <h4>候选变更</h4>
-          <p class="summary">从工单或 replay 提案加入此版本的变更会集中显示在这里。</p>
+          <h4>逐条原子技能变更</h4>
+          <p class="summary">相对 base active 的 create / update / delete / reorder 会集中显示在这里。</p>
         </div>
-        <span class="mini-pill subtle">${escapeHtml(String(stagedChanges.length || 0))} 条</span>
+        <span class="mini-pill subtle">${escapeHtml(String(changeEntries.length || 0))} 条</span>
       </div>
+      <div class="skill-version-diff-summary">
+        ${renderMetric("新增", diff.create || 0)}
+        ${renderMetric("修改", diff.update || 0)}
+        ${renderMetric("删除", diff.delete || 0)}
+        ${renderMetric("排序", diff.reorder || 0)}
+      </div>
+      <label class="skill-version-filter">
+        来源过滤
+        <select data-bundle-change-source-filter>
+          <option value="all" ${state.bundleChangeSourceFilter === "all" ? "selected" : ""}>全部来源</option>
+          ${sourceTypes.map((sourceType) => `<option value="${escapeHtml(sourceType)}" ${state.bundleChangeSourceFilter === sourceType ? "selected" : ""}>${escapeHtml(formatChangeSourceType(sourceType))}</option>`).join("")}
+        </select>
+      </label>
       <div class="skill-version-change-list">
-        ${stagedChanges.length ? stagedChanges.map(renderBundleChangeItem).join("") : '<div class="empty-state">当前版本没有记录工单变更。</div>'}
+        ${visibleChanges.length ? visibleChanges.map(renderBundleChangeItem).join("") : '<div class="empty-state">当前筛选条件下没有原子技能变更。</div>'}
       </div>
     </section>
   `
 }
 
 function renderBundleChangeItem(change = {}) {
+  const before = change.beforeSnapshot || null
+  const after = change.afterSnapshot || null
+  const beforeText = formatChangeSnapshot(before)
+  const afterText = formatChangeSnapshot(after)
   return `
     <article class="skill-version-change-item">
       <div class="inline-meta-row">
-        <strong>${escapeHtml(change.title || change.skillCode || "技能变更")}</strong>
-        <span class="mini-pill subtle">${escapeHtml(change.mode || "stage")}</span>
+        <strong>${escapeHtml(change.afterSnapshot?.title || change.beforeSnapshot?.title || change.title || change.skillCode || "技能变更")}</strong>
+        <span class="mini-pill ${statusTone(change.operation)}">${escapeHtml(formatChangeOperation(change.operation))}</span>
+        <span class="mini-pill subtle">${escapeHtml(formatChangeSourceType(change.sourceType))}</span>
       </div>
-      <p>${escapeHtml(change.skillCode || "-")}</p>
-      <p class="summary">${escapeHtml([change.workOrderId, change.workOrderItemId].filter(Boolean).join(" / ") || "无来源工单")}</p>
+      <p>${escapeHtml(change.skillCode || "-")} · ${escapeHtml([change.layer, change.profileKey, change.kind].filter(Boolean).join(" / ") || "-")}</p>
+      <p class="summary">${escapeHtml([change.sourceId, change.workOrderId, change.workOrderItemId, change.sourceTaskId].filter(Boolean).join(" / ") || "无来源")} · ${escapeHtml((change.changedFields || []).join(", ") || "-")}</p>
+      <div class="skill-version-diff-grid">
+        <div>
+          <span>Before</span>
+          <pre>${escapeHtml(beforeText)}</pre>
+        </div>
+        <div>
+          <span>After</span>
+          <pre>${escapeHtml(afterText)}</pre>
+        </div>
+      </div>
     </article>
   `
 }
@@ -1447,6 +1546,7 @@ function renderProfileRail() {
 function renderItemBrowserChrome() {
   const profile = getSelectedProfileSummary()
   const detail = state.detailProfile
+  const editingBundle = getEditingBundle()
 
   if (!profile) {
     itemQueryInput.disabled = true
@@ -1478,6 +1578,8 @@ function renderItemBrowserChrome() {
           ${profile.abnormal ? '<span class="browser-metric-chip">异常映射</span>' : ""}
         </div>
         <div class="browser-path">
+          <span class="code-chip">编辑目标：${escapeHtml(editingBundle?.status === "candidate" ? "候选版本" : editingBundle?.status || "-")}</span>
+          <span class="code-chip">${escapeHtml(editingBundle?.id || "-")}</span>
           <span class="code-chip">${escapeHtml(detail?.profile?.registryPath || `${profile.key}/skill-items.json`)}</span>
           ${state.payload?.activeSource?.sourceType === "sqlite" ? `<span class="code-chip">SQLite 真源</span>` : ""}
           ${detail?.profile?.documentTypeScope ? `<span class="code-chip">${escapeHtml(detail.profile.documentTypeScope)}</span>` : ""}
@@ -1723,6 +1825,7 @@ function renderEditorDrawer() {
     draft.kind = getAllowedKindsByLayer(draft.layer)[0] || "writing_rule"
   }
   const hideStructuredEditor = isTextTruthKind(draft.kind)
+  const editingBundle = getEditingBundle()
 
   editorBackdrop.hidden = false
   editorBackdrop.classList.add("is-open")
@@ -1735,7 +1838,7 @@ function renderEditorDrawer() {
       <div>
         <p class="review-eyebrow">${state.editorMode === "create" ? "Create" : "Edit"} Drawer</p>
         <h2>${escapeHtml(state.editorMode === "create" ? "新增技能条目" : `编辑 ${item?.title || "技能条目"}`)}</h2>
-        <p>${escapeHtml(state.editorMode === "create" ? "抽屉只负责修改，不打断主审阅画布。" : `当前正在编辑 ${item?.skillCode || ""}`)}</p>
+        <p>${escapeHtml(`改动会进入候选版本 ${editingBundle?.id || "-"}，不会直接写入 active。`)}</p>
       </div>
       <button type="button" class="secondary-button" data-close-editor="true">关闭</button>
     </div>
@@ -2107,10 +2210,10 @@ function renderFileSummary(entry) {
 
 async function materializeRegistry() {
   try {
-    setPageStatus("正在导出兼容文件...")
-    await request("/api/skill-export/compatibility", { method: "POST" })
+    setPageStatus("正在导出候选版本兼容文件...")
+    await request(buildBundleScopedUrl("/api/skill-export/compatibility"), { method: "POST" })
     await refreshAll(false)
-    setPageStatus("兼容文件已导出，Markdown 与 domain-knowledge.json 已同步。")
+    setPageStatus("候选版本兼容文件已导出。")
   } catch (error) {
     setPageStatus(`导出失败：${error.message}`, true)
   }
@@ -2624,6 +2727,41 @@ function formatBundleStatus(status = "") {
   return labels[status] || status || "未知"
 }
 
+function formatChangeOperation(operation = "") {
+  const labels = {
+    create: "新增",
+    update: "修改",
+    delete: "删除",
+    reorder: "排序"
+  }
+  return labels[operation] || operation || "变更"
+}
+
+function formatChangeSourceType(sourceType = "") {
+  const labels = {
+    manual_skill_edit: "手工编辑",
+    work_order: "工单",
+    replay_proposal: "Replay",
+    api_skill_edit: "API",
+    default_candidate: "默认候选"
+  }
+  return labels[sourceType] || sourceType || "未知来源"
+}
+
+function formatChangeSnapshot(snapshot = null) {
+  if (!snapshot) return "-"
+  if (Array.isArray(snapshot.siblingOrder)) {
+    return `order: ${snapshot.order || "-"}\n${snapshot.siblingOrder.join(" -> ")}`
+  }
+  const parts = [
+    snapshot.title ? `title: ${snapshot.title}` : "",
+    snapshot.status ? `status: ${snapshot.status}` : "",
+    snapshot.content ? `content:\n${snapshot.content}` : "",
+    snapshot.structuredPayload ? `structuredPayload:\n${stringifyJson(snapshot.structuredPayload)}` : ""
+  ].filter(Boolean)
+  return parts.join("\n\n") || stringifyJson(snapshot)
+}
+
 function formatWorkOrderActionLabel(item = {}) {
   return item.conclusionType === "create_new" ? "新增技能条目" : "修改已有技能条目"
 }
@@ -2658,8 +2796,9 @@ function formatReuseJudgement(value = "") {
 
 function statusTone(status = "") {
   if (["active", "applied", "staged", "accepted", "closed"].includes(status)) return "success"
-  if (["rejected"].includes(status)) return "danger"
-  if (["candidate", "edited", "partially_applied", "partially_reviewed"].includes(status)) return "warning"
+  if (["rejected", "delete"].includes(status)) return "danger"
+  if (["candidate", "edited", "partially_applied", "partially_reviewed", "update", "reorder"].includes(status)) return "warning"
+  if (["create"].includes(status)) return "success"
   return "subtle"
 }
 
@@ -2703,7 +2842,7 @@ async function submitWorkOrderItemAction(itemId, reviewStatus, useEditedContent,
 async function jumpToSkill(skillCode = "") {
   if (!skillCode) return
   try {
-    const detail = await request(`/api/skill-items/${encodeURIComponent(skillCode)}`)
+    const detail = await request(buildBundleScopedUrl(`/api/skill-items/${encodeURIComponent(skillCode)}`))
     state.selectedProfileId = `${detail.item.layer}:${detail.item.profileKey}`
     state.selectedSkillCode = detail.item.skillCode
     state.selectedKind = detail.item.kind

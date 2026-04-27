@@ -6506,6 +6506,8 @@ const tests = [
         const workOrder = await workOrderService.getWorkOrder(replayTask.workOrderId);
         const item = workOrder.items[0];
         assert.ok(item);
+        const defaultCandidate = await bundleService.getDefaultCandidateBundle();
+        assert.equal(defaultCandidate.status, "candidate");
 
         await workOrderService.reviewItem(workOrder.id, item.itemId, {
           reviewStatus: "accepted",
@@ -6517,9 +6519,11 @@ const tests = [
         });
         assert.equal(applied.item.reviewStatus, "staged");
         assert.ok(applied.candidateBundle.id);
+        assert.equal(applied.candidateBundle.id, defaultCandidate.id);
         assert.equal(applied.candidateBundle.status, "candidate");
         assert.equal(applied.item.stagedBundleId, applied.candidateBundle.id);
         assert.ok(applied.item.appliedChange.afterSnapshot);
+        assert.ok((applied.candidateBundle.changeEntries || []).some((entry) => entry.sourceType === "work_order"));
 
         const targetSkillCode = applied.item.appliedChange.skillCode;
         const candidateSkillDir = await bundleService.getSkillDir(applied.candidateBundle.id);
@@ -6681,48 +6685,120 @@ const tests = [
     }
   },
   {
-    name: "Direct active skill item writes can be blocked in versioned mode",
+    name: "Skill item API writes default candidate and records atomic changes",
     run: async () => {
       await withTempConfig(async () => {
         config.skillVersioning.directActiveSkillItemWrites = "blocked";
+        const bundleService = new SkillBundleService();
+        await bundleService.ensureInitialized();
+        const skillManagementService = new SkillManagementService();
+        const activeBundle = await bundleService.getActiveBundle();
+        const defaultCandidate = await bundleService.getDefaultCandidateBundle();
+        assert.equal(defaultCandidate.status, "candidate");
+        assert.equal(defaultCandidate.baseBundleId, activeBundle.id);
+        assert.equal(defaultCandidate.isDefaultCandidate, true);
+        let createdSkillCode = "";
+
         await withTestServer(async ({ baseUrl }) => {
-          const blockedResponse = await fetch(`${baseUrl}/api/skill-items`, {
+          const bundleResponse = await fetch(`${baseUrl}/api/skill-bundles`);
+          assert.equal(bundleResponse.status, 200);
+          const bundlePayload = await bundleResponse.json();
+          assert.equal(bundlePayload.defaultCandidateBundle.id, defaultCandidate.id);
+
+          const activeTargetResponse = await fetch(`${baseUrl}/api/skill-items`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              targetBundleId: activeBundle.id,
               layer: "generic",
               profileKey: "generic",
               kind: "validation_rule",
-              title: "Blocked direct write",
+              title: "Blocked active target",
               content: "should not write active"
             })
           });
-          assert.equal(blockedResponse.status, 409);
-          assert.equal((await blockedResponse.json()).code, "direct_active_skill_write_blocked");
+          assert.equal(activeTargetResponse.status, 409);
+          assert.equal((await activeTargetResponse.json()).code, "direct_active_skill_write_blocked");
 
-          const draftResponse = await fetch(`${baseUrl}/api/skill-bundles/drafts`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ changeSummary: "API candidate" })
-          });
-          assert.equal(draftResponse.status, 201);
-          const draft = await draftResponse.json();
-          const candidateResponse = await fetch(`${baseUrl}/api/skill-items`, {
+          const createResponse = await fetch(`${baseUrl}/api/skill-items`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              targetBundleId: draft.id,
               layer: "generic",
               profileKey: "generic",
               kind: "validation_rule",
               title: "Candidate write",
-              content: "writes only candidate"
+              content: "writes only candidate",
+              changeSourceType: "manual_skill_edit",
+              createdBy: "tester"
             })
           });
-          assert.equal(candidateResponse.status, 201);
-          const created = await candidateResponse.json();
+          assert.equal(createResponse.status, 201);
+          const created = await createResponse.json();
           assert.ok(created.skillCode);
+          createdSkillCode = created.skillCode;
+          await assert.rejects(() => skillManagementService.getSkillItem(created.skillCode));
+
+          const createSecondResponse = await fetch(`${baseUrl}/api/skill-items`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              layer: "generic",
+              profileKey: "generic",
+              kind: "validation_rule",
+              title: "Candidate write second",
+              content: "second candidate-only item",
+              changeSourceType: "api_skill_edit",
+              createdBy: "tester"
+            })
+          });
+          assert.equal(createSecondResponse.status, 201);
+          const createdSecond = await createSecondResponse.json();
+
+          const patchResponse = await fetch(`${baseUrl}/api/skill-items/${encodeURIComponent(created.skillCode)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: "Candidate write updated",
+              content: "updated candidate-only content",
+              changeSourceType: "manual_skill_edit",
+              updatedBy: "tester"
+            })
+          });
+          assert.equal(patchResponse.status, 200);
+
+          const reorderResponse = await fetch(`${baseUrl}/api/skill-items/${encodeURIComponent(created.skillCode)}/reorder`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              direction: "down",
+              changeSourceType: "manual_skill_edit",
+              reorderedBy: "tester"
+            })
+          });
+          assert.equal(reorderResponse.status, 200);
+
+          const deleteResponse = await fetch(`${baseUrl}/api/skill-items/${encodeURIComponent(createdSecond.skillCode)}?changeSourceType=manual_skill_edit&deletedBy=tester`, {
+            method: "DELETE"
+          });
+          assert.equal(deleteResponse.status, 200);
         });
+
+        const candidateSkillDir = await bundleService.getSkillDir(defaultCandidate.id);
+        const candidateItem = await skillManagementService.getSkillItem(createdSkillCode, candidateSkillDir);
+        assert.equal(candidateItem.item.content, "updated candidate-only content");
+        await assert.rejects(() => skillManagementService.getSkillItem(createdSkillCode));
+
+        const refreshedCandidate = await bundleService.getBundle(defaultCandidate.id);
+        const operations = (refreshedCandidate.changeEntries || []).map((entry) => entry.operation);
+        assert.ok(operations.includes("create"));
+        assert.ok(operations.includes("update"));
+        assert.ok(operations.includes("reorder"));
+        assert.ok(operations.includes("delete"));
+        assert.equal(refreshedCandidate.diffSummary.create, 2);
+        assert.equal(refreshedCandidate.diffSummary.update, 1);
+        assert.equal(refreshedCandidate.diffSummary.reorder, 1);
+        assert.equal(refreshedCandidate.diffSummary.delete, 1);
       });
     }
   },

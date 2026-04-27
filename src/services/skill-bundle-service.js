@@ -23,9 +23,97 @@ const DEFAULT_DOMAIN_KNOWLEDGE = {
   ruleHints: [],
   antiPatterns: []
 };
+const DEFAULT_CANDIDATE_SOURCE_TYPE = "default_candidate";
+const CHANGE_TRACKED_FIELDS = ["title", "status", "content", "structuredPayload", "provenance", "review"];
 
 function now() {
   return new Date().toISOString();
+}
+
+function cloneJson(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function stableJson(value) {
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+function normalizeOperation(value = "") {
+  const normalized = String(value || "").trim();
+  if (normalized === "modify_existing") return "update";
+  if (normalized === "create_new") return "create";
+  if (["create", "update", "delete", "reorder"].includes(normalized)) return normalized;
+  return "update";
+}
+
+function computeChangedFields(beforeSnapshot = null, afterSnapshot = null, fallback = []) {
+  const before = beforeSnapshot && typeof beforeSnapshot === "object" ? beforeSnapshot : {};
+  const after = afterSnapshot && typeof afterSnapshot === "object" ? afterSnapshot : {};
+  const changed = CHANGE_TRACKED_FIELDS.filter((field) => stableJson(before[field]) !== stableJson(after[field]));
+  return changed.length ? changed : fallback;
+}
+
+function summarizeChangeEntries(entries = []) {
+  const summary = {
+    total: 0,
+    create: 0,
+    update: 0,
+    delete: 0,
+    reorder: 0,
+    bySourceType: {}
+  };
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const operation = normalizeOperation(entry.operation || entry.mode);
+    summary.total += 1;
+    summary[operation] = (summary[operation] || 0) + 1;
+    const sourceType = String(entry.sourceType || "unknown").trim() || "unknown";
+    summary.bySourceType[sourceType] = (summary.bySourceType[sourceType] || 0) + 1;
+  }
+  return summary;
+}
+
+function normalizeChangeEntry(change = {}) {
+  const beforeSnapshot = change.beforeSnapshot === undefined ? null : cloneJson(change.beforeSnapshot);
+  const afterSnapshot = change.afterSnapshot === undefined ? null : cloneJson(change.afterSnapshot);
+  const sourceType = String(change.sourceType || (change.workOrderId ? "work_order" : "manual_skill_edit")).trim() || "manual_skill_edit";
+  const sourceId = String(
+    change.sourceId ||
+      change.workOrderItemId ||
+      change.workOrderId ||
+      change.replayTaskId ||
+      change.sourceTaskId ||
+      ""
+  ).trim();
+  const operation = normalizeOperation(change.operation || change.mode);
+  const fallbackChangedFields = operation === "create" || operation === "delete"
+    ? ["skillCode"]
+    : operation === "reorder"
+      ? ["order"]
+      : [];
+  const changedFields = Array.isArray(change.changedFields) && change.changedFields.length
+    ? change.changedFields.map((item) => String(item || "").trim()).filter(Boolean)
+    : computeChangedFields(beforeSnapshot, afterSnapshot, fallbackChangedFields);
+  const skillCode = String(change.skillCode || afterSnapshot?.skillCode || beforeSnapshot?.skillCode || "").trim();
+  const layer = String(change.layer || afterSnapshot?.layer || beforeSnapshot?.layer || "").trim();
+  const profileKey = String(change.profileKey || afterSnapshot?.profileKey || beforeSnapshot?.profileKey || "").trim();
+  const kind = String(change.kind || afterSnapshot?.kind || beforeSnapshot?.kind || "").trim();
+
+  return {
+    ...cloneJson(change),
+    changeId: String(change.changeId || randomUUID()),
+    sourceType,
+    sourceId,
+    skillCode,
+    layer,
+    profileKey,
+    kind,
+    operation,
+    beforeSnapshot,
+    afterSnapshot,
+    changedFields,
+    createdAt: change.createdAt || change.stagedAt || now(),
+    createdBy: String(change.createdBy || change.stagedBy || change.appliedBy || "system").trim() || "system"
+  };
 }
 
 function isArrayEmpty(value) {
@@ -147,6 +235,7 @@ export class SkillBundleService {
           );
         }
         this.initialized = true;
+        await this.ensureDefaultCandidateBundle();
         return;
       }
 
@@ -190,6 +279,7 @@ export class SkillBundleService {
       await this.persistBundleMetadata(metadata, { skillDir: bundleDir, forceRuleIndex: true });
       await writeJson(config.activeSkillBundlePointerPath, { bundleId });
       this.initialized = true;
+      await this.ensureDefaultCandidateBundle();
     })();
 
     try {
@@ -289,9 +379,18 @@ export class SkillBundleService {
     const sqliteSnapshotPath = options.skipSqliteSnapshot
       ? metadata.sqliteSnapshotPath || ""
       : serializeRuntimePath(await this.createSqliteSnapshot(bundleId, skillDir));
+    const changeEntries = Array.isArray(metadata.changeEntries)
+      ? metadata.changeEntries.map((entry) => normalizeChangeEntry(entry))
+      : Array.isArray(metadata.stagedChanges)
+        ? metadata.stagedChanges.map((entry) => normalizeChangeEntry(entry))
+        : [];
     const nextMetadata = {
       ...metadata,
       files: metadata.files || [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
+      isDefaultCandidate: Boolean(metadata.isDefaultCandidate),
+      defaultForActiveBundleId: metadata.defaultForActiveBundleId || "",
+      changeEntries,
+      diffSummary: summarizeChangeEntries(changeEntries),
       ruleIndexVersion: ruleIndex.ruleIndexVersion,
       snapshotHash,
       sqliteSnapshotPath,
@@ -352,6 +451,62 @@ export class SkillBundleService {
     return pointer?.bundleId ? this.getBundle(pointer.bundleId) : null;
   }
 
+  async ensureDefaultCandidateBundle(options = {}) {
+    await this.ensureInitialized();
+    const activeBundle = await this.getActiveBundle();
+    if (!activeBundle) {
+      return null;
+    }
+
+    const bundles = await this.listBundles();
+    const candidates = bundles.filter(
+      (bundle) =>
+        bundle.status === "candidate" &&
+        bundle.isDefaultCandidate === true &&
+        bundle.baseBundleId === activeBundle.id &&
+        bundle.defaultForActiveBundleId === activeBundle.id
+    );
+    const selected = candidates[0] || null;
+    for (const duplicate of candidates.slice(1)) {
+      await this.persistBundleMetadata(
+        {
+          ...duplicate,
+          isDefaultCandidate: false,
+          defaultForActiveBundleId: "",
+          updatedAt: now()
+        },
+        { skillDir: await this.getSkillDir(duplicate.id), skipSqliteSnapshot: true }
+      );
+    }
+    if (selected) {
+      return selected.diffSummary
+        ? selected
+        : this.persistBundleMetadata(
+            {
+              ...selected,
+              updatedAt: now()
+            },
+            { skillDir: await this.getSkillDir(selected.id), skipSqliteSnapshot: true }
+          );
+    }
+    if (options.create === false) {
+      return null;
+    }
+
+    return this.createDraftBundle({
+      baseBundleId: activeBundle.id,
+      changeSummary: `Default candidate based on ${activeBundle.id}.`,
+      sourceType: DEFAULT_CANDIDATE_SOURCE_TYPE,
+      createdBy: "system",
+      isDefaultCandidate: true,
+      defaultForActiveBundleId: activeBundle.id
+    });
+  }
+
+  async getDefaultCandidateBundle() {
+    return this.ensureDefaultCandidateBundle();
+  }
+
   async getSkillDir(bundleId = "") {
     await this.ensureInitialized();
     if (!bundleId) {
@@ -379,14 +534,40 @@ export class SkillBundleService {
     return composed[DOMAIN_KNOWLEDGE_FILE] || DEFAULT_DOMAIN_KNOWLEDGE;
   }
 
-  async createCandidateBundle({ baseBundleId = "", proposal, proposalItems = [], replayTaskId = "", createdFromCaseIds = [], evaluationSummary = null }) {
+  async createCandidateBundle({
+    baseBundleId = "",
+    proposal,
+    proposalItems = [],
+    replayTaskId = "",
+    createdFromCaseIds = [],
+    evaluationSummary = null,
+    targetBundleId = ""
+  }) {
     await this.ensureInitialized();
-    const candidate = await this.createDraftBundle({
-      baseBundleId,
-      changeSummary: proposal?.summary || "Candidate bundle generated from refinement run.",
-      sourceType: replayTaskId ? "replay_proposal" : "refinement_run",
-      createdFromCaseIds
-    });
+    const candidate = targetBundleId
+      ? await this.getBundle(targetBundleId)
+      : await this.createDraftBundle({
+          baseBundleId,
+          changeSummary: proposal?.summary || "Candidate bundle generated from refinement run.",
+          sourceType: replayTaskId ? "replay_proposal" : "refinement_run",
+          createdFromCaseIds
+        });
+    if (!candidate) {
+      throw new Error("Candidate bundle not found");
+    }
+    if (candidate.status !== "candidate") {
+      throw new Error("Only candidate bundles can receive proposal items");
+    }
+    if (baseBundleId && candidate.baseBundleId !== baseBundleId) {
+      const error = new Error("Candidate bundle is not based on the requested base bundle");
+      error.code = "skill_bundle_base_mismatch";
+      error.details = {
+        candidateBundleId: candidate.id,
+        candidateBaseBundleId: candidate.baseBundleId,
+        baseBundleId
+      };
+      throw error;
+    }
     const targetDir = this.getBundleSkillDir(candidate.id);
 
     let ruleIndex = await this.skillRuleService.ensureBundleRuleIndex(candidate.id, targetDir, { force: true });
@@ -405,10 +586,11 @@ export class SkillBundleService {
     const metadata = {
       ...candidate,
       status: "candidate",
-      changeSummary: proposal?.summary || "Candidate bundle generated from refinement run.",
-      createdFromCaseIds,
+      changeSummary: targetBundleId ? candidate.changeSummary : proposal?.summary || "Candidate bundle generated from refinement run.",
       evaluationSummary,
       ruleIndexVersion: ruleIndex.ruleIndexVersion,
+      sourceType: candidate.sourceType === DEFAULT_CANDIDATE_SOURCE_TYPE ? candidate.sourceType : replayTaskId ? "replay_proposal" : "refinement_run",
+      createdFromCaseIds: [...new Set([...(candidate.createdFromCaseIds || []), ...createdFromCaseIds])],
       appliedProposalItemIds: [...(candidate.appliedProposalItemIds || []), ...proposalItems.map((item) => item.proposalItemId || item.id)],
       appliedReplayTaskIds: replayTaskId ? [...new Set([...(candidate.appliedReplayTaskIds || []), replayTaskId])] : candidate.appliedReplayTaskIds || [],
       updatedAt: now()
@@ -424,7 +606,10 @@ export class SkillBundleService {
     createdFromCaseIds = [],
     createdFromWorkOrderIds = [],
     createdBy = "system",
-    forkedFromBundleId = ""
+    forkedFromBundleId = "",
+    isDefaultCandidate = false,
+    defaultForActiveBundleId = "",
+    changeEntries = []
   } = {}) {
     await this.ensureInitialized();
     const activeBundle = await this.getActiveBundle();
@@ -452,6 +637,8 @@ export class SkillBundleService {
       forkedFromBundleId,
       status: "candidate",
       sourceType,
+      isDefaultCandidate: Boolean(isDefaultCandidate),
+      defaultForActiveBundleId: isDefaultCandidate ? defaultForActiveBundleId || baseBundle.id : "",
       files: [...MANAGED_SKILL_FILES, DOMAIN_KNOWLEDGE_FILE],
       changeSummary,
       createdBy,
@@ -462,6 +649,7 @@ export class SkillBundleService {
       appliedReplayTaskIds: [],
       stagedWorkOrderItemIds: [],
       stagedChanges: [],
+      changeEntries: changeEntries.map((entry) => normalizeChangeEntry(entry)),
       createdAt: now(),
       updatedAt: now()
     };
@@ -475,23 +663,26 @@ export class SkillBundleService {
     if (!baseBundle) {
       throw new Error("Base bundle not found");
     }
-    const bundles = await this.listBundles();
-    const existing = bundles.find(
-      (bundle) =>
-        bundle.status === "candidate" &&
-        bundle.baseBundleId === baseBundle.id &&
-        bundle.sourceType === "work_order_staging" &&
-        (!workOrderId || (bundle.createdFromWorkOrderIds || []).includes(workOrderId))
-    );
-    if (existing) {
-      return existing;
-    }
+    return this.ensureDefaultCandidateBundle();
+  }
 
-    return this.createDraftBundle({
-      baseBundleId: baseBundle.id,
-      changeSummary: changeSummary || `Work order staging candidate based on ${baseBundle.id}.`,
-      sourceType: "work_order_staging",
-      createdFromWorkOrderIds: workOrderId ? [workOrderId] : []
+  async recordCandidateChange(bundleId, change = {}) {
+    const bundle = await this.getBundle(bundleId);
+    if (!bundle) {
+      throw new Error("Bundle not found");
+    }
+    if (bundle.status !== "candidate") {
+      throw new Error("Only candidate bundles can receive skill changes");
+    }
+    const entry = normalizeChangeEntry(change);
+    const next = {
+      ...bundle,
+      changeEntries: [...(bundle.changeEntries || []), entry],
+      updatedAt: now()
+    };
+    return this.persistBundleMetadata(next, {
+      skillDir: await this.getSkillDir(bundleId),
+      forceRuleIndex: true
     });
   }
 
@@ -505,6 +696,12 @@ export class SkillBundleService {
     }
     const workOrderId = String(change.workOrderId || "").trim();
     const workOrderItemId = String(change.workOrderItemId || "").trim();
+    const entry = normalizeChangeEntry({
+      ...change,
+      sourceType: change.sourceType || "work_order",
+      sourceId: change.sourceId || workOrderItemId || workOrderId,
+      operation: change.operation || change.mode
+    });
     const next = {
       ...bundle,
       createdFromWorkOrderIds: workOrderId
@@ -515,11 +712,9 @@ export class SkillBundleService {
         : bundle.stagedWorkOrderItemIds || [],
       stagedChanges: [
         ...(bundle.stagedChanges || []),
-        {
-          ...change,
-          stagedAt: change.stagedAt || now()
-        }
+        entry
       ],
+      changeEntries: [...(bundle.changeEntries || []), entry],
       updatedAt: now()
     };
     return this.persistBundleMetadata(next, {
@@ -626,6 +821,8 @@ export class SkillBundleService {
       {
         ...candidate,
         status: "active",
+        isDefaultCandidate: false,
+        defaultForActiveBundleId: "",
         evaluationSummary: options.evaluationSummary || candidate.evaluationSummary || null,
         releasedAt,
         releasedBy: options.releasedBy || "system",
@@ -634,6 +831,7 @@ export class SkillBundleService {
       { skillDir: config.activeSkillDir, forceRuleIndex: true }
     );
     await writeJson(config.activeSkillBundlePointerPath, { bundleId: candidate.id });
+    await this.ensureDefaultCandidateBundle();
     return released;
   }
 
@@ -670,6 +868,8 @@ export class SkillBundleService {
       {
         ...target,
         status: "active",
+        isDefaultCandidate: false,
+        defaultForActiveBundleId: "",
         rollbackFromBundleId: activeBundle?.id || "",
         rollbackReason: options.reason || "",
         rolledForwardAt: now(),
@@ -678,6 +878,7 @@ export class SkillBundleService {
       { skillDir: config.activeSkillDir, forceRuleIndex: true }
     );
     await writeJson(config.activeSkillBundlePointerPath, { bundleId: target.id });
+    await this.ensureDefaultCandidateBundle();
     return activated;
   }
 
