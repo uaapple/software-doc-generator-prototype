@@ -8630,6 +8630,21 @@ const tests = [
     }
   },
   {
+    name: "Feedback pool supports global entry without project context",
+    run: async () => {
+      const script = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.js"), "utf8");
+
+      assert.ok(script.includes("全局反馈池共有"));
+      assert.ok(script.includes("function getModuleFilterOptions"));
+      assert.ok(script.includes("await refreshModuleOptions();"));
+      assert.ok(script.includes("function buildModuleOptions"));
+      assert.ok(script.includes("request(\"/api/rejections\")"));
+      assert.ok(script.includes("if (state.projectId) params.set(\"projectId\", state.projectId);"));
+      assert.ok(script.includes("const replayProjectId = state.projectId || selectedRecords[0]?.projectId"));
+      assert.ok(script.includes("loadReplayContext(state.selectedReplayProjectId, state.selectedReplayModuleId)"));
+    }
+  },
+  {
     name: "Hermes task queue runs queued work with single concurrency",
     run: async () => {
       const events = [];
