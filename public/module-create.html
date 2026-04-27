@@ -36,17 +36,21 @@
             <input name="moduleSkillKey" placeholder="charging_management" />
           </label>
 
-          <fieldset class="stack-card">
+          <fieldset class="stack-card module-init-mode-group">
             <legend>Skill 初始化方式</legend>
-            <label>
+            <label class="module-init-mode-option">
               <input type="radio" name="skillInitMode" value="import_existing" checked />
-              绑定已有 Module Skill
-              <span class="inline-hint">优先复用已有 module 层能力，后续可直接进入正式生成。</span>
+              <span class="module-init-mode-copy">
+                <strong>绑定已有 Module Skill</strong>
+                <span class="inline-hint">优先复用已有 module 层能力，后续可直接进入正式生成。</span>
+              </span>
             </label>
-            <label>
+            <label class="module-init-mode-option">
               <input type="radio" name="skillInitMode" value="cold_start" />
-              冷启动
-              <span class="inline-hint">创建后先保持空白 module skill；进入软件需求生成时会先引导做一次技能冷启动。</span>
+              <span class="module-init-mode-copy">
+                <strong>冷启动</strong>
+                <span class="inline-hint">创建后先保持空白 module skill；进入软件需求生成时会先引导做一次技能冷启动。</span>
+              </span>
             </label>
           </fieldset>
 
