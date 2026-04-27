@@ -152,3 +152,12 @@
 - Windows 平台的 Wiki 启停脚本现在已经补齐，说明独立 Wiki 已经不只面向类 Unix 环境。
 - 运行态数据也被显式保留进仓库：当前存在新的 rejection record、group、replay task 和 project review 状态快照，说明团队希望跨机器继续沿真实 `充电管理` 样本调试，而不是每次从空白状态重建现场。
 - 当前存在一个明显的临时残留文件：`skills/active/skill-manifest.json.tmp-3696-1776614708939-50e5911f-ec20-491a-88fd-43502de12381`，后续提交前应确认是否需要清理。
+
+## Windows VM zip 发布部署新增发现（2026-04-27）
+- 正式发布必须把“代码版本”和“正式运行态数据”分离；否则 zip 覆盖代码时可能误伤 `data/projects`、`data/uploads`、`data/skills.sqlite`、replay/work order 记录和生成产物。
+- 运行态 skill 也不能只看 `data/skills.sqlite`：系统仍会读写 active skill 文件和 bundles，因此正式环境需要同时外置 `APP_DATA_DIR` 与 `APP_SKILLS_DIR`。
+- 发布包适合从 `release/windows-prod` 用 `git archive` 生成，这样天然只包含版本控制内的发布内容，不会带入 `.git`、未跟踪文件、`node_modules` 或本机 `.env`。
+- Windows VM 的 `current` 更适合做成指向 `releases/<version>` 的 junction；这样服务工作目录稳定，回滚只需要重新指向上一版 release。
+- VM 首次安装服务需要一个 bootstrap 步骤：先用 `deploy-release.ps1 -NoServiceRestart` 解出第一版 `current`，再用 WinSW 安装 `SoftwareDocGenerator` 与 `SoftwareDocWiki`。
+- `scripts/build-release-zip.sh` 会把 `deploy-release.ps1` 和 `install-windows-services.ps1` 复制到 `release-dist/`，方便首次部署时先把部署脚本和 zip 一起拷到 VM 的 `incoming` 目录。
+- 初版发布需要把当前技能库作为 seed 带过去，但只适合在 `prod-skills` 为空时初始化；一旦正式环境已有 `prod-skills/active/skill-manifest.json`，后续代码包不能覆盖正式技能库，否则会丢失线上通过技能管理演进过的内容。

@@ -2712,6 +2712,80 @@ const tests = [
     }
   },
   {
+    name: "Runtime config supports external production data and skill directories",
+    run: async () => {
+      const source = await fs.readFile(new URL("../src/config.js", import.meta.url), "utf8");
+
+      assert.ok(source.includes("APP_ENV_FILE"));
+      assert.ok(source.includes("APP_DATA_DIR"));
+      assert.ok(source.includes("APP_SKILLS_DIR"));
+      assert.match(source, /const dataDir = resolveRuntimePath\(process\.env\.APP_DATA_DIR/);
+      assert.match(source, /const runtimeSkillDir = resolveRuntimePath\(process\.env\.APP_SKILLS_DIR/);
+      assert.match(source, /legacySkillDir:\s*repositorySkillSeedDir/);
+      assert.match(source, /activeSkillDir:\s*path\.join\(runtimeSkillDir,\s*"active"\)/);
+      assert.match(source, /skillBundleDir:\s*path\.join\(runtimeSkillDir,\s*"bundles"\)/);
+      assert.match(source, /skillDatabasePath:\s*path\.join\(dataDir,\s*"skills\.sqlite"\)/);
+    }
+  },
+  {
+    name: "Release zip script only packages deployable code from the production branch",
+    run: async () => {
+      const script = await fs.readFile(path.join(config.rootDir, "scripts", "build-release-zip.sh"), "utf8");
+      const packageJson = JSON.parse(await fs.readFile(path.join(config.rootDir, "package.json"), "utf8"));
+
+      assert.equal(packageJson.scripts["release:zip"], "bash scripts/build-release-zip.sh");
+      assert.ok(script.includes("release/windows-prod"));
+      assert.ok(script.includes("git status --porcelain=v1"));
+      assert.ok(script.includes("npm test"));
+      assert.ok(script.includes("npm run check:wiki"));
+      assert.ok(script.includes("npm run check:encoding"));
+      assert.ok(script.includes("git archive --format=zip"));
+      assert.ok(script.includes('"src"'));
+      assert.ok(script.includes('"public"'));
+      assert.ok(script.includes('"wiki"'));
+      assert.ok(script.includes('"skills"'));
+      assert.ok(script.includes('"scripts"'));
+      assert.ok(script.includes('"templates"'));
+      assert.ok(script.includes('"docs"'));
+      assert.ok(!script.includes('"data"'));
+      assert.ok(script.includes("latest.zip"));
+      assert.ok(script.includes("deploy-release.ps1"));
+      assert.ok(script.includes("install-windows-services.ps1"));
+    }
+  },
+  {
+    name: "Windows deployment scripts use external production data and rollback-aware service deployment",
+    run: async () => {
+      const deployScript = await fs.readFile(path.join(config.rootDir, "scripts", "deploy-release.ps1"), "utf8");
+      const serviceScript = await fs.readFile(path.join(config.rootDir, "scripts", "install-windows-services.ps1"), "utf8");
+      const docs = await fs.readFile(path.join(config.rootDir, "docs", "windows-vm-zip-deployment.md"), "utf8");
+
+      assert.ok(deployScript.includes("C:\\apps\\software-doc-generator\\incoming\\latest.zip"));
+      assert.ok(deployScript.includes("SoftwareDocGenerator"));
+      assert.ok(deployScript.includes("SoftwareDocWiki"));
+      assert.ok(deployScript.includes("prod-data"));
+      assert.ok(deployScript.includes("prod-skills"));
+      assert.ok(deployScript.includes("Initialize-ProdSkillsFromRelease"));
+      assert.ok(deployScript.includes("Release package does not contain the initial skill library"));
+      assert.ok(deployScript.includes("Production skill library already exists"));
+      assert.ok(deployScript.includes("Expand-Archive"));
+      assert.ok(deployScript.includes("npmCmd ci --omit=dev"));
+      assert.ok(deployScript.includes("Set-CurrentJunction"));
+      assert.ok(deployScript.includes("Rolling back current"));
+      assert.ok(deployScript.includes("/api/health"));
+      assert.ok(deployScript.includes("/health"));
+      assert.ok(serviceScript.includes("winsw-x64.exe"));
+      assert.ok(serviceScript.includes("APP_ENV_FILE"));
+      assert.ok(serviceScript.includes("src/server.js"));
+      assert.ok(serviceScript.includes("src/wiki-server.js"));
+      assert.ok(docs.includes("release/windows-prod"));
+      assert.ok(docs.includes("APP_DATA_DIR"));
+      assert.ok(docs.includes("APP_SKILLS_DIR"));
+      assert.ok(docs.includes("初版 seed 技能库"));
+      assert.ok(docs.includes("保留正式环境技能库"));
+    }
+  },
+  {
     name: "Hermes agent client builds anchor_index_build prompt and parses anchors",
     run: async () => {
       await withTempConfig(async () => {

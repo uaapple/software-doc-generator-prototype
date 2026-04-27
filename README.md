@@ -78,11 +78,25 @@
 
 - 仓库会先加载 `.env.defaults`，再加载 `.env`
 - 优先级: 系统环境变量 > `.env` > `.env.defaults`
+- `APP_ENV_FILE`: 可选，加载额外的外置环境文件，如正式 VM 的 `config\.env.production`
+- `APP_DATA_DIR`: 可选，将工程、上传物、任务产物、反馈与 `skills.sqlite` 放到代码目录之外
+- `APP_SKILLS_DIR`: 可选，将运行态可变技能目录放到代码目录之外，默认仍使用仓库内 `skills`
 - `PORT`: 服务端口，默认 `3000`
 - `WIKI_PORT`: Wiki 服务端口，默认 `3001`
 - `OPENAI_API_KEY`: 大模型 API Key
 - `OPENAI_MODEL`: 模型名，默认 `gpt-4.1-mini`
 - `OPENAI_BASE_URL`: 可选，自定义兼容 API 地址
+
+## 正式发布部署
+
+- 发布分支固定为 `release/windows-prod`
+- Mac 侧打包命令：`npm run release:zip`
+- 默认输出目录：`release-dist/`
+- Windows VM 一键部署脚本：`scripts/deploy-release.ps1`
+- Windows 服务安装脚本：`scripts/install-windows-services.ps1`
+- 详细流程见 `docs/windows-vm-zip-deployment.md`
+
+发布包不会包含 `.env`、`.git`、`node_modules`、`.local` 或运行态 `data/`。正式数据应通过 `APP_DATA_DIR` 和 `APP_SKILLS_DIR` 固定到 VM 外置目录，避免部署新代码时覆盖正式工程和技能库。
 
 ## 编码协作规范
 

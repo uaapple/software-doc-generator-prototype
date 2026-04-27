@@ -10,6 +10,7 @@
     "hermes:dev": "node --disable-warning=ExperimentalWarning --watch src/hermes-server.js",
     "wiki:start": "node --disable-warning=ExperimentalWarning src/wiki-server.js",
     "wiki:dev": "node --disable-warning=ExperimentalWarning --watch src/wiki-server.js",
+    "release:zip": "bash scripts/build-release-zip.sh",
     "test": "node --disable-warning=ExperimentalWarning tests/run-tests.js",
     "check:wiki": "node scripts/check-wiki.mjs",
     "check:skills-db-diff": "node scripts/check-skills-db-diff.mjs",

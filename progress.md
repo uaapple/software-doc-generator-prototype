@@ -304,3 +304,24 @@
   - Replay 已切换到“人工指定 targetArea + targetLayerConstraint，模型只能在该层内处理”的约束模式。
   - 新增 Replay Lab 后，当前最适合的验证路径已经从“读旧 replay 记录”变成“用历史 task 做模板，在当前规则下重跑并直接验证”。
   - 当前还带着真实运行态调试数据与一个疑似临时文件，后续提交前需要再次判断哪些应保留、哪些应清理。
+
+## 会话：2026-04-27（Windows VM zip 发布部署实现）
+
+### 阶段：Windows 正式发布部署
+- **状态：** complete
+- **执行的操作：**
+  - 修改 `src/config.js`，新增 `APP_ENV_FILE`、`APP_DATA_DIR`、`APP_SKILLS_DIR` 支持，使正式运行态数据和可变 skill 目录可以独立于代码发布目录。
+  - 新增 `scripts/build-release-zip.sh`，只允许在 `release/windows-prod` 且工作树干净时打 zip 包，并在打包前执行 `npm test`、`npm run check:wiki`、`npm run check:encoding`。
+  - 新增 `scripts/deploy-release.ps1`，用于 Windows VM 从 zip 一键部署新版本：停服务、解压到 `releases`、复制 `.env.production`、执行 `npm ci --omit=dev`、更新 `current` junction、重启服务、健康检查，并在失败时回滚。
+  - 根据初版发布需要，补充首次部署时从发布包 `skills/` 初始化 `prod-skills` 的逻辑；如果正式环境已有 `active/skill-manifest.json`，后续部署不覆盖正式技能库。
+  - 新增 `scripts/install-windows-services.ps1`，基于 WinSW 安装 `SoftwareDocGenerator` 与 `SoftwareDocWiki` 两个服务。
+  - 新增 `docs/windows-vm-zip-deployment.md`，补充 Mac 打包、VM 首次部署、服务安装和正式数据目录策略。
+  - 更新 `README.md`、`package.json`、`.gitignore` 和 `tests/run-tests.js`，把发布流程纳入命令入口与自动化验证。
+- **验证结果：**
+  - `npm test` -> `All 150 tests passed.`
+  - `npm run check:wiki` -> `Wiki validation passed.`
+  - `npm run check:encoding` -> `Encoding check passed for 293 tracked text files.`
+  - 使用 `APP_DATA_DIR=/tmp/software-doc-prod-data APP_SKILLS_DIR=/tmp/software-doc-prod-skills` 启动配置模块，确认数据目录、active skill 目录、bundle 目录和 `skills.sqlite` 路径都已切到外置目录。
+- **补充说明：**
+  - 本次没有实际执行 `npm run release:zip`，因为当前分支不是 `release/windows-prod`，且脚本本身会拒绝在非发布分支打正式包。
+  - `npm test` 曾触碰已跟踪的 `data/skills.sqlite`，已作为测试副作用还原，不纳入本次实现。
