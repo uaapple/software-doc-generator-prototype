@@ -1,0 +1,2101 @@
+{
+  "version": 1,
+  "layer": "module",
+  "profileKey": "扭矩干预",
+  "displayName": "扭矩干预",
+  "documentTypeScope": "",
+  "status": "active",
+  "items": [
+    {
+      "skillCode": "MOD-扭矩干预-bad_example-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "bad_example",
+      "title": "bad example 1",
+      "content": "软件应合理处理扭矩干预请求。",
+      "order": 1,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/examples/bad_examples.md",
+        "migratedFromRuleId": "MOD-torque_intervention-bad_example-001",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-bad_example-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "bad_example",
+      "title": "bad example 2",
+      "content": "当前后轴有请求时，系统按情况处理。",
+      "order": 2,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/examples/bad_examples.md",
+        "migratedFromRuleId": "MOD-torque_intervention-bad_example-002",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-bad_example-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "bad_example",
+      "title": "bad example 3",
+      "content": "软件应根据需要限制输出扭矩。",
+      "order": 3,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/examples/bad_examples.md",
+        "migratedFromRuleId": "MOD-torque_intervention-bad_example-003",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-bad_example-004",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "bad_example",
+      "title": "bad example 4",
+      "content": "当功能激活时，输出标志位。",
+      "order": 4,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/examples/bad_examples.md",
+        "migratedFromRuleId": "MOD-torque_intervention-bad_example-004",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-bad_example-005",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "bad_example",
+      "title": "bad example 5",
+      "content": "参考其他需求即可。",
+      "order": 5,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/examples/bad_examples.md",
+        "migratedFromRuleId": "MOD-torque_intervention-bad_example-005",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-bad_example-006",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "bad_example",
+      "title": "bad example 6",
+      "content": "ESC前后轴扭矩干预激活标志位根据对应轴请求综合判断。",
+      "order": 6,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/examples/bad_examples.md",
+        "migratedFromRuleId": "MOD-torque_intervention-bad_example-006",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-bad_example-007",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "bad_example",
+      "title": "bad example 7",
+      "content": "软件应提供接口定义、时序要求、诊断要求和越野模式处理。",
+      "order": 7,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/examples/bad_examples.md",
+        "migratedFromRuleId": "MOD-torque_intervention-bad_example-007",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "generation_priority",
+      "title": "generation priority 1",
+      "content": "先复现目标样例的章节骨架，再补足细节，不要先生成泛化条目。",
+      "order": 8,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "generation_priority",
+      "title": "generation priority 2",
+      "content": "前轴和后轴必须分别成条，不要统一写成对应轴。",
+      "order": 9,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "generation_priority",
+      "title": "generation priority 3",
+      "content": "优先生成四个核心设计主题：前轴激活、前轴计算、后轴激活、后轴计算。",
+      "order": 10,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-004",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "generation_priority",
+      "title": "generation priority 4",
+      "content": "若当前输入同时提供人工软件设计需求样例，优先复现样例中的核心条目数、主题顺序和章节归属，不要把代码还能支持的补充逻辑提前写成新的主条目。",
+      "order": 11,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-005",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "generation_priority",
+      "title": "generation priority 5",
+      "content": "若输出 schema 只能承载列表，也要在标题或正文中保留层级关系和对象归属，但不要输出具体章节数字。",
+      "order": 12,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-006",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "generation_priority",
+      "title": "generation priority 6",
+      "content": "只有在四个核心主题已经成型后，才考虑追加接口、时序、诊断等补充条目。",
+      "order": 13,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-007",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "generation_priority",
+      "title": "generation priority 7",
+      "content": "信号命名优先使用参考样例中的标准工程命名，不要让代码变量名主导最终正文。",
+      "order": 14,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-008",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "generation_priority",
+      "title": "generation priority 8",
+      "content": "对于 ISO 26262 场景，若样例和系统需求未明确要求，不得擅自把 ABS/EBD/CCO/ISA 等逻辑扩写进核心设计需求。",
+      "order": 15,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "good_example",
+      "title": "ESC干预前轴激活标志位判断",
+      "content": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：1. ESC 降扭请求前电机降扭有效 ESC_TqDecReqAct_F = 0x1，且前电机降扭请求标志位激活；2. 前轴制动再生活跃 ESC_EHB_RBS_F_Active = 0x1，且前轴制动再生扭矩请求标志位激活；3. 前驱电机增扭请求标志位 ESC_TrqIncReqActv_F = 0x1，且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+      "structuredPayload": {
+        "requirementId": "SMiVCU-10160",
+        "topic": "ESC干预前轴激活标志位判断",
+        "sectionTitle": "ESC前轴扭矩干预",
+        "requirementType": "activation_flag_logic",
+        "preferredTitle": "ESC前轴扭矩干预 - 激活标志位判断",
+        "requirementText": "当满足以下任一条件时，ESC干预前轴激活标志位置为 active：1. ESC 降扭请求前电机降扭有效 ESC_TqDecReqAct_F = 0x1，且前电机降扭请求标志位激活；2. 前轴制动再生活跃 ESC_EHB_RBS_F_Active = 0x1，且前轴制动再生扭矩请求标志位激活；3. 前驱电机增扭请求标志位 ESC_TrqIncReqActv_F = 0x1，且前电机升扭请求标志位激活。否则，ESC干预前轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+        "signals": [
+          "ESC_TqDecReqAct_F",
+          "ESC_EHB_RBS_F_Active",
+          "ESC_TrqIncReqActv_F",
+          "ESC_TrqIncReq_F",
+          "ESC_EHB_RBS_F_TargetRegenTrq",
+          "ESCWhlTq_bFrntAxleTqIntvActv"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "前轴降扭请求激活",
+          "前轴制动再生请求激活",
+          "前轴升扭请求激活",
+          "否则 inactive",
+          "阈值有效性判断"
+        ],
+        "keywords": [
+          "前轴",
+          "激活标志位",
+          "active",
+          "inactive",
+          "降扭请求",
+          "升扭请求",
+          "制动再生",
+          "阈值"
+        ]
+      },
+      "order": 16,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#examples",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "good_example",
+      "title": "ESC干预前轴扭矩计算",
+      "content": "ESC干预前轴扭矩的计算应按以下优先级顺序展开：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前前轴升扭请求标志位置为 active 时，ESC干预前轴目标扭矩 ESCWhlTq_tqTarFrntAxle = 前驱电机增扭请求 ESC_TrqIncReq_F；当前前轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarFrntAxle = ESC 前电机降扭请求 ESC_TqDecReq_F；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarFrntAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarFrntAxle = 扭矩仲裁后前轴目标扭矩 TqSpltArbt_tqTarFrntAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle。注：ESC干预前轴目标扭矩需经过前轴最大扭矩和前轴最小扭矩限制后得到。",
+      "structuredPayload": {
+        "requirementId": "SMiVCU-10597",
+        "topic": "ESC干预前轴扭矩计算",
+        "sectionTitle": "ESC前轴扭矩干预",
+        "requirementType": "torque_calculation_logic",
+        "preferredTitle": "ESC前轴扭矩干预 - 扭矩计算",
+        "requirementText": "ESC干预前轴扭矩的计算应按以下优先级顺序展开：前轴升扭请求 > 前轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前前轴升扭请求标志位置为 active 时，ESC干预前轴目标扭矩 ESCWhlTq_tqTarFrntAxle = 前驱电机增扭请求 ESC_TrqIncReq_F；当前前轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarFrntAxle = ESC 前电机降扭请求 ESC_TqDecReq_F；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarFrntAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarFrntAxle = 扭矩仲裁后前轴目标扭矩 TqSpltArbt_tqTarFrntAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle + ESC_EHB_RBS_F_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarFrntAxle = min(TqSpltArbt_tqTarFrntAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarFrntAxle = TqSpltArbt_tqTarFrntAxle。注：ESC干预前轴目标扭矩需经过前轴最大扭矩和前轴最小扭矩限制后得到。",
+        "signals": [
+          "ESCWhlTq_tqTarFrntAxle",
+          "ESC_TqDecReq_F",
+          "ESC_TrqIncReq_F",
+          "ESC_AEB_Active",
+          "ESC_CDP_Active",
+          "ESC_VLC_TorqCtrlActive",
+          "VehCfg_stRBCCtrlModeSel",
+          "TqSpltArbt_tqTarFrntAxle",
+          "ESC_EHB_RBS_F_TargetRegenTrq"
+        ],
+        "references": [
+          "SMiVCU-10160",
+          "SMiVCU-9469",
+          "SMiVCU-9477"
+        ],
+        "canonicalBranches": [
+          "升扭请求分支",
+          "降扭请求分支",
+          "AEB/CDP 置零分支",
+          "APA/ACC + VLC 分支",
+          "RBC 模式 0x3 分支",
+          "RBC 模式非 0x3 分支",
+          "默认扭矩分配分支",
+          "最大/最小扭矩限制"
+        ],
+        "keywords": [
+          "前轴",
+          "扭矩计算",
+          "优先级顺序",
+          "AEB",
+          "CDP",
+          "VLC",
+          "RBC模式",
+          "边界限制"
+        ]
+      },
+      "order": 17,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#examples",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "good_example",
+      "title": "ESC干预后轴激活标志位判断",
+      "content": "当满足以下任一条件时，ESC干预后轴激活标志位置为 active：1. ESC 降扭请求后电机降扭有效 ESC_TqDecReqAct_R = 0x1，且后电机降扭请求标志位激活；2. 后轴制动再生活跃 ESC_EHB_RBS_R_Active = 0x1，且后轴制动再生扭矩请求标志位激活；3. 后驱电机增扭请求标志位 ESC_TrqIncReqActv_R = 0x1，且后电机升扭请求标志位激活。否则，ESC干预后轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+      "structuredPayload": {
+        "requirementId": "SMiVCU-10161",
+        "topic": "ESC干预后轴激活标志位判断",
+        "sectionTitle": "ESC后轴扭矩干预",
+        "requirementType": "activation_flag_logic",
+        "preferredTitle": "ESC后轴扭矩干预 - 激活标志位判断",
+        "requirementText": "当满足以下任一条件时，ESC干预后轴激活标志位置为 active：1. ESC 降扭请求后电机降扭有效 ESC_TqDecReqAct_R = 0x1，且后电机降扭请求标志位激活；2. 后轴制动再生活跃 ESC_EHB_RBS_R_Active = 0x1，且后轴制动再生扭矩请求标志位激活；3. 后驱电机增扭请求标志位 ESC_TrqIncReqActv_R = 0x1，且后电机升扭请求标志位激活。否则，ESC干预后轴激活标志位置为 inactive。对降扭、升扭和制动再生请求还应结合 ESC 扭矩干预低阈值和高阈值进行有效性判断。",
+        "signals": [
+          "ESC_TqDecReqAct_R",
+          "ESC_EHB_RBS_R_Active",
+          "ESC_TrqIncReqActv_R",
+          "ESC_TrqIncReq_R",
+          "ESC_EHB_RBS_R_TargetRegenTrq",
+          "ESCWhlTq_bReAxleTqIntvActv"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "后轴降扭请求激活",
+          "后轴制动再生请求激活",
+          "后轴升扭请求激活",
+          "否则 inactive",
+          "阈值有效性判断"
+        ],
+        "keywords": [
+          "后轴",
+          "激活标志位",
+          "active",
+          "inactive",
+          "降扭请求",
+          "升扭请求",
+          "制动再生",
+          "阈值"
+        ]
+      },
+      "order": 18,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#examples",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-004",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "good_example",
+      "title": "ESC干预后轴扭矩计算",
+      "content": "ESC干预后轴扭矩的计算应按以下优先级顺序展开：后轴升扭请求 > 后轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前后轴升扭请求标志位置为 active 时，ESC干预后轴目标扭矩 ESCWhlTq_tqTarReAxle = 后驱电机增扭请求 ESC_TrqIncReq_R；当前后轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarReAxle = ESC 后电机降扭请求 ESC_TqDecReq_R；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarReAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarReAxle = 扭矩仲裁后后轴目标扭矩 TqSpltArbt_tqTarReAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle。注：ESC干预后轴目标扭矩需经过后轴最大扭矩和后轴最小扭矩限制后得到。",
+      "structuredPayload": {
+        "requirementId": "SMiVCU-10598",
+        "topic": "ESC干预后轴扭矩计算",
+        "sectionTitle": "ESC后轴扭矩干预",
+        "requirementType": "torque_calculation_logic",
+        "preferredTitle": "ESC后轴扭矩干预 - 扭矩计算",
+        "requirementText": "ESC干预后轴扭矩的计算应按以下优先级顺序展开：后轴升扭请求 > 后轴降扭请求 > 主动制动 > ADAS 的 VLC 工况 > RBS。当当前后轴升扭请求标志位置为 active 时，ESC干预后轴目标扭矩 ESCWhlTq_tqTarReAxle = 后驱电机增扭请求 ESC_TrqIncReq_R；当前后轴降扭请求标志位置为 active 时，ESCWhlTq_tqTarReAxle = ESC 后电机降扭请求 ESC_TqDecReq_R；当满足 AEB 激活或 CDP 激活任一条件时，ESCWhlTq_tqTarReAxle = 0；当 APA 激活或 ACC 激活，且 VLC 扭矩控制激活 ESC_VLC_TorqCtrlActive 时，ESCWhlTq_tqTarReAxle = 扭矩仲裁后后轴目标扭矩 TqSpltArbt_tqTarReAxle；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel = 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle + ESC_EHB_RBS_R_TargetRegenTrq, 0)；当前轴制动再生扭矩请求标志位激活且 VehCfg_stRBCCtrlModeSel != 0x3 ESPCtrlSplt 时，ESCWhlTq_tqTarReAxle = min(TqSpltArbt_tqTarReAxle, 0)；当前轴制动再生扭矩请求标志位未激活时，ESCWhlTq_tqTarReAxle = TqSpltArbt_tqTarReAxle。注：ESC干预后轴目标扭矩需经过后轴最大扭矩和后轴最小扭矩限制后得到。",
+        "signals": [
+          "ESCWhlTq_tqTarReAxle",
+          "ESC_TqDecReq_R",
+          "ESC_TrqIncReq_R",
+          "ESC_AEB_Active",
+          "ESC_CDP_Active",
+          "ESC_VLC_TorqCtrlActive",
+          "VehCfg_stRBCCtrlModeSel",
+          "TqSpltArbt_tqTarReAxle",
+          "ESC_EHB_RBS_R_TargetRegenTrq"
+        ],
+        "references": [
+          "SMiVCU-10161",
+          "SMiVCU-9469",
+          "SMiVCU-9477"
+        ],
+        "canonicalBranches": [
+          "升扭请求分支",
+          "降扭请求分支",
+          "AEB/CDP 置零分支",
+          "APA/ACC + VLC 分支",
+          "RBC 模式 0x3 分支",
+          "RBC 模式非 0x3 分支",
+          "默认扭矩分配分支",
+          "最大/最小扭矩限制"
+        ],
+        "keywords": [
+          "后轴",
+          "扭矩计算",
+          "优先级顺序",
+          "AEB",
+          "CDP",
+          "VLC",
+          "RBC模式",
+          "边界限制"
+        ]
+      },
+      "order": 19,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#examples",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-rule_hint-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "rule_hint",
+      "title": "torque_intervention rule hint",
+      "content": "",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "subdomain": "torque_intervention",
+        "sectionHints": [
+          "扭矩干预功能",
+          "ESC前轴扭矩干预",
+          "ESC后轴扭矩干预"
+        ],
+        "writingPattern": "优先按对象对称拆章；先写激活标志位判断，再写扭矩计算；保留优先级、阈值、模式和内部引用；输出只保留层级结构，不输出具体章节数字。",
+        "targetStyle": "输出应贴近工程侧人工样例的结构化控制逻辑写法。",
+        "sourceBasis": [
+          "input/software-requirement-writing-rules-vcu.md",
+          "input/system-requirements-example-torque-intervention.md",
+          "input/software-design-requirements-example-esc-torque-intervention.md"
+        ]
+      },
+      "order": 20,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#ruleHints",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z",
+      "documentTypeScope": "software_requirement"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-anti_pattern-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "anti_pattern",
+      "title": "anti pattern 1",
+      "content": "不要省略前轴/后轴等对称对象中的任一侧。",
+      "order": 21,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-005",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "ESP干预前轴状态判断",
+      "content": "当满足以下任意条件时，<前轴扭矩干预激活标志位>为1：1. <前轴RBS扭矩激活标志位>为1，且<RBS需求前轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <前轴降扭激活标志位>为1，且<前轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <前轴升扭激活标志位>为1，且<前轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<前轴扭矩干预激活标志位>为0。",
+      "structuredPayload": {
+        "topic": "ESP干预前轴状态判断",
+        "sectionTitle": "前轴扭矩干预",
+        "requirementType": "status_judgment_logic",
+        "preferredTitle": "前轴扭矩干预 - 状态判断",
+        "requirementText": "当满足以下任意条件时，<前轴扭矩干预激活标志位>为1：1. <前轴RBS扭矩激活标志位>为1，且<RBS需求前轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <前轴降扭激活标志位>为1，且<前轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <前轴升扭激活标志位>为1，且<前轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<前轴扭矩干预激活标志位>为0。",
+        "signals": [
+          "<前轴扭矩干预激活标志位>",
+          "<前轴RBS扭矩激活标志位>",
+          "<RBS需求前轴扭矩>",
+          "<前轴降扭激活标志位>",
+          "<前轴降扭目标扭矩>",
+          "<前轴升扭激活标志位>",
+          "<前轴升扭目标扭矩>",
+          "tqESCIntvMin",
+          "tqESCIntvMax"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "前轴RBS干预激活",
+          "前轴降扭干预激活",
+          "前轴升扭干预激活",
+          "否则为0"
+        ],
+        "keywords": [
+          "前轴",
+          "状态判断",
+          "扭矩干预激活",
+          "RBS",
+          "升扭",
+          "降扭"
+        ]
+      },
+      "order": 21,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-anti_pattern-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "anti_pattern",
+      "title": "anti pattern 2",
+      "content": "不要把优先级顺序或默认路径省略掉。",
+      "order": 22,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-006",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "ESP干预前轴扭矩计算",
+      "content": "当前轴升扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的前轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的前轴目标扭矩>=<仲裁后的前轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的前轴目标扭矩>=min(<ESC干涉的滑行回收前轴目标扭矩>+<RBS需求前轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的前轴目标扭矩>=min(<仲裁后的前轴目标扭矩>,0)；否则承接<仲裁后的前轴目标扭矩>。其中，<ESC干涉的滑行回收前轴目标扭矩>需根据前轴RBS激活状态和上一时刻量计算。注：结果需经过前轴最大/最小允许扭矩限制。",
+      "structuredPayload": {
+        "topic": "ESP干预前轴扭矩计算",
+        "sectionTitle": "前轴扭矩干预",
+        "requirementType": "torque_calculation_logic",
+        "preferredTitle": "前轴扭矩干预 - 扭矩计算",
+        "requirementText": "当前轴升扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的前轴目标扭矩>=<前轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的前轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的前轴目标扭矩>=<仲裁后的前轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的前轴目标扭矩>=min(<ESC干涉的滑行回收前轴目标扭矩>+<RBS需求前轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的前轴目标扭矩>=min(<仲裁后的前轴目标扭矩>,0)；否则承接<仲裁后的前轴目标扭矩>。其中，<ESC干涉的滑行回收前轴目标扭矩>需根据前轴RBS激活状态和上一时刻量计算。注：结果需经过前轴最大/最小允许扭矩限制。",
+        "signals": [
+          "<ESC干预后的前轴目标扭矩>",
+          "<前轴升扭目标扭矩>",
+          "<前轴降扭目标扭矩>",
+          "<仲裁后的前轴目标扭矩>",
+          "<ESC干涉的滑行回收前轴目标扭矩>",
+          "<RBS需求前轴扭矩>",
+          "<RBC控制模式状态>",
+          "VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)",
+          "<前轴最大允许扭矩>",
+          "<前轴最小允许扭矩>"
+        ],
+        "references": [
+          "ESP干预前轴状态判断"
+        ],
+        "canonicalBranches": [
+          "升扭分支",
+          "降扭分支",
+          "AEB/CDP置零分支",
+          "APA/ACC承接分支",
+          "RBC模式分支",
+          "默认承接分支",
+          "滑行回收目标扭矩计算方法",
+          "最大/最小允许扭矩限制"
+        ],
+        "keywords": [
+          "前轴",
+          "扭矩计算",
+          "RBC控制模式",
+          "滑行回收",
+          "上一时刻量",
+          "限幅"
+        ]
+      },
+      "order": 22,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-anti_pattern-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "anti_pattern",
+      "title": "anti pattern 3",
+      "content": "不要把工程变量名替换成笼统自然语言。",
+      "order": 23,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-007",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "计算前轴仅RBS激活标志位",
+      "content": "当以下条件全部满足时，将<前轴仅RBS激活标志位>置1，否则置0：1. [前轴升扭干预激活]=0；2. [前轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [前轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+      "structuredPayload": {
+        "topic": "计算前轴仅RBS激活标志位",
+        "sectionTitle": "前轴扭矩干预",
+        "requirementType": "state_flag_logic",
+        "preferredTitle": "前轴扭矩干预 - 仅RBS激活标志位",
+        "requirementText": "当以下条件全部满足时，将<前轴仅RBS激活标志位>置1，否则置0：1. [前轴升扭干预激活]=0；2. [前轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [前轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+        "signals": [
+          "<前轴仅RBS激活标志位>",
+          "[前轴升扭干预激活]",
+          "[前轴降扭干预激活]",
+          "[前轴RBS干预激活]",
+          "<ABS激活标志位>",
+          "<EBD激活标志位>",
+          "<AEB激活标志位>",
+          "<CDP激活标志位>",
+          "<APA激活标志位>",
+          "<ACC激活标志位>",
+          "<泊车请求扭矩有效>"
+        ],
+        "references": [
+          "ESP干预前轴状态判断",
+          "ESP干预前轴扭矩计算"
+        ],
+        "canonicalBranches": [
+          "升扭未激活",
+          "降扭未激活",
+          "主动安全功能均未激活",
+          "RBS干预未激活",
+          "APA/ACC与泊车请求条件"
+        ],
+        "keywords": [
+          "前轴",
+          "仅RBS激活标志位",
+          "布尔判定",
+          "主动安全功能"
+        ]
+      },
+      "order": 23,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-anti_pattern-004",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "anti_pattern",
+      "title": "anti pattern 4",
+      "content": "不要输出没有来源依据的内部引用编号。",
+      "order": 24,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-008",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "ESP干预后轴状态判断",
+      "content": "当满足以下任意条件时，<后轴扭矩干预激活标志位>为1：1. <后轴RBS扭矩激活标志位>为1，且<RBS需求后轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <后轴降扭激活标志位>为1，且<后轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <后轴升扭激活标志位>为1，且<后轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<后轴扭矩干预激活标志位>为0。",
+      "structuredPayload": {
+        "topic": "ESP干预后轴状态判断",
+        "sectionTitle": "后轴扭矩干预",
+        "requirementType": "status_judgment_logic",
+        "preferredTitle": "后轴扭矩干预 - 状态判断",
+        "requirementText": "当满足以下任意条件时，<后轴扭矩干预激活标志位>为1：1. <后轴RBS扭矩激活标志位>为1，且<RBS需求后轴扭矩>位于tqESCIntvMin与tqESCIntvMax之间；2. <后轴降扭激活标志位>为1，且<后轴降扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间；3. <后轴升扭激活标志位>为1，且<后轴升扭目标扭矩>位于tqESCIntvMin与tqESCIntvMax之间。否则，<后轴扭矩干预激活标志位>为0。",
+        "signals": [
+          "<后轴扭矩干预激活标志位>",
+          "<后轴RBS扭矩激活标志位>",
+          "<RBS需求后轴扭矩>",
+          "<后轴降扭激活标志位>",
+          "<后轴降扭目标扭矩>",
+          "<后轴升扭激活标志位>",
+          "<后轴升扭目标扭矩>",
+          "tqESCIntvMin",
+          "tqESCIntvMax"
+        ],
+        "references": [],
+        "canonicalBranches": [
+          "后轴RBS干预激活",
+          "后轴降扭干预激活",
+          "后轴升扭干预激活",
+          "否则为0"
+        ],
+        "keywords": [
+          "后轴",
+          "状态判断",
+          "扭矩干预激活",
+          "RBS",
+          "升扭",
+          "降扭"
+        ]
+      },
+      "order": 24,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-anti_pattern-005",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "anti_pattern",
+      "title": "anti pattern 5",
+      "content": "不要把前轴和后轴合并成一个对应轴需求。",
+      "order": 25,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-009",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "ESP干预后轴扭矩计算",
+      "content": "当后轴升扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的后轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的后轴目标扭矩>=<仲裁后的后轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的后轴目标扭矩>=min(<ESC干涉的滑行回收后轴目标扭矩>+<RBS需求后轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的后轴目标扭矩>=min(<仲裁后的后轴目标扭矩>,0)；否则承接<仲裁后的后轴目标扭矩>。其中，<ESC干涉的滑行回收后轴目标扭矩>需根据后轴RBS激活状态和上一时刻量计算。注：结果需经过后轴最大/最小允许扭矩限制。",
+      "structuredPayload": {
+        "topic": "ESP干预后轴扭矩计算",
+        "sectionTitle": "后轴扭矩干预",
+        "requirementType": "torque_calculation_logic",
+        "preferredTitle": "后轴扭矩干预 - 扭矩计算",
+        "requirementText": "当后轴升扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴升扭目标扭矩>；否则，当降扭干预激活=1时，<ESC干预后的后轴目标扭矩>=<后轴降扭目标扭矩>；否则，当AEB/CDP等任一主动安全功能激活时，<ESC干预后的后轴目标扭矩>=0；否则，当APA或ACC激活且<泊车请求扭矩有效>=1时，<ESC干预后的后轴目标扭矩>=<仲裁后的后轴目标扭矩>；否则，当RBS干预激活且<RBC控制模式状态>=VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)时，<ESC干预后的后轴目标扭矩>=min(<ESC干涉的滑行回收后轴目标扭矩>+<RBS需求后轴扭矩>,0)；当RBC控制模式不为该值时，<ESC干预后的后轴目标扭矩>=min(<仲裁后的后轴目标扭矩>,0)；否则承接<仲裁后的后轴目标扭矩>。其中，<ESC干涉的滑行回收后轴目标扭矩>需根据后轴RBS激活状态和上一时刻量计算。注：结果需经过后轴最大/最小允许扭矩限制。",
+        "signals": [
+          "<ESC干预后的后轴目标扭矩>",
+          "<后轴升扭目标扭矩>",
+          "<后轴降扭目标扭矩>",
+          "<仲裁后的后轴目标扭矩>",
+          "<ESC干涉的滑行回收后轴目标扭矩>",
+          "<RBS需求后轴扭矩>",
+          "<RBC控制模式状态>",
+          "VehCfg_stRBCCtrlModeESPCtrlSplt_SC(3)",
+          "<后轴最大允许扭矩>",
+          "<后轴最小允许扭矩>"
+        ],
+        "references": [
+          "ESP干预后轴状态判断"
+        ],
+        "canonicalBranches": [
+          "升扭分支",
+          "降扭分支",
+          "AEB/CDP置零分支",
+          "APA/ACC承接分支",
+          "RBC模式分支",
+          "默认承接分支",
+          "滑行回收目标扭矩计算方法",
+          "最大/最小允许扭矩限制"
+        ],
+        "keywords": [
+          "后轴",
+          "扭矩计算",
+          "RBC控制模式",
+          "滑行回收",
+          "上一时刻量",
+          "限幅"
+        ]
+      },
+      "order": 25,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-anti_pattern-006",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "anti_pattern",
+      "title": "anti pattern 6",
+      "content": "不要在四个核心设计主题缺失时，优先输出接口总表、执行周期、越野 TCS 等泛化条目。",
+      "order": 26,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-good_example-010",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "good_example",
+      "title": "计算后轴仅RBS激活标志位",
+      "content": "当以下条件全部满足时，将<后轴仅RBS激活标志位>置1，否则置0：1. [后轴升扭干预激活]=0；2. [后轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [后轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+      "structuredPayload": {
+        "topic": "计算后轴仅RBS激活标志位",
+        "sectionTitle": "后轴扭矩干预",
+        "requirementType": "state_flag_logic",
+        "preferredTitle": "后轴扭矩干预 - 仅RBS激活标志位",
+        "requirementText": "当以下条件全部满足时，将<后轴仅RBS激活标志位>置1，否则置0：1. [后轴升扭干预激活]=0；2. [后轴降扭干预激活]=0；3. <ABS激活标志位>、<EBD激活标志位>、<AEB激活标志位>、<CDP激活标志位>全部为0；4. [后轴RBS干预激活]=0；5. <APA激活标志位>且<ACC激活标志位>为0，或<泊车请求扭矩有效>为0。",
+        "signals": [
+          "<后轴仅RBS激活标志位>",
+          "[后轴升扭干预激活]",
+          "[后轴降扭干预激活]",
+          "[后轴RBS干预激活]",
+          "<ABS激活标志位>",
+          "<EBD激活标志位>",
+          "<AEB激活标志位>",
+          "<CDP激活标志位>",
+          "<APA激活标志位>",
+          "<ACC激活标志位>",
+          "<泊车请求扭矩有效>"
+        ],
+        "references": [
+          "ESP干预后轴状态判断",
+          "ESP干预后轴扭矩计算"
+        ],
+        "canonicalBranches": [
+          "升扭未激活",
+          "降扭未激活",
+          "主动安全功能均未激活",
+          "RBS干预未激活",
+          "APA/ACC与泊车请求条件"
+        ],
+        "keywords": [
+          "后轴",
+          "仅RBS激活标志位",
+          "布尔判定",
+          "主动安全功能"
+        ]
+      },
+      "order": 26,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-anti_pattern-007",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "anti_pattern",
+      "title": "anti pattern 7",
+      "content": "不要只做系统需求复述，要尽量落到激活条件、输出变量、分支和边界处理。",
+      "order": 27,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#antiPatterns",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-009",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 9",
+      "content": "若输入包含系统需求和模型代码，详细设计优先形成六个核心主题：前轴状态判断、前轴扭矩计算、前轴仅RBS激活标志位、后轴状态判断、后轴扭矩计算、后轴仅RBS激活标志位。",
+      "order": 27,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_policy_setting-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_policy_setting",
+      "title": "source policy standard",
+      "content": "",
+      "structuredPayload": {
+        "key": "standard",
+        "value": "ISO 26262"
+      },
+      "order": 28,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.standard",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-010",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 10",
+      "content": "详细设计应先写前轴三条，再以对称方式展开后轴三条，避免在对象结构尚未稳定前先写补充条目。",
+      "order": 28,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_policy_setting-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_policy_setting",
+      "title": "single source of truth",
+      "content": "",
+      "structuredPayload": {
+        "key": "singleSourceOfTruth",
+        "value": true
+      },
+      "order": 29,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.singleSourceOfTruth",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-011",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 11",
+      "content": "前后轴仅RBS激活标志位属于详细设计核心，不应被当作可有可无的补充噪声。",
+      "order": 29,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_policy_setting-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_policy_setting",
+      "title": "forbid code style signals",
+      "content": "",
+      "structuredPayload": {
+        "key": "forbidCodeStyleSignals",
+        "value": true
+      },
+      "order": 30,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.forbidCodeStyleSignals",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-generation_priority-012",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "generation_priority",
+      "title": "generation priority 12",
+      "content": "ESC干涉的滑行回收目标扭矩计算方法应并入对应轴的扭矩计算条目，不单独升格为新的主章节。",
+      "order": 30,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-code_style_prefix-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "code_style_prefix",
+      "title": "code style prefix 1",
+      "content": "icesc_",
+      "order": 31,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-rule_hint-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "documentTypeScope": "detail_design",
+      "kind": "rule_hint",
+      "title": "torque_intervention detail design rule hint",
+      "content": "",
+      "structuredPayload": {
+        "domain": "embedded_vcu",
+        "documentType": "detail_design",
+        "subdomain": "torque_intervention",
+        "sectionHints": [
+          "前轴状态判断",
+          "前轴扭矩计算",
+          "前轴仅RBS激活标志位",
+          "后轴状态判断",
+          "后轴扭矩计算",
+          "后轴仅RBS激活标志位"
+        ],
+        "writingPattern": "前后轴镜像展开；每轴先写状态判断，再写扭矩计算与仅RBS激活标志位；在扭矩计算条目内保留其中/注、模式分支和限幅说明。",
+        "targetStyle": "输出应贴近工程侧详细设计条目的原文式实现展开。",
+        "sourceBasis": [
+          "系统需求",
+          "模型代码文件",
+          "扭矩干预详细设计人工整理稿"
+        ]
+      },
+      "order": 31,
+      "status": "active",
+      "sectionKey": "default"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-code_style_prefix-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "code_style_prefix",
+      "title": "code style prefix 2",
+      "content": "icadas_",
+      "order": 32,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-code_style_prefix-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "code_style_prefix",
+      "title": "code style prefix 3",
+      "content": "ACCtl_",
+      "order": 33,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-code_style_prefix-004",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "code_style_prefix",
+      "title": "code style prefix 4",
+      "content": "ParkCtrl_",
+      "order": 34,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_TqDecReqAct_F",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TqDecReqAct_F",
+        "aliases": [
+          "icesc_bFrntAxleTqDecActv"
+        ]
+      },
+      "order": 35,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_EHB_RBS_F_Active",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_EHB_RBS_F_Active",
+        "aliases": [
+          "icesc_bFrntAxleRBSTqActv"
+        ]
+      },
+      "order": 36,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_TrqIncReqActv_F",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TrqIncReqActv_F",
+        "aliases": [
+          "icesc_bFrntAxleTqIncActv"
+        ]
+      },
+      "order": 37,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-004",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_TrqIncReq_F",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TrqIncReq_F",
+        "aliases": [
+          "icesc_tqReqFrntAxleInc"
+        ]
+      },
+      "order": 38,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-005",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_TqDecReq_F",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TqDecReq_F",
+        "aliases": [
+          "icesc_tqReqFrntAxleDec"
+        ]
+      },
+      "order": 39,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-006",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_EHB_RBS_F_TargetRegenTrq",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_EHB_RBS_F_TargetRegenTrq",
+        "aliases": [
+          "icesc_tqRBSReqFrntAxle"
+        ]
+      },
+      "order": 40,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-007",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_TqDecReqAct_R",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TqDecReqAct_R",
+        "aliases": [
+          "icesc_bReAxleTqDecActv"
+        ]
+      },
+      "order": 41,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-008",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_EHB_RBS_R_Active",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_EHB_RBS_R_Active",
+        "aliases": [
+          "icesc_bReAxleRBSTqActv"
+        ]
+      },
+      "order": 42,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-009",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_TrqIncReqActv_R",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TrqIncReqActv_R",
+        "aliases": [
+          "icesc_bReAxleTqIncActv"
+        ]
+      },
+      "order": 43,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-010",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_TrqIncReq_R",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TrqIncReq_R",
+        "aliases": [
+          "icesc_tqReqReAxleInc"
+        ]
+      },
+      "order": 44,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-011",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_TqDecReq_R",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TqDecReq_R",
+        "aliases": [
+          "icesc_tqReqReAxleDec"
+        ]
+      },
+      "order": 45,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-012",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_EHB_RBS_R_TargetRegenTrq",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_EHB_RBS_R_TargetRegenTrq",
+        "aliases": [
+          "icesc_tqRBSReqReAxle"
+        ]
+      },
+      "order": 46,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-013",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_AEB_Active",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_AEB_Active",
+        "aliases": [
+          "icadas_bAEBActv"
+        ]
+      },
+      "order": 47,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-014",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_CDP_Active",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_CDP_Active",
+        "aliases": [
+          "icesc_bCDPActv"
+        ]
+      },
+      "order": 48,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-source_alias-015",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "source_alias",
+      "title": "source alias ESC_VLC_TorqCtrlActive",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_VLC_TorqCtrlActive",
+        "aliases": [
+          "icadas_bTqVLCTrgtReqVld"
+        ]
+      },
+      "order": 49,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-normalization_rule-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "normalization_rule",
+      "title": "normalization rule 1",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "AEB/CDP/ABS/EBD任一功能",
+        "replacement": "AEB或CDP任一功能"
+      },
+      "order": 50,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-normalization_rule-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "normalization_rule",
+      "title": "normalization rule 2",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "主动制动（AEB/CDP/ABS/EBD）",
+        "replacement": "主动制动（AEB/CDP）"
+      },
+      "order": 51,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-normalization_rule-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "normalization_rule",
+      "title": "normalization rule 3",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "；4. 前轴CCO/ISA扭矩请求有效"
+      },
+      "order": 52,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-normalization_rule-004",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "normalization_rule",
+      "title": "normalization rule 4",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "；4. 后轴CCO/ISA扭矩请求有效"
+      },
+      "order": 53,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-forbidden_expansion-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion activation_flag_logic",
+      "content": "",
+      "structuredPayload": {
+        "topic": "activation_flag_logic",
+        "entries": [
+          "CCO",
+          "ISA"
+        ]
+      },
+      "order": 54,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.forbiddenExpansions",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-forbidden_expansion-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion torque_calculation_logic",
+      "content": "",
+      "structuredPayload": {
+        "topic": "torque_calculation_logic",
+        "entries": [
+          "ABS",
+          "EBD",
+          "CCO",
+          "ISA"
+        ]
+      },
+      "order": 55,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#sourceOfTruthPolicy.forbiddenExpansions",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-document_blueprint_section-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "document_blueprint_section",
+      "title": "preferred function section 扭矩干预功能",
+      "content": "",
+      "structuredPayload": {
+        "role": "preferredFunctionSection",
+        "title": "扭矩干预功能"
+      },
+      "order": 56,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.preferredFunctionSection",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-document_blueprint_section-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "document_blueprint_section",
+      "title": "preferred subsection ESC前轴扭矩干预",
+      "content": "",
+      "structuredPayload": {
+        "role": "preferredSubsection",
+        "title": "ESC前轴扭矩干预",
+        "coreRequirementTypes": [
+          "activation_flag_logic",
+          "torque_calculation_logic"
+        ]
+      },
+      "order": 57,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.preferredSubsections",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-document_blueprint_section-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "document_blueprint_section",
+      "title": "preferred subsection ESC后轴扭矩干预",
+      "content": "",
+      "structuredPayload": {
+        "role": "preferredSubsection",
+        "title": "ESC后轴扭矩干预",
+        "coreRequirementTypes": [
+          "activation_flag_logic",
+          "torque_calculation_logic"
+        ]
+      },
+      "order": 58,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.preferredSubsections",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-document_blueprint_policy-001",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy coreFirst",
+      "content": "",
+      "structuredPayload": {
+        "key": "coreFirst",
+        "value": true
+      },
+      "order": 59,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-document_blueprint_policy-002",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy preferSymmetricExpansion",
+      "content": "",
+      "structuredPayload": {
+        "key": "preferSymmetricExpansion",
+        "value": true
+      },
+      "order": 60,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-document_blueprint_policy-003",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy preferObjectSpecificRequirements",
+      "content": "",
+      "structuredPayload": {
+        "key": "preferObjectSpecificRequirements",
+        "value": true
+      },
+      "order": 61,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    },
+    {
+      "skillCode": "MOD-扭矩干预-document_blueprint_policy-004",
+      "layer": "module",
+      "profileKey": "扭矩干预",
+      "kind": "document_blueprint_policy",
+      "title": "document blueprint policy discourageGenericScatterRequirements",
+      "content": "",
+      "structuredPayload": {
+        "key": "discourageGenericScatterRequirements",
+        "value": true
+      },
+      "order": 62,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/modules/torque_intervention/domain-knowledge.json#documentBlueprint.targetOutputPolicy",
+        "migrationBatchId": "2026-04-16T07:26:49.700Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.700Z",
+      "updatedAt": "2026-04-16T07:26:49.700Z"
+    }
+  ]
+}

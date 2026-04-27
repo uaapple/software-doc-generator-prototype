@@ -1,0 +1,758 @@
+{
+  "version": 1,
+  "layer": "domain",
+  "profileKey": "embedded_vcu",
+  "displayName": "embedded_vcu",
+  "documentTypeScope": "",
+  "status": "active",
+  "items": [
+    {
+      "skillCode": "DOM-embedded_vcu-source_policy_setting-001",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_policy_setting",
+      "title": "source policy standard",
+      "content": "",
+      "structuredPayload": {
+        "key": "standard",
+        "value": "ISO 26262"
+      },
+      "order": 1,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.standard",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_policy_setting-002",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_policy_setting",
+      "title": "single source of truth",
+      "content": "",
+      "structuredPayload": {
+        "key": "singleSourceOfTruth",
+        "value": true
+      },
+      "order": 2,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.singleSourceOfTruth",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_policy_setting-003",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_policy_setting",
+      "title": "forbid code style signals",
+      "content": "",
+      "structuredPayload": {
+        "key": "forbidCodeStyleSignals",
+        "value": true
+      },
+      "order": 3,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.forbidCodeStyleSignals",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-code_style_prefix-001",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "code_style_prefix",
+      "title": "code style prefix 1",
+      "content": "icesc_",
+      "order": 4,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-code_style_prefix-002",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "code_style_prefix",
+      "title": "code style prefix 2",
+      "content": "icadas_",
+      "order": 5,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-code_style_prefix-003",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "code_style_prefix",
+      "title": "code style prefix 3",
+      "content": "ACCtl_",
+      "order": 6,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-code_style_prefix-004",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "code_style_prefix",
+      "title": "code style prefix 4",
+      "content": "ParkCtrl_",
+      "order": 7,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.codeStylePrefixes",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-001",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_TqDecReqAct_F",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TqDecReqAct_F",
+        "aliases": [
+          "icesc_bFrntAxleTqDecActv"
+        ]
+      },
+      "order": 8,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-002",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_EHB_RBS_F_Active",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_EHB_RBS_F_Active",
+        "aliases": [
+          "icesc_bFrntAxleRBSTqActv"
+        ]
+      },
+      "order": 9,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-003",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_TrqIncReqActv_F",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TrqIncReqActv_F",
+        "aliases": [
+          "icesc_bFrntAxleTqIncActv"
+        ]
+      },
+      "order": 10,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-004",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_TrqIncReq_F",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TrqIncReq_F",
+        "aliases": [
+          "icesc_tqReqFrntAxleInc"
+        ]
+      },
+      "order": 11,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-005",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_TqDecReq_F",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TqDecReq_F",
+        "aliases": [
+          "icesc_tqReqFrntAxleDec"
+        ]
+      },
+      "order": 12,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-006",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_EHB_RBS_F_TargetRegenTrq",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_EHB_RBS_F_TargetRegenTrq",
+        "aliases": [
+          "icesc_tqRBSReqFrntAxle"
+        ]
+      },
+      "order": 13,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-007",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_TqDecReqAct_R",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TqDecReqAct_R",
+        "aliases": [
+          "icesc_bReAxleTqDecActv"
+        ]
+      },
+      "order": 14,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-008",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_EHB_RBS_R_Active",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_EHB_RBS_R_Active",
+        "aliases": [
+          "icesc_bReAxleRBSTqActv"
+        ]
+      },
+      "order": 15,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-009",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_TrqIncReqActv_R",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TrqIncReqActv_R",
+        "aliases": [
+          "icesc_bReAxleTqIncActv"
+        ]
+      },
+      "order": 16,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-010",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_TrqIncReq_R",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TrqIncReq_R",
+        "aliases": [
+          "icesc_tqReqReAxleInc"
+        ]
+      },
+      "order": 17,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-011",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_TqDecReq_R",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_TqDecReq_R",
+        "aliases": [
+          "icesc_tqReqReAxleDec"
+        ]
+      },
+      "order": 18,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-012",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_EHB_RBS_R_TargetRegenTrq",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_EHB_RBS_R_TargetRegenTrq",
+        "aliases": [
+          "icesc_tqRBSReqReAxle"
+        ]
+      },
+      "order": 19,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-013",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_AEB_Active",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_AEB_Active",
+        "aliases": [
+          "icadas_bAEBActv"
+        ]
+      },
+      "order": 20,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-014",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_CDP_Active",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_CDP_Active",
+        "aliases": [
+          "icesc_bCDPActv"
+        ]
+      },
+      "order": 21,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-source_alias-015",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "source_alias",
+      "title": "source alias ESC_VLC_TorqCtrlActive",
+      "content": "",
+      "structuredPayload": {
+        "canonical": "ESC_VLC_TorqCtrlActive",
+        "aliases": [
+          "icadas_bTqVLCTrgtReqVld"
+        ]
+      },
+      "order": 22,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.canonicalSignalAliases",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-normalization_rule-001",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "normalization_rule",
+      "title": "normalization rule 1",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "AEB/CDP/ABS/EBD任一功能",
+        "replacement": "AEB或CDP任一功能"
+      },
+      "order": 23,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-normalization_rule-002",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "normalization_rule",
+      "title": "normalization rule 2",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "主动制动（AEB/CDP/ABS/EBD）",
+        "replacement": "主动制动（AEB/CDP）"
+      },
+      "order": 24,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-normalization_rule-003",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "normalization_rule",
+      "title": "normalization rule 3",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "；4. 前轴CCO/ISA扭矩请求有效"
+      },
+      "order": 25,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-normalization_rule-004",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "normalization_rule",
+      "title": "normalization rule 4",
+      "content": "",
+      "structuredPayload": {
+        "pattern": "；4. 后轴CCO/ISA扭矩请求有效"
+      },
+      "order": 26,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.normalizationRules",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-forbidden_expansion-001",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion activation_flag_logic",
+      "content": "",
+      "structuredPayload": {
+        "topic": "activation_flag_logic",
+        "entries": [
+          "CCO",
+          "ISA"
+        ]
+      },
+      "order": 27,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.forbiddenExpansions",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    },
+    {
+      "skillCode": "DOM-embedded_vcu-forbidden_expansion-002",
+      "layer": "domain",
+      "profileKey": "embedded_vcu",
+      "kind": "forbidden_expansion",
+      "title": "forbidden expansion torque_calculation_logic",
+      "content": "",
+      "structuredPayload": {
+        "topic": "torque_calculation_logic",
+        "entries": [
+          "ABS",
+          "EBD",
+          "CCO",
+          "ISA"
+        ]
+      },
+      "order": 28,
+      "status": "active",
+      "sectionKey": "default",
+      "provenance": {
+        "legacySource": "profiles/domains/embedded_vcu/domain-knowledge.json#sourceOfTruthPolicy.forbiddenExpansions",
+        "migrationBatchId": "2026-04-16T07:26:49.694Z"
+      },
+      "review": {
+        "reviewer": "",
+        "note": "",
+        "updatedAt": ""
+      },
+      "createdAt": "2026-04-16T07:26:49.694Z",
+      "updatedAt": "2026-04-16T07:26:49.694Z"
+    }
+  ]
+}

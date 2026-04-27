@@ -1,0 +1,223 @@
+{
+  "version": 1,
+  "generationPriorities": [
+    "优先严格复现人工样例中的 5 条核心主线：动力电池可用放电功率计算、动力电池放电单体保护、动力电池可用充电功率计算、动力电池充电单体保护、动力电池峰值可用放电功率计算。",
+    "若系统需求只给出总纲，而人工样例已经拆出稳定条目边界，应优先沿用人工样例的主题拆分、顺序和内部引用关系，不要重新泛化为更大的总纲条目。",
+    "放电功率计算应先写基于 BMS 10s 可用放电功率的主计算逻辑，再写 SOC 阈值、预留功率和低 SOC 限制路径。",
+    "充电功率计算应单独成条，突出 1.5kW 充电禁用阈值和预留功率扣减，不要并入单体保护或总功率限制条目。",
+    "峰值可用放电功率计算应单独成条，明确其基于 BMS 2s 可用放电功率，并通过单体保护等限制实现。",
+    "诊断、配置、滤波和错误处理默认作为支撑逻辑嵌入对应核心需求，除非人工样例明确单列，否则不要抢占核心主线。"
+  ],
+  "examples": [
+    {
+      "requirementId": "CheryVCU-4098",
+      "topic": "动力电池可用放电功率计算",
+      "sectionNumber": "5.4.1",
+      "sectionTitle": "电池可用充放功率计算",
+      "requirementType": "charge_discharge_power_calculation",
+      "preferredTitle": "动力电池可用放电功率计算",
+      "requirementText": "VCU 内部对动力电池可用放电功率应优先采用 BMS 10s 可用放电功率（BMS4_N_SOF10D），并在此基础上结合 SOC 保护、预留功率及低 SOC 限制进行修正；在怠速发电和行车发电场景下，当动力电池 SOC 大于默认 6% 时，应按 BMS 10s 可用放电功率减去默认 3kW 预留功率计算；当 SOC 低于默认 6% 时，应随 SOC 下降逐步降低，并在 3% 以下限制为 3kW。",
+      "signals": [
+        "BMS2_N_SOC",
+        "BMS4_N_SOF10D",
+        "CheryVCU-7532",
+        "CheryVCU-7549"
+      ],
+      "references": [
+        "CheryVCU-7532",
+        "CheryVCU-7549"
+      ],
+      "canonicalBranches": [
+        "怠速发电/行车发电场景成立",
+        "SOC > 6% 按 10s 可用放电功率减预留功率",
+        "SOC <= 6% 随 SOC 下降逐步降低",
+        "SOC < 3% 限制为 3kW"
+      ],
+      "keywords": [
+        "10s 可用放电功率",
+        "SOC 保护",
+        "预留功率",
+        "低 SOC 限制"
+      ]
+    },
+    {
+      "requirementId": "CheryVCU-15867",
+      "topic": "动力电池放电单体保护",
+      "sectionNumber": "5.4.1",
+      "sectionTitle": "电池可用充放功率计算",
+      "requirementType": "discharge_cell_protection",
+      "preferredTitle": "动力电池放电单体保护",
+      "requirementText": "VCU 应根据最小单体电池电压（BMS3_N_CellVoltageMin）查表得到功率系数，并将该系数乘以需求 CheryVCU-4098 计算得到的动力电池可用放电功率；当最小单体电池电压低于默认 2.3V 时应开始限制，至 2.1V 时应限制为 0kW，以防止电芯过放。",
+      "signals": [
+        "BMS3_N_CellVoltageMin",
+        "CheryVCU-4098"
+      ],
+      "references": [
+        "CheryVCU-4098"
+      ],
+      "canonicalBranches": [
+        "查表获取放电功率系数",
+        "乘以前序放电功率结果",
+        "2.3V 开始限制",
+        "2.1V 限制为 0kW"
+      ],
+      "keywords": [
+        "最小单体电压",
+        "放电功率系数",
+        "过放保护"
+      ]
+    },
+    {
+      "requirementId": "CheryVCU-15868",
+      "topic": "动力电池可用充电功率计算",
+      "sectionNumber": "5.4.1",
+      "sectionTitle": "电池可用充放功率计算",
+      "requirementType": "charge_power_calculation",
+      "preferredTitle": "动力电池可用充电功率计算",
+      "requirementText": "当动力电池可用充电功率（BMS4_N_SOF10C）小于默认 1.5kW 时，VCU 内部应认为该充电功率不可用并置为 0kW；否则，VCU 应按动力电池可用充电功率减去默认 3kW 预留功率计算可用充电功率。",
+      "signals": [
+        "BMS4_N_SOF10C"
+      ],
+      "canonicalBranches": [
+        "充电功率 < 1.5kW 置为 0kW",
+        "充电功率 >= 1.5kW 扣减 3kW 预留功率"
+      ],
+      "keywords": [
+        "可用充电功率",
+        "1.5kW 阈值",
+        "3kW 预留功率"
+      ]
+    },
+    {
+      "requirementId": "CheryVCU-15869",
+      "topic": "动力电池充电单体保护",
+      "sectionNumber": "5.4.1",
+      "sectionTitle": "电池可用充放功率计算",
+      "requirementType": "charge_cell_protection",
+      "preferredTitle": "动力电池充电单体保护",
+      "requirementText": "VCU 应根据最大单体电池电压（BMS2_N_CellVoltageMax）查表得到功率系数，并将该系数乘以需求 CheryVCU-15868 计算得到的动力电池可用充电功率；当最大单体电池电压高于默认 4.8V 时应开始限制，至 5V 时应限制为 0kW，以防止电芯过充。",
+      "signals": [
+        "BMS2_N_CellVoltageMax",
+        "CheryVCU-15868"
+      ],
+      "references": [
+        "CheryVCU-15868"
+      ],
+      "canonicalBranches": [
+        "查表获取充电功率系数",
+        "乘以前序充电功率结果",
+        "4.8V 开始限制",
+        "5V 限制为 0kW"
+      ],
+      "keywords": [
+        "最大单体电压",
+        "充电功率系数",
+        "过充保护"
+      ]
+    },
+    {
+      "requirementId": "CheryVCU-15870",
+      "topic": "动力电池峰值可用放电功率计算",
+      "sectionNumber": "5.4.1",
+      "sectionTitle": "电池可用充放功率计算",
+      "requirementType": "peak_discharge_power_calculation",
+      "preferredTitle": "动力电池峰值可用放电功率计算",
+      "requirementText": "VCU 在发动机加启等需要峰值功率的场景下，应基于 BMS 2s 可用放电功率（BMS4_N_SOF2D）计算动力电池峰值可用放电功率，并在该基础上叠加单体电压保护等限制，以防止动力电池过放。",
+      "signals": [
+        "BMS4_N_SOF2D",
+        "CheryVCU-15867"
+      ],
+      "references": [
+        "CheryVCU-15867"
+      ],
+      "canonicalBranches": [
+        "峰值功率场景成立",
+        "基于 2s 可用放电功率计算",
+        "叠加单体电压保护限制"
+      ],
+      "keywords": [
+        "2s 可用放电功率",
+        "峰值放电功率",
+        "过放保护"
+      ]
+    }
+  ],
+  "ruleHints": [
+    {
+      "domain": "embedded_vcu",
+      "subdomain": "高压能量管理",
+      "sectionHints": [
+        "5.4.1 电池可用充放功率计算",
+        "动力电池可用放电功率计算",
+        "动力电池放电单体保护",
+        "动力电池可用充电功率计算",
+        "动力电池充电单体保护",
+        "动力电池峰值可用放电功率计算"
+      ],
+      "writingPattern": "严格贴近人工软件需求条目的写法。每条需求聚焦一个稳定主题，优先保留“前序需求引用 + 关键输入信号 + 阈值/预留值 + 限制结果”的表达方式；不要改写成总纲说明、设计步骤清单或代码实现解说。",
+      "targetStyle": "输出应接近人工软件需求，而不是详细设计说明。保留需求编号锚点、章节归属、核心信号和默认阈值，句式紧凑，避免大量“步骤如下”“注：”“a) b) c)”式展开。",
+      "sourceBasis": [
+        "system-requirements-example-hv-energy-management.md",
+        "software-design-requirements-example-hv-energy-management.md",
+        "PwrLimBatt.pdf",
+        "PwrLimBatt.c"
+      ]
+    }
+  ],
+  "antiPatterns": [
+    "不要把 10s/2s 可用功率、单体保护、峰值功率、诊断和滤波全部揉成一条总纲需求。",
+    "不要把人工样例中的 5 条核心主线重新改写成更泛化的章节标题，例如“高压电池功率限制计算”“电池过充过放保护限制”。",
+    "不要把代码里能看到的诊断、配置和错误处理信号提前提升为与 4098/15867/15868/15869/15870 并列的核心主条目。",
+    "不要把软件需求写成详细设计说明，避免大量“具体步骤如下”“a) b) c)”或大段实现机理解说。",
+    "不要丢失人工样例里的需求编号引用关系，例如 15867 依赖 4098、15869 依赖 15868、15870 依赖 15867。"
+  ],
+  "documentBlueprint": {
+    "preferredFunctionSection": {
+      "title": "电池可用充放功率计算",
+      "sectionNumber": "5.4.1"
+    },
+    "preferredSubsections": [
+      {
+        "sectionNumber": "5.4.1",
+        "title": "动力电池可用放电功率计算",
+        "coreRequirementTypes": [
+          "charge_discharge_power_calculation"
+        ]
+      },
+      {
+        "sectionNumber": "5.4.1",
+        "title": "动力电池放电单体保护",
+        "coreRequirementTypes": [
+          "discharge_cell_protection"
+        ]
+      },
+      {
+        "sectionNumber": "5.4.1",
+        "title": "动力电池可用充电功率计算",
+        "coreRequirementTypes": [
+          "charge_power_calculation"
+        ]
+      },
+      {
+        "sectionNumber": "5.4.1",
+        "title": "动力电池充电单体保护",
+        "coreRequirementTypes": [
+          "charge_cell_protection"
+        ]
+      },
+      {
+        "sectionNumber": "5.4.1",
+        "title": "动力电池峰值可用放电功率计算",
+        "coreRequirementTypes": [
+          "peak_discharge_power_calculation"
+        ]
+      }
+    ],
+    "targetOutputPolicy": {
+      "coreFirst": true,
+      "preferSymmetricExpansion": true,
+      "preferObjectSpecificRequirements": true,
+      "discourageGenericScatterRequirements": true
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "id": "4804db96-2e40-4967-9733-5dbb158f950f",
+  "version": "1.0.0-candidate-1777108372524",
+  "baseBundleId": "bundle-base",
+  "baseSnapshotHash": "776364a15b92e505887e4dba1fac30ada74338fc",
+  "forkedFromBundleId": "",
+  "status": "candidate",
+  "sourceType": "default_candidate",
+  "isDefaultCandidate": true,
+  "defaultForActiveBundleId": "bundle-base",
+  "files": [
+    "requirement_extraction.md",
+    "requirement_writing.md",
+    "requirement_validation.md",
+    "examples/good_examples.md",
+    "examples/bad_examples.md",
+    "domain-knowledge.json"
+  ],
+  "changeSummary": "Default candidate based on bundle-base.",
+  "createdBy": "system",
+  "createdFromCaseIds": [],
+  "createdFromWorkOrderIds": [],
+  "evaluationSummary": null,
+  "appliedProposalItemIds": [],
+  "appliedReplayTaskIds": [],
+  "stagedWorkOrderItemIds": [],
+  "stagedChanges": [],
+  "changeEntries": [],
+  "createdAt": "2026-04-25T09:12:52.524Z",
+  "updatedAt": "2026-04-25T09:12:52.524Z",
+  "diffSummary": {
+    "total": 0,
+    "create": 0,
+    "update": 0,
+    "delete": 0,
+    "reorder": 0,
+    "bySourceType": {}
+  },
+  "ruleIndexVersion": "registry-1777108372567",
+  "snapshotHash": "776364a15b92e505887e4dba1fac30ada74338fc",
+  "sqliteSnapshotPath": "data/skill-refinement/bundle-snapshots/4804db96-2e40-4967-9733-5dbb158f950f.sqlite"
+}
