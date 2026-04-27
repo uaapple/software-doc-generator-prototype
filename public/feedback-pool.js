@@ -8,11 +8,13 @@ const state = {
   moduleFilterId: query.get("moduleId") || "",
   project: null,
   modules: [],
+  moduleOptions: [],
   records: [],
   tasks: [],
   selectedRecordId: "",
   selectedTaskId: initialTaskId,
   replayRecordIds: [],
+  selectedReplayProjectId: "",
   selectedReplayModuleId: "",
   externalTaskDrawerOpen: Boolean(initialTaskId),
   filters: {
@@ -111,19 +113,12 @@ window.addEventListener("message", handleHostMessage);
 window.addEventListener("resize", syncReplayDialogHeight);
 
 async function bootstrap() {
-  if (!state.projectId) {
-    heroTitleRoot.textContent = "反馈池";
-    projectSummaryRoot.textContent = "缺少项目上下文，请从项目内入口进入反馈池。";
-    projectMetricsRoot.innerHTML = "<div class=\"empty-state\">请先在项目页选择工程，再进入反馈池。</div>";
-    recordListRoot.innerHTML = '<div class="empty-state">当前无法加载驳回记录。</div>';
-    return;
-  }
-
   await refreshAllData();
 }
 
 async function refreshAllData() {
   await Promise.all([refreshContext(), refreshLlmProfiles()]);
+  await refreshModuleOptions();
   await Promise.all([refreshRecords(), refreshTasks()]);
   renderProjectSummary();
   renderFilters();
@@ -158,6 +153,12 @@ function syncTopNavLinks() {
 }
 
 async function refreshContext() {
+  if (!state.projectId) {
+    state.project = null;
+    state.modules = [];
+    return;
+  }
+
   state.project = await request(`/api/projects/${state.projectId}`);
   state.modules = state.project.modules || [];
 }
@@ -170,7 +171,7 @@ async function refreshLlmProfiles() {
 
 async function refreshRecords() {
   const params = new URLSearchParams();
-  params.set("projectId", state.projectId);
+  if (state.projectId) params.set("projectId", state.projectId);
   if (state.moduleFilterId) params.set("moduleId", state.moduleFilterId);
   if (state.filters.reasonCategory) params.set("reasonCategory", state.filters.reasonCategory);
   if (state.filters.replayStatus) params.set("replayStatus", state.filters.replayStatus);
@@ -183,9 +184,26 @@ async function refreshRecords() {
   }
 }
 
+async function refreshModuleOptions() {
+  if (state.projectId) {
+    state.moduleOptions = state.modules.map((module) => ({
+      id: module.id,
+      name: module.name || "未命名模块",
+      projectName: ""
+    }));
+    return;
+  }
+
+  const [recordsResponse, tasksResponse] = await Promise.all([
+    request("/api/rejections"),
+    request("/api/replay-tasks")
+  ]);
+  state.moduleOptions = buildModuleOptions(recordsResponse.records || [], tasksResponse.tasks || []);
+}
+
 async function refreshTasks() {
   const params = new URLSearchParams();
-  params.set("projectId", state.projectId);
+  if (state.projectId) params.set("projectId", state.projectId);
   if (state.moduleFilterId) params.set("moduleId", state.moduleFilterId);
 
   const response = await request(`/api/replay-tasks?${params.toString()}`);
@@ -198,20 +216,22 @@ async function refreshTasks() {
 }
 
 function renderProjectSummary() {
-  const projectName = state.project?.name || "未命名工程";
-  const currentModule = state.modules.find((item) => item.id === state.moduleFilterId) || null;
+  const scopedToProject = Boolean(state.projectId);
+  const projectName = state.project?.name || (scopedToProject ? "未命名工程" : "全部项目");
+  const moduleOptions = getModuleFilterOptions();
+  const currentModule = moduleOptions.find((item) => item.id === state.moduleFilterId) || null;
   const replayedCount = state.records.filter((record) => record.replayStatus && record.replayStatus !== "not_started").length;
   const activeCount = countActiveReplayTasks();
 
-  heroTitleRoot.textContent = currentModule
-    ? `${projectName} / ${currentModule.name} 驳回记录`
-    : `${projectName} 驳回记录`;
+  heroTitleRoot.textContent = currentModule ? `${projectName} / ${currentModule.name} 驳回记录` : `${projectName} 驳回记录`;
   projectSummaryRoot.textContent = currentModule
     ? `${currentModule.name} 当前共有 ${state.records.length} 条驳回记录。`
-    : `当前项目共有 ${state.records.length} 条驳回记录。`;
+    : scopedToProject
+      ? `当前项目共有 ${state.records.length} 条驳回记录。`
+      : `全局反馈池共有 ${state.records.length} 条驳回记录，可从技能管理直接进入查看。`;
 
   const metrics = [
-    { label: "功能模块", value: state.modules.length },
+    { label: scopedToProject ? "功能模块" : "项目", value: scopedToProject ? state.modules.length : countUniqueProjects() },
     { label: "驳回记录", value: state.records.length },
     { label: "已 Replay", value: replayedCount },
     { label: activeCount ? "处理中任务" : "最近任务", value: activeCount || state.tasks.length }
@@ -233,12 +253,50 @@ function renderTaskDrawerButtons() {
   }
 }
 
+function countUniqueProjects() {
+  return new Set(
+    [
+      ...state.records.map((record) => record.projectId),
+      ...state.tasks.map((task) => task.projectId)
+    ].filter(Boolean)
+  ).size;
+}
+
+function getModuleFilterOptions() {
+  return state.moduleOptions || [];
+}
+
+function buildModuleOptions(records = [], tasks = []) {
+  const modules = new Map();
+  for (const record of records) {
+    const moduleId = record.moduleId || "";
+    if (!moduleId || modules.has(moduleId)) continue;
+    modules.set(moduleId, {
+      id: moduleId,
+      name: record.moduleName || "未命名模块",
+      projectName: record.projectName || ""
+    });
+  }
+  for (const task of tasks) {
+    const moduleId = task.moduleId || "";
+    if (!moduleId || modules.has(moduleId)) continue;
+    modules.set(moduleId, {
+      id: moduleId,
+      name: task.moduleName || "未命名模块",
+      projectName: task.projectName || ""
+    });
+  }
+  return [...modules.values()].sort((left, right) =>
+    `${left.projectName} ${left.name}`.localeCompare(`${right.projectName} ${right.name}`, "zh-CN")
+  );
+}
+
 function renderFilters() {
   moduleFilterSelect.innerHTML = '<option value="">全部模块</option>';
-  for (const module of state.modules) {
+  for (const module of getModuleFilterOptions()) {
     const option = document.createElement("option");
     option.value = module.id;
-    option.textContent = module.name;
+    option.textContent = module.projectName ? `${module.projectName} / ${module.name}` : module.name;
     option.selected = module.id === state.moduleFilterId;
     moduleFilterSelect.append(option);
   }
@@ -307,7 +365,7 @@ function renderTaskDrawer() {
   const visibleTasks = state.tasks;
 
   if (!visibleTasks.length) {
-    taskDrawerListRoot.innerHTML = '<div class="empty-state">当前项目下还没有 Replay 任务。</div>';
+    taskDrawerListRoot.innerHTML = `<div class="empty-state">${state.projectId ? "当前项目下还没有 Replay 任务。" : "当前还没有 Replay 任务。"}</div>`;
     taskDrawerDetailRoot.className = "feedback-task-detail empty-state";
     taskDrawerDetailRoot.textContent = "选择一个任务查看提案详情。";
     if (isEmbeddedFeedbackPool() && state.externalTaskDrawerOpen) {
@@ -1173,6 +1231,11 @@ async function openReplayDialog(recordIds = []) {
     window.alert("一次 Replay 仅支持同一功能模块下的驳回记录，请重新选择。");
     return;
   }
+  const projectIds = [...new Set(selectedRecords.map((record) => String(record.projectId || "")).filter(Boolean))];
+  if (projectIds.length > 1) {
+    window.alert("一次 Replay 仅支持同一项目下的驳回记录，请重新选择。");
+    return;
+  }
 
   const targetLayerConstraints = [
     ...new Set(
@@ -1187,11 +1250,13 @@ async function openReplayDialog(recordIds = []) {
   }
 
   state.replayRecordIds = recordIds;
+  state.selectedReplayProjectId = state.projectId || projectIds[0] || "";
   state.selectedReplayModuleId = moduleIds[0] || "";
-  const module = state.modules.find((item) => item.id === state.selectedReplayModuleId) || null;
+  const replayContext = await loadReplayContext(state.selectedReplayProjectId, state.selectedReplayModuleId);
+  const module = replayContext.module || state.modules.find((item) => item.id === state.selectedReplayModuleId) || null;
   const assets = module?.assets || [];
 
-  replayDialogSubtitle.textContent = `${state.project?.name || "当前项目"} / ${module?.name || "未指定模块"}`;
+  replayDialogSubtitle.textContent = `${replayContext.project?.name || state.project?.name || "当前项目"} / ${module?.name || "未指定模块"}`;
   replaySelectedRecordsRoot.innerHTML = selectedRecords
     .map(
       (record) => `
@@ -1227,6 +1292,23 @@ async function openReplayDialog(recordIds = []) {
   replayDialog.showModal();
 }
 
+async function loadReplayContext(projectId = "", moduleId = "") {
+  if (!projectId) {
+    return { project: null, module: null };
+  }
+
+  try {
+    const [project, module] = await Promise.all([
+      state.projectId === projectId && state.project ? Promise.resolve(state.project) : request(`/api/projects/${projectId}`),
+      moduleId ? request(`/api/projects/${projectId}/modules/${moduleId}`) : Promise.resolve(null)
+    ]);
+    return { project, module };
+  } catch (error) {
+    console.warn("Failed to load replay context", error);
+    return { project: state.project, module: state.modules.find((item) => item.id === moduleId) || null };
+  }
+}
+
 async function submitReplayTask(event) {
   event.preventDefault();
   if (!state.replayRecordIds.length) {
@@ -1254,12 +1336,13 @@ async function submitReplayTask(event) {
   if (cancelButton) cancelButton.disabled = true;
 
   try {
+    const replayProjectId = state.projectId || selectedRecords[0]?.projectId || state.selectedReplayProjectId || "";
     const task = await request("/api/replay-tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         rejectionIds: state.replayRecordIds,
-        projectId: state.projectId,
+        projectId: replayProjectId,
         moduleId: state.selectedReplayModuleId,
         llmProfileId: replayLlmProfileSelect.value || "",
         referenceAssetIds
@@ -1297,6 +1380,7 @@ async function handleFilterChange() {
   state.filters.reasonCategory = recordCategoryFilter.value || "";
   state.filters.replayStatus = recordReplayFilter.value || "";
   syncTopNavLinks();
+  await refreshModuleOptions();
   await Promise.all([refreshRecords(), refreshTasks()]);
   renderProjectSummary();
   renderFilters();
@@ -1756,10 +1840,6 @@ function buildReplayTaskArtifactBlock(task = {}) {
 }
 
 function syncReplayTaskPolling() {
-  if (!state.projectId) {
-    stopReplayTaskPolling();
-    return;
-  }
   if (countActiveReplayTasks()) {
     if (!replayTaskPollTimer) {
       replayTaskPollTimer = window.setTimeout(pollReplayTaskUpdates, 2500);
