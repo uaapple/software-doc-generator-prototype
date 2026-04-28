@@ -56,14 +56,22 @@ function assertCleanWorktree() {
 
 function appendManifest(zipPath, manifestRoot) {
   if (process.platform === "win32") {
-    const literalPath = path.join(manifestRoot, "release").replaceAll("'", "''");
+    const manifestPath = path.join(manifestRoot, "release", "manifest.json").replaceAll("'", "''");
     const destinationPath = zipPath.replaceAll("'", "''");
     run("powershell.exe", [
       "-NoProfile",
       "-ExecutionPolicy",
       "Bypass",
       "-Command",
-      `Compress-Archive -LiteralPath '${literalPath}' -DestinationPath '${destinationPath}' -Update`
+      [
+        "Add-Type -AssemblyName System.IO.Compression.FileSystem;",
+        `$zip = [System.IO.Compression.ZipFile]::Open('${destinationPath}', 'Update');`,
+        "try {",
+        `  [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, '${manifestPath}', 'release/manifest.json') | Out-Null;`,
+        "} finally {",
+        "  $zip.Dispose();",
+        "}"
+      ].join(" ")
     ]);
     return;
   }
