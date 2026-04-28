@@ -20,7 +20,7 @@
           "summary": "先理解平台能做什么，再决定从哪条阅读路径开始。",
           "audience": "系统使用者",
           "status": "stable",
-          "lastReviewed": "2026-04-17",
+          "lastReviewed": "2026-04-27",
           "relatedPages": [
             "quick-start",
             "implementation-principles"
@@ -32,7 +32,7 @@
           "summary": "从创建工程、创建模块、选择 Module Skill 或冷启动，到开始一次软件需求生成。",
           "audience": "系统使用者",
           "status": "stable",
-          "lastReviewed": "2026-04-24",
+          "lastReviewed": "2026-04-27",
           "relatedPages": [
             "project-module-workspace",
             "faq-current-limits"
@@ -62,7 +62,7 @@
           "summary": "介绍如何为当前模块发起软件需求生成，并理解结果页中的关键字段。",
           "audience": "系统使用者",
           "status": "stable",
-          "lastReviewed": "2026-04-17",
+          "lastReviewed": "2026-04-27",
           "relatedPages": [
             "project-module-workspace",
             "implementation-principles"
@@ -128,7 +128,7 @@
           "summary": "介绍驳回记录、回投任务、Fallback 历史任务和后续修正链路。",
           "audience": "系统使用者",
           "status": "stable",
-          "lastReviewed": "2026-04-20",
+          "lastReviewed": "2026-04-27",
           "relatedPages": [
             "skill-management-fallback",
             "implementation-principles"
@@ -159,7 +159,7 @@
           "summary": "统一说明端口、输入要求、当前边界和遇到问题时的排查方向。",
           "audience": "系统使用者",
           "status": "stable",
-          "lastReviewed": "2026-04-17",
+          "lastReviewed": "2026-04-27",
           "relatedPages": [
             "quick-start",
             "implementation-principles"
