@@ -56,14 +56,14 @@ function assertCleanWorktree() {
 
 function appendManifest(zipPath, manifestRoot) {
   if (process.platform === "win32") {
+    const literalPath = path.join(manifestRoot, "release").replaceAll("'", "''");
+    const destinationPath = zipPath.replaceAll("'", "''");
     run("powershell.exe", [
       "-NoProfile",
       "-ExecutionPolicy",
       "Bypass",
       "-Command",
-      "Compress-Archive -LiteralPath $args[0] -DestinationPath $args[1] -Update",
-      path.join(manifestRoot, "release"),
-      zipPath
+      `Compress-Archive -LiteralPath '${literalPath}' -DestinationPath '${destinationPath}' -Update`
     ]);
     return;
   }
