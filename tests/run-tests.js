@@ -3375,6 +3375,7 @@ const tests = [
 
       assert.match(source, /module_skill_bootstrap/);
       assert.match(source, /requiresExplicitBootstrap/);
+      assert.match(source, /isImportedExistingModuleSkill/);
       assert.match(source, /开始技能冷启动/);
       assert.match(source, /当前模块被标记为冷启动模式/);
     }

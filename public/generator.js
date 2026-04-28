@@ -33,7 +33,20 @@ let manualTitleOutlineState = createDefaultManualTitleOutline();
 syncTopNavLinks();
 
 function requiresExplicitBootstrap() {
-  return pageDocumentType === "software_requirement" && Boolean(initialization?.requiresExplicitBootstrap);
+  if (pageDocumentType !== "software_requirement") {
+    return false;
+  }
+  if (isImportedExistingModuleSkill()) {
+    return false;
+  }
+  return Boolean(initialization?.requiresExplicitBootstrap);
+}
+
+function isImportedExistingModuleSkill() {
+  return (
+    moduleData?.skillInitMode === "import_existing" ||
+    moduleData?.skillSource?.type === "module_profile"
+  );
 }
 
 function currentTaskIntent() {
