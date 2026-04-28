@@ -125,7 +125,7 @@ export const config = {
       anchor_index_build: Number(process.env.HERMES_TIMEOUT_ANCHOR_INDEX_BUILD_MS || 180000),
       outline_build: Number(process.env.HERMES_TIMEOUT_OUTLINE_BUILD_MS || 180000),
       module_bootstrap_generate: Number(process.env.HERMES_TIMEOUT_MODULE_BOOTSTRAP_GENERATE_MS || 600000),
-      content_generate: Number(process.env.HERMES_TIMEOUT_CONTENT_GENERATE_MS || 600000),
+      content_generate: Number(process.env.HERMES_TIMEOUT_CONTENT_GENERATE_MS || 1200000),
       document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
       replay_proposal_generate: Number(process.env.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS || 600000)
     },
