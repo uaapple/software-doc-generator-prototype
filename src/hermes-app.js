@@ -10,6 +10,8 @@ import {
   recallSkillInventory,
   selectEvidenceForGeneration
 } from "./services/software-requirement-agent-shared.js";
+import { SlxModelAnalysisService } from "./services/slx-model-analysis-service.js";
+import { ModelRequirementViewService } from "./services/model-requirement-view-service.js";
 
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
@@ -516,6 +518,89 @@ function buildAnchorAwareItems(project = {}, template = {}, anchors = [], recall
   ];
 }
 
+function flattenRequiredTitleOutline(requiredTitleOutline = {}) {
+  const sections = Array.isArray(requiredTitleOutline.sections) ? requiredTitleOutline.sections : [];
+  return sections.flatMap((section) =>
+    (Array.isArray(section.items) ? section.items : []).map((item) => ({
+      sectionTitle: String(section.sectionTitle || section.title || "").trim(),
+      itemTitle: String(item.itemTitle || item.title || "").trim()
+    }))
+  );
+}
+
+function buildFactAwareItems(project = {}, template = {}, modelRequirementView = {}, requiredTitleOutline = {}, requiredLeafCount = 0) {
+  const facts = Array.isArray(modelRequirementView.facts) ? modelRequirementView.facts : [];
+  if (!facts.length) {
+    return [];
+  }
+
+  const leaves = flattenRequiredTitleOutline(requiredTitleOutline);
+  const count = Math.max(1, Number(requiredLeafCount || 0) || leaves.length || Math.min(facts.length, 8));
+  return Array.from({ length: count }, (_, index) => {
+    const fact = facts[index] || facts[0];
+    const leaf = leaves[index] || {};
+    const title = leaf.itemTitle || fact.topic || `软件需求 ${index + 1}`;
+    const behavior = String(fact.behavior || fact.topic || "根据当前模型事实执行对应功能。").trim();
+    return {
+      requirementId: `${template.requirementIdPrefix || "SWR"}-${String(index + 1).padStart(3, "0")}`,
+      title,
+      requirementText: `软件应${truncateText(behavior, 180).replace(/^[，。；：,\s]+/, "").replace(/^(软件应|系统应)/, "") || "根据当前模型事实执行对应功能。"}。`,
+      type: "functional",
+      sourceFactIds: fact.id ? [fact.id] : [],
+      sourceAnchorIds: [],
+      verificationHint: "通过评审、仿真或联调验证条目与模型事实一致。",
+      rationale: "基于 modelRequirementView 模型事实、人工标题大纲和 skill 约束生成。",
+      confidence: 0.65,
+      conflictNote: ""
+    };
+  });
+}
+
+async function buildSlxParseFallbackArtifact(inputArtifact = {}, allowedPaths = []) {
+  const slxFiles = Array.isArray(inputArtifact?.slxFiles) ? inputArtifact.slxFiles : [];
+  if (!slxFiles.length) {
+    throw createHttpError("slx_parse_generate requires at least one SLX file in inputArtifact.slxFiles", 400, "hermes_slx_parse_no_input");
+  }
+
+  const slxAnalysisService = new SlxModelAnalysisService();
+  const modelRequirementViewService = new ModelRequirementViewService();
+  const allExtractions = [];
+
+  for (const slxFile of slxFiles) {
+    const absolutePath = path.resolve(String(slxFile.absolutePath || ""));
+    if (!absolutePath || !isPathAllowed(absolutePath, allowedPaths)) {
+      throw createHttpError(`File path is not allowed: ${slxFile.originalName || absolutePath}`, 403, "hermes_path_forbidden");
+    }
+    const extraction = await slxAnalysisService.analyzeAndConvertToExtraction({
+      id: slxFile.id || slxFile.assetId || "",
+      role: "simulink_slx",
+      fileRole: "simulink_slx",
+      originalName: slxFile.originalName || path.basename(absolutePath),
+      absolutePath
+    }, { documentType: "software_requirement" });
+    allExtractions.push(extraction);
+  }
+
+  const assets = slxFiles.map((file, index) => ({
+    assetId: file.id || file.assetId || `slx-${index + 1}`,
+    fileName: file.originalName || path.basename(file.absolutePath || ""),
+    fileRole: "simulink_slx",
+    absolutePath: file.absolutePath || ""
+  }));
+
+  const project = inputArtifact?.project || {};
+  const modelRequirementView = modelRequirementViewService.build({
+    project,
+    assets,
+    extractions: allExtractions
+  });
+
+  return {
+    modelRequirementView,
+    summary: `已从 ${slxFiles.length} 个 SLX 模型解析得到 ${Array.isArray(modelRequirementView.facts) ? modelRequirementView.facts.length : 0} 条模型事实。`
+  };
+}
+
 export async function createHermesApp() {
   const app = express();
   const extractionService = new ExtractionService();
@@ -611,6 +696,25 @@ export async function createHermesApp() {
           payload.inputArtifact?.template ||
           (await templateService.getTemplate(payload.inputArtifact?.project?.documentType || "software_requirement"));
         const anchors = Array.isArray(payload.inputArtifact?.anchors) ? payload.inputArtifact.anchors : [];
+        const factItems = buildFactAwareItems(
+          payload.inputArtifact?.project || {},
+          template,
+          payload.inputArtifact?.modelRequirementView || {},
+          payload.inputArtifact?.requiredTitleOutline || {},
+          payload.inputArtifact?.requiredLeafCount || 0
+        );
+        if (factItems.length) {
+          return res.json(
+            buildStepResponse(stepType, { items: factItems }, startedAt, {
+              metrics: {
+                generatedItemCount: factItems.length,
+                factCount: Array.isArray(payload.inputArtifact?.modelRequirementView?.facts)
+                  ? payload.inputArtifact.modelRequirementView.facts.length
+                  : 0
+              }
+            })
+          );
+        }
         if (anchors.length) {
           const items = buildAnchorAwareItems(
             payload.inputArtifact?.project || {},
@@ -663,6 +767,19 @@ export async function createHermesApp() {
             metrics: {
               imageInputCount: Array.isArray(payload.inputArtifact?.images) ? payload.inputArtifact.images.length : 0,
               sourceTextLength: String(payload.inputArtifact?.sourceText || "").length
+            }
+          })
+        );
+      }
+
+      if (stepType === "slx_parse_generate") {
+        const allowedPaths = normalizeAllowedPaths(payload.allowedPaths);
+        const artifact = await buildSlxParseFallbackArtifact(payload.inputArtifact || {}, allowedPaths);
+        return res.json(
+          buildStepResponse(stepType, artifact, startedAt, {
+            metrics: {
+              slxFileCount: Array.isArray(payload.inputArtifact?.slxFiles) ? payload.inputArtifact.slxFiles.length : 0,
+              factCount: Array.isArray(artifact.modelRequirementView?.facts) ? artifact.modelRequirementView.facts.length : 0
             }
           })
         );

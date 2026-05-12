@@ -135,11 +135,26 @@ export const config = {
     maxRecalledAtoms: Number(process.env.HERMES_MAX_RECALLED_ATOMS || 24),
     maxOutlineSections: Number(process.env.HERMES_MAX_OUTLINE_SECTIONS || 6),
     maxEvidenceForGeneration: Number(process.env.HERMES_MAX_EVIDENCE_FOR_GENERATION || 40),
-    maxAnchorsForGeneration: Number(process.env.HERMES_MAX_ANCHORS_FOR_GENERATION || 80)
+    maxAnchorsForGeneration: Number(process.env.HERMES_MAX_ANCHORS_FOR_GENERATION || 80),
+    maxModelRequirementFacts: Number(process.env.HERMES_MAX_MODEL_REQUIREMENT_FACTS || 100),
+    maxModelRequirementBytes: Number(process.env.HERMES_MAX_MODEL_REQUIREMENT_BYTES || 12000)
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY || "",
     model: process.env.OPENAI_MODEL || process.env.ZHIPU_MODEL || process.env.ARK_MODEL || "gpt-4.1-mini",
     baseURL: process.env.OPENAI_BASE_URL || process.env.ZHIPU_BASE_URL || process.env.ARK_BASE_URL || undefined
+  },
+  matlabMcp: {
+    transport: process.env.MATLAB_MCP_TRANSPORT || "stdio",
+    baseURL: process.env.MATLAB_MCP_BASE_URL || "http://127.0.0.1:5100",
+    timeoutMs: Number(process.env.MATLAB_MCP_TIMEOUT_MS || 300000),
+    tempDir: process.env.MATLAB_MCP_TMPDIR || "/tmp",
+    serverCommand: process.env.MATLAB_MCP_SERVER_COMMAND || path.join(rootDir, "tools", "matlab-mcp-core-server"),
+    serverArgs: [
+      "--matlab-root=" + (process.env.MATLAB_ROOT || "/Applications/MATLAB_R2026a.app"),
+      "--matlab-display-mode=nodesktop",
+      "--extension-file=" + path.join(rootDir, "tools", "matlab-mcp-extension.json"),
+      "--initial-working-folder=" + path.join(rootDir, "tools", "matlab-functions")
+    ]
   }
 };

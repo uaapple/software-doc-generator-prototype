@@ -907,6 +907,7 @@ function getRoleLabel(role) {
   if (role === "extracted_software_requirement") return "\u63d0\u53d6\u8f6f\u4ef6\u9700\u6c42";
   if (role === "extracted_detail_design") return "\u63d0\u53d6\u8be6\u7ec6\u8bbe\u8ba1";
   if (role === "extracted_hil_test_case") return "提取 HIL 测试用例";
+  if (role === "model_requirement_view_json") return "模型需求 JSON";
   if (role === "reference_requirement_example") return "\u8f6f\u4ef6\u9700\u6c42\u8303\u4f8b";
   if (role === "reference_detail_design_example") return "\u8be6\u7ec6\u8bbe\u8ba1\u8303\u4f8b";
   if (role === "reference_hil_test_case_example") return "HIL \u7528\u4f8b\u8303\u4f8b";

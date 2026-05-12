@@ -218,6 +218,7 @@ function createModuleRecord(projectId, input = {}) {
     assets: [],
     documentSpaces: ensureDocumentSpaces(),
     documentExtractionTasks: [],
+    slxParserTasks: [],
     auditLog: [
       {
         at: now(),
@@ -668,6 +669,46 @@ function normalizeAcceptedItem(item = {}) {
   };
 }
 
+function normalizeSlxParserTask(task = {}) {
+  return {
+    id: task.id || randomUUID(),
+    moduleId: task.moduleId || "",
+    status: String(task.status || "completed").trim() || "completed",
+    inputArtifacts: Array.isArray(task.inputArtifacts)
+      ? task.inputArtifacts.map((item) => ({
+          originalName: String(item?.originalName || item?.originalname || "").trim(),
+          storedName: String(item?.storedName || item?.filename || "").trim(),
+          mimeType: String(item?.mimeType || item?.mimetype || "").trim(),
+          size: Math.max(0, Number(item?.size || 0) || 0),
+          absolutePath: String(item?.absolutePath || item?.path || "").trim(),
+          relativePath: String(item?.relativePath || "").trim()
+        }))
+      : [],
+    outputAssetId: String(task.outputAssetId || "").trim(),
+    outputAssetName: String(task.outputAssetName || "").trim(),
+    summary: String(task.summary || "").trim(),
+    progress: normalizeTaskProgress(task.progress),
+    timeline: normalizeTaskTimeline(task.timeline),
+    debug: normalizeTaskDebug(task.debug),
+    errorMessage: String(task.errorMessage || "").trim(),
+    createdAt: task.createdAt || now(),
+    updatedAt: task.updatedAt || task.createdAt || now()
+  };
+}
+
+function buildSlxParserTaskSummary(task = {}) {
+  if (task.status === "running") {
+    return task.progress?.label || task.progress?.message || "正在解析 SLX 模型";
+  }
+  if (task.status === "failed") {
+    return task.errorMessage || task.summary || "SLX 解析失败";
+  }
+  if (task.summary) {
+    return task.summary;
+  }
+  return "SLX 解析任务";
+}
+
 function normalizeModule(module, projectId) {
   if (!module) {
     return createModuleRecord(projectId);
@@ -701,6 +742,9 @@ function normalizeModule(module, projectId) {
     ),
     documentExtractionTasks: Array.isArray(module.documentExtractionTasks)
       ? module.documentExtractionTasks.map(normalizeDocumentExtractionTask)
+      : [],
+    slxParserTasks: Array.isArray(module.slxParserTasks)
+      ? module.slxParserTasks.map(normalizeSlxParserTask)
       : [],
     auditLog: Array.isArray(module.auditLog) ? module.auditLog : [],
     createdAt: module.createdAt || now(),
@@ -827,6 +871,35 @@ export class ProjectService {
           task.errorMessage = previousStatus === "queued"
             ? "任务在服务重启后仍处于排队状态，请重新发起。"
             : "任务在服务重启或中断后未恢复，已标记为失败。";
+          task.progress = normalizeTaskProgress({
+            ...task.progress,
+            stage: "failed",
+            label: "任务已中断",
+            message: task.errorMessage,
+            percent: 100,
+            updatedAt: now()
+          });
+          appendTimelineEntry(task, {
+            at: now(),
+            stage: "failed",
+            label: "任务已中断",
+            message: task.errorMessage,
+            level: "error"
+          });
+          task.summary = task.errorMessage;
+          task.updatedAt = now();
+          recoveredCount += 1;
+          changed = true;
+        }
+        for (const task of module.slxParserTasks || []) {
+          if (!isInterruptedTaskAfterRestart(task)) {
+            continue;
+          }
+          const previousStatus = task.status;
+          task.status = "failed";
+          task.errorMessage = previousStatus === "queued"
+            ? "SLX 解析任务在服务重启后仍处于排队状态，请重新发起。"
+            : "SLX 解析任务在服务重启或中断后未恢复，已标记为失败。";
           task.progress = normalizeTaskProgress({
             ...task.progress,
             stage: "failed",
@@ -1707,6 +1780,176 @@ export class ProjectService {
     });
     await this.saveProject(project);
     return record;
+  }
+
+  async createSlxJsonModuleAsset(projectId, moduleId, input = {}) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const role = "model_requirement_view_json";
+    const moduleName = String(module.name || "").trim() || "未命名模块";
+    const baseName = `${moduleName}-model-requirement-view`;
+    const existingNames = new Set((module.assets || []).map((asset) => asset.originalName));
+    let fileName = `${baseName}.json`;
+    if (existingNames.has(fileName)) {
+      const stampedName = `${baseName}-${formatAssetTimestamp()}.json`;
+      fileName = existingNames.has(stampedName) ? `${baseName}-${formatAssetTimestamp()}-2.json` : stampedName;
+    }
+
+    const storedName = toSafeStoredName(fileName);
+    const relativePath = path.join(projectId, moduleId, storedName);
+    const absolutePath = path.join(config.uploadDir, relativePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    const jsonContent = typeof input.modelRequirementView === "string"
+      ? input.modelRequirementView
+      : JSON.stringify(input.modelRequirementView || {}, null, 2);
+    await fs.writeFile(absolutePath, jsonContent, "utf8");
+    const stat = await fs.stat(absolutePath);
+
+    const record = {
+      id: randomUUID(),
+      role,
+      originalName: fileName,
+      storedName,
+      relativePath,
+      absolutePath,
+      mimeType: "application/json",
+      size: stat.size,
+      uploadedAt: now()
+    };
+
+    module.assets.push(record);
+
+    if (input.sourceTaskId) {
+      const task = (module.slxParserTasks || []).find((item) => item.id === input.sourceTaskId);
+      if (task) {
+        task.outputAssetId = record.id;
+        task.outputAssetName = record.originalName;
+        task.updatedAt = now();
+      }
+    }
+
+    touchModule(module, "slx_json_asset_created", `已生成模型需求 JSON 资产：${record.originalName}`);
+    project.auditLog.push({
+      at: now(),
+      action: "module_slx_json_asset_created",
+      detail: `${module.name} 已新增模型需求 JSON 资产：${record.originalName}`
+    });
+    await this.saveProject(project);
+    return record;
+  }
+
+  async listSlxParserTasks(projectId, moduleId) {
+    const module = await this.getModule(projectId, moduleId);
+    return [...(module.slxParserTasks || [])].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  async getSlxParserTask(projectId, moduleId, taskId) {
+    const module = await this.getModule(projectId, moduleId);
+    return (module.slxParserTasks || []).find((task) => task.id === taskId) || null;
+  }
+
+  async deleteSlxParserTask(projectId, moduleId, taskId) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const taskIndex = (module.slxParserTasks || []).findIndex((item) => item.id === taskId);
+    if (taskIndex === -1) {
+      throw new Error("SLX parser task not found");
+    }
+
+    const [removedTask] = module.slxParserTasks.splice(taskIndex, 1);
+    touchModule(module, "slx_parser_task_deleted", "SLX 解析任务已删除");
+    project.auditLog.push({
+      at: now(),
+      action: "module_slx_parser_task_deleted",
+      detail: `${module.name} SLX 解析任务已删除`
+    });
+    await this.saveProject(project);
+    return { id: taskId, deleted: true };
+  }
+
+  async recordSlxParserTask(projectId, moduleId, taskInput = {}) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const task = normalizeSlxParserTask({
+      ...taskInput,
+      moduleId,
+      createdAt: now(),
+      updatedAt: now()
+    });
+    task.summary = buildSlxParserTaskSummary(task);
+    module.slxParserTasks.unshift(task);
+    touchModule(module, "slx_parser_task_created", "SLX 解析任务已创建");
+    project.auditLog.push({
+      at: now(),
+      action: "module_slx_parser_task_created",
+      detail: `${module.name} 已新增 SLX 解析任务`
+    });
+    await this.saveProject(project);
+    return task;
+  }
+
+  async updateSlxParserTask(projectId, moduleId, taskId, updates = {}) {
+    const taskKey = `${projectId}:${moduleId}:slx_parser:${taskId}`;
+    return this.enqueueGenerationTaskMutation(taskKey, async () => {
+      const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+      const task = (module.slxParserTasks || []).find((item) => item.id === taskId);
+      if (!task) {
+        throw new Error("SLX parser task not found");
+      }
+
+      if (updates.status) {
+        task.status = String(updates.status).trim();
+      }
+      if (Array.isArray(updates.inputArtifacts)) {
+        task.inputArtifacts = normalizeSlxParserTask({
+          inputArtifacts: updates.inputArtifacts
+        }).inputArtifacts;
+      }
+      if (typeof updates.outputAssetId === "string") {
+        task.outputAssetId = updates.outputAssetId.trim();
+      }
+      if (typeof updates.outputAssetName === "string") {
+        task.outputAssetName = updates.outputAssetName.trim();
+      }
+      if (typeof updates.summary === "string") {
+        task.summary = updates.summary;
+      }
+      if (Object.hasOwn(updates, "errorMessage")) {
+        task.errorMessage = String(updates.errorMessage || "").trim();
+      }
+      if (updates.progress && typeof updates.progress === "object") {
+        task.progress = {
+          ...normalizeTaskProgress(task.progress),
+          ...normalizeTaskProgress({
+            ...task.progress,
+            ...updates.progress,
+            updatedAt: now()
+          })
+        };
+      }
+      if (updates.debug && typeof updates.debug === "object") {
+        task.debug = mergeTaskDebug(task.debug, updates.debug);
+      }
+      if (updates.timelineEntry && typeof updates.timelineEntry === "object") {
+        appendTimelineEntry(task, updates.timelineEntry);
+      }
+      if (updates.debugEvent && typeof updates.debugEvent === "object") {
+        appendTaskDebugEvent(task, updates.debugEvent);
+      }
+
+      task.summary = buildSlxParserTaskSummary(task);
+      task.updatedAt = now();
+
+      if (task.status === "completed") {
+        touchModule(module, "slx_parser_completed", "SLX 解析任务已完成");
+      } else if (task.status === "failed") {
+        touchModule(module, "slx_parser_failed", "SLX 解析任务失败");
+      } else {
+        touchModule(module, "slx_parser_task_updated", "SLX 解析任务状态已更新");
+      }
+
+      await this.saveProject(project);
+      return task;
+    });
   }
 
   async getProjectAndModule(projectId, moduleId) {

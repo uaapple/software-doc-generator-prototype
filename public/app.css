@@ -2252,3 +2252,94 @@ button.danger {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── SLX Parser: Upload Zone ───────────────────────────── */
+
+.slx-upload-zone {
+  position: relative;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-alt);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.slx-upload-zone:hover {
+  border-color: var(--brand);
+  background: #eef4fb;
+  box-shadow: 0 0 0 3px rgba(19, 81, 151, 0.08);
+}
+
+.slx-upload-zone.dragover {
+  border-color: var(--brand);
+  background: #e0ecf8;
+  box-shadow: 0 0 0 4px rgba(19, 81, 151, 0.15);
+}
+
+.slx-upload-zone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  gap: 6px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.slx-upload-plus {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+  color: var(--brand);
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 48px;
+  text-align: center;
+  margin-bottom: 8px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.slx-upload-zone:hover .slx-upload-plus {
+  background: var(--brand);
+  color: #fff;
+}
+
+.slx-upload-zone.dragover .slx-upload-plus {
+  background: var(--brand-strong);
+  border-color: var(--brand-strong);
+  color: #fff;
+}
+
+.slx-upload-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+.slx-upload-hint {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.slx-file-info {
+  margin-top: 10px;
+  color: var(--success);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.slx-file-info:empty {
+  display: none;
+}
+
+.slx-file-info-error {
+  color: var(--danger);
+}

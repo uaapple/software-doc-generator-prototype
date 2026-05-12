@@ -11,6 +11,8 @@ import { LlmProfileService } from "./llm-profile-service.js";
 import { ModuleSkillService, canonicalizeBootstrapAssetRole } from "./module-skill-service.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
 import { SpreadsheetExtractionService } from "./spreadsheet-extraction-service.js";
+import { ModelRequirementViewService } from "./model-requirement-view-service.js";
+import { SlxModelAnalysisService } from "./slx-model-analysis-service.js";
 import { recallSkillInventory, tokenize } from "./software-requirement-agent-shared.js";
 import { writeJson } from "./storage.js";
 import { config } from "../config.js";
@@ -602,17 +604,25 @@ function assertValidAnchors(anchors = [], assetManifest = []) {
   }
 }
 
-function assertValidResultItems(resultItems = [], anchors = []) {
+function assertValidResultItems(resultItems = [], anchors = [], modelRequirementView = {}) {
   if (!Array.isArray(resultItems) || !resultItems.length) {
     throw new Error("Hermes content_generate must return at least one result item");
   }
   const anchorIds = new Set(anchors.map((anchor) => anchor.anchorId).filter(Boolean));
+  const factIds = new Set((modelRequirementView.facts || []).map((fact) => fact.id).filter(Boolean));
 
   for (const item of resultItems) {
-    if (!String(item?.requirementText || "").trim() || !Array.isArray(item.sourceAnchorIds) || !item.sourceAnchorIds.length) {
+    const sourceFactIds = Array.isArray(item.sourceFactIds) ? item.sourceFactIds : [];
+    const sourceAnchorIds = Array.isArray(item.sourceAnchorIds) ? item.sourceAnchorIds : [];
+    if (!String(item?.requirementText || "").trim() || (!sourceFactIds.length && !sourceAnchorIds.length)) {
       throw new Error("Hermes generated result item is missing required fields");
     }
-    for (const sourceAnchorId of item.sourceAnchorIds) {
+    for (const sourceFactId of sourceFactIds) {
+      if (!factIds.has(sourceFactId)) {
+        throw new Error("Hermes generated a sourceFactId outside the modelRequirementView fact set");
+      }
+    }
+    for (const sourceAnchorId of sourceAnchorIds) {
       if (!anchorIds.has(sourceAnchorId)) {
         throw new Error("Hermes generated a sourceAnchorId outside the anchor index set");
       }
@@ -634,10 +644,25 @@ function assertValidExtractedDocument(document = {}, targetDocumentType = "softw
   }
 }
 
-function resolveSourceAnchors(resultItems = [], anchors = []) {
+function resolveSourceAnchors(resultItems = [], anchors = [], modelRequirementView = {}) {
   const anchorById = new Map(anchors.map((anchor) => [anchor.anchorId, anchor]));
+  const factById = new Map((modelRequirementView.facts || []).map((fact) => [fact.id, fact]));
   return resultItems.map((item) => {
-    const resolvedSourceRefs = (item.sourceAnchorIds || []).map((sourceAnchorId) => {
+    const resolvedFactRefs = (item.sourceFactIds || []).flatMap((sourceFactId) => {
+      const fact = factById.get(sourceFactId);
+      if (!fact) {
+        throw new Error(`无法解析 sourceFactId: ${sourceFactId}`);
+      }
+      return (fact.sourceRefs || []).map((sourceRef) => ({
+        fileName: sourceRef.fileName || "",
+        fileRole: sourceRef.fileRole || "",
+        location: sourceRef.location || "",
+        excerpt: sourceRef.excerpt || fact.behavior || "",
+        sourceFactId,
+        sourceAnchorId: sourceRef.sourceAnchorId || ""
+      }));
+    });
+    const resolvedAnchorRefs = (item.sourceAnchorIds || []).map((sourceAnchorId) => {
       const anchor = anchorById.get(sourceAnchorId);
       if (!anchor) {
         throw new Error(`无法解析 sourceAnchorId: ${sourceAnchorId}`);
@@ -646,9 +671,11 @@ function resolveSourceAnchors(resultItems = [], anchors = []) {
         fileName: anchor.fileName,
         fileRole: anchor.fileRole,
         location: anchor.location,
-        excerpt: anchor.excerpt
+        excerpt: anchor.excerpt,
+        sourceAnchorId
       };
     });
+    const resolvedSourceRefs = [...resolvedFactRefs, ...resolvedAnchorRefs];
 
     if (!resolvedSourceRefs.length) {
       throw new Error("reference_resolve 未生成任何 sourceRefs");
@@ -707,12 +734,51 @@ function buildHermesStepDescriptor(stepType = "") {
       runningPercent: 68
     };
   }
+  if (stepType === "slx_parse_generate") {
+    return {
+      stage: "slx_parse_generate",
+      runningLabel: "正在解析 SLX 模型并生成模型需求视图",
+      actionLabel: "解析 SLX 模型并生成模型需求视图",
+      runningPercent: 60
+    };
+  }
   return {
     stage: stepType || "agent_runtime",
     runningLabel: "正在调用本机 Hermes",
     actionLabel: stepType || "agent step",
     runningPercent: 60
   };
+}
+
+export function validateModelRequirementView(mrv = {}) {
+  if (!mrv || typeof mrv !== "object") {
+    throw new Error("modelRequirementView 必须是非空对象");
+  }
+  if (!mrv.version) {
+    throw new Error("modelRequirementView.version 必须存在");
+  }
+  if (!Array.isArray(mrv.facts) || !mrv.facts.length) {
+    throw new Error("modelRequirementView.facts 必须是非空数组");
+  }
+  for (const [index, fact] of mrv.facts.entries()) {
+    if (!fact.id) {
+      throw new Error(`modelRequirementView.facts[${index}] 必须有 id`);
+    }
+    if (!fact.behavior) {
+      throw new Error(`modelRequirementView.facts[${index}] 必须有 behavior`);
+    }
+    if (!Array.isArray(fact.sourceRefs) || !fact.sourceRefs.length) {
+      throw new Error(`modelRequirementView.facts[${index}].sourceRefs 必须是非空数组`);
+    }
+    for (const [refIndex, ref] of fact.sourceRefs.entries()) {
+      if (!ref.fileName && !ref.fileRole) {
+        throw new Error(`modelRequirementView.facts[${index}].sourceRefs[${refIndex}] 至少包含 fileName 或 fileRole`);
+      }
+      if (!ref.location && !ref.excerpt) {
+        throw new Error(`modelRequirementView.facts[${index}].sourceRefs[${refIndex}] 至少包含 location 或 excerpt`);
+      }
+    }
+  }
 }
 
 export class PipelineService {
@@ -728,6 +794,8 @@ export class PipelineService {
     this.llmProfileService = new LlmProfileService();
     this.moduleSkillService = new ModuleSkillService();
     this.spreadsheetExtractionService = new SpreadsheetExtractionService();
+    this.modelRequirementViewService = new ModelRequirementViewService();
+    this.slxModelAnalysisService = options.slxModelAnalysisService || new SlxModelAnalysisService();
     this.hermesAgentClient = new HermesAgentClient();
   }
 
@@ -1056,45 +1124,129 @@ export class PipelineService {
       return assertHermesStepResponse(stepType, response);
     };
 
+    const extractionInputAssets = inputAssets.map((asset) => ({
+      id: asset.id,
+      role: asset.role,
+      fileRole: asset.role,
+      originalName: asset.originalName,
+      absolutePath: asset.absolutePath,
+      relativePath: asset.relativePath,
+      storedName: asset.storedName,
+      mimeType: asset.mimeType,
+      size: asset.size
+    }));
+    const slxExtractionAssets = extractionInputAssets.filter((asset) => asset.role === "simulink_slx" || asset.fileRole === "simulink_slx");
+    const slxAssetIds = new Set(slxExtractionAssets.map((asset) => asset.id).filter(Boolean));
+
     let extractions = [];
+    let modelRequirementExtractions = [];
     let anchors = [];
     if (this.hermesAgentClient.transport === "cli") {
       extractions = await this.extractionService.extractFiles(
-        {
-          files: inputAssets.map((asset) => ({
-            id: asset.id,
-            role: asset.role,
-            fileRole: asset.role,
-            originalName: asset.originalName,
-            absolutePath: asset.absolutePath,
-            relativePath: asset.relativePath,
-            storedName: asset.storedName,
-            mimeType: asset.mimeType,
-            size: asset.size
-          }))
-        },
+        { files: extractionInputAssets },
         { allowStoredNameFallback: true }
       );
+      modelRequirementExtractions = extractions;
       anchors = buildAnchorsFromExtractions(extractions, assetManifest);
     } else {
-      const anchorArtifact = assertHermesStepResponse(
-        "anchor_index_build",
-        await this.hermesAgentClient.executeStep({
-          taskId,
-          stepType: "anchor_index_build",
-          allowedPaths: assetManifest.map((asset) => asset.absolutePath).filter(Boolean),
-          inputArtifact: {
-            assets: assetManifest
+      const hermesAnchorAssets = assetManifest.filter((asset) => !slxAssetIds.has(asset.assetId));
+      let slxAnchors = [];
+      let slxExtractions = [];
+      if (slxExtractionAssets.length) {
+        await updateTaskProgress(
+          {
+            stage: "extracting_inputs",
+            label: "正在解析 Simulink 模型",
+            message: `正在通过 MATLAB MCP 解析 ${slxExtractionAssets.length} 个 SLX 模型资产。`,
+            percent: 30,
+            current: 0,
+            total: slxExtractionAssets.length
           },
-          skillInventory: effectiveSkillInventory,
-          llmProfileSnapshot: llmProfile
-        })
-      );
-      anchors = Array.isArray(anchorArtifact.anchors) ? anchorArtifact.anchors : [];
+          {
+            timelineEntry: {
+              stage: "extracting_inputs",
+              label: "解析 Simulink 模型",
+              message: `开始通过 MATLAB MCP 解析 ${slxExtractionAssets.length} 个 SLX 模型资产。`,
+              level: "info"
+            }
+          }
+        );
+        slxExtractions = await this.extractionService.extractFiles(
+          { files: slxExtractionAssets },
+          { allowStoredNameFallback: true, documentType: "software_requirement" }
+        );
+        slxAnchors = buildAnchorsFromExtractions(slxExtractions, assetManifest);
+        await updateTaskProgress(
+          {
+            stage: "extracting_inputs",
+            label: "Simulink 模型解析完成",
+            message: `已从 SLX 模型提取 ${slxAnchors.length} 个模型事实锚点。`,
+            percent: 36,
+            current: slxExtractionAssets.length,
+            total: slxExtractionAssets.length
+          },
+          {
+            timelineEntry: {
+              stage: "extracting_inputs",
+              label: "Simulink 模型解析完成",
+              message: `SLX 模型解析完成，共得到 ${slxAnchors.length} 个模型事实锚点。`,
+              level: "info"
+            }
+          }
+        );
+      }
+
+      let hermesAnchors = [];
+      if (hermesAnchorAssets.length) {
+        const anchorArtifact = assertHermesStepResponse(
+          "anchor_index_build",
+          await this.hermesAgentClient.executeStep({
+            taskId,
+            stepType: "anchor_index_build",
+            allowedPaths: hermesAnchorAssets.map((asset) => asset.absolutePath).filter(Boolean),
+            inputArtifact: {
+              assets: hermesAnchorAssets
+            },
+            skillInventory: effectiveSkillInventory,
+            llmProfileSnapshot: llmProfile
+          })
+        );
+        hermesAnchors = Array.isArray(anchorArtifact.anchors) ? anchorArtifact.anchors : [];
+      }
+      anchors = [...hermesAnchors, ...slxAnchors];
+      modelRequirementExtractions = [...buildAnchorBackedExtractions(hermesAnchors, assetManifest), ...slxExtractions];
     }
     assertValidAnchors(anchors, assetManifest);
     extractions = buildAnchorBackedExtractions(anchors, assetManifest);
     assertValidExtractions(extractions);
+    const modelRequirementView = this.modelRequirementViewService.build({
+      project: contextProject,
+      assets: assetManifest,
+      extractions: modelRequirementExtractions.length ? modelRequirementExtractions : extractions,
+      anchors
+    });
+
+    const preloadedViews = Array.isArray(options.preloadedModelRequirementViews) ? options.preloadedModelRequirementViews : [];
+    if (preloadedViews.length) {
+      const existingFactIds = new Set((modelRequirementView.facts || []).map((f) => f.id));
+      const mergedFacts = [...(modelRequirementView.facts || [])];
+      const mergedSourceAssets = [...(modelRequirementView.sourceAssets || [])];
+      for (const pView of preloadedViews) {
+        for (const fact of (pView.facts || [])) {
+          if (!existingFactIds.has(fact.id)) {
+            mergedFacts.push(fact);
+            existingFactIds.add(fact.id);
+          }
+        }
+        for (const srcAsset of (pView.sourceAssets || [])) {
+          if (!mergedSourceAssets.some((sa) => sa.assetId === srcAsset.assetId)) {
+            mergedSourceAssets.push(srcAsset);
+          }
+        }
+      }
+      modelRequirementView.facts = mergedFacts;
+      modelRequirementView.sourceAssets = mergedSourceAssets;
+    }
 
     await updateTaskProgress(
       {
@@ -1115,7 +1267,8 @@ export class PipelineService {
         },
         debug: {
           artifacts: {
-            anchors
+            anchors,
+            modelRequirementView
           }
         },
         timelineEntry: {
@@ -1346,26 +1499,21 @@ export class PipelineService {
       };
     }
 
-    const outline = await runHermesStep("outline_build", {
-      assets: assetManifest,
+    const generationModelRequirementView = this.modelRequirementViewService.buildCompactForGeneration(modelRequirementView, {
       anchors,
-      recalledAtoms
+      assets: assetManifest,
+      requiredTitleOutline,
+      maxFacts: config.hermes?.maxModelRequirementFacts || undefined,
+      maxBytes: config.hermes?.maxModelRequirementBytes || undefined
     });
-    assertValidOutline(outline);
 
     await updateTaskProgress(
+      {},
       {
-        stage: "outline_build",
-        label: "正在调用 Hermes 读取 Skill 清单并生成提纲",
-        message: `Hermes 已读取 task skill bundle，并构建 ${outline.sections.length} 个主题分解。`,
-        percent: 68
-      },
-      {
-        timelineEntry: {
-          stage: "outline_build",
-          label: "生成需求提纲",
-          message: `提纲生成完成，Hermes 已基于 task skill bundle 覆盖 ${outline.sections.length} 个主题。`,
-          level: "info"
+        debug: {
+          artifacts: {
+            generationModelRequirementView
+          }
         }
       }
     );
@@ -1376,7 +1524,7 @@ export class PipelineService {
       assets: assetManifest,
       anchors,
       recalledAtoms,
-      outline,
+      modelRequirementView: generationModelRequirementView,
       requiredTitleOutline,
       requiredLeafCount
     });
@@ -1401,7 +1549,7 @@ export class PipelineService {
       {
         stage: "content_postprocess",
         label: "正在校验 Hermes 返回内容",
-        message: `Hermes 已返回 ${titledResultItems.length} 条正文，正在校验 sourceAnchorIds 与结果结构。`,
+        message: `Hermes 已返回 ${titledResultItems.length} 条正文，正在校验 sourceFactIds/sourceAnchorIds 与结果结构。`,
         percent: 84
       },
       {
@@ -1419,7 +1567,7 @@ export class PipelineService {
       }
     );
 
-    assertValidResultItems(titledResultItems, anchors);
+    assertValidResultItems(titledResultItems, anchors, generationModelRequirementView);
 
     await updateTaskProgress(
       {
@@ -1438,7 +1586,7 @@ export class PipelineService {
         debugEvent: {
           stage: "result_items_validated",
           label: "结果校验通过",
-          message: `候选结果已通过 sourceAnchorIds 与结构校验，共 ${titledResultItems.length} 条。`,
+          message: `候选结果已通过 sourceFactIds/sourceAnchorIds 与结构校验，共 ${titledResultItems.length} 条。`,
           level: "info"
         },
         timelineEntry: {
@@ -1454,7 +1602,7 @@ export class PipelineService {
       {
         stage: "reference_resolve",
         label: "正在回填来源引用",
-        message: `准备将 ${resultItems.length} 条候选结果中的 sourceAnchorIds 解析为 sourceRefs。`,
+        message: `准备将 ${resultItems.length} 条候选结果中的 sourceFactIds/sourceAnchorIds 解析为 sourceRefs。`,
         percent: 90
       },
       {
@@ -1466,13 +1614,13 @@ export class PipelineService {
         timelineEntry: {
           stage: "reference_resolve",
           label: "回填来源引用",
-          message: "开始将 sourceAnchorIds 反解为前端兼容的 sourceRefs。",
+          message: "开始将 sourceFactIds/sourceAnchorIds 反解为前端兼容的 sourceRefs。",
           level: "info"
         }
       }
     );
 
-    const resolvedResultItems = resolveSourceAnchors(titledResultItems, anchors);
+    const resolvedResultItems = resolveSourceAnchors(titledResultItems, anchors, generationModelRequirementView);
 
     await updateTaskProgress(
       {
@@ -1490,7 +1638,7 @@ export class PipelineService {
         debugEvent: {
           stage: "reference_resolve",
           label: "引用回填完成",
-          message: `已将 ${resolvedResultItems.length} 条结果的 sourceAnchorIds 解析为 sourceRefs。`,
+          message: `已将 ${resolvedResultItems.length} 条结果的 sourceFactIds/sourceAnchorIds 解析为 sourceRefs。`,
           level: "info"
         }
       }
@@ -1723,21 +1871,27 @@ export class PipelineService {
         {
           onProgress: async (event) => {
             if (event.phase === "extracting_file") {
+              const slxLabel = event.slxParsing ? "正在解析 Simulink 模型" : "正在解析输入资料";
               await updateTaskProgress({
                 stage: "extracting_inputs",
-                label: "正在解析输入资料",
-                message: `正在解析第 ${event.current}/${event.total} 个文件：${event.fileName}`,
+                label: slxLabel,
+                message: event.slxParsing
+                  ? `正在解析 Simulink 模型 ${event.fileName}`
+                  : `正在解析第 ${event.current}/${event.total} 个文件：${event.fileName}`,
                 percent: Math.min(48, 22 + Math.round((event.current / Math.max(event.total, 1)) * 22)),
                 current: event.current,
                 total: event.total
               });
             }
             if (event.phase === "file_extracted") {
+              const slxLabel = event.slxParsed ? "Simulink 模型解析完成" : "正在解析输入资料";
               await updateTaskProgress(
                 {
                   stage: "extracting_inputs",
-                  label: "正在解析输入资料",
-                  message: `已完成 ${event.current}/${event.total} 个文件：${event.fileName}`,
+                  label: slxLabel,
+                  message: event.slxParsed
+                    ? `已提取 Simulink 模型 ${event.fileName} 的模型接口/状态/参数事实，共 ${event.evidenceCount || 0} 条证据。`
+                    : `已完成 ${event.current}/${event.total} 个文件：${event.fileName}`,
                   percent: Math.min(50, 24 + Math.round((event.current / Math.max(event.total, 1)) * 24)),
                   current: event.current,
                   total: event.total
@@ -1745,9 +1899,31 @@ export class PipelineService {
                 {
                   timelineEntry: {
                     stage: "extracting_inputs",
-                    label: "文件解析完成",
-                    message: `${event.fileName} 解析完成，提取 ${event.evidenceCount || 0} 条证据。`,
+                    label: event.slxParsed ? "Simulink 模型解析完成" : "文件解析完成",
+                    message: event.slxParsed
+                      ? `Simulink 模型 ${event.fileName} 解析完成，已提取模型接口/状态/参数事实，共 ${event.evidenceCount || 0} 条证据。`
+                      : `${event.fileName} 解析完成，提取 ${event.evidenceCount || 0} 条证据。`,
                     level: "info"
+                  }
+                }
+              );
+            }
+            if (event.phase === "slx_parse_failed") {
+              await updateTaskProgress(
+                {
+                  stage: "extracting_inputs",
+                  label: "Simulink 模型解析失败",
+                  message: event.error,
+                  percent: Math.min(50, 24 + Math.round((event.current / Math.max(event.total, 1)) * 24)),
+                  current: event.current,
+                  total: event.total
+                },
+                {
+                  timelineEntry: {
+                    stage: "extracting_inputs",
+                    label: "Simulink 模型解析失败",
+                    message: event.error,
+                    level: "error"
                   }
                 }
               );
@@ -2527,24 +2703,46 @@ export class PipelineService {
       ? options.assetIds
       : module.assets.map((asset) => asset.id);
     const selectedAssets = module.assets.filter((asset) => selectedAssetIds.includes(asset.id));
+    const jsonMrvAssets = selectedAssets.filter((asset) => asset.role === "model_requirement_view_json");
+    const nonJsonAssets = selectedAssets.filter((asset) => asset.role !== "model_requirement_view_json");
     const inputAssets =
       normalizedDocumentType === "software_requirement" && !isModuleSkillBootstrapTask(options)
-        ? selectedAssets.filter((asset) => !isDisallowedFormalSoftwareRequirementAsset(asset))
-        : selectedAssets;
+        ? nonJsonAssets.filter((asset) => !isDisallowedFormalSoftwareRequirementAsset(asset))
+        : nonJsonAssets;
 
-    if (!inputAssets.length) {
+    let preloadedModelRequirementViews = [];
+    if (jsonMrvAssets.length) {
+      const { resolveStoredFilePath } = await import("./storage.js");
+      for (const jsonAsset of jsonMrvAssets) {
+        const assetPath = resolveStoredFilePath(jsonAsset, { baseDir: config.uploadDir });
+        if (assetPath) {
+          try {
+            const content = await fs.readFile(assetPath, "utf8");
+            const mrv = JSON.parse(content);
+            validateModelRequirementView(mrv);
+            preloadedModelRequirementViews.push(mrv);
+          } catch (error) {
+            const wrapped = new Error(`模型需求 JSON 资产 ${jsonAsset.originalName} 校验失败: ${error.message}`);
+            wrapped.statusCode = 400;
+            throw wrapped;
+          }
+        }
+      }
+    }
+
+    if (!inputAssets.length && !preloadedModelRequirementViews.length) {
       if (
         normalizedDocumentType === "software_requirement" &&
         !isModuleSkillBootstrapTask(options) &&
-        selectedAssets.length &&
-        selectedAssets.every((asset) => isDisallowedFormalSoftwareRequirementAsset(asset))
+        nonJsonAssets.length &&
+        nonJsonAssets.every((asset) => isDisallowedFormalSoftwareRequirementAsset(asset))
       ) {
         const error = new Error("正式软件需求生成不会使用人工范例资产，请选择系统需求或代码/模型资产。");
         error.statusCode = 400;
         error.code = "invalid_generation_assets";
         error.details = {
           documentType: normalizedDocumentType,
-          excludedAssetIds: selectedAssets.map((asset) => asset.id)
+          excludedAssetIds: nonJsonAssets.map((asset) => asset.id)
         };
         throw error;
       }
@@ -2610,7 +2808,8 @@ export class PipelineService {
       skillBundleId: lockedSkillBundleId,
       skillVersion,
       manualTitleOutline,
-      taskId: task.id
+      taskId: task.id,
+      preloadedModelRequirementViews
     });
 
     if (options.asyncStart) {
@@ -2658,5 +2857,301 @@ export class PipelineService {
     }
 
     return runGeneration();
+  }
+
+  async parseSlxForModule(projectId, moduleId, options = {}) {
+    const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
+    const slxFile = options.slxFile;
+    if (!slxFile || !slxFile.absolutePath) {
+      throw new Error("SLX file is required");
+    }
+
+    const inputArtifacts = [{
+      originalName: slxFile.originalName || "",
+      storedName: slxFile.storedName || "",
+      mimeType: slxFile.mimeType || "",
+      size: slxFile.size || 0,
+      absolutePath: slxFile.absolutePath,
+      relativePath: slxFile.relativePath || ""
+    }];
+
+    const selectedProfile = await this.llmProfileService.resolveProfile(options.llmProfileId || "");
+    const llmProfile = selectedProfile
+      ? {
+          id: selectedProfile.id,
+          provider: selectedProfile.provider,
+          name: selectedProfile.name,
+          model: selectedProfile.model,
+          baseURL: selectedProfile.baseURL
+        }
+      : null;
+
+    const task = await this.projectService.recordSlxParserTask(projectId, moduleId, {
+      status: options.asyncStart ? "queued" : "running",
+      inputArtifacts,
+      summary: "正在解析 SLX 模型",
+      progress: {
+        stage: "slx_parse_prepare",
+        label: "正在准备 SLX 解析",
+        message: "任务已创建，正在准备解析 SLX 模型。",
+        percent: 3,
+        current: 0,
+        total: 1
+      },
+      timeline: [
+        {
+          at: new Date().toISOString(),
+          stage: "slx_parse_prepare",
+          label: "SLX 解析任务已启动",
+          message: `SLX 解析任务已创建，等待后台处理 ${slxFile.originalName || "SLX 文件"}。`,
+          level: "info"
+        }
+      ]
+    });
+
+    const updateTaskProgress = async (progress = {}, extraUpdates = {}) =>
+      this.projectService.updateSlxParserTask(projectId, moduleId, task.id, {
+        progress,
+        ...extraUpdates
+      });
+
+    const runParse = async () => {
+      try {
+        await updateTaskProgress(
+          {
+            stage: "slx_parse_prepare",
+            label: "正在准备 SLX 解析",
+            message: `已整理输入 SLX 文件 ${slxFile.originalName || ""}，准备调用 MATLAB MCP。`,
+            percent: 18,
+            current: 1,
+            total: 1
+          },
+          {
+            timelineEntry: {
+              stage: "slx_parse_prepare",
+              label: "准备 SLX 解析",
+              message: "已完成输入整理，准备调用 MATLAB MCP 解析 SLX 模型。",
+              level: "info"
+            }
+          }
+        );
+
+        const descriptor = buildHermesStepDescriptor("slx_parse_generate");
+        const startedAt = new Date().toISOString();
+
+        await updateTaskProgress(
+          {
+            stage: descriptor.stage,
+            label: descriptor.runningLabel,
+            message: "正在调用 MATLAB MCP 解析 SLX 模型并生成模型需求视图。",
+            percent: descriptor.runningPercent
+          },
+          {
+            debug: {
+              agent: {
+                transport: "matlab_mcp",
+                currentStep: "slx_parse_generate",
+                status: "running",
+                startedAt,
+                lastEventAt: startedAt,
+                elapsedMs: 0
+              }
+            },
+            timelineEntry: {
+              stage: descriptor.stage,
+              label: descriptor.runningLabel,
+              message: "已开始调用 MATLAB MCP 执行 SLX 解析。",
+              level: "info"
+            }
+          }
+        );
+
+        let extraction;
+        try {
+          extraction = await this.slxModelAnalysisService.analyzeAndConvertToExtraction(
+            {
+              ...slxFile,
+              id: slxFile.id || "",
+              role: "simulink_slx"
+            },
+            { documentType: "software_requirement" }
+          );
+        } finally {
+          await this.slxModelAnalysisService.mcpClient?.shutdown?.().catch(() => {});
+        }
+        const modelRequirementView = this.modelRequirementViewService.build({
+          project: { documentType: "software_requirement" },
+          assets: [{ ...slxFile, role: "simulink_slx" }],
+          extractions: [extraction],
+          anchors: []
+        });
+        const summary = extraction.summary || "";
+
+        const completedAt = new Date().toISOString();
+        await updateTaskProgress({}, {
+          debug: {
+            agent: {
+              transport: "matlab_mcp",
+              currentStep: "slx_parse_generate",
+              status: "completed",
+              startedAt,
+              lastEventAt: completedAt,
+              elapsedMs: Date.parse(completedAt) - Date.parse(startedAt)
+            }
+          },
+          debugEvent: {
+            stage: descriptor.stage,
+            label: "MATLAB MCP 已返回",
+            message: "MATLAB MCP 已完成 SLX 模型解析。",
+            level: "info",
+            type: "agent_runtime",
+            status: "completed",
+            transport: "matlab_mcp",
+            stepType: "slx_parse_generate",
+            startedAt,
+            elapsedMs: Date.parse(completedAt) - Date.parse(startedAt)
+          }
+        });
+
+        await updateTaskProgress(
+          {
+            stage: "slx_parse_validate",
+            label: "正在校验模型需求视图",
+            message: `MATLAB MCP 已返回解析结果，正在校验 modelRequirementView 结构。`,
+            percent: 78
+          },
+          {
+            timelineEntry: {
+              stage: "slx_parse_validate",
+              label: "校验模型需求视图",
+              message: "开始校验 modelRequirementView 结构完整性。",
+              level: "info"
+            }
+          }
+        );
+
+        validateModelRequirementView(modelRequirementView);
+
+        await updateTaskProgress(
+          {
+            stage: "slx_parse_persist",
+            label: "正在写回模型需求 JSON 资产",
+            message: "校验通过，正在将 modelRequirementView 写回模块资产。",
+            percent: 88
+          },
+          {
+            timelineEntry: {
+              stage: "slx_parse_persist",
+              label: "写回模型需求 JSON 资产",
+              message: "开始将 modelRequirementView JSON 写回当前模块资产。",
+              level: "info"
+            }
+          }
+        );
+
+        const outputAsset = await this.projectService.createSlxJsonModuleAsset(projectId, moduleId, {
+          sourceTaskId: task.id,
+          modelRequirementView
+        });
+
+        const completedTask = await this.projectService.updateSlxParserTask(projectId, moduleId, task.id, {
+          status: "completed",
+          outputAssetId: outputAsset.id,
+          outputAssetName: outputAsset.originalName,
+          summary: summary || `已从 SLX 模型解析得到 ${Array.isArray(modelRequirementView.facts) ? modelRequirementView.facts.length : 0} 条模型事实`,
+          progress: {
+            stage: "completed",
+            label: "SLX 解析任务已完成",
+            message: `已生成模型需求 JSON 资产：${outputAsset.originalName}`,
+            percent: 100
+          },
+          timelineEntry: {
+            stage: "completed",
+            label: "SLX 解析任务完成",
+            message: `解析完成，结果已写回模块资产：${outputAsset.originalName}`,
+            level: "info"
+          }
+        });
+
+        return {
+          projectId,
+          moduleId,
+          task: completedTask,
+          outputAsset
+        };
+      } catch (error) {
+        const stackCapture = clipDebugText(error.stack || "", DEBUG_STACK_LIMIT);
+        await this.projectService.updateSlxParserTask(projectId, moduleId, task.id, {
+          status: "failed",
+          errorMessage: error.message || "SLX 解析失败",
+          debug: {
+            lastError: {
+              at: new Date().toISOString(),
+              stage: error.stage || "slx_parse",
+              message: error.message || "SLX 解析失败",
+              stack: stackCapture.text
+            }
+          },
+          progress: {
+            stage: "failed",
+            label: "SLX 解析任务失败",
+            message: error.message || "SLX 解析失败",
+            percent: 100
+          },
+          timelineEntry: {
+            stage: "failed",
+            label: "SLX 解析任务失败",
+            message: error.message || "SLX 解析失败",
+            level: "error"
+          },
+          summary: error.message || "SLX 解析失败"
+        });
+        throw error;
+      }
+    };
+
+    if (options.asyncStart) {
+      const runQueuedTask = () => runParse().catch((error) => {
+        console.error("SLX parse failed", error);
+        return null;
+      });
+      if (this.hermesTaskQueueService) {
+        this.hermesTaskQueueService.enqueue({
+          id: task.id,
+          type: "slx_parse",
+          title: "SLX 解析",
+          projectId,
+          moduleId,
+          documentType: "software_requirement",
+          onStart: async () => {
+            await this.projectService.updateSlxParserTask(projectId, moduleId, task.id, {
+              status: "running",
+              progress: {
+                stage: "slx_parse_prepare",
+                label: "SLX 解析任务开始执行",
+                message: "任务已从 Hermes 队列取出，正在准备解析 SLX 模型。",
+                percent: 5
+              },
+              timelineEntry: {
+                stage: "slx_parse_prepare",
+                label: "SLX 解析任务开始执行",
+                message: "任务已从 Hermes 队列取出，开始后台处理。",
+                level: "info"
+              }
+            });
+          },
+          run: runQueuedTask
+        });
+      } else {
+        runQueuedTask();
+      }
+      return {
+        projectId,
+        moduleId,
+        task
+      };
+    }
+
+    return runParse();
   }
 }

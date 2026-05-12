@@ -31,6 +31,7 @@ import { createHermesApp } from "../src/hermes-app.js";
 import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
 import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
+import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -550,6 +551,90 @@ const tests = [
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
+    }
+  },
+  {
+    name: "Model requirement view builds stable facts from C, PDF and SLX anchors",
+    run: async () => {
+      const service = new ModelRequirementViewService();
+      const anchors = [
+        {
+          anchorId: "anchor-c",
+          assetId: "asset-c",
+          fileName: "torque.c",
+          fileRole: "generated_c",
+          location: "line 12",
+          excerpt: "if (torqueRequest > 120) { torqueOut = 120; }",
+          summary: "扭矩请求限幅",
+          tags: ["threshold", "logic"]
+        },
+        {
+          anchorId: "anchor-pdf",
+          assetId: "asset-pdf",
+          fileName: "system.pdf",
+          fileRole: "system_pdf",
+          location: "page:1",
+          excerpt: "当扭矩干预激活时，系统应输出目标扭矩。",
+          summary: "扭矩干预目标扭矩输出",
+          tags: ["requirement-like"]
+        },
+        {
+          anchorId: "anchor-slx",
+          assetId: "asset-slx",
+          fileName: "torque.slx",
+          fileRole: "simulink_slx",
+          location: "TorqueModel/In1",
+          excerpt: "接口 TorqueReq (input) 类型:double",
+          summary: "SLX 输入接口",
+          tags: ["interface"]
+        }
+      ];
+
+      const view = service.build({
+        project: { documentType: "software_requirement" },
+        assets: [
+          { assetId: "asset-c", fileName: "torque.c", fileRole: "generated_c" },
+          { assetId: "asset-pdf", fileName: "system.pdf", fileRole: "system_pdf" },
+          { assetId: "asset-slx", fileName: "torque.slx", fileRole: "simulink_slx" }
+        ],
+        anchors
+      });
+      const viewAgain = service.build({ project: { documentType: "software_requirement" }, anchors });
+
+      assert.equal(view.version, "1.0");
+      assert.equal(view.facts.length, 3);
+      assert.deepEqual(view.facts.map((fact) => fact.id), viewAgain.facts.map((fact) => fact.id));
+      assert.ok(view.facts.some((fact) => fact.sourceRefs[0].fileRole === "generated_c" && fact.parameters.length));
+      assert.ok(view.facts.some((fact) => fact.sourceRefs[0].fileRole === "system_pdf" && fact.condition));
+      assert.ok(view.facts.some((fact) => fact.sourceRefs[0].fileRole === "simulink_slx" && fact.signals.includes("TorqueReq")));
+      assert.equal(service.validateReferenceIds(view, [view.facts[0].id]), true);
+      assert.equal(service.validateReferenceIds(view, ["fact-missing"]), false);
+
+      const bundleView = service.build({
+        project: { documentType: "software_requirement" },
+        extractions: [
+          {
+            fileId: "asset-slx",
+            fileName: "torque.slx",
+            fileRole: "simulink_slx",
+            modelFactBundle: {
+              source: { fileName: "torque.slx", modelName: "TorqueModel" },
+              interfaces: [{ name: "TorqueReq", direction: "input", dataType: "double", location: "TorqueModel/In1" }],
+              subsystems: [{ name: "TorqueLimiter", location: "TorqueModel/TorqueLimiter" }],
+              states: [],
+              parameters: [],
+              logicRules: [],
+              timing: [],
+              diagnostics: [],
+              traceRefs: []
+            }
+          }
+        ]
+      });
+      assert.equal(bundleView.facts.length, 2);
+      assert.equal(bundleView.facts[0].sourceRefs[0].fileRole, "simulink_slx");
+      assert.ok(bundleView.facts[0].signals.includes("TorqueReq"));
+      assert.ok(bundleView.facts.some((fact) => fact.topic === "模型结构事实" && fact.behavior.includes("TorqueLimiter")));
     }
   },
   {
@@ -2848,7 +2933,7 @@ const tests = [
     }
   },
   {
-    name: "Hermes agent client content_generate prompt uses skill bundle and sourceAnchorIds contract",
+    name: "Hermes agent client content_generate prompt uses modelRequirementView and sourceFactIds contract",
     run: async () => {
       await withTempConfig(async () => {
         const invocations = [];
@@ -2858,7 +2943,7 @@ const tests = [
             invocations.push({ command, args, options });
             return {
               stdout:
-                "{\"items\":[{\"requirementText\":\"CLI text\",\"type\":\"functional\",\"verificationHint\":\"inspect\",\"sourceAnchorIds\":[\"anchor-1\",\"anchor-2\"],\"conflictNote\":\"\"}]}\n\nsession_id: 20260421_144511_anchor02\n",
+                "{\"items\":[{\"requirementText\":\"CLI text\",\"type\":\"functional\",\"verificationHint\":\"inspect\",\"sourceFactIds\":[\"fact-1\"],\"sourceAnchorIds\":[],\"conflictNote\":\"\"}]}\n\nsession_id: 20260421_144511_anchor02\n",
               stderr: ""
             };
           }
@@ -2891,7 +2976,30 @@ const tests = [
               }
             ],
             recalledAtoms: [],
-            outline: { sections: [{ title: "Section", objective: "Goal", anchorIds: ["anchor-1"] }] },
+            modelRequirementView: {
+              version: "1.0",
+              sourceAssets: [{ assetId: "asset-1", fileName: "charging-model.c", fileRole: "generatedCode" }],
+              facts: [
+                {
+                  id: "fact-1",
+                  topic: "充电状态",
+                  condition: "chargeEnable == true",
+                  behavior: "chargeState = 1;",
+                  signals: ["chargeEnable", "chargeState"],
+                  parameters: [],
+                  stateLogic: "",
+                  sourceRefs: [
+                    {
+                      sourceAnchorId: "anchor-1",
+                      fileName: "charging-model.c",
+                      fileRole: "generatedCode",
+                      location: "line 10-18",
+                      excerpt: "chargeState = 1;"
+                    }
+                  ]
+                }
+              ]
+            },
             requiredTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }]),
             requiredLeafCount: 1,
             template: { requirementIdPrefix: "SWR", sections: [] },
@@ -2906,15 +3014,99 @@ const tests = [
           llmProfileSnapshot: null
         });
 
-        assert.deepEqual(response.artifact.items[0].sourceAnchorIds, ["anchor-1", "anchor-2"]);
+        assert.deepEqual(response.artifact.items[0].sourceFactIds, ["fact-1"]);
         const prompt = invocations[0].args[2];
+        assert.match(prompt, /modelRequirementView|Model requirement view/);
+        assert.match(prompt, /sourceFactIds/);
         assert.match(prompt, /sourceAnchorIds/);
         assert.match(prompt, /requiredTitleOutline/);
         assert.match(prompt, /requiredLeafCount/);
         assert.match(prompt, /manifest\.json/);
         assert.match(prompt, /module_rule_1/);
+        assert.doesNotMatch(prompt, /^Outline:/m);
         assert.doesNotMatch(prompt, /Requirement title/);
         assert.doesNotMatch(prompt, /sourceRefs must exactly reuse/i);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client content_generate prompt treats MRV JSON as C replacement when no C asset is selected",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"items\":[{\"requirementText\":\"MRV JSON text\",\"type\":\"functional\",\"verificationHint\":\"inspect\",\"sourceFactIds\":[\"fact-json-1\"],\"sourceAnchorIds\":[],\"conflictNote\":\"\"}]}\n\nsession_id: 20260511_124716_mrvjson\n",
+              stderr: ""
+            };
+          }
+        });
+
+        await client.executeStep({
+          taskId: "task-mrv-json-contract",
+          stepType: "content_generate",
+          allowedPaths: ["/tmp/low-voltage-model-requirement-view.json", "/tmp/skills/manifest.json"],
+          inputArtifact: {
+            project: { name: "VCU", documentType: "software_requirement" },
+            assets: [
+              {
+                assetId: "asset-json",
+                fileName: "低压能量管理-model-requirement-view.json",
+                fileRole: "model_requirement_view_json",
+                absolutePath: "/tmp/low-voltage-model-requirement-view.json"
+              }
+            ],
+            anchors: [],
+            recalledAtoms: [],
+            modelRequirementView: {
+              version: "1.0",
+              documentType: "software_requirement",
+              compactForGeneration: { strategy: "mrv_compact_generation_v1", originalFactCount: 4552, factCount: 120 },
+              sourceAssets: [{ assetId: "asset-json", fileName: "低压能量管理-model-requirement-view.json", fileRole: "model_requirement_view_json" }],
+              facts: [
+                {
+                  id: "fact-json-1",
+                  topic: "派生信号定义",
+                  condition: "HvCoorn_bStartUpReq",
+                  behavior: "派生信号 HvCoorn_bStartUpReq = KL15 == OFF",
+                  signals: ["HvCoorn_bStartUpReq", "KL15"],
+                  parameters: [],
+                  stateLogic: "",
+                  sourceRefs: [
+                    {
+                      fileName: "HvCoorn.slx",
+                      fileRole: "simulink_slx",
+                      location: "HvCoorn/Logic",
+                      excerpt: "派生信号 HvCoorn_bStartUpReq = KL15 == OFF"
+                    }
+                  ]
+                }
+              ]
+            },
+            requiredTitleOutline: buildManualTitleOutline([{ sectionTitle: "智能补电", itemTitles: ["智能补电激活判断"] }]),
+            requiredLeafCount: 1,
+            template: { requirementIdPrefix: "SWR", sections: [] },
+            skillBundle: {
+              bundlePath: "/tmp/skills",
+              manifestPath: "/tmp/skills/manifest.json",
+              recommendedSkillCodes: [],
+              chunks: []
+            }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        const prompt = invocations[0].args[2];
+        assert.match(prompt, /No generated C source is present/);
+        assert.match(prompt, /sourceFactIds should include relevant implementation evidence/);
+        assert.match(prompt, /compact generation view/);
+        assert.match(prompt, /"hasGeneratedCodeAsset": false/);
+        assert.match(prompt, /"hasModelRequirementJsonAsset": true/);
       });
     }
   },
@@ -3667,9 +3859,37 @@ const tests = [
         const hermesPayloads = [];
 
         pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.extractionService = {
+          async extractFiles(project) {
+            assert.equal(project.files.length, 1);
+            assert.equal(project.files[0].role, "simulink_slx");
+            return [
+              {
+                id: "slx-extraction-1",
+                fileId: project.files[0].id,
+                fileName: project.files[0].originalName,
+                fileRole: "simulink_slx",
+                summary: "SLX 模型: ChargingModel，接口:1",
+                evidence: [
+                  {
+                    id: "slx-anchor-1",
+                    fileId: project.files[0].id,
+                    fileName: project.files[0].originalName,
+                    fileRole: "simulink_slx",
+                    location: "ChargingModel/In1",
+                    excerpt: "接口 ChargeEnable (input) 类型:boolean",
+                    tags: ["interface"],
+                    confidence: 0.8
+                  }
+                ]
+              }
+            ];
+          }
+        };
         pipelineService.hermesAgentClient.executeStep = async (payload) => {
           hermesPayloads.push(payload);
           if (payload.stepType === "anchor_index_build") {
+            assert.ok(payload.inputArtifact.assets.every((asset) => asset.fileRole !== "simulink_slx"));
             return {
               status: "succeeded",
               artifact: {
@@ -3708,41 +3928,10 @@ const tests = [
               }
             };
           }
-          if (payload.stepType === "outline_build") {
-            return {
-              status: "succeeded",
-              artifact: {
-                summary: "充电状态输出",
-                sections: [
-                  {
-                    title: "功能行为",
-                    objective: "描述充电状态输出行为",
-                    anchorIds: ["anchor-1"]
-                  }
-                ]
-              }
-            };
-          }
-          if (payload.stepType === "atom_recall") {
-            return {
-              status: "succeeded",
-              artifact: {
-                items: [
-                  {
-                    skillCode: "module.charge_enable.state",
-                    layer: "module",
-                    profileKey: "charging_management",
-                    kind: "good_example",
-                    title: "充电状态信号输出",
-                    content: "当充电使能时，软件应输出充电状态信号。",
-                    order: 1,
-                    matchedReason: "锚点明确提到充电状态输出。"
-                  }
-                ]
-              }
-            };
-          }
           if (payload.stepType === "content_generate") {
+            const sourceFactId = payload.inputArtifact.modelRequirementView.facts.find((fact) =>
+              fact.sourceRefs?.some((sourceRef) => sourceRef.fileName === "charging-system.md")
+            )?.id || payload.inputArtifact.modelRequirementView.facts[0]?.id;
             return {
               status: "succeeded",
               artifact: {
@@ -3752,7 +3941,8 @@ const tests = [
                     requirementText: "当充电使能时，软件应输出充电状态信号。",
                     type: "functional",
                     verificationHint: "验证充电使能时的状态输出。",
-                    sourceAnchorIds: ["anchor-1"],
+                    sourceFactIds: [sourceFactId],
+                    sourceAnchorIds: [],
                     conflictNote: ""
                   }
                 ]
@@ -3772,9 +3962,11 @@ const tests = [
         await fs.mkdir(uploadDir, { recursive: true });
         const systemFilePath = path.join(uploadDir, "charging-system.md");
         const modelFilePath = path.join(uploadDir, "charging-model.c");
+        const slxFilePath = path.join(uploadDir, "charging-model.slx");
         const referenceFilePath = path.join(uploadDir, "charging-reference.md");
         await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
         await fs.writeFile(modelFilePath, "void Charging_step(void) { chargeState = 1; }", "utf8");
+        await fs.writeFile(slxFilePath, "fake slx payload", "utf8");
         await fs.writeFile(referenceFilePath, "软件应在充电使能时输出充电状态信号。", "utf8");
 
         await projectService.attachModuleAssets(project.id, module.id, {
@@ -3796,6 +3988,15 @@ const tests = [
               size: 44
             }
           ],
+          slx: [
+            {
+              originalname: "charging-model.slx",
+              filename: "charging-model.slx",
+              path: slxFilePath,
+              mimetype: "application/octet-stream",
+              size: 16
+            }
+          ],
           referenceExample: [
             {
               originalname: "charging-reference.md",
@@ -3815,8 +4016,9 @@ const tests = [
         assert.ok(result.task.resultItems.length >= 1);
         assert.ok(result.task.extractions.length >= 1);
         assert.ok(result.task.metrics.extractionEvidenceCount >= 1);
-        assert.equal(result.task.debug.artifacts.assetManifest.length, 2);
-        assert.equal(result.task.debug.artifacts.anchors.length, 1);
+        assert.equal(result.task.debug.artifacts.assetManifest.length, 3);
+        assert.equal(result.task.debug.artifacts.anchors.length, 2);
+        assert.ok(result.task.debug.artifacts.anchors.some((anchor) => anchor.fileRole === "simulink_slx"));
         assert.ok(result.task.debug.artifacts.taskSkillBundle);
         assert.ok(result.task.debug.artifacts.taskSkillBundle.skillBundlePath);
         assert.ok(result.task.debug.artifacts.taskSkillBundle.skillManifestPath);
@@ -3831,9 +4033,7 @@ const tests = [
         assert.ok(manifest.items.length > 0);
         assert.ok(manifest.items.every((item) => item.chunkPath));
 
-        const outlinePayload = hermesPayloads.find((payload) => payload.stepType === "outline_build");
         const contentPayload = hermesPayloads.find((payload) => payload.stepType === "content_generate");
-        assert.equal(outlinePayload.skillBundlePath, skillManifestPath);
         assert.equal(contentPayload.skillBundlePath, skillManifestPath);
         assert.ok(
           result.task.debug.artifacts.assetManifest.every((asset) => asset.fileRole !== "reference_requirement_example")
@@ -3841,25 +4041,23 @@ const tests = [
         assert.ok(
           (contentPayload.inputArtifact.assets || []).every((asset) => asset.fileRole !== "reference_requirement_example")
         );
-        assert.ok(Array.isArray(outlinePayload.recommendedSkillCodes));
         assert.ok(Array.isArray(contentPayload.recommendedSkillCodes));
-        assert.ok(outlinePayload.recommendedSkillCodes.length > 0);
         assert.ok(contentPayload.recommendedSkillCodes.length > 0);
-        assert.ok(outlinePayload.recommendedSkillCodes.length <= config.hermes.maxRecalledAtoms);
         assert.ok(contentPayload.recommendedSkillCodes.length <= config.hermes.maxRecalledAtoms);
+        assert.ok(contentPayload.inputArtifact.modelRequirementView.facts.length >= 1);
 
         const stages = (result.task.timeline || []).map((entry) => entry.stage);
         assert.ok(stages.includes("task_init"));
         assert.ok(stages.includes("effective_skill_resolve"));
         assert.ok(stages.includes("anchor_index_build"));
         assert.ok(stages.includes("atom_recall"));
-        assert.ok(stages.includes("outline_build"));
+        assert.ok(!stages.includes("outline_build"));
         assert.ok(stages.includes("content_generate"));
         assert.ok(stages.includes("reference_resolve"));
         assert.ok(stages.includes("rule_validate"));
         assert.ok(stages.includes("persist_result"));
 
-        assert.deepEqual(result.task.resultItems[0].sourceAnchorIds, ["anchor-1"]);
+        assert.ok(result.task.resultItems[0].sourceFactIds.length >= 1);
         assert.ok(result.task.resultItems[0].id);
         assert.equal(result.task.resultItems[0].sectionTitle, "功能行为");
         assert.equal(result.task.resultItems[0].itemTitle, "充电状态信号输出");
@@ -3951,16 +4149,8 @@ const tests = [
           if (payload.stepType === "atom_recall") {
             return { status: "succeeded", artifact: { items: [] } };
           }
-          if (payload.stepType === "outline_build") {
-            return {
-              status: "succeeded",
-              artifact: {
-                summary: "充电状态输出",
-                sections: [{ title: "功能行为", objective: "描述充电状态输出行为", anchorIds: ["anchor-1"] }]
-              }
-            };
-          }
           if (payload.stepType === "content_generate") {
+            const sourceFactId = payload.inputArtifact.modelRequirementView.facts[0]?.id;
             return {
               status: "succeeded",
               artifact: {
@@ -3969,7 +4159,8 @@ const tests = [
                     requirementText: "当充电使能时，软件应输出充电状态信号。",
                     type: "functional",
                     verificationHint: "验证充电使能时的状态输出。",
-                    sourceAnchorIds: ["anchor-1"],
+                    sourceFactIds: [sourceFactId],
+                    sourceAnchorIds: [],
                     conflictNote: ""
                   }
                 ]
@@ -4076,22 +4267,8 @@ const tests = [
               }
             };
           }
-          if (payload.stepType === "outline_build") {
-            return {
-              status: "succeeded",
-              artifact: {
-                summary: "冷却请求",
-                sections: [
-                  {
-                    title: "功能行为",
-                    objective: "描述冷却请求建立行为",
-                    anchorIds: ["anchor-1"]
-                  }
-                ]
-              }
-            };
-          }
           if (payload.stepType === "content_generate") {
+            const sourceFactId = payload.inputArtifact.modelRequirementView.facts[0]?.id;
             return {
               status: "succeeded",
               artifact: {
@@ -4100,7 +4277,8 @@ const tests = [
                     requirementText: "当满足热管理条件时，软件应建立冷却请求。",
                     type: "functional",
                     verificationHint: "验证满足条件时冷却请求建立。",
-                    sourceAnchorIds: ["anchor-1"],
+                    sourceFactIds: [sourceFactId],
+                    sourceAnchorIds: [],
                     conflictNote: ""
                   }
                 ]
@@ -4163,7 +4341,8 @@ const tests = [
         assert.equal(result.task.status, "completed");
         assert.ok(stepTypes.includes("module_bootstrap_analyze"));
         assert.ok(stepTypes.includes("module_bootstrap_generate"));
-        assert.ok(stepTypes.indexOf("module_bootstrap_generate") < stepTypes.indexOf("outline_build"));
+        assert.ok(!stepTypes.includes("outline_build"));
+        assert.ok(stepTypes.indexOf("module_bootstrap_generate") < stepTypes.indexOf("content_generate"));
 
         const inspection = await pipelineService.moduleSkillService.inspectModule(project, module, "software_requirement");
         assert.equal(inspection.hasScopedModuleSkill, true);
@@ -4567,21 +4746,6 @@ const tests = [
               }
             };
           }
-          if (payload.stepType === "outline_build") {
-            return {
-              status: "succeeded",
-              artifact: {
-                summary: "充电状态输出",
-                sections: [
-                  {
-                    title: "功能行为",
-                    objective: "描述充电状态输出行为",
-                    anchorIds: ["anchor-1"]
-                  }
-                ]
-              }
-            };
-          }
           if (payload.stepType === "atom_recall") {
             return {
               status: "succeeded",
@@ -4663,6 +4827,91 @@ const tests = [
         assert.equal(task.progress.stage, "failed");
         assert.match(task.errorMessage, /sourceAnchorId outside the anchor index set/);
         assert.ok((task.timeline || []).some((entry) => entry.stage === "anchor_index_build"));
+      });
+    }
+  },
+  {
+    name: "Pipeline service fails software requirement generation when Hermes returns invalid sourceFactIds",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+
+        pipelineService.hermesAgentClient.transport = "api";
+        pipelineService.hermesAgentClient.executeStep = async (payload) => {
+          if (payload.stepType === "anchor_index_build") {
+            return {
+              status: "succeeded",
+              artifact: {
+                anchors: [
+                  {
+                    anchorId: "anchor-1",
+                    assetId: payload.inputArtifact.assets[0].assetId || payload.inputArtifact.assets[0].id,
+                    fileName: payload.inputArtifact.assets[0].fileName,
+                    fileRole: payload.inputArtifact.assets[0].fileRole,
+                    location: "page:1",
+                    anchorType: "requirement_clause",
+                    excerpt: "系统应在充电使能时输出充电状态信号。",
+                    summary: "充电使能时输出充电状态信号。",
+                    tags: ["requirement-like"]
+                  }
+                ]
+              }
+            };
+          }
+          if (payload.stepType === "atom_recall") {
+            return { status: "succeeded", artifact: { items: [] } };
+          }
+          if (payload.stepType === "content_generate") {
+            return {
+              status: "succeeded",
+              artifact: {
+                items: [
+                  {
+                    requirementText: "当充电使能时，软件应输出充电状态信号。",
+                    type: "functional",
+                    verificationHint: "验证充电使能时的状态输出。",
+                    sourceFactIds: ["fact-missing"],
+                    sourceAnchorIds: [],
+                    conflictNote: ""
+                  }
+                ]
+              }
+            };
+          }
+          throw new Error(`Unexpected step: ${payload.stepType}`);
+        };
+
+        const project = await projectService.createProject({ name: "Fact Failure Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging-system.md");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging-system.md",
+              filename: "charging-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ]
+        });
+
+        await assert.rejects(
+          () =>
+            pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+              manualTitleOutline: buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["充电状态信号输出"] }])
+            }),
+          /sourceFactId outside the modelRequirementView fact set/
+        );
       });
     }
   },
@@ -4792,7 +5041,7 @@ const tests = [
           await runtime.onEvent?.({
             type: "agent_runtime",
             transport: "cli",
-            stepType: "outline_build",
+            stepType: "content_generate",
             status: "failed",
             level: "error",
             label: "Hermes CLI 请求超时",
@@ -4852,7 +5101,7 @@ const tests = [
         assert.equal(task.progress.stage, "failed");
         assert.match(task.errorMessage, /timed out/);
         assert.equal(task.debug.agent.status, "failed");
-        assert.equal(task.debug.agent.currentStep, "outline_build");
+        assert.equal(task.debug.agent.currentStep, "content_generate");
         assert.match(task.debug.events.at(-1)?.message || "", /timed out/);
       });
     }
@@ -4893,16 +5142,8 @@ const tests = [
           if (payload.stepType === "atom_recall") {
             return { status: "succeeded", artifact: { items: [] } };
           }
-          if (payload.stepType === "outline_build") {
-            return {
-              status: "succeeded",
-              artifact: {
-                summary: "充电状态输出",
-                sections: [{ title: "功能行为", objective: "描述充电状态输出行为", anchorIds: ["anchor-1"] }]
-              }
-            };
-          }
           if (payload.stepType === "content_generate") {
+            const sourceFactId = payload.inputArtifact.modelRequirementView.facts[0]?.id;
             return {
               status: "succeeded",
               artifact: {
@@ -4911,7 +5152,8 @@ const tests = [
                     requirementText: "当充电使能时，软件应输出充电状态信号。",
                     type: "functional",
                     verificationHint: "验证充电使能时的状态输出。",
-                    sourceAnchorIds: ["anchor-1"],
+                    sourceFactIds: [sourceFactId],
+                    sourceAnchorIds: [],
                     conflictNote: ""
                   }
                 ]
@@ -8804,6 +9046,15 @@ const tests = [
                       createdAt: "2026-04-24T01:01:00.000Z",
                       updatedAt: "2026-04-24T01:02:00.000Z"
                     }
+                  ],
+                  slxParserTasks: [
+                    {
+                      id: "slx-1",
+                      status: "queued",
+                      progress: { message: "等待解析", percent: 0 },
+                      createdAt: "2026-04-24T01:05:00.000Z",
+                      updatedAt: "2026-04-24T01:05:00.000Z"
+                    }
                   ]
                 }
               ]
@@ -8843,9 +9094,16 @@ const tests = [
       assert.ok(ids.includes("gen-1"));
       assert.ok(ids.includes("extract-1"));
       assert.ok(ids.includes("replay-1"));
+      assert.ok(ids.includes("slx-1"));
       assert.equal(summaries.find((task) => task.id === "gen-1").queuePosition, 1);
       assert.equal(summaries.find((task) => task.id === "extract-1").detailUrl, "/projects/project-1/modules/module-1?openHistory=1&highlightTaskId=extract-1");
       assert.equal(summaries.find((task) => task.id === "replay-1").detailUrl, "/feedback-pool?projectId=project-1&moduleId=module-1&taskId=replay-1");
+      const slxSummary = summaries.find((task) => task.id === "slx-1");
+      assert.equal(slxSummary.type, "slx_parse");
+      assert.equal(slxSummary.documentType, "software_requirement");
+      assert.ok(slxSummary.detailUrl.includes("/slx-parser?projectId=project-1&moduleId=module-1&highlightTaskId=slx-1"));
+      assert.equal(slxSummary.title.includes("SLX 解析"), true);
+      assert.equal(slxSummary.queuePosition, 0);
     }
   },
   {
@@ -8857,7 +9115,8 @@ const tests = [
         "task-detail.html",
         "feedback-pool.html",
         "document-extractor.html",
-        "requirement-generation.html"
+        "requirement-generation.html",
+        "slx-parser.html"
       ];
       for (const page of pages) {
         const html = await fs.readFile(path.join(config.rootDir, "public", page), "utf8");
@@ -8866,6 +9125,11 @@ const tests = [
       const script = await fs.readFile(path.join(config.rootDir, "public", "task-queue-widget.js"), "utf8");
       assert.ok(script.includes("/api/task-queue"));
       assert.ok(script.includes("任务队列"));
+      const slxHtml = await fs.readFile(path.join(config.rootDir, "public", "slx-parser.html"), "utf8");
+      assert.ok(slxHtml.includes('/app.css'), "slx-parser.html should load app.css");
+      assert.ok(slxHtml.includes('/feedback-widget.css'), "slx-parser.html should load feedback-widget.css");
+      assert.ok(slxHtml.includes('/slx-parser.js'), "slx-parser.html should load slx-parser.js");
+      assert.ok(slxHtml.includes('/feedback-widget.js'), "slx-parser.html should load feedback-widget.js");
     }
   }
 ];

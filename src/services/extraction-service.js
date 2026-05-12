@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { PdfExtractor } from "./pdf-extractor.js";
 import { CExtractor } from "./c-extractor.js";
+import { SlxModelAnalysisService, SlxAnalysisError } from "./slx-model-analysis-service.js";
+import { MatlabMcpError } from "./matlab-mcp-client.js";
 
 export class ExtractionService {
-  constructor() {
+  constructor(options = {}) {
     this.pdfExtractor = new PdfExtractor();
     this.cExtractor = new CExtractor();
+    this.slxAnalysisService = options.slxAnalysisService || new SlxModelAnalysisService(options);
   }
 
   async extractFiles(project, options = {}) {
@@ -23,23 +26,46 @@ export class ExtractionService {
       });
 
       if (file.role === "simulink_slx") {
-        extractions.push({
-          id: randomUUID(),
-          fileId: file.id,
-          fileRole: file.role,
-          fileName: file.originalName,
-          summary: "SLX 第一阶段暂不解析，已预留模型抽取接口。",
-          evidence: [],
-          reservedForFuture: true
-        });
         options.onProgress?.({
-          phase: "file_extracted",
+          phase: "extracting_file",
           current: index + 1,
           total: files.length,
           fileName: file.originalName,
-          evidenceCount: 0,
-          reservedForFuture: true
+          fileRole: file.role,
+          slxParsing: true
         });
+
+        try {
+          const extraction = await this.slxAnalysisService.analyzeAndConvertToExtraction(file, {
+            absolutePath: file.absolutePath,
+            documentType: options.documentType || "software_requirement"
+          });
+          extractions.push(extraction);
+          options.onProgress?.({
+            phase: "file_extracted",
+            current: index + 1,
+            total: files.length,
+            fileName: file.originalName,
+            evidenceCount: extraction.evidence.length,
+            slxParsed: true
+          });
+        } catch (slxError) {
+          const isMcpUnavailable = slxError instanceof MatlabMcpError && (slxError.code === "CONNECTION_ERROR" || slxError.code === "TIMEOUT");
+          const errorMessage = isMcpUnavailable
+            ? `MATLAB MCP 不可用，无法解析 SLX 文件 ${file.originalName}：${slxError.message}。请检查 MATLAB MCP 服务配置。`
+            : `SLX 文件 ${file.originalName} 解析失败：${slxError.message}`;
+
+          options.onProgress?.({
+            phase: "slx_parse_failed",
+            current: index + 1,
+            total: files.length,
+            fileName: file.originalName,
+            error: errorMessage,
+            errorCode: slxError.code || "SLX_PARSE_ERROR"
+          });
+
+          throw new Error(errorMessage);
+        }
         continue;
       }
 
