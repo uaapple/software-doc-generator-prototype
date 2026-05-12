@@ -518,6 +518,7 @@ function getRoleLabel(role) {
   if (role === "extracted_system_requirement") return "提取系统需求";
   if (role === "extracted_detail_design") return "提取详细设计";
   if (role === "extracted_hil_test_case") return "提取 HIL 测试用例";
+  if (role === "model_requirement_view_json") return "模型需求 JSON";
   if (role === "extracted_software_requirement") return "提取软件需求";
   return role || "模块资产";
 }

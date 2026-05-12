@@ -177,6 +177,9 @@ export class HermesTaskQueueService {
         for (const task of module.documentExtractionTasks || []) {
           summaries.push(this.buildDocumentExtractionSummary(project, module, task));
         }
+        for (const task of module.slxParserTasks || []) {
+          summaries.push(this.buildSlxParserSummary(project, module, task));
+        }
       }
     }
     return summaries;
@@ -231,6 +234,31 @@ export class HermesTaskQueueService {
       startedAt: task.debug?.agent?.startedAt || task.startedAt || "",
       updatedAt: task.updatedAt || task.createdAt || "",
       detailUrl: `/projects/${project.id}/modules/${module.id}?openHistory=1&highlightTaskId=${task.id}`
+    };
+  }
+
+  buildSlxParserSummary(project = {}, module = {}, task = {}) {
+    const type = "slx_parse";
+    const status = normalizeStatus(task.status);
+    const moduleName = module.name || "";
+    const title = moduleName ? `SLX 解析 · ${moduleName}` : "SLX 解析";
+    return {
+      id: task.id,
+      type,
+      status,
+      title,
+      projectId: project.id,
+      projectName: project.name || "",
+      moduleId: module.id,
+      moduleName,
+      documentType: "software_requirement",
+      queuePosition: status === "queued" ? this.getQueuePosition("slx_parse", task.id) : 0,
+      progress: task.progress || null,
+      latestMessage: getLatestMessage(task),
+      createdAt: task.createdAt || "",
+      startedAt: task.debug?.agent?.startedAt || task.startedAt || "",
+      updatedAt: task.updatedAt || task.createdAt || "",
+      detailUrl: `/slx-parser?projectId=${project.id}&moduleId=${module.id}&highlightTaskId=${task.id}`
     };
   }
 

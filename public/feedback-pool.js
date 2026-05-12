@@ -1832,6 +1832,7 @@ function getRoleLabel(role) {
   if (role === "extracted_software_requirement") return "提取软件需求";
   if (role === "extracted_detail_design") return "提取详细设计";
   if (role === "extracted_hil_test_case") return "提取 HIL 测试用例";
+  if (role === "model_requirement_view_json") return "模型需求 JSON";
   if (role === "reference_requirement_example") return "软件需求样例";
   if (role === "reference_detail_design_example") return "详细设计样例";
   if (role === "reference_hil_test_case_example") return "HIL 用例样例";

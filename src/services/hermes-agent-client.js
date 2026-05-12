@@ -245,6 +245,9 @@ function sanitizeContentItem(item = {}) {
     requirementText: clipText(item.requirementText || "", 6000),
     type: clipText(item.type || "", 80),
     verificationHint: clipText(item.verificationHint || "", 1000),
+    sourceFactIds: Array.isArray(item.sourceFactIds)
+      ? item.sourceFactIds.map((value) => clipText(value || "", 120)).slice(0, 20)
+      : [],
     sourceAnchorIds: Array.isArray(item.sourceAnchorIds)
       ? item.sourceAnchorIds.map((value) => clipText(value || "", 120)).slice(0, 20)
       : [],
@@ -830,15 +833,38 @@ function buildContentGeneratePrompt(payload = {}) {
         content: clipText(item.content || "", 900)
       }))
     : [];
-  const outline = sanitizeOutline(inputArtifact.outline || {});
+  const modelRequirementView = inputArtifact.modelRequirementView && typeof inputArtifact.modelRequirementView === "object"
+    ? inputArtifact.modelRequirementView
+    : { version: "1.0", sourceAssets: [], facts: [] };
+  const modelRequirementSourceAssets = Array.isArray(modelRequirementView.sourceAssets)
+    ? modelRequirementView.sourceAssets
+    : [];
+  const allSourceAssets = [...assets, ...modelRequirementSourceAssets];
+  const hasGeneratedCodeAsset = allSourceAssets.some((asset) =>
+    /generated_c|generatedcode|\.c$/i.test(`${asset.fileRole || asset.role || ""} ${asset.fileName || asset.originalName || ""}`.trim())
+  );
+  const hasModelRequirementJsonAsset = allSourceAssets.some((asset) =>
+    /model_requirement_view_json|simulink_slx|\.slx$|model-requirement-view/i.test(`${asset.fileRole || asset.role || ""} ${asset.fileName || asset.originalName || ""}`.trim())
+  );
   const requiredTitleOutline = sanitizeManualTitleOutline(inputArtifact.requiredTitleOutline || inputArtifact.manualTitleOutline || {});
   const requiredLeafCount = Math.max(0, Number(inputArtifact.requiredLeafCount || 0) || 0);
   const template = inputArtifact.template || {};
+  const sourcePolicyRules = [
+    "- Use modelRequirementView.facts as the primary source-of-truth references for generated requirements.",
+    hasModelRequirementJsonAsset && !hasGeneratedCodeAsset
+      ? "- No generated C source is present in this task. Do not assume, cite, or request a `.c` file; treat the Simulink/modelRequirementView JSON facts as the implementation evidence replacing generated C."
+      : "",
+    hasModelRequirementJsonAsset && !hasGeneratedCodeAsset
+      ? "- For JSON-only replacement runs, sourceFactIds should include relevant implementation evidence from Simulink/modelRequirementView JSON facts when available; do not rely only on system requirement facts unless no relevant model fact exists."
+      : "",
+    modelRequirementView.compactForGeneration
+      ? "- The supplied modelRequirementView is a compact generation view. It intentionally omits irrelevant audit facts; use only the fact ids that are present in this compact view."
+      : ""
+  ].filter(Boolean);
   return [
     "You are executing the Hermes step `content_generate` for software requirement generation.",
-    "Generate structured software requirement body text from the provided project context, template, anchors, task skill bundle, recalled skill atoms, and outline.",
+    "Generate structured software requirement body text from the provided project context, template, modelRequirementView, task skill bundle, and recalled skill hints.",
     "Do not generate section titles or item titles. The backend will inject them after generation.",
-    "The `outline` block is supporting context only; obey `requiredTitleOutline` for the actual title structure.",
     "Return strict JSON only. No markdown fences. No explanation.",
     "",
     "Project:",
@@ -846,9 +872,6 @@ function buildContentGeneratePrompt(payload = {}) {
     "",
     "Template:",
     JSON.stringify(template, null, 2),
-    "",
-    "Outline:",
-    JSON.stringify(outline, null, 2),
     "",
     "Required title outline:",
     JSON.stringify(requiredTitleOutline, null, 2),
@@ -859,8 +882,14 @@ function buildContentGeneratePrompt(payload = {}) {
     "Assets:",
     JSON.stringify(assets, null, 2),
     "",
+    "Input source policy:",
+    JSON.stringify({ hasGeneratedCodeAsset, hasModelRequirementJsonAsset }, null, 2),
+    "",
     "Anchors:",
     JSON.stringify(anchors, null, 2),
+    "",
+    "Model requirement view:",
+    JSON.stringify(modelRequirementView, null, 2),
     "",
     "Task skill bundle:",
     JSON.stringify(skillBundle, null, 2),
@@ -876,7 +905,8 @@ function buildContentGeneratePrompt(payload = {}) {
             requirementText: "The software shall ...",
             type: "functional",
             verificationHint: "How to verify",
-            sourceAnchorIds: ["asset-1::line-10-18::behavior"],
+            sourceFactIds: ["fact-123456789abc"],
+            sourceAnchorIds: [],
             conflictNote: ""
           }
         ]
@@ -887,14 +917,17 @@ function buildContentGeneratePrompt(payload = {}) {
     "",
     "Rules:",
     "- First read the task skill bundle manifest, then read only the skill chunks you need to write each requirement.",
-    "- Use anchors as the source-of-truth references for generated requirements.",
+    ...sourcePolicyRules,
     "- Treat `requiredTitleOutline` as the authoritative ordering and cardinality constraint for the output items.",
     "- Return exactly `requiredLeafCount` items in the same order as the leaf list implied by `requiredTitleOutline`.",
     "- Do not invent titles, headings, or grouping text.",
-    "- Every requirement must be traceable to one or more sourceAnchorIds from the provided anchors.",
-    "- sourceAnchorIds must only contain anchor ids that exist in the provided anchor list.",
+    "- Preserve explicit source requirement cases and thresholds, especially activation, exit, reset, re-enable, counter clearing, hysteresis, Enabled/Disabled outputs, and sleep/wake coordination.",
+    "- Preserve units and enum values exactly: do not add `%` to counters, timers, failure counts, or enum thresholds; keep explicit values such as `0x2`, `20分钟`, `11.8V`, and `10.5%` when they appear in sources.",
+    "- Prefer sourceFactIds and only use ids that exist in modelRequirementView.facts.",
+    "- sourceAnchorIds is accepted only as a compatibility fallback when no fact id can represent the source.",
+    "- If you return sourceAnchorIds, they must only contain anchor ids that exist in the provided anchor list.",
     "- Keep content at software requirement level, not implementation detail level.",
-    "- Do not invent sources, anchor ids, or skill codes."
+    "- Do not invent sources, fact ids, anchor ids, or skill codes."
   ].join("\n");
 }
 
@@ -955,6 +988,62 @@ function buildDocumentExtractPrompt(payload = {}) {
     "- For `hil_test_case`, preserve test case titles and ids, keep Precondition / Step Description / Expected Result structure, and write a reviewable structured markdown test case document.",
     "- File naming style inside markdown should align with module name + document type, but the JSON should only return the document content.",
     "- Do not add content that is not supported by the input."
+  ].join("\n");
+}
+
+function buildSlxParsePrompt(payload = {}) {
+  const inputArtifact = payload.inputArtifact || {};
+  const project = sanitizeProjectContext(inputArtifact.project || {});
+  const slxFiles = Array.isArray(inputArtifact.slxFiles) ? inputArtifact.slxFiles.map(sanitizeAssetItem) : [];
+  return [
+    "You are executing the Hermes step `slx_parse_generate` for SLX model parsing.",
+    "Analyze the uploaded Simulink .slx model files and produce a modelRequirementView JSON with structured facts.",
+    "Each fact must capture an observable behavior, interface, state transition, parameter threshold, logic rule, timing constraint, or diagnostic from the model.",
+    "Return strict JSON only. No markdown fences. No explanation.",
+    "",
+    "Project:",
+    JSON.stringify(project, null, 2),
+    "",
+    "Allowed SLX files:",
+    JSON.stringify(slxFiles, null, 2),
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        modelRequirementView: {
+          version: "1.0",
+          documentType: "software_requirement",
+          sourceAssets: [{ assetId: "id", fileName: "name.slx", fileRole: "simulink_slx" }],
+          facts: [{
+            id: "fact-<hash>",
+            topic: "inferred topic",
+            condition: "triggering condition",
+            behavior: "observable behavior excerpt",
+            signals: ["signal names"],
+            parameters: [{ value: "val", unit: "unit" }],
+            stateLogic: "state-related logic",
+            sourceRefs: [{
+              sourceAnchorId: "",
+              assetId: "id",
+              fileName: "name.slx",
+              fileRole: "simulink_slx",
+              location: "block path",
+              excerpt: "relevant excerpt"
+            }]
+          }]
+        },
+        summary: "解析完成摘要"
+      },
+      null,
+      2
+    ),
+    "",
+    "Rules:",
+    "- Only use the SLX model as source of truth. Do not invent facts.",
+    "- Each fact must have a unique id, behavior, and at least one sourceRef.",
+    "- sourceRefs must include fileName, fileRole, location, and excerpt.",
+    "- Group related signals/parameters into the same fact when they describe a single behavior.",
+    "- Preserve block paths, signal names, state names, and parameter values exactly."
   ].join("\n");
 }
 
@@ -1414,6 +1503,8 @@ function buildCliPrompt(payload = {}) {
       return buildReplayProposalPrompt(payload);
     case "document_extract_generate":
       return buildDocumentExtractPrompt(payload);
+    case "slx_parse_generate":
+      return buildSlxParsePrompt(payload);
     case "anchor_index_build":
       return buildAnchorIndexPrompt(payload);
     case "material_extract":
@@ -1467,6 +1558,16 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
   }
   if (stepType === "document_extract_generate") {
     return parsed && typeof parsed === "object" ? parsed : {};
+  }
+  if (stepType === "slx_parse_generate") {
+    const artifact = parsed && typeof parsed === "object" ? parsed : {};
+    const mrv = artifact.modelRequirementView && typeof artifact.modelRequirementView === "object"
+      ? artifact.modelRequirementView
+      : {};
+    return {
+      modelRequirementView: mrv,
+      summary: String(artifact.summary || "").trim()
+    };
   }
   if (stepType === "outline_build") {
     return {

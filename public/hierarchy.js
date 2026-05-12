@@ -601,6 +601,12 @@ function getModuleWorkspaceConfig(projectId, moduleId) {
       url: `/document-extractor?projectId=${projectId}&moduleId=${moduleId}`,
       embeddedKind: "generator"
     },
+    slx_parser: {
+      title: "SLX 解析器",
+      subtitle: "上传 Simulink .slx 模型，生成模型需求视图 JSON 资产。",
+      url: `/slx-parser?projectId=${projectId}&moduleId=${moduleId}`,
+      embeddedKind: "generator"
+    },
     detail_design: {
       title: "详细设计生成",
       subtitle: "在当前模块页内切换详细设计生成页面，保持原工作流不变。",
@@ -2231,6 +2237,13 @@ function handleWorkspaceMessage(event) {
       statusMessage: data.status === "running" ? "新的提取任务已加入历史任务列表。" : ""
     });
   }
+
+  if (data.type === "slx_parser:tasks_changed") {
+    refreshModuleTaskHistory({
+      highlightTaskId: data.taskId || "",
+      statusMessage: data.status === "running" ? "新的 SLX 解析任务已加入历史任务列表。" : ""
+    });
+  }
 }
 
 async function refreshModuleTaskHistory({ highlightTaskId = "", statusMessage = "" } = {}) {
@@ -2807,8 +2820,14 @@ function collectTasks(module) {
     historyKind: "extraction",
     taskKind: "document_extraction"
   }));
+  const slxParserTasks = (module.slxParserTasks || []).map((task) => ({
+    ...task,
+    documentType: "software_requirement",
+    historyKind: "slx_parse",
+    taskKind: "slx_parser"
+  }));
 
-  return [...generationTasks, ...documentExtractionTasks]
+  return [...generationTasks, ...documentExtractionTasks, ...slxParserTasks]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -2818,6 +2837,7 @@ function countTasks(module) {
 
 function taskKindLabel(task = {}) {
   if (task.historyKind === "extraction") return "文档提取";
+  if (task.historyKind === "slx_parse") return "SLX 解析";
   if (task.historyKind === "bootstrap") return "技能冷启动";
   return "文档生成";
 }

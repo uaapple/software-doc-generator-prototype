@@ -264,6 +264,9 @@ export async function createApp() {
   app.get("/document-extractor", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "document-extractor.html"));
   });
+  app.get("/slx-parser", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "slx-parser.html"));
+  });
   app.get("/hil-test-case-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "hil-test-case-generation.html"));
   });
@@ -574,6 +577,79 @@ export async function createApp() {
           sourceText: req.body?.sourceText || "",
           imageInputs,
           spreadsheetInputs,
+          llmProfileId: req.body?.llmProfileId || "",
+          asyncStart: true
+        });
+        res.status(202).json({ ...result, taskStarted: true });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  app.get("/api/projects/:projectId/modules/:moduleId/slx-parser-tasks", async (req, res, next) => {
+    try {
+      const tasks = await projectService.listSlxParserTasks(req.params.projectId, req.params.moduleId);
+      res.json({ tasks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/slx-parser-tasks/:taskId", async (req, res, next) => {
+    try {
+      const task = await projectService.getSlxParserTask(req.params.projectId, req.params.moduleId, req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "SLX 解析任务不存在" });
+      }
+      res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/projects/:projectId/modules/:moduleId/slx-parser-tasks/:taskId", async (req, res, next) => {
+    try {
+      const result = await projectService.deleteSlxParserTask(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.taskId
+      );
+      res.json(result);
+    } catch (error) {
+      if (error.message === "SLX parser task not found") {
+        return res.status(404).json({ error: "SLX 解析任务不存在" });
+      }
+      next(error);
+    }
+  });
+
+  app.post(
+    "/api/projects/:projectId/modules/:moduleId/slx-parser-tasks",
+    upload.single("slx"),
+    async (req, res, next) => {
+      try {
+        if (!req.file) {
+          const error = new Error("SLX file is required");
+          error.statusCode = 400;
+          throw error;
+        }
+        const originalName = normalizeUploadedFileName(req.file.originalname);
+        if (!originalName.toLowerCase().endsWith(".slx")) {
+          const error = new Error("Only .slx files are accepted");
+          error.statusCode = 400;
+          throw error;
+        }
+        const slxFile = {
+          originalName,
+          storedName: req.file.filename,
+          mimeType: req.file.mimetype,
+          size: req.file.size,
+          absolutePath: req.file.path,
+          relativePath: path.join(req.params.projectId, req.params.moduleId, req.file.filename)
+        };
+        const result = await pipelineService.parseSlxForModule(req.params.projectId, req.params.moduleId, {
+          slxFile,
           llmProfileId: req.body?.llmProfileId || "",
           asyncStart: true
         });
