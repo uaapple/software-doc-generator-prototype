@@ -19,6 +19,7 @@ const archivePaths = [
   "wiki",
   "skills",
   "scripts",
+  "tools",
   "templates",
   "docs"
 ];
