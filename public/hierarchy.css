@@ -745,6 +745,77 @@ body[data-page="project-detail"] .top-actions {
   margin-top: 8px;
 }
 
+.accepted-heading {
+  margin: 16px 0 8px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.accepted-code {
+  overflow-x: auto;
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid rgba(14, 106, 168, 0.12);
+  border-radius: 8px;
+  background: rgba(248, 251, 255, 0.9);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.accepted-result-body code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(14, 106, 168, 0.08);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9em;
+}
+
+.accepted-code code {
+  display: block;
+  padding: 0;
+  background: transparent;
+}
+
+.accepted-result-body a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.accepted-blockquote {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid rgba(14, 106, 168, 0.35);
+  border-radius: 0 8px 8px 0;
+  background: rgba(14, 106, 168, 0.06);
+}
+
+.accepted-table-wrap {
+  overflow-x: auto;
+  margin-top: 12px;
+}
+
+.accepted-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.accepted-table th,
+.accepted-table td {
+  padding: 8px 10px;
+  border: 1px solid rgba(14, 106, 168, 0.14);
+  text-align: left;
+  vertical-align: top;
+}
+
+.accepted-table th {
+  background: rgba(14, 106, 168, 0.06);
+  font-weight: 700;
+}
+
 .accepted-note {
   color: inherit;
   font-weight: inherit;
@@ -788,6 +859,22 @@ body[data-page="project-detail"] .top-actions {
   gap: 14px;
 }
 
+.generated-result-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.generated-result-title-block {
+  display: grid;
+  gap: 6px;
+}
+
+.generated-result-title {
+  font-size: 17px;
+}
+
 .generated-result-preview-wrap {
   margin-top: 4px;
 }
@@ -809,6 +896,57 @@ body[data-page="project-detail"] .top-actions {
 
 .generated-result-editor {
   margin-top: 12px;
+}
+
+.task-result-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.task-raw-debug {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: rgba(248, 251, 255, 0.7);
+}
+
+.task-raw-debug summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.task-raw-debug summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-raw-debug-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.task-raw-debug-entry strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.task-raw-debug-entry pre {
+  overflow-x: auto;
+  max-height: 360px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #111827;
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .history-drawer-backdrop {
@@ -1611,6 +1749,10 @@ select {
   color: #111 !important;
 }
 
+.accepted-result-body.accepted-content {
+  white-space: normal;
+}
+
 .result-section {
   margin-top: 14px;
   padding-top: 12px;
@@ -1765,6 +1907,19 @@ select[disabled] {
 
   .module-workspace-frame {
     min-height: 420px;
+  }
+
+  .generated-result-card-head {
+    flex-direction: column;
+  }
+
+  .generated-result-card-head .status-badge {
+    align-self: flex-start;
+  }
+
+  .task-raw-debug summary {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .feedback-history-drawer {
