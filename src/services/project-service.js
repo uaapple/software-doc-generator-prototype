@@ -245,6 +245,9 @@ function normalizeTask(task = {}) {
     inputAssetIds: Array.isArray(task.inputAssetIds) ? task.inputAssetIds : [],
     uploadedAssetIds: Array.isArray(task.uploadedAssetIds) ? task.uploadedAssetIds : [],
     manualTitleOutline: normalizeTaskManualTitleOutline(task.manualTitleOutline),
+    generationMode: String(task.generationMode || "").trim(),
+    resultMarkdown: normalizeDebugText(task.resultMarkdown || "", 200000),
+    resultMarkdownArtifact: normalizeTaskMarkdownArtifact(task.resultMarkdownArtifact),
     skillVersion: normalizeSkillVersionRef(task.skillVersion),
     resultItems: Array.isArray(task.resultItems) ? task.resultItems.map(normalizeTaskResultItem) : [],
     extractions: Array.isArray(task.extractions) ? task.extractions : [],
@@ -326,6 +329,45 @@ function normalizeTaskMetrics(metrics = {}) {
     llmDurationMs: Math.max(0, Number(metrics?.llmDurationMs || 0) || 0),
     generatedItemCount: Math.max(0, Number(metrics?.generatedItemCount || 0) || 0),
     conflictCount: Math.max(0, Number(metrics?.conflictCount || 0) || 0)
+  };
+}
+
+function normalizeTaskMarkdownArtifact(artifact = {}) {
+  if (!artifact || typeof artifact !== "object") {
+    return null;
+  }
+  const markdownPath = String(artifact.markdownPath || "").trim();
+  const absoluteMarkdownPath = String(artifact.absoluteMarkdownPath || "").trim();
+  const workspaceDir = String(artifact.workspaceDir || "").trim();
+  const manifestPath = String(artifact.manifestPath || "").trim();
+  const taskBriefPath = String(artifact.taskBriefPath || "").trim();
+  const promptPath = String(artifact.promptPath || "").trim();
+  const hasArtifact = markdownPath || absoluteMarkdownPath || workspaceDir || manifestPath || taskBriefPath || promptPath;
+  if (!hasArtifact) {
+    return null;
+  }
+  return {
+    workspaceDir: normalizeDebugText(workspaceDir, 4000),
+    manifestPath: normalizeDebugText(manifestPath, 4000),
+    taskBriefPath: normalizeDebugText(taskBriefPath, 4000),
+    promptPath: normalizeDebugText(promptPath, 4000),
+    markdownPath: normalizeDebugText(markdownPath, 1000),
+    absoluteMarkdownPath: normalizeDebugText(absoluteMarkdownPath, 4000),
+    itemCount: Math.max(0, Number(artifact.itemCount || 0) || 0),
+    summary: normalizeDebugText(artifact.summary || "", 2000),
+    inputFiles: Array.isArray(artifact.inputFiles)
+      ? artifact.inputFiles
+          .map((item) => ({
+            assetId: String(item?.assetId || "").trim(),
+            originalName: String(item?.originalName || "").trim(),
+            fileName: String(item?.fileName || "").trim(),
+            role: String(item?.role || "").trim(),
+            relativePath: String(item?.relativePath || "").trim(),
+            isSystemRequirement: Boolean(item?.isSystemRequirement),
+            isSlx: Boolean(item?.isSlx)
+          }))
+          .slice(0, 200)
+      : []
   };
 }
 
@@ -1297,6 +1339,15 @@ export class ProjectService {
       }
       if (Object.hasOwn(updates, "llmProfile")) {
         task.llmProfile = updates.llmProfile || null;
+      }
+      if (Object.hasOwn(updates, "generationMode")) {
+        task.generationMode = String(updates.generationMode || "").trim();
+      }
+      if (Object.hasOwn(updates, "resultMarkdown")) {
+        task.resultMarkdown = normalizeDebugText(updates.resultMarkdown || "", 200000);
+      }
+      if (Object.hasOwn(updates, "resultMarkdownArtifact")) {
+        task.resultMarkdownArtifact = normalizeTaskMarkdownArtifact(updates.resultMarkdownArtifact);
       }
       if (Object.hasOwn(updates, "skillVersion")) {
         task.skillVersion = normalizeSkillVersionRef(updates.skillVersion);

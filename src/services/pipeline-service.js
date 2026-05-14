@@ -14,6 +14,12 @@ import { SpreadsheetExtractionService } from "./spreadsheet-extraction-service.j
 import { ModelRequirementViewService } from "./model-requirement-view-service.js";
 import { SlxModelAnalysisService } from "./slx-model-analysis-service.js";
 import { recallSkillInventory, tokenize } from "./software-requirement-agent-shared.js";
+import {
+  buildOutlineItems,
+  buildResultItemsFromMarkdownBlocks,
+  normalizeMarkdownAgentArtifact,
+  prepareSoftwareRequirementMarkdownWorkspace
+} from "./software-requirement-markdown-agent-service.js";
 import { writeJson } from "./storage.js";
 import { config } from "../config.js";
 
@@ -759,6 +765,14 @@ function buildHermesStepDescriptor(stepType = "") {
       runningPercent: 82
     };
   }
+  if (stepType === "software_requirement_markdown_generate") {
+    return {
+      stage: "software_requirement_markdown_generate",
+      runningLabel: "正在调用 Hermes Agent 生成软件需求条目",
+      actionLabel: "在任务工作目录中生成软件需求 Markdown 条目",
+      runningPercent: 72
+    };
+  }
   if (stepType === "document_extract_generate") {
     return {
       stage: "document_extract_generate",
@@ -928,8 +942,12 @@ export class PipelineService {
     });
     const isBootstrapTask = isModuleSkillBootstrapTask(options);
     const requiredTitleOutline = isBootstrapTask ? null : normalizeManualTitleOutline(options.manualTitleOutline);
-    const requiredLeafOutline = requiredTitleOutline ? flattenManualTitleOutline(requiredTitleOutline) : [];
-    const requiredLeafCount = requiredLeafOutline.length;
+    const requiredOutlineItems = requiredTitleOutline ? buildOutlineItems(requiredTitleOutline) : [];
+    const requiredLeafOutline = requiredOutlineItems.map((item) => ({
+      sectionTitle: item.sectionTitle,
+      itemTitle: item.itemTitle
+    }));
+    const requiredLeafCount = requiredOutlineItems.length;
     if (!isBootstrapTask && (!requiredTitleOutline || !requiredLeafCount)) {
       throw new Error("manualTitleOutline is required for software requirement generation");
     }
@@ -949,7 +967,8 @@ export class PipelineService {
           artifacts: {
             assetManifest,
             taskSkillBundle,
-            requiredTitleOutline
+            requiredTitleOutline,
+            requiredOutlineItems
           }
         },
         timelineEntry: {
@@ -1043,12 +1062,20 @@ export class PipelineService {
                 taskSkillBundle.skillManifestPath,
                 ...taskSkillBundle.chunks.map((chunk) => chunk.path).filter(Boolean)
               ]
+            : inputArtifact?.workspaceDir
+              ? [
+                  inputArtifact.workspaceDir,
+                  taskSkillBundle.skillBundlePath,
+                  taskSkillBundle.skillManifestPath,
+                  ...taskSkillBundle.chunks.map((chunk) => chunk.path).filter(Boolean)
+                ]
             : [
                 ...assetManifest.map((asset) => asset.absolutePath).filter(Boolean),
                 taskSkillBundle.skillBundlePath,
                 taskSkillBundle.skillManifestPath,
                 ...taskSkillBundle.chunks.map((chunk) => chunk.path).filter(Boolean)
               ],
+          workdir: inputArtifact?.workspaceDir || "",
           inputArtifact: {
             ...inputArtifact,
             skillBundle: taskSkillBundle
@@ -1156,6 +1183,172 @@ export class PipelineService {
 
       return assertHermesStepResponse(stepType, response);
     };
+
+    if (!isBootstrapTask && readiness.hasUsableModuleSkill && this.hermesAgentClient.transport === "cli" && inputAssets.length) {
+      await updateTaskProgress(
+        {
+          stage: "agent_workspace_prepare",
+          label: "正在准备 Hermes Agent 工作目录",
+          message: "正在复制输入资产并生成本次任务的 manifest、brief 与 prompt。",
+          percent: 30,
+          current: inputAssets.length,
+          total: inputAssets.length
+        },
+        {
+          timelineEntry: {
+            stage: "agent_workspace_prepare",
+            label: "准备 Agent 工作目录",
+            message: "开始创建软件需求生成专用工作目录。",
+            level: "info"
+          }
+        }
+      );
+
+      const markdownWorkspace = await prepareSoftwareRequirementMarkdownWorkspace({
+        projectId,
+        moduleId,
+        taskId,
+        project,
+        module,
+        inputAssets,
+        manualTitleOutline: requiredTitleOutline
+      });
+
+      await updateTaskProgress(
+        {
+          stage: "agent_workspace_prepare",
+          label: "Hermes Agent 工作目录已准备",
+          message: `已准备 ${markdownWorkspace.copiedInputs.length} 个输入文件和 ${markdownWorkspace.outlineItems.length} 个目标条目。`,
+          percent: 38,
+          current: markdownWorkspace.copiedInputs.length,
+          total: markdownWorkspace.copiedInputs.length
+        },
+        {
+          generationMode: "agent_workspace_markdown",
+          resultMarkdownArtifact: normalizeMarkdownAgentArtifact({}, markdownWorkspace),
+          timelineEntry: {
+            stage: "agent_workspace_prepare",
+            label: "工作目录已准备",
+            message: `已写入 manifest、task brief 和 prompt，等待 Hermes Agent 生成 Markdown 条目。`,
+            level: "info"
+          }
+        }
+      );
+
+      const markdownArtifactResponse = await runHermesStep("software_requirement_markdown_generate", {
+        workspaceDir: markdownWorkspace.workspaceDir,
+        manifestPath: markdownWorkspace.manifestPath,
+        taskBriefPath: markdownWorkspace.taskBriefPath,
+        promptPath: markdownWorkspace.promptPath,
+        outputRelativePath: markdownWorkspace.outputRelativePath,
+        prompt: markdownWorkspace.prompt,
+        outlineItems: markdownWorkspace.outlineItems
+      });
+      const markdownArtifact = normalizeMarkdownAgentArtifact(markdownArtifactResponse, markdownWorkspace);
+      if (markdownArtifact.itemCount && markdownArtifact.itemCount !== requiredLeafCount) {
+        throw new Error(`Hermes Markdown 结果条目数不匹配：期望 ${requiredLeafCount} 条，实际 ${markdownArtifact.itemCount} 条`);
+      }
+
+      const resultMarkdown = await fs.readFile(markdownArtifact.absoluteMarkdownPath, "utf8");
+      const resultItems = buildResultItemsFromMarkdownBlocks({
+        markdown: resultMarkdown,
+        outlineItems: markdownWorkspace.outlineItems,
+        copiedInputs: markdownWorkspace.copiedInputs,
+        template
+      });
+
+      if (resultItems.length !== requiredLeafCount) {
+        throw new Error(`Markdown 解析结果条目数不匹配：期望 ${requiredLeafCount} 条，实际 ${resultItems.length} 条`);
+      }
+
+      await updateTaskProgress(
+        {
+          stage: "content_postprocess",
+          label: "正在解析 Markdown 生成条目",
+          message: `Hermes Agent 已返回 Markdown，正在解析 ${resultItems.length} 个 requirement-item block。`,
+          percent: 84
+        },
+        {
+          resultMarkdown,
+          resultMarkdownArtifact: markdownArtifact,
+          debug: {
+            postProcess: {
+              lastStage: "markdown_agent_returned"
+            }
+          },
+          debugEvent: {
+            stage: "markdown_agent_returned",
+            label: "Markdown 产物已返回",
+            message: `已读取 ${markdownArtifact.markdownPath}，准备进行条目解析和规则校验。`,
+            level: "info"
+          }
+        }
+      );
+
+      const conflicts = this.validationService.validate(resultItems, { domainKnowledge, documentType: "software_requirement" });
+      const traces = buildTraces(resultItems);
+
+      await updateTaskProgress(
+        {
+          stage: "rule_validate",
+          label: "正在校验生成结果",
+          message: `规则校验完成，识别到 ${conflicts.length} 个冲突，准备保存任务结果。`,
+          percent: 92
+        },
+        {
+          metrics: {
+            extractionFileCount: inputAssets.length,
+            extractionEvidenceCount: traces.length,
+            generatedItemCount: resultItems.length,
+            conflictCount: conflicts.length
+          },
+          timelineEntry: {
+            stage: "rule_validate",
+            label: "规则校验",
+            message: `已完成 Markdown 条目校验，得到 ${traces.length} 条追溯信息和 ${conflicts.length} 个冲突。`,
+            level: "info"
+          }
+        }
+      );
+
+      const updatedTask = await this.projectService.updateGenerationTask(projectId, moduleId, "software_requirement", taskId, {
+        status: "completed",
+        generationMode: "agent_workspace_markdown",
+        resultMarkdown,
+        resultMarkdownArtifact: markdownArtifact,
+        resultItems,
+        extractions: [],
+        traces,
+        conflicts,
+        llmProfile,
+        metrics: {
+          extractionFileCount: inputAssets.length,
+          extractionEvidenceCount: traces.length,
+          generatedItemCount: resultItems.length,
+          conflictCount: conflicts.length
+        },
+        progress: {
+          stage: "completed",
+          label: "任务已完成",
+          message: `Hermes Agent 已生成 ${resultItems.length} 条软件需求，可开始审核。`,
+          percent: 100
+        },
+        timelineEntry: {
+          stage: "persist_result",
+          label: "保存结果",
+          message: "任务结果、条目卡片和原始 Markdown 产物信息已写入模块工作区。",
+          level: "info"
+        },
+        summary: `通过 Hermes Agent 工作目录模式生成 ${resultItems.length} 条软件需求`
+      });
+
+      return {
+        projectId,
+        moduleId,
+        documentType: "software_requirement",
+        task: updatedTask
+      };
+    }
 
     const extractionInputAssets = inputAssets.map((asset) => ({
       id: asset.id,

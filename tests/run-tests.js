@@ -32,6 +32,10 @@ import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
 import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
 import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
+import {
+  buildOutlineItems,
+  parseRequirementMarkdownBlocks
+} from "../src/services/software-requirement-markdown-agent-service.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -651,6 +655,92 @@ const tests = [
       assert.equal(bundleView.facts[0].sourceRefs[0].fileRole, "simulink_slx");
       assert.ok(bundleView.facts[0].signals.includes("TorqueReq"));
       assert.ok(bundleView.facts.some((fact) => fact.topic === "模型结构事实" && fact.behavior.includes("TorqueLimiter")));
+    }
+  },
+  {
+    name: "Software requirement markdown parser follows manual title outline item ids",
+    run: async () => {
+      const outlineItems = buildOutlineItems(
+        buildManualTitleOutline([
+          { sectionTitle: "前轴干预", itemTitles: ["激活标志位判断", "扭矩计算"] },
+          { sectionTitle: "后轴干预", itemTitles: ["激活标志位判断"] }
+        ])
+      );
+      const markdown = [
+        "# 软件需求生成结果",
+        "",
+        "<!-- requirement-item:start id=\"item-001\" -->",
+        "软件应判断前轴 ESC 干预激活标志。",
+        "<!-- requirement-item:end -->",
+        "",
+        "<!-- requirement-item:start id=\"item-002\" -->",
+        "- 软件应计算前轴目标扭矩。",
+        "- 软件应执行上下限限制。",
+        "<!-- requirement-item:end -->",
+        "",
+        "<!-- requirement-item:start id=\"item-003\" -->",
+        "### 激活标志位判断",
+        "软件应判断后轴 ESC 干预激活标志。",
+        "<!-- requirement-item:end -->"
+      ].join("\n");
+
+      const blocks = parseRequirementMarkdownBlocks(markdown, outlineItems);
+      assert.equal(blocks.length, 3);
+      assert.equal(blocks[0].id, "item-001");
+      assert.equal(blocks[1].sectionTitle, "前轴干预");
+      assert.equal(blocks[2].itemTitle, "激活标志位判断");
+      assert.doesNotMatch(blocks[2].markdown, /^###/);
+    }
+  },
+  {
+    name: "Software requirement markdown parser rejects missing, duplicate, and out-of-order items",
+    run: async () => {
+      const outlineItems = buildOutlineItems(
+        buildManualTitleOutline([{ sectionTitle: "功能行为", itemTitles: ["标题一", "标题二"] }])
+      );
+
+      assert.throws(
+        () =>
+          parseRequirementMarkdownBlocks(
+            [
+              "<!-- requirement-item:start id=\"item-001\" -->",
+              "正文",
+              "<!-- requirement-item:end -->"
+            ].join("\n"),
+            outlineItems
+          ),
+        /条目数不匹配/
+      );
+      assert.throws(
+        () =>
+          parseRequirementMarkdownBlocks(
+            [
+              "<!-- requirement-item:start id=\"item-002\" -->",
+              "正文二",
+              "<!-- requirement-item:end -->",
+              "<!-- requirement-item:start id=\"item-001\" -->",
+              "正文一",
+              "<!-- requirement-item:end -->"
+            ].join("\n"),
+            outlineItems
+          ),
+        /顺序不匹配/
+      );
+      assert.throws(
+        () =>
+          parseRequirementMarkdownBlocks(
+            [
+              "<!-- requirement-item:start id=\"item-001\" -->",
+              "正文一",
+              "<!-- requirement-item:end -->",
+              "<!-- requirement-item:start id=\"item-001\" -->",
+              "正文二",
+              "<!-- requirement-item:end -->"
+            ].join("\n"),
+            outlineItems
+          ),
+        /顺序不匹配|重复/
+      );
     }
   },
   {
@@ -2431,6 +2521,48 @@ const tests = [
     }
   },
   {
+    name: "Module asset delete removes metadata and stored upload via API",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl }) => {
+          const projectService = new ProjectService();
+          const project = await projectService.createProject({ name: "Asset Delete Workspace" });
+          const module = await projectService.createModule(project.id, { name: "低压能量管理" });
+
+          const form = new FormData();
+          form.append("documentType", "software_requirement");
+          form.append("systemPdf", new Blob(["系统需求正文"], { type: "text/markdown" }), "低压能量管理系统需求.md");
+
+          const uploadResponse = await fetch(`${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets`, {
+            method: "POST",
+            body: form
+          });
+          assert.equal(uploadResponse.status, 201);
+          const uploadPayload = await uploadResponse.json();
+          const asset = uploadPayload.assets[0];
+          const assetPath = path.join(config.uploadDir, asset.relativePath);
+          await fs.access(assetPath);
+
+          const deleteResponse = await fetch(`${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets/${asset.id}`, {
+            method: "DELETE"
+          });
+          assert.equal(deleteResponse.status, 200);
+          const updatedModule = await deleteResponse.json();
+          assert.equal(updatedModule.assets.length, 0);
+          await assert.rejects(fs.access(assetPath));
+
+          const reloadedModule = await projectService.getModule(project.id, module.id);
+          assert.equal(reloadedModule.assets.length, 0);
+
+          const missingResponse = await fetch(`${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets/${asset.id}`, {
+            method: "DELETE"
+          });
+          assert.equal(missingResponse.status, 404);
+        });
+      });
+    }
+  },
+  {
     name: "Project service deletes completed and running tasks, including accepted snapshots",
     run: async () => {
       await withTempConfig(async () => {
@@ -2711,6 +2843,78 @@ const tests = [
         assert.deepEqual(usageReaderInvocations, ["20260421_144500_abcd12"]);
         assert.equal(response.metrics.tokenUsage.totalTokens, 1550);
         assert.equal(response.metrics.tokenUsage.inputTokens, 1200);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client accepts markdown artifact when workspace CLI stdout is not JSON",
+    run: async () => {
+      await withTempConfig(async () => {
+        const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "markdown-workspace-cli-"));
+        const outputRelativePath = "outputs/software-requirements.md";
+        const outputPath = path.join(workspaceDir, "outputs", "software-requirements.md");
+        const events = [];
+        const usageReaderInvocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          commandRunner: async (_command, _args, options) => {
+            assert.equal(options.cwd, workspaceDir);
+            await fs.mkdir(path.dirname(outputPath), { recursive: true });
+            await fs.writeFile(
+              outputPath,
+              [
+                "<!-- requirement-item:start id=\"item-001\" -->",
+                "正文一",
+                "<!-- requirement-item:end -->",
+                "<!-- requirement-item:start id=\"item-002\" -->",
+                "正文二",
+                "<!-- requirement-item:end -->"
+              ].join("\n"),
+              "utf8"
+            );
+            return {
+              stdout: "┊ review diff\noutputs/software-requirements.md updated\n",
+              stderr: "session_id: 20260515_030304_c00c73\n"
+            };
+          },
+          usageReader: async ({ sessionId }) => {
+            usageReaderInvocations.push(sessionId);
+            return {
+              model: "gpt-5.4",
+              inputTokens: 10,
+              outputTokens: 5,
+              totalTokens: 15,
+              costStatus: "included"
+            };
+          }
+        });
+
+        const response = await client.executeStep(
+          {
+            taskId: "task-markdown-cli",
+            stepType: "software_requirement_markdown_generate",
+            workdir: workspaceDir,
+            inputArtifact: {
+              workspaceDir,
+              prompt: "Write the markdown artifact.",
+              outputRelativePath
+            },
+            skillInventory: { items: [] },
+            llmProfileSnapshot: null
+          },
+          {
+            onEvent: async (event) => {
+              events.push(event);
+            }
+          }
+        );
+
+        assert.equal(response.status, "succeeded");
+        assert.equal(response.sessionId, "20260515_030304_c00c73");
+        assert.equal(response.artifact.markdownPath, outputRelativePath);
+        assert.equal(response.artifact.itemCount, 2);
+        assert.deepEqual(usageReaderInvocations, ["20260515_030304_c00c73"]);
+        assert.ok(events.some((event) => event.status === "completed" && /Markdown 产物/.test(event.label || "")));
       });
     }
   },
@@ -3588,6 +3792,16 @@ const tests = [
       assert.match(orderedListHtml, /<ol class="accepted-list">/);
       assert.match(orderedListHtml, /<li>条件一<\/li>/);
       assert.match(orderedListHtml, /<li>条件二<\/li>/);
+
+      const formulaHtml = runtime.formatReadableRequirementHtml(
+        "1. 当后轴降扭转移分支有效时，前轴目标扭矩应取 max (ESCWhlTq_tqTarReAxleDif, 0) + TqSpltArbt_tqTarFrntAxle。\n\n1. 当前轴 RBS 分支有效时，应继续执行 RBS 路径计算。"
+      );
+      assert.doesNotMatch(formulaHtml, /<li>\+ TqSpltArbt_tqTarFrntAxle/);
+      assert.match(formulaHtml, /max \(ESCWhlTq_tqTarReAxleDif, 0\) \+ TqSpltArbt_tqTarFrntAxle/);
+      assert.match(formulaHtml, /<li>当前轴 RBS 分支有效时，应继续执行 RBS 路径计算。<\/li>/);
+
+      const splitAutoNumberHtml = runtime.formatReadableRequirementHtml("1. 条件一\n\n- 补充说明\n\n1. 条件二");
+      assert.match(splitAutoNumberHtml, /<ol class="accepted-list" start="2">/);
     }
   },
   {
@@ -4119,6 +4333,117 @@ const tests = [
         assert.equal((result.task.resultItems[0].sourceRefs || []).length, 1);
         assert.equal(result.task.resultItems[0].sourceRefs[0].fileName, "charging-system.md");
         assert.equal(result.task.progress.stage, "completed");
+      });
+    }
+  },
+  {
+    name: "Pipeline service uses Hermes workspace markdown mode for CLI software requirement generation",
+    run: async () => {
+      await withTempConfig(async () => {
+        const projectService = new ProjectService();
+        const pipelineService = new PipelineService(projectService);
+        const hermesPayloads = [];
+
+        pipelineService.hermesAgentClient.transport = "cli";
+        pipelineService.hermesAgentClient.executeStep = async (payload, runtime = {}) => {
+          hermesPayloads.push(payload);
+          assert.equal(payload.stepType, "software_requirement_markdown_generate");
+          assert.equal(payload.workdir, payload.inputArtifact.workspaceDir);
+          assert.match(payload.inputArtifact.prompt, /Matlab MCP/);
+          assert.match(payload.inputArtifact.prompt, /charging-model\.slx/);
+          await Promise.resolve(
+            runtime.onEvent?.({
+              type: "agent_runtime",
+              transport: "cli",
+              stepType: payload.stepType,
+              status: "completed",
+              message: "mock markdown generated"
+            })
+          );
+          const markdownPath = path.join(payload.workdir, payload.inputArtifact.outputRelativePath);
+          await fs.writeFile(
+            markdownPath,
+            [
+              "# 软件需求生成结果",
+              "",
+              "<!-- requirement-item:start id=\"item-001\" -->",
+              "软件应根据系统需求和模型逻辑判断充电状态信号输出。",
+              "<!-- requirement-item:end -->",
+              "",
+              "<!-- requirement-item:start id=\"item-002\" -->",
+              "- 软件应在充电使能有效时计算目标状态。",
+              "- 软件应在输入无效时保持安全默认值。",
+              "<!-- requirement-item:end -->"
+            ].join("\n"),
+            "utf8"
+          );
+          return {
+            status: "succeeded",
+            artifact: {
+              markdownPath: payload.inputArtifact.outputRelativePath,
+              itemCount: 2,
+              summary: "已生成 2 条软件需求"
+            }
+          };
+        };
+
+        const project = await projectService.createProject({ name: "Markdown Workspace" });
+        const module = await projectService.createModule(project.id, {
+          name: "Charging Management",
+          moduleSkillKey: "charging_management"
+        });
+        const uploadDir = path.join(config.uploadDir, project.id, module.id);
+        await fs.mkdir(uploadDir, { recursive: true });
+        const systemFilePath = path.join(uploadDir, "charging-system.md");
+        const slxFilePath = path.join(uploadDir, "charging-model.slx");
+        await fs.writeFile(systemFilePath, "系统应在充电使能时输出充电状态信号。", "utf8");
+        await fs.writeFile(slxFilePath, "fake slx payload", "utf8");
+
+        await projectService.attachModuleAssets(project.id, module.id, {
+          systemPdf: [
+            {
+              originalname: "charging-system.md",
+              filename: "charging-system.md",
+              path: systemFilePath,
+              mimetype: "text/markdown",
+              size: 24
+            }
+          ],
+          slx: [
+            {
+              originalname: "charging-model.slx",
+              filename: "charging-model.slx",
+              path: slxFilePath,
+              mimetype: "application/octet-stream",
+              size: 16
+            }
+          ]
+        });
+
+        const result = await pipelineService.generateForModule(project.id, module.id, "software_requirement", {
+          manualTitleOutline: buildManualTitleOutline([
+            { sectionTitle: "功能行为", itemTitles: ["充电状态信号输出", "目标状态计算"] }
+          ])
+        });
+
+        assert.equal(result.task.status, "completed");
+        assert.equal(result.task.generationMode, "agent_workspace_markdown");
+        assert.equal(result.task.resultItems.length, 2);
+        assert.equal(result.task.resultItems[0].sectionTitle, "功能行为");
+        assert.equal(result.task.resultItems[0].itemTitle, "充电状态信号输出");
+        assert.equal(result.task.resultItems[1].itemTitle, "目标状态计算");
+        assert.match(result.task.resultMarkdown, /requirement-item:start id="item-001"/);
+        assert.ok(result.task.resultMarkdownArtifact.workspaceDir.includes(result.task.id));
+        assert.ok(result.task.resultMarkdownArtifact.inputFiles.some((item) => item.fileName === "charging-model.slx" && item.isSlx));
+        assert.equal(hermesPayloads.length, 1);
+
+        const manifest = JSON.parse(await fs.readFile(result.task.resultMarkdownArtifact.manifestPath, "utf8"));
+        assert.equal(manifest.outlineItems.length, 2);
+        assert.equal(manifest.inputs.some((item) => item.fileName === "charging-system.md" && item.isSystemRequirement), true);
+        assert.equal(manifest.slxFiles[0].originalName, "charging-model.slx");
+        assert.equal(manifest.slxFiles[0].workspacePath, "inputs/charging-model.slx");
+        await fs.access(path.join(result.task.resultMarkdownArtifact.workspaceDir, "inputs", "charging-model.slx"));
+        assert.equal(await fs.readFile(result.task.resultMarkdownArtifact.absoluteMarkdownPath, "utf8"), result.task.resultMarkdown);
       });
     }
   },

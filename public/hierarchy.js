@@ -1705,6 +1705,18 @@ function renderTaskAgentRuntime(task) {
   if (!runtimeRoot) {
     return;
   }
+  const runtimePanel = runtimeRoot.closest(".panel");
+  if (runtimePanel) {
+    runtimePanel.hidden = false;
+  }
+
+  if (isTerminalTaskStatus(task.status) && (task.resultItems || []).length) {
+    if (runtimePanel) {
+      runtimePanel.hidden = true;
+    }
+    runtimeRoot.innerHTML = "";
+    return;
+  }
 
   const debug = task.debug || {};
   const agent = debug.agent || {};
@@ -1939,9 +1951,129 @@ function buildResultSourceBlock(resultItem) {
   );
 }
 
+function stringifyDebugValue(value) {
+  if (value == null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function pushTaskDebugEntry(entries, seen, label, value, type = "text") {
+  if (Array.isArray(value) && !value.length) {
+    return;
+  }
+  if (value && typeof value === "object" && !Array.isArray(value) && !Object.keys(value).length) {
+    return;
+  }
+  const text = stringifyDebugValue(value).trim();
+  if (!text) {
+    return;
+  }
+  const key = `${label}::${text}`;
+  if (seen.has(key)) {
+    return;
+  }
+  seen.add(key);
+  entries.push({ label, text, type });
+}
+
+function parseDebugJsonText(value = "") {
+  const text = String(value || "").trim();
+  if (!text || !/^[\[{]/.test(text)) {
+    return null;
+  }
+  const lastObjectEnd = text.lastIndexOf("}");
+  const lastArrayEnd = text.lastIndexOf("]");
+  const endIndex = Math.max(lastObjectEnd, lastArrayEnd);
+  if (endIndex < 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(text.slice(0, endIndex + 1));
+  } catch {
+    return null;
+  }
+}
+
+function collectTaskRawDebugEntries(task = {}) {
+  const debug = task.debug || {};
+  const agent = debug.agent || {};
+  const llm = debug.llm || {};
+  const artifacts = debug.artifacts || {};
+  const parsedStdout = parseDebugJsonText(agent.stdoutExcerpt);
+  const entries = [];
+  const seen = new Set();
+
+  pushTaskDebugEntry(
+    entries,
+    seen,
+    "原始 Markdown 产物",
+    firstNonEmptyString(
+      task.rawMarkdown,
+      task.resultMarkdown,
+      task.outputMarkdown,
+      task.markdown,
+      task.artifact?.markdown,
+      task.outputArtifact?.markdown,
+      task.result?.markdown,
+      parsedStdout?.markdown,
+      parsedStdout?.artifact?.markdown,
+      parsedStdout?.outputArtifact?.markdown
+    ),
+    "markdown"
+  );
+  pushTaskDebugEntry(entries, seen, "LLM 原始响应", llm.rawResponseText, "json");
+  pushTaskDebugEntry(entries, seen, "Hermes stdout 摘要", agent.stdoutExcerpt, "json");
+  pushTaskDebugEntry(entries, seen, "Hermes stderr 摘要", agent.stderrExcerpt, "text");
+  pushTaskDebugEntry(entries, seen, "Token 使用统计", agent.tokenUsage, "json");
+  pushTaskDebugEntry(entries, seen, "Markdown 产物路径", task.resultMarkdownArtifact, "json");
+  pushTaskDebugEntry(entries, seen, "Task Skill Bundle", artifacts.taskSkillBundle, "json");
+  pushTaskDebugEntry(entries, seen, "输入资产 Manifest", artifacts.assetManifest, "json");
+  pushTaskDebugEntry(entries, seen, "来源锚点索引", artifacts.anchors, "json");
+  pushTaskDebugEntry(entries, seen, "Agent 运行事件", debug.events, "json");
+
+  return entries;
+}
+
+function buildTaskRawDebugSection(task) {
+  const entries = collectTaskRawDebugEntries(task);
+  if (!entries.length) {
+    return "";
+  }
+
+  return `
+    <details class="task-raw-debug">
+      <summary>
+        <span>原始产物 / 调试信息</span>
+        <span>${entries.length} 项 · 默认折叠</span>
+      </summary>
+      <div class="task-raw-debug-body">
+        ${entries
+          .map(
+            (entry) => `
+              <article class="task-raw-debug-entry task-raw-debug-entry-${escapeAttribute(entry.type)}">
+                <strong>${escapeHtml(entry.label)}</strong>
+                <pre>${escapeHtml(entry.text)}</pre>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </details>
+  `;
+}
+
 function renderTaskResults(task, projectId, moduleId, documentType) {
   const taskResults = document.querySelector("#task-results");
   const visibleProgress = deriveVisibleTaskProgress(task);
+  const rawDebugSection = buildTaskRawDebugSection(task);
   if (task.status === "running") {
     taskResults.innerHTML = `<div class="empty-state">${escapeHtml(
       visibleProgress.message || "任务正在生成中，页面会自动刷新最新进度。"
@@ -1952,12 +2084,12 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
   if (task.status === "failed") {
     taskResults.innerHTML = `<div class="empty-state">${escapeHtml(
       task.errorMessage || task.progress?.message || "任务执行失败，请返回模块页重新发起，或检查模型与输入资产。"
-    )}</div>`;
+    )}</div>${rawDebugSection}`;
     return;
   }
 
   if (!(task.resultItems || []).length) {
-    taskResults.innerHTML = '<div class="empty-state">本次任务没有生成结果。</div>';
+    taskResults.innerHTML = `<div class="empty-state">本次任务没有生成结果。</div>${rawDebugSection}`;
     return;
   }
 
@@ -1967,68 +2099,75 @@ function renderTaskResults(task, projectId, moduleId, documentType) {
     itemTitle: getResultItemTitle(item)
   })));
 
-  taskResults.innerHTML = sectionGroups
-    .map(
-      (sectionGroup) => `
-        <section class="result-section-group">
-          <div class="accepted-domain-head accepted-section-head">
-            <div>
-              <h3>${escapeHtml(sectionGroup.sectionTitle)}</h3>
-              <p class="muted">同一章节下的结果可以逐条编辑后再采纳。</p>
-            </div>
-            <span class="accepted-domain-count">${sectionGroup.items.length} 条</span>
-          </div>
-          <div class="stack-list result-section-list">
-            ${sectionGroup.items
-              .map(
-                (item) => `
-                  <article class="stack-card generated-result-card" data-result-item-id="${item.id}" data-result-section-title="${escapeAttribute(sectionGroup.sectionTitle)}">
-                    <div class="inline-actions">
-                      <span class="status-badge ${statusTone(item.review?.status || "pending")}">${escapeHtml(
-                        translateStatus(item.review?.status || "pending")
-                      )}</span>
-                    </div>
-                    <strong>${escapeHtml(item.itemTitle || item.title || item.requirementId || "未命名结果")}</strong>
-                    <div class="card-meta">
-                      <span data-requirement-code>${escapeHtml(item.requirementId || "未编号")}</span>
-                      <span>${escapeHtml(item.type || "functional")}</span>
-                      <span>置信度 ${String(item.confidence ?? "--")}</span>
-                    </div>
-                    <label>
-                      条目标题
-                      <input data-title-input="${item.id}" value="${escapeAttribute(item.itemTitle || item.title || "")}" />
-                    </label>
-                    <div class="generated-result-preview-wrap">
-                      <div class="generated-result-preview-head">
-                        <span>正文预览</span>
-                        <button class="secondary-button" type="button" data-toggle-result-editor="${item.id}">编辑正文</button>
-                      </div>
-                      <div class="accepted-result-body accepted-content generated-result-preview" data-result-preview="${item.id}">
-                        ${formatReadableRequirementHtml(item.requirementText || "")}
-                      </div>
-                    </div>
-                    <div class="generated-result-editor" data-result-editor="${item.id}" hidden>
-                      <label>
-                        正文编辑
-                        <textarea data-text-input="${item.id}" rows="8">${escapeHtml(item.requirementText || "")}</textarea>
-                      </label>
-                    </div>
-                    <div class="inline-actions">
-                      <button data-accept-item="${item.id}">采纳</button>
-                      <button class="secondary-button" data-reject-item="${item.id}">驳回</button>
-                    </div>
-                    ${buildResultConflictBlock(task, item)}
-                    ${buildResultTraceBlock(task, item)}
-                    ${buildResultSourceBlock(item)}
-                  </article>
-                `
-              )
-              .join("")}
-          </div>
-        </section>
-      `
-    )
-    .join("");
+  taskResults.innerHTML = `
+    <div class="task-result-groups">
+      ${sectionGroups
+        .map(
+          (sectionGroup) => `
+            <section class="result-section-group">
+              <div class="accepted-domain-head accepted-section-head">
+                <div>
+                  <h3>${escapeHtml(sectionGroup.sectionTitle)}</h3>
+                  <p class="muted">同一章节下的结果可以逐条编辑后再采纳。</p>
+                </div>
+                <span class="accepted-domain-count">${sectionGroup.items.length} 条</span>
+              </div>
+              <div class="stack-list result-section-list">
+                ${sectionGroup.items
+                  .map(
+                    (item) => `
+                      <article class="stack-card generated-result-card" data-result-item-id="${escapeAttribute(item.id)}" data-result-section-title="${escapeAttribute(sectionGroup.sectionTitle)}">
+                        <div class="generated-result-card-head">
+                          <div class="generated-result-title-block">
+                            <strong class="generated-result-title">${escapeHtml(item.itemTitle || item.title || item.requirementId || "未命名结果")}</strong>
+                            <div class="card-meta">
+                              <span data-requirement-code>${escapeHtml(item.requirementId || "未编号")}</span>
+                              <span>${escapeHtml(item.type || "functional")}</span>
+                              <span>置信度 ${escapeHtml(String(item.confidence ?? "--"))}</span>
+                            </div>
+                          </div>
+                          <span class="status-badge ${statusTone(item.review?.status || "pending")}">${escapeHtml(
+                            translateStatus(item.review?.status || "pending")
+                          )}</span>
+                        </div>
+                        <label>
+                          条目标题
+                          <input data-title-input="${escapeAttribute(item.id)}" value="${escapeAttribute(item.itemTitle || item.title || "")}" />
+                        </label>
+                        <div class="generated-result-preview-wrap">
+                          <div class="generated-result-preview-head">
+                            <span>正文预览</span>
+                            <button class="secondary-button" type="button" data-toggle-result-editor="${escapeAttribute(item.id)}">编辑正文</button>
+                          </div>
+                          <div class="accepted-result-body accepted-content generated-result-preview" data-result-preview="${escapeAttribute(item.id)}">
+                            ${formatReadableRequirementHtml(item.requirementText || "")}
+                          </div>
+                        </div>
+                        <div class="generated-result-editor" data-result-editor="${escapeAttribute(item.id)}" hidden>
+                          <label>
+                            正文编辑
+                            <textarea data-text-input="${escapeAttribute(item.id)}" rows="8">${escapeHtml(item.requirementText || "")}</textarea>
+                          </label>
+                        </div>
+                        <div class="inline-actions">
+                          <button data-accept-item="${escapeAttribute(item.id)}">采纳</button>
+                          <button class="secondary-button" data-reject-item="${escapeAttribute(item.id)}">驳回</button>
+                        </div>
+                        ${buildResultConflictBlock(task, item)}
+                        ${buildResultTraceBlock(task, item)}
+                        ${buildResultSourceBlock(item)}
+                      </article>
+                    `
+                  )
+                  .join("")}
+              </div>
+            </section>
+          `
+        )
+        .join("")}
+    </div>
+    ${rawDebugSection}
+  `;
 
   taskResults.onclick = async (event) => {
     const acceptButton = event.target.closest("[data-accept-item]");
@@ -2242,6 +2381,12 @@ function handleWorkspaceMessage(event) {
     refreshModuleTaskHistory({
       highlightTaskId: data.taskId || "",
       statusMessage: data.status === "running" ? "新的 SLX 解析任务已加入历史任务列表。" : ""
+    });
+  }
+
+  if (data.type === "module_assets:changed") {
+    refreshModuleTaskHistory({
+      statusMessage: data.assetName ? `已删除模块资产：${data.assetName}` : "模块资产已更新。"
     });
   }
 }
@@ -2762,12 +2907,86 @@ function buildAcceptedSummaryChips(module, item) {
 
 function normalizeReadableRequirementText(value) {
   return String(value || "")
-    .replace(/\r\n/g, "\n")
+    .replace(/\r\n?/g, "\n")
     .replace(/\u3000/g, " ")
     .replace(/([。；])(?=(?:当|若|如果|否则|注：|说明：))/g, "$1\n")
-    .replace(/(?<!\d)(\d+\.\s+)/g, "\n$1")
+    .replace(/([。；])\s*(?=\d+[.)、）]\s+[\u4e00-\u9fa5A-Za-zA-Z])/g, "$1\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function reserveMarkdownHtml(placeholders, html) {
+  const key = `\u0000md${placeholders.length}\u0000`;
+  placeholders.push({ key, html });
+  return key;
+}
+
+function sanitizeMarkdownHref(value = "") {
+  const href = String(value || "").trim();
+  if (!href) {
+    return "";
+  }
+  if (/^(https?:|mailto:)/i.test(href) || href.startsWith("/") || href.startsWith("#")) {
+    return href;
+  }
+  return "";
+}
+
+function renderInlineMarkdown(text = "") {
+  const placeholders = [];
+  let value = String(text || "");
+
+  value = value.replace(/`([^`\n]+)`/g, (_, code) =>
+    reserveMarkdownHtml(placeholders, `<code>${escapeHtml(code)}</code>`)
+  );
+  value = value.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, href) => {
+    const safeHref = sanitizeMarkdownHref(href);
+    if (!safeHref) {
+      return reserveMarkdownHtml(placeholders, escapeHtml(match));
+    }
+    return reserveMarkdownHtml(
+      placeholders,
+      `<a href="${escapeAttribute(safeHref)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`
+    );
+  });
+
+  let html = escapeHtml(value)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/(^|[^\*])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>");
+
+  for (const placeholder of placeholders) {
+    html = html.replaceAll(placeholder.key, placeholder.html);
+  }
+  return html;
+}
+
+function isMarkdownTableDivider(line = "") {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function parseMarkdownTableRow(line = "") {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function parseOrderedListLine(line = "") {
+  const match = String(line || "").trim().match(/^(\d+)[.)、）]\s+(.+)$/);
+  if (!match) {
+    return null;
+  }
+  const content = match[2].trim();
+  if (!content || /^[+*/=;；,，.)）]/.test(content)) {
+    return null;
+  }
+  return {
+    number: Math.max(1, Number(match[1]) || 1),
+    content
+  };
 }
 
 function formatReadableRequirementHtml(value) {
@@ -2776,32 +2995,188 @@ function formatReadableRequirementHtml(value) {
     return '<p class="accepted-paragraph muted">暂无内容</p>';
   }
 
-  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const lines = text.split("\n");
   const parts = [];
-  let listItems = [];
+  let list = null;
+  let paragraph = [];
+  let codeFence = null;
+  let table = null;
+  let nextOrderedStart = null;
 
   const flushList = () => {
-    if (!listItems.length) {
+    if (!list || !list.items.length) {
+      return;
+    }
+    const tag = list.type === "ordered" ? "ol" : "ul";
+    const startAttribute = tag === "ol" && list.start && list.start > 1 ? ` start="${list.start}"` : "";
+    parts.push(
+      `<${tag} class="accepted-list"${startAttribute}>${list.items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</${tag}>`
+    );
+    if (list.type === "ordered") {
+      nextOrderedStart = (list.start || 1) + list.items.length;
+    }
+    list = null;
+  };
+
+  const resetOrderedContinuation = () => {
+    nextOrderedStart = null;
+  };
+
+  const flushParagraph = () => {
+    if (!paragraph.length) {
+      return;
+    }
+    const content = paragraph.join(" ").trim();
+    if (content) {
+      parts.push(`<p class="${/^(注：|说明：)/.test(content) ? "accepted-note" : "accepted-paragraph"}">${renderInlineMarkdown(content)}</p>`);
+    }
+    paragraph = [];
+  };
+
+  const flushTable = () => {
+    if (!table || (!(table.header || []).length && !table.rows.length)) {
+      table = null;
+      return;
+    }
+    const header = table.header || [];
+    const bodyRows = table.rows;
+    const columnCount = Math.max(header.length, ...bodyRows.map((row) => row.length));
+    const normalizeRow = (row) => Array.from({ length: columnCount }, (_, cellIndex) => row[cellIndex] || "");
+    parts.push(`
+      <div class="accepted-table-wrap">
+        <table class="accepted-table">
+          ${
+            header.length
+              ? `<thead><tr>${normalizeRow(header).map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join("")}</tr></thead>`
+              : ""
+          }
+          <tbody>${bodyRows
+            .map((row) => `<tr>${normalizeRow(row).map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`).join("")}</tr>`)
+            .join("")}</tbody>
+        </table>
+      </div>
+    `);
+    table = null;
+  };
+
+  const flushCodeFence = () => {
+    if (!codeFence) {
       return;
     }
     parts.push(
-      `<ol class="accepted-list">${listItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`
+      `<pre class="accepted-code"><code data-language="${escapeAttribute(codeFence.language || "")}">${escapeHtml(
+        codeFence.lines.join("\n")
+      )}</code></pre>`
     );
-    listItems = [];
+    codeFence = null;
   };
 
-  for (const line of lines) {
-    if (/^\d+\.\s+/.test(line)) {
-      listItems.push(line.replace(/^\d+\.\s+/, ""));
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index] || "";
+    const line = rawLine.trim();
+
+    if (codeFence) {
+      if (line.startsWith(codeFence.fence)) {
+        flushCodeFence();
+      } else {
+        codeFence.lines.push(rawLine);
+      }
+      continue;
+    }
+
+    const fenceMatch = /^(?:```|~~~)\s*([\w-]+)?\s*$/.exec(line);
+    if (fenceMatch) {
+      flushParagraph();
+      flushList();
+      flushTable();
+      resetOrderedContinuation();
+      codeFence = {
+        fence: line.startsWith("~~~") ? "~~~" : "```",
+        language: fenceMatch[1] || "",
+        lines: []
+      };
+      continue;
+    }
+
+    if (!line) {
+      flushParagraph();
+      flushList();
+      flushTable();
+      continue;
+    }
+
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      flushParagraph();
+      flushList();
+      flushTable();
+      resetOrderedContinuation();
+      const level = Math.min(6, Math.max(3, headingMatch[1].length + 2));
+      parts.push(`<h${level} class="accepted-heading">${renderInlineMarkdown(headingMatch[2].trim())}</h${level}>`);
+      continue;
+    }
+
+    const quoteMatch = line.match(/^>\s*(.+)$/);
+    if (quoteMatch) {
+      flushParagraph();
+      flushList();
+      flushTable();
+      resetOrderedContinuation();
+      const quoteLines = [quoteMatch[1]];
+      while (index + 1 < lines.length) {
+        const nextQuote = (lines[index + 1] || "").trim().match(/^>\s*(.*)$/);
+        if (!nextQuote) {
+          break;
+        }
+        quoteLines.push(nextQuote[1]);
+        index += 1;
+      }
+      parts.push(`<blockquote class="accepted-blockquote">${renderInlineMarkdown(quoteLines.join(" "))}</blockquote>`);
+      continue;
+    }
+
+    const nextLine = lines[index + 1] || "";
+    if (line.includes("|") && isMarkdownTableDivider(nextLine)) {
+      flushParagraph();
+      flushList();
+      flushTable();
+      resetOrderedContinuation();
+      table = { header: parseMarkdownTableRow(line), rows: [] };
+      index += 1;
+      continue;
+    }
+    if (table && line.includes("|")) {
+      table.rows.push(parseMarkdownTableRow(line));
+      continue;
+    }
+
+    const orderedMatch = parseOrderedListLine(line);
+    const unorderedMatch = line.match(/^[-*+]\s+(.+)$/);
+    if (orderedMatch || unorderedMatch) {
+      flushParagraph();
+      flushTable();
+      const listType = orderedMatch ? "ordered" : "unordered";
+      if (!list || list.type !== listType) {
+        flushList();
+        list = {
+          type: listType,
+          start: orderedMatch ? (nextOrderedStart && orderedMatch.number === 1 ? nextOrderedStart : orderedMatch.number) : null,
+          items: []
+        };
+      }
+      list.items.push(orderedMatch ? orderedMatch.content : unorderedMatch[1].trim());
       continue;
     }
 
     flushList();
-
-    parts.push(`<p class="${/^(注：|说明：)/.test(line) ? "accepted-note" : "accepted-paragraph"}">${escapeHtml(line)}</p>`);
+    flushTable();
+    paragraph.push(line);
   }
 
+  flushParagraph();
   flushList();
+  flushTable();
+  flushCodeFence();
   return parts.join("");
 }
 

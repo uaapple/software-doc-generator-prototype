@@ -975,6 +975,7 @@ function buildContentGeneratePrompt(payload = {}) {
     "Rules:",
     "- First read the task skill bundle manifest, then read only the skill chunks you need to write each requirement.",
     ...sourcePolicyRules,
+    "- Treat recalled `good_example`, `rule_hint`, and module-specific skill atoms as writing and coverage guidance; do not cite them as source evidence unless they also appear as modelRequirementView facts or anchors.",
     "- Treat `requiredTitleOutline` as the authoritative ordering and cardinality constraint for the output items.",
     "- Return exactly `requiredLeafCount` items in the same order as the leaf list implied by `requiredTitleOutline`.",
     "- Do not invent titles, headings, or grouping text.",
@@ -1101,6 +1102,32 @@ function buildSlxParsePrompt(payload = {}) {
     "- sourceRefs must include fileName, fileRole, location, and excerpt.",
     "- Group related signals/parameters into the same fact when they describe a single behavior.",
     "- Preserve block paths, signal names, state names, and parameter values exactly."
+  ].join("\n");
+}
+
+function buildSoftwareRequirementMarkdownPrompt(payload = {}) {
+  const inputArtifact = payload.inputArtifact || {};
+  const prompt = String(inputArtifact.prompt || "").trim();
+  if (prompt) {
+    return prompt;
+  }
+
+  return [
+    "You are executing the Hermes step `software_requirement_markdown_generate`.",
+    "Read `prompt.md` from the provided workspace directory, follow it exactly, write the requested Markdown artifact, and return strict JSON only.",
+    "",
+    "Workspace artifact:",
+    JSON.stringify(
+      {
+        workspaceDir: inputArtifact.workspaceDir || "",
+        manifestPath: inputArtifact.manifestPath || "",
+        taskBriefPath: inputArtifact.taskBriefPath || "",
+        promptPath: inputArtifact.promptPath || "",
+        outputRelativePath: inputArtifact.outputRelativePath || "outputs/software-requirements.md"
+      },
+      null,
+      2
+    )
   ].join("\n");
 }
 
@@ -1562,6 +1589,8 @@ function buildCliPrompt(payload = {}) {
       return buildDocumentExtractPrompt(payload);
     case "slx_parse_generate":
       return buildSlxParsePrompt(payload);
+    case "software_requirement_markdown_generate":
+      return buildSoftwareRequirementMarkdownPrompt(payload);
     case "anchor_index_build":
       return buildAnchorIndexPrompt(payload);
     case "material_extract":
@@ -1611,8 +1640,9 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
     return sanitizeModuleBootstrapAnalysis(parsed);
   }
   if (stepType === "module_bootstrap_generate") {
-    return parsed && typeof parsed === "object" ? parsed : {};
-  }
+  return parsed && typeof parsed === "object" ? parsed : {};
+}
+
   if (stepType === "document_extract_generate") {
     return parsed && typeof parsed === "object" ? parsed : {};
   }
@@ -1626,6 +1656,14 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
       summary: String(artifact.summary || "").trim()
     };
   }
+  if (stepType === "software_requirement_markdown_generate") {
+    const artifact = parsed && typeof parsed === "object" ? parsed : {};
+    return {
+      markdownPath: String(artifact.markdownPath || "outputs/software-requirements.md").trim(),
+      itemCount: Math.max(0, Number(artifact.itemCount || 0) || 0),
+      summary: String(artifact.summary || "").trim()
+    };
+  }
   if (stepType === "outline_build") {
     return {
       summary: String(parsed.summary || "").trim(),
@@ -1636,6 +1674,44 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
     return { items: Array.isArray(parsed.items) ? parsed.items.map(sanitizeContentItem) : [] };
   }
   return parsed;
+}
+
+async function buildMarkdownArtifactFromWorkspace(payload = {}, workdir = "") {
+  if (payload.stepType !== "software_requirement_markdown_generate") {
+    return null;
+  }
+  const inputArtifact = payload.inputArtifact || {};
+  const markdownPath = String(
+    inputArtifact.outputRelativePath ||
+      inputArtifact.markdownPath ||
+      inputArtifact.outputPath ||
+      "outputs/software-requirements.md"
+  ).trim();
+  const absoluteMarkdownPath = path.isAbsolute(markdownPath)
+    ? markdownPath
+    : path.join(workdir || inputArtifact.workspaceDir || process.cwd(), ...markdownPath.split("/").filter(Boolean));
+  try {
+    const stat = await fs.stat(absoluteMarkdownPath);
+    if (!stat.isFile()) {
+      return null;
+    }
+  } catch (_error) {
+    return null;
+  }
+
+  let itemCount = 0;
+  try {
+    const markdown = await fs.readFile(absoluteMarkdownPath, "utf8");
+    itemCount = (markdown.match(/<!--\s*requirement-item:start\b/gi) || []).length;
+  } catch (_error) {
+    itemCount = 0;
+  }
+
+  return {
+    markdownPath,
+    itemCount,
+    summary: "Hermes wrote the Markdown artifact but did not return strict JSON."
+  };
 }
 
 async function defaultCommandRunner(command, args, options = {}) {
@@ -1900,6 +1976,7 @@ export class HermesAgentClient {
     const args = ["chat", "-q", prompt, "-Q", "--source", "tool", "--max-turns", String(this.maxTurns), "--yolo"];
     const startedAt = Date.now();
     const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
+    const workdir = String(payload.workdir || payload.inputArtifact?.workspaceDir || this.workdir || process.cwd());
     let heartbeatTimer = null;
 
     try {
@@ -1927,24 +2004,55 @@ export class HermesAgentClient {
         });
       }, this.heartbeatIntervalMs);
       const { stdout = "", stderr = "" } = await this.commandRunner(this.command, args, {
-        cwd: this.workdir,
+        cwd: workdir,
         timeout: timeoutMs,
         maxBuffer: 16 * 1024 * 1024,
         env: { ...process.env, NO_COLOR: "1" }
       });
-      const { body, sessionId } = parseCliResponse(stdout);
+      const stdoutResponse = parseCliResponse(stdout);
+      const stderrResponse = parseCliResponse(stderr);
+      const body = stdoutResponse.body;
+      const sessionId = stdoutResponse.sessionId || stderrResponse.sessionId;
       const tokenUsage = sessionId
         ? await this.usageReader({
             sessionId,
             stateDbPath: this.stateDbPath,
             commandRunner: this.commandRunner,
-            workdir: this.workdir
+            workdir
           })
         : null;
       let parsed = null;
       try {
         parsed = JSON.parse(extractJsonText(body));
       } catch (_error) {
+        const fallbackArtifact = await buildMarkdownArtifactFromWorkspace(payload, workdir);
+        if (fallbackArtifact) {
+          await emitHermesEvent(runtime.onEvent, {
+            type: "agent_runtime",
+            transport: "cli",
+            stepType: payload.stepType || "",
+            status: "completed",
+            label: "Hermes CLI 已写入 Markdown 产物",
+            message: "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。",
+            sessionId,
+            startedAt: new Date(startedAt).toISOString(),
+            heartbeatAt: new Date().toISOString(),
+            elapsedMs: Date.now() - startedAt,
+            tokenUsage,
+            stdoutExcerpt: clipText(body, 2000),
+            stderrExcerpt: clipText(stderr, 2000)
+          });
+          return {
+            status: "succeeded",
+            stepType: payload.stepType,
+            artifact: normalizeCliArtifact(payload.stepType, fallbackArtifact, payload),
+            metrics: tokenUsage ? { tokenUsage } : {},
+            logs: stderr ? [clipText(stderr, 4000)] : [],
+            error: null,
+            sessionId
+          };
+        }
+
         const invalidError = new Error("Hermes returned an invalid JSON response");
         invalidError.code = "hermes_invalid_response";
         invalidError.rawOutput = body;
