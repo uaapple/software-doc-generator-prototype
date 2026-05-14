@@ -1,11 +1,13 @@
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const externalEnvKeys = new Set(Object.keys(process.env));
+const homeDir = process.env.HOME || process.env.USERPROFILE || "";
 
 loadDotEnv(path.join(rootDir, ".env.defaults"));
 loadDotEnv(path.join(rootDir, ".env"), {
@@ -95,12 +97,15 @@ export const config = {
     command: process.env.HERMES_COMMAND || "hermes",
     stateDbPath: process.env.HERMES_STATE_DB_PATH || path.join(process.env.HOME || "", ".hermes", "state.db"),
     workdir: process.env.HERMES_WORKDIR || rootDir,
+    uploadTempDir: process.env.HERMES_UPLOAD_TMPDIR || path.join(os.tmpdir(), "software-doc-hermes-agent"),
+    maxUploadBytes: Number(process.env.HERMES_MAX_UPLOAD_BYTES || 250 * 1024 * 1024),
     timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 120000),
     stepTimeoutMs: {
       anchor_index_build: Number(process.env.HERMES_TIMEOUT_ANCHOR_INDEX_BUILD_MS || 180000),
       outline_build: Number(process.env.HERMES_TIMEOUT_OUTLINE_BUILD_MS || 180000),
       module_bootstrap_generate: Number(process.env.HERMES_TIMEOUT_MODULE_BOOTSTRAP_GENERATE_MS || 600000),
       content_generate: Number(process.env.HERMES_TIMEOUT_CONTENT_GENERATE_MS || 1200000),
+      software_requirement_markdown_generate: Number(process.env.HERMES_TIMEOUT_SOFTWARE_REQUIREMENT_MARKDOWN_GENERATE_MS || 600000),
       document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
       replay_proposal_generate: Number(process.env.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS || 600000)
     },
@@ -112,7 +117,7 @@ export const config = {
     maxEvidenceForGeneration: Number(process.env.HERMES_MAX_EVIDENCE_FOR_GENERATION || 40),
     maxAnchorsForGeneration: Number(process.env.HERMES_MAX_ANCHORS_FOR_GENERATION || 80),
     maxModelRequirementFacts: Number(process.env.HERMES_MAX_MODEL_REQUIREMENT_FACTS || 100),
-    maxModelRequirementBytes: Number(process.env.HERMES_MAX_MODEL_REQUIREMENT_BYTES || 12000)
+    maxModelRequirementBytes: Number(process.env.HERMES_MAX_MODEL_REQUIREMENT_BYTES || 48000)
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ARK_API_KEY || "",
@@ -120,13 +125,63 @@ export const config = {
     baseURL: process.env.OPENAI_BASE_URL || process.env.ZHIPU_BASE_URL || process.env.ARK_BASE_URL || undefined
   },
   matlabMcp: {
+    analysisBackend: String(process.env.SLX_ANALYSIS_BACKEND || "satk").trim().toLowerCase(),
+    simulinkAgenticToolkitRoot:
+      process.env.SIMULINK_AGENTIC_TOOLKIT_ROOT || path.join(homeDir, ".matlab", "agentic-toolkits", "simulink"),
+    simulinkAgenticToolkitVersion: readOptionalText(
+      path.join(process.env.SIMULINK_AGENTIC_TOOLKIT_ROOT || path.join(homeDir, ".matlab", "agentic-toolkits", "simulink"), "VERSION")
+    ),
     transport: process.env.MATLAB_MCP_TRANSPORT || "stdio",
     baseURL: process.env.MATLAB_MCP_BASE_URL || "http://127.0.0.1:5100",
     httpMode: process.env.MATLAB_MCP_HTTP_MODE || "path",
     authToken: process.env.MATLAB_MCP_AUTH_TOKEN || "",
     timeoutMs: Number(process.env.MATLAB_MCP_TIMEOUT_MS || 300000),
     tempDir: process.env.MATLAB_MCP_TMPDIR || "/tmp",
-    serverCommand: process.env.MATLAB_MCP_SERVER_COMMAND || "",
-    serverArgs: []
+    serverCommand:
+      process.env.MATLAB_MCP_SERVER_COMMAND ||
+      firstExistingPath([
+        path.join(homeDir, ".matlab", "agentic-toolkits", "bin", process.platform === "win32" ? "matlab-mcp-core-server.exe" : "matlab-mcp-core-server"),
+        path.join(rootDir, "tools", process.platform === "win32" ? "matlab-mcp-core-server.exe" : "matlab-mcp-core-server")
+      ]),
+    serverArgs: buildMatlabMcpServerArgs()
   }
 };
+
+function buildMatlabMcpServerArgs() {
+  if (process.env.MATLAB_MCP_SERVER_ARGS_JSON) {
+    try {
+      const parsed = JSON.parse(process.env.MATLAB_MCP_SERVER_ARGS_JSON);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      // fall back to the derived args below
+    }
+  }
+
+  const analysisBackend = String(process.env.SLX_ANALYSIS_BACKEND || "satk").trim().toLowerCase();
+  if (analysisBackend === "legacy") {
+    return [
+      "--matlab-root=" + (process.env.MATLAB_ROOT || "/Applications/MATLAB_R2026a.app"),
+      "--matlab-display-mode=nodesktop",
+      "--extension-file=" + path.join(rootDir, "tools", "matlab-mcp-extension.json"),
+      "--initial-working-folder=" + path.join(rootDir, "tools", "matlab-functions")
+    ];
+  }
+
+  const toolkitRoot = process.env.SIMULINK_AGENTIC_TOOLKIT_ROOT || path.join(homeDir, ".matlab", "agentic-toolkits", "simulink");
+  return [
+    "--matlab-session-mode=existing",
+    "--extension-file=" + (process.env.SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE || path.join(toolkitRoot, "tools", "tools.json"))
+  ];
+}
+
+function firstExistingPath(paths = []) {
+  return paths.find((candidate) => candidate && fs.existsSync(candidate)) || paths[paths.length - 1] || "";
+}
+
+function readOptionalText(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
