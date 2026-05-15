@@ -1,5 +1,6 @@
 import express from "express";
 import multer from "multer";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "./config.js";
@@ -20,6 +21,7 @@ import { SkillLoader } from "./services/skill-loader.js";
 import { ReplayLabService, DEFAULT_REPLAY_LAB_TEMPLATE_TASK_ID } from "./services/replay-lab-service.js";
 import { FeedbackTicketService } from "./services/feedback-ticket-service.js";
 import { buildStoredUploadName, normalizeUploadedFileName } from "./services/upload-filename.js";
+import { HermesAgentClient } from "./services/hermes-agent-client.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -74,6 +76,114 @@ function createHttpError(message, statusCode = 400, code = "request_error", deta
   error.code = code;
   error.details = details;
   return error;
+}
+
+function normalizeDebugTimeoutMs(value, fallback = 60000) {
+  const timeoutMs = Number(value || fallback);
+  return Math.min(Math.max(Number.isFinite(timeoutMs) ? timeoutMs : fallback, 1000), 10 * 60 * 1000);
+}
+
+function getBearerHeaders(token = "") {
+  const authToken = String(token || "").trim();
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
+function getWorkerDebugConfig() {
+  return {
+    hermes: {
+      baseURL: config.hermes.baseURL,
+      apiMode: config.hermes.apiMode || "json",
+      authConfigured: Boolean(config.hermes.authToken)
+    },
+    matlabWorker: {
+      baseURL: config.matlabMcp.baseURL,
+      httpMode: config.matlabMcp.httpMode || "path",
+      authConfigured: Boolean(config.matlabMcp.authToken)
+    }
+  };
+}
+
+function getWorkerDebugDir() {
+  return path.join(config.dataDir, "windows-worker-debug");
+}
+
+function getWorkerDebugArtifactPath() {
+  return path.join(getWorkerDebugDir(), "latest-artifact.json");
+}
+
+async function fetchWorkerJson(url, options = {}) {
+  const timeoutMs = normalizeDebugTimeoutMs(options.timeoutMs, 10000);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(url, {
+      method: options.method || "GET",
+      headers: options.headers || {},
+      body: options.body,
+      signal: controller.signal
+    });
+    const raw = await response.text();
+    let body = null;
+    try {
+      body = raw ? JSON.parse(raw) : null;
+    } catch (_error) {
+      body = { raw };
+    }
+    return {
+      ok: response.ok,
+      status: response.status,
+      elapsedMs: Date.now() - startedAt,
+      body
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      elapsedMs: Date.now() - startedAt,
+      error: error?.name === "AbortError" ? `Request timed out after ${timeoutMs}ms` : error?.message || "Request failed"
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function createDebugHermesClient(timeoutMs) {
+  return new HermesAgentClient({
+    transport: "api",
+    baseURL: config.hermes.baseURL,
+    apiMode: config.hermes.apiMode || "json",
+    authToken: config.hermes.authToken || "",
+    timeoutMs,
+    stepTimeoutMs: {
+      ...(config.hermes.stepTimeoutMs || {}),
+      document_extract_generate: timeoutMs,
+      windows_worker_probe: timeoutMs
+    }
+  });
+}
+
+function createRuntimeEventCollector() {
+  const events = [];
+  return {
+    events,
+    onEvent(event) {
+      events.push({
+        ...event,
+        capturedAt: new Date().toISOString()
+      });
+    }
+  };
+}
+
+async function persistWorkerDebugArtifact(entry) {
+  await fs.mkdir(getWorkerDebugDir(), { recursive: true });
+  const record = {
+    ...entry,
+    savedAt: new Date().toISOString()
+  };
+  await fs.writeFile(getWorkerDebugArtifactPath(), JSON.stringify(record, null, 2), "utf8");
+  return record;
 }
 
 export async function createApp() {
@@ -287,6 +397,9 @@ export async function createApp() {
   app.get("/slx-parser", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "slx-parser.html"));
   });
+  app.get("/windows-worker-debug", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "windows-worker-debug.html"));
+  });
   app.get("/hil-test-case-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "hil-test-case-generation.html"));
   });
@@ -311,6 +424,145 @@ export async function createApp() {
   app.get("/api/meta", async (_req, res) => {
     const meta = await pipelineService.getMeta();
     res.json(meta);
+  });
+
+  app.get("/api/windows-worker-debug/config", (_req, res) => {
+    res.json(getWorkerDebugConfig());
+  });
+
+  app.post("/api/windows-worker-debug/health", async (req, res) => {
+    const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
+    const hermesBaseURL = String(config.hermes.baseURL || "").replace(/\/+$/, "");
+    const matlabBaseURL = String(config.matlabMcp.baseURL || "").replace(/\/+$/, "");
+    const [hermes, matlabWorker] = await Promise.all([
+      fetchWorkerJson(`${hermesBaseURL}/api/health`, {
+        timeoutMs,
+        headers: getBearerHeaders(config.hermes.authToken)
+      }),
+      fetchWorkerJson(`${matlabBaseURL}/health`, {
+        timeoutMs,
+        headers: getBearerHeaders(config.matlabMcp.authToken)
+      })
+    ]);
+    res.json({
+      ok: Boolean(hermes.ok && matlabWorker.ok),
+      checkedAt: new Date().toISOString(),
+      config: getWorkerDebugConfig(),
+      checks: {
+        hermes,
+        matlabWorker
+      }
+    });
+  });
+
+  app.post("/api/windows-worker-debug/upload-probe", async (req, res, next) => {
+    const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 60000);
+    const probeId = `worker-probe-${Date.now()}-${randomUUID()}`;
+    const probeDir = path.join(getWorkerDebugDir(), "local-probes", probeId);
+    const fileName = "windows-worker-upload-probe.txt";
+    const probePath = path.join(probeDir, fileName);
+    const retainUploadedFiles = req.body?.retainUploadedFiles !== false;
+    const probeText = [
+      "software-doc-generator windows worker upload probe",
+      `probeId=${probeId}`,
+      `createdAt=${new Date().toISOString()}`,
+      `localPath=${probePath}`
+    ].join("\n");
+
+    try {
+      await fs.mkdir(probeDir, { recursive: true });
+      await fs.writeFile(probePath, probeText, "utf8");
+      const runtime = createRuntimeEventCollector();
+      const response = await createDebugHermesClient(timeoutMs).executeStep(
+        {
+          taskId: probeId,
+          stepType: "windows_worker_probe",
+          allowedPaths: [probePath],
+          inputArtifact: {
+            probeId,
+            probeFilePath: probePath,
+            retainUploadedFiles,
+            expectedText: probeText,
+            requestedAt: new Date().toISOString()
+          }
+        },
+        { onEvent: runtime.onEvent }
+      );
+      const savedArtifact = await persistWorkerDebugArtifact({
+        type: "upload-probe",
+        probeId,
+        artifact: response.artifact || response,
+        response,
+        runtimeEvents: runtime.events
+      });
+      res.json({
+        ok: true,
+        probeId,
+        retainedOnWindows: retainUploadedFiles,
+        artifact: response.artifact || response,
+        response,
+        runtimeEvents: runtime.events,
+        savedArtifact
+      });
+    } catch (error) {
+      next(error);
+    } finally {
+      await fs.rm(probeDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  app.post("/api/windows-worker-debug/hermes-probe", async (req, res, next) => {
+    const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 60000);
+    const probeId = `hermes-probe-${Date.now()}-${randomUUID()}`;
+    const sourceText = String(req.body?.sourceText || "").trim() ||
+      `Windows worker Hermes probe ${probeId} at ${new Date().toISOString()}`;
+
+    try {
+      const runtime = createRuntimeEventCollector();
+      const response = await createDebugHermesClient(timeoutMs).executeStep(
+        {
+          taskId: probeId,
+          stepType: "document_extract_generate",
+          inputArtifact: {
+            targetDocumentType: "software_requirement",
+            module: { name: "Windows Worker Probe" },
+            sourceText
+          }
+        },
+        { onEvent: runtime.onEvent }
+      );
+      const savedArtifact = await persistWorkerDebugArtifact({
+        type: "hermes-probe",
+        probeId,
+        artifact: response.artifact || response,
+        response,
+        runtimeEvents: runtime.events
+      });
+      res.json({
+        ok: true,
+        probeId,
+        artifact: response.artifact || response,
+        response,
+        runtimeEvents: runtime.events,
+        savedArtifact
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/windows-worker-debug/latest-artifact", async (_req, res, next) => {
+    try {
+      const artifactPath = getWorkerDebugArtifactPath();
+      const raw = await fs.readFile(artifactPath, "utf8").catch(() => "");
+      res.json({
+        ok: Boolean(raw),
+        artifactPath,
+        record: raw ? JSON.parse(raw) : null
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/api/llm-profiles", async (_req, res, next) => {

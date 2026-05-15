@@ -555,6 +555,102 @@ button.danger {
   padding: 0 14px 14px;
 }
 
+.debug-step-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.debug-step-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 360px;
+}
+
+.debug-kv-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.debug-kv-grid div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+
+.debug-kv-grid span,
+.debug-summary span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.debug-kv-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.debug-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin: 0;
+}
+
+.debug-checkbox input {
+  width: auto;
+}
+
+.debug-result,
+.debug-artifact-preview {
+  min-height: 120px;
+}
+
+.debug-result pre,
+.debug-artifact-preview pre {
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #24364a;
+  background: #f7fafc;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.debug-summary {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-alt);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.debug-status-ok {
+  color: var(--success);
+}
+
+.debug-status-warn {
+  color: var(--warning);
+}
+
+.debug-status-error {
+  color: var(--danger);
+}
+
 .llm-manager-head {
   margin-bottom: 12px;
 }
@@ -973,6 +1069,8 @@ button.danger {
   }
 
   .panel-grid,
+  .debug-step-grid,
+  .debug-kv-grid,
   .llm-profile-form,
   .llm-profile-item,
   .file-item {

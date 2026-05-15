@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Windows Worker 调试台</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/feedback-widget.css" />
+  </head>
+  <body data-page-kind="windows-worker-debug">
+    <main class="layout">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>软件开发需求自动生成平台</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">工程列表</a>
+          <a class="nav-link" href="/document-extractor">文档提取</a>
+          <a class="nav-link" href="/requirement-generation">软件需求生成</a>
+          <a class="nav-link" href="/slx-parser">SLX 解析</a>
+          <a class="nav-link active" href="/windows-worker-debug">Worker 调试</a>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">临时调试</p>
+          <h1>Windows Worker 调试台</h1>
+          <p class="strip-text">逐步验证 Linux 后端与 Windows VM 上 Hermes Agent / MATLAB Worker 的连通、上传、调度和产物回传。</p>
+        </div>
+        <div class="strip-actions">
+          <button class="secondary" id="refresh-config-btn">刷新配置</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="card">
+          <div class="section-head">
+            <span class="section-index">00</span>
+            <div>
+              <h2>当前远程配置</h2>
+              <p id="config-summary">正在读取配置。</p>
+            </div>
+          </div>
+          <div class="debug-kv-grid" id="config-grid"></div>
+        </div>
+      </section>
+
+      <section class="panel debug-step-grid">
+        <div class="card debug-step-card">
+          <div class="section-head">
+            <span class="section-index">01</span>
+            <div>
+              <h2>连接检查</h2>
+              <p>检查 Hermes Agent 与 MATLAB Worker HTTP 入口。</p>
+            </div>
+          </div>
+          <button id="health-btn">测试连接</button>
+          <div class="status" id="health-status"></div>
+          <div class="debug-result" id="health-result"></div>
+        </div>
+
+        <div class="card debug-step-card">
+          <div class="section-head">
+            <span class="section-index">02</span>
+            <div>
+              <h2>文件传送</h2>
+              <p>上传一个探针文件到 Windows Hermes Agent 的接收目录。</p>
+            </div>
+          </div>
+          <label class="debug-checkbox">
+            <input type="checkbox" id="retain-upload" checked />
+            <span>保留 Windows 侧 probe 文件</span>
+          </label>
+          <button id="upload-btn">上传 probe 文件</button>
+          <div class="status" id="upload-status"></div>
+          <div class="debug-result" id="upload-result"></div>
+        </div>
+
+        <div class="card debug-step-card">
+          <div class="section-head">
+            <span class="section-index">03</span>
+            <div>
+              <h2>Hermes 调度</h2>
+              <p>请求 Windows Hermes Agent 执行一次轻量 step。</p>
+            </div>
+          </div>
+          <textarea id="probe-source" rows="4">Windows worker debug probe: generate a small software requirement extraction artifact.</textarea>
+          <button id="hermes-btn">执行 Hermes probe</button>
+          <div class="status" id="hermes-status"></div>
+          <div class="debug-result" id="hermes-result"></div>
+        </div>
+
+        <div class="card debug-step-card">
+          <div class="section-head">
+            <span class="section-index">04</span>
+            <div>
+              <h2>产物回显</h2>
+              <p>读取后端保存的最近一次 Hermes probe artifact。</p>
+            </div>
+          </div>
+          <button id="artifact-btn">读取最近产物</button>
+          <div class="status" id="artifact-status"></div>
+          <div class="debug-artifact-preview" id="artifact-preview"></div>
+          <div class="debug-result" id="artifact-result"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/windows-worker-debug.js"></script>
+    <script type="module" src="/task-queue-widget.js"></script>
+    <script type="module" src="/feedback-widget.js"></script>
+  </body>
+</html>
