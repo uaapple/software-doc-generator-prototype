@@ -153,6 +153,11 @@ moduleRecordReviewWorkOrder?.addEventListener("click", () => {
   window.location.href = `/skill-management?view=work-orders&workOrderId=${encodeURIComponent(workOrderId)}`;
 });
 window.addEventListener("message", handleWorkspaceMessage);
+window.addEventListener("resize", () => {
+  if (state.activeWorkspaceTab) {
+    syncWorkspaceFrameHeight();
+  }
+});
 rejectDialog?.addEventListener("click", (event) => {
   if (state.rejectSubmitting) {
     return;
@@ -602,9 +607,9 @@ function getModuleWorkspaceConfig(projectId, moduleId) {
       embeddedKind: "generator"
     },
     slx_parser: {
-      title: "SLX 解析器",
-      subtitle: "上传 Simulink .slx 模型，生成模型需求视图 JSON 资产。",
-      url: `/slx-parser?projectId=${projectId}&moduleId=${moduleId}`,
+      title: "SLX 解释器",
+      subtitle: "选择模块内的 Simulink .slx 模型，用聊天方式询问模型结构、信号和状态逻辑。",
+      url: `/slx-interpreter?projectId=${projectId}&moduleId=${moduleId}`,
       embeddedKind: "generator"
     },
     detail_design: {
@@ -678,11 +683,27 @@ function applyEmbeddedWorkspaceChrome(config) {
           .card { border-radius: 18px !important; box-shadow: none !important; }
           .panel-grid { gap: 14px !important; }
           .card:not(.workbench-strip) { padding: 20px !important; }
+          body[data-page-kind="slx-interpreter"] { overflow: hidden !important; }
+          body[data-page-kind="slx-interpreter"] .layout { height: 100vh !important; overflow: hidden !important; }
+          body[data-page-kind="slx-interpreter"] .slx-interpreter-layout { height: 100vh !important; min-height: 0 !important; }
+          body[data-page-kind="slx-interpreter"] .slx-model-rail { height: 100% !important; min-height: 0 !important; overflow: auto !important; }
+          body[data-page-kind="slx-interpreter"] .slx-chat-surface { height: 100% !important; min-height: 0 !important; grid-template-rows: auto minmax(0, 1fr) auto !important; }
+          body[data-page-kind="slx-interpreter"] .slx-chat-messages { min-height: 0 !important; overflow: auto !important; }
         `;
     doc.head.appendChild(style);
   } catch (error) {
     console.warn("Failed to trim embedded workspace chrome", error);
   }
+}
+
+function getAdaptiveWorkspaceFrameHeight() {
+  if (!workspaceFrame) {
+    return 620;
+  }
+  const viewportHeight = window.innerHeight || 900;
+  const frameTop = workspaceFrame.getBoundingClientRect().top || 0;
+  const bottomPadding = 24;
+  return Math.max(520, Math.floor(viewportHeight - frameTop - bottomPadding));
 }
 
 function syncWorkspaceFrameHeight() {
@@ -691,6 +712,10 @@ function syncWorkspaceFrameHeight() {
   }
 
   try {
+    if (state.activeWorkspaceTab === "slx_parser") {
+      workspaceFrame.style.height = `${getAdaptiveWorkspaceFrameHeight()}px`;
+      return;
+    }
     const doc = workspaceFrame.contentWindow.document;
     const bodyHeight = Math.max(
       doc.body?.scrollHeight || 0,
@@ -1379,7 +1404,9 @@ function renderTaskList(module, projectId, pendingGeneration = null) {
                       : ""
                   }
                 `
-                : `<a class="primary-link" href="/projects/${projectId}/modules/${module.id}/tasks/${task.id}?documentType=${task.documentType}" data-open-task-detail="true">查看详情</a>`
+                : task.historyKind === "slx_parse"
+                  ? `<a class="primary-link" href="/slx-interpreter?projectId=${projectId}&moduleId=${module.id}&highlightTaskId=${task.id}" data-open-task-detail="true">打开解释器</a>`
+                  : `<a class="primary-link" href="/projects/${projectId}/modules/${module.id}/tasks/${task.id}?documentType=${task.documentType}" data-open-task-detail="true">查看详情</a>`
             }
             <button
               class="secondary-button"
@@ -1407,7 +1434,7 @@ function renderTaskList(module, projectId, pendingGeneration = null) {
       const taskLabel = button.dataset.taskLabel || "该任务";
 
       const confirmed = window.confirm(
-        taskFamily === "extraction"
+        taskFamily === "extraction" || taskFamily === "slx_parse"
           ? `确认删除“${taskLabel}”吗？这只会删除任务记录，已生成的模块资产会保留。`
           : `确认删除“${taskLabel}”吗？该任务下已采纳的结果也会一并移除。`
       );
@@ -1419,12 +1446,14 @@ function renderTaskList(module, projectId, pendingGeneration = null) {
         await request(
           taskFamily === "extraction"
             ? `/api/projects/${projectId}/modules/${module.id}/document-extraction-tasks/${taskId}`
-            : `/api/projects/${projectId}/modules/${module.id}/spaces/${documentType}/tasks/${taskId}`,
+            : taskFamily === "slx_parse"
+              ? `/api/projects/${projectId}/modules/${module.id}/slx-parser-tasks/${taskId}`
+              : `/api/projects/${projectId}/modules/${module.id}/spaces/${documentType}/tasks/${taskId}`,
           {
             method: "DELETE"
           }
         );
-        if (taskFamily !== "extraction") {
+        if (taskFamily !== "extraction" && taskFamily !== "slx_parse") {
           clearPendingGeneration(projectId, module.id, documentType);
         }
         setStatus(`已删除任务：${taskLabel}`);
@@ -2380,7 +2409,14 @@ function handleWorkspaceMessage(event) {
   if (data.type === "slx_parser:tasks_changed") {
     refreshModuleTaskHistory({
       highlightTaskId: data.taskId || "",
-      statusMessage: data.status === "running" ? "新的 SLX 解析任务已加入历史任务列表。" : ""
+      statusMessage: data.status === "running" ? "新的 SLX 解释任务已加入后台队列。" : ""
+    });
+  }
+
+  if (data.type === "slx_interpreter:tasks_changed") {
+    refreshModuleTaskHistory({
+      highlightTaskId: data.taskId || "",
+      statusMessage: data.status === "running" ? "新的 SLX 解释任务已加入后台队列。" : ""
     });
   }
 
@@ -3212,7 +3248,7 @@ function countTasks(module) {
 
 function taskKindLabel(task = {}) {
   if (task.historyKind === "extraction") return "文档提取";
-  if (task.historyKind === "slx_parse") return "SLX 解析";
+  if (task.historyKind === "slx_parse") return "SLX 解释器";
   if (task.historyKind === "bootstrap") return "技能冷启动";
   return "文档生成";
 }

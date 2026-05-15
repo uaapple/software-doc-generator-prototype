@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SLX 解析器</title>
+    <title>SLX 解释器</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/feedback-widget.css" />
   </head>
-  <body data-page-kind="slx-parser">
+  <body data-page-kind="slx-interpreter">
     <main class="layout">
       <nav class="top-nav">
         <div class="brand-mark">
@@ -22,85 +22,80 @@
           <a class="nav-link" href="/document-extractor">文档提取</a>
           <a class="nav-link" href="/requirement-generation">软件需求生成</a>
           <a class="nav-link" href="/detail-design-generation">软件详细设计生成</a>
-          <a class="nav-link active" href="/slx-parser">SLX 解析</a>
+          <a class="nav-link active" href="/slx-interpreter">SLX 解释器</a>
           <a class="nav-link" href="/feedback-pool">反馈池</a>
         </div>
       </nav>
 
       <nav id="generator-breadcrumb" class="breadcrumb-strip card"></nav>
 
-      <section class="workbench-strip card">
+      <section class="workbench-strip card slx-interpreter-strip">
         <div>
           <p class="strip-label">模块工具</p>
-          <h1>SLX 解析器</h1>
-          <p class="strip-text">上传 Simulink .slx 模型，生成面向软件需求的模型需求视图 JSON 资产</p>
+          <h1>SLX 解释器</h1>
+          <p class="strip-text" id="context-copy">正在加载工程和模块信息。</p>
         </div>
         <div class="strip-actions">
           <a id="back-to-module" class="hero-link secondary" href="/">返回功能模块</a>
         </div>
       </section>
 
-      <section class="panel panel-grid">
-        <div class="card">
-          <div class="section-head">
-            <span class="section-index">01</span>
-            <div>
-              <h2>当前上下文</h2>
-              <p id="context-copy">正在加载工程和模块信息。</p>
+      <section class="slx-interpreter-layout">
+        <aside class="slx-model-rail" aria-label="模型选择与上传">
+          <div class="slx-rail-block">
+            <div class="section-head compact">
+              <span class="section-index">01</span>
+              <div>
+                <h2>模型上下文</h2>
+                <p id="module-copy">-</p>
+              </div>
             </div>
+            <label class="slx-select-label" for="model-select">
+              当前模型
+              <select id="model-select"></select>
+            </label>
+            <div id="model-meta" class="slx-model-meta empty-state">暂无可选 SLX 模型。</div>
           </div>
-          <dl class="context-info" id="context-info">
-            <dt>工程</dt><dd id="project-name">-</dd>
-            <dt>模块</dt><dd id="module-name">-</dd>
-          </dl>
-        </div>
 
-        <div class="card">
-          <div class="section-head">
-            <span class="section-index">02</span>
-            <div>
-              <h2>上传 SLX 并启动解析</h2>
-              <p>上传 Simulink .slx 模型文件，系统将通过 Hermes 解析生成模型需求视图。</p>
+          <div class="slx-rail-block slx-upload-panel">
+            <div class="section-head compact">
+              <span class="section-index">02</span>
+              <div>
+                <h2>上传模型文件</h2>
+                <p>上传后的模型会进入当前模块资产。</p>
+              </div>
             </div>
-          </div>
-          <div class="slx-upload-zone" id="upload-zone">
-            <div class="slx-upload-zone-inner">
-              <div class="slx-upload-plus">&#43;</div>
-              <p class="slx-upload-title">拖拽 .slx 文件到此处</p>
-              <p class="slx-upload-hint">或点击此区域通过文件管理器选择模型文件</p>
-              <input type="file" id="slx-input" accept=".slx" style="display:none;">
+            <div class="slx-upload-zone compact" id="upload-zone">
+              <div class="slx-upload-zone-inner">
+                <div class="slx-upload-plus">+</div>
+                <p class="slx-upload-title">拖拽或点击选择 .slx</p>
+                <p class="slx-upload-hint">文件会保存为模块资产</p>
+                <input type="file" id="slx-input" accept=".slx" hidden />
+              </div>
             </div>
+            <div id="file-info" class="slx-file-info"></div>
+            <button class="btn btn-primary slx-upload-button" id="upload-btn" type="button" disabled>上传模型</button>
           </div>
-          <div id="file-info" class="slx-file-info"></div>
-          <div style="margin-top:16px;">
-            <button class="btn btn-primary" id="submit-btn" disabled>开始解析</button>
-          </div>
-        </div>
-      </section>
+        </aside>
 
-      <section class="panel">
-        <div class="card">
-          <div class="section-head">
-            <span class="section-index">03</span>
+        <section class="slx-chat-surface" aria-label="SLX 模型问答">
+          <div class="slx-chat-head">
             <div>
-              <h2>最近解析任务</h2>
-              <p>这里会展示最近的解析状态和生成结果。</p>
+              <p class="strip-label">Model Chat</p>
+              <h2 id="chat-title">选择模型后开始提问</h2>
             </div>
+            <span id="chat-status" class="slx-chat-status">未选择模型</span>
           </div>
-          <ul class="task-list" id="task-list">
-            <li class="empty-state">暂无解析任务</li>
-          </ul>
-        </div>
+
+          <div id="chat-messages" class="slx-chat-messages" aria-live="polite"></div>
+
+          <form id="chat-form" class="slx-chat-form">
+            <textarea id="question-input" rows="3" placeholder="询问当前模型的信号、状态、参数或逻辑关系"></textarea>
+            <button id="send-btn" type="submit">发送</button>
+          </form>
+        </section>
       </section>
     </main>
-
-    <div class="preview-modal" id="preview-modal">
-      <div class="preview-content">
-        <span class="close-btn" id="close-preview">&times;</span>
-        <h2>JSON 资产预览</h2>
-        <pre id="preview-json"></pre>
-      </div>
-    </div>
 
     <script type="module" src="/slx-parser.js"></script>
     <script type="module" src="/task-queue-widget.js"></script>
