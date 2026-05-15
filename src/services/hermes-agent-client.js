@@ -271,6 +271,9 @@ function sanitizeProjectContext(project = {}) {
     language: clipText(project.language || "", 80),
     documentType: clipText(project.documentType || "software_requirement", 80),
     domain: clipText(project.domain || "", 120),
+    moduleId: clipText(project.moduleId || "", 120),
+    moduleName: clipText(project.moduleName || "", 200),
+    moduleDescription: clipText(project.moduleDescription || "", 1000),
     moduleSkillKey: clipText(project.moduleSkillKey || "", 120)
   };
 }
@@ -1105,6 +1108,69 @@ function buildSlxParsePrompt(payload = {}) {
   ].join("\n");
 }
 
+function sanitizeSlxInterpreterHistory(history = []) {
+  return Array.isArray(history)
+    ? history.map((message) => ({
+        role: String(message?.role || "").trim() === "user" ? "user" : "assistant",
+        content: clipText(message?.content || "", 2400),
+        status: String(message?.status || "").trim(),
+        createdAt: String(message?.createdAt || "").trim()
+      })).filter((message) => message.content)
+    : [];
+}
+
+function buildSlxInterpretPrompt(payload = {}) {
+  const inputArtifact = payload.inputArtifact || {};
+  const project = sanitizeProjectContext(inputArtifact.project || {});
+  const model = sanitizeAssetItem(inputArtifact.model || {});
+  const question = clipText(inputArtifact.question || "", 8000);
+  const history = sanitizeSlxInterpreterHistory(inputArtifact.history || []);
+  return [
+    "You are executing the Hermes step `slx_interpret_answer` for an interactive SLX model interpreter.",
+    "Answer the user's question about exactly one selected Simulink .slx model.",
+    "You must inspect the selected model with the available Simulink Agentic Toolkit / MATLAB MCP capabilities before answering.",
+    "Prefer these tools when available: model_overview, model_read, model_query_params, model_resolve_params.",
+    "Do not answer from cached modelRequirementView JSON unless the tool path is unavailable; the selected .slx model is the source of truth.",
+    "Return strict JSON only. No markdown fences. No explanation outside JSON.",
+    "",
+    "Project and module context:",
+    JSON.stringify(project, null, 2),
+    "",
+    "Selected SLX model:",
+    JSON.stringify(model, null, 2),
+    "",
+    "Conversation history:",
+    JSON.stringify(history, null, 2),
+    "",
+    "User question:",
+    question,
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        answerMarkdown: "A concise but useful Markdown answer in Chinese unless the user asked otherwise.",
+        summary: "One-sentence task summary.",
+        evidence: [{
+          fileName: "model.slx",
+          fileRole: "simulink_slx",
+          location: "model/block/path or SATK scope",
+          excerpt: "Short evidence from the model or tool result"
+        }],
+        warnings: ["Optional limitations, unavailable tools, or assumptions"]
+      },
+      null,
+      2
+    ),
+    "",
+    "Rules:",
+    "- Use only the selected SLX model and the explicit conversation context.",
+    "- If MATLAB MCP / SATK is unavailable, say so in warnings and answer only what can be supported by available evidence.",
+    "- Preserve block paths, signal names, state names, parameter names, and threshold values exactly.",
+    "- Keep the answer focused on the user's question; do not dump the full model structure.",
+    "- evidence must cite the model file and the most relevant scope/block/path or tool excerpt."
+  ].join("\n");
+}
+
 function buildSoftwareRequirementMarkdownPrompt(payload = {}) {
   const inputArtifact = payload.inputArtifact || {};
   const prompt = String(inputArtifact.prompt || "").trim();
@@ -1587,6 +1653,8 @@ function buildCliPrompt(payload = {}) {
       return buildReplayProposalPrompt(payload);
     case "document_extract_generate":
       return buildDocumentExtractPrompt(payload);
+    case "slx_interpret_answer":
+      return buildSlxInterpretPrompt(payload);
     case "slx_parse_generate":
       return buildSlxParsePrompt(payload);
     case "software_requirement_markdown_generate":
@@ -1654,6 +1722,19 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
     return {
       modelRequirementView: mrv,
       summary: String(artifact.summary || "").trim()
+    };
+  }
+  if (stepType === "slx_interpret_answer") {
+    const artifact = parsed && typeof parsed === "object" ? parsed : {};
+    return {
+      answerMarkdown: String(artifact.answerMarkdown || artifact.answer || artifact.content || "").trim(),
+      summary: String(artifact.summary || "").trim(),
+      evidence: Array.isArray(artifact.evidence)
+        ? artifact.evidence.map(sanitizeEvidenceItem).filter((item) => item.fileName || item.location || item.excerpt)
+        : [],
+      warnings: Array.isArray(artifact.warnings)
+        ? artifact.warnings.map((item) => clipText(item || "", 300)).filter(Boolean).slice(0, 20)
+        : []
     };
   }
   if (stepType === "software_requirement_markdown_generate") {

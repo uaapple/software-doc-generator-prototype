@@ -400,6 +400,9 @@ export async function createApp() {
   app.get("/windows-worker-debug", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "windows-worker-debug.html"));
   });
+  app.get("/slx-interpreter", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "slx-parser.html"));
+  });
   app.get("/hil-test-case-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "hil-test-case-generation.html"));
   });
@@ -778,6 +781,59 @@ export async function createApp() {
       );
       res.json(module);
     } catch (error) {
+      if (error.message === "Asset not found") {
+        return res.status(404).json({ error: "资产不存在" });
+      }
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/slx-interpreter/models", async (req, res, next) => {
+    try {
+      const models = await projectService.listSlxInterpreterModels(req.params.projectId, req.params.moduleId);
+      res.json({ models });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/slx-interpreter/sessions", async (req, res, next) => {
+    try {
+      const sessions = await projectService.listSlxInterpreterSessions(req.params.projectId, req.params.moduleId);
+      res.json({ sessions });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/slx-interpreter/tasks/:taskId", async (req, res, next) => {
+    try {
+      const task = await projectService.getSlxInterpreterTask(req.params.projectId, req.params.moduleId, req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "SLX 解释任务不存在" });
+      }
+      res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/projects/:projectId/modules/:moduleId/slx-interpreter/messages", async (req, res, next) => {
+    try {
+      const result = await pipelineService.interpretSlxForModule(req.params.projectId, req.params.moduleId, {
+        modelAssetId: req.body?.modelAssetId || "",
+        question: req.body?.question || "",
+        sessionId: req.body?.sessionId || "",
+        asyncStart: true
+      });
+      res.status(202).json({ ...result, taskStarted: true });
+    } catch (error) {
+      if (error.message === "SLX model asset not found") {
+        return res.status(404).json({ error: "SLX 模型资产不存在" });
+      }
+      if (error.message === "SLX interpreter session does not match selected model") {
+        return res.status(409).json({ error: "会话与当前模型不匹配" });
+      }
       next(error);
     }
   });

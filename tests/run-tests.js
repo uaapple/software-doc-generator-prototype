@@ -9343,6 +9343,36 @@ const tests = [
                       createdAt: "2026-04-24T01:05:00.000Z",
                       updatedAt: "2026-04-24T01:05:00.000Z"
                     }
+                  ],
+                  slxInterpreterSessions: [
+                    {
+                      id: "session-1",
+                      moduleId: "module-1",
+                      modelAssetId: "asset-slx-1",
+                      modelName: "charging-model.slx",
+                      createdAt: "2026-04-24T01:06:00.000Z",
+                      updatedAt: "2026-04-24T01:06:30.000Z",
+                      messages: [
+                        {
+                          id: "message-user-1",
+                          role: "user",
+                          content: "这个模型的输入是什么？",
+                          status: "completed",
+                          createdAt: "2026-04-24T01:06:00.000Z",
+                          updatedAt: "2026-04-24T01:06:00.000Z"
+                        },
+                        {
+                          id: "message-assistant-1",
+                          role: "assistant",
+                          taskId: "interp-task-1",
+                          status: "queued",
+                          summary: "等待 Hermes 解释 SLX 模型",
+                          progress: { message: "等待解释", percent: 2 },
+                          createdAt: "2026-04-24T01:06:01.000Z",
+                          updatedAt: "2026-04-24T01:06:30.000Z"
+                        }
+                      ]
+                    }
                   ]
                 }
               ]
@@ -9376,6 +9406,11 @@ const tests = [
         type: "generation",
         run: async () => null
       });
+      queue.enqueue({
+        id: "interp-task-1",
+        type: "slx_interpret",
+        run: async () => null
+      });
 
       const summaries = await queue.listTaskSummaries();
       const ids = summaries.map((task) => task.id);
@@ -9383,15 +9418,22 @@ const tests = [
       assert.ok(ids.includes("extract-1"));
       assert.ok(ids.includes("replay-1"));
       assert.ok(ids.includes("slx-1"));
+      assert.ok(ids.includes("interp-task-1"));
       assert.equal(summaries.find((task) => task.id === "gen-1").queuePosition, 1);
       assert.equal(summaries.find((task) => task.id === "extract-1").detailUrl, "/projects/project-1/modules/module-1?openHistory=1&highlightTaskId=extract-1");
       assert.equal(summaries.find((task) => task.id === "replay-1").detailUrl, "/feedback-pool?projectId=project-1&moduleId=module-1&taskId=replay-1");
       const slxSummary = summaries.find((task) => task.id === "slx-1");
       assert.equal(slxSummary.type, "slx_parse");
       assert.equal(slxSummary.documentType, "software_requirement");
-      assert.ok(slxSummary.detailUrl.includes("/slx-parser?projectId=project-1&moduleId=module-1&highlightTaskId=slx-1"));
-      assert.equal(slxSummary.title.includes("SLX 解析"), true);
+      assert.ok(slxSummary.detailUrl.includes("/slx-interpreter?projectId=project-1&moduleId=module-1&highlightTaskId=slx-1"));
+      assert.equal(slxSummary.title.includes("SLX 解释器"), true);
       assert.equal(slxSummary.queuePosition, 0);
+      const interpSummary = summaries.find((task) => task.id === "interp-task-1");
+      assert.equal(interpSummary.type, "slx_interpret");
+      assert.equal(interpSummary.documentType, "software_requirement");
+      assert.equal(interpSummary.title, "SLX 解释 · charging-model.slx");
+      assert.ok(interpSummary.detailUrl.includes("/slx-interpreter?projectId=project-1&moduleId=module-1&sessionId=session-1&highlightTaskId=interp-task-1&messageId=message-assistant-1"));
+      assert.equal(interpSummary.queuePosition, 2);
     }
   },
   {
@@ -9418,6 +9460,15 @@ const tests = [
       assert.ok(slxHtml.includes('/feedback-widget.css'), "slx-parser.html should load feedback-widget.css");
       assert.ok(slxHtml.includes('/slx-parser.js'), "slx-parser.html should load slx-parser.js");
       assert.ok(slxHtml.includes('/feedback-widget.js'), "slx-parser.html should load feedback-widget.js");
+      assert.ok(slxHtml.includes('data-page-kind="slx-interpreter"'), "slx-parser.html should render interpreter layout");
+      assert.ok(slxHtml.includes('id="model-select"'), "SLX interpreter should expose model select");
+      assert.ok(slxHtml.includes('id="chat-messages"'), "SLX interpreter should expose chat message stream");
+      assert.ok(slxHtml.includes('id="question-input"'), "SLX interpreter should expose question input");
+      assert.ok(slxHtml.includes('id="upload-zone"'), "SLX interpreter should keep upload entry");
+      const slxScript = await fs.readFile(path.join(config.rootDir, "public", "slx-parser.js"), "utf8");
+      assert.ok(slxScript.includes("/slx-interpreter/models"), "SLX interpreter script should load model API");
+      assert.ok(slxScript.includes("/slx-interpreter/messages"), "SLX interpreter script should send questions through interpreter API");
+      assert.ok(slxScript.includes("typing-dot"), "SLX interpreter script should render typing animation nodes");
     }
   }
 ];
