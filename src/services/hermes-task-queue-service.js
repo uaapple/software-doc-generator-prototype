@@ -180,6 +180,13 @@ export class HermesTaskQueueService {
         for (const task of module.slxParserTasks || []) {
           summaries.push(this.buildSlxParserSummary(project, module, task));
         }
+        for (const session of module.slxInterpreterSessions || []) {
+          for (const message of session.messages || []) {
+            if (message.role === "assistant" && message.taskId) {
+              summaries.push(this.buildSlxInterpreterSummary(project, module, session, message));
+            }
+          }
+        }
       }
     }
     return summaries;
@@ -241,7 +248,7 @@ export class HermesTaskQueueService {
     const type = "slx_parse";
     const status = normalizeStatus(task.status);
     const moduleName = module.name || "";
-    const title = moduleName ? `SLX 解析 · ${moduleName}` : "SLX 解析";
+    const title = moduleName ? `SLX 解释器 · ${moduleName}` : "SLX 解释器";
     return {
       id: task.id,
       type,
@@ -258,7 +265,31 @@ export class HermesTaskQueueService {
       createdAt: task.createdAt || "",
       startedAt: task.debug?.agent?.startedAt || task.startedAt || "",
       updatedAt: task.updatedAt || task.createdAt || "",
-      detailUrl: `/slx-parser?projectId=${project.id}&moduleId=${module.id}&highlightTaskId=${task.id}`
+      detailUrl: `/slx-interpreter?projectId=${project.id}&moduleId=${module.id}&highlightTaskId=${task.id}`
+    };
+  }
+
+  buildSlxInterpreterSummary(project = {}, module = {}, session = {}, message = {}) {
+    const type = "slx_interpret";
+    const status = normalizeStatus(message.status);
+    const modelName = session.modelName || "SLX 模型";
+    return {
+      id: message.taskId,
+      type,
+      status,
+      title: `SLX 解释 · ${modelName}`,
+      projectId: project.id,
+      projectName: project.name || "",
+      moduleId: module.id,
+      moduleName: module.name || "",
+      documentType: "software_requirement",
+      queuePosition: status === "queued" ? this.getQueuePosition(type, message.taskId) : 0,
+      progress: message.progress || null,
+      latestMessage: getLatestMessage(message),
+      createdAt: message.createdAt || "",
+      startedAt: message.debug?.agent?.startedAt || "",
+      updatedAt: message.updatedAt || message.createdAt || "",
+      detailUrl: `/slx-interpreter?projectId=${project.id}&moduleId=${module.id}&sessionId=${session.id}&highlightTaskId=${message.taskId}&messageId=${message.id}`
     };
   }
 

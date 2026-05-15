@@ -219,6 +219,7 @@ function createModuleRecord(projectId, input = {}) {
     documentSpaces: ensureDocumentSpaces(),
     documentExtractionTasks: [],
     slxParserTasks: [],
+    slxInterpreterSessions: [],
     auditLog: [
       {
         at: now(),
@@ -738,6 +739,95 @@ function normalizeSlxParserTask(task = {}) {
   };
 }
 
+function isSlxModelAsset(asset = {}) {
+  const role = String(asset.role || "").trim();
+  const originalName = String(asset.originalName || asset.fileName || "").trim().toLowerCase();
+  return role === "simulink_slx" || originalName.endsWith(".slx");
+}
+
+function toSlxModelOption(asset = {}) {
+  return {
+    id: String(asset.id || "").trim(),
+    role: String(asset.role || "").trim(),
+    originalName: String(asset.originalName || "").trim(),
+    storedName: String(asset.storedName || "").trim(),
+    relativePath: String(asset.relativePath || "").trim(),
+    absolutePath: String(asset.absolutePath || "").trim(),
+    mimeType: String(asset.mimeType || "").trim(),
+    size: Math.max(0, Number(asset.size || 0) || 0),
+    uploadedAt: asset.uploadedAt || ""
+  };
+}
+
+function normalizeSlxInterpreterEvidenceItem(item = {}) {
+  return {
+    fileName: String(item?.fileName || item?.originalName || "").trim(),
+    fileRole: String(item?.fileRole || item?.role || "").trim(),
+    location: String(item?.location || "").trim(),
+    excerpt: normalizeDebugText(item?.excerpt || "", 2000)
+  };
+}
+
+function normalizeSlxInterpreterMessage(message = {}) {
+  return {
+    id: message.id || randomUUID(),
+    role: String(message.role || "assistant").trim() === "user" ? "user" : "assistant",
+    content: normalizeDebugText(message.content || "", 200000),
+    status: String(message.status || "completed").trim() || "completed",
+    taskId: String(message.taskId || "").trim(),
+    summary: String(message.summary || "").trim(),
+    question: normalizeDebugText(message.question || "", 20000),
+    progress: normalizeTaskProgress(message.progress),
+    timeline: normalizeTaskTimeline(message.timeline),
+    evidence: Array.isArray(message.evidence)
+      ? message.evidence.map(normalizeSlxInterpreterEvidenceItem).filter((item) => item.fileName || item.location || item.excerpt)
+      : [],
+    warnings: Array.isArray(message.warnings)
+      ? message.warnings.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20)
+      : [],
+    debug: normalizeTaskDebug(message.debug),
+    errorMessage: String(message.errorMessage || "").trim(),
+    createdAt: message.createdAt || now(),
+    updatedAt: message.updatedAt || message.createdAt || now()
+  };
+}
+
+function normalizeSlxInterpreterSession(session = {}) {
+  return {
+    id: session.id || randomUUID(),
+    moduleId: String(session.moduleId || "").trim(),
+    modelAssetId: String(session.modelAssetId || "").trim(),
+    modelName: String(session.modelName || "").trim(),
+    messages: Array.isArray(session.messages)
+      ? session.messages.map(normalizeSlxInterpreterMessage)
+      : [],
+    createdAt: session.createdAt || now(),
+    updatedAt: session.updatedAt || session.createdAt || now()
+  };
+}
+
+function findSlxInterpreterTask(module = {}, taskId = "") {
+  const normalizedTaskId = String(taskId || "").trim();
+  if (!normalizedTaskId) return null;
+  for (const session of module.slxInterpreterSessions || []) {
+    const message = (session.messages || []).find((item) => item.taskId === normalizedTaskId);
+    if (message) {
+      return { session, message };
+    }
+  }
+  return null;
+}
+
+function buildSlxInterpreterTaskSummary(message = {}) {
+  if (message.status === "running" || message.status === "queued") {
+    return message.progress?.label || message.progress?.message || "正在解释 SLX 模型";
+  }
+  if (message.status === "failed") {
+    return message.errorMessage || message.summary || "SLX 模型解释失败";
+  }
+  return message.summary || "SLX 模型解释完成";
+}
+
 function buildSlxParserTaskSummary(task = {}) {
   if (task.status === "running") {
     return task.progress?.label || task.progress?.message || "正在解析 SLX 模型";
@@ -787,6 +877,9 @@ function normalizeModule(module, projectId) {
       : [],
     slxParserTasks: Array.isArray(module.slxParserTasks)
       ? module.slxParserTasks.map(normalizeSlxParserTask)
+      : [],
+    slxInterpreterSessions: Array.isArray(module.slxInterpreterSessions)
+      ? module.slxInterpreterSessions.map((session) => normalizeSlxInterpreterSession({ ...session, moduleId: session.moduleId || module.id }))
       : [],
     auditLog: Array.isArray(module.auditLog) ? module.auditLog : [],
     createdAt: module.createdAt || now(),
@@ -961,6 +1054,38 @@ export class ProjectService {
           task.updatedAt = now();
           recoveredCount += 1;
           changed = true;
+        }
+        for (const session of module.slxInterpreterSessions || []) {
+          for (const message of session.messages || []) {
+            if (!isInterruptedTaskAfterRestart(message)) {
+              continue;
+            }
+            const previousStatus = message.status;
+            message.status = "failed";
+            message.errorMessage = previousStatus === "queued"
+              ? "SLX 解释任务在服务重启后仍处于排队状态，请重新发起。"
+              : "SLX 解释任务在服务重启或中断后未恢复，已标记为失败。";
+            message.progress = normalizeTaskProgress({
+              ...message.progress,
+              stage: "failed",
+              label: "任务已中断",
+              message: message.errorMessage,
+              percent: 100,
+              updatedAt: now()
+            });
+            appendTimelineEntry(message, {
+              at: now(),
+              stage: "failed",
+              label: "任务已中断",
+              message: message.errorMessage,
+              level: "error"
+            });
+            message.summary = message.errorMessage;
+            message.updatedAt = now();
+            session.updatedAt = now();
+            recoveredCount += 1;
+            changed = true;
+          }
         }
       }
       if (changed) {
@@ -1229,6 +1354,191 @@ export class ProjectService {
     touchModule(module, "asset_deleted", `已删除资产：${removedAsset.originalName}`);
     await this.saveProject(project);
     return module;
+  }
+
+  async listSlxInterpreterModels(projectId, moduleId) {
+    const module = await this.getModule(projectId, moduleId);
+    return (module.assets || [])
+      .filter(isSlxModelAsset)
+      .map(toSlxModelOption)
+      .sort((a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime());
+  }
+
+  async listSlxInterpreterSessions(projectId, moduleId) {
+    const module = await this.getModule(projectId, moduleId);
+    return [...(module.slxInterpreterSessions || [])].sort(
+      (a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime()
+    );
+  }
+
+  async getSlxInterpreterTask(projectId, moduleId, taskId) {
+    const module = await this.getModule(projectId, moduleId);
+    const found = findSlxInterpreterTask(module, taskId);
+    if (!found) return null;
+    const model = (module.assets || []).find((asset) => asset.id === found.session.modelAssetId) || null;
+    return {
+      session: found.session,
+      message: found.message,
+      task: found.message,
+      model: model ? toSlxModelOption(model) : null
+    };
+  }
+
+  async recordSlxInterpreterQuestion(projectId, moduleId, input = {}) {
+    const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+    const modelAssetId = String(input.modelAssetId || "").trim();
+    const question = String(input.question || "").trim();
+    if (!modelAssetId) {
+      throw new Error("SLX model asset is required");
+    }
+    if (!question) {
+      throw new Error("SLX interpreter question is required");
+    }
+
+    const model = (module.assets || []).find((asset) => asset.id === modelAssetId && isSlxModelAsset(asset));
+    if (!model) {
+      throw new Error("SLX model asset not found");
+    }
+
+    const sessionId = String(input.sessionId || "").trim();
+    let session = sessionId
+      ? (module.slxInterpreterSessions || []).find((item) => item.id === sessionId)
+      : null;
+    if (session && session.modelAssetId !== model.id) {
+      throw new Error("SLX interpreter session does not match selected model");
+    }
+    if (!session) {
+      session = (module.slxInterpreterSessions || []).find((item) => item.modelAssetId === model.id) || null;
+    }
+    if (!session) {
+      session = normalizeSlxInterpreterSession({
+        moduleId,
+        modelAssetId: model.id,
+        modelName: model.originalName || "model.slx",
+        messages: []
+      });
+      module.slxInterpreterSessions.unshift(session);
+    }
+
+    const createdAt = now();
+    const userMessage = normalizeSlxInterpreterMessage({
+      role: "user",
+      content: question,
+      status: "completed",
+      createdAt,
+      updatedAt: createdAt
+    });
+    const assistantMessage = normalizeSlxInterpreterMessage({
+      role: "assistant",
+      content: "",
+      status: "queued",
+      taskId: randomUUID(),
+      question,
+      summary: "等待 Hermes 解释 SLX 模型",
+      progress: {
+        stage: "slx_interpret_queued",
+        label: "等待解释模型",
+        message: "问题已进入 Hermes 队列，等待读取 SLX 模型。",
+        percent: 2,
+        updatedAt: createdAt
+      },
+      timeline: [{
+        at: createdAt,
+        stage: "slx_interpret_queued",
+        label: "SLX 解释任务已创建",
+        message: `已创建模型解释任务：${model.originalName || "model.slx"}`,
+        level: "info"
+      }],
+      createdAt,
+      updatedAt: createdAt
+    });
+
+    session.messages.push(userMessage, assistantMessage);
+    session.updatedAt = createdAt;
+    touchModule(module, "slx_interpreter_question_created", "SLX 解释问题已创建");
+    project.auditLog.push({
+      at: now(),
+      action: "module_slx_interpreter_question_created",
+      detail: `${module.name} 已新增 SLX 模型解释问题`
+    });
+    await this.saveProject(project);
+    return {
+      session,
+      userMessage,
+      assistantMessage,
+      task: assistantMessage,
+      model: toSlxModelOption(model)
+    };
+  }
+
+  async updateSlxInterpreterTask(projectId, moduleId, sessionId, messageId, updates = {}) {
+    const taskKey = `${projectId}:${moduleId}:slx_interpret:${messageId}`;
+    return this.enqueueGenerationTaskMutation(taskKey, async () => {
+      const { project, module } = await this.getProjectAndModule(projectId, moduleId);
+      const session = (module.slxInterpreterSessions || []).find((item) => item.id === sessionId);
+      if (!session) {
+        throw new Error("SLX interpreter session not found");
+      }
+      const message = (session.messages || []).find((item) => item.id === messageId);
+      if (!message) {
+        throw new Error("SLX interpreter message not found");
+      }
+
+      if (updates.status) {
+        message.status = String(updates.status).trim();
+      }
+      if (Object.hasOwn(updates, "content")) {
+        message.content = normalizeDebugText(updates.content || "", 200000);
+      }
+      if (Object.hasOwn(updates, "summary")) {
+        message.summary = String(updates.summary || "").trim();
+      }
+      if (Object.hasOwn(updates, "errorMessage")) {
+        message.errorMessage = String(updates.errorMessage || "").trim();
+      }
+      if (Array.isArray(updates.evidence)) {
+        message.evidence = updates.evidence
+          .map(normalizeSlxInterpreterEvidenceItem)
+          .filter((item) => item.fileName || item.location || item.excerpt);
+      }
+      if (Array.isArray(updates.warnings)) {
+        message.warnings = updates.warnings.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20);
+      }
+      if (updates.progress && typeof updates.progress === "object") {
+        message.progress = {
+          ...normalizeTaskProgress(message.progress),
+          ...normalizeTaskProgress({
+            ...message.progress,
+            ...updates.progress,
+            updatedAt: now()
+          })
+        };
+      }
+      if (updates.debug && typeof updates.debug === "object") {
+        message.debug = mergeTaskDebug(message.debug, updates.debug);
+      }
+      if (updates.timelineEntry && typeof updates.timelineEntry === "object") {
+        appendTimelineEntry(message, updates.timelineEntry);
+      }
+      if (updates.debugEvent && typeof updates.debugEvent === "object") {
+        appendTaskDebugEvent(message, updates.debugEvent);
+      }
+
+      message.summary = buildSlxInterpreterTaskSummary(message);
+      message.updatedAt = now();
+      session.updatedAt = message.updatedAt;
+
+      if (message.status === "completed") {
+        touchModule(module, "slx_interpreter_completed", "SLX 解释任务已完成");
+      } else if (message.status === "failed") {
+        touchModule(module, "slx_interpreter_failed", "SLX 解释任务失败");
+      } else {
+        touchModule(module, "slx_interpreter_task_updated", "SLX 解释任务状态已更新");
+      }
+
+      await this.saveProject(project);
+      return { session, message, task: message };
+    });
   }
 
   async getDocumentSpace(projectId, moduleId, documentType) {

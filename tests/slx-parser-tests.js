@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { validateModelFactBundle, createEmptyModelFactBundle, MODEL_FACT_FIELDS } from "../src/services/model-fact-bundle.js";
 import { SlxModelFactAdapter } from "../src/services/slx-model-fact-adapter.js";
-import { SlxModelAnalysisService, SlxAnalysisError } from "../src/services/slx-model-analysis-service.js";
+import { SlxModelAnalysisService, SlxAnalysisError, appendRawSlxSemanticFactsFromXml } from "../src/services/slx-model-analysis-service.js";
 import { MatlabMcpClient, MatlabMcpError } from "../src/services/matlab-mcp-client.js";
 import { ExtractionService } from "../src/services/extraction-service.js";
 import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
@@ -204,6 +204,125 @@ async function testCompactModelRequirementViewKeepsDerivedStateAndSystemFacts() 
   assert.equal(compact.compactForGeneration.originalFactCount, 4);
 }
 
+async function testCompactModelRequirementViewKeepsLowVoltageCriticalFacts() {
+  const service = new ModelRequirementViewService();
+  const sourceRefs = [{ fileName: "HvCoorn.slx", fileRole: "simulink_slx", location: "M/Block", excerpt: "evidence" }];
+  const mrv = {
+    version: "1.0",
+    documentType: "software_requirement",
+    sourceAssets: [{ assetId: "slx-1", fileName: "HvCoorn.slx", fileRole: "simulink_slx" }],
+    facts: [
+      {
+        id: "fact-system",
+        topic: "系统需求事实",
+        behavior: "系统需求：智能补电退出需要处理失败次数、休眠和重新唤醒。",
+        sourceRefs: [{ fileName: "system.md", fileRole: "system_pdf", location: "REQ-1", excerpt: "智能补电退出" }]
+      },
+      {
+        id: "fact-noise",
+        topic: "接口与信号",
+        behavior: "接口 CosmeticDisplaySignal (input)",
+        sourceRefs
+      },
+      {
+        id: "fact-dcdc",
+        topic: "阈值与标定",
+        behavior: "模型原始 XML 中存在 DCDC Buck 状态和 HvCoorn_tiMntnFailNoBuckThd_C 标定。",
+        sourceRefs
+      },
+      {
+        id: "fact-sleep",
+        topic: "派生信号定义",
+        behavior: "派生信号 HvCoorn_bAllwShutNet 和 HvCoorn_bAllwSlep 控制允许网络休眠和控制器休眠。",
+        sourceRefs
+      },
+      {
+        id: "fact-b9",
+        topic: "状态与模式",
+        behavior: "高压状态机进入 B9 后重置智能补电失败计数。",
+        sourceRefs
+      }
+    ]
+  };
+
+  const compact = service.buildCompactForGeneration(mrv, {
+    requiredTitleOutline: {
+      sections: [{ sectionTitle: "智能补电", items: [{ itemTitle: "智能补电退出判断" }] }]
+    },
+    maxFacts: 4,
+    maxBytes: 48000
+  });
+
+  const ids = compact.facts.map((fact) => fact.id);
+  assert.ok(ids.includes("fact-system"), "system requirement fact should stay");
+  assert.ok(ids.includes("fact-dcdc"), "DCDC Buck critical fact should stay");
+  assert.ok(ids.includes("fact-sleep"), "sleep permission critical fact should stay");
+  assert.ok(ids.includes("fact-b9"), "B9 reset critical fact should stay");
+  assert.ok(!ids.includes("fact-noise"), "low-score non-critical noise should be dropped");
+  assert.ok(compact.compactForGeneration.criticalFactCount >= 3);
+}
+
+async function testModelRequirementViewKeepsSignalArrowsAsLogic() {
+  const service = new ModelRequirementViewService();
+  const bundle = createEmptyModelFactBundle();
+  bundle.source = { fileName: "m.slx", modelName: "M" };
+  bundle.logicRules.push({
+    name: "SignalRoute",
+    description: "logic signalA -> blk_1.signalA",
+    location: "M/SignalRoute"
+  });
+  bundle.logicRules.push({
+    name: "Idle->Run",
+    description: "StateflowTransition Idle -> Run id=sf_1:2 source=sf_1:1 target=sf_1:3",
+    location: "M/Stateflow/1/Idle->Run"
+  });
+
+  const extraction = new SlxModelFactAdapter().toExtraction(bundle, { id: "f1", originalName: "m.slx" });
+  const mrv = service.build({
+    project: { documentType: "software_requirement" },
+    assets: [{ id: "f1", originalName: "m.slx", role: "simulink_slx" }],
+    extractions: [extraction]
+  });
+
+  const signalRoute = mrv.facts.find((fact) => fact.behavior.includes("signalA -> blk_1.signalA"));
+  const transition = mrv.facts.find((fact) => fact.behavior.includes("StateflowTransition Idle -> Run"));
+  assert.equal(signalRoute.topic, "逻辑与条件");
+  assert.equal(transition.topic, "状态与模式");
+}
+
+async function testRawSlxDataflowFactsAreGeneric() {
+  const bundle = createEmptyModelFactBundle();
+  bundle.source = { fileName: "generic.slx", modelName: "GenericModel" };
+
+  const rawXml = `
+    <System>
+      <Block BlockType="Inport" Name="ReqInc" SID="1"></Block>
+      <Block BlockType="Inport" Name="ReqDec" SID="2"></Block>
+      <Block BlockType="Inport" Name="IncActive" SID="3"></Block>
+      <Block BlockType="Switch" Name="SelectRequest" SID="4">
+        <P Name="Criteria">u2 ~= 0</P>
+      </Block>
+      <Block BlockType="Outport" Name="OutTorque" SID="5"></Block>
+      <Line><P Name="Src">1#out:1</P><P Name="Dst">4#in:1</P></Line>
+      <Line><P Name="Src">3#out:1</P><P Name="Dst">4#in:2</P></Line>
+      <Line><P Name="Src">2#out:1</P><P Name="Dst">4#in:3</P></Line>
+      <Line><P Name="Src">4#out:1</P><P Name="Dst">5#in:1</P></Line>
+    </System>
+  `;
+
+  appendRawSlxSemanticFactsFromXml(bundle, { originalName: "generic.slx" }, rawXml);
+
+  const dataflowFact = bundle.logicRules.find((fact) => fact.blockType === "raw_slx_dataflow");
+  assert.ok(dataflowFact, "raw SLX XML should produce generic dataflow facts");
+  assert.ok(dataflowFact.name.startsWith("raw_slx_dataflow_"), "fact name should use generic dataflow prefix");
+  assert.ok(!dataflowFact.name.includes("torque"), "fact name should not be torque-specific");
+  assert.ok(dataflowFact.action.includes("OutTorque"));
+  assert.ok(dataflowFact.action.includes("Switch SelectRequest"));
+  assert.ok(dataflowFact.action.includes("ReqInc"));
+  assert.ok(dataflowFact.action.includes("ReqDec"));
+  assert.ok(bundle.traceRefs.some((fact) => fact.name === "raw_slx_xml_dataflow_scan"));
+}
+
 // ── SlxModelAnalysisService ──
 
 function createFakeMcpClient(response) {
@@ -220,6 +339,89 @@ function createFailingMcpClient(error) {
     isAvailable: true,
     async analyzeSlx() {
       throw error;
+    }
+  };
+}
+
+function createFakeSatkMcpClient() {
+  const calls = [];
+  return {
+    calls,
+    isAvailable: true,
+    async analyzeSlx() {
+      throw new Error("legacy analyze_slx should not be called");
+    },
+    async callTool(toolName, args) {
+      calls.push({ toolName, args });
+      if (toolName === "model_overview") {
+        return [
+          "status: ok",
+          "blk_1 Inport WakeUpReq input port dataType=boolean",
+          "blk_2 Stateflow Chart ModeChart subsystem",
+          "blk_3 Outport PwrMode output port dataType=uint8"
+        ].join("\n");
+      }
+      if (toolName === "model_read" && args.scope === "root") {
+        return [
+          "status: ok",
+          "blk_2 Stateflow Chart ModeChart",
+          "blk_4 Switch condition WakeUpReq && Vbat > @Threshold(VbatLowThd)",
+          "blk_5 Gain y1 = @Gain(Kp) * u1(blk_1.y1)"
+        ].join("\n");
+      }
+      if (toolName === "model_read") {
+        return [
+          "status: ok",
+          `${args.scope} State Idle -> Active guard [WakeUpReq && Vbat > VbatLowThd] action PwrMode=Active after(2,tick)`
+        ].join("\n");
+      }
+      if (toolName === "model_query_params") {
+        return "status: ok\nblk_4 BlockType=Switch Threshold=11.8 V SampleTime=0.01";
+      }
+      if (toolName === "model_resolve_params") {
+        return "status: ok\nVbatLowThd = 11.8\nKp = 2.5";
+      }
+      throw new Error(`Unexpected tool ${toolName}`);
+    }
+  };
+}
+
+function createNoisySatkMcpClient() {
+  const calls = [];
+  return {
+    calls,
+    isAvailable: true,
+    async analyzeSlx() {
+      throw new Error("legacy analyze_slx should not be called");
+    },
+    async callTool(toolName, args) {
+      calls.push({ toolName, args });
+      if (toolName === "model_overview") {
+        return [
+          "status: ok",
+          "message: Output truncated after 2 container(s). Token limit reached.",
+          "interface:",
+          "Input:",
+          "Output:",
+          "DataTypeConversion: Convert input signal to specified data type",
+          "blk_1 Inport WakeUpReq input port dataType=boolean",
+          "blk_3 Outport PwrMode output port dataType=uint8",
+          "blk_HvCoorn:4046:255 WaitForReady [State | 3]",
+          "blk_HvCoorn:4046:234 Startup [State | 3]"
+        ].join("\n");
+      }
+      if (toolName === "model_read") {
+        if (args.scope !== "root") return "status: ok";
+        return [
+          "status: ok",
+          "- id: \"sf_4046:245\" #sf_4046:255->sf_4046:234 Order:2",
+          "blk_4 Logic y1 = HvCoorn_bStartUpReq && WakeUpReq"
+        ].join("\n");
+      }
+      if (toolName === "model_query_params") {
+        return "status: ok\nblk_1 Name=WakeUpReq BlockType=Inport OutDataTypeStr=boolean";
+      }
+      throw new Error(`Unexpected tool ${toolName}`);
     }
   };
 }
@@ -253,6 +455,79 @@ async function testAnalysisServiceConvertToExtraction() {
   assert.equal(extraction.fileRole, "simulink_slx");
   assert.equal(extraction.evidence.length, 1);
   assert.equal(extraction.evidence[0].tags[0], "interface");
+}
+
+async function testAnalysisServiceUsesSatkToolsByDefault() {
+  const fakeMcpClient = createFakeSatkMcpClient();
+  const service = new SlxModelAnalysisService({
+    mcpClient: fakeMcpClient,
+    simulinkAgenticToolkitVersion: "2026.05.07"
+  });
+
+  const file = { id: "f1", originalName: "test.slx", absolutePath: "/tmp/test.slx" };
+  const result = await service.analyze(file);
+
+  assert.equal(result.source.generator.kind, "simulink_agentic_toolkit");
+  assert.equal(result.source.generator.toolkitVersion, "2026.05.07");
+  assert.ok(fakeMcpClient.calls.some((call) => call.toolName === "model_overview"));
+  assert.ok(fakeMcpClient.calls.some((call) => call.toolName === "model_read"));
+  assert.ok(fakeMcpClient.calls.some((call) => call.toolName === "model_query_params"));
+  assert.ok(fakeMcpClient.calls.some((call) => call.toolName === "model_resolve_params"));
+  assert.ok(result.interfaces.some((fact) => fact.name === "WakeUpReq"));
+  assert.ok(result.states.some((fact) => fact.description.includes("Idle -> Active")));
+  assert.ok(result.logicRules.some((fact) => fact.description.includes("WakeUpReq")));
+  assert.ok(result.parameters.some((fact) => fact.name === "VbatLowThd" && String(fact.value).includes("11.8")));
+  assert.ok(result.derivedSignals.some((fact) => fact.expression.includes("@Gain")));
+}
+
+async function testSatkBuilderFiltersNoiseAndResolvesStateflowIds() {
+  const fakeMcpClient = createNoisySatkMcpClient();
+  const service = new SlxModelAnalysisService({ mcpClient: fakeMcpClient });
+  const file = { id: "f1", originalName: "HvCoorn.slx", absolutePath: "/tmp/HvCoorn.slx" };
+  const bundle = await service.analyze(file);
+
+  assert.ok(bundle.interfaces.some((fact) => fact.name === "WakeUpReq"));
+  assert.ok(bundle.interfaces.some((fact) => fact.name === "PwrMode"));
+  assert.ok(bundle.interfaces.some((fact) => fact.name.startsWith("signal_catalog") && fact.description.includes("HvCoorn_bStartUpReq")));
+  assert.ok(!bundle.interfaces.some((fact) => /^(message|interface|Input|Output|DataTypeConversion)$/i.test(fact.name)));
+
+  const transition = bundle.states.find((fact) => fact.description.includes("StateflowTransition"));
+  assert.ok(transition, "Stateflow transition should be retained as a state fact");
+  assert.ok(transition.description.includes("WaitForReady -> Startup"));
+  assert.ok(!transition.description.includes("#sf_4046:255->sf_4046:234"));
+  assert.match(transition.location, /HvCoorn\/Stateflow\/4046\/WaitForReady->Startup/);
+
+  const extraction = new SlxModelFactAdapter().toExtraction(bundle, file);
+  const mrv = new ModelRequirementViewService().build({
+    project: { documentType: "software_requirement" },
+    assets: [{ ...file, role: "simulink_slx" }],
+    extractions: [extraction]
+  });
+  assert.ok(!mrv.facts.some((fact) => /satk_tool_summary|Output truncated|接口 interface|接口 Input|接口 Output/i.test(fact.behavior)));
+}
+
+async function testAnalysisServiceStagesUploadedSlxWithOriginalModelName() {
+  const { promises: fs } = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "slx-satk-test-"));
+
+  try {
+    const uploadedPath = path.join(tmpDir, "1778657572381-HvCoorn.slx");
+    await fs.writeFile(uploadedPath, "fake slx payload", "utf8");
+
+    const fakeMcpClient = createFakeSatkMcpClient();
+    const service = new SlxModelAnalysisService({ mcpClient: fakeMcpClient });
+    await service.analyze({ id: "f1", originalName: "HvCoorn.slx", absolutePath: uploadedPath });
+
+    const models = fakeMcpClient.calls.map((call) => call.args.model).filter(Boolean);
+    assert.ok(models.length, "SATK calls should receive a model argument");
+    assert.ok(models.every((model) => path.basename(model) === "HvCoorn.slx"));
+    assert.ok(models.every((model) => !model.includes("1778657572381-HvCoorn")));
+    await assert.rejects(() => fs.access(models[0]), { code: "ENOENT" });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
 }
 
 async function testAnalysisServiceMcpFailure() {
@@ -581,6 +856,205 @@ async function testProjectServiceCreateSlxJsonAsset() {
   await service.deleteProject(project.id);
 }
 
+async function testProjectServiceSlxInterpreterModelsAndQuestionTask() {
+  const { ProjectService } = await import("../src/services/project-service.js");
+  const { config: testConfig } = await import("../src/config.js");
+  const { promises: fs } = await import("node:fs");
+  const path = await import("node:path");
+
+  const service = new ProjectService();
+  const project = await service.createProject({ name: "SLX Interpreter Model Test" });
+  const mod = await service.createModule(project.id, { name: "Interpreter Module" });
+  const uploadDir = path.join(testConfig.uploadDir, project.id, mod.id);
+  await fs.mkdir(uploadDir, { recursive: true });
+  const slxPath = path.join(uploadDir, "charging-model.slx");
+  const cPath = path.join(uploadDir, "charging.c");
+  await fs.writeFile(slxPath, "fake slx payload", "utf8");
+  await fs.writeFile(cPath, "void step(void) {}", "utf8");
+
+  await service.attachModuleAssets(project.id, mod.id, {
+    slx: [{
+      originalname: "charging-model.slx",
+      filename: "charging-model.slx",
+      path: slxPath,
+      mimetype: "application/octet-stream",
+      size: 16
+    }],
+    generatedCode: [{
+      originalname: "charging.c",
+      filename: "charging.c",
+      path: cPath,
+      mimetype: "text/x-c",
+      size: 17
+    }]
+  });
+
+  const models = await service.listSlxInterpreterModels(project.id, mod.id);
+  assert.equal(models.length, 1, "Only SLX assets should be selectable");
+  assert.equal(models[0].role, "simulink_slx");
+  assert.equal(models[0].originalName, "charging-model.slx");
+
+  const created = await service.recordSlxInterpreterQuestion(project.id, mod.id, {
+    modelAssetId: models[0].id,
+    question: "这个模型的输入输出是什么？"
+  });
+  assert.ok(created.session.id);
+  assert.equal(created.session.modelAssetId, models[0].id);
+  assert.equal(created.session.messages.length, 2);
+  assert.equal(created.userMessage.role, "user");
+  assert.equal(created.assistantMessage.role, "assistant");
+  assert.equal(created.assistantMessage.status, "queued");
+  assert.ok(created.assistantMessage.taskId);
+
+  const task = await service.getSlxInterpreterTask(project.id, mod.id, created.assistantMessage.taskId);
+  assert.equal(task.message.id, created.assistantMessage.id);
+  assert.equal(task.model.originalName, "charging-model.slx");
+
+  const moduleAfter = await service.getModule(project.id, mod.id);
+  assert.equal((moduleAfter.slxParserTasks || []).length, 0, "Interpreter upload/question should not create parser tasks");
+  assert.equal(
+    (moduleAfter.assets || []).filter((asset) => asset.role === "model_requirement_view_json").length,
+    0,
+    "Interpreter flow should not auto-create MRV JSON assets"
+  );
+
+  await service.deleteProject(project.id);
+}
+
+async function testPipelineServiceInterpretSlxUsesHermesAndPersistsAnswer() {
+  const { ProjectService } = await import("../src/services/project-service.js");
+  const { PipelineService } = await import("../src/services/pipeline-service.js");
+  const { config: testConfig } = await import("../src/config.js");
+  const { promises: fs } = await import("node:fs");
+  const path = await import("node:path");
+
+  const service = new ProjectService();
+  const project = await service.createProject({ name: "SLX Interpreter Pipeline Test" });
+  const mod = await service.createModule(project.id, { name: "Pipeline Module" });
+  const uploadDir = path.join(testConfig.uploadDir, project.id, mod.id);
+  await fs.mkdir(uploadDir, { recursive: true });
+  const slxPath = path.join(uploadDir, "charging-model.slx");
+  await fs.writeFile(slxPath, "fake slx payload", "utf8");
+
+  const upload = await service.attachModuleAssets(project.id, mod.id, {
+    slx: [{
+      originalname: "charging-model.slx",
+      filename: "charging-model.slx",
+      path: slxPath,
+      mimetype: "application/octet-stream",
+      size: 16
+    }]
+  });
+  const modelAsset = upload.assets[0];
+  const captured = { payload: null };
+  const pipeline = new PipelineService(service, { hermesTaskQueueService: null });
+  pipeline.hermesAgentClient = {
+    transport: "cli",
+    async executeStep(payload, runtime = {}) {
+      captured.payload = payload;
+      await runtime.onEvent?.({
+        status: "started",
+        stepType: "slx_interpret_answer",
+        transport: "cli",
+        message: "Hermes 已启动",
+        elapsedMs: 10
+      });
+      return {
+        status: "succeeded",
+        stepType: "slx_interpret_answer",
+        artifact: {
+          answerMarkdown: "模型包含输入 ChargeEnable 和输出 ChargeState。",
+          summary: "已回答模型接口问题。",
+          evidence: [{
+            fileName: "charging-model.slx",
+            fileRole: "simulink_slx",
+            location: "ChargingModel/In1",
+            excerpt: "ChargeEnable input"
+          }],
+          warnings: ["示例 warning"]
+        },
+        metrics: {
+          durationMs: 42,
+          tokenUsage: { totalTokens: 123 }
+        },
+        sessionId: "hermes-session-1"
+      };
+    }
+  };
+
+  const result = await pipeline.interpretSlxForModule(project.id, mod.id, {
+    modelAssetId: modelAsset.id,
+    question: "这个模型的输入输出是什么？",
+    asyncStart: false
+  });
+
+  assert.equal(captured.payload.stepType, "slx_interpret_answer");
+  assert.deepEqual(captured.payload.allowedPaths, [slxPath]);
+  assert.equal(captured.payload.inputArtifact.model.assetId, modelAsset.id);
+  assert.equal(captured.payload.inputArtifact.question, "这个模型的输入输出是什么？");
+  assert.equal(result.message.status, "completed");
+  assert.equal(result.message.content, "模型包含输入 ChargeEnable 和输出 ChargeState。");
+
+  const persisted = await service.getSlxInterpreterTask(project.id, mod.id, result.message.taskId);
+  assert.equal(persisted.message.status, "completed");
+  assert.equal(persisted.message.evidence[0].location, "ChargingModel/In1");
+  assert.equal(persisted.message.warnings[0], "示例 warning");
+  assert.equal(persisted.message.debug.agent.currentStep, "slx_interpret_answer");
+  assert.equal(persisted.message.debug.agent.tokenUsage.totalTokens, 123);
+
+  await service.deleteProject(project.id);
+}
+
+async function testPipelineServiceInterpretSlxPersistsFailure() {
+  const { ProjectService } = await import("../src/services/project-service.js");
+  const { PipelineService } = await import("../src/services/pipeline-service.js");
+  const { config: testConfig } = await import("../src/config.js");
+  const { promises: fs } = await import("node:fs");
+  const path = await import("node:path");
+
+  const service = new ProjectService();
+  const project = await service.createProject({ name: "SLX Interpreter Failure Test" });
+  const mod = await service.createModule(project.id, { name: "Failure Module" });
+  const uploadDir = path.join(testConfig.uploadDir, project.id, mod.id);
+  await fs.mkdir(uploadDir, { recursive: true });
+  const slxPath = path.join(uploadDir, "fault-model.slx");
+  await fs.writeFile(slxPath, "fake slx payload", "utf8");
+  const upload = await service.attachModuleAssets(project.id, mod.id, {
+    slx: [{
+      originalname: "fault-model.slx",
+      filename: "fault-model.slx",
+      path: slxPath,
+      mimetype: "application/octet-stream",
+      size: 16
+    }]
+  });
+
+  const pipeline = new PipelineService(service, { hermesTaskQueueService: null });
+  pipeline.hermesAgentClient = {
+    transport: "api",
+    async executeStep() {
+      throw new Error("MATLAB MCP unavailable");
+    }
+  };
+
+  await assert.rejects(
+    () => pipeline.interpretSlxForModule(project.id, mod.id, {
+      modelAssetId: upload.assets[0].id,
+      question: "模型能读到吗？",
+      asyncStart: false
+    }),
+    /MATLAB MCP unavailable/
+  );
+
+  const sessions = await service.listSlxInterpreterSessions(project.id, mod.id);
+  const assistantMessage = sessions[0].messages.find((message) => message.role === "assistant");
+  assert.equal(assistantMessage.status, "failed");
+  assert.ok(assistantMessage.errorMessage.includes("MATLAB MCP unavailable"));
+  assert.equal(assistantMessage.progress.stage, "failed");
+
+  await service.deleteProject(project.id);
+}
+
 async function testPipelineServiceParseSlxShutsDownMcpClient() {
   const { ProjectService } = await import("../src/services/project-service.js");
   const { PipelineService } = await import("../src/services/pipeline-service.js");
@@ -649,8 +1123,14 @@ const tests = [
   testAdapterNullBundle,
   testAdapterTagMapping,
   testCompactModelRequirementViewKeepsDerivedStateAndSystemFacts,
+  testCompactModelRequirementViewKeepsLowVoltageCriticalFacts,
+  testModelRequirementViewKeepsSignalArrowsAsLogic,
+  testRawSlxDataflowFactsAreGeneric,
   testAnalysisServiceSuccess,
   testAnalysisServiceConvertToExtraction,
+  testAnalysisServiceUsesSatkToolsByDefault,
+  testSatkBuilderFiltersNoiseAndResolvesStateflowIds,
+  testAnalysisServiceStagesUploadedSlxWithOriginalModelName,
   testAnalysisServiceMcpFailure,
   testAnalysisServiceMissingPath,
   testAnalysisServiceInvalidBundle,
@@ -670,6 +1150,9 @@ const tests = [
   testValidateModelRequirementViewSourceRefMissingRequiredFields,
   testProjectServiceSlxParserTaskCRUD,
   testProjectServiceCreateSlxJsonAsset,
+  testProjectServiceSlxInterpreterModelsAndQuestionTask,
+  testPipelineServiceInterpretSlxUsesHermesAndPersistsAnswer,
+  testPipelineServiceInterpretSlxPersistsFailure,
   testPipelineServiceParseSlxShutsDownMcpClient
 ];
 

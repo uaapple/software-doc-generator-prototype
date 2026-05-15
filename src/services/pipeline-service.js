@@ -756,6 +756,14 @@ function buildHermesStepDescriptor(stepType = "") {
       runningPercent: 60
     };
   }
+  if (stepType === "slx_interpret_answer") {
+    return {
+      stage: "slx_interpret_answer",
+      runningLabel: "正在调用 Hermes 读取模型并组织回答",
+      actionLabel: "读取 SLX 模型并回答问题",
+      runningPercent: 66
+    };
+  }
   return {
     stage: stepType || "agent_runtime",
     runningLabel: "正在调用本机 Hermes",
@@ -3050,6 +3058,328 @@ export class PipelineService {
     }
 
     return runGeneration();
+  }
+
+  async interpretSlxForModule(projectId, moduleId, options = {}) {
+    const question = String(options.question || "").trim();
+    const modelAssetId = String(options.modelAssetId || "").trim();
+    if (!question) {
+      throw new Error("SLX interpreter question is required");
+    }
+    if (!modelAssetId) {
+      throw new Error("SLX model asset is required");
+    }
+
+    const created = await this.projectService.recordSlxInterpreterQuestion(projectId, moduleId, {
+      modelAssetId,
+      question,
+      sessionId: options.sessionId || ""
+    });
+    const { project, module } = await this.projectService.getProjectAndModule(projectId, moduleId);
+    const sessionId = created.session.id;
+    const messageId = created.assistantMessage.id;
+    const taskId = created.assistantMessage.taskId;
+    const model = {
+      ...created.model,
+      absolutePath: created.model.absolutePath || (created.model.relativePath ? path.join(config.uploadDir, created.model.relativePath) : "")
+    };
+
+    const updateTaskProgress = async (progress = {}, extraUpdates = {}) =>
+      this.projectService.updateSlxInterpreterTask(projectId, moduleId, sessionId, messageId, {
+        progress,
+        ...extraUpdates
+      });
+
+    const buildHistory = () =>
+      (created.session.messages || [])
+        .filter((message) => message.id !== messageId)
+        .slice(-12)
+        .map((message) => ({
+          role: message.role,
+          content: message.content,
+          status: message.status,
+          createdAt: message.createdAt
+        }));
+
+    const runInterpret = async () => {
+      const descriptor = buildHermesStepDescriptor("slx_interpret_answer");
+      const startedAt = new Date().toISOString();
+      try {
+        await updateTaskProgress(
+          {
+            stage: descriptor.stage,
+            label: descriptor.runningLabel,
+            message: `已启动 ${this.hermesAgentClient.transport === "cli" ? "本机 Hermes CLI" : "Hermes API"}，正在读取 ${model.originalName || "SLX 模型"}。`,
+            percent: descriptor.runningPercent
+          },
+          {
+            status: "running",
+            debug: {
+              agent: {
+                transport: this.hermesAgentClient.transport,
+                currentStep: "slx_interpret_answer",
+                status: "running",
+                startedAt,
+                lastEventAt: startedAt,
+                elapsedMs: 0
+              }
+            },
+            timelineEntry: {
+              stage: descriptor.stage,
+              label: descriptor.runningLabel,
+              message: "已开始调用 Hermes 执行 SLX 模型解释。",
+              level: "info"
+            }
+          }
+        );
+
+        const response = await this.hermesAgentClient.executeStep(
+          {
+            taskId,
+            stepType: "slx_interpret_answer",
+            allowedPaths: [model.absolutePath].filter(Boolean),
+            inputArtifact: {
+              project: {
+                id: project.id,
+                name: project.name || "",
+                description: project.description || "",
+                language: project.language || "zh-CN",
+                domain: module.domain || project.domain || "embedded_vcu",
+                moduleId: module.id,
+                moduleName: module.name || "",
+                moduleDescription: module.description || "",
+                moduleSkillKey: module.moduleSkillKey || ""
+              },
+              model: {
+                assetId: model.id,
+                fileName: model.originalName || "",
+                fileRole: model.role || "simulink_slx",
+                absolutePath: model.absolutePath || "",
+                size: model.size || 0,
+                uploadedAt: model.uploadedAt || ""
+              },
+              question,
+              history: buildHistory()
+            },
+            workdir: config.rootDir
+          },
+          {
+            onEvent: async (event = {}) => {
+              const status = String(event.status || "").trim();
+              const eventAt = event.at || new Date().toISOString();
+              const debugUpdate = {
+                agent: {
+                  transport: event.transport || this.hermesAgentClient.transport,
+                  currentStep: event.stepType || "slx_interpret_answer",
+                  status: status || "running",
+                  startedAt: event.startedAt || startedAt,
+                  lastHeartbeatAt: event.heartbeatAt || "",
+                  lastEventAt: eventAt,
+                  sessionId: event.sessionId || "",
+                  tokenUsage: event.tokenUsage || null,
+                  stdoutExcerpt: event.stdoutExcerpt || "",
+                  stderrExcerpt: event.stderrExcerpt || "",
+                  elapsedMs: Number(event.elapsedMs || 0) || 0
+                }
+              };
+              const debugEvent = {
+                stage: descriptor.stage,
+                label: event.label || descriptor.runningLabel,
+                message: event.message || "SLX 解释任务状态已更新。",
+                level: event.level || (status === "failed" ? "error" : "info"),
+                type: event.type || "agent_runtime",
+                status,
+                transport: event.transport || this.hermesAgentClient.transport,
+                stepType: event.stepType || "slx_interpret_answer",
+                sessionId: event.sessionId || "",
+                startedAt: event.startedAt || startedAt,
+                heartbeatAt: event.heartbeatAt || "",
+                elapsedMs: Number(event.elapsedMs || 0) || 0,
+                tokenUsage: event.tokenUsage || null,
+                stdoutExcerpt: event.stdoutExcerpt || "",
+                stderrExcerpt: event.stderrExcerpt || ""
+              };
+
+              if (status === "failed") {
+                await updateTaskProgress(
+                  {
+                    stage: "failed",
+                    label: "SLX 解释任务失败",
+                    message: event.message || "Hermes 解释 SLX 模型失败。",
+                    percent: 100
+                  },
+                  {
+                    status: "failed",
+                    errorMessage: event.message || "Hermes 解释 SLX 模型失败。",
+                    debug: debugUpdate,
+                    debugEvent,
+                    timelineEntry: {
+                      stage: "failed",
+                      label: event.label || "SLX 解释任务失败",
+                      message: event.message || "Hermes 解释 SLX 模型失败。",
+                      level: event.level || "error"
+                    }
+                  }
+                );
+                return;
+              }
+
+              if (status === "started" || status === "heartbeat") {
+                await updateTaskProgress(
+                  {
+                    stage: descriptor.stage,
+                    label: descriptor.runningLabel,
+                    message: status === "heartbeat"
+                      ? `${descriptor.runningLabel}，已运行 ${formatElapsedSeconds(event.elapsedMs || 0)}。`
+                      : `已启动 ${this.hermesAgentClient.transport === "cli" ? "本机 Hermes CLI" : "Hermes API"}，等待模型解释结果。`,
+                    percent: descriptor.runningPercent
+                  },
+                  {
+                    status: "running",
+                    debug: debugUpdate,
+                    debugEvent
+                  }
+                );
+                return;
+              }
+
+              await updateTaskProgress({}, {
+                debug: debugUpdate,
+                debugEvent
+              });
+            }
+          }
+        );
+
+        const artifact = assertHermesStepResponse("slx_interpret_answer", response);
+        const answerMarkdown = String(artifact.answerMarkdown || "").trim();
+        if (!answerMarkdown) {
+          throw new Error("Hermes SLX 解释未返回 answerMarkdown");
+        }
+
+        const completed = await updateTaskProgress(
+          {
+            stage: "completed",
+            label: "SLX 解释任务已完成",
+            message: "Hermes 已完成模型解释，答案已写回聊天窗口。",
+            percent: 100
+          },
+          {
+            status: "completed",
+            content: answerMarkdown,
+            summary: artifact.summary || "SLX 模型解释完成",
+            evidence: artifact.evidence || [],
+            warnings: artifact.warnings || [],
+            debug: {
+              agent: {
+                transport: this.hermesAgentClient.transport,
+                currentStep: "slx_interpret_answer",
+                status: "completed",
+                startedAt,
+                lastEventAt: new Date().toISOString(),
+                sessionId: response.sessionId || "",
+                tokenUsage: response.metrics?.tokenUsage || null,
+                elapsedMs: Number(response.metrics?.durationMs || 0) || 0
+              }
+            },
+            timelineEntry: {
+              stage: "completed",
+              label: "SLX 解释任务完成",
+              message: artifact.summary || "Hermes 已返回 SLX 模型解释结果。",
+              level: "info"
+            }
+          }
+        );
+
+        return {
+          projectId,
+          moduleId,
+          session: completed.session,
+          task: completed.task,
+          message: completed.message,
+          model
+        };
+      } catch (error) {
+        const stackCapture = clipDebugText(error.stack || "", DEBUG_STACK_LIMIT);
+        await updateTaskProgress(
+          {
+            stage: "failed",
+            label: "SLX 解释任务失败",
+            message: error.message || "SLX 模型解释失败",
+            percent: 100
+          },
+          {
+            status: "failed",
+            content: "",
+            errorMessage: error.message || "SLX 模型解释失败",
+            debug: {
+              lastError: {
+                at: new Date().toISOString(),
+                stage: error.stage || "slx_interpret_answer",
+                message: error.message || "SLX 模型解释失败",
+                stack: stackCapture.text
+              }
+            },
+            timelineEntry: {
+              stage: "failed",
+              label: "SLX 解释任务失败",
+              message: error.message || "SLX 模型解释失败",
+              level: "error"
+            }
+          }
+        );
+        throw error;
+      }
+    };
+
+    if (options.asyncStart !== false) {
+      const runQueuedTask = () => runInterpret().catch((error) => {
+        console.error("SLX interpret failed", error);
+        return null;
+      });
+      if (this.hermesTaskQueueService) {
+        this.hermesTaskQueueService.enqueue({
+          id: taskId,
+          type: "slx_interpret",
+          title: "SLX 解释",
+          projectId,
+          moduleId,
+          documentType: "software_requirement",
+          onStart: async () => {
+            await updateTaskProgress(
+              {
+                stage: "slx_interpret_prepare",
+                label: "SLX 解释任务开始执行",
+                message: "任务已从 Hermes 队列取出，正在准备读取 SLX 模型。",
+                percent: 8
+              },
+              {
+                status: "running",
+                timelineEntry: {
+                  stage: "slx_interpret_prepare",
+                  label: "SLX 解释任务开始执行",
+                  message: "任务已从 Hermes 队列取出，开始后台处理。",
+                  level: "info"
+                }
+              }
+            );
+          },
+          run: runQueuedTask
+        });
+      } else {
+        runQueuedTask();
+      }
+      return {
+        projectId,
+        moduleId,
+        session: created.session,
+        task: created.task,
+        message: created.assistantMessage,
+        model
+      };
+    }
+
+    return runInterpret();
   }
 
   async parseSlxForModule(projectId, moduleId, options = {}) {
