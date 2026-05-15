@@ -173,6 +173,39 @@ async function prepareMultipartStepPayload(req) {
   };
 }
 
+async function buildWindowsWorkerProbeArtifact(inputArtifact = {}, allowedPaths = []) {
+  const probeFilePath = path.resolve(String(inputArtifact.probeFilePath || ""));
+  if (!probeFilePath) {
+    throw createHttpError("probeFilePath is required for windows_worker_probe");
+  }
+  if (!isPathAllowed(probeFilePath, allowedPaths)) {
+    throw createHttpError(`File path is not allowed: ${probeFilePath}`, 403, "hermes_path_forbidden");
+  }
+
+  const stat = await fs.stat(probeFilePath).catch(() => null);
+  const content = stat?.isFile() ? await fs.readFile(probeFilePath, "utf8").catch(() => "") : "";
+  const expectedText = String(inputArtifact.expectedText || "");
+  const contentMatches = expectedText ? content === expectedText : Boolean(content);
+
+  return {
+    probeId: inputArtifact.probeId || "",
+    ok: Boolean(stat?.isFile() && contentMatches),
+    service: "hermes-agent",
+    checkedAt: now(),
+    uploadTempDir: getHermesUploadTempDir(),
+    receivedPath: probeFilePath,
+    receivedDirectory: path.dirname(probeFilePath),
+    retainedUploadedFiles: Boolean(inputArtifact.retainUploadedFiles),
+    file: {
+      exists: Boolean(stat?.isFile()),
+      size: stat?.size || 0,
+      modifiedAt: stat?.mtime ? stat.mtime.toISOString() : null,
+      contentMatches,
+      contentPreview: content.slice(0, 500)
+    }
+  };
+}
+
 function normalizeMaterialFiles(files = [], allowedPaths = []) {
   return (Array.isArray(files) ? files : []).map((file) => {
     const absolutePath = path.resolve(String(file.absolutePath || ""));
@@ -774,6 +807,19 @@ export async function createHermesApp() {
         throw createHttpError("stepType is required");
       }
 
+      if (stepType === "windows_worker_probe") {
+        const allowedPaths = normalizeAllowedPaths(payload.allowedPaths);
+        const artifact = await buildWindowsWorkerProbeArtifact(payload.inputArtifact || {}, allowedPaths);
+        return res.json(
+          buildStepResponse(stepType, artifact, startedAt, {
+            metrics: {
+              uploadedFileSize: artifact.file?.size || 0,
+              contentMatches: Boolean(artifact.file?.contentMatches)
+            }
+          })
+        );
+      }
+
       if (stepType === "material_extract") {
         const allowedPaths = normalizeAllowedPaths(payload.allowedPaths);
         const files = normalizeMaterialFiles(payload.inputArtifact?.files || [], allowedPaths);
@@ -986,15 +1032,19 @@ export async function createHermesApp() {
 
   app.post("/internal/steps/execute-upload", requireHermesAuth, upload.any(), async (req, res, next) => {
     let cleanupDir = "";
+    let retainUploadedFiles = false;
     try {
       const prepared = await prepareMultipartStepPayload(req);
       cleanupDir = prepared.cleanupDir;
       req.body = prepared.payload;
+      retainUploadedFiles =
+        prepared.payload?.stepType === "windows_worker_probe" &&
+        prepared.payload?.inputArtifact?.retainUploadedFiles === true;
       return executeStepRequest(req, res, next);
     } catch (error) {
       return next(error);
     } finally {
-      if (cleanupDir) {
+      if (cleanupDir && !retainUploadedFiles) {
         await fs.rm(cleanupDir, { recursive: true, force: true }).catch(() => {});
       }
       for (const file of Array.isArray(req.files) ? req.files : []) {

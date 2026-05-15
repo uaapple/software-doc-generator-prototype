@@ -2612,6 +2612,49 @@ const tests = [
     }
   },
   {
+    name: "Hermes API server reports uploaded Windows worker probe path",
+    run: async () => {
+      await withTempConfig(async () => {
+        const uploadFixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-worker-probe-"));
+        const filePath = path.join(uploadFixtureDir, "windows-worker-upload-probe.txt");
+        const probeText = "windows worker probe fixture";
+        await fs.writeFile(filePath, probeText, "utf8");
+
+        try {
+          await withHermesServer(async ({ baseUrl }) => {
+            const client = new HermesAgentClient({
+              transport: "api",
+              apiMode: "multipart",
+              baseURL: baseUrl,
+              timeoutMs: 5000
+            });
+
+            const response = await client.executeStep({
+              taskId: "task-worker-probe",
+              stepType: "windows_worker_probe",
+              allowedPaths: [filePath],
+              inputArtifact: {
+                probeId: "probe-test",
+                probeFilePath: filePath,
+                expectedText: probeText,
+                retainUploadedFiles: false
+              }
+            });
+
+            assert.equal(response.status, "succeeded");
+            assert.equal(response.artifact.ok, true);
+            assert.equal(response.artifact.file.exists, true);
+            assert.equal(response.artifact.file.contentMatches, true);
+            assert.notEqual(path.resolve(response.artifact.receivedPath), path.resolve(filePath));
+            assert.ok(response.artifact.receivedDirectory.includes("step-"));
+          });
+        } finally {
+          await fs.rm(uploadFixtureDir, { recursive: true, force: true });
+        }
+      });
+    }
+  },
+  {
     name: "Hermes agent client parses quiet CLI output and session id",
     run: async () => {
       await withTempConfig(async () => {
