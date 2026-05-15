@@ -1,4 +1,6 @@
 import express from "express";
+import multer from "multer";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "./config.js";
@@ -33,6 +35,142 @@ function normalizeAllowedPaths(allowedPaths = []) {
 function isPathAllowed(targetPath = "", allowedPaths = []) {
   const resolvedTarget = path.resolve(String(targetPath || ""));
   return allowedPaths.some((allowedPath) => resolvedTarget === allowedPath || resolvedTarget.startsWith(`${allowedPath}${path.sep}`));
+}
+
+function requireHermesAuth(req, res, next) {
+  const authToken = String(config.hermes.authToken || "").trim();
+  if (!authToken) {
+    return next();
+  }
+  const header = String(req.get("authorization") || "");
+  if (header === `Bearer ${authToken}`) {
+    return next();
+  }
+  return res.status(401).json({
+    error: "Invalid Hermes agent token",
+    code: "hermes_unauthorized"
+  });
+}
+
+function parseJsonField(value = "", fallback = {}) {
+  if (!value) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(String(value));
+  } catch (_error) {
+    throw createHttpError("Invalid multipart JSON field", 400, "hermes_invalid_upload_manifest");
+  }
+}
+
+function safeUploadRelativePath(value = "") {
+  const normalized = String(value || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((part) => part && part !== "." && part !== "..")
+    .join(path.sep);
+  return normalized || "uploaded-file";
+}
+
+function getHermesUploadTempDir() {
+  return config.hermes.uploadTempDir || path.join(config.rootDir || process.cwd(), "tmp", "hermes-agent-uploads");
+}
+
+function comparePathText(value = "") {
+  return String(value || "").replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function replaceUploadedPath(value = "", mappings = []) {
+  const original = String(value || "");
+  const normalized = comparePathText(original);
+  for (const mapping of mappings) {
+    const sourceRoot = comparePathText(mapping.sourceRoot);
+    if (!sourceRoot) {
+      continue;
+    }
+    if (mapping.type === "file") {
+      if (normalized === sourceRoot) {
+        return mapping.remoteRoot;
+      }
+      continue;
+    }
+    if (normalized === sourceRoot) {
+      return mapping.remoteRoot;
+    }
+    if (normalized.startsWith(`${sourceRoot}/`)) {
+      const relativePath = normalized.slice(sourceRoot.length + 1);
+      return path.join(mapping.remoteRoot, ...relativePath.split("/").filter(Boolean));
+    }
+  }
+  return original;
+}
+
+function replaceUploadedPaths(value, mappings = []) {
+  if (typeof value === "string") {
+    return replaceUploadedPath(value, mappings);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => replaceUploadedPaths(item, mappings));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, replaceUploadedPaths(entry, mappings)])
+    );
+  }
+  return value;
+}
+
+async function moveFile(source, destination) {
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  try {
+    await fs.rename(source, destination);
+  } catch (_error) {
+    await fs.copyFile(source, destination);
+    await fs.rm(source, { force: true }).catch(() => {});
+  }
+}
+
+async function prepareMultipartStepPayload(req) {
+  const payload = parseJsonField(req.body?.payload || "{}", {});
+  const uploadManifest = parseJsonField(req.body?.uploadManifest || "{}", { roots: [], files: [] });
+  const uploadedFiles = new Map((Array.isArray(req.files) ? req.files : []).map((file) => [file.fieldname, file]));
+  const sessionDir = path.join(getHermesUploadTempDir(), `step-${Date.now()}-${randomUUID()}`);
+  await fs.mkdir(sessionDir, { recursive: true });
+
+  const rootMappings = (Array.isArray(uploadManifest.roots) ? uploadManifest.roots : []).map((root, index) => {
+    const type = root?.type === "file" ? "file" : "directory";
+    const remoteRoot =
+      type === "file"
+        ? path.join(sessionDir, `root-${index}`, path.basename(String(root?.sourceRoot || "")) || "uploaded-file")
+        : path.join(sessionDir, `root-${index}`);
+    return {
+      sourceRoot: String(root?.sourceRoot || ""),
+      remoteRoot,
+      type
+    };
+  });
+
+  for (const fileEntry of Array.isArray(uploadManifest.files) ? uploadManifest.files : []) {
+    const upload = uploadedFiles.get(String(fileEntry?.fieldName || ""));
+    if (!upload) {
+      throw createHttpError("Multipart upload is missing a referenced file", 400, "hermes_upload_file_missing");
+    }
+    const rootIndex = Number(fileEntry?.rootIndex || 0) || 0;
+    const mapping = rootMappings[rootIndex];
+    if (!mapping) {
+      throw createHttpError("Multipart upload has an invalid root index", 400, "hermes_upload_root_invalid");
+    }
+    const targetPath =
+      mapping.type === "file"
+        ? mapping.remoteRoot
+        : path.join(mapping.remoteRoot, safeUploadRelativePath(fileEntry?.relativePath || upload.originalname || ""));
+    await moveFile(upload.path, targetPath);
+  }
+
+  return {
+    payload: replaceUploadedPaths(payload, rootMappings),
+    cleanupDir: sessionDir
+  };
 }
 
 function normalizeMaterialFiles(files = [], allowedPaths = []) {
@@ -606,6 +744,14 @@ export async function createHermesApp() {
   const extractionService = new ExtractionService();
   const llmService = new LlmService();
   const templateService = new TemplateService();
+  const uploadTempDir = getHermesUploadTempDir();
+  await fs.mkdir(uploadTempDir, { recursive: true });
+  const upload = multer({
+    dest: uploadTempDir,
+    limits: {
+      fileSize: Number(config.hermes.maxUploadBytes || 250 * 1024 * 1024)
+    }
+  });
 
   app.use(express.json({ limit: "8mb" }));
 
@@ -619,7 +765,7 @@ export async function createHermesApp() {
     });
   });
 
-  app.post("/internal/steps/execute", async (req, res, next) => {
+  const executeStepRequest = async (req, res, next) => {
     const startedAt = Date.now();
     try {
       const payload = req.body || {};
@@ -833,6 +979,27 @@ export async function createHermesApp() {
       throw createHttpError(`Unsupported Hermes step: ${stepType}`, 400, "hermes_step_unsupported");
     } catch (error) {
       next(error);
+    }
+  };
+
+  app.post("/internal/steps/execute", requireHermesAuth, executeStepRequest);
+
+  app.post("/internal/steps/execute-upload", requireHermesAuth, upload.any(), async (req, res, next) => {
+    let cleanupDir = "";
+    try {
+      const prepared = await prepareMultipartStepPayload(req);
+      cleanupDir = prepared.cleanupDir;
+      req.body = prepared.payload;
+      return executeStepRequest(req, res, next);
+    } catch (error) {
+      return next(error);
+    } finally {
+      if (cleanupDir) {
+        await fs.rm(cleanupDir, { recursive: true, force: true }).catch(() => {});
+      }
+      for (const file of Array.isArray(req.files) ? req.files : []) {
+        await fs.rm(file.path, { force: true }).catch(() => {});
+      }
     }
   });
 

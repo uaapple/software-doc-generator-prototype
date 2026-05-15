@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -95,6 +96,8 @@ export const config = {
     command: process.env.HERMES_COMMAND || "hermes",
     stateDbPath: process.env.HERMES_STATE_DB_PATH || path.join(process.env.HOME || "", ".hermes", "state.db"),
     workdir: process.env.HERMES_WORKDIR || rootDir,
+    uploadTempDir: process.env.HERMES_UPLOAD_TMPDIR || path.join(os.tmpdir(), "software-doc-hermes-agent"),
+    maxUploadBytes: Number(process.env.HERMES_MAX_UPLOAD_BYTES || 250 * 1024 * 1024),
     timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 120000),
     stepTimeoutMs: {
       anchor_index_build: Number(process.env.HERMES_TIMEOUT_ANCHOR_INDEX_BUILD_MS || 180000),
@@ -126,7 +129,12 @@ export const config = {
     authToken: process.env.MATLAB_MCP_AUTH_TOKEN || "",
     timeoutMs: Number(process.env.MATLAB_MCP_TIMEOUT_MS || 300000),
     tempDir: process.env.MATLAB_MCP_TMPDIR || "/tmp",
-    serverCommand: process.env.MATLAB_MCP_SERVER_COMMAND || "",
-    serverArgs: []
+    serverCommand: process.env.MATLAB_MCP_SERVER_COMMAND || path.join(rootDir, "tools", "matlab-mcp-core-server"),
+    serverArgs: [
+      "--matlab-root=" + (process.env.MATLAB_ROOT || "/Applications/MATLAB_R2026a.app"),
+      "--matlab-display-mode=nodesktop",
+      "--extension-file=" + path.join(rootDir, "tools", "matlab-mcp-extension.json"),
+      "--initial-working-folder=" + path.join(rootDir, "tools", "matlab-functions")
+    ]
   }
 };
