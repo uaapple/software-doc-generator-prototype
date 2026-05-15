@@ -18,15 +18,10 @@
   - MATLAB 可执行文件：`C:\Program Files\MATLAB\R2022b_Update_1\bin\matlab.exe`
   - 登录用户：`zguan`
   - 密码不写入仓库、文档、脚本或日志，只通过安全运维通道配置。
-- 如果在应用本机安装 MATLAB，默认 MATLAB 路径为 `/Applications/MATLAB_R2026a.app`。如果生产机路径不同，需要设置：
-  - `MATLAB_ROOT=/实际/MATLAB.app`
-- 默认 MCP server 使用仓库内的 `tools/matlab-mcp-core-server`。如果生产机不是当前 macOS 架构，可能需要替换该二进制或设置：
-  - `MATLAB_MCP_SERVER_COMMAND=/path/to/matlab-mcp-core-server`
-- `tools/matlab-functions/analyze_slx.m` 必须随代码一起部署；server 启动时会把该目录作为初始工作目录。
+- Windows VM worker、Hermes Agent 服务端、MATLAB MCP tools 和一键部署脚本维护在 `release/windows-prod` 分支。
 
 ## 关键环境变量
 
-- `MATLAB_ROOT`：MATLAB 安装路径。
 - `MATLAB_MCP_TRANSPORT`：生产 Linux 连接远程 Worker 时设置为 `http`。
 - `MATLAB_MCP_HTTP_MODE`：生产 Linux 连接远程 Worker 时设置为 `multipart`。
 - `MATLAB_MCP_BASE_URL`：远程 Windows Worker 地址，例如 `http://Wx11v-PRJ130.itk.local:5100`。
@@ -57,9 +52,8 @@ MATLAB_MCP_AUTH_TOKEN=<从安全通道配置>
 Windows VM worker、Hermes Agent 服务端和一键部署包维护在 elease/windows-prod 分支；Linux 生产分支只需要配置上述远程地址和 token。
 ## 部署注意点
 
-- 不需要预先手动打开 MATLAB；Windows Worker 会通过 MCP server 启动 MATLAB。若 Windows GUI/权限策略阻止 MATLAB 启动，需要先在 VM 上验证 `MATLAB_ROOT` 和 server 权限。
 - 远程 Worker 模式下，Linux 生产机不需要能访问 Windows 文件路径；应用会直接 multipart 上传 Hermes step 所需文件和 `.slx` 文件。
-- Windows Worker 只应监听网域内地址，并通过防火墙限制只允许生产 Linux VM 访问 `3101` 和 `5100` 端口。
+- 部署 Linux 后端前，先确认远程 Windows worker 已按 `release/windows-prod` 分支部署，并且 Linux 生产机可访问 `3101` 和 `5100` 端口。
 - `.slx` 解析会比普通文档提取慢，首次启动 MATLAB 更慢；生产测试时建议先用一个小模型做连通性验证。
 - 当前提交不包含本机测试产生的 `data/uploads`、`input/`、`output/`、`videos/` 等运行产物。生产环境应上传自己的 `.slx` 重新解析。
 - 如果生产机已有持久化 `data/`，部署代码时不要覆盖生产 `data/projects`、`data/uploads`、`data/skills.sqlite`，除非明确要同步本机测试数据。

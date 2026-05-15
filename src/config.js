@@ -126,12 +126,7 @@ export const config = {
     authToken: process.env.MATLAB_MCP_AUTH_TOKEN || "",
     timeoutMs: Number(process.env.MATLAB_MCP_TIMEOUT_MS || 300000),
     tempDir: process.env.MATLAB_MCP_TMPDIR || "/tmp",
-    serverCommand: process.env.MATLAB_MCP_SERVER_COMMAND || path.join(rootDir, "tools", "matlab-mcp-core-server"),
-    serverArgs: [
-      "--matlab-root=" + (process.env.MATLAB_ROOT || "/Applications/MATLAB_R2026a.app"),
-      "--matlab-display-mode=nodesktop",
-      "--extension-file=" + path.join(rootDir, "tools", "matlab-mcp-extension.json"),
-      "--initial-working-folder=" + path.join(rootDir, "tools", "matlab-functions")
-    ]
+    serverCommand: process.env.MATLAB_MCP_SERVER_COMMAND || "",
+    serverArgs: []
   }
 };
