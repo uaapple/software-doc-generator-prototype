@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.js";
@@ -16,9 +17,65 @@ function trimTrailingSlash(value = "") {
   return String(value || "").replace(/\/+$/, "");
 }
 
+function isMultipartApiMode(value = "") {
+  return ["multipart", "upload"].includes(String(value || "").trim().toLowerCase());
+}
+
 function clipText(value = "", maxLength = CLI_JSON_MAX_LENGTH) {
   const text = String(value || "").trim();
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+async function collectUploadFilesForAllowedPaths(allowedPaths = []) {
+  const roots = [];
+  const files = [];
+
+  async function walkDirectory(rootPath, currentPath, rootIndex) {
+    const entries = await fs.readdir(currentPath, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const entryPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) {
+        await walkDirectory(rootPath, entryPath, rootIndex);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+      files.push({
+        fieldName: `file_${files.length}`,
+        rootIndex,
+        sourcePath: entryPath,
+        relativePath: path.relative(rootPath, entryPath) || entry.name
+      });
+    }
+  }
+
+  for (const rawPath of Array.isArray(allowedPaths) ? allowedPaths : []) {
+    const sourceRoot = path.resolve(String(rawPath || ""));
+    const stat = await fs.stat(sourceRoot).catch(() => null);
+    if (!stat) {
+      continue;
+    }
+
+    const rootIndex = roots.length;
+    if (stat.isDirectory()) {
+      roots.push({ sourceRoot, type: "directory" });
+      await walkDirectory(sourceRoot, sourceRoot, rootIndex);
+      continue;
+    }
+
+    if (stat.isFile()) {
+      roots.push({ sourceRoot, type: "file" });
+      files.push({
+        fieldName: `file_${files.length}`,
+        rootIndex,
+        sourcePath: sourceRoot,
+        relativePath: path.basename(sourceRoot)
+      });
+    }
+  }
+
+  return { roots, files };
 }
 
 async function emitHermesEvent(onEvent, event = {}) {
@@ -1594,6 +1651,8 @@ export class HermesAgentClient {
   constructor(options = {}) {
     this.transport = String(options.transport || config.hermes.transport || "cli").trim().toLowerCase();
     this.baseURL = trimTrailingSlash(options.baseURL || config.hermes.baseURL);
+    this.apiMode = String(options.apiMode || config.hermes.apiMode || "json").trim().toLowerCase();
+    this.authToken = String(options.authToken || config.hermes.authToken || "").trim();
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs || config.hermes.timeoutMs) || config.hermes.timeoutMs);
     this.stepTimeoutMs = normalizeStepTimeoutMap(options.stepTimeoutMs || config.hermes.stepTimeoutMs || {});
     this.command = String(options.command || config.hermes.command || "hermes").trim() || "hermes";
@@ -1612,7 +1671,39 @@ export class HermesAgentClient {
     return this.stepTimeoutMs[String(stepType || "").trim()] || this.timeoutMs;
   }
 
+  _authHeaders() {
+    return this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {};
+  }
+
+  async _parseApiResponse(response, payload = {}) {
+    let body = null;
+    try {
+      body = await response.json();
+    } catch (_error) {
+      const error = new Error("Hermes returned an invalid JSON response");
+      error.code = "hermes_invalid_response";
+      throw error;
+    }
+
+    if (!response.ok) {
+      const error = new Error(body?.error || "Hermes step execution failed");
+      error.code = body?.code || "hermes_request_failed";
+      error.details = body?.details || null;
+      throw error;
+    }
+
+    if (body?.artifact && typeof body.artifact === "object") {
+      body.artifact = normalizeCliArtifact(payload.stepType, body.artifact, payload);
+    }
+
+    return body;
+  }
+
   async executeApiStep(payload = {}, runtime = {}) {
+    if (isMultipartApiMode(this.apiMode)) {
+      return this.executeApiUploadStep(payload, runtime);
+    }
+
     const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
     await emitHermesEvent(runtime.onEvent, {
       type: "agent_runtime",
@@ -1630,31 +1721,114 @@ export class HermesAgentClient {
       const response = await fetch(`${this.baseURL}/internal/steps/execute`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...this._authHeaders()
         },
         body: JSON.stringify(payload),
         signal: controller.signal
       });
 
-      let body = null;
-      try {
-        body = await response.json();
-      } catch (_error) {
-        const error = new Error("Hermes returned an invalid JSON response");
-        error.code = "hermes_invalid_response";
+      const body = await this._parseApiResponse(response, payload);
+
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "api",
+        stepType: payload.stepType || "",
+        status: "completed",
+        label: "Hermes API 已返回",
+        message: `Hermes API 已完成 ${payload.stepType || "step"}。`
+      });
+      return body;
+    } catch (error) {
+      if (error?.code === "hermes_invalid_response") {
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "api",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes API 返回非法 JSON",
+          message: "Hermes API 返回了无法解析的 JSON 响应。"
+        });
         throw error;
       }
-
-      if (!response.ok) {
-        const error = new Error(body?.error || "Hermes step execution failed");
-        error.code = body?.code || "hermes_request_failed";
-        error.details = body?.details || null;
-        throw error;
+      if (error?.name === "AbortError") {
+        const timeoutError = new Error(`Hermes request timed out after ${timeoutMs}ms`);
+        timeoutError.code = "hermes_timeout";
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "api",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes API 请求超时",
+          message: timeoutError.message
+        });
+        throw timeoutError;
       }
-
-      if (body?.artifact && typeof body.artifact === "object") {
-        body.artifact = normalizeCliArtifact(payload.stepType, body.artifact, payload);
+      if (error instanceof TypeError) {
+        const connectionError = new Error(`Hermes is unavailable at ${this.baseURL}`);
+        connectionError.code = "hermes_unavailable";
+        await emitHermesEvent(runtime.onEvent, {
+          type: "agent_runtime",
+          transport: "api",
+          stepType: payload.stepType || "",
+          status: "failed",
+          level: "error",
+          label: "Hermes API 不可用",
+          message: connectionError.message
+        });
+        throw connectionError;
       }
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "api",
+        stepType: payload.stepType || "",
+        status: "failed",
+        level: "error",
+        label: "Hermes API 请求失败",
+        message: error?.message || "Hermes API 请求失败"
+      });
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async executeApiUploadStep(payload = {}, runtime = {}) {
+    const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
+    const uploadManifest = await collectUploadFilesForAllowedPaths(payload.allowedPaths || []);
+    await emitHermesEvent(runtime.onEvent, {
+      type: "agent_runtime",
+      transport: "api",
+      stepType: payload.stepType || "",
+      status: "started",
+      label: "已开始调用 Hermes API",
+      message: uploadManifest.files.length
+        ? `正在上传 ${uploadManifest.files.length} 个本地文件并请求 Hermes API 执行 ${payload.stepType || "step"}。`
+        : `正在请求 Hermes API 执行 ${payload.stepType || "step"}。`,
+      elapsedMs: 0
+    });
+
+    const form = new FormData();
+    form.set("payload", JSON.stringify(payload));
+    form.set("uploadManifest", JSON.stringify(uploadManifest));
+    for (const file of uploadManifest.files) {
+      const fileBuffer = await fs.readFile(file.sourcePath);
+      form.set(file.fieldName, new Blob([fileBuffer], { type: "application/octet-stream" }), path.basename(file.sourcePath));
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(`${this.baseURL}/internal/steps/execute-upload`, {
+        method: "POST",
+        headers: this._authHeaders(),
+        body: form,
+        signal: controller.signal
+      });
+      const body = await this._parseApiResponse(response, payload);
 
       await emitHermesEvent(runtime.onEvent, {
         type: "agent_runtime",

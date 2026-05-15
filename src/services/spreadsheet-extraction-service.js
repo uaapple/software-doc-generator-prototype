@@ -5,6 +5,10 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const ZIP_READ_MAX_BUFFER = 8 * 1024 * 1024;
 
+function quotePowerShell(value = "") {
+  return `'${String(value || "").replaceAll("'", "''")}'`;
+}
+
 function decodeXmlEntities(value = "") {
   return String(value || "")
     .replace(/&#x([0-9a-fA-F]+);/g, (_match, hex) => String.fromCodePoint(parseInt(hex, 16)))
@@ -50,8 +54,52 @@ async function readZipEntry(filePath, entryPath) {
     });
     return String(stdout || "");
   } catch (error) {
+    if (error?.code === "ENOENT" && process.platform === "win32") {
+      return readZipEntryWithPowerShell(filePath, entryPath);
+    }
     const message = String(error?.message || "");
     if (message.includes("filename not matched")) {
+      return "";
+    }
+    throw error;
+  }
+}
+
+async function readZipEntryWithPowerShell(filePath, entryPath) {
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        [
+          "Add-Type -AssemblyName System.IO.Compression.FileSystem;",
+          `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;`,
+          `$zip = [System.IO.Compression.ZipFile]::OpenRead(${quotePowerShell(filePath)});`,
+          "try {",
+          `  $entry = $zip.GetEntry(${quotePowerShell(entryPath)});`,
+          "  if ($null -eq $entry) {",
+          `    $entry = $zip.GetEntry(${quotePowerShell(entryPath.replace(/\//g, "\\"))});`,
+          "  }",
+          "  if ($null -eq $entry) { exit 3 }",
+          "  $stream = $entry.Open();",
+          "  try {",
+          "    $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8);",
+          "    try { [Console]::Out.Write($reader.ReadToEnd()) } finally { $reader.Dispose() }",
+          "  } finally { $stream.Dispose() }",
+          "} finally { $zip.Dispose() }"
+        ].join(" ")
+      ],
+      {
+        encoding: "utf8",
+        maxBuffer: ZIP_READ_MAX_BUFFER
+      }
+    );
+    return String(stdout || "");
+  } catch (error) {
+    if (Number(error?.code) === 3) {
       return "";
     }
     throw error;

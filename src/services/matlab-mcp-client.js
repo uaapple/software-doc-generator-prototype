@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { request as httpRequest } from "node:http";
 
@@ -22,6 +23,8 @@ export class MatlabMcpClient {
   constructor(options = {}) {
     this.transport = String(options.transport || process.env.MATLAB_MCP_TRANSPORT || "stdio").trim().toLowerCase();
     this.baseURL = options.baseURL || process.env.MATLAB_MCP_BASE_URL || "http://127.0.0.1:5100";
+    this.httpMode = String(options.httpMode || process.env.MATLAB_MCP_HTTP_MODE || "path").trim().toLowerCase();
+    this.authToken = options.authToken || process.env.MATLAB_MCP_AUTH_TOKEN || "";
     this.timeoutMs = Number(options.timeoutMs || process.env.MATLAB_MCP_TIMEOUT_MS || 120000);
     this.tempDir = options.tempDir || process.env.MATLAB_MCP_TMPDIR || "/tmp";
     this.serverCommand = options.serverCommand || process.env.MATLAB_MCP_SERVER_COMMAND || "";
@@ -282,6 +285,10 @@ export class MatlabMcpClient {
    * http transport: call analyze_slx via HTTP POST (legacy).
    */
   async _analyzeSlxHttp({ absolutePath, originalName, documentType }) {
+    if (this.httpMode === "multipart" || this.httpMode === "upload") {
+      return this._analyzeSlxHttpMultipart({ absolutePath, originalName, documentType });
+    }
+
     const body = JSON.stringify({
       filePath: absolutePath,
       originalName: originalName || "",
@@ -300,7 +307,8 @@ export class MatlabMcpClient {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(body)
+            "Content-Length": Buffer.byteLength(body),
+            ...this._authHeaders()
           },
           timeout: this.timeoutMs
         },
@@ -341,6 +349,54 @@ export class MatlabMcpClient {
       req.write(body);
       req.end();
     });
+  }
+
+  async _analyzeSlxHttpMultipart({ absolutePath, originalName, documentType }) {
+    const url = new URL("/mcp/tools/analyze_slx", this.baseURL);
+    const fileBuffer = await fs.readFile(absolutePath);
+    const form = new FormData();
+    form.set("documentType", documentType);
+    form.set("outputFormat", "model_fact_bundle");
+    form.set("slx", new Blob([fileBuffer], { type: "application/octet-stream" }), originalName || path.basename(absolutePath));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: this._authHeaders(),
+        body: form,
+        signal: controller.signal
+      });
+      const raw = await res.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new MatlabMcpError("INVALID_RESPONSE", `MATLAB MCP returned non-JSON: ${raw.slice(0, 200)}`);
+      }
+
+      if (!res.ok || parsed.error) {
+        const code = parsed.error?.code || `HTTP_${res.status}`;
+        const message = parsed.error?.message || parsed.message || `MATLAB MCP request failed with status ${res.status}`;
+        throw new MatlabMcpError(code, message);
+      }
+
+      return parsed.result || parsed;
+    } catch (error) {
+      if (error instanceof MatlabMcpError) throw error;
+      if (error.name === "AbortError") {
+        throw new MatlabMcpError("TIMEOUT", `MATLAB MCP request timed out after ${this.timeoutMs}ms`);
+      }
+      throw new MatlabMcpError("CONNECTION_ERROR", `Cannot connect to MATLAB MCP at ${this.baseURL}: ${error.message}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  _authHeaders() {
+    return this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {};
   }
 
   /**

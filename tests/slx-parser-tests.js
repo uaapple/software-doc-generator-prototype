@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { validateModelFactBundle, createEmptyModelFactBundle, MODEL_FACT_FIELDS } from "../src/services/model-fact-bundle.js";
 import { SlxModelFactAdapter } from "../src/services/slx-model-fact-adapter.js";
 import { SlxModelAnalysisService, SlxAnalysisError } from "../src/services/slx-model-analysis-service.js";
@@ -406,6 +409,46 @@ async function testMcpClientMissingPathError() {
   );
 }
 
+async function testMcpClientMultipartUploadSendsFileAndToken() {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "slx-client-test-"));
+  const slxPath = path.join(tmpDir, "demo.slx");
+  await fs.writeFile(slxPath, "fake-slx");
+
+  const originalFetch = globalThis.fetch;
+  const bundle = createEmptyModelFactBundle();
+  bundle.source = { fileName: "demo.slx", modelName: "Demo" };
+  let called = false;
+
+  globalThis.fetch = async (url, options) => {
+    called = true;
+    assert.equal(String(url), "http://worker.local:5100/mcp/tools/analyze_slx");
+    assert.equal(options.method, "POST");
+    assert.equal(options.headers.Authorization, "Bearer test-token");
+    assert.equal(options.body.get("documentType"), "software_requirement");
+    assert.equal(options.body.get("outputFormat"), "model_fact_bundle");
+    assert.equal(options.body.get("slx").name, "demo.slx");
+    return new Response(JSON.stringify({ result: bundle }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+
+  try {
+    const client = new MatlabMcpClient({
+      transport: "http",
+      httpMode: "multipart",
+      baseURL: "http://worker.local:5100",
+      authToken: "test-token"
+    });
+    const result = await client.analyzeSlx({ absolutePath: slxPath, originalName: "demo.slx" });
+    assert.equal(called, true);
+    assert.equal(result.source.modelName, "Demo");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
 // ── validateModelRequirementView ──
 
 async function testValidateModelRequirementViewValid() {
@@ -660,6 +703,7 @@ const tests = [
   testExtractionServiceNoSlxNoMcpCall,
   testMcpClientAvailability,
   testMcpClientMissingPathError,
+  testMcpClientMultipartUploadSendsFileAndToken,
   testValidateModelRequirementViewValid,
   testValidateModelRequirementViewNotObject,
   testValidateModelRequirementViewMissingVersion,

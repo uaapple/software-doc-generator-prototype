@@ -115,7 +115,7 @@ function sanitizeRelativePath(value = "", fallback = "item.txt") {
       const baseFallback = index === list.length - 1 ? fallback : "dir";
       return sanitizePathSegment(segment, baseFallback);
     });
-  return parts.length ? path.join(...parts) : fallback;
+  return parts.length ? path.posix.join(...parts) : fallback;
 }
 
 function normalizeList(value) {
@@ -226,7 +226,7 @@ export class ReplayArtifactService {
     const effectiveSkillFiles = [];
     for (const [relativeFilePath, fileValue] of Object.entries(effectiveSkillSnapshot.files || {})) {
       const safeFilePath = sanitizeRelativePath(relativeFilePath, "skill-file.txt");
-      const artifactRelativePath = path.join("effective-skill", safeFilePath);
+      const artifactRelativePath = path.posix.join("effective-skill", safeFilePath);
       const content =
         typeof fileValue === "string"
           ? fileValue
@@ -283,7 +283,7 @@ export class ReplayArtifactService {
     const referenceAssetEntries = [];
     for (const [index, asset] of selectedAssets.entries()) {
       const relativeName = inferArtifactFileName(asset, index);
-      const artifactRelativePath = path.join("reference-assets", relativeName);
+      const artifactRelativePath = path.posix.join("reference-assets", relativeName);
       const sourcePath = resolveStoredFilePath(asset, {
         baseDir: uploadBaseDir || config.uploadDir,
         allowStoredNameFallback: true

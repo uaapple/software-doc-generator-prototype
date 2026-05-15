@@ -13,6 +13,8 @@ export class SlxModelAnalysisService {
     const mcpOptions = {
       transport: options.transport || config.matlabMcp.transport,
       baseURL: options.baseURL || config.matlabMcp.baseURL,
+      httpMode: options.httpMode || config.matlabMcp.httpMode,
+      authToken: options.authToken || config.matlabMcp.authToken,
       timeoutMs: options.timeoutMs || config.matlabMcp.timeoutMs,
       tempDir: options.tempDir || config.matlabMcp.tempDir,
       serverCommand: options.serverCommand || config.matlabMcp.serverCommand,

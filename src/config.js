@@ -8,7 +8,6 @@ const rootDir = path.resolve(__dirname, "..");
 const externalEnvKeys = new Set(Object.keys(process.env));
 
 loadDotEnv(path.join(rootDir, ".env.defaults"));
-loadExternalDotEnv();
 loadDotEnv(path.join(rootDir, ".env"), {
   canOverride(key) {
     return !externalEnvKeys.has(key);
@@ -48,67 +47,41 @@ function loadDotEnv(filePath, options = {}) {
   }
 }
 
-function loadExternalDotEnv() {
-  const externalEnvPath = process.env.APP_ENV_FILE || process.env.SOFTWARE_DOC_ENV_FILE || "";
-  if (!externalEnvPath) {
-    return;
-  }
-
-  loadDotEnv(resolveRuntimePath(externalEnvPath, ""), {
-    canOverride(key) {
-      return !externalEnvKeys.has(key);
-    }
-  });
-}
-
-function resolveRuntimePath(value, fallback) {
-  const text = String(value || "").trim();
-  if (!text) {
-    return fallback;
-  }
-
-  return path.isAbsolute(text) ? text : path.resolve(rootDir, text);
-}
-
-const dataDir = resolveRuntimePath(process.env.APP_DATA_DIR, path.join(rootDir, "data"));
-const runtimeSkillDir = resolveRuntimePath(process.env.APP_SKILLS_DIR, path.join(rootDir, "skills"));
-const repositorySkillSeedDir = path.join(rootDir, "skills");
-
 export const config = {
   host: process.env.HOST || "::",
   port: Number(process.env.PORT || 3000),
   rootDir,
   publicDir: path.join(rootDir, "public"),
-  legacySkillDir: repositorySkillSeedDir,
-  activeSkillDir: path.join(runtimeSkillDir, "active"),
-  skillBundleDir: path.join(runtimeSkillDir, "bundles"),
-  generationTaskArtifactDir: path.join(dataDir, "generation-task-artifacts"),
-  replayTaskArtifactDir: path.join(dataDir, "replay-task-artifacts"),
-  dataDir,
-  skillDatabasePath: path.join(dataDir, "skills.sqlite"),
-  projectStoreDir: path.join(dataDir, "projects"),
-  uploadDir: path.join(dataDir, "uploads"),
-  llmProfileStorePath: path.join(dataDir, "llm-profiles.json"),
-  skillRefinementDir: path.join(dataDir, "skill-refinement"),
-  skillRefinementCaseDir: path.join(dataDir, "skill-refinement", "cases"),
-  skillRefinementRunDir: path.join(dataDir, "skill-refinement", "runs"),
-  skillRefinementEvaluationDir: path.join(dataDir, "skill-refinement", "evaluations"),
-  skillRefinementAuditDir: path.join(dataDir, "skill-refinement", "audit"),
-  skillRefinementBundleMetaDir: path.join(dataDir, "skill-refinement", "bundles"),
-  skillBundleSnapshotDir: path.join(dataDir, "skill-refinement", "bundle-snapshots"),
-  skillRefinementUploadDir: path.join(dataDir, "skill-refinement", "uploads"),
-  activeSkillBundlePointerPath: path.join(dataDir, "skill-refinement", "active-bundle.json"),
-  skillRuleDir: path.join(dataDir, "skill-rules"),
-  skillRuleChangeLogPath: path.join(dataDir, "skill-rules", "change-log.json"),
-  rejectionStoreDir: path.join(dataDir, "rejections"),
-  rejectionGroupStorePath: path.join(dataDir, "rejections", "groups.json"),
-  replayTaskStoreDir: path.join(dataDir, "replay-tasks"),
-  skillWorkOrderStoreDir: path.join(dataDir, "skill-work-orders"),
-  feedbackTicketStoreDir: path.join(dataDir, "feedback-tickets"),
-  feedbackTicketUploadDir: path.join(dataDir, "uploads", "feedback-tickets"),
+  legacySkillDir: path.join(rootDir, "skills"),
+  activeSkillDir: path.join(rootDir, "skills", "active"),
+  skillBundleDir: path.join(rootDir, "skills", "bundles"),
+  generationTaskArtifactDir: path.join(rootDir, "data", "generation-task-artifacts"),
+  replayTaskArtifactDir: path.join(rootDir, "data", "replay-task-artifacts"),
+  dataDir: path.join(rootDir, "data"),
+  skillDatabasePath: path.join(rootDir, "data", "skills.sqlite"),
+  projectStoreDir: path.join(rootDir, "data", "projects"),
+  uploadDir: path.join(rootDir, "data", "uploads"),
+  llmProfileStorePath: path.join(rootDir, "data", "llm-profiles.json"),
+  skillRefinementDir: path.join(rootDir, "data", "skill-refinement"),
+  skillRefinementCaseDir: path.join(rootDir, "data", "skill-refinement", "cases"),
+  skillRefinementRunDir: path.join(rootDir, "data", "skill-refinement", "runs"),
+  skillRefinementEvaluationDir: path.join(rootDir, "data", "skill-refinement", "evaluations"),
+  skillRefinementAuditDir: path.join(rootDir, "data", "skill-refinement", "audit"),
+  skillRefinementBundleMetaDir: path.join(rootDir, "data", "skill-refinement", "bundles"),
+  skillBundleSnapshotDir: path.join(rootDir, "data", "skill-refinement", "bundle-snapshots"),
+  skillRefinementUploadDir: path.join(rootDir, "data", "skill-refinement", "uploads"),
+  activeSkillBundlePointerPath: path.join(rootDir, "data", "skill-refinement", "active-bundle.json"),
+  skillRuleDir: path.join(rootDir, "data", "skill-rules"),
+  skillRuleChangeLogPath: path.join(rootDir, "data", "skill-rules", "change-log.json"),
+  rejectionStoreDir: path.join(rootDir, "data", "rejections"),
+  rejectionGroupStorePath: path.join(rootDir, "data", "rejections", "groups.json"),
+  replayTaskStoreDir: path.join(rootDir, "data", "replay-tasks"),
+  skillWorkOrderStoreDir: path.join(rootDir, "data", "skill-work-orders"),
+  feedbackTicketStoreDir: path.join(rootDir, "data", "feedback-tickets"),
+  feedbackTicketUploadDir: path.join(rootDir, "data", "uploads", "feedback-tickets"),
   templateDir: path.join(rootDir, "templates"),
   templatePath: path.join(rootDir, "templates", "software-requirement-template.json"),
-  skillDir: path.join(runtimeSkillDir, "active"),
+  skillDir: path.join(rootDir, "skills", "active"),
   skillVersioning: {
     directActiveSkillItemWrites: process.env.SKILL_DIRECT_ACTIVE_WRITES || "allow"
   },
@@ -117,6 +90,8 @@ export const config = {
     host: process.env.HERMES_HOST || "127.0.0.1",
     port: Number(process.env.HERMES_PORT || 3101),
     baseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
+    apiMode: process.env.HERMES_API_MODE || "json",
+    authToken: process.env.HERMES_AUTH_TOKEN || "",
     command: process.env.HERMES_COMMAND || "hermes",
     stateDbPath: process.env.HERMES_STATE_DB_PATH || path.join(process.env.HOME || "", ".hermes", "state.db"),
     workdir: process.env.HERMES_WORKDIR || rootDir,
@@ -147,6 +122,8 @@ export const config = {
   matlabMcp: {
     transport: process.env.MATLAB_MCP_TRANSPORT || "stdio",
     baseURL: process.env.MATLAB_MCP_BASE_URL || "http://127.0.0.1:5100",
+    httpMode: process.env.MATLAB_MCP_HTTP_MODE || "path",
+    authToken: process.env.MATLAB_MCP_AUTH_TOKEN || "",
     timeoutMs: Number(process.env.MATLAB_MCP_TIMEOUT_MS || 300000),
     tempDir: process.env.MATLAB_MCP_TMPDIR || "/tmp",
     serverCommand: process.env.MATLAB_MCP_SERVER_COMMAND || path.join(rootDir, "tools", "matlab-mcp-core-server"),

@@ -575,6 +575,39 @@ function buildAnchorBackedExtractions(anchors = [], assetManifest = []) {
   return Array.from(grouped.values()).filter((item) => item.fileName || item.evidence.length);
 }
 
+function buildAnchorsFromModelRequirementView(modelRequirementView = {}, assetManifest = []) {
+  const assetById = new Map((Array.isArray(assetManifest) ? assetManifest : []).map((asset) => [asset.assetId, asset]));
+  for (const sourceAsset of Array.isArray(modelRequirementView.sourceAssets) ? modelRequirementView.sourceAssets : []) {
+    if (sourceAsset?.assetId && !assetById.has(sourceAsset.assetId)) {
+      assetById.set(sourceAsset.assetId, sourceAsset);
+    }
+  }
+
+  return (Array.isArray(modelRequirementView.facts) ? modelRequirementView.facts : [])
+    .map((fact, index) => {
+      const sourceRef = Array.isArray(fact.sourceRefs) ? fact.sourceRefs[0] || {} : {};
+      const matchedAsset =
+        assetById.get(sourceRef.assetId) ||
+        assetManifest.find((asset) => asset.fileName && asset.fileName === sourceRef.fileName) ||
+        assetManifest[0] ||
+        {};
+      const excerpt = String(fact.behavior || fact.topic || sourceRef.excerpt || "").trim();
+      const summary = String(fact.topic || excerpt || fact.id || "").trim();
+      return {
+        anchorId: sourceRef.sourceAnchorId || fact.id || `model-fact-${index + 1}`,
+        assetId: sourceRef.assetId || matchedAsset.assetId || "",
+        fileName: sourceRef.fileName || matchedAsset.fileName || "",
+        fileRole: sourceRef.fileRole || matchedAsset.fileRole || "simulink_slx",
+        location: sourceRef.location || fact.topic || `fact ${index + 1}`,
+        anchorType: "model_fact",
+        excerpt,
+        summary,
+        tags: ["model_requirement_fact", fact.topic].filter(Boolean)
+      };
+    })
+    .filter((anchor) => anchor.anchorId && anchor.assetId && anchor.excerpt && anchor.summary);
+}
+
 function assertValidAnchors(anchors = [], assetManifest = []) {
   if (!Array.isArray(anchors)) {
     throw new Error("Hermes anchor_index_build must return an anchor array");
@@ -1141,6 +1174,7 @@ export class PipelineService {
     let extractions = [];
     let modelRequirementExtractions = [];
     let anchors = [];
+    let remoteModelRequirementViews = [];
     if (this.hermesAgentClient.transport === "cli") {
       extractions = await this.extractionService.extractFiles(
         { files: extractionInputAssets },
@@ -1155,7 +1189,7 @@ export class PipelineService {
       if (slxExtractionAssets.length) {
         await updateTaskProgress(
           {
-            stage: "extracting_inputs",
+            stage: "slx_parse_generate",
             label: "正在解析 Simulink 模型",
             message: `正在通过 MATLAB MCP 解析 ${slxExtractionAssets.length} 个 SLX 模型资产。`,
             percent: 30,
@@ -1164,21 +1198,34 @@ export class PipelineService {
           },
           {
             timelineEntry: {
-              stage: "extracting_inputs",
+              stage: "slx_parse_generate",
               label: "解析 Simulink 模型",
               message: `开始通过 MATLAB MCP 解析 ${slxExtractionAssets.length} 个 SLX 模型资产。`,
               level: "info"
             }
           }
         );
-        slxExtractions = await this.extractionService.extractFiles(
-          { files: slxExtractionAssets },
-          { allowStoredNameFallback: true, documentType: "software_requirement" }
+        const slxParseArtifact = assertHermesStepResponse(
+          "slx_parse_generate",
+          await this.hermesAgentClient.executeStep({
+            taskId,
+            stepType: "slx_parse_generate",
+            allowedPaths: slxExtractionAssets.map((asset) => asset.absolutePath).filter(Boolean),
+            inputArtifact: {
+              project: contextProject,
+              slxFiles: slxExtractionAssets
+            },
+            skillInventory: effectiveSkillInventory,
+            llmProfileSnapshot: llmProfile
+          })
         );
-        slxAnchors = buildAnchorsFromExtractions(slxExtractions, assetManifest);
+        validateModelRequirementView(slxParseArtifact.modelRequirementView);
+        remoteModelRequirementViews = [...remoteModelRequirementViews, slxParseArtifact.modelRequirementView];
+        slxAnchors = buildAnchorsFromModelRequirementView(slxParseArtifact.modelRequirementView, assetManifest);
+        slxExtractions = buildAnchorBackedExtractions(slxAnchors, assetManifest);
         await updateTaskProgress(
           {
-            stage: "extracting_inputs",
+            stage: "slx_parse_generate",
             label: "Simulink 模型解析完成",
             message: `已从 SLX 模型提取 ${slxAnchors.length} 个模型事实锚点。`,
             percent: 36,
@@ -1187,7 +1234,7 @@ export class PipelineService {
           },
           {
             timelineEntry: {
-              stage: "extracting_inputs",
+              stage: "slx_parse_generate",
               label: "Simulink 模型解析完成",
               message: `SLX 模型解析完成，共得到 ${slxAnchors.length} 个模型事实锚点。`,
               level: "info"
@@ -1226,7 +1273,10 @@ export class PipelineService {
       anchors
     });
 
-    const preloadedViews = Array.isArray(options.preloadedModelRequirementViews) ? options.preloadedModelRequirementViews : [];
+    const preloadedViews = [
+      ...remoteModelRequirementViews,
+      ...(Array.isArray(options.preloadedModelRequirementViews) ? options.preloadedModelRequirementViews : [])
+    ];
     if (preloadedViews.length) {
       const existingFactIds = new Set((modelRequirementView.facts || []).map((f) => f.id));
       const mergedFacts = [...(modelRequirementView.facts || [])];

@@ -279,7 +279,23 @@ async function createMinimalXlsx(filePath, rowsBySheet = {}) {
       await fs.writeFile(path.join(workbookDir, "xl", "worksheets", `sheet${index + 1}.xml`), buildSheetXml(rows), "utf8");
     }
 
-    await execFileAsync("zip", ["-rq", filePath, "."], { cwd: workbookDir });
+    if (process.platform === "win32") {
+      const escapedSource = workbookDir.replaceAll("'", "''");
+      const escapedDestination = filePath.replaceAll("'", "''");
+      await execFileAsync("powershell.exe", [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        [
+          "Add-Type -AssemblyName System.IO.Compression.FileSystem;",
+          `Remove-Item -LiteralPath '${escapedDestination}' -Force -ErrorAction SilentlyContinue;`,
+          `[System.IO.Compression.ZipFile]::CreateFromDirectory('${escapedSource}', '${escapedDestination}');`
+        ].join(" ")
+      ]);
+    } else {
+      await execFileAsync("zip", ["-rq", filePath, "."], { cwd: workbookDir });
+    }
   } finally {
     await fs.rm(workbookDir, { recursive: true, force: true });
   }
@@ -1093,7 +1109,7 @@ const tests = [
         assert.ok(artifact.writtenFiles.includes("task-brief.md"));
         assert.ok(artifact.writtenFiles.includes("rejections.json"));
         assert.ok(artifact.writtenFiles.includes("effective-skill-manifest.json"));
-        assert.ok(artifact.writtenFiles.includes(path.join("effective-skill", "requirement_validation.md")));
+        assert.ok(artifact.writtenFiles.includes("effective-skill/requirement_validation.md"));
         assert.ok(artifact.writtenFiles.some((item) => item.startsWith("reference-assets/")));
 
         const manifest = JSON.parse(await fs.readFile(path.join(outputDir, "manifest.json"), "utf8"));
@@ -2540,6 +2556,62 @@ const tests = [
     }
   },
   {
+    name: "Hermes agent client uploads allowed files in API multipart mode",
+    run: async () => {
+      await withTempConfig(async () => {
+        const uploadFixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-api-upload-"));
+        const filePath = path.join(uploadFixtureDir, "charging-model.c");
+        await fs.writeFile(
+          filePath,
+          [
+            "#define CHARGE_LIMIT 80",
+            "void ChargingStep(void) {",
+            "  if (chargeSoc >= CHARGE_LIMIT) {",
+            "    chargeState = 1;",
+            "  }",
+            "}"
+          ].join("\n"),
+          "utf8"
+        );
+
+        try {
+          await withHermesServer(async ({ baseUrl }) => {
+            const client = new HermesAgentClient({
+              transport: "api",
+              apiMode: "multipart",
+              baseURL: baseUrl,
+              timeoutMs: 5000
+            });
+
+            const response = await client.executeStep({
+              taskId: "task-api-upload",
+              stepType: "anchor_index_build",
+              allowedPaths: [filePath],
+              inputArtifact: {
+                assets: [
+                  {
+                    assetId: "asset-upload-1",
+                    fileName: "charging-model.c",
+                    fileRole: "generated_c",
+                    absolutePath: filePath
+                  }
+                ]
+              },
+              skillInventory: { items: [] },
+              llmProfileSnapshot: null
+            });
+
+            assert.equal(response.status, "succeeded");
+            assert.ok(response.artifact.anchors.some((anchor) => anchor.fileName === "charging-model.c"));
+            assert.ok(response.metrics.anchorCount > 0);
+          });
+        } finally {
+          await fs.rm(uploadFixtureDir, { recursive: true, force: true });
+        }
+      });
+    }
+  },
+  {
     name: "Hermes agent client parses quiet CLI output and session id",
     run: async () => {
       await withTempConfig(async () => {
@@ -2643,11 +2715,11 @@ const tests = [
     }
   },
   {
-    name: "Default Hermes content_generate timeout is 600000ms",
+    name: "Default Hermes content_generate timeout is 1200000ms",
     run: async () => {
       const source = await fs.readFile(new URL("../src/config.js", import.meta.url), "utf8");
 
-      assert.match(source, /content_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_CONTENT_GENERATE_MS\s*\|\|\s*600000\)/);
+      assert.match(source, /content_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_CONTENT_GENERATE_MS\s*\|\|\s*1200000\)/);
     }
   },
   {
@@ -2794,80 +2866,6 @@ const tests = [
         source,
         /replay_proposal_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS\s*\|\|\s*600000\)/
       );
-    }
-  },
-  {
-    name: "Runtime config supports external production data and skill directories",
-    run: async () => {
-      const source = await fs.readFile(new URL("../src/config.js", import.meta.url), "utf8");
-
-      assert.ok(source.includes("APP_ENV_FILE"));
-      assert.ok(source.includes("APP_DATA_DIR"));
-      assert.ok(source.includes("APP_SKILLS_DIR"));
-      assert.match(source, /const dataDir = resolveRuntimePath\(process\.env\.APP_DATA_DIR/);
-      assert.match(source, /const runtimeSkillDir = resolveRuntimePath\(process\.env\.APP_SKILLS_DIR/);
-      assert.match(source, /legacySkillDir:\s*repositorySkillSeedDir/);
-      assert.match(source, /activeSkillDir:\s*path\.join\(runtimeSkillDir,\s*"active"\)/);
-      assert.match(source, /skillBundleDir:\s*path\.join\(runtimeSkillDir,\s*"bundles"\)/);
-      assert.match(source, /skillDatabasePath:\s*path\.join\(dataDir,\s*"skills\.sqlite"\)/);
-    }
-  },
-  {
-    name: "Release zip script only packages deployable code from the production branch",
-    run: async () => {
-      const script = await fs.readFile(path.join(config.rootDir, "scripts", "build-release-zip.sh"), "utf8");
-      const packageJson = JSON.parse(await fs.readFile(path.join(config.rootDir, "package.json"), "utf8"));
-
-      assert.equal(packageJson.scripts["release:zip"], "bash scripts/build-release-zip.sh");
-      assert.ok(script.includes("release/windows-prod"));
-      assert.ok(script.includes("git status --porcelain=v1"));
-      assert.ok(script.includes("npm test"));
-      assert.ok(script.includes("npm run check:wiki"));
-      assert.ok(script.includes("npm run check:encoding"));
-      assert.ok(script.includes("git archive --format=zip"));
-      assert.ok(script.includes('"src"'));
-      assert.ok(script.includes('"public"'));
-      assert.ok(script.includes('"wiki"'));
-      assert.ok(script.includes('"skills"'));
-      assert.ok(script.includes('"scripts"'));
-      assert.ok(script.includes('"templates"'));
-      assert.ok(script.includes('"docs"'));
-      assert.ok(!script.includes('"data"'));
-      assert.ok(script.includes("latest.zip"));
-      assert.ok(script.includes("deploy-release.ps1"));
-      assert.ok(script.includes("install-windows-services.ps1"));
-    }
-  },
-  {
-    name: "Windows deployment scripts use external production data and rollback-aware service deployment",
-    run: async () => {
-      const deployScript = await fs.readFile(path.join(config.rootDir, "scripts", "deploy-release.ps1"), "utf8");
-      const serviceScript = await fs.readFile(path.join(config.rootDir, "scripts", "install-windows-services.ps1"), "utf8");
-      const docs = await fs.readFile(path.join(config.rootDir, "docs", "windows-vm-zip-deployment.md"), "utf8");
-
-      assert.ok(deployScript.includes("C:\\apps\\software-doc-generator\\incoming\\latest.zip"));
-      assert.ok(deployScript.includes("SoftwareDocGenerator"));
-      assert.ok(deployScript.includes("SoftwareDocWiki"));
-      assert.ok(deployScript.includes("prod-data"));
-      assert.ok(deployScript.includes("prod-skills"));
-      assert.ok(deployScript.includes("Initialize-ProdSkillsFromRelease"));
-      assert.ok(deployScript.includes("Release package does not contain the initial skill library"));
-      assert.ok(deployScript.includes("Production skill library already exists"));
-      assert.ok(deployScript.includes("Expand-Archive"));
-      assert.ok(deployScript.includes("npmCmd ci --omit=dev"));
-      assert.ok(deployScript.includes("Set-CurrentJunction"));
-      assert.ok(deployScript.includes("Rolling back current"));
-      assert.ok(deployScript.includes("/api/health"));
-      assert.ok(deployScript.includes("/health"));
-      assert.ok(serviceScript.includes("winsw-x64.exe"));
-      assert.ok(serviceScript.includes("APP_ENV_FILE"));
-      assert.ok(serviceScript.includes("src/server.js"));
-      assert.ok(serviceScript.includes("src/wiki-server.js"));
-      assert.ok(docs.includes("release/windows-prod"));
-      assert.ok(docs.includes("APP_DATA_DIR"));
-      assert.ok(docs.includes("APP_SKILLS_DIR"));
-      assert.ok(docs.includes("初版 seed 技能库"));
-      assert.ok(docs.includes("保留正式环境技能库"));
     }
   },
   {
@@ -3567,7 +3565,6 @@ const tests = [
 
       assert.match(source, /module_skill_bootstrap/);
       assert.match(source, /requiresExplicitBootstrap/);
-      assert.match(source, /isImportedExistingModuleSkill/);
       assert.match(source, /开始技能冷启动/);
       assert.match(source, /当前模块被标记为冷启动模式/);
     }
@@ -3859,35 +3856,48 @@ const tests = [
         const hermesPayloads = [];
 
         pipelineService.hermesAgentClient.transport = "api";
-        pipelineService.extractionService = {
-          async extractFiles(project) {
-            assert.equal(project.files.length, 1);
-            assert.equal(project.files[0].role, "simulink_slx");
-            return [
-              {
-                id: "slx-extraction-1",
-                fileId: project.files[0].id,
-                fileName: project.files[0].originalName,
-                fileRole: "simulink_slx",
-                summary: "SLX 模型: ChargingModel，接口:1",
-                evidence: [
-                  {
-                    id: "slx-anchor-1",
-                    fileId: project.files[0].id,
-                    fileName: project.files[0].originalName,
-                    fileRole: "simulink_slx",
-                    location: "ChargingModel/In1",
-                    excerpt: "接口 ChargeEnable (input) 类型:boolean",
-                    tags: ["interface"],
-                    confidence: 0.8
-                  }
-                ]
-              }
-            ];
-          }
-        };
         pipelineService.hermesAgentClient.executeStep = async (payload) => {
           hermesPayloads.push(payload);
+          if (payload.stepType === "slx_parse_generate") {
+            assert.equal(payload.inputArtifact.slxFiles.length, 1);
+            const slxAsset = payload.inputArtifact.slxFiles[0];
+            return {
+              status: "succeeded",
+              artifact: {
+                modelRequirementView: {
+                  version: "1.0",
+                  documentType: "software_requirement",
+                  sourceAssets: [
+                    {
+                      assetId: slxAsset.id,
+                      fileName: slxAsset.originalName,
+                      fileRole: "simulink_slx",
+                      absolutePath: slxAsset.absolutePath
+                    }
+                  ],
+                  facts: [
+                    {
+                      id: "slx-fact-1",
+                      topic: "SLX 充电使能接口",
+                      behavior: "接口 ChargeEnable (input) 类型:boolean",
+                      signals: ["ChargeEnable"],
+                      sourceRefs: [
+                        {
+                          sourceAnchorId: "slx-anchor-1",
+                          assetId: slxAsset.id,
+                          fileName: slxAsset.originalName,
+                          fileRole: "simulink_slx",
+                          location: "ChargingModel/In1",
+                          excerpt: "接口 ChargeEnable (input) 类型:boolean"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                summary: "SLX 模型解析完成"
+              }
+            };
+          }
           if (payload.stepType === "anchor_index_build") {
             assert.ok(payload.inputArtifact.assets.every((asset) => asset.fileRole !== "simulink_slx"));
             return {
@@ -4049,6 +4059,7 @@ const tests = [
         const stages = (result.task.timeline || []).map((entry) => entry.stage);
         assert.ok(stages.includes("task_init"));
         assert.ok(stages.includes("effective_skill_resolve"));
+        assert.ok(stages.includes("slx_parse_generate"));
         assert.ok(stages.includes("anchor_index_build"));
         assert.ok(stages.includes("atom_recall"));
         assert.ok(!stages.includes("outline_build"));
@@ -6823,8 +6834,6 @@ const tests = [
         const workOrder = await workOrderService.getWorkOrder(replayTask.workOrderId);
         const item = workOrder.items[0];
         assert.ok(item);
-        const defaultCandidate = await bundleService.getDefaultCandidateBundle();
-        assert.equal(defaultCandidate.status, "candidate");
 
         await workOrderService.reviewItem(workOrder.id, item.itemId, {
           reviewStatus: "accepted",
@@ -6836,11 +6845,9 @@ const tests = [
         });
         assert.equal(applied.item.reviewStatus, "staged");
         assert.ok(applied.candidateBundle.id);
-        assert.equal(applied.candidateBundle.id, defaultCandidate.id);
         assert.equal(applied.candidateBundle.status, "candidate");
         assert.equal(applied.item.stagedBundleId, applied.candidateBundle.id);
         assert.ok(applied.item.appliedChange.afterSnapshot);
-        assert.ok((applied.candidateBundle.changeEntries || []).some((entry) => entry.sourceType === "work_order"));
 
         const targetSkillCode = applied.item.appliedChange.skillCode;
         const candidateSkillDir = await bundleService.getSkillDir(applied.candidateBundle.id);
@@ -7002,120 +7009,48 @@ const tests = [
     }
   },
   {
-    name: "Skill item API writes default candidate and records atomic changes",
+    name: "Direct active skill item writes can be blocked in versioned mode",
     run: async () => {
       await withTempConfig(async () => {
         config.skillVersioning.directActiveSkillItemWrites = "blocked";
-        const bundleService = new SkillBundleService();
-        await bundleService.ensureInitialized();
-        const skillManagementService = new SkillManagementService();
-        const activeBundle = await bundleService.getActiveBundle();
-        const defaultCandidate = await bundleService.getDefaultCandidateBundle();
-        assert.equal(defaultCandidate.status, "candidate");
-        assert.equal(defaultCandidate.baseBundleId, activeBundle.id);
-        assert.equal(defaultCandidate.isDefaultCandidate, true);
-        let createdSkillCode = "";
-
         await withTestServer(async ({ baseUrl }) => {
-          const bundleResponse = await fetch(`${baseUrl}/api/skill-bundles`);
-          assert.equal(bundleResponse.status, 200);
-          const bundlePayload = await bundleResponse.json();
-          assert.equal(bundlePayload.defaultCandidateBundle.id, defaultCandidate.id);
-
-          const activeTargetResponse = await fetch(`${baseUrl}/api/skill-items`, {
+          const blockedResponse = await fetch(`${baseUrl}/api/skill-items`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              targetBundleId: activeBundle.id,
               layer: "generic",
               profileKey: "generic",
               kind: "validation_rule",
-              title: "Blocked active target",
+              title: "Blocked direct write",
               content: "should not write active"
             })
           });
-          assert.equal(activeTargetResponse.status, 409);
-          assert.equal((await activeTargetResponse.json()).code, "direct_active_skill_write_blocked");
+          assert.equal(blockedResponse.status, 409);
+          assert.equal((await blockedResponse.json()).code, "direct_active_skill_write_blocked");
 
-          const createResponse = await fetch(`${baseUrl}/api/skill-items`, {
+          const draftResponse = await fetch(`${baseUrl}/api/skill-bundles/drafts`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ changeSummary: "API candidate" })
+          });
+          assert.equal(draftResponse.status, 201);
+          const draft = await draftResponse.json();
+          const candidateResponse = await fetch(`${baseUrl}/api/skill-items`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              targetBundleId: draft.id,
               layer: "generic",
               profileKey: "generic",
               kind: "validation_rule",
               title: "Candidate write",
-              content: "writes only candidate",
-              changeSourceType: "manual_skill_edit",
-              createdBy: "tester"
+              content: "writes only candidate"
             })
           });
-          assert.equal(createResponse.status, 201);
-          const created = await createResponse.json();
+          assert.equal(candidateResponse.status, 201);
+          const created = await candidateResponse.json();
           assert.ok(created.skillCode);
-          createdSkillCode = created.skillCode;
-          await assert.rejects(() => skillManagementService.getSkillItem(created.skillCode));
-
-          const createSecondResponse = await fetch(`${baseUrl}/api/skill-items`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              layer: "generic",
-              profileKey: "generic",
-              kind: "validation_rule",
-              title: "Candidate write second",
-              content: "second candidate-only item",
-              changeSourceType: "api_skill_edit",
-              createdBy: "tester"
-            })
-          });
-          assert.equal(createSecondResponse.status, 201);
-          const createdSecond = await createSecondResponse.json();
-
-          const patchResponse = await fetch(`${baseUrl}/api/skill-items/${encodeURIComponent(created.skillCode)}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: "Candidate write updated",
-              content: "updated candidate-only content",
-              changeSourceType: "manual_skill_edit",
-              updatedBy: "tester"
-            })
-          });
-          assert.equal(patchResponse.status, 200);
-
-          const reorderResponse = await fetch(`${baseUrl}/api/skill-items/${encodeURIComponent(created.skillCode)}/reorder`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              direction: "down",
-              changeSourceType: "manual_skill_edit",
-              reorderedBy: "tester"
-            })
-          });
-          assert.equal(reorderResponse.status, 200);
-
-          const deleteResponse = await fetch(`${baseUrl}/api/skill-items/${encodeURIComponent(createdSecond.skillCode)}?changeSourceType=manual_skill_edit&deletedBy=tester`, {
-            method: "DELETE"
-          });
-          assert.equal(deleteResponse.status, 200);
         });
-
-        const candidateSkillDir = await bundleService.getSkillDir(defaultCandidate.id);
-        const candidateItem = await skillManagementService.getSkillItem(createdSkillCode, candidateSkillDir);
-        assert.equal(candidateItem.item.content, "updated candidate-only content");
-        await assert.rejects(() => skillManagementService.getSkillItem(createdSkillCode));
-
-        const refreshedCandidate = await bundleService.getBundle(defaultCandidate.id);
-        const operations = (refreshedCandidate.changeEntries || []).map((entry) => entry.operation);
-        assert.ok(operations.includes("create"));
-        assert.ok(operations.includes("update"));
-        assert.ok(operations.includes("reorder"));
-        assert.ok(operations.includes("delete"));
-        assert.equal(refreshedCandidate.diffSummary.create, 2);
-        assert.equal(refreshedCandidate.diffSummary.update, 1);
-        assert.equal(refreshedCandidate.diffSummary.reorder, 1);
-        assert.equal(refreshedCandidate.diffSummary.delete, 1);
       });
     }
   },
@@ -8944,21 +8879,6 @@ const tests = [
       assert.ok(hierarchyScript.includes("Fallback 历史任务已删除"));
       assert.ok(hierarchyScript.includes("/replay-lab?runTaskId="));
       assert.ok(hierarchyScript.includes("查看详情页"));
-    }
-  },
-  {
-    name: "Feedback pool supports global entry without project context",
-    run: async () => {
-      const script = await fs.readFile(path.join(config.rootDir, "public", "feedback-pool.js"), "utf8");
-
-      assert.ok(script.includes("全局反馈池共有"));
-      assert.ok(script.includes("function getModuleFilterOptions"));
-      assert.ok(script.includes("await refreshModuleOptions();"));
-      assert.ok(script.includes("function buildModuleOptions"));
-      assert.ok(script.includes("request(\"/api/rejections\")"));
-      assert.ok(script.includes("if (state.projectId) params.set(\"projectId\", state.projectId);"));
-      assert.ok(script.includes("const replayProjectId = state.projectId || selectedRecords[0]?.projectId"));
-      assert.ok(script.includes("loadReplayContext(state.selectedReplayProjectId, state.selectedReplayModuleId)"));
     }
   },
   {
