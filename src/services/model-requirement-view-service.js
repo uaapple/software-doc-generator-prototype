@@ -213,7 +213,7 @@ function inferTopic(evidence = {}, excerpt = "", tags = []) {
   const role = evidence.fileRole || "";
   if (tags.includes("interface")) return "接口与信号";
   if (tags.includes("structure")) return "模型结构事实";
-  if (tags.includes("logic") && /StateflowTransition|->/i.test(excerpt)) return "状态与模式";
+  if (tags.includes("logic") && /StateflowTransition|State\s+\S+\s*->|状态[^。；;]*->/i.test(excerpt)) return "状态与模式";
   if (tags.includes("state")) return "状态与模式";
   if (tags.includes("threshold")) return "阈值与标定";
   if (tags.includes("derived_signal")) return "派生信号定义";
@@ -318,6 +318,7 @@ function buildCompactModelRequirementView(modelRequirementView = {}, options = {
       strategy: "mrv_compact_generation_v1",
       originalFactCount: facts.length,
       factCount: compactFacts.length,
+      criticalFactCount: compactFacts.filter((fact) => isCriticalCompactFact(fact)).length,
       seedTermCount: seedTerms.length,
       maxFacts,
       maxBytes

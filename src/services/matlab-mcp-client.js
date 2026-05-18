@@ -245,6 +245,10 @@ export class MatlabMcpClient {
     return result;
   }
 
+  async callTool(toolName, args = {}) {
+    return this._callTool(toolName, args);
+  }
+
   /**
    * Analyze an SLX file — main entry point.
    */

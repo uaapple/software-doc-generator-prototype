@@ -236,6 +236,14 @@ export async function createApp() {
 
   async function resolveSkillItemWriteTarget(req) {
     const requestedBundleId = requestField(req, "targetBundleId", "bundleId");
+    const directMode = String(config.skillVersioning?.directActiveSkillItemWrites || "allow").trim();
+    if (!requestedBundleId && (directMode === "block" || directMode === "blocked")) {
+      throw createHttpError(
+        "Direct active skill edits are disabled; provide a candidate targetBundleId.",
+        409,
+        "direct_active_skill_write_blocked"
+      );
+    }
     const bundle = requestedBundleId
       ? await skillBundleService.getBundle(requestedBundleId)
       : await skillBundleService.getDefaultCandidateBundle();
