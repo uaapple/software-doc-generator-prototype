@@ -2970,6 +2970,19 @@ const tests = [
     }
   },
   {
+    name: "Production config keeps runtime data and skills outside release directory",
+    run: async () => {
+      const source = await fs.readFile(new URL("../src/config.js", import.meta.url), "utf8");
+
+      assert.match(source, /process\.env\.APP_DATA_DIR/);
+      assert.match(source, /process\.env\.APP_SKILLS_DIR/);
+      assert.match(source, /projectStoreDir:\s*path\.join\(dataDir,\s*"projects"\)/);
+      assert.match(source, /skillDatabasePath:\s*path\.join\(dataDir,\s*"skills\.sqlite"\)/);
+      assert.match(source, /activeSkillDir:\s*path\.join\(skillRootDir,\s*"active"\)/);
+      assert.match(source, /skillBundleDir:\s*path\.join\(skillRootDir,\s*"bundles"\)/);
+    }
+  },
+  {
     name: "Hermes agent client applies step-specific CLI timeout for document_extract_generate",
     run: async () => {
       await withTempConfig(async () => {
