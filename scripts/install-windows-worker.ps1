@@ -1,25 +1,57 @@
 param(
   [string]$InstallDir = "C:\SoftwareDocWorker",
-  [string]$MatlabExecutable = "C:\Program Files\MATLAB\R2022b_Update_1\bin\matlab.exe",
+  [string]$MatlabExecutable = "C:\Program Files\MATLAB\R2025b\bin\matlab.exe",
+  [string]$MatlabInstallerPath = "",
+  [string]$MatlabInstallerArgs = "",
   [string]$McpServerCommand = "",
+  [string]$McpServerPackagePath = "",
+  [string]$NodeInstallerPath = "",
   [string]$HermesCommand = "hermes",
   [string]$HermesInstallerPath = "",
+  [string]$HermesInstallerArgs = "",
   [string]$MatlabAuthToken = "",
   [string]$HermesAuthToken = "",
   [switch]$SkipTaskRegistration
 )
 
 $ErrorActionPreference = "Stop"
+$Script:RuntimePathEntries = @()
+$Script:NodeHome = ""
 
 function New-Token {
   return (([guid]::NewGuid().ToString("N")) + ([guid]::NewGuid().ToString("N")))
 }
 
-function Resolve-BundleAppDir {
+function Resolve-BundleRoot {
   $scriptDir = Split-Path -Parent $PSCommandPath
-  $bundleRoots = @(
+  $candidates = @(
     $scriptDir,
     (Split-Path -Parent $scriptDir)
+  )
+
+  foreach ($root in $candidates) {
+    if (-not $root) {
+      continue
+    }
+    if (
+      (Test-Path -LiteralPath (Join-Path $root "app\package.json")) -or
+      (Test-Path -LiteralPath (Join-Path $root "package.json")) -or
+      (Test-Path -LiteralPath (Join-Path $root "offline-installers"))
+    ) {
+      return $root
+    }
+  }
+
+  return $scriptDir
+}
+
+$Script:BundleRoot = Resolve-BundleRoot
+$Script:OfflineRoot = Join-Path $Script:BundleRoot "offline-installers"
+
+function Resolve-BundleAppDir {
+  $bundleRoots = @(
+    $Script:BundleRoot,
+    (Split-Path -Parent $Script:BundleRoot)
   )
 
   foreach ($root in $bundleRoots) {
@@ -31,19 +63,325 @@ function Resolve-BundleAppDir {
     if (Test-Path -LiteralPath (Join-Path $bundleAppDir "package.json")) {
       return $bundleAppDir
     }
+
+    if (Test-Path -LiteralPath (Join-Path $root "package.json")) {
+      return $root
+    }
   }
 
-  $repoRoot = Split-Path -Parent $scriptDir
-  if (Test-Path -LiteralPath (Join-Path $repoRoot "package.json")) {
-    return $repoRoot
-  }
   throw "Cannot find app package. Run this script from the worker bundle or repository."
+}
+
+function Add-RuntimePathEntry {
+  param([string]$PathEntry)
+  if (-not $PathEntry -or -not (Test-Path -LiteralPath $PathEntry)) {
+    return
+  }
+  $resolved = (Resolve-Path -LiteralPath $PathEntry).Path
+  if ($Script:RuntimePathEntries -notcontains $resolved) {
+    $Script:RuntimePathEntries += $resolved
+  }
+  $pathItems = @($env:Path -split ";" | Where-Object { $_ })
+  if ($pathItems -notcontains $resolved) {
+    $env:Path = "$resolved;$env:Path"
+  }
+}
+
+function Sync-ProcessPath {
+  $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $combined = @($machinePath, $userPath, $env:Path) -join ";"
+  $env:Path = $combined
+  foreach ($entry in $Script:RuntimePathEntries) {
+    Add-RuntimePathEntry -PathEntry $entry
+  }
+}
+
+function Resolve-CommandPath {
+  param([string]$Command)
+  if (-not $Command) {
+    return ""
+  }
+  if (Test-Path -LiteralPath $Command) {
+    return (Resolve-Path -LiteralPath $Command).Path
+  }
+  $resolved = Get-Command $Command -ErrorAction SilentlyContinue
+  if ($resolved) {
+    return $resolved.Source
+  }
+  return ""
+}
+
+function Test-CommandAvailable {
+  param([string]$Command)
+  return [bool](Resolve-CommandPath -Command $Command)
+}
+
+function Find-FirstFile {
+  param(
+    [string[]]$Directories,
+    [string[]]$Patterns
+  )
+  foreach ($directory in $Directories) {
+    if (-not $directory -or -not (Test-Path -LiteralPath $directory)) {
+      continue
+    }
+    foreach ($pattern in $Patterns) {
+      $match = Get-ChildItem -LiteralPath $directory -Filter $pattern -File -Recurse -ErrorAction SilentlyContinue |
+        Sort-Object FullName |
+        Select-Object -First 1
+      if ($match) {
+        return $match.FullName
+      }
+    }
+  }
+  return ""
+}
+
+function Start-Installer {
+  param(
+    [string]$Path,
+    [string]$Arguments = "",
+    [string]$Name = "installer"
+  )
+  if (-not (Test-Path -LiteralPath $Path)) {
+    throw "$Name not found: $Path"
+  }
+
+  $extension = [IO.Path]::GetExtension($Path).ToLowerInvariant()
+  Write-Host "Running ${Name}: $Path"
+
+  if ($extension -eq ".msi") {
+    $process = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", $Path, "/qn", "/norestart") -Wait -PassThru
+  } elseif ($extension -eq ".ps1") {
+    $commandLine = "-NoProfile -ExecutionPolicy Bypass -File `"$Path`" $Arguments"
+    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $commandLine -Wait -PassThru
+  } elseif ($extension -eq ".cmd" -or $extension -eq ".bat") {
+    $commandLine = "/c `"$Path`" $Arguments"
+    $process = Start-Process -FilePath "cmd.exe" -ArgumentList $commandLine -Wait -PassThru
+  } else {
+    $process = Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru
+  }
+
+  if ($process.ExitCode -notin @(0, 3010)) {
+    throw "$Name failed with exit code $($process.ExitCode): $Path"
+  }
+}
+
+function Install-PortableNode {
+  param([string]$ZipPath)
+  if (-not (Test-Path -LiteralPath $ZipPath)) {
+    throw "Node.js portable zip not found: $ZipPath"
+  }
+
+  $runtimeRoot = Join-Path $InstallDir "runtime\node"
+  if (Test-Path -LiteralPath $runtimeRoot) {
+    Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
+  }
+  New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
+  Expand-Archive -LiteralPath $ZipPath -DestinationPath $runtimeRoot -Force
+
+  $nodeExe = Find-FirstFile -Directories @($runtimeRoot) -Patterns @("node.exe")
+  if (-not $nodeExe) {
+    throw "Node.js portable zip did not contain node.exe: $ZipPath"
+  }
+
+  $nodeHome = Split-Path -Parent $nodeExe
+  $npmCmd = Join-Path $nodeHome "npm.cmd"
+  if (-not (Test-Path -LiteralPath $npmCmd)) {
+    throw "Node.js portable zip did not contain npm.cmd next to node.exe: $ZipPath"
+  }
+
+  $Script:NodeHome = $nodeHome
+  Add-RuntimePathEntry -PathEntry $nodeHome
+}
+
+function Ensure-Node {
+  $nodePath = Resolve-CommandPath -Command "node.exe"
+  $npmPath = Resolve-CommandPath -Command "npm.cmd"
+  if ($nodePath -and $npmPath) {
+    $Script:NodeHome = Split-Path -Parent $nodePath
+    Add-RuntimePathEntry -PathEntry $Script:NodeHome
+    return
+  }
+
+  $nodeSource = $NodeInstallerPath
+  if (-not $nodeSource) {
+    $nodeSource = Find-FirstFile -Directories @(
+      (Join-Path $Script:OfflineRoot "node"),
+      (Join-Path $Script:BundleRoot "node-installer")
+    ) -Patterns @("node-*-win-x64.zip", "node-*-x64.msi", "*.msi", "*.zip")
+  }
+  if (-not $nodeSource) {
+    throw "Node.js was not found and no bundled installer was found. Put node-v22+ x64 MSI or win-x64 zip under offline-installers\node, or pass -NodeInstallerPath."
+  }
+
+  $extension = [IO.Path]::GetExtension($nodeSource).ToLowerInvariant()
+  if ($extension -eq ".zip") {
+    Install-PortableNode -ZipPath $nodeSource
+  } elseif ($extension -eq ".msi") {
+    Start-Installer -Path $nodeSource -Name "Node.js installer"
+    Sync-ProcessPath
+  } else {
+    throw "Unsupported Node.js installer type: $nodeSource"
+  }
+
+  $nodePath = Resolve-CommandPath -Command "node.exe"
+  $npmPath = Resolve-CommandPath -Command "npm.cmd"
+  if (-not $nodePath -or -not $npmPath) {
+    throw "Node.js install completed but node.exe/npm.cmd still cannot be found."
+  }
+  $Script:NodeHome = Split-Path -Parent $nodePath
+  Add-RuntimePathEntry -PathEntry $Script:NodeHome
+}
+
+function Resolve-MatlabInstaller {
+  if ($MatlabInstallerPath) {
+    return $MatlabInstallerPath
+  }
+  return Find-FirstFile -Directories @((Join-Path $Script:OfflineRoot "matlab")) -Patterns @("install.ps1", "setup.exe", "*.cmd", "*.bat", "*.exe")
+}
+
+function Ensure-Matlab {
+  if (Test-Path -LiteralPath $MatlabExecutable) {
+    return
+  }
+
+  $installer = Resolve-MatlabInstaller
+  if ($installer) {
+    Start-Installer -Path $installer -Arguments $MatlabInstallerArgs -Name "MATLAB installer"
+  }
+
+  if (-not (Test-Path -LiteralPath $MatlabExecutable)) {
+    throw "MATLAB executable not found: $MatlabExecutable. The default target is MATLAB R2025b. Install MATLAB first, or bundle its offline installer under offline-installers\matlab and pass silent install args if required."
+  }
+}
+
+function Install-PortableHermes {
+  $portableCommand = Find-FirstFile -Directories @((Join-Path $Script:OfflineRoot "hermes")) -Patterns @("hermes.exe", "hermes.cmd", "hermes.ps1")
+  if (-not $portableCommand) {
+    return ""
+  }
+
+  $sourceRoot = Join-Path $Script:OfflineRoot "hermes"
+  $targetRoot = Join-Path $InstallDir "runtime\hermes"
+  if (Test-Path -LiteralPath $targetRoot) {
+    Remove-Item -LiteralPath $targetRoot -Recurse -Force
+  }
+  New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
+  Copy-Item -Path (Join-Path $sourceRoot "*") -Destination $targetRoot -Recurse -Force
+
+  $targetCommand = Find-FirstFile -Directories @($targetRoot) -Patterns @("hermes.exe", "hermes.cmd", "hermes.ps1")
+  if ($targetCommand) {
+    Add-RuntimePathEntry -PathEntry (Split-Path -Parent $targetCommand)
+  }
+  return $targetCommand
+}
+
+function Ensure-AppRuntimeDirectories {
+  param([string]$TargetAppDir)
+  $directories = @(
+    "data",
+    "data\skill-rules",
+    "data\projects",
+    "data\uploads",
+    "data\uploads\feedback-tickets",
+    "data\generation-task-artifacts",
+    "data\replay-task-artifacts",
+    "data\rejections",
+    "data\replay-tasks",
+    "data\skill-work-orders",
+    "data\feedback-tickets",
+    "data\skill-refinement",
+    "data\skill-refinement\cases",
+    "data\skill-refinement\runs",
+    "data\skill-refinement\evaluations",
+    "data\skill-refinement\audit",
+    "data\skill-refinement\bundles",
+    "data\skill-refinement\bundle-snapshots",
+    "data\skill-refinement\uploads",
+    "tmp",
+    "tmp\hermes-uploads",
+    "tmp\matlab"
+  )
+
+  foreach ($relativePath in $directories) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $TargetAppDir $relativePath) | Out-Null
+  }
+}
+
+function Ensure-Hermes {
+  if (Test-CommandAvailable -Command $HermesCommand) {
+    $resolved = Resolve-CommandPath -Command $HermesCommand
+    if ($resolved) {
+      Add-RuntimePathEntry -PathEntry (Split-Path -Parent $resolved)
+    }
+    return
+  }
+
+  $portableHermes = Install-PortableHermes
+  if ($portableHermes) {
+    $script:HermesCommand = $portableHermes
+    return
+  }
+
+  if ($HermesInstallerPath) {
+    $installerArgs = $HermesInstallerArgs
+    if (-not $installerArgs -and ([IO.Path]::GetExtension($HermesInstallerPath).ToLowerInvariant() -eq ".ps1")) {
+      $installerArgs = "-SkipSetup"
+    }
+    Start-Installer -Path $HermesInstallerPath -Arguments $installerArgs -Name "Hermes CLI installer"
+    Sync-ProcessPath
+
+    if (Test-CommandAvailable -Command $HermesCommand) {
+      $resolved = Resolve-CommandPath -Command $HermesCommand
+      if ($resolved) {
+        Add-RuntimePathEntry -PathEntry (Split-Path -Parent $resolved)
+      }
+      return
+    }
+  }
+
+  Write-Warning "Hermes CLI command '$HermesCommand' was not found. Continuing because the bundled Software Doc Hermes Agent runs as a Node service. Pass -HermesInstallerPath only if an external Hermes CLI is required."
+}
+
+function Resolve-McpServerCommand {
+  param([string]$TargetAppDir)
+  if ($McpServerCommand) {
+    $resolvedMcp = Resolve-CommandPath -Command $McpServerCommand
+    if ($resolvedMcp) {
+      return $resolvedMcp
+    }
+  }
+
+  $targetToolsDir = Join-Path $TargetAppDir "tools"
+  New-Item -ItemType Directory -Force -Path $targetToolsDir | Out-Null
+  $targetMcp = Join-Path $targetToolsDir "matlab-mcp-core-server.exe"
+
+  $candidate = Join-Path $TargetAppDir "tools\matlab-mcp-core-server.exe"
+  if (Test-Path -LiteralPath $candidate) {
+    return $candidate
+  }
+
+  $packagePath = $McpServerPackagePath
+  if (-not $packagePath) {
+    $packagePath = Find-FirstFile -Directories @((Join-Path $Script:OfflineRoot "matlab-mcp")) -Patterns @("matlab-mcp-core-server.exe", "*.exe")
+  }
+  if ($packagePath -and (Test-Path -LiteralPath $packagePath)) {
+    Copy-Item -LiteralPath $packagePath -Destination $targetMcp -Force
+    return $targetMcp
+  }
+
+  throw "MATLAB MCP server executable not found. Put matlab-mcp-core-server.exe under offline-installers\matlab-mcp, or pass -McpServerCommand."
 }
 
 function Write-EnvFile {
   param([string]$Path)
+  $runtimePaths = ($Script:RuntimePathEntries | Where-Object { $_ } | Select-Object -Unique) -join ";"
   $content = @(
     "# Software document generator Windows worker environment",
+    "SOFTWARE_DOC_NODE_HOME=$Script:NodeHome",
+    "SOFTWARE_DOC_RUNTIME_PATHS=$runtimePaths",
     "HERMES_HOST=0.0.0.0",
     "HERMES_PORT=3101",
     "HERMES_TRANSPORT=cli",
@@ -91,54 +429,36 @@ if (-not $HermesAuthToken) {
   $HermesAuthToken = New-Token
 }
 
-if ($HermesInstallerPath) {
-  if (-not (Test-Path -LiteralPath $HermesInstallerPath)) {
-    throw "Hermes installer not found: $HermesInstallerPath"
-  }
-  Start-Process -FilePath $HermesInstallerPath -Wait
-}
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "runtime") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "tmp") | Out-Null
 
-if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
-  throw "Node.js is required but node.exe was not found in PATH."
-}
-if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) {
-  throw "npm.cmd is required but was not found in PATH."
-}
-if (-not (Test-Path -LiteralPath $MatlabExecutable)) {
-  throw "MATLAB executable not found: $MatlabExecutable"
-}
+Ensure-Node
+Ensure-Matlab
+Ensure-Hermes
 
 $sourceAppDir = Resolve-BundleAppDir
 $targetAppDir = Join-Path $InstallDir "app"
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir "tmp") | Out-Null
 
 if (Test-Path -LiteralPath $targetAppDir) {
   Remove-Item -LiteralPath $targetAppDir -Recurse -Force
 }
 Copy-Item -LiteralPath $sourceAppDir -Destination $targetAppDir -Recurse -Force
+Ensure-AppRuntimeDirectories -TargetAppDir $targetAppDir
 
-if (-not $McpServerCommand) {
-  $candidate = Join-Path $targetAppDir "tools\matlab-mcp-core-server.exe"
-  if (Test-Path -LiteralPath $candidate) {
-    $McpServerCommand = $candidate
-  }
-}
-if (-not $McpServerCommand -or -not (Test-Path -LiteralPath $McpServerCommand)) {
-  throw "MATLAB MCP server executable not found. Pass -McpServerCommand C:\path\to\matlab-mcp-core-server.exe"
-}
+$McpServerCommand = Resolve-McpServerCommand -TargetAppDir $targetAppDir
 
 Set-Location $targetAppDir
 if (-not (Test-Path -LiteralPath (Join-Path $targetAppDir "node_modules"))) {
-  npm.cmd ci --omit=dev
+  $npmCmd = Resolve-CommandPath -Command "npm.cmd"
+  if (-not $npmCmd) {
+    throw "npm.cmd is required but was not found after Node.js setup."
+  }
+  & $npmCmd ci --omit=dev
 }
 
 $envFile = Join-Path $InstallDir "software-doc-worker.env"
 Write-EnvFile -Path $envFile
-
-if (-not (Get-Command $HermesCommand -ErrorAction SilentlyContinue)) {
-  Write-Warning "Hermes command '$HermesCommand' was not found in PATH. Install/login Hermes CLI before running generation tasks."
-}
 
 if (-not $SkipTaskRegistration) {
   Register-WorkerTask -TaskName "SoftwareDocHermesAgent" -Service "hermes"
@@ -146,6 +466,9 @@ if (-not $SkipTaskRegistration) {
 }
 
 Write-Host "Windows worker installed at $InstallDir"
+Write-Host "MATLAB executable: $MatlabExecutable"
+Write-Host "MATLAB MCP server: $McpServerCommand"
+Write-Host "Hermes command: $HermesCommand"
 Write-Host ""
 Write-Host "Configure the Linux backend with:"
 Write-Host "HERMES_TRANSPORT=api"

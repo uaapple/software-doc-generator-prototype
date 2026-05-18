@@ -26,13 +26,43 @@ function Import-EnvFile {
   }
 }
 
+function Ensure-AppRuntimeDirectories {
+  param([string]$TargetAppDir)
+  $directories = @(
+    "data",
+    "data\skill-rules",
+    "tmp",
+    "tmp\hermes-uploads",
+    "tmp\matlab"
+  )
+
+  foreach ($relativePath in $directories) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $TargetAppDir $relativePath) | Out-Null
+  }
+}
+
 $appDir = Join-Path $InstallDir "app"
 $envFile = Join-Path $InstallDir "software-doc-worker.env"
 Import-EnvFile -Path $envFile
+
+if ($env:SOFTWARE_DOC_RUNTIME_PATHS) {
+  foreach ($runtimePath in ($env:SOFTWARE_DOC_RUNTIME_PATHS -split ";")) {
+    if ($runtimePath -and (Test-Path -LiteralPath $runtimePath)) {
+      $env:Path = "$runtimePath;$env:Path"
+    }
+  }
+}
+
+$npmCmd = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
+if (-not $npmCmd) {
+  throw "npm.cmd was not found after loading the worker environment."
+}
+
+Ensure-AppRuntimeDirectories -TargetAppDir $appDir
 Set-Location $appDir
 
 if ($Service -eq "hermes") {
-  npm.cmd run hermes:start
+  & $npmCmd run hermes:start
 } else {
-  npm.cmd run matlab-worker:start
+  & $npmCmd run matlab-worker:start
 }
