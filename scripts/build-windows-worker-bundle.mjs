@@ -57,7 +57,8 @@ function copyPath(relativePath, destinationRoot) {
     force: true,
     filter(sourcePath) {
       const normalized = sourcePath.replace(/\\/g, "/");
-      return !normalized.includes("/release-dist/") && !normalized.includes("/.git/");
+      const name = path.basename(sourcePath).toLowerCase();
+      return !normalized.includes("/release-dist/") && !normalized.includes("/.git/") && !name.includes(".tmp-");
     }
   });
 }

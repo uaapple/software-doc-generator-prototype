@@ -13,6 +13,7 @@
     "wiki:dev": "node --disable-warning=ExperimentalWarning --watch src/wiki-server.js",
     "release:zip": "node scripts/build-release-zip.mjs",
     "windows-worker:zip": "node scripts/build-windows-worker-bundle.mjs",
+    "windows-worker:source-zip": "node scripts/build-windows-worker-source-update.mjs",
     "test": "node --disable-warning=ExperimentalWarning tests/run-tests.js && node tests/slx-parser-tests.js",
     "check:wiki": "node scripts/check-wiki.mjs",
     "check:skills-db-diff": "node scripts/check-skills-db-diff.mjs",
