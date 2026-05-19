@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "defaultProfileId": "deepseek-v4-pro",
+  "profiles": [
+    {
+      "id": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "provider": "deepseek",
+      "baseURL": "https://api.deepseek.com",
+      "model": "deepseek-v4-pro",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "docs": "https://api-docs.deepseek.com/zh-cn/"
+    },
+    {
+      "id": "deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "provider": "deepseek",
+      "baseURL": "https://api.deepseek.com",
+      "model": "deepseek-v4-flash",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "docs": "https://api-docs.deepseek.com/zh-cn/"
+    },
+    {
+      "id": "glm-5.1",
+      "displayName": "GLM 5.1",
+      "provider": "zhipu",
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
+      "model": "glm-5.1",
+      "apiKeyEnv": "ZHIPU_API_KEY",
+      "docs": "https://docs.bigmodel.cn/cn/guide/models/text/glm-5.1"
+    }
+  ]
+}

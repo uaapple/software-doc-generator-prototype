@@ -51,6 +51,26 @@ Windows Worker 在安装 MATLAB 的机器上运行，包含两个本地服务：
 
 注意：当前仓库内置的 `tools/matlab-mcp-core-server` 可能不是 Windows 可执行文件。Windows Worker 上需要准备 Windows 版 MATLAB MCP Core Server，并通过 `MATLAB_MCP_SERVER_COMMAND` 指向实际 `.exe`。
 
+Hermes Agent 的 LLM/API 在 Windows VM 本机切换，不写入仓库默认 `.env.defaults`。源码包会随 `scripts\hermes-llm-profiles.json` 下发预置 profile，VM 上的外置配置位于：
+
+```powershell
+C:\SoftwareDocWorker\config\hermes-llm-profiles.json
+C:\SoftwareDocWorker\config\hermes-llm-secrets.env
+C:\SoftwareDocWorker\config\hermes-llm.active.env
+```
+
+切换入口：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\Switch-HermesLlmProfile.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\Switch-HermesLlmProfile.ps1 -Action list
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\Switch-HermesLlmProfile.ps1 -Action set -ProfileId deepseek-v4-pro
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\Switch-HermesLlmProfile.ps1 -Action set -ProfileId deepseek-v4-flash
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\Switch-HermesLlmProfile.ps1 -Action set -ProfileId glm-5.1
+```
+
+不带参数运行脚本会打开上下键菜单：Up/Down 选择，Enter 切换，`T` 测试当前 profile，`Q` 或 Esc 退出。脚本会把选中的 profile 写入 `hermes-llm.active.env`，重启 `SoftwareDocHermesAgent`，并做一次 OpenAI-compatible chat smoke test。后续新增模型/API 时，通过更新 `scripts\hermes-llm-profiles.json` 并重新下发 Windows 源码更新包完成。
+
 生成 Windows Worker 包：
 
 ```powershell

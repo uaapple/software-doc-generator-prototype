@@ -7,9 +7,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Import-EnvFile {
-  param([string]$Path)
+  param(
+    [string]$Path,
+    [switch]$Required
+  )
   if (-not (Test-Path -LiteralPath $Path)) {
-    throw "Environment file not found: $Path"
+    if ($Required) {
+      throw "Environment file not found: $Path"
+    }
+    return
   }
   foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
     $trimmed = $line.Trim()
@@ -43,7 +49,8 @@ function Ensure-AppRuntimeDirectories {
 
 $appDir = Join-Path $InstallDir "app"
 $envFile = Join-Path $InstallDir "software-doc-worker.env"
-Import-EnvFile -Path $envFile
+Import-EnvFile -Path $envFile -Required
+Import-EnvFile -Path (Join-Path $InstallDir "config\hermes-llm.active.env")
 
 if ($env:SOFTWARE_DOC_RUNTIME_PATHS) {
   foreach ($runtimePath in ($env:SOFTWARE_DOC_RUNTIME_PATHS -split ";")) {

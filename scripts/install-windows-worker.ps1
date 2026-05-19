@@ -310,6 +310,26 @@ function Ensure-AppRuntimeDirectories {
   }
 }
 
+function Ensure-HermesLlmConfig {
+  param([string]$TargetAppDir)
+  $configDir = Join-Path $InstallDir "config"
+  New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+  $profilesSource = Join-Path $TargetAppDir "scripts\hermes-llm-profiles.json"
+  if (Test-Path -LiteralPath $profilesSource) {
+    Copy-Item -LiteralPath $profilesSource -Destination (Join-Path $configDir "hermes-llm-profiles.json") -Force
+  }
+}
+
+function Write-HermesLlmMenuLauncher {
+  $launcherPath = Join-Path $InstallDir "Switch-HermesLlm.cmd"
+  $lines = @(
+    "@echo off",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File ""%~dp0app\scripts\Switch-HermesLlmProfile.ps1""",
+    "pause"
+  )
+  $lines | Set-Content -LiteralPath $launcherPath -Encoding ascii
+}
+
 function Ensure-Hermes {
   if (Test-CommandAvailable -Command $HermesCommand) {
     $resolved = Resolve-CommandPath -Command $HermesCommand
@@ -445,6 +465,8 @@ if (Test-Path -LiteralPath $targetAppDir) {
 }
 Copy-Item -LiteralPath $sourceAppDir -Destination $targetAppDir -Recurse -Force
 Ensure-AppRuntimeDirectories -TargetAppDir $targetAppDir
+Ensure-HermesLlmConfig -TargetAppDir $targetAppDir
+Write-HermesLlmMenuLauncher
 
 $McpServerCommand = Resolve-McpServerCommand -TargetAppDir $targetAppDir
 

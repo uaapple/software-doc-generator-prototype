@@ -875,6 +875,18 @@ export async function createHermesApp() {
     });
   });
 
+  app.get("/api/debug/llm", requireHermesAuth, (_req, res) => {
+    res.json({
+      ok: true,
+      profile: process.env.HERMES_LLM_PROFILE || "",
+      provider: process.env.HERMES_LLM_PROVIDER || "",
+      model: config.openai.model,
+      baseURL: config.openai.baseURL || "",
+      apiKeyEnv: process.env.HERMES_LLM_API_KEY_ENV || "",
+      hasApiKey: Boolean(config.openai.apiKey)
+    });
+  });
+
   const executeStepRequest = async (req, res, next) => {
     const startedAt = Date.now();
     try {

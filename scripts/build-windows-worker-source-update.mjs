@@ -136,6 +136,17 @@ try {
     "- C:\\SoftwareDocWorker\\app\\data",
     "- C:\\SoftwareDocWorker\\app\\node_modules when package-lock.json is unchanged",
     "- C:\\SoftwareDocWorker\\app\\tools\\matlab-mcp-core-server.exe",
+    "- C:\\SoftwareDocWorker\\config\\hermes-llm-secrets.env",
+    "- C:\\SoftwareDocWorker\\config\\hermes-llm.active.env",
+    "",
+    "Hermes LLM profile switcher:",
+    "Double-click after update:",
+    "C:\\SoftwareDocWorker\\Switch-HermesLlm.cmd",
+    "",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\SoftwareDocWorker\\app\\scripts\\Switch-HermesLlmProfile.ps1",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\SoftwareDocWorker\\app\\scripts\\Switch-HermesLlmProfile.ps1 -Action list",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\SoftwareDocWorker\\app\\scripts\\Switch-HermesLlmProfile.ps1 -Action set -ProfileId deepseek-v4-pro",
+    "Run the switcher without arguments for the Up/Down interactive menu.",
     "",
     "Use the full software-doc-windows-worker.zip bundle only for first install or prerequisite refresh."
   ]);

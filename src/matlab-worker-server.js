@@ -31,6 +31,7 @@ app.get("/health", (_req, res) => {
 
 app.post("/mcp/tools/analyze_slx", requireAuth, upload.single("slx"), async (req, res) => {
   const uploadedPath = req.file?.path || "";
+  let stagedSlxPath = "";
   try {
     const filePath = uploadedPath || String(req.body?.filePath || "");
     const originalName = req.file?.originalname || req.body?.originalName || path.basename(filePath);
@@ -43,8 +44,9 @@ app.post("/mcp/tools/analyze_slx", requireAuth, upload.single("slx"), async (req
 
     const client = createLocalMatlabClient();
     try {
+      stagedSlxPath = uploadedPath ? await stageUploadedSlxFile(uploadedPath) : filePath;
       const result = await client.analyzeSlx({
-        absolutePath: filePath,
+        absolutePath: stagedSlxPath,
         originalName,
         documentType: req.body?.documentType || "software_requirement"
       });
@@ -70,11 +72,23 @@ app.post("/mcp/tools/analyze_slx", requireAuth, upload.single("slx"), async (req
       }
     });
   } finally {
+    if (stagedSlxPath && stagedSlxPath !== uploadedPath) {
+      await fs.rm(stagedSlxPath, { force: true }).catch(() => {});
+    }
     if (uploadedPath) {
       await fs.rm(uploadedPath, { force: true }).catch(() => {});
     }
   }
 });
+
+async function stageUploadedSlxFile(uploadedPath) {
+  if (String(uploadedPath).toLowerCase().endsWith(".slx")) {
+    return uploadedPath;
+  }
+  const stagedPath = `${uploadedPath}.slx`;
+  await fs.copyFile(uploadedPath, stagedPath);
+  return stagedPath;
+}
 
 function requireAuth(req, res, next) {
   if (!authToken) {

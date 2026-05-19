@@ -117,6 +117,27 @@ function Ensure-AppRuntimeDirectories {
   }
 }
 
+function Sync-HermesLlmProfiles {
+  param([string]$TargetAppDir)
+  $source = Join-Path $TargetAppDir "scripts\hermes-llm-profiles.json"
+  if (-not (Test-Path -LiteralPath $source)) {
+    return
+  }
+  $configDir = Join-Path $InstallDir "config"
+  New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+  Copy-Item -LiteralPath $source -Destination (Join-Path $configDir "hermes-llm-profiles.json") -Force
+}
+
+function Write-HermesLlmMenuLauncher {
+  $launcherPath = Join-Path $InstallDir "Switch-HermesLlm.cmd"
+  $lines = @(
+    "@echo off",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File ""%~dp0app\scripts\Switch-HermesLlmProfile.ps1""",
+    "pause"
+  )
+  $lines | Set-Content -LiteralPath $launcherPath -Encoding ascii
+}
+
 function Backup-ManagedSource {
   param(
     [string]$TargetAppDir,
@@ -171,6 +192,8 @@ foreach ($relativePath in $managedPaths) {
   Copy-ManagedPath -SourceAppDir $sourceAppDir -TargetAppDir $targetAppDir -RelativePath $relativePath
 }
 Ensure-AppRuntimeDirectories -TargetAppDir $targetAppDir
+Sync-HermesLlmProfiles -TargetAppDir $targetAppDir
+Write-HermesLlmMenuLauncher
 
 $nodeModulesPath = Join-Path $targetAppDir "node_modules"
 $shouldInstall = $ForceNpmInstall -or (-not (Test-Path -LiteralPath $nodeModulesPath)) -or ($oldLockHash -ne $newLockHash)
@@ -198,3 +221,5 @@ Write-Host "Install dir: $InstallDir"
 Write-Host "Backup dir: $backupDir"
 Write-Host "Hermes health: http://127.0.0.1:3101/api/health"
 Write-Host "MATLAB worker health: http://127.0.0.1:5100/health"
+Write-Host "Hermes LLM switcher: $targetAppDir\scripts\Switch-HermesLlmProfile.ps1"
+Write-Host "Hermes LLM menu launcher: $InstallDir\Switch-HermesLlm.cmd"
