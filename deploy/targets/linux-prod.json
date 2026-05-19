@@ -1,0 +1,34 @@
+{
+  "id": "linux-prod",
+  "description": "Linux platform package for the web/backend entrypoint that calls remote Hermes and MATLAB worker services.",
+  "releaseBranch": "release/linux-prod",
+  "packagePrefix": "software-doc-generator-linux",
+  "latestAlias": "latest-linux.zip",
+  "includePaths": [
+    ".env.defaults",
+    ".env.linux-prod.example",
+    "README.md",
+    "package.json",
+    "package-lock.json",
+    "src",
+    "public",
+    "wiki",
+    "skills",
+    "scripts",
+    "templates",
+    "docs"
+  ],
+  "excludePaths": [
+    "data",
+    "input",
+    "output",
+    "release-dist",
+    "test-fixtures",
+    "videos",
+    "tools",
+    "scripts/deploy-release.ps1",
+    "scripts/install-windows-services.ps1"
+  ],
+  "copyFiles": [],
+  "runtimeDataPolicy": "Linux production keeps APP_DATA_DIR and APP_SKILLS_DIR outside the code directory and reaches Hermes/MATLAB through remote HTTP endpoints."
+}

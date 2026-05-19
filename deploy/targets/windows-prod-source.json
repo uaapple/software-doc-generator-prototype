@@ -1,0 +1,38 @@
+{
+  "id": "windows-prod-source",
+  "description": "Windows VM source update package without bundled platform-specific MCP binaries or runtime data.",
+  "releaseBranch": "release/windows-prod",
+  "packagePrefix": "software-doc-generator-windows-source",
+  "latestAlias": "latest-windows-source.zip",
+  "includePaths": [
+    ".env.defaults",
+    ".env.windows-prod.example",
+    "README.md",
+    "package.json",
+    "package-lock.json",
+    "src",
+    "public",
+    "wiki",
+    "skills",
+    "scripts",
+    "tools/matlab-functions",
+    "tools/matlab-mcp-extension.json",
+    "templates",
+    "docs"
+  ],
+  "excludePaths": [
+    "data",
+    "input",
+    "output",
+    "release-dist",
+    "test-fixtures",
+    "videos",
+    "tools/matlab-mcp-core-server",
+    "tools/matlab-mcp-core-server.exe"
+  ],
+  "copyFiles": [
+    "scripts/deploy-release.ps1",
+    "scripts/install-windows-services.ps1"
+  ],
+  "runtimeDataPolicy": "Runtime data, mutable skills, and heavyweight local tool binaries are external to this source update package."
+}
