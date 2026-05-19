@@ -80,6 +80,7 @@ await bootstrap();
 
 generateForm.addEventListener("submit", handleGenerate);
 llmProfileSelect.addEventListener("change", renderSelectedProfileHint);
+assetPicker?.addEventListener("click", handleAssetPickerClick);
 manualTitleOutlineAddSectionButton?.addEventListener("click", () => {
   if (!isManualTitleOutlineVisible()) {
     return;
@@ -121,6 +122,82 @@ async function bootstrap() {
     handleError(error);
     disableGenerate();
   }
+}
+
+async function handleAssetPickerClick(event) {
+  const deleteButton = event.target.closest("[data-delete-module-asset]");
+  if (!deleteButton || !assetPicker?.contains(deleteButton)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  await deleteModuleAsset(deleteButton.dataset.deleteModuleAsset || "", deleteButton);
+}
+
+async function deleteModuleAsset(assetId, trigger) {
+  if (!assetId) {
+    return;
+  }
+
+  const asset = (moduleData?.assets || []).find((item) => item.id === assetId);
+  const assetName = asset?.originalName || "该资产";
+  const confirmed = window.confirm(
+    `确认删除模块资产“${assetName}”吗？删除后该文件会从当前模块移除，后续生成不能再选择。`
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  const previousText = trigger?.textContent || "删除";
+  if (trigger) {
+    trigger.disabled = true;
+    trigger.textContent = "删除中";
+  }
+  setStatus(`正在删除模块资产：${assetName}`, true);
+
+  try {
+    const updatedModule = await request(`/api/projects/${projectId}/modules/${moduleId}/assets/${assetId}`, {
+      method: "DELETE"
+    });
+    moduleData = updatedModule;
+    initialization = await request(
+      `/api/projects/${projectId}/modules/${moduleId}/initialization-check?documentType=${encodeURIComponent(pageDocumentType)}`
+    );
+    renderContext();
+    renderAssets();
+    renderManualTitleOutlineEditor();
+    if (hasRunningTask()) {
+      disableGenerate(`当前模块已有进行中的${documentLabel(pageDocumentType)}任务，请先等待任务结束。`);
+    } else {
+      refreshGenerateButtonState();
+    }
+    notifyParentModuleAssetsChanged({ assetId, assetName });
+    setStatus(`已删除模块资产：${assetName}`);
+  } catch (error) {
+    if (trigger) {
+      trigger.disabled = false;
+      trigger.textContent = previousText;
+    }
+    handleError(error);
+  }
+}
+
+function notifyParentModuleAssetsChanged({ assetId = "", assetName = "" } = {}) {
+  if (!window.parent || window.parent === window) {
+    return;
+  }
+  window.parent.postMessage(
+    {
+      type: "module_assets:changed",
+      projectId,
+      moduleId,
+      documentType: pageDocumentType,
+      assetId,
+      assetName
+    },
+    window.location.origin
+  );
 }
 
 async function handleGenerate(event) {
@@ -731,19 +808,10 @@ function handleManualTitleOutlineInput(event) {
 function renderAssets() {
   const assets = moduleData?.assets || [];
   const selectableAssets = getSelectableAssets();
+  const selectableAssetIds = new Set(selectableAssets.map((asset) => asset.id));
   const filteredAssetCount = assets.length - selectableAssets.length;
 
   if (!assets.length) {
-    assetPicker.innerHTML = '<p class="empty-state">\u5f53\u524d\u6a21\u5757\u8fd8\u6ca1\u6709\u8d44\u4ea7\uff0c\u672c\u6b21\u53ef\u76f4\u63a5\u901a\u8fc7\u53f3\u4fa7\u8868\u5355\u4e0a\u4f20\u6587\u4ef6\u3002</p>';
-    return;
-  }
-
-  if (!selectableAssets.length) {
-    if (filteredAssetCount > 0 && isFormalSoftwareRequirementGeneration()) {
-      assetPicker.innerHTML =
-        '<p class="empty-state">\u5f53\u524d\u6a21\u5757\u53ea\u6709\u53c2\u8003\u8f6f\u4ef6\u9700\u6c42\u7c7b\u8d44\u4ea7\uff0c\u4f46\u6b63\u5f0f\u8f6f\u4ef6\u9700\u6c42\u751f\u6210\u4e0d\u4f1a\u4f7f\u7528\u4eba\u5de5\u8303\u4f8b\uff0c\u8bf7\u9009\u62e9\u7cfb\u7edf\u9700\u6c42\u6216\u4ee3\u7801/\u6a21\u578b\u8d44\u4ea7\uff0c\u6216\u5728\u53f3\u4fa7\u8868\u5355\u4e2d\u8865\u5145\u4e0a\u4f20\u3002</p>';
-      return;
-    }
     assetPicker.innerHTML = '<p class="empty-state">\u5f53\u524d\u6a21\u5757\u8fd8\u6ca1\u6709\u8d44\u4ea7\uff0c\u672c\u6b21\u53ef\u76f4\u63a5\u901a\u8fc7\u53f3\u4fa7\u8868\u5355\u4e0a\u4f20\u6587\u4ef6\u3002</p>';
     return;
   }
@@ -752,24 +820,49 @@ function renderAssets() {
     filteredAssetCount > 0 && isFormalSoftwareRequirementGeneration()
       ? `<p class="inline-hint">\u5df2\u81ea\u52a8\u5ffd\u7565 ${filteredAssetCount} \u4e2a\u4eba\u5de5\u8303\u4f8b/\u63d0\u53d6\u8f6f\u4ef6\u9700\u6c42\u8d44\u4ea7\uff0c\u6b63\u5f0f\u8f6f\u4ef6\u9700\u6c42\u751f\u6210\u53ea\u4f7f\u7528\u7cfb\u7edf\u9700\u6c42\u4e0e\u5b9e\u73b0\u8f93\u5165\u3002</p>`
       : "";
+  const noSelectableNote =
+    !selectableAssets.length && filteredAssetCount > 0
+      ? '<p class="inline-hint">当前模块没有可用于本次正式生成的资产；你可以先删除不需要的资产，或通过右侧表单补充上传。</p>'
+      : "";
 
   assetPicker.innerHTML =
     policyNote +
-    selectableAssets
+    noSelectableNote +
+    assets
       .map(
-      (asset) => `
-        <label class="file-item checkbox-item">
-          <input type="checkbox" name="assetIds" value="${asset.id}" checked />
+      (asset) => {
+        const selectable = selectableAssetIds.has(asset.id);
+        return `
+        <div class="file-item module-asset-item${selectable ? "" : " is-unselectable"}">
+          <input
+            class="module-asset-checkbox"
+            type="checkbox"
+            name="assetIds"
+            value="${escapeAttribute(asset.id)}"
+            ${selectable ? "checked" : "disabled"}
+            aria-label="选择资产 ${escapeAttribute(asset.originalName)}"
+          />
           <div class="file-item-copy">
             <div class="file-item-title-row">
-              <strong>${escapeHtml(asset.originalName)}</strong>
-              <span class="mini-pill subtle">${escapeHtml(getRoleLabel(asset.role))}</span>
+              <strong title="${escapeAttribute(asset.originalName)}">${escapeHtml(asset.originalName)}</strong>
+              <span class="file-item-title-badges">
+                <span class="mini-pill subtle">${escapeHtml(getRoleLabel(asset.role))}</span>
+                ${selectable ? "" : '<span class="mini-pill warning">本次忽略</span>'}
+              </span>
             </div>
             <p>\u4e0a\u4f20\u65f6\u95f4\uff1a${formatDateTime(asset.uploadedAt)}</p>
             <p>\u5927\u5c0f\uff1a${formatFileSize(asset.size)}</p>
           </div>
-        </label>
-      `
+          <div class="file-item-actions module-asset-actions">
+            <button
+              class="secondary-button module-asset-delete-button"
+              type="button"
+              data-delete-module-asset="${escapeAttribute(asset.id)}"
+            >删除</button>
+          </div>
+        </div>
+      `;
+      }
     )
     .join("");
 }
@@ -940,4 +1033,8 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replaceAll("`", "&#96;");
 }
