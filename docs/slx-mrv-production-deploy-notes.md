@@ -4,6 +4,7 @@
 
 - 新增 `/slx-parser` 页面，可在模块下上传 `.slx` 并生成 `modelRequirementView JSON`。
 - SLX 解析结果会进入模块资产，角色为 `model_requirement_view_json`。
+- SLX 解析默认使用 Simulink Agentic Toolkit 的 `model_overview`、`model_read`、`model_query_params`、`model_resolve_params` 生成语义化模型事实；旧 `analyze_slx.m` 仅作为 legacy backend。
 - 软件需求生成时支持 `系统需求 + modelRequirementView JSON`，不再必须选择 `.c` 文件。
 - 生成前会构建 compact MRV，只保留需求生成需要的模型事实，例如派生信号、Stateflow transition guard、关键阈值和输出动作，避免把完整 MRV 全量喂给 Hermes。
 - JSON-only 生成 prompt 已明确要求引用 SLX/MRV `sourceFactIds`，并避免假设或请求 `.c`。
@@ -11,16 +12,17 @@
 ## 部署前置条件
 
 - 目标机器需要能运行本机 Hermes CLI，软件需求生成仍走 Hermes 任务链路。
-- 目标机器需要安装 MATLAB，并能通过 MATLAB MCP server 启动 `nodesktop` 会话解析 `.slx`。
-- 默认 MATLAB 路径为 `/Applications/MATLAB_R2026a.app`。如果生产机路径不同，需要设置：
-  - `MATLAB_ROOT=/实际/MATLAB.app`
-- 默认 MCP server 使用仓库内的 `tools/matlab-mcp-core-server`。如果生产机不是当前 macOS 架构，可能需要替换该二进制或设置：
+- 目标机器需要安装 MATLAB、Simulink 和 Simulink Agentic Toolkit。
+- 默认 SLX 解析使用 SATK attach 模式。解析前需要打开 MATLAB，并运行：
+  - `addpath("~/.matlab/agentic-toolkits/simulink"); satk_initialize`
+- 默认 MCP server 优先使用 `~/.matlab/agentic-toolkits/bin/matlab-mcp-core-server`，缺失时回退到仓库内 `tools/matlab-mcp-core-server`。如果生产机不是当前 macOS 架构，可能需要替换该二进制或设置：
   - `MATLAB_MCP_SERVER_COMMAND=/path/to/matlab-mcp-core-server`
-- `tools/matlab-functions/analyze_slx.m` 必须随代码一起部署；server 启动时会把该目录作为初始工作目录。
+- 如需临时回到旧解析器，可设置 `SLX_ANALYSIS_BACKEND=legacy`；此时仍需要部署 `tools/matlab-functions/analyze_slx.m`。
 
 ## 关键环境变量
 
-- `MATLAB_ROOT`：MATLAB 安装路径。
+- `SLX_ANALYSIS_BACKEND`：SLX 解析后端，默认 `satk`；可设为 `legacy` 回退旧 `analyze_slx.m`。
+- `SIMULINK_AGENTIC_TOOLKIT_ROOT`：SATK 安装目录，默认 `~/.matlab/agentic-toolkits/simulink`。
 - `MATLAB_MCP_TIMEOUT_MS`：SLX 解析超时，默认 `300000`。
 - `MATLAB_MCP_TMPDIR`：MATLAB MCP 临时目录，默认 `/tmp`。
 - `HERMES_MAX_MODEL_REQUIREMENT_FACTS`：生成前 compact MRV 最大 facts，默认 `100`。
@@ -28,8 +30,8 @@
 
 ## 部署注意点
 
-- 不需要预先手动打开 MATLAB；后端会通过 MCP server 启动 MATLAB。若生产机 GUI/权限策略阻止 MATLAB 启动，需要先在机器上验证 `MATLAB_ROOT` 和 server 权限。
-- `.slx` 解析会比普通文档提取慢，首次启动 MATLAB 更慢；生产测试时建议先用一个小模型做连通性验证。
+- 默认 SATK 模式需要预先手动打开 MATLAB 并运行 `satk_initialize`；如果 MCP server 无法连接，优先检查 MATLAB 当前会话是否已 share。
+- `.slx` 解析会比普通文档提取慢，首次连接 MATLAB 更慢；生产测试时建议先用一个小模型做连通性验证。
 - 当前提交不包含本机测试产生的 `data/uploads`、`input/`、`output/`、`videos/` 等运行产物。生产环境应上传自己的 `.slx` 重新解析。
 - 如果生产机已有持久化 `data/`，部署代码时不要覆盖生产 `data/projects`、`data/uploads`、`data/skills.sqlite`，除非明确要同步本机测试数据。
 - Hermes token 统计存在 session 级波动。判断 compact 是否生效时，优先看生成任务 debug 中的 compact MRV fact 数/大小，以及 `sourceRefs` 是否来自 `simulink_slx`。

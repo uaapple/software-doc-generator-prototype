@@ -218,28 +218,20 @@ export class MatlabMcpClient {
       arguments: args
     });
 
-    // Extract text content from MCP tool result
-    if (result && Array.isArray(result.content)) {
-      for (const item of result.content) {
-        if (item.type === "text" && item.text) {
-          try {
-            return JSON.parse(item.text);
-          } catch {
-            const embeddedJson = extractJsonObjectText(item.text);
-            if (embeddedJson) {
-              try {
-                return JSON.parse(embeddedJson);
-              } catch {
-                return item.text;
-              }
-            }
-            return item.text;
-          }
-        }
-      }
-    }
+    return normalizeToolResult(result);
+  }
 
-    return result;
+  /**
+   * Call an MCP tool by name. Used by the SATK-backed SLX analyzer.
+   */
+  async callTool(toolName, args = {}) {
+    if (!toolName) {
+      throw new MatlabMcpError("MISSING_TOOL", "MATLAB MCP tool name is required");
+    }
+    if (this.transport === "http") {
+      return this._callToolHttp(toolName, args);
+    }
+    return this._callTool(toolName, args);
   }
 
   /**
@@ -262,7 +254,7 @@ export class MatlabMcpClient {
    */
   async _analyzeSlxStdio({ absolutePath, documentType }) {
     try {
-      const result = await this._callTool("analyze_slx", {
+      const result = await this.callTool("analyze_slx", {
         filePath: absolutePath,
         outputFormat: "model_fact_bundle"
       });
@@ -343,6 +335,62 @@ export class MatlabMcpClient {
     });
   }
 
+  async _callToolHttp(toolName, args = {}) {
+    const body = JSON.stringify(args || {});
+    const url = new URL(`/mcp/tools/${encodeURIComponent(toolName)}`, this.baseURL);
+
+    return new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          hostname: url.hostname,
+          port: url.port,
+          path: url.pathname,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body)
+          },
+          timeout: this.timeoutMs
+        },
+        (res) => {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            const raw = Buffer.concat(chunks).toString("utf8");
+            let parsed;
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              reject(new MatlabMcpError("INVALID_RESPONSE", `MATLAB MCP returned non-JSON: ${raw.slice(0, 200)}`));
+              return;
+            }
+
+            if (res.statusCode >= 400 || parsed.error) {
+              const code = parsed.error?.code || `HTTP_${res.statusCode}`;
+              const message = parsed.error?.message || parsed.message || `MATLAB MCP request failed with status ${res.statusCode}`;
+              reject(new MatlabMcpError(code, message));
+              return;
+            }
+
+            resolve(normalizeToolResult(parsed.result || parsed));
+          });
+        }
+      );
+
+      req.on("error", (err) => {
+        reject(new MatlabMcpError("CONNECTION_ERROR", `Cannot connect to MATLAB MCP at ${this.baseURL}: ${err.message}`));
+      });
+
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new MatlabMcpError("TIMEOUT", `MATLAB MCP request timed out after ${this.timeoutMs}ms`));
+      });
+
+      req.write(body);
+      req.end();
+    });
+  }
+
   /**
    * Gracefully shut down the MCP server process.
    */
@@ -369,6 +417,30 @@ function extractJsonObjectText(text = "") {
     return "";
   }
   return raw.slice(start, end + 1);
+}
+
+function normalizeToolResult(result) {
+  if (result && Array.isArray(result.content)) {
+    for (const item of result.content) {
+      if (item.type === "text" && item.text) {
+        try {
+          return JSON.parse(item.text);
+        } catch {
+          const embeddedJson = extractJsonObjectText(item.text);
+          if (embeddedJson) {
+            try {
+              return JSON.parse(embeddedJson);
+            } catch {
+              return item.text;
+            }
+          }
+          return item.text;
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 export class MatlabMcpError extends Error {

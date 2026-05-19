@@ -17,8 +17,7 @@ const FIELD_TAG_MAP = {
   derivedSignals: "derived_signal",
   logicRules: "logic",
   timing: "timing",
-  diagnostics: "diagnostic",
-  traceRefs: "interface"
+  diagnostics: "diagnostic"
 };
 
 const EVIDENCE_FIELDS = [
@@ -29,8 +28,7 @@ const EVIDENCE_FIELDS = [
   "derivedSignals",
   "logicRules",
   "timing",
-  "diagnostics",
-  "traceRefs"
+  "diagnostics"
 ];
 
 export class SlxModelFactAdapter {

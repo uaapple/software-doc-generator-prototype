@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 
 const MODEL_REQUIREMENT_VIEW_VERSION = "1.0";
 const DEFAULT_COMPACT_MAX_FACTS = 100;
-const DEFAULT_COMPACT_MAX_BYTES = 12000;
+const DEFAULT_COMPACT_MAX_BYTES = 48000;
 const COMPACT_MIN_DERIVED_FACTS = 8;
 const COMPACT_MIN_STATE_FACTS = 8;
-const CRITICAL_COMPACT_FACT_PATTERN = /派生信号\s+HvCoorn_b(StartUpReq|Wake2NetMan|NetMan2PwrShut|AftRun2NetMan|Init2AftRun|ShutDisCh2ShutErr|VehNetWkupEna)\b|条件:[^\n]*HvCoorn_b(StartUpReq|Wake2NetMan|NetMan2PwrShut|AftRun2NetMan|Init2AftRun)\b|after\s*\(\s*2\s*,\s*tick\s*\)|SOCWU|VCCM_bNetMaintn|智能补电|补电|休眠|唤醒|失败|11\.8|10\.5|70%?|20分钟/i;
+const CRITICAL_COMPACT_FACT_PATTERN =
+  /派生信号\s+HvCoorn_b(StartUpReq|Wake2NetMan|NetMan2PwrShut|AftRun2NetMan|Init2AftRun|ShutDisCh2ShutErr|VehNetWkupEna|AllwShutNet|AllwSlep|TimerWkupReq|TimerWkupReqEEW|SocWkup|SocWkupEEW|LbmsLvBatMntnReq|RemLvBatMntnReq|HvRlyOpenAct)\b|条件:[^\n]*HvCoorn_b(StartUpReq|Wake2NetMan|NetMan2PwrShut|AftRun2NetMan|Init2AftRun|AllwShutNet|AllwSlep|TimerWkupReq|SocWkup)\b|HvCoorn_(ctSmtBatMntnFailEEW|ctSmtBatMntnSucsEEW|stRemLvBatMntnFailRsn|stRemLvBatMntnFailRsnEEW|pctLbmsSocMntnThd|stDCDCModeReq|bDCDCHvilErr)|DCDC|DCBuck|Buck|B9|Mntn|SOCWU|VCCM_bNetMaintn|TimerWakeUp|TimerWkup|AllwShutNet|AllwSlep|after\s*\(\s*2\s*,\s*tick\s*\)|timer\s*[<>]=?\s*10|智能补电|补电|休眠|唤醒|失败|11\.8|10\.5|13V|70%?|90%?|20分钟|2小时|15s/i;
 const COMPACT_TOPIC_CAPS = {
   系统需求事实: 36,
   派生信号定义: 28,
@@ -118,8 +119,7 @@ function modelFactBundleToEvidenceItems(bundle = {}, extraction = {}) {
     ["derivedSignals", "derived_signal"],
     ["logicRules", "logic"],
     ["timing", "timing"],
-    ["diagnostics", "diagnostic"],
-    ["traceRefs", "interface"]
+    ["diagnostics", "diagnostic"]
   ];
 
   return fields.flatMap(([field, tag]) =>
@@ -213,7 +213,7 @@ function inferTopic(evidence = {}, excerpt = "", tags = []) {
   const role = evidence.fileRole || "";
   if (tags.includes("interface")) return "接口与信号";
   if (tags.includes("structure")) return "模型结构事实";
-  if (tags.includes("logic") && /StateflowTransition|->/i.test(excerpt)) return "状态与模式";
+  if (tags.includes("logic") && /StateflowTransition/i.test(excerpt)) return "状态与模式";
   if (tags.includes("state")) return "状态与模式";
   if (tags.includes("threshold")) return "阈值与标定";
   if (tags.includes("derived_signal")) return "派生信号定义";
@@ -305,6 +305,7 @@ function buildCompactModelRequirementView(modelRequirementView = {}, options = {
       addCompactFact(item, selected, selectedIds, topicCounts);
     }
   }
+  addCriticalCompactFacts(scoredFacts, selected, selectedIds, topicCounts, maxFacts);
 
   let compactFacts = selected
     .sort((a, b) => a.index - b.index)
@@ -318,6 +319,7 @@ function buildCompactModelRequirementView(modelRequirementView = {}, options = {
       strategy: "mrv_compact_generation_v1",
       originalFactCount: facts.length,
       factCount: compactFacts.length,
+      criticalFactCount: compactFacts.filter((fact) => isCriticalCompactFact(fact)).length,
       seedTermCount: seedTerms.length,
       maxFacts,
       maxBytes
@@ -330,9 +332,18 @@ function buildCompactModelRequirementView(modelRequirementView = {}, options = {
     if (removableIndex < 0) break;
     compact.facts.splice(removableIndex, 1);
     compact.compactForGeneration.factCount = compact.facts.length;
+    compact.compactForGeneration.criticalFactCount = compact.facts.filter((fact) => isCriticalCompactFact(fact)).length;
   }
 
   return compact;
+}
+
+function addCriticalCompactFacts(scoredFacts = [], selected = [], selectedIds = new Set(), topicCounts = new Map(), maxFacts = DEFAULT_COMPACT_MAX_FACTS) {
+  for (const item of scoredFacts) {
+    if (selected.length >= maxFacts) break;
+    if (!isCriticalCompactFact(item.fact)) continue;
+    addCompactFact(item, selected, selectedIds, topicCounts);
+  }
 }
 
 function addCompactFact(item, selected, selectedIds, topicCounts) {
@@ -466,6 +477,10 @@ function scoreFactForGeneration(fact = {}, seedTerms = []) {
   }
 
   if (isSystemRequirementFact(fact)) {
+    score += 80;
+    mandatory = true;
+  }
+  if (isCriticalCompactFact(fact)) {
     score += 80;
     mandatory = true;
   }
