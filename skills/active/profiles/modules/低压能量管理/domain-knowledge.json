@@ -60,6 +60,40 @@
         "相关代码语义",
         "相关既有技能规则"
       ]
+    },
+    {
+      "domain": "embedded_vcu",
+      "subdomain": "低压能量管理",
+      "sectionHints": [
+        "智能补电激活条件清单",
+        "智能补电激活输出",
+        "未激活与无效值边界"
+      ],
+      "writingPattern": "智能补电激活需求应显式覆盖前置场景和全部门槛：VCU已被唤醒、ZCUL_SystemPowerMode=0x0 OFF、高压未连接、连续补电失败计数小于3、BMS2_N_SOC>10%，并满足以下任一低压电池触发条件：EBS_SOC≤70%且EBS_SOC_STATE≤10%，或KL15 OFF持续大于20分钟且EBS_U_BATT<11.8V。激活后应写清执行上高压流程，VCU_IntelligentChgSt=0x1 Active，VCCM_SOCWU_Ena=0x1 Enabled。若激活条件不满足，应写清VCU_IntelligentChgSt保持Inactive或Not Active，VCCM_SOCWU_Ena保持Disabled；EBS_SOC或EBS_U_BATT为0/初始值时不得触发智能补电。正式生成依据仍以系统需求、MRV/SLX模型事实和模块规则为准，不把人工范例资产作为源证据。",
+      "targetStyle": "激活路径清单式软件需求风格，前置条件、任一触发条件、状态输出、上高压动作和否则路径分开表达。",
+      "sourceBasis": [
+        "系统需求",
+        "MRV模型事实",
+        "SLX语义事实",
+        "模块级规则沉淀"
+      ]
+    },
+    {
+      "domain": "embedded_vcu",
+      "subdomain": "低压能量管理",
+      "sectionHints": [
+        "智能补电退出条件清单",
+        "退出后动作与失败计数",
+        "重新允许与复位条件"
+      ],
+      "writingPattern": "智能补电退出需求应覆盖以下任一退出条件：补电持续20分钟且EBS_SOC≥90%且EBS_SOC_STATE≤10%；KL15由OFF切换为ON；BMS2_N_SOC≤10%；激活持续时间达到2小时；出现需要下高压的故障；激活后15s内DCDC未反馈0x1 Buck；EBS_U_BATT<13V持续15s，若EBS信号丢失则使用内部KL30电压判断。退出动作应按条件分组写清：SOC达标退出时清零失败计数、下高压、进入休眠并保持VCCM_SOCWU_Ena Enabled；KL15 OFF->ON退出时清零失败计数、保持高压连接并保持Enabled；BMS2_N_SOC≤10%退出时保持失败计数、下高压并进入休眠、VCCM_SOCWU_Ena Disabled，待BMS2_N_SOC>10.5%或OFF->ON后复位；2小时超时退出时若EBS_SOC>70%则清零失败计数，若EBS_SOC≤70%则保持失败计数，并设置VCU_TimerWakeUp_Req=0x1、VCU_bAllwShutNet=0x1、VCU_bAllwSlep=0x1、下高压并休眠；故障、DCDC未进入Buck或低压电压不足退出时失败计数+1、VCCM_SOCWU_Ena Disabled、下高压并休眠，后续仅在再次满足激活条件时允许重启，OFF->ON、激活成功或B9条件可复位失败计数。正式生成不得把人工范例资产作为事实来源。",
+      "targetStyle": "退出路径矩阵式软件需求风格，退出条件、计数处理、使能信号、高压动作、休眠动作和复位条件逐项对应。",
+      "sourceBasis": [
+        "系统需求",
+        "MRV模型事实",
+        "SLX原始XML语义扫描",
+        "模块级规则沉淀"
+      ]
     }
   ],
   "antiPatterns": [
