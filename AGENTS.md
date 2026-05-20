@@ -1,0 +1,65 @@
+# 全局协作约定
+
+- 以后由 Codex 生成的 Git commit message 默认使用中文，除非用户明确要求使用其他语言。
+
+# Codex 开发提交约束
+
+本项目生产部署分为 `release/linux-prod` 和 `release/windows-prod`。Mac 开发环境可以 all-in-one 运行后端、Hermes Agent、MATLAB/MCP，但 Codex 在开发分支提交时必须显式维护部署边界。
+
+每次修改代码时，Codex 必须优先判断改动归属：
+
+- `linux`: 平台后端、前端、项目管理、任务调度、上传下载、调用远端 Hermes/MATLAB 服务。
+- `windows`: Hermes Agent、MATLAB Worker、MATLAB/MCP、SLX/SATK 解析、Windows 部署脚本。
+- `shared`: 配置、协议、schema、通用服务、MRV/事实模型、两边都需要的脚本。
+- `dev-only`: 测试夹具、实验材料、验证脚本，不进入生产 release。
+- `runtime/local`: `.env`、`.mcp.json`、`data/**`、`output/**`、`videos/**`、`input/**` 等，不提交或不进入 release。
+
+提交前必须运行：
+
+```bash
+npm run classify:changes -- --allow-ambiguous
+```
+
+不得把以下内容提交到功能提交中：
+
+- `.mcp.json`
+- `.env`
+- `data/projects/**`
+- `data/uploads/**`
+- `data/rejections/**`
+- `data/skills.sqlite`
+- `data/skill-rules/**`
+- `output/**`
+- `videos/**`
+- `input/**`
+- `release-dist/**`
+- `test-fixtures/**/artifacts/**`
+
+如果新增文件类型或目录，必须判断是否需要更新：
+
+- `deploy/ownership.yml`
+- `deploy/targets/linux-prod.json`
+- `deploy/targets/windows-prod-full.json`
+- `deploy/targets/windows-prod-source.json`
+
+提交时尽量按部署归属拆分 commit：
+
+- Linux 平台能力单独提交。
+- Windows/MATLAB/Hermes 能力单独提交。
+- shared 协议/配置单独提交。
+- dev-only 夹具或验证材料单独提交。
+
+每次涉及代码或部署相关改动的最终回复必须包含部署拆分说明：
+
+```text
+Deployment split:
+- linux-prod: ...
+- windows-prod: ...
+- shared: ...
+- dev-only: ...
+- excluded runtime/local: ...
+```
+
+如果本次改动会改变部署方式、运行环境变量、release 包内容或拆分规则，必须同步更新：
+
+- `docs/deployment-split-handoff.md`
