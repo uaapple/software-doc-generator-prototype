@@ -107,6 +107,14 @@ try {
     path.join(projectRoot, "scripts", "update-windows-worker-source.ps1"),
     path.join(bundleRoot, "Update-WindowsWorkerSource.ps1")
   );
+  fs.copyFileSync(
+    path.join(projectRoot, "scripts", "Deploy-WindowsWorkerSourceUpdate.ps1"),
+    path.join(bundleRoot, "Deploy-WindowsWorkerSourceUpdate.ps1")
+  );
+  fs.copyFileSync(
+    path.join(projectRoot, "scripts", "Deploy-WindowsWorkerSourceUpdate.cmd"),
+    path.join(bundleRoot, "Deploy-WindowsWorkerSourceUpdate.cmd")
+  );
 
   const branch = gitValue(["rev-parse", "--abbrev-ref", "HEAD"]);
   const commit = gitValue(["rev-parse", "HEAD"]);
@@ -125,6 +133,13 @@ try {
   writeText(path.join(bundleRoot, "README.txt"), [
     "Software Doc Windows worker source update package",
     "",
+    "One-click deployment on the Windows VM:",
+    "1. Copy this zip to C:\\temp.",
+    "2. Double-click Deploy-WindowsWorkerSourceUpdate.cmd from the same folder, or run the launcher already installed at C:\\SoftwareDocWorker\\Deploy-WindowsWorkerSourceUpdate.cmd.",
+    "",
+    "The deployer automatically finds the newest software-doc-windows-worker-source*.zip in C:\\temp, expands it, applies the update to C:\\SoftwareDocWorker, restarts worker tasks, and checks health.",
+    "",
+    "Manual fallback:",
     "Copy this zip to the Windows VM, expand it, then run from an elevated PowerShell:",
     "powershell -NoProfile -ExecutionPolicy Bypass -File .\\Update-WindowsWorkerSource.ps1",
     "",
@@ -142,6 +157,7 @@ try {
     "Hermes LLM profile switcher:",
     "Double-click after update:",
     "C:\\SoftwareDocWorker\\Switch-HermesLlm.cmd",
+    "C:\\SoftwareDocWorker\\Deploy-WindowsWorkerSourceUpdate.cmd",
     "",
     "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\SoftwareDocWorker\\app\\scripts\\Switch-HermesLlmProfile.ps1",
     "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\SoftwareDocWorker\\app\\scripts\\Switch-HermesLlmProfile.ps1 -Action list",
@@ -153,8 +169,18 @@ try {
 
   const zipPath = path.join(outputDir, "software-doc-windows-worker-source.zip");
   zipDirectory(bundleRoot, zipPath);
+  fs.copyFileSync(
+    path.join(projectRoot, "scripts", "Deploy-WindowsWorkerSourceUpdate.ps1"),
+    path.join(outputDir, "Deploy-WindowsWorkerSourceUpdate.ps1")
+  );
+  fs.copyFileSync(
+    path.join(projectRoot, "scripts", "Deploy-WindowsWorkerSourceUpdate.cmd"),
+    path.join(outputDir, "Deploy-WindowsWorkerSourceUpdate.cmd")
+  );
   console.log("Windows worker source update bundle created:");
   console.log(zipPath);
+  console.log("One-click deployer created:");
+  console.log(path.join(outputDir, "Deploy-WindowsWorkerSourceUpdate.cmd"));
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }

@@ -138,6 +138,16 @@ function Write-HermesLlmMenuLauncher {
   $lines | Set-Content -LiteralPath $launcherPath -Encoding ascii
 }
 
+function Write-SourceUpdateDeployerLauncher {
+  $launcherPath = Join-Path $InstallDir "Deploy-WindowsWorkerSourceUpdate.cmd"
+  $lines = @(
+    "@echo off",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File ""%~dp0app\scripts\Deploy-WindowsWorkerSourceUpdate.ps1""",
+    "pause"
+  )
+  $lines | Set-Content -LiteralPath $launcherPath -Encoding ascii
+}
+
 function Backup-ManagedSource {
   param(
     [string]$TargetAppDir,
@@ -194,6 +204,7 @@ foreach ($relativePath in $managedPaths) {
 Ensure-AppRuntimeDirectories -TargetAppDir $targetAppDir
 Sync-HermesLlmProfiles -TargetAppDir $targetAppDir
 Write-HermesLlmMenuLauncher
+Write-SourceUpdateDeployerLauncher
 
 $nodeModulesPath = Join-Path $targetAppDir "node_modules"
 $shouldInstall = $ForceNpmInstall -or (-not (Test-Path -LiteralPath $nodeModulesPath)) -or ($oldLockHash -ne $newLockHash)
@@ -223,3 +234,4 @@ Write-Host "Hermes health: http://127.0.0.1:3101/api/health"
 Write-Host "MATLAB worker health: http://127.0.0.1:5100/health"
 Write-Host "Hermes LLM switcher: $targetAppDir\scripts\Switch-HermesLlmProfile.ps1"
 Write-Host "Hermes LLM menu launcher: $InstallDir\Switch-HermesLlm.cmd"
+Write-Host "Source update deployer: $InstallDir\Deploy-WindowsWorkerSourceUpdate.cmd"

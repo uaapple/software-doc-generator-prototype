@@ -86,6 +86,20 @@ npm run windows-worker:zip
 
 如果不提供安装器，Windows Worker 包仍包含本项目的 Hermes Agent 服务脚本，默认调用 VM `PATH` 中已有的 `hermes` 命令。
 
+日常源码更新只需要使用 source update 包：
+
+```powershell
+npm run windows-worker:source-zip
+```
+
+一键部署方式：
+
+1. 将 `software-doc-windows-worker-source.zip` 拷贝到 Windows VM 的 `C:\temp`。
+2. 双击 `C:\SoftwareDocWorker\Deploy-WindowsWorkerSourceUpdate.cmd`。
+3. 部署器会自动选择 `C:\temp` 下最新的 `software-doc-windows-worker-source*.zip`，解压、更新 `C:\SoftwareDocWorker`、重启 Hermes/MATLAB Worker 计划任务，并检查 `http://127.0.0.1:3101/api/health` 与 `http://127.0.0.1:5100/health`。
+
+如果是首次使用部署器，也可以把 source update 包根目录里的 `Deploy-WindowsWorkerSourceUpdate.cmd` / `Deploy-WindowsWorkerSourceUpdate.ps1` 一起放到 `C:\temp` 后双击运行。部署完成后，该入口会被安装到 `C:\SoftwareDocWorker` 供后续复用。
+
 把 `release-dist/windows-worker/software-doc-windows-worker.zip` 解压到 Windows VM 后执行：
 
 ```powershell

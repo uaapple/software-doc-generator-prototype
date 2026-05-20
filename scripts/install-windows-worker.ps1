@@ -330,6 +330,16 @@ function Write-HermesLlmMenuLauncher {
   $lines | Set-Content -LiteralPath $launcherPath -Encoding ascii
 }
 
+function Write-SourceUpdateDeployerLauncher {
+  $launcherPath = Join-Path $InstallDir "Deploy-WindowsWorkerSourceUpdate.cmd"
+  $lines = @(
+    "@echo off",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File ""%~dp0app\scripts\Deploy-WindowsWorkerSourceUpdate.ps1""",
+    "pause"
+  )
+  $lines | Set-Content -LiteralPath $launcherPath -Encoding ascii
+}
+
 function Ensure-Hermes {
   if (Test-CommandAvailable -Command $HermesCommand) {
     $resolved = Resolve-CommandPath -Command $HermesCommand
@@ -467,6 +477,7 @@ Copy-Item -LiteralPath $sourceAppDir -Destination $targetAppDir -Recurse -Force
 Ensure-AppRuntimeDirectories -TargetAppDir $targetAppDir
 Ensure-HermesLlmConfig -TargetAppDir $targetAppDir
 Write-HermesLlmMenuLauncher
+Write-SourceUpdateDeployerLauncher
 
 $McpServerCommand = Resolve-McpServerCommand -TargetAppDir $targetAppDir
 
