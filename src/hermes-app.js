@@ -72,6 +72,18 @@ function safeUploadRelativePath(value = "") {
   return normalized || "uploaded-file";
 }
 
+function isMatlabIdentifier(value = "") {
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(String(value || ""));
+}
+
+function matlabSafeSlxFileName(value = "", fallback = "model") {
+  const parsed = path.parse(String(value || ""));
+  const candidate = parsed.name || fallback;
+  const normalized = candidate.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  const modelName = isMatlabIdentifier(normalized) ? normalized : fallback;
+  return `${modelName}.slx`;
+}
+
 function getHermesUploadTempDir() {
   return config.hermes.uploadTempDir || path.join(config.rootDir || process.cwd(), "tmp", "hermes-agent-uploads");
 }
@@ -160,10 +172,19 @@ async function prepareMultipartStepPayload(req) {
     if (!mapping) {
       throw createHttpError("Multipart upload has an invalid root index", 400, "hermes_upload_root_invalid");
     }
+    const uploadName = fileEntry?.relativePath || upload.originalname || "";
     const targetPath =
       mapping.type === "file"
-        ? mapping.remoteRoot
-        : path.join(mapping.remoteRoot, safeUploadRelativePath(fileEntry?.relativePath || upload.originalname || ""));
+        ? path.join(
+            path.dirname(mapping.remoteRoot),
+            String(uploadName).toLowerCase().endsWith(".slx")
+              ? matlabSafeSlxFileName(uploadName, `model_${rootIndex}`)
+              : safeUploadRelativePath(uploadName || path.basename(mapping.remoteRoot))
+          )
+        : path.join(mapping.remoteRoot, safeUploadRelativePath(uploadName));
+    if (mapping.type === "file") {
+      mapping.remoteRoot = targetPath;
+    }
     await moveFile(upload.path, targetPath);
   }
 
@@ -1142,7 +1163,7 @@ export async function createHermesApp() {
       retainUploadedFiles =
         prepared.payload?.stepType === "windows_worker_probe" &&
         prepared.payload?.inputArtifact?.retainUploadedFiles === true;
-      return executeStepRequest(req, res, next);
+      return await executeStepRequest(req, res, next);
     } catch (error) {
       return next(error);
     } finally {

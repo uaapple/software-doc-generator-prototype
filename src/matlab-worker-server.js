@@ -3,6 +3,7 @@ import multer from "multer";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { MatlabMcpClient, MatlabMcpError } from "./services/matlab-mcp-client.js";
 import { validateModelFactBundle } from "./services/model-fact-bundle.js";
@@ -44,7 +45,7 @@ app.post("/mcp/tools/analyze_slx", requireAuth, upload.single("slx"), async (req
 
     const client = createLocalMatlabClient();
     try {
-      stagedSlxPath = uploadedPath ? await stageUploadedSlxFile(uploadedPath) : filePath;
+      stagedSlxPath = uploadedPath ? await stageUploadedSlxFile(uploadedPath, originalName) : filePath;
       const result = await client.analyzeSlx({
         absolutePath: stagedSlxPath,
         originalName,
@@ -81,13 +82,27 @@ app.post("/mcp/tools/analyze_slx", requireAuth, upload.single("slx"), async (req
   }
 });
 
-async function stageUploadedSlxFile(uploadedPath) {
-  if (String(uploadedPath).toLowerCase().endsWith(".slx")) {
+async function stageUploadedSlxFile(uploadedPath, originalName = "") {
+  if (String(uploadedPath).toLowerCase().endsWith(".slx") && isMatlabIdentifier(path.basename(uploadedPath, ".slx"))) {
     return uploadedPath;
   }
-  const stagedPath = `${uploadedPath}.slx`;
+  const stagedPath = path.join(path.dirname(uploadedPath), `${matlabSafeModelName(originalName)}.slx`);
   await fs.copyFile(uploadedPath, stagedPath);
   return stagedPath;
+}
+
+function matlabSafeModelName(originalName = "") {
+  const parsed = path.parse(String(originalName || ""));
+  const candidate = parsed.name || `model_${randomUUID().replaceAll("-", "_")}`;
+  const normalized = candidate.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  if (isMatlabIdentifier(normalized)) {
+    return normalized;
+  }
+  return `model_${randomUUID().replaceAll("-", "_")}`;
+}
+
+function isMatlabIdentifier(value = "") {
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(String(value || ""));
 }
 
 function requireAuth(req, res, next) {
