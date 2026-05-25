@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
-import fs from "node:fs/promises";
+import { promises as fs } from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import { promisify } from "node:util";
 import { config } from "../config.js";
@@ -344,6 +346,24 @@ function parseCliResponse(stdout = "") {
     body,
     sessionId
   };
+}
+
+function buildCliFailureMessage(error = {}, fallbackMessage = "Hermes CLI request failed") {
+  const stderr = clipText(error?.stderr || "", 4000);
+  const stdout = clipText(error?.stdout || "", 4000);
+  if (stderr) {
+    return stderr;
+  }
+  if (stdout) {
+    return stdout;
+  }
+
+  const rawMessage = String(error?.message || "").trim();
+  if (!rawMessage) {
+    return fallbackMessage;
+  }
+  const withoutCommand = rawMessage.replace(/^Command failed:[^\n]*(?:\n|$)/, "").trim();
+  return clipText(withoutCommand || fallbackMessage, 4000);
 }
 
 function delay(ms) {
@@ -1197,6 +1217,67 @@ function buildSoftwareRequirementMarkdownPrompt(payload = {}) {
   ].join("\n");
 }
 
+function sanitizeSimulinkUtTcsdArtifact(inputArtifact = {}) {
+  return {
+    workspaceDir: clipText(inputArtifact.workspaceDir || "", CLI_PATH_MAX_LENGTH),
+    modelSlxPath: clipText(inputArtifact.modelSlxPath || "", CLI_PATH_MAX_LENGTH),
+    modelMatPath: clipText(inputArtifact.modelMatPath || "", CLI_PATH_MAX_LENGTH),
+    outputDir: clipText(inputArtifact.outputDir || "", CLI_PATH_MAX_LENGTH),
+    skillName: clipText(inputArtifact.skillName || "simulink-ut-tcsd-generator", 160),
+    expectedOutputPattern: clipText(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx", 200),
+    modelSlxFileName: clipText(inputArtifact.modelSlxFileName || path.basename(inputArtifact.modelSlxPath || "model.slx"), 200),
+    modelMatFileName: clipText(inputArtifact.modelMatFileName || path.basename(inputArtifact.modelMatPath || "model.mat"), 200)
+  };
+}
+
+function buildSimulinkUtTcsdPrompt(payload = {}) {
+  const inputArtifact = sanitizeSimulinkUtTcsdArtifact(payload.inputArtifact || {});
+  return [
+    "You are executing the Hermes step `simulink_ut_tcsd_generate`.",
+    "Use the Codex skill `simulink-ut-tcsd-generator` for the full workflow.",
+    "The task is to generate coverage-oriented Simulink unit-test TCSD Excel cases from one `.slx` model and its matching `.mat` data file.",
+    "",
+    "Workspace artifact:",
+    JSON.stringify(inputArtifact, null, 2),
+    "",
+    "Execution contract:",
+    "- Treat `workspaceDir` as the sandbox root. Do not read or write outside it.",
+    "- The model input is `modelSlxPath`; the matching data file is `modelMatPath`.",
+    "- Before loading Simulink files, change MATLAB current folder to `workspaceDir`.",
+    "- If `ITKLib` or the target model is already loaded from another path, close that loaded model first with `bdclose` before calling `load_system`.",
+    "- Prefer the canonical workspace filenames `modelSlxFileName` and `modelMatFileName` for MATLAB `load`, `load_system`, and simulation steps; avoid loading timestamped upload archive names.",
+    "- Use the skill named by `skillName` and follow its SATK/MATLAB/TCSD rules.",
+    "- In this environment, `model_overview` and `model_read` can be registered but fail because the backing MATLAB functions are unavailable; do not spend repeated retries on them. Prefer `evaluate_matlab_code` for MATLAB inspection, and use static SLX XML inspection only as a fallback.",
+    "- Start TCSD workbook construction early. Use the skill's `scripts/build_tcsd_from_json.py` from a terminal command with `python3` so it can access the installed `openpyxl`; do not rely on the isolated `execute_code` Python environment for openpyxl.",
+    "- If simulation or expected-output backfill is blocked by MATLAB/MCP instability, still generate a best-effort TCSD workbook under `outputDir` with clear warnings instead of ending without an `.xlsx` artifact.",
+    "- Before finishing, verify the workbook file exists under `outputDir` and include it in `outputFiles` using a relative path that matches `outputs/*_tcsd.xlsx`.",
+    "- Before returning, clean up MATLAB state per the skill's MATLAB Cleanup Contract: close task-loaded workspace models/libraries, clear task-local variables, restore current folder/path when possible, and report cleanup warnings.",
+    "- Write generated workbooks only under `outputDir`.",
+    "- The expected final workbook pattern is `outputs/*_tcsd.xlsx`.",
+    "- If MATLAB, SATK, Simulink, or required skill assets are unavailable, fail clearly and include the missing dependency in `warnings` or `errorMessage`.",
+    "",
+    "Return strict JSON only. No markdown fences. No prose outside JSON.",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        status: "completed",
+        summary: "One-sentence Chinese summary of the generated TCSD workbook.",
+        outputFiles: [
+          {
+            relativePath: "outputs/model_Test0001_tcsd.xlsx",
+            kind: "tcsd_workbook",
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            description: "Generated TCSD Excel workbook"
+          }
+        ],
+        warnings: []
+      },
+      null,
+      2
+    )
+  ].join("\n");
+}
+
 const REPLAY_PROPOSAL_ALLOWED_LAYERS = new Set(["generic", "docType", "domain", "module"]);
 const REPLAY_PROPOSAL_ALLOWED_ACTIONS = new Set([
   "add_skill_item",
@@ -1659,6 +1740,8 @@ function buildCliPrompt(payload = {}) {
       return buildSlxParsePrompt(payload);
     case "software_requirement_markdown_generate":
       return buildSoftwareRequirementMarkdownPrompt(payload);
+    case "simulink_ut_tcsd_generate":
+      return buildSimulinkUtTcsdPrompt(payload);
     case "anchor_index_build":
       return buildAnchorIndexPrompt(payload);
     case "material_extract":
@@ -1688,6 +1771,17 @@ function normalizeStepTimeoutMap(stepTimeoutMs = {}) {
         Math.max(1000, Number(timeoutMs || 0) || 0)
       ])
       .filter(([stepType, timeoutMs]) => stepType && timeoutMs > 0)
+  );
+}
+
+function normalizeStepMaxTurnsMap(stepMaxTurns = {}) {
+  return Object.fromEntries(
+    Object.entries(stepMaxTurns || {})
+      .map(([stepType, maxTurns]) => [
+        String(stepType || "").trim(),
+        Number(maxTurns || 0) || 0
+      ])
+      .filter(([stepType]) => stepType)
   );
 }
 
@@ -1745,6 +1839,45 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
       summary: String(artifact.summary || "").trim()
     };
   }
+  if (stepType === "simulink_ut_tcsd_generate") {
+    const artifact = parsed && typeof parsed === "object" ? parsed : {};
+    const outputFiles = Array.isArray(artifact.outputFiles)
+      ? artifact.outputFiles
+          .map((item) => {
+            if (typeof item === "string") {
+              return {
+                relativePath: item.trim(),
+                kind: "tcsd_workbook",
+                mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                description: ""
+              };
+            }
+            if (!item || typeof item !== "object") {
+              return null;
+            }
+            return {
+              relativePath: String(item.relativePath || item.path || item.filePath || "").trim(),
+              absolutePath: String(item.absolutePath || "").trim(),
+              fileName: String(item.fileName || "").trim(),
+              kind: String(item.kind || "tcsd_workbook").trim(),
+              mimeType: String(
+                item.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              ).trim(),
+              description: String(item.description || "").trim()
+            };
+          })
+          .filter((item) => item && (item.relativePath || item.absolutePath))
+      : [];
+    return {
+      status: String(artifact.status || "completed").trim(),
+      summary: String(artifact.summary || "").trim(),
+      outputFiles,
+      warnings: Array.isArray(artifact.warnings)
+        ? artifact.warnings.map((item) => clipText(item || "", 300)).filter(Boolean).slice(0, 20)
+        : [],
+      errorMessage: String(artifact.errorMessage || artifact.error || "").trim()
+    };
+  }
   if (stepType === "outline_build") {
     return {
       summary: String(parsed.summary || "").trim(),
@@ -1758,6 +1891,37 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
 }
 
 async function buildMarkdownArtifactFromWorkspace(payload = {}, workdir = "") {
+  if (payload.stepType === "simulink_ut_tcsd_generate") {
+    const inputArtifact = payload.inputArtifact || {};
+    const outputDir = inputArtifact.outputDir || path.join(workdir || inputArtifact.workspaceDir || process.cwd(), "outputs");
+    const absoluteOutputDir = path.isAbsolute(outputDir)
+      ? outputDir
+      : path.join(workdir || inputArtifact.workspaceDir || process.cwd(), ...String(outputDir).split("/").filter(Boolean));
+    const entries = await fs.readdir(absoluteOutputDir, { withFileTypes: true }).catch(() => []);
+    const outputFiles = entries
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".xlsx"))
+      .map((entry) => {
+        const absolutePath = path.join(absoluteOutputDir, entry.name);
+        const relativePath = path
+          .relative(workdir || inputArtifact.workspaceDir || process.cwd(), absolutePath)
+          .replace(/\\/g, "/");
+        return {
+          relativePath,
+          kind: "tcsd_workbook",
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          description: "Generated TCSD Excel workbook"
+        };
+      });
+    if (!outputFiles.length) {
+      return null;
+    }
+    return {
+      status: "completed",
+      summary: "Hermes wrote TCSD workbook artifacts but did not return strict JSON.",
+      outputFiles,
+      warnings: ["Hermes CLI 未返回严格 JSON，后端从 outputs 目录回收了 Excel 产物。"]
+    };
+  }
   if (payload.stepType !== "software_requirement_markdown_generate") {
     return null;
   }
@@ -1804,6 +1968,56 @@ async function defaultCommandRunner(command, args, options = {}) {
   });
 }
 
+async function postJsonWithTimeout(url, payload, timeoutMs) {
+  const body = JSON.stringify(payload);
+  const target = new URL(url);
+  const transport = target.protocol === "https:" ? https : http;
+
+  return new Promise((resolve, reject) => {
+    const request = transport.request(
+      target,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body)
+        }
+      },
+      (response) => {
+        response.setEncoding("utf8");
+        let text = "";
+        response.on("data", (chunk) => {
+          text += chunk;
+        });
+        response.on("end", () => {
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            status: response.statusCode,
+            text
+          });
+        });
+      }
+    );
+
+    request.setTimeout(timeoutMs, () => {
+      const error = new Error(`Hermes request timed out after ${timeoutMs}ms`);
+      error.name = "AbortError";
+      request.destroy(error);
+    });
+    request.on("error", reject);
+    request.write(body);
+    request.end();
+  });
+}
+
+function buildProfiledCliArgs(profile = "", args = []) {
+  const profileName = String(profile || "").trim();
+  if (!profileName || profileName === "default") {
+    return args;
+  }
+  return ["-p", profileName, ...args];
+}
+
 export class HermesAgentClient {
   constructor(options = {}) {
     this.transport = String(options.transport || config.hermes.transport || "cli").trim().toLowerCase();
@@ -1813,7 +2027,9 @@ export class HermesAgentClient {
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs || config.hermes.timeoutMs) || config.hermes.timeoutMs);
     this.stepTimeoutMs = normalizeStepTimeoutMap(options.stepTimeoutMs || config.hermes.stepTimeoutMs || {});
     this.command = String(options.command || config.hermes.command || "hermes").trim() || "hermes";
+    this.profile = String(options.profile || config.hermes.profile || "").trim();
     this.maxTurns = Math.max(1, Number(options.maxTurns || config.hermes.maxTurns) || config.hermes.maxTurns || 40);
+    this.stepMaxTurns = normalizeStepMaxTurnsMap(options.stepMaxTurns || config.hermes.stepMaxTurns || {});
     this.heartbeatIntervalMs = Math.max(
       10,
       Number(options.heartbeatIntervalMs || config.hermes.heartbeatIntervalMs) || config.hermes.heartbeatIntervalMs || 5000
@@ -1826,6 +2042,14 @@ export class HermesAgentClient {
 
   getTimeoutMsForStep(stepType = "") {
     return this.stepTimeoutMs[String(stepType || "").trim()] || this.timeoutMs;
+  }
+
+  getMaxTurnsForStep(stepType = "") {
+    const normalizedStepType = String(stepType || "").trim();
+    if (Object.prototype.hasOwnProperty.call(this.stepMaxTurns, normalizedStepType)) {
+      return this.stepMaxTurns[normalizedStepType];
+    }
+    return this.maxTurns;
   }
 
   _authHeaders() {
@@ -2047,14 +2271,25 @@ export class HermesAgentClient {
         message: error?.message || "Hermes API 请求失败"
       });
       throw error;
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
   async executeCliStep(payload = {}, runtime = {}) {
     const prompt = buildCliPrompt(payload);
-    const args = ["chat", "-q", prompt, "-Q", "--source", "tool", "--max-turns", String(this.maxTurns), "--yolo"];
+    const maxTurns = this.getMaxTurnsForStep(payload.stepType);
+    const rawArgs = [
+      "chat",
+      "-q",
+      prompt,
+      "-Q",
+      "--source",
+      "tool"
+    ];
+    if (maxTurns > 0) {
+      rawArgs.push("--max-turns", String(maxTurns));
+    }
+    rawArgs.push("--yolo");
+    const args = buildProfiledCliArgs(this.profile, rawArgs);
     const startedAt = Date.now();
     const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
     const workdir = String(payload.workdir || payload.inputArtifact?.workspaceDir || this.workdir || process.cwd());
@@ -2067,8 +2302,11 @@ export class HermesAgentClient {
         stepType: payload.stepType || "",
         status: "started",
         command: this.command,
+        profile: this.profile || "default",
         label: "已启动本机 Hermes CLI",
-        message: `正在调用本机 Hermes 执行 ${payload.stepType || "step"}。`,
+        message: this.profile
+          ? `正在调用本机 Hermes profile ${this.profile} 执行 ${payload.stepType || "step"}。`
+          : `正在调用本机 Hermes 执行 ${payload.stepType || "step"}。`,
         startedAt: new Date(startedAt).toISOString()
       });
       heartbeatTimer = setInterval(() => {
@@ -2108,13 +2346,19 @@ export class HermesAgentClient {
       } catch (_error) {
         const fallbackArtifact = await buildMarkdownArtifactFromWorkspace(payload, workdir);
         if (fallbackArtifact) {
+          const fallbackLabel =
+            payload.stepType === "simulink_ut_tcsd_generate" ? "Hermes CLI 已写入 TCSD 产物" : "Hermes CLI 已写入 Markdown 产物";
+          const fallbackMessage =
+            payload.stepType === "simulink_ut_tcsd_generate"
+              ? "Hermes CLI 未返回严格 JSON，但已写入 TCSD Excel 产物，后端将继续登记结果文件。"
+              : "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。";
           await emitHermesEvent(runtime.onEvent, {
             type: "agent_runtime",
             transport: "cli",
             stepType: payload.stepType || "",
             status: "completed",
-            label: "Hermes CLI 已写入 Markdown 产物",
-            message: "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。",
+            label: fallbackLabel,
+            message: fallbackMessage,
             sessionId,
             startedAt: new Date(startedAt).toISOString(),
             heartbeatAt: new Date().toISOString(),
@@ -2217,8 +2461,11 @@ export class HermesAgentClient {
         });
         throw timeoutError;
       }
-      const requestError = new Error(error?.stderr || error?.message || "Hermes CLI request failed");
-      requestError.code = error?.code || "hermes_request_failed";
+      const requestError = new Error(buildCliFailureMessage(error));
+      requestError.code = typeof error?.code === "string" ? error.code : "hermes_request_failed";
+      if (Number.isInteger(error?.code)) {
+        requestError.exitCode = error.code;
+      }
       await emitHermesEvent(runtime.onEvent, {
         type: "agent_runtime",
         transport: "cli",
@@ -2229,6 +2476,7 @@ export class HermesAgentClient {
         message: requestError.message,
         startedAt: new Date(startedAt).toISOString(),
         elapsedMs: Date.now() - startedAt,
+        stdoutExcerpt: clipText(error?.stdout || "", 2000),
         stderrExcerpt: clipText(error?.stderr || "", 2000)
       });
       throw requestError;

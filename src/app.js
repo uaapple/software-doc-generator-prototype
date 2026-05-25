@@ -14,6 +14,7 @@ import { LlmProfileService } from "./services/llm-profile-service.js";
 import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
 import { HermesTaskQueueService } from "./services/hermes-task-queue-service.js";
+import { UnitTestCaseGenerationService } from "./services/unit-test-case-generation-service.js";
 import { ModuleSkillService } from "./services/module-skill-service.js";
 import { SkillManagementService } from "./services/skill-management-service.js";
 import { SkillWorkOrderService } from "./services/skill-work-order-service.js";
@@ -191,7 +192,8 @@ export async function createApp() {
 
   const app = express();
   const projectService = new ProjectService();
-  const hermesTaskQueueService = new HermesTaskQueueService({ projectService });
+  const unitTestCaseGenerationService = new UnitTestCaseGenerationService();
+  const hermesTaskQueueService = new HermesTaskQueueService({ projectService, unitTestCaseGenerationService });
   const pipelineService = new PipelineService(projectService, { hermesTaskQueueService });
   const benchmarkCaseService = new BenchmarkCaseService();
   const skillRefinementService = new SkillRefinementService();
@@ -209,6 +211,7 @@ export async function createApp() {
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
   await projectService.recoverStaleGenerationTasks();
+  await unitTestCaseGenerationService.recoverStaleTasks();
 
   function requestField(req, ...keys) {
     for (const key of keys) {
@@ -327,6 +330,26 @@ export async function createApp() {
     }
   });
 
+  const unitTestUpload = multer({
+    storage: multer.diskStorage({
+      destination: async (_req, _file, cb) => {
+        try {
+          await fs.mkdir(unitTestCaseGenerationService.uploadTempDir, { recursive: true });
+          cb(null, unitTestCaseGenerationService.uploadTempDir);
+        } catch (error) {
+          cb(error);
+        }
+      },
+      filename: (_req, file, cb) => {
+        const safeName = buildStoredUploadName(file.originalname);
+        cb(null, safeName);
+      }
+    }),
+    limits: {
+      files: 2
+    }
+  });
+
   app.use(express.json({ limit: "2mb" }));
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
@@ -348,6 +371,60 @@ export async function createApp() {
       next(error);
     }
   });
+
+  app.get("/api/unit-test-case-generation/tasks", async (_req, res, next) => {
+    try {
+      const tasks = await unitTestCaseGenerationService.listTasks();
+      res.json({ tasks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/unit-test-case-generation/tasks/:taskId", async (req, res, next) => {
+    try {
+      const task = await unitTestCaseGenerationService.getTask(req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "单元测试用例生成任务不存在", code: "unit_test_case_task_not_found" });
+      }
+      res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/unit-test-case-generation/tasks/:taskId/artifacts/:artifactId/download", async (req, res, next) => {
+    try {
+      const artifact = await unitTestCaseGenerationService.getArtifact(req.params.taskId, req.params.artifactId);
+      res.download(artifact.absolutePath, artifact.fileName);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post(
+    "/api/unit-test-case-generation/tasks",
+    unitTestUpload.fields([
+      { name: "modelSlx", maxCount: 1 },
+      { name: "modelMat", maxCount: 1 }
+    ]),
+    async (req, res, next) => {
+      try {
+        const task = await unitTestCaseGenerationService.createTask(req.files || {}, req.body || {});
+        hermesTaskQueueService.enqueue({
+          id: task.id,
+          type: "unit_test_case_generation",
+          title: "单元测试用例生成",
+          run: () => unitTestCaseGenerationService.runTask(task.id),
+          onError: (error) => unitTestCaseGenerationService.failTask(task.id, error)
+        });
+        const queuedTask = await unitTestCaseGenerationService.getTask(task.id);
+        res.status(202).json({ task: queuedTask, taskStarted: true });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
 
   app.post("/api/feedback-tickets", feedbackUpload.array("images", 6), async (req, res, next) => {
     try {
@@ -413,6 +490,9 @@ export async function createApp() {
   });
   app.get("/hil-test-case-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "hil-test-case-generation.html"));
+  });
+  app.get("/unit-test-case-generation", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "unit-test-case-generation.html"));
   });
   app.get("/skill-refinement", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "skill-refinement.html"));
@@ -1922,13 +2002,14 @@ export async function createApp() {
   });
 
   app.use((error, _req, res, _next) => {
-    const statusCode = error.statusCode || 500;
+    const isUploadError = error instanceof multer.MulterError;
+    const statusCode = error.statusCode || (isUploadError ? 400 : 500);
     if (statusCode >= 500) {
       console.error(error);
     }
     res.status(statusCode).json({
       error: error.message || "Internal server error",
-      code: error.code || "internal_error",
+      code: error.code || (isUploadError ? "upload_error" : "internal_error"),
       details: error.details || null
     });
   });

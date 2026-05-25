@@ -14,6 +14,7 @@ import {
 } from "./services/software-requirement-agent-shared.js";
 import { SlxModelAnalysisService } from "./services/slx-model-analysis-service.js";
 import { ModelRequirementViewService } from "./services/model-requirement-view-service.js";
+import { HermesAgentClient } from "./services/hermes-agent-client.js";
 
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
@@ -249,6 +250,56 @@ function normalizeMaterialFiles(files = [], allowedPaths = []) {
       size: Number(file.size || 0) || 0
     };
   });
+}
+
+async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = []) {
+  const workspaceValue = String(inputArtifact.workspaceDir || "").trim();
+  if (!workspaceValue) {
+    throw createHttpError("workspaceDir is required for simulink_ut_tcsd_generate");
+  }
+  const workspaceDir = path.resolve(workspaceValue);
+  const effectiveAllowedPaths = allowedPaths.length ? allowedPaths : [workspaceDir];
+  if (!isPathAllowed(workspaceDir, effectiveAllowedPaths)) {
+    throw createHttpError(`Workspace path is not allowed: ${workspaceDir}`, 403, "hermes_path_forbidden");
+  }
+
+  const modelSlxValue = String(inputArtifact.modelSlxPath || "").trim();
+  const modelMatValue = String(inputArtifact.modelMatPath || "").trim();
+  if (!modelSlxValue || !modelMatValue) {
+    throw createHttpError("modelSlxPath and modelMatPath are required for simulink_ut_tcsd_generate");
+  }
+  const modelSlxPath = path.resolve(modelSlxValue);
+  const modelMatPath = path.resolve(modelMatValue);
+  const outputDir = path.resolve(String(inputArtifact.outputDir || path.join(workspaceDir, "outputs")));
+  for (const [label, filePath] of [
+    ["modelSlxPath", modelSlxPath],
+    ["modelMatPath", modelMatPath],
+    ["outputDir", outputDir]
+  ]) {
+    if (!isPathAllowed(filePath, effectiveAllowedPaths)) {
+      throw createHttpError(`${label} is not allowed: ${filePath}`, 403, "hermes_path_forbidden");
+    }
+  }
+  if (path.extname(modelSlxPath).toLowerCase() !== ".slx") {
+    throw createHttpError("modelSlxPath must point to a .slx file", 400, "hermes_invalid_slx_path");
+  }
+  if (path.extname(modelMatPath).toLowerCase() !== ".mat") {
+    throw createHttpError("modelMatPath must point to a .mat file", 400, "hermes_invalid_mat_path");
+  }
+  await fs.access(modelSlxPath);
+  await fs.access(modelMatPath);
+  await fs.mkdir(outputDir, { recursive: true });
+
+  return {
+    workspaceDir,
+    modelSlxPath,
+    modelMatPath,
+    outputDir,
+    skillName: String(inputArtifact.skillName || "simulink-ut-tcsd-generator").trim(),
+    expectedOutputPattern: String(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx").trim(),
+    modelSlxFileName: inputArtifact.modelSlxFileName || path.basename(modelSlxPath),
+    modelMatFileName: inputArtifact.modelMatFileName || path.basename(modelMatPath)
+  };
 }
 
 function normalizeDocumentExtractionType(value) {
@@ -1141,6 +1192,31 @@ export async function createHermesApp() {
               replayRecordCount: Array.isArray(records) ? records.length : 0,
               candidateSkillCount: Array.isArray(inventoryItems) ? inventoryItems.length : 0
             }
+          })
+        );
+      }
+
+      if (stepType === "simulink_ut_tcsd_generate") {
+        const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
+        const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
+        const hermesClient = new HermesAgentClient({
+          transport: "cli",
+          workdir: inputArtifact.workspaceDir
+        });
+        const result = await hermesClient.executeStep(
+          {
+            ...payload,
+            stepType,
+            workdir: inputArtifact.workspaceDir,
+            allowedPaths: [inputArtifact.workspaceDir],
+            inputArtifact
+          },
+          {}
+        );
+        return res.json(
+          buildStepResponse(stepType, result.artifact || {}, startedAt, {
+            metrics: result.metrics || {},
+            logs: result.logs || []
           })
         );
       }
