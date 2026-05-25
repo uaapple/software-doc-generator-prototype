@@ -48,7 +48,7 @@ Linux VM
 - 默认安装根目录：`C:\SoftwareDocWorker`
 - API Server 默认监听：`0.0.0.0:8642`
 - 计划任务名：`SoftwareDocHermesOpenApiServer`
-- API key 存放：`C:\SoftwareDocWorker\config\hermes-api-server.env`
+- API key 默认存放：`C:\SoftwareDocWorker\config\hermes-api-server.env`；如果明确使用 `-AllowNoApiKey`，则 `API_SERVER_KEY` 写为空，Linux 调用 `:8642` 时不需要 `Authorization` 头。
 
 脚本做了几件关键事情：
 
@@ -64,14 +64,14 @@ Linux VM
 1. 在 Windows VM 上执行 API Server 启动脚本。
 
    ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File .\Enable-HermesOpenApiServer.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\Enable-HermesOpenApiServer.ps1 -AllowNoApiKey
    ```
 
 2. 从 Linux VM 验证 API Server 健康状态和模型列表。
 
    ```bash
    curl -sS http://<windows-vm>:8642/health
-   curl -sS -H "Authorization: Bearer <api-key>" http://<windows-vm>:8642/v1/models
+   curl -sS http://<windows-vm>:8642/v1/models
    ```
 
 3. 将 `ESCWhlTq.slx` 放到 Linux VM。
@@ -113,7 +113,7 @@ Linux VM
 7. 轮询结果。
 
    ```bash
-   curl -sS -H "Authorization: Bearer <api-key>" \
+   curl -sS \
      http://<windows-vm>:8642/v1/runs/<run_id>
    ```
 
@@ -121,7 +121,6 @@ Linux VM
 
    ```bash
    curl -sS -X POST \
-     -H "Authorization: Bearer <api-key>" \
      -H "Content-Type: application/json" \
      -d '{"choice":"session","resolve_all":true}' \
      http://<windows-vm>:8642/v1/runs/<run_id>/approval
@@ -285,7 +284,6 @@ HERMES_BASE_URL=http://Wx11v-PRJ130.itk.local:3101
 
 HERMES_SLX_INTERPRETER_TRANSPORT=openai-api
 HERMES_OPENAI_API_BASE_URL=http://Wx11v-PRJ130.itk.local:8642
-HERMES_OPENAI_API_KEY=<read-from-Windows-hermes-api-server-env>
 HERMES_OPENAI_API_MODEL=deepseek-v4-pro
 HERMES_OPENAI_API_AUTO_APPROVE=true
 HERMES_OPENAI_API_POLL_INTERVAL_MS=5000

@@ -5,6 +5,7 @@ param(
   [string]$AllowedRemoteAddress = "10.36.77.221",
   [string]$TaskName = "SoftwareDocHermesOpenApiServer",
   [string]$ApiKey = "",
+  [switch]$AllowNoApiKey,
   [switch]$NoFirewall,
   [switch]$NoScheduledTask
 )
@@ -456,11 +457,18 @@ function Wait-ApiServer {
   )
   $healthUri = "http://127.0.0.1:$Port/health"
   $modelsUri = "http://127.0.0.1:$Port/v1/models"
-  $headers = @{ Authorization = "Bearer $BearerToken" }
+  $headers = @{}
+  if ($BearerToken) {
+    $headers.Authorization = "Bearer $BearerToken"
+  }
   for ($i = 0; $i -lt 30; $i++) {
     try {
       Invoke-RestMethod -Uri $healthUri -TimeoutSec 3 | Out-Null
-      Invoke-RestMethod -Uri $modelsUri -Headers $headers -TimeoutSec 3 | Out-Null
+      if ($headers.Count) {
+        Invoke-RestMethod -Uri $modelsUri -Headers $headers -TimeoutSec 3 | Out-Null
+      } else {
+        Invoke-RestMethod -Uri $modelsUri -TimeoutSec 3 | Out-Null
+      }
       return
     } catch {
       Start-Sleep -Seconds 2
@@ -498,7 +506,9 @@ if (-not $env:MATLAB_MCP_SERVER_COMMAND -or -not (Test-Path -LiteralPath $env:MA
 }
 $mcpServerCommand = (Resolve-Path -LiteralPath $env:MATLAB_MCP_SERVER_COMMAND).Path
 
-if (-not $ApiKey) {
+if ($AllowNoApiKey) {
+  $ApiKey = ""
+} elseif (-not $ApiKey) {
   $apiEnvFileExisting = Join-Path $InstallDir "config\hermes-api-server.env"
   if (Test-Path -LiteralPath $apiEnvFileExisting) {
     Import-EnvFile -Path $apiEnvFileExisting
@@ -544,5 +554,9 @@ Write-Host ""
 Write-Host "Hermes OpenAI-compatible API Server is ready."
 Write-Host "Local health: http://127.0.0.1:$ApiPort/health"
 Write-Host "Linux URL: http://<windows-vm-host>:$ApiPort/v1"
-Write-Host "API key is stored in: $apiEnvPath"
+if ($AllowNoApiKey) {
+  Write-Host "API key authentication: disabled"
+} else {
+  Write-Host "API key is stored in: $apiEnvPath"
+}
 Write-Host "Task name: $TaskName"
