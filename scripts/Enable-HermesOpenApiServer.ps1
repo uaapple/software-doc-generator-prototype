@@ -2,6 +2,7 @@ param(
   [string]$InstallDir = "C:\SoftwareDocWorker",
   [string]$ApiHost = "0.0.0.0",
   [int]$ApiPort = 8642,
+  [int]$NoKeyInternalPort = 8643,
   [string]$AllowedRemoteAddress = "10.36.77.221",
   [string]$TaskName = "SoftwareDocHermesOpenApiServer",
   [string]$ApiKey = "",
@@ -415,6 +416,17 @@ function Ensure-FirewallRule {
     -RemoteAddress $remote | Out-Null
 }
 
+function Ensure-PortProxy {
+  param(
+    [int]$PublicPort,
+    [int]$InternalPort
+  )
+  Start-Service iphlpsvc -ErrorAction SilentlyContinue
+  netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$PublicPort *> $null
+  netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=$PublicPort *> $null
+  netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$PublicPort connectaddress=127.0.0.1 connectport=$InternalPort | Out-Null
+}
+
 function Register-OpenApiTask {
   param(
     [string]$Name,
@@ -522,10 +534,17 @@ if ($AllowNoApiKey) {
 
 $modelName = if ($env:OPENAI_MODEL) { $env:OPENAI_MODEL } else { "hermes-windows-agent" }
 $apiEnvPath = Join-Path $InstallDir "config\hermes-api-server.env"
+$effectiveApiHost = $ApiHost
+$effectiveApiPort = $ApiPort
+if ($AllowNoApiKey -and $ApiHost -in @("0.0.0.0", "::", "*")) {
+  $effectiveApiHost = "127.0.0.1"
+  $effectiveApiPort = $NoKeyInternalPort
+  Ensure-PortProxy -PublicPort $ApiPort -InternalPort $effectiveApiPort
+}
 Write-EnvFile -Path $apiEnvPath -Values @{
   "API_SERVER_ENABLED" = "true"
-  "API_SERVER_HOST" = $ApiHost
-  "API_SERVER_PORT" = [string]$ApiPort
+  "API_SERVER_HOST" = $effectiveApiHost
+  "API_SERVER_PORT" = [string]$effectiveApiPort
   "API_SERVER_KEY" = $ApiKey
   "API_SERVER_MODEL_NAME" = $modelName
 }
@@ -547,15 +566,21 @@ Ensure-FirewallRule -Port $ApiPort -RemoteAddress $AllowedRemoteAddress
 Register-OpenApiTask -Name $TaskName -RunnerPath $runnerPath -Root $InstallDir
 
 if (-not $NoScheduledTask) {
-  Wait-ApiServer -Port $ApiPort -BearerToken $ApiKey
+  Wait-ApiServer -Port $effectiveApiPort -BearerToken $ApiKey
+  if ($AllowNoApiKey -and $effectiveApiPort -ne $ApiPort) {
+    Wait-ApiServer -Port $ApiPort -BearerToken ""
+  }
 }
 
 Write-Host ""
 Write-Host "Hermes OpenAI-compatible API Server is ready."
-Write-Host "Local health: http://127.0.0.1:$ApiPort/health"
+Write-Host "Local health: http://127.0.0.1:$effectiveApiPort/health"
 Write-Host "Linux URL: http://<windows-vm-host>:$ApiPort/v1"
 if ($AllowNoApiKey) {
   Write-Host "API key authentication: disabled"
+  if ($effectiveApiPort -ne $ApiPort) {
+    Write-Host "No-key mode uses Windows portproxy: 0.0.0.0:$ApiPort -> 127.0.0.1:$effectiveApiPort"
+  }
 } else {
   Write-Host "API key is stored in: $apiEnvPath"
 }

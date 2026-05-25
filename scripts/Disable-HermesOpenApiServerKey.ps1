@@ -1,6 +1,7 @@
 param(
   [string]$InstallDir = "C:\SoftwareDocWorker",
   [int]$ApiPort = 8642,
+  [int]$NoKeyInternalPort = 8643,
   [string]$TaskName = "SoftwareDocHermesOpenApiServer"
 )
 
@@ -50,7 +51,22 @@ function Restart-ApiServerTask {
   }
   Stop-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 2
+  Get-CimInstance Win32_Process |
+    Where-Object { $_.CommandLine -match 'run-hermes-openai-api-server\.ps1|hermes\.cmd" gateway|hermes_cli\.main gateway' } |
+    ForEach-Object { Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null }
+  Start-Sleep -Seconds 2
   Start-ScheduledTask -TaskName $Name
+}
+
+function Ensure-PortProxy {
+  param(
+    [int]$PublicPort,
+    [int]$InternalPort
+  )
+  Start-Service iphlpsvc -ErrorAction SilentlyContinue
+  netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=$PublicPort *> $null
+  netsh interface portproxy delete v4tov4 listenaddress=127.0.0.1 listenport=$PublicPort *> $null
+  netsh interface portproxy add v4tov4 listenaddress=0.0.0.0 listenport=$PublicPort connectaddress=127.0.0.1 connectport=$InternalPort | Out-Null
 }
 
 function Wait-NoAuthApiServer {
@@ -72,10 +88,16 @@ function Wait-NoAuthApiServer {
 Assert-Administrator
 
 $apiEnvPath = Join-Path $InstallDir "config\hermes-api-server.env"
+Set-EnvValue -Path $apiEnvPath -Key "API_SERVER_HOST" -Value "127.0.0.1"
+Set-EnvValue -Path $apiEnvPath -Key "API_SERVER_PORT" -Value ([string]$NoKeyInternalPort)
 Set-EnvValue -Path $apiEnvPath -Key "API_SERVER_KEY" -Value ""
+Ensure-PortProxy -PublicPort $ApiPort -InternalPort $NoKeyInternalPort
 Restart-ApiServerTask -Name $TaskName
+Wait-NoAuthApiServer -Port $NoKeyInternalPort
 Wait-NoAuthApiServer -Port $ApiPort
 
 Write-Host "Hermes OpenAI-compatible API Server key authentication is disabled."
 Write-Host "Updated env file: $apiEnvPath"
+Write-Host "Hermes local URL: http://127.0.0.1:$NoKeyInternalPort/v1"
+Write-Host "Linux URL via Windows portproxy: http://<windows-vm-host>:$ApiPort/v1"
 Write-Host "Verified without Authorization header: http://127.0.0.1:$ApiPort/v1/models"

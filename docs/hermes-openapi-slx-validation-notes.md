@@ -48,7 +48,7 @@ Linux VM
 - 默认安装根目录：`C:\SoftwareDocWorker`
 - API Server 默认监听：`0.0.0.0:8642`
 - 计划任务名：`SoftwareDocHermesOpenApiServer`
-- API key 默认存放：`C:\SoftwareDocWorker\config\hermes-api-server.env`；如果明确使用 `-AllowNoApiKey`，则 `API_SERVER_KEY` 写为空，Linux 调用 `:8642` 时不需要 `Authorization` 头。
+- API key 默认存放：`C:\SoftwareDocWorker\config\hermes-api-server.env`；如果明确使用 `-AllowNoApiKey`，则 `API_SERVER_KEY` 写为空，Hermes 本体监听 `127.0.0.1:8643`，Windows `portproxy` 对外暴露 `8642`，Linux 调用 `:8642` 时不需要 `Authorization` 头。
 
 脚本做了几件关键事情：
 
@@ -67,7 +67,7 @@ Linux VM
    powershell -NoProfile -ExecutionPolicy Bypass -File .\Enable-HermesOpenApiServer.ps1 -AllowNoApiKey
    ```
 
-   如果 API Server 已经在运行，也可以只关闭 key 鉴权并重启计划任务：
+   如果 API Server 已经在运行，也可以只关闭 key 鉴权、启用 `8642 -> 8643` 端口转发并重启计划任务：
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\Disable-HermesOpenApiServerKey.ps1
