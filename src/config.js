@@ -74,6 +74,18 @@ const appEnvironment = String(process.env.APP_ENV || process.env.APP_RUNTIME_ENV
   .toLowerCase();
 const dataDir = resolveRuntimePath(process.env.APP_DATA_DIR, path.join(rootDir, "data"));
 const skillsRootDir = resolveRuntimePath(process.env.APP_SKILLS_DIR, path.join(rootDir, "skills"));
+const hermesHomeDir = resolveRuntimePath(process.env.HERMES_HOME, path.join(homeDir, ".hermes"));
+const hermesProfile = String(process.env.HERMES_PROFILE || "").trim();
+
+function resolveHermesStateDbPath() {
+  if (process.env.HERMES_STATE_DB_PATH) {
+    return resolveRuntimePath(process.env.HERMES_STATE_DB_PATH, "");
+  }
+  if (hermesProfile && hermesProfile !== "default") {
+    return path.join(hermesHomeDir, "profiles", hermesProfile, "state.db");
+  }
+  return path.join(hermesHomeDir, "state.db");
+}
 
 const appConfig = {
   runtimeRole,
@@ -88,6 +100,13 @@ const appConfig = {
   skillBundleDir: path.join(skillsRootDir, "bundles"),
   generationTaskArtifactDir: path.join(dataDir, "generation-task-artifacts"),
   replayTaskArtifactDir: path.join(dataDir, "replay-task-artifacts"),
+  unitTestCase: {
+    taskStoreDir: path.join(dataDir, "unit-test-case-generation", "tasks"),
+    uploadTempDir: path.join(dataDir, "unit-test-case-generation", "_incoming"),
+    skillName: process.env.UNIT_TEST_CASE_SKILL_NAME || "simulink-ut-tcsd-generator",
+    expectedOutputPattern: process.env.UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN || "outputs/*_tcsd.xlsx",
+    agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || ""
+  },
   dataDir,
   skillDatabasePath: path.join(dataDir, "skills.sqlite"),
   projectStoreDir: path.join(dataDir, "projects"),
@@ -122,9 +141,12 @@ const appConfig = {
     port: Number(process.env.HERMES_PORT || 3101),
     baseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
     command: process.env.HERMES_COMMAND || "hermes",
-    stateDbPath: process.env.HERMES_STATE_DB_PATH || path.join(process.env.HOME || "", ".hermes", "state.db"),
+    profile: hermesProfile,
+    homeDir: hermesHomeDir,
+    stateDbPath: resolveHermesStateDbPath(),
     workdir: process.env.HERMES_WORKDIR || rootDir,
     timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 120000),
+    serverRequestTimeoutMs: Number(process.env.HERMES_SERVER_REQUEST_TIMEOUT_MS || 0),
     stepTimeoutMs: {
       anchor_index_build: Number(process.env.HERMES_TIMEOUT_ANCHOR_INDEX_BUILD_MS || 180000),
       outline_build: Number(process.env.HERMES_TIMEOUT_OUTLINE_BUILD_MS || 180000),
@@ -133,11 +155,17 @@ const appConfig = {
       software_requirement_markdown_generate: Number(process.env.HERMES_TIMEOUT_SOFTWARE_REQUIREMENT_MARKDOWN_GENERATE_MS || 600000),
       document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
       slx_interpret_answer: Number(process.env.HERMES_TIMEOUT_SLX_INTERPRET_ANSWER_MS || 600000),
+      simulink_ut_tcsd_generate: Number(process.env.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS || 3600000),
       replay_proposal_generate: Number(process.env.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS || 600000)
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
     taskConcurrency: Number(process.env.HERMES_TASK_CONCURRENCY || 1),
     maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
+    stepMaxTurns: {
+      simulink_ut_tcsd_generate: process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE
+        ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE)
+        : 10000
+    },
     maxRecalledAtoms: Number(process.env.HERMES_MAX_RECALLED_ATOMS || 24),
     maxOutlineSections: Number(process.env.HERMES_MAX_OUTLINE_SECTIONS || 6),
     maxEvidenceForGeneration: Number(process.env.HERMES_MAX_EVIDENCE_FOR_GENERATION || 40),

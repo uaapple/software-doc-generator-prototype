@@ -2,6 +2,7 @@
 # Keep broad runtime data and local-only patterns first in the classifier priority.
 runtime-data:
   - data/**
+  - data/unit-test-case-generation/**
   - output/**
   - tmp/**
   - release-dist/**
@@ -32,6 +33,7 @@ linux:
   - src/services/skill-refinement-service.js
   - src/services/benchmark-evaluation-service.js
   - src/services/hermes-task-queue-service.js
+  - src/services/unit-test-case-generation-service.js
   - src/services/pipeline-service.js
   - src/services/skill-database-service.js
   - src/services/replay-artifact-service.js
@@ -68,6 +70,16 @@ shared:
   - .env.dev-distributed.example
   - .env.defaults
   - deploy/ownership.yml
+  - start-local.cmd
+  - stop-local.cmd
+  - restart-local.cmd
+  - start-local.sh
+  - stop-local.sh
+  - scripts/start-local.sh
+  - scripts/stop-local.sh
+  - scripts/start-local.ps1
+  - scripts/stop-local.ps1
+  - scripts/restart-local.ps1
   - scripts/build-release-zip.mjs
   - scripts/classify-changes.mjs
   - src/config.js

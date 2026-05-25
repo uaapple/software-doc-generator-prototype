@@ -1,5 +1,7 @@
 param(
   [int]$Port = 3000,
+  [int]$HermesPort = 3101,
+  [switch]$NoHermesAgent,
   [switch]$NoBrowser
 )
 
@@ -23,7 +25,15 @@ Start-Sleep -Milliseconds 500
 
 Write-Host "Restarting local service..." -ForegroundColor Cyan
 if ($NoBrowser) {
-  & $startScript -Port $Port -NoBrowser
+  if ($NoHermesAgent) {
+    & $startScript -Port $Port -HermesPort $HermesPort -NoHermesAgent -NoBrowser
+  } else {
+    & $startScript -Port $Port -HermesPort $HermesPort -NoBrowser
+  }
 } else {
-  & $startScript -Port $Port
+  if ($NoHermesAgent) {
+    & $startScript -Port $Port -HermesPort $HermesPort -NoHermesAgent
+  } else {
+    & $startScript -Port $Port -HermesPort $HermesPort
+  }
 }

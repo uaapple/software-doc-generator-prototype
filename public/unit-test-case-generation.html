@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>单元测试用例生成</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/feedback-widget.css" />
+  </head>
+  <body data-page-kind="unit-test-case-generation">
+    <main class="layout">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>单元测试 TCSD 生成</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">工程列表</a>
+          <a class="nav-link" href="/skill-management">技能管理</a>
+          <a class="nav-link active" href="/unit-test-case-generation">单元测试用例生成</a>
+          <a class="nav-link" href="/replay-lab">Replay Lab</a>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">Hermes Agent</p>
+          <h1>单元测试用例生成</h1>
+          <p class="strip-text">上传 Simulink 模型和同名数据文件后发起后台 TCSD Excel 生成任务。</p>
+        </div>
+        <div class="strip-actions">
+          <a class="hero-link secondary" href="/">返回工程列表</a>
+        </div>
+      </section>
+
+      <section class="unit-test-grid">
+        <form id="unit-test-form" class="card unit-test-launcher" enctype="multipart/form-data">
+          <div class="section-head">
+            <span class="section-index">01</span>
+            <div>
+              <h2>发起任务</h2>
+              <p>当前版本固定调用 `simulink-ut-tcsd-generator` skill。</p>
+            </div>
+          </div>
+
+          <label class="unit-file-field">
+            <span>模型文件</span>
+            <input id="model-slx-input" type="file" name="modelSlx" accept=".slx" required />
+          </label>
+
+          <label class="unit-file-field">
+            <span>数据文件</span>
+            <input id="model-mat-input" type="file" name="modelMat" accept=".mat" required />
+          </label>
+
+          <p id="unit-form-status" class="status" hidden></p>
+          <button id="unit-start-button" type="submit">发起生成任务</button>
+        </form>
+
+        <section class="card unit-task-list-card">
+          <div class="section-head">
+            <span class="section-index">02</span>
+            <div>
+              <h2>任务列表</h2>
+              <p>最近的 Hermes 单元测试用例生成任务。</p>
+            </div>
+          </div>
+          <div id="unit-task-list" class="unit-task-list"></div>
+        </section>
+
+        <section class="card unit-task-detail-card">
+          <div class="section-head">
+            <span class="section-index">03</span>
+            <div>
+              <h2>任务详情</h2>
+              <p id="unit-task-detail-subtitle">选择任务后查看运行摘要、错误信息和下载结果。</p>
+            </div>
+          </div>
+          <div id="unit-task-detail" class="unit-task-detail"></div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/unit-test-case-generation.js"></script>
+    <script type="module" src="/task-queue-widget.js"></script>
+    <script type="module" src="/feedback-widget.js"></script>
+  </body>
+</html>
