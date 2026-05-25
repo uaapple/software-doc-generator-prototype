@@ -1,0 +1,105 @@
+# Path ownership used by scripts/classify-changes.mjs.
+# Keep broad runtime data and local-only patterns first in the classifier priority.
+runtime-data:
+  - data/**
+  - data/unit-test-case-generation/**
+  - output/**
+  - tmp/**
+  - release-dist/**
+  - test-fixtures/**/artifacts/**
+  - test-fixtures/**/preflight-summary.json
+
+local-only:
+  - .env
+  - .mcp.json
+  - .DS_Store
+  - .local/**
+
+linux:
+  - .env.linux-prod.example
+  - deploy/targets/linux-prod.json
+  - public/**
+  - wiki/**
+  - src/app.js
+  - src/server.js
+  - src/wiki-server.js
+  - src/wiki/**
+  - src/services/case-alignment-service.js
+  - src/services/replay-lab-service.js
+  - src/services/golden-structurer-service.js
+  - src/services/replay-task-service.js
+  - src/services/benchmark-case-service.js
+  - src/services/skill-work-order-service.js
+  - src/services/skill-refinement-service.js
+  - src/services/benchmark-evaluation-service.js
+  - src/services/hermes-task-queue-service.js
+  - src/services/unit-test-case-generation-service.js
+  - src/services/pipeline-service.js
+  - src/services/skill-database-service.js
+  - src/services/replay-artifact-service.js
+  - src/services/extraction-service.js
+  - src/services/skill-registry-service.js
+  - src/services/llm-profile-service.js
+  - src/services/module-skill-service.js
+  - src/services/project-service.js
+  - src/services/skill-management-service.js
+  - src/services/validation-service.js
+  - src/services/skill-rule-service.js
+  - src/services/skill-refinement-audit-service.js
+  - src/services/storage.js
+  - src/services/upload-filename.js
+  - src/services/template-service.js
+  - src/services/skill-bundle-service.js
+  - src/services/feedback-ticket-service.js
+  - src/services/rejection-service.js
+
+windows:
+  - .env.windows-prod.example
+  - deploy/targets/windows-prod*.json
+  - src/hermes-app.js
+  - src/hermes-server.js
+  - src/services/matlab-mcp-client.js
+  - src/services/slx-model-analysis-service.js
+  - src/services/satk-model-fact-builder.js
+  - src/services/slx-model-fact-adapter.js
+  - tools/**
+  - scripts/deploy-release.ps1
+  - scripts/install-windows-services.ps1
+
+shared:
+  - .env.dev-distributed.example
+  - .env.defaults
+  - deploy/ownership.yml
+  - start-local.cmd
+  - stop-local.cmd
+  - restart-local.cmd
+  - start-local.sh
+  - stop-local.sh
+  - scripts/start-local.sh
+  - scripts/stop-local.sh
+  - scripts/start-local.ps1
+  - scripts/stop-local.ps1
+  - scripts/restart-local.ps1
+  - scripts/build-release-zip.mjs
+  - scripts/classify-changes.mjs
+  - src/config.js
+  - src/services/c-extractor.js
+  - src/services/pdf-extractor.js
+  - src/services/spreadsheet-extraction-service.js
+  - src/services/llm-service.js
+  - src/services/openai-compatible-chat.js
+  - src/services/model-requirement-view-service.js
+  - src/services/model-fact-bundle.js
+  - src/services/hermes-agent-client.js
+  - src/services/software-requirement-agent-shared.js
+  - src/services/software-requirement-markdown-agent-service.js
+  - templates/**
+  - skills/**
+  - docs/**
+  - tests/**
+  - test-fixtures/**
+
+ambiguous:
+  - package.json
+  - package-lock.json
+  - README.md

@@ -30,6 +30,7 @@ import { FeedbackTicketService } from "../src/services/feedback-ticket-service.j
 import { createHermesApp } from "../src/hermes-app.js";
 import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
+import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
 import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
 import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
 import {
@@ -64,6 +65,13 @@ async function withTempConfig(run) {
     skillBundleDir: path.join(tempDir, "skills", "bundles"),
     generationTaskArtifactDir: path.join(tempDir, "data", "generation-task-artifacts"),
     replayTaskArtifactDir: path.join(tempDir, "data", "replay-task-artifacts"),
+    unitTestCase: {
+      taskStoreDir: path.join(tempDir, "data", "unit-test-case-generation", "tasks"),
+      uploadTempDir: path.join(tempDir, "data", "unit-test-case-generation", "_incoming"),
+      skillName: "simulink-ut-tcsd-generator",
+      expectedOutputPattern: "outputs/*_tcsd.xlsx",
+      agentWorkspaceRoot: ""
+    },
     dataDir: path.join(tempDir, "data"),
     skillDatabasePath: path.join(tempDir, "data", "skills.sqlite"),
     projectStoreDir: path.join(tempDir, "data", "projects"),
@@ -104,7 +112,8 @@ async function withTempConfig(run) {
           replay_proposal_generate: 4000,
           anchor_index_build: 2000,
           outline_build: 2000,
-          content_generate: 4000
+          content_generate: 4000,
+          simulink_ut_tcsd_generate: 5000
         },
       maxTurns: 8,
       maxRecalledAtoms: 24,
@@ -336,6 +345,21 @@ async function withTestServer(run) {
       });
     });
   }
+}
+
+async function createMockUploadFile(tempDir, originalname, content = "fixture") {
+  const uploadDir = path.join(tempDir, "mock-uploads");
+  await fs.mkdir(uploadDir, { recursive: true });
+  const filePath = path.join(uploadDir, `${Date.now()}-${originalname}`);
+  await fs.writeFile(filePath, content);
+  const stat = await fs.stat(filePath);
+  return {
+    originalname,
+    filename: path.basename(filePath),
+    path: filePath,
+    mimetype: "application/octet-stream",
+    size: stat.size
+  };
 }
 
 async function withHermesServer(run) {
@@ -2966,6 +2990,64 @@ const tests = [
     }
   },
   {
+    name: "Hermes agent client passes configured CLI profile and profile state db",
+    run: async () => {
+      await withTempConfig(async () => {
+        const invocations = [];
+        const usageReaderInvocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          profile: "deepseek",
+          stateDbPath: "/tmp/deepseek-state.db",
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"items\":[{\"title\":\"Profile item\",\"requirementText\":\"Profile text\",\"sourceAnchorIds\":[]}]}\n\nsession_id: 20260522_170000_deepseek\n",
+              stderr: ""
+            };
+          },
+          usageReader: async ({ sessionId, stateDbPath }) => {
+            usageReaderInvocations.push({ sessionId, stateDbPath });
+            return {
+              model: "deepseek-v4-pro",
+              inputTokens: 100,
+              outputTokens: 20,
+              totalTokens: 120,
+              costStatus: "api"
+            };
+          }
+        });
+
+        const response = await client.executeStep({
+          taskId: "task-cli-profile",
+          stepType: "content_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            project: { name: "CLI Profile Project", documentType: "software_requirement" },
+            evidence: [],
+            recalledAtoms: [],
+            outline: { sections: [{ title: "Section", objective: "Goal" }] },
+            template: { requirementIdPrefix: "SWR", sections: [] }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].command, "hermes");
+        assert.deepEqual(invocations[0].args.slice(0, 3), ["-p", "deepseek", "chat"]);
+        assert.deepEqual(usageReaderInvocations, [
+          {
+            sessionId: "20260522_170000_deepseek",
+            stateDbPath: "/tmp/deepseek-state.db"
+          }
+        ]);
+        assert.equal(response.metrics.tokenUsage.model, "deepseek-v4-pro");
+      });
+    }
+  },
+  {
     name: "Hermes agent client accepts markdown artifact when workspace CLI stdout is not JSON",
     run: async () => {
       await withTempConfig(async () => {
@@ -3099,6 +3181,76 @@ const tests = [
       assert.match(source, /skillDatabasePath:\s*path\.join\(dataDir,\s*"skills\.sqlite"\)/);
       assert.match(source, /activeSkillDir:\s*path\.join\(skillRootDir,\s*"active"\)/);
       assert.match(source, /skillBundleDir:\s*path\.join\(skillRootDir,\s*"bundles"\)/);
+    }
+  },
+  {
+    name: "Hermes Agent sidecar disables default HTTP request timeout for long steps",
+    run: async () => {
+      const configSource = await fs.readFile(new URL("../src/config.js", import.meta.url), "utf8");
+      const serverSource = await fs.readFile(new URL("../src/hermes-server.js", import.meta.url), "utf8");
+
+      assert.match(configSource, /serverRequestTimeoutMs:\s*Number\(process\.env\.HERMES_SERVER_REQUEST_TIMEOUT_MS\s*\|\|\s*0\)/);
+      assert.match(configSource, /simulink_ut_tcsd_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS\s*\|\|\s*3600000\)/);
+      assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE[\s\S]*:\s*10000/);
+      assert.ok(serverSource.includes("server.requestTimeout = requestTimeoutMs"));
+      assert.ok(serverSource.includes("server.timeout = requestTimeoutMs"));
+    }
+  },
+  {
+    name: "Hermes agent client builds simulink_ut_tcsd_generate prompt and timeout",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        await fs.mkdir(outputDir, { recursive: true });
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 120000,
+          stepTimeoutMs: {
+            simulink_ut_tcsd_generate: 3600000
+          },
+          stepMaxTurns: {
+            simulink_ut_tcsd_generate: 10000
+          },
+          usageReader: async () => null,
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"status\":\"completed\",\"summary\":\"完成\",\"outputFiles\":[{\"relativePath\":\"outputs/Demo_Test0001_tcsd.xlsx\"}],\"warnings\":[]}\n\nsession_id: 20260522_ut\n",
+              stderr: ""
+            };
+          }
+        });
+
+        const result = await client.executeStep({
+          taskId: "ut-task-1",
+          stepType: "simulink_ut_tcsd_generate",
+          allowedPaths: [workspaceDir],
+          workdir: workspaceDir,
+          inputArtifact: {
+            workspaceDir,
+            modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+            modelMatPath: path.join(workspaceDir, "Demo.mat"),
+            outputDir,
+            skillName: "simulink-ut-tcsd-generator",
+            expectedOutputPattern: "outputs/*_tcsd.xlsx"
+          }
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].options.timeout, 3600000);
+        assert.equal(invocations[0].args[invocations[0].args.indexOf("--max-turns") + 1], "10000");
+        assert.match(invocations[0].args[2], /simulink_ut_tcsd_generate/);
+        assert.match(invocations[0].args[2], /simulink-ut-tcsd-generator/);
+        assert.match(invocations[0].args[2], /Demo\.slx/);
+        assert.match(invocations[0].args[2], /Demo\.mat/);
+        assert.match(invocations[0].args[2], /outputs\/\*_tcsd\.xlsx/);
+        assert.match(invocations[0].args[2], /MATLAB Cleanup Contract/);
+        assert.match(invocations[0].args[2], /build_tcsd_from_json\.py/);
+        assert.equal(result.artifact.outputFiles[0].relativePath, "outputs/Demo_Test0001_tcsd.xlsx");
+      });
     }
   },
   {
@@ -3766,6 +3918,44 @@ const tests = [
           (error) => {
             assert.equal(error.code, "hermes_invalid_response");
             assert.match(error.message, /JSON/i);
+            return true;
+          }
+        );
+      });
+    }
+  },
+  {
+    name: "Hermes agent client uses CLI stdout or stderr for request failures",
+    run: async () => {
+      await withTempConfig(async () => {
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 2000,
+          commandRunner: async () => {
+            const error = new Error("Command failed: hermes chat -q very long prompt");
+            error.code = 1;
+            error.stdout = "Codex refresh token was already consumed. Run hermes auth.";
+            error.stderr = "";
+            throw error;
+          }
+        });
+
+        await assert.rejects(
+          () =>
+            client.executeStep({
+              stepType: "simulink_ut_tcsd_generate",
+              inputArtifact: {
+                workspaceDir: "/tmp/workspace",
+                modelSlxPath: "/tmp/workspace/model.slx",
+                modelMatPath: "/tmp/workspace/model.mat",
+                outputDir: "/tmp/workspace/outputs"
+              }
+            }),
+          (error) => {
+            assert.match(error.message, /Run hermes auth/);
+            assert.doesNotMatch(error.message, /very long prompt/);
+            assert.equal(error.code, "hermes_request_failed");
+            assert.equal(error.exitCode, 1);
             return true;
           }
         );
@@ -8659,6 +8849,37 @@ const tests = [
     }
   },
   {
+    name: "Local one-click scripts start and stop the Hermes Agent sidecar",
+    run: async () => {
+      const startShell = await fs.readFile(path.join(config.rootDir, "scripts", "start-local.sh"), "utf8");
+      const stopShell = await fs.readFile(path.join(config.rootDir, "scripts", "stop-local.sh"), "utf8");
+      const startWindows = await fs.readFile(path.join(config.rootDir, "scripts", "start-local.ps1"), "utf8");
+      const stopWindows = await fs.readFile(path.join(config.rootDir, "scripts", "stop-local.ps1"), "utf8");
+      const restartWindows = await fs.readFile(path.join(config.rootDir, "scripts", "restart-local.ps1"), "utf8");
+      const startCommand = await fs.readFile(path.join(config.rootDir, "start-local.cmd"), "utf8");
+      const restartCommand = await fs.readFile(path.join(config.rootDir, "restart-local.cmd"), "utf8");
+
+      assert.ok(startShell.includes("src/hermes-server.js"));
+      assert.ok(startShell.includes("hermes-agent.pid"));
+      assert.ok(startShell.includes('APP_RUNTIME_ROLE="hermes-agent"'));
+      assert.ok(startShell.includes('APP_RUNTIME_ROLE="platform"'));
+      assert.ok(startShell.includes('HERMES_TRANSPORT="$PLATFORM_HERMES_TRANSPORT"'));
+      assert.ok(startShell.includes("HERMES_SERVER_REQUEST_TIMEOUT_MS"));
+      assert.ok(stopShell.includes("hermes-agent.pid"));
+
+      assert.ok(startWindows.includes("src/hermes-server.js"));
+      assert.ok(startWindows.includes("hermes-agent.pid"));
+      assert.ok(startWindows.includes('APP_RUNTIME_ROLE = "hermes-agent"'));
+      assert.ok(startWindows.includes('APP_RUNTIME_ROLE = "platform"'));
+      assert.ok(startWindows.includes('HERMES_TRANSPORT = "$platformHermesTransport"'));
+      assert.ok(startWindows.includes("HERMES_SERVER_REQUEST_TIMEOUT_MS"));
+      assert.ok(stopWindows.includes("hermes-agent.pid"));
+      assert.ok(restartWindows.includes("HermesPort"));
+      assert.ok(startCommand.includes("%*"));
+      assert.ok(restartCommand.includes("%*"));
+    }
+  },
+  {
     name: "Replay Lab loads template with current preview and validation context",
     run: async () => {
       await withTempConfig(async () => {
@@ -9325,6 +9546,170 @@ const tests = [
     }
   },
   {
+    name: "Project list replaces Skill Refinement shortcut with unit test case generation workbench",
+    run: async () => {
+      const indexHtml = await fs.readFile(path.join(config.rootDir, "public", "index.html"), "utf8");
+
+      assert.ok(indexHtml.includes('href="/unit-test-case-generation"'));
+      assert.ok(indexHtml.includes("单元测试用例生成"));
+      assert.equal(indexHtml.includes('href="/skill-refinement">Skill Refinement'), false);
+
+      await withTestServer(async ({ baseUrl }) => {
+        const response = await fetch(`${baseUrl}/unit-test-case-generation`);
+        assert.equal(response.status, 200);
+        const html = await response.text();
+
+        assert.ok(html.includes("<title>单元测试用例生成</title>"));
+        assert.ok(html.includes('id="unit-test-form"'));
+        assert.ok(html.includes('name="modelSlx"'));
+        assert.ok(html.includes('name="modelMat"'));
+        assert.ok(html.includes('id="unit-start-button"'));
+        assert.ok(html.includes('/unit-test-case-generation.js'));
+      });
+    }
+  },
+  {
+    name: "Unit test case generation API validates upload pairs and creates queued tasks",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl }) => {
+          const missingMat = new FormData();
+          missingMat.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          const missingResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: missingMat
+          });
+          assert.equal(missingResponse.status, 400);
+          const missingBody = await missingResponse.json();
+          assert.equal(missingBody.code, "unit_test_case_invalid_upload_count");
+
+          const wrongExt = new FormData();
+          wrongExt.append("modelSlx", new Blob(["txt"]), "Demo.txt");
+          wrongExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          const wrongExtResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: wrongExt
+          });
+          assert.equal(wrongExtResponse.status, 400);
+          const wrongExtBody = await wrongExtResponse.json();
+          assert.equal(wrongExtBody.code, "unit_test_case_invalid_slx_extension");
+
+          const valid = new FormData();
+          valid.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          valid.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          const validResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: valid
+          });
+          assert.equal(validResponse.status, 202);
+          const validBody = await validResponse.json();
+          assert.equal(validBody.taskStarted, true);
+          assert.equal(validBody.task.type, "unit_test_case_generation");
+          assert.equal(validBody.task.inputs.modelSlx.originalName, "Demo.slx");
+          assert.equal(validBody.task.inputs.modelMat.originalName, "Demo.mat");
+          assert.equal(validBody.task.inputs.modelSlx.workspaceName, "Demo.slx");
+          assert.equal(validBody.task.inputs.modelMat.workspaceName, "Demo.mat");
+          assert.equal(validBody.task.inputs.modelSlx.workspaceRelativePath, "Demo.slx");
+          assert.equal(validBody.task.inputs.modelMat.workspaceRelativePath, "Demo.mat");
+
+          const listResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`);
+          assert.equal(listResponse.status, 200);
+          const listBody = await listResponse.json();
+          assert.ok(listBody.tasks.some((task) => task.id === validBody.task.id));
+        });
+      });
+    }
+  },
+  {
+    name: "UnitTestCaseGenerationService completes tasks with outputs xlsx and rejects artifact traversal",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const service = new UnitTestCaseGenerationService({
+          hermesAgentClient: {
+            async executeStep(payload, runtime = {}) {
+              await runtime.onEvent?.({
+                status: "completed",
+                label: "Hermes mock completed",
+                message: "Mock TCSD workbook generated.",
+                transport: "mock"
+              });
+              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
+              await fs.mkdir(path.dirname(outputPath), { recursive: true });
+              await fs.writeFile(outputPath, "xlsx");
+              return {
+                status: "succeeded",
+                stepType: "simulink_ut_tcsd_generate",
+                artifact: {
+                  status: "completed",
+                  summary: "已生成 Demo_Test0001_tcsd.xlsx。",
+                  outputFiles: [{ relativePath: "outputs/Demo_Test0001_tcsd.xlsx" }]
+                },
+                metrics: { tokenUsage: { totalTokens: 12 } },
+                logs: []
+              };
+            }
+          }
+        });
+        const task = await service.createTask({
+          modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+          modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+        });
+        const created = await service.readTask(task.id);
+        assert.equal(created.inputs.modelSlx.workspaceName, "Demo.slx");
+        assert.equal(created.inputs.modelMat.workspaceName, "Demo.mat");
+        assert.equal(created.inputs.modelSlx.workspaceRelativePath, "Demo.slx");
+        assert.equal(created.inputs.modelMat.workspaceRelativePath, "Demo.mat");
+        assert.ok(created.workspace.modelSlxPath.endsWith(`${path.sep}Demo.slx`));
+        assert.ok(created.workspace.modelMatPath.endsWith(`${path.sep}Demo.mat`));
+
+        const completed = await service.runTask(task.id);
+        assert.equal(completed.status, "completed");
+        assert.equal(completed.artifacts.length, 1);
+        assert.equal(completed.artifacts[0].fileName, "Demo_Test0001_tcsd.xlsx");
+        const artifact = await service.getArtifact(task.id, completed.artifacts[0].id);
+        assert.equal(path.basename(artifact.absolutePath), "Demo_Test0001_tcsd.xlsx");
+
+        const stored = await service.readTask(task.id);
+        stored.artifacts.push({
+          id: "bad-artifact",
+          fileName: "bad.xlsx",
+          relativePath: "../bad.xlsx",
+          size: 1
+        });
+        await service.saveTask(stored);
+        await assert.rejects(
+          () => service.getArtifact(task.id, "bad-artifact"),
+          /outputs\/\*\.xlsx/
+        );
+      });
+    }
+  },
+  {
+    name: "UnitTestCaseGenerationService records Hermes failures",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const service = new UnitTestCaseGenerationService({
+          hermesAgentClient: {
+            async executeStep() {
+              const error = new Error("MATLAB unavailable");
+              error.code = "matlab_unavailable";
+              throw error;
+            }
+          }
+        });
+        const task = await service.createTask({
+          modelSlx: [await createMockUploadFile(tempDir, "Fail.slx", "slx")],
+          modelMat: [await createMockUploadFile(tempDir, "Fail.mat", "mat")]
+        });
+        await assert.rejects(() => service.runTask(task.id), /MATLAB unavailable/);
+        const failed = await service.getTask(task.id);
+        assert.equal(failed.status, "failed");
+        assert.equal(failed.errorMessage, "MATLAB unavailable");
+        assert.equal(failed.hermes.errorCode, "matlab_unavailable");
+      });
+    }
+  },
+  {
     name: "Task detail page route supports document space task urls",
     run: async () => {
       await withTestServer(async ({ baseUrl }) => {
@@ -9527,7 +9912,23 @@ const tests = [
           ];
         }
       };
-      const queue = new HermesTaskQueueService({ projectService, replayTaskService });
+      const unitTestCaseGenerationService = {
+        async listTasks() {
+          return [
+            {
+              id: "unit-1",
+              status: "queued",
+              inputs: {
+                modelSlx: { originalName: "Demo.slx" }
+              },
+              progress: { message: "等待生成 TCSD", percent: 5 },
+              createdAt: "2026-04-24T01:07:00.000Z",
+              updatedAt: "2026-04-24T01:07:00.000Z"
+            }
+          ];
+        }
+      };
+      const queue = new HermesTaskQueueService({ projectService, replayTaskService, unitTestCaseGenerationService });
       queue.enqueue({
         id: "blocker",
         type: "generation",
@@ -9543,6 +9944,11 @@ const tests = [
         type: "slx_interpret",
         run: async () => null
       });
+      queue.enqueue({
+        id: "unit-1",
+        type: "unit_test_case_generation",
+        run: async () => null
+      });
 
       const summaries = await queue.listTaskSummaries();
       const ids = summaries.map((task) => task.id);
@@ -9551,6 +9957,7 @@ const tests = [
       assert.ok(ids.includes("replay-1"));
       assert.ok(ids.includes("slx-1"));
       assert.ok(ids.includes("interp-task-1"));
+      assert.ok(ids.includes("unit-1"));
       assert.equal(summaries.find((task) => task.id === "gen-1").queuePosition, 1);
       assert.equal(summaries.find((task) => task.id === "extract-1").detailUrl, "/projects/project-1/modules/module-1?openHistory=1&highlightTaskId=extract-1");
       assert.equal(summaries.find((task) => task.id === "replay-1").detailUrl, "/feedback-pool?projectId=project-1&moduleId=module-1&taskId=replay-1");
@@ -9566,6 +9973,11 @@ const tests = [
       assert.equal(interpSummary.title, "SLX 解释 · charging-model.slx");
       assert.ok(interpSummary.detailUrl.includes("/slx-interpreter?projectId=project-1&moduleId=module-1&sessionId=session-1&highlightTaskId=interp-task-1&messageId=message-assistant-1"));
       assert.equal(interpSummary.queuePosition, 2);
+      const unitSummary = summaries.find((task) => task.id === "unit-1");
+      assert.equal(unitSummary.type, "unit_test_case_generation");
+      assert.equal(unitSummary.title, "单元测试用例 · Demo.slx");
+      assert.equal(unitSummary.detailUrl, "/unit-test-case-generation?taskId=unit-1");
+      assert.equal(unitSummary.queuePosition, 3);
     }
   },
   {
@@ -9578,7 +9990,8 @@ const tests = [
         "feedback-pool.html",
         "document-extractor.html",
         "requirement-generation.html",
-        "slx-parser.html"
+        "slx-parser.html",
+        "unit-test-case-generation.html"
       ];
       for (const page of pages) {
         const html = await fs.readFile(path.join(config.rootDir, "public", page), "utf8");

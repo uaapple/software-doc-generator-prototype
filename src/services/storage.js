@@ -10,6 +10,8 @@ export async function ensureStorage() {
     fs.mkdir(config.projectStoreDir, { recursive: true }),
     fs.mkdir(config.generationTaskArtifactDir, { recursive: true }),
     fs.mkdir(config.replayTaskArtifactDir, { recursive: true }),
+    fs.mkdir(config.unitTestCase?.taskStoreDir || path.join(config.dataDir, "unit-test-case-generation", "tasks"), { recursive: true }),
+    fs.mkdir(config.unitTestCase?.uploadTempDir || path.join(config.dataDir, "unit-test-case-generation", "_incoming"), { recursive: true }),
     fs.mkdir(config.uploadDir, { recursive: true }),
     fs.mkdir(path.dirname(config.llmProfileStorePath), { recursive: true }),
     fs.mkdir(config.skillRefinementDir, { recursive: true }),
