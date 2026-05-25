@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
+import fsSync, { promises as fs } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -1987,6 +1987,15 @@ function quoteWindowsCmdArg(value = "") {
 function buildCommandRunnerInvocation(command, args = []) {
   const normalizedCommand = String(command || "").trim();
   const extension = path.extname(normalizedCommand).toLowerCase();
+  if (process.platform === "win32" && extension === ".cmd") {
+    const embeddedPython = path.join(path.dirname(normalizedCommand), "python", "python.exe");
+    if (path.basename(normalizedCommand).toLowerCase() === "hermes.cmd" && fsSync.existsSync(embeddedPython)) {
+      return {
+        command: embeddedPython,
+        args: ["-m", "hermes_cli.main", ...args]
+      };
+    }
+  }
   if (process.platform === "win32" && [".cmd", ".bat"].includes(extension)) {
     return {
       command: "cmd.exe",
