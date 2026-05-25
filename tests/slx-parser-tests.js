@@ -1035,6 +1035,10 @@ async function testPipelineServiceInterpretSlxUsesHermesAndPersistsAnswer() {
   assert.deepEqual(captured.payload.allowedPaths, [slxPath]);
   assert.equal(captured.payload.inputArtifact.model.assetId, modelAsset.id);
   assert.equal(captured.payload.inputArtifact.question, "这个模型的输入输出是什么？");
+  assert.match(
+    captured.payload.inputArtifact.prompt,
+    /使用 MCP\/SATK 基于模型文件 charging-model\.slx，回答问题：“这个模型的输入输出是什么？”/
+  );
   assert.equal(result.message.status, "completed");
   assert.equal(result.message.content, "模型包含输入 ChargeEnable 和输出 ChargeState。");
 

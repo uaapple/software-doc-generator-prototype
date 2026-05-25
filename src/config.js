@@ -52,9 +52,14 @@ function loadDotEnv(filePath, options = {}) {
   }
 }
 
+function trimTrailingSlash(value = "") {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
 export const config = {
   host: process.env.HOST || "::",
   port: Number(process.env.PORT || 3000),
+  publicBaseURL: trimTrailingSlash(process.env.APP_PUBLIC_BASE_URL || process.env.APP_BASE_URL || ""),
   rootDir,
   publicDir: path.join(rootDir, "public"),
   legacySkillDir: skillRootDir,
@@ -92,11 +97,21 @@ export const config = {
   },
   hermes: {
     transport: process.env.HERMES_TRANSPORT || "cli",
+    slxInterpreterTransport: String(process.env.HERMES_SLX_INTERPRETER_TRANSPORT || "").trim().toLowerCase(),
     host: process.env.HERMES_HOST || "127.0.0.1",
     port: Number(process.env.HERMES_PORT || 3101),
     baseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
     apiMode: process.env.HERMES_API_MODE || "json",
     authToken: process.env.HERMES_AUTH_TOKEN || "",
+    openAiApi: {
+      baseURL: trimTrailingSlash(process.env.HERMES_OPENAI_API_BASE_URL || process.env.HERMES_API_SERVER_BASE_URL || ""),
+      apiKey: process.env.HERMES_OPENAI_API_KEY || process.env.HERMES_API_SERVER_KEY || "",
+      model: process.env.HERMES_OPENAI_API_MODEL || process.env.HERMES_API_SERVER_MODEL || "",
+      pollIntervalMs: Number(process.env.HERMES_OPENAI_API_POLL_INTERVAL_MS || 5000),
+      requestTimeoutMs: Number(process.env.HERMES_OPENAI_API_REQUEST_TIMEOUT_MS || 30000),
+      autoApprove: String(process.env.HERMES_OPENAI_API_AUTO_APPROVE || "true").trim().toLowerCase() !== "false",
+      approvalChoice: process.env.HERMES_OPENAI_API_APPROVAL_CHOICE || "session"
+    },
     command: process.env.HERMES_COMMAND || "hermes",
     stateDbPath: process.env.HERMES_STATE_DB_PATH || path.join(process.env.HOME || "", ".hermes", "state.db"),
     workdir: process.env.HERMES_WORKDIR || rootDir,

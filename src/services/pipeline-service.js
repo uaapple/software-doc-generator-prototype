@@ -36,6 +36,24 @@ function normalizeDocumentExtractionType(value) {
   return "software_requirement";
 }
 
+function buildModuleAssetDownloadUrl(projectId, moduleId, assetId) {
+  const baseURL = String(config.publicBaseURL || "").replace(/\/+$/, "");
+  if (!baseURL || !projectId || !moduleId || !assetId) {
+    return "";
+  }
+  return [
+    baseURL,
+    "api",
+    "projects",
+    encodeURIComponent(projectId),
+    "modules",
+    encodeURIComponent(moduleId),
+    "assets",
+    encodeURIComponent(assetId),
+    "download"
+  ].join("/");
+}
+
 function getDocumentExtractionTypeLabel(documentType) {
   if (documentType === "system_requirement") return "系统需求";
   if (documentType === "detail_design") return "详细设计";
@@ -803,6 +821,17 @@ function buildHermesStepDescriptor(stepType = "") {
     actionLabel: stepType || "agent step",
     runningPercent: 60
   };
+}
+
+function buildSlxInterpreterAgentPrompt(model = {}, question = "") {
+  const fileName = String(model.originalName || model.fileName || path.basename(model.absolutePath || "model.slx")).trim();
+  const absolutePath = String(model.absolutePath || "").trim();
+  const userQuestion = String(question || "").trim();
+  return [
+    `使用 MCP/SATK 基于模型文件 ${fileName}，回答问题：“${userQuestion}”。`,
+    absolutePath ? `模型文件绝对路径：${absolutePath}` : "",
+    "如果无法调用 MCP/SATK 或无法读取模型文件，请直接说明失败原因。"
+  ].filter(Boolean).join("\n");
 }
 
 export function validateModelRequirementView(mrv = {}) {
@@ -3154,19 +3183,22 @@ export class PipelineService {
     const runInterpret = async () => {
       const descriptor = buildHermesStepDescriptor("slx_interpret_answer");
       const startedAt = new Date().toISOString();
+      const hermesTransport = typeof this.hermesAgentClient.getTransportForStep === "function"
+        ? this.hermesAgentClient.getTransportForStep("slx_interpret_answer")
+        : this.hermesAgentClient.transport;
       try {
         await updateTaskProgress(
           {
             stage: descriptor.stage,
             label: descriptor.runningLabel,
-            message: `已启动 ${this.hermesAgentClient.transport === "cli" ? "本机 Hermes CLI" : "Hermes API"}，正在读取 ${model.originalName || "SLX 模型"}。`,
+            message: `已启动 ${hermesTransport === "cli" ? "本机 Hermes CLI" : "Hermes API"}，正在读取 ${model.originalName || "SLX 模型"}。`,
             percent: descriptor.runningPercent
           },
           {
             status: "running",
             debug: {
               agent: {
-                transport: this.hermesAgentClient.transport,
+                transport: hermesTransport,
                 currentStep: "slx_interpret_answer",
                 status: "running",
                 startedAt,
@@ -3205,10 +3237,12 @@ export class PipelineService {
                 fileName: model.originalName || "",
                 fileRole: model.role || "simulink_slx",
                 absolutePath: model.absolutePath || "",
+                downloadUrl: buildModuleAssetDownloadUrl(projectId, moduleId, model.id),
                 size: model.size || 0,
                 uploadedAt: model.uploadedAt || ""
               },
               question,
+              prompt: buildSlxInterpreterAgentPrompt(model, question),
               history: buildHistory()
             },
             workdir: config.rootDir
@@ -3219,7 +3253,7 @@ export class PipelineService {
               const eventAt = event.at || new Date().toISOString();
               const debugUpdate = {
                 agent: {
-                  transport: event.transport || this.hermesAgentClient.transport,
+                  transport: event.transport || hermesTransport,
                   currentStep: event.stepType || "slx_interpret_answer",
                   status: status || "running",
                   startedAt: event.startedAt || startedAt,
@@ -3239,7 +3273,7 @@ export class PipelineService {
                 level: event.level || (status === "failed" ? "error" : "info"),
                 type: event.type || "agent_runtime",
                 status,
-                transport: event.transport || this.hermesAgentClient.transport,
+                transport: event.transport || hermesTransport,
                 stepType: event.stepType || "slx_interpret_answer",
                 sessionId: event.sessionId || "",
                 startedAt: event.startedAt || startedAt,
@@ -3281,7 +3315,7 @@ export class PipelineService {
                     label: descriptor.runningLabel,
                     message: status === "heartbeat"
                       ? `${descriptor.runningLabel}，已运行 ${formatElapsedSeconds(event.elapsedMs || 0)}。`
-                      : `已启动 ${this.hermesAgentClient.transport === "cli" ? "本机 Hermes CLI" : "Hermes API"}，等待模型解释结果。`,
+                      : `已启动 ${hermesTransport === "cli" ? "本机 Hermes CLI" : "Hermes API"}，等待模型解释结果。`,
                     percent: descriptor.runningPercent
                   },
                   {
@@ -3322,7 +3356,7 @@ export class PipelineService {
             warnings: artifact.warnings || [],
             debug: {
               agent: {
-                transport: this.hermesAgentClient.transport,
+                transport: hermesTransport,
                 currentStep: "slx_interpret_answer",
                 status: "completed",
                 startedAt,

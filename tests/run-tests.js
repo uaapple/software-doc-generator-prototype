@@ -2563,6 +2563,36 @@ const tests = [
     }
   },
   {
+    name: "Module asset download API serves binary uploads for remote Hermes tools",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl }) => {
+          const projectService = new ProjectService();
+          const project = await projectService.createProject({ name: "Asset Download Workspace" });
+          const module = await projectService.createModule(project.id, { name: "SLX Module" });
+
+          const form = new FormData();
+          const slxBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x53, 0x4c, 0x58]);
+          form.append("slx", new Blob([slxBytes], { type: "application/octet-stream" }), "model.slx");
+
+          const uploadResponse = await fetch(`${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets`, {
+            method: "POST",
+            body: form
+          });
+          assert.equal(uploadResponse.status, 201);
+          const uploadPayload = await uploadResponse.json();
+          const asset = uploadPayload.assets[0];
+
+          const downloadResponse = await fetch(`${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets/${asset.id}/download`);
+          assert.equal(downloadResponse.status, 200);
+          assert.match(downloadResponse.headers.get("content-disposition") || "", /model\.slx/);
+          const downloaded = new Uint8Array(await downloadResponse.arrayBuffer());
+          assert.deepEqual([...downloaded], [...slxBytes]);
+        });
+      });
+    }
+  },
+  {
     name: "Project service deletes completed and running tasks, including accepted snapshots",
     run: async () => {
       await withTempConfig(async () => {
@@ -2800,6 +2830,138 @@ const tests = [
         assert.deepEqual(usageReaderInvocations, ["20260421_144500_abcd12"]);
         assert.equal(response.metrics.tokenUsage.totalTokens, 1550);
         assert.equal(response.metrics.tokenUsage.inputTokens, 1200);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client routes SLX interpreter through OpenAI-compatible runs API",
+    run: async () => {
+      await withTempConfig(async () => {
+        const requests = [];
+        const approvals = [];
+        let pollCount = 0;
+        const readJsonBody = (req) =>
+          new Promise((resolve, reject) => {
+            const chunks = [];
+            req.on("data", (chunk) => chunks.push(chunk));
+            req.on("error", reject);
+            req.on("end", () => {
+              const raw = Buffer.concat(chunks).toString("utf8");
+              resolve(raw ? JSON.parse(raw) : {});
+            });
+          });
+        const server = http.createServer(async (req, res) => {
+          requests.push({ method: req.method, url: req.url, auth: req.headers.authorization || "" });
+          try {
+            if (req.method === "POST" && req.url === "/v1/runs") {
+              const body = await readJsonBody(req);
+              assert.equal(req.headers.authorization, "Bearer test-key");
+              assert.equal(body.model, "deepseek-v4-pro");
+              assert.match(body.input, /slx_interpret_answer/);
+              assert.match(body.input, /downloadUrl/);
+              assert.match(body.instructions, /internal\/steps\/execute/);
+              res.writeHead(202, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ run_id: "run_slx_1", status: "started" }));
+              return;
+            }
+            if (req.method === "GET" && req.url === "/v1/runs/run_slx_1") {
+              pollCount += 1;
+              res.writeHead(200, { "Content-Type": "application/json" });
+              if (pollCount === 1) {
+                res.end(JSON.stringify({ run_id: "run_slx_1", status: "waiting_for_approval", last_event: "approval.request" }));
+                return;
+              }
+              res.end(JSON.stringify({
+                run_id: "run_slx_1",
+                status: "completed",
+                last_event: "run.completed",
+                output: [
+                  "```json",
+                  JSON.stringify({
+                    answerMarkdown: "模型顶层输入为 A，输出为 B。",
+                    summary: "已回答 SLX 接口问题。",
+                    evidence: [{ fileName: "model.slx", fileRole: "simulink_slx", location: "SATK", excerpt: "A -> B" }],
+                    warnings: []
+                  }),
+                  "```"
+                ].join("\n"),
+                usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+              }));
+              return;
+            }
+            if (req.method === "POST" && req.url === "/v1/runs/run_slx_1/approval") {
+              approvals.push(await readJsonBody(req));
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ ok: true }));
+              return;
+            }
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "not found" }));
+          } catch (error) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: error.message }));
+          }
+        });
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const address = server.address();
+        const client = new HermesAgentClient({
+          transport: "api",
+          slxInterpreterTransport: "openai-api",
+          timeoutMs: 1000,
+          openAiApi: {
+            baseURL: `http://127.0.0.1:${address.port}`,
+            apiKey: "test-key",
+            model: "deepseek-v4-pro",
+            pollIntervalMs: 1,
+            requestTimeoutMs: 500
+          }
+        });
+        const events = [];
+
+        try {
+          const response = await client.executeStep(
+            {
+              taskId: "task-openai-slx",
+              stepType: "slx_interpret_answer",
+              inputArtifact: {
+                project: { name: "OpenAI SLX Project", language: "zh-CN" },
+                model: {
+                  assetId: "asset-slx",
+                  fileName: "model.slx",
+                  fileRole: "simulink_slx",
+                  absolutePath: "/opt/software-doc-generator/prod-data/uploads/project/module/model.slx",
+                  downloadUrl: "http://10.36.77.221:3000/api/projects/project/modules/module/assets/asset-slx/download"
+                },
+                question: "这个模型的顶层输入输出是什么？",
+                history: []
+              }
+            },
+            {
+              onEvent: async (event) => {
+                events.push(event);
+              }
+            }
+          );
+
+          assert.equal(response.status, "succeeded");
+          assert.equal(response.sessionId, "run_slx_1");
+          assert.equal(response.metrics.tokenUsage.totalTokens, 15);
+          assert.equal(response.artifact.answerMarkdown, "模型顶层输入为 A，输出为 B。");
+          assert.equal(response.artifact.evidence[0].fileName, "model.slx");
+          assert.deepEqual(approvals, [{ choice: "session", resolve_all: true }]);
+          assert.ok(requests.every((item) => !item.url.includes("/internal/steps/execute")));
+          assert.ok(events.some((event) => event.transport === "openai-api" && event.status === "completed"));
+        } finally {
+          await new Promise((resolve, reject) => {
+            server.close((error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve();
+            });
+          });
+        }
       });
     }
   },

@@ -765,6 +765,24 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/projects/:projectId/modules/:moduleId/assets/:assetId/download", async (req, res, next) => {
+    try {
+      const payload = await projectService.getModuleAssetDownload(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.assetId
+      );
+      res.setHeader("Content-Type", payload.mimeType || "application/octet-stream");
+      res.setHeader("Content-Length", String(payload.size || 0));
+      res.download(payload.path, payload.fileName);
+    } catch (error) {
+      if (error.message === "Asset not found") {
+        return res.status(404).json({ error: "资产不存在" });
+      }
+      next(error);
+    }
+  });
+
   app.post(
     "/api/projects/:projectId/modules/:moduleId/assets",
     upload.fields(moduleUploadFields()),

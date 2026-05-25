@@ -104,7 +104,8 @@ function sanitizeAssetItem(item = {}) {
     assetId: String(item.assetId || item.id || "").trim(),
     fileName: String(item.fileName || item.originalName || "").trim(),
     fileRole: String(item.fileRole || item.role || "").trim(),
-    absolutePath: clipText(item.absolutePath || item.path || "", CLI_PATH_MAX_LENGTH)
+    absolutePath: clipText(item.absolutePath || item.path || "", CLI_PATH_MAX_LENGTH),
+    downloadUrl: clipText(item.downloadUrl || "", 1000)
   };
 }
 
@@ -393,6 +394,25 @@ function buildUsageSummary(usage = {}) {
     `output ${usage.outputTokens || 0}`,
     `total ${usage.totalTokens || 0}`
   ].join(", ");
+}
+
+function normalizeOpenAiRunUsage(usage = {}) {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+  const inputTokens = usage.inputTokens ?? usage.input_tokens ?? 0;
+  const outputTokens = usage.outputTokens ?? usage.output_tokens ?? 0;
+  const totalTokens = usage.totalTokens ?? usage.total_tokens ?? 0;
+  const normalized = normalizeTokenUsage({
+    model: usage.model || "",
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? usage.cache_read_tokens ?? 0,
+    cacheWriteTokens: usage.cacheWriteTokens ?? usage.cache_write_tokens ?? 0,
+    reasoningTokens: usage.reasoningTokens ?? usage.reasoning_tokens ?? 0
+  });
+  return normalized.totalTokens ? normalized : null;
 }
 
 function parseSqliteUsageRow(stdout = "") {
@@ -1130,6 +1150,7 @@ function buildSlxInterpretPrompt(payload = {}) {
     "Answer the user's question about exactly one selected Simulink .slx model.",
     "You must inspect the selected model with the available Simulink Agentic Toolkit / MATLAB MCP capabilities before answering.",
     "Prefer these tools when available: model_overview, model_read, model_query_params, model_resolve_params.",
+    "If the selected model includes `downloadUrl`, download that file onto the API-server host before calling MATLAB/SATK; Linux absolute paths are not readable from Windows.",
     "Do not answer from cached modelRequirementView JSON unless the tool path is unavailable; the selected .slx model is the source of truth.",
     "Return strict JSON only. No markdown fences. No explanation outside JSON.",
     "",
@@ -1164,6 +1185,7 @@ function buildSlxInterpretPrompt(payload = {}) {
     "",
     "Rules:",
     "- Use only the selected SLX model and the explicit conversation context.",
+    "- When `downloadUrl` is present, fetch that exact URL and analyze the downloaded local copy on the tool host.",
     "- If MATLAB MCP / SATK is unavailable, say so in warnings and answer only what can be supported by available evidence.",
     "- Preserve block paths, signal names, state names, parameter names, and threshold values exactly.",
     "- Keep the answer focused on the user's question; do not dump the full model structure.",
@@ -1808,6 +1830,25 @@ export class HermesAgentClient {
   constructor(options = {}) {
     this.transport = String(options.transport || config.hermes.transport || "cli").trim().toLowerCase();
     this.baseURL = trimTrailingSlash(options.baseURL || config.hermes.baseURL);
+    this.slxInterpreterTransport = String(
+      options.slxInterpreterTransport || config.hermes.slxInterpreterTransport || ""
+    ).trim().toLowerCase();
+    const openAiApiOptions = options.openAiApi || {};
+    this.openAiApi = {
+      baseURL: trimTrailingSlash(openAiApiOptions.baseURL || config.hermes.openAiApi?.baseURL || ""),
+      apiKey: String(openAiApiOptions.apiKey ?? config.hermes.openAiApi?.apiKey ?? "").trim(),
+      model: String(openAiApiOptions.model || config.hermes.openAiApi?.model || "").trim(),
+      pollIntervalMs: Math.max(
+        250,
+        Number(openAiApiOptions.pollIntervalMs ?? config.hermes.openAiApi?.pollIntervalMs ?? 5000) || 5000
+      ),
+      requestTimeoutMs: Math.max(
+        1000,
+        Number(openAiApiOptions.requestTimeoutMs ?? config.hermes.openAiApi?.requestTimeoutMs ?? 30000) || 30000
+      ),
+      autoApprove: openAiApiOptions.autoApprove ?? config.hermes.openAiApi?.autoApprove ?? true,
+      approvalChoice: String(openAiApiOptions.approvalChoice || config.hermes.openAiApi?.approvalChoice || "session").trim() || "session"
+    };
     this.apiMode = String(options.apiMode || config.hermes.apiMode || "json").trim().toLowerCase();
     this.authToken = String(options.authToken || config.hermes.authToken || "").trim();
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs || config.hermes.timeoutMs) || config.hermes.timeoutMs);
@@ -1826,6 +1867,282 @@ export class HermesAgentClient {
 
   getTimeoutMsForStep(stepType = "") {
     return this.stepTimeoutMs[String(stepType || "").trim()] || this.timeoutMs;
+  }
+
+  getTransportForStep(stepType = "") {
+    if (String(stepType || "").trim() === "slx_interpret_answer" && this.slxInterpreterTransport) {
+      return this.slxInterpreterTransport;
+    }
+    return this.transport;
+  }
+
+  buildOpenAiApiUrl(pathname = "") {
+    const baseURL = this.openAiApi.baseURL;
+    const normalizedPath = String(pathname || "").startsWith("/") ? String(pathname || "") : `/${pathname}`;
+    if (baseURL.toLowerCase().endsWith("/v1") && normalizedPath.startsWith("/v1/")) {
+      return `${baseURL}${normalizedPath.slice(3)}`;
+    }
+    return `${baseURL}${normalizedPath}`;
+  }
+
+  async fetchOpenAiApiJson(pathname, options = {}) {
+    if (!this.openAiApi.baseURL) {
+      const error = new Error("Hermes OpenAI-compatible API base URL is not configured");
+      error.code = "hermes_openai_api_not_configured";
+      throw error;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.openAiApi.requestTimeoutMs);
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    };
+    if (this.openAiApi.apiKey) {
+      headers.Authorization = `Bearer ${this.openAiApi.apiKey}`;
+    }
+
+    try {
+      const response = await fetch(this.buildOpenAiApiUrl(pathname), {
+        method: options.method || "GET",
+        headers,
+        body: Object.hasOwn(options, "body") ? JSON.stringify(options.body || {}) : undefined,
+        signal: controller.signal
+      });
+      const raw = await response.text();
+      let parsed = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : {};
+      } catch (_error) {
+        const error = new Error("Hermes OpenAI-compatible API returned an invalid JSON response");
+        error.code = "hermes_invalid_response";
+        error.status = response.status;
+        error.rawOutput = raw;
+        throw error;
+      }
+      if (!response.ok) {
+        const message = parsed?.error?.message || parsed?.error || parsed?.message || `Hermes OpenAI-compatible API failed with status ${response.status}`;
+        const error = new Error(message);
+        error.code = parsed?.error?.code || parsed?.code || "hermes_openai_api_request_failed";
+        error.status = response.status;
+        error.details = parsed;
+        throw error;
+      }
+      return parsed;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        const timeoutError = new Error(`Hermes OpenAI-compatible API request timed out after ${this.openAiApi.requestTimeoutMs}ms`);
+        timeoutError.code = "hermes_timeout";
+        throw timeoutError;
+      }
+      if (error instanceof TypeError) {
+        const connectionError = new Error(`Hermes OpenAI-compatible API is unavailable at ${this.openAiApi.baseURL}`);
+        connectionError.code = "hermes_unavailable";
+        throw connectionError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  buildOpenAiRunRequest(payload = {}) {
+    const input = buildCliPrompt(payload);
+    const request = {
+      input,
+      instructions: [
+        "You are running inside the Hermes built-in OpenAI-compatible API Server.",
+        "Tools execute on the API-server host.",
+        "For SLX interpreter tasks, use the server-side terminal/file tools and matlab_satk MCP tools.",
+        "Do not call the project-specific /internal/steps/execute interface.",
+        "Return strict JSON only, matching the requested schema."
+      ].join("\n"),
+      session_id: payload.taskId || undefined
+    };
+    if (this.openAiApi.model) {
+      request.model = this.openAiApi.model;
+    }
+    return request;
+  }
+
+  async executeOpenAiRunStep(payload = {}, runtime = {}) {
+    if (payload.stepType !== "slx_interpret_answer") {
+      const error = new Error(`Hermes OpenAI-compatible API transport only supports slx_interpret_answer, not ${payload.stepType || "(empty)"}`);
+      error.code = "hermes_openai_api_step_unsupported";
+      throw error;
+    }
+
+    const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+    let runId = "";
+
+    await emitHermesEvent(runtime.onEvent, {
+      type: "agent_runtime",
+      transport: "openai-api",
+      stepType: payload.stepType || "",
+      status: "started",
+      label: "Hermes OpenAI API run started",
+      message: "Submitting SLX interpreter task to Hermes /v1/runs.",
+      startedAt: new Date(startedAt).toISOString(),
+      elapsedMs: 0
+    });
+
+    try {
+      const startResponse = await this.fetchOpenAiApiJson("/v1/runs", {
+        method: "POST",
+        body: this.buildOpenAiRunRequest(payload)
+      });
+      runId = String(startResponse.run_id || startResponse.id || "").trim();
+      if (!runId) {
+        const error = new Error("Hermes OpenAI-compatible API did not return a run_id");
+        error.code = "hermes_openai_api_missing_run_id";
+        throw error;
+      }
+
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "openai-api",
+        stepType: payload.stepType || "",
+        status: "running",
+        label: "Hermes OpenAI API run accepted",
+        message: `Hermes run ${runId} has started.`,
+        sessionId: runId,
+        startedAt: new Date(startedAt).toISOString(),
+        elapsedMs: Date.now() - startedAt
+      });
+
+      let lastStatus = "";
+      let lastEvent = "";
+      while (Date.now() < deadline) {
+        const runStatus = await this.fetchOpenAiApiJson(`/v1/runs/${encodeURIComponent(runId)}`);
+        const status = String(runStatus.status || "").trim();
+        const eventName = String(runStatus.last_event || "").trim();
+        const elapsedMs = Date.now() - startedAt;
+
+        if (status !== lastStatus || eventName !== lastEvent) {
+          lastStatus = status;
+          lastEvent = eventName;
+          await emitHermesEvent(runtime.onEvent, {
+            type: "agent_runtime",
+            transport: "openai-api",
+            stepType: payload.stepType || "",
+            status: status || "running",
+            label: "Hermes OpenAI API run status",
+            message: eventName ? `Hermes run ${runId}: ${status || "running"} (${eventName}).` : `Hermes run ${runId}: ${status || "running"}.`,
+            sessionId: runId,
+            startedAt: new Date(startedAt).toISOString(),
+            heartbeatAt: new Date().toISOString(),
+            elapsedMs
+          });
+        }
+
+        if (status === "waiting_for_approval") {
+          if (!this.openAiApi.autoApprove) {
+            await delay(Math.min(this.openAiApi.pollIntervalMs, Math.max(250, deadline - Date.now())));
+            continue;
+          }
+          await this.fetchOpenAiApiJson(`/v1/runs/${encodeURIComponent(runId)}/approval`, {
+            method: "POST",
+            body: {
+              choice: this.openAiApi.approvalChoice,
+              resolve_all: true
+            }
+          });
+          await emitHermesEvent(runtime.onEvent, {
+            type: "agent_runtime",
+            transport: "openai-api",
+            stepType: payload.stepType || "",
+            status: "running",
+            label: "Hermes OpenAI API approval sent",
+            message: `Approved pending tools for Hermes run ${runId}.`,
+            sessionId: runId,
+            startedAt: new Date(startedAt).toISOString(),
+            elapsedMs
+          });
+        }
+
+        if (status === "completed") {
+          const output = String(runStatus.output || "").trim();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(extractJsonText(output));
+          } catch (_error) {
+            const invalidError = new Error("Hermes OpenAI-compatible API returned an invalid JSON response");
+            invalidError.code = "hermes_invalid_response";
+            invalidError.rawOutput = output;
+            invalidError.sessionId = runId;
+            throw invalidError;
+          }
+          const tokenUsage = normalizeOpenAiRunUsage(runStatus.usage || {});
+          await emitHermesEvent(runtime.onEvent, {
+            type: "agent_runtime",
+            transport: "openai-api",
+            stepType: payload.stepType || "",
+            status: "completed",
+            label: "Hermes OpenAI API run completed",
+            message: tokenUsage
+              ? `Hermes run ${runId} completed, ${buildUsageSummary(tokenUsage)}.`
+              : `Hermes run ${runId} completed.`,
+            sessionId: runId,
+            startedAt: new Date(startedAt).toISOString(),
+            heartbeatAt: new Date().toISOString(),
+            elapsedMs: Date.now() - startedAt,
+            tokenUsage,
+            stdoutExcerpt: clipText(output, 2000)
+          });
+          return {
+            status: "succeeded",
+            stepType: payload.stepType,
+            artifact: normalizeCliArtifact(payload.stepType, parsed, payload),
+            metrics: {
+              durationMs: Date.now() - startedAt,
+              ...(tokenUsage ? { tokenUsage } : {})
+            },
+            logs: [],
+            error: null,
+            sessionId: runId
+          };
+        }
+
+        if (["failed", "cancelled"].includes(status)) {
+          const error = new Error(runStatus.error || `Hermes OpenAI-compatible API run ${status}`);
+          error.code = status === "cancelled" ? "hermes_cancelled" : "hermes_request_failed";
+          error.sessionId = runId;
+          throw error;
+        }
+
+        await delay(Math.min(this.openAiApi.pollIntervalMs, Math.max(250, deadline - Date.now())));
+      }
+
+      const timeoutError = new Error(`Hermes OpenAI-compatible API run timed out after ${timeoutMs}ms`);
+      timeoutError.code = "hermes_timeout";
+      timeoutError.sessionId = runId;
+      try {
+        await this.fetchOpenAiApiJson(`/v1/runs/${encodeURIComponent(runId)}/stop`, {
+          method: "POST",
+          body: {}
+        });
+      } catch (_stopError) {
+        // The timeout error is more useful to callers than a best-effort stop failure.
+      }
+      throw timeoutError;
+    } catch (error) {
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "openai-api",
+        stepType: payload.stepType || "",
+        status: "failed",
+        level: "error",
+        label: "Hermes OpenAI API run failed",
+        message: error?.message || "Hermes OpenAI-compatible API run failed.",
+        sessionId: runId,
+        startedAt: new Date(startedAt).toISOString(),
+        elapsedMs: Date.now() - startedAt,
+        stdoutExcerpt: clipText(error?.rawOutput || "", 2000)
+      });
+      throw error;
+    }
   }
 
   _authHeaders() {
@@ -2240,8 +2557,17 @@ export class HermesAgentClient {
   }
 
   async executeStep(payload = {}, runtime = {}) {
-    if (this.transport === "api") {
+    const transport = this.getTransportForStep(payload.stepType);
+    if (["openai-api", "openai", "api-server"].includes(transport)) {
+      return this.executeOpenAiRunStep(payload, runtime);
+    }
+    if (transport === "api") {
       return this.executeApiStep(payload, runtime);
+    }
+    if (transport !== "cli") {
+      const error = new Error(`Unsupported Hermes transport: ${transport || "(empty)"}`);
+      error.code = "hermes_transport_unsupported";
+      throw error;
     }
     return this.executeCliStep(payload, runtime);
   }
