@@ -50,6 +50,7 @@ function Ensure-AppRuntimeDirectories {
 $appDir = Join-Path $InstallDir "app"
 $envFile = Join-Path $InstallDir "software-doc-worker.env"
 Import-EnvFile -Path $envFile -Required
+Import-EnvFile -Path (Join-Path $InstallDir "config\hermes-llm-secrets.env")
 Import-EnvFile -Path (Join-Path $InstallDir "config\hermes-llm.active.env")
 
 if ($env:SOFTWARE_DOC_RUNTIME_PATHS) {
