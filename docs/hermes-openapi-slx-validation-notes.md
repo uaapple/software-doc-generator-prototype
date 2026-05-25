@@ -67,6 +67,12 @@ Linux VM
    powershell -NoProfile -ExecutionPolicy Bypass -File .\Enable-HermesOpenApiServer.ps1 -AllowNoApiKey
    ```
 
+   如果 API Server 已经在运行，也可以只关闭 key 鉴权并重启计划任务：
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\Disable-HermesOpenApiServerKey.ps1
+   ```
+
 2. 从 Linux VM 验证 API Server 健康状态和模型列表。
 
    ```bash
