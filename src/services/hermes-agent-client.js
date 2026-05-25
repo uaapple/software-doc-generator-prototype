@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
+import fsSync, { promises as fs } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -1960,12 +1960,49 @@ async function buildMarkdownArtifactFromWorkspace(payload = {}, workdir = "") {
 }
 
 async function defaultCommandRunner(command, args, options = {}) {
-  return execFileAsync(command, args, {
+  const invocation = buildCommandRunnerInvocation(command, args);
+  return execFileAsync(invocation.command, invocation.args, {
     cwd: options.cwd,
     timeout: options.timeout,
     maxBuffer: options.maxBuffer,
     env: options.env
   });
+}
+
+function quoteWindowsCmdArg(value = "") {
+  const text = String(value);
+  if (!text) {
+    return '""';
+  }
+  const escaped = text
+    .replace(/%/g, "%%")
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\+)$/g, "$1$1");
+  if (!/[\s"&|<>^()%!]/.test(text)) {
+    return escaped;
+  }
+  return `"${escaped}"`;
+}
+
+function buildCommandRunnerInvocation(command, args = []) {
+  const normalizedCommand = String(command || "").trim();
+  const extension = path.extname(normalizedCommand).toLowerCase();
+  if (process.platform === "win32" && extension === ".cmd") {
+    const embeddedPython = path.join(path.dirname(normalizedCommand), "python", "python.exe");
+    if (path.basename(normalizedCommand).toLowerCase() === "hermes.cmd" && fsSync.existsSync(embeddedPython)) {
+      return {
+        command: embeddedPython,
+        args: ["-m", "hermes_cli.main", ...args]
+      };
+    }
+  }
+  if (process.platform === "win32" && [".cmd", ".bat"].includes(extension)) {
+    return {
+      command: "cmd.exe",
+      args: ["/d", "/s", "/c", [quoteWindowsCmdArg(normalizedCommand), ...args.map(quoteWindowsCmdArg)].join(" ")]
+    };
+  }
+  return { command: normalizedCommand, args };
 }
 
 async function postJsonWithTimeout(url, payload, timeoutMs) {
@@ -2016,6 +2053,17 @@ function buildProfiledCliArgs(profile = "", args = []) {
     return args;
   }
   return ["-p", profileName, ...args];
+}
+
+function assertHermesCliCommand(command = "") {
+  const commandName = path.basename(String(command || "").trim()).toLowerCase();
+  if (["powershell.exe", "powershell", "pwsh.exe", "pwsh", "cmd.exe", "cmd"].includes(commandName)) {
+    const error = new Error(
+      `Invalid HERMES_COMMAND '${command}'. Configure HERMES_COMMAND to the Hermes CLI executable, not a shell.`
+    );
+    error.code = "hermes_command_invalid";
+    throw error;
+  }
 }
 
 export class HermesAgentClient {
@@ -2275,6 +2323,7 @@ export class HermesAgentClient {
   }
 
   async executeCliStep(payload = {}, runtime = {}) {
+    assertHermesCliCommand(this.command);
     const prompt = buildCliPrompt(payload);
     const maxTurns = this.getMaxTurnsForStep(payload.stepType);
     const rawArgs = [
