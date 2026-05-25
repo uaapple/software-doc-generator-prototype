@@ -1965,7 +1965,7 @@ async function defaultCommandRunner(command, args, options = {}) {
     cwd: options.cwd,
     timeout: options.timeout,
     maxBuffer: options.maxBuffer,
-    env: options.env
+    env: { ...(options.env || process.env), ...(invocation.env || {}) }
   });
 }
 
@@ -1990,9 +1990,11 @@ function buildCommandRunnerInvocation(command, args = []) {
   if (process.platform === "win32" && extension === ".cmd") {
     const embeddedPython = path.join(path.dirname(normalizedCommand), "python", "python.exe");
     if (path.basename(normalizedCommand).toLowerCase() === "hermes.cmd" && fsSync.existsSync(embeddedPython)) {
+      const hermesHome = path.resolve(path.dirname(normalizedCommand), "..", "hermes-home");
       return {
         command: embeddedPython,
-        args: ["-m", "hermes_cli.main", ...args]
+        args: ["-m", "hermes_cli.main", ...args],
+        env: fsSync.existsSync(hermesHome) ? { HERMES_HOME: hermesHome } : {}
       };
     }
   }
