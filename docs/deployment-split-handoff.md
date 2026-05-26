@@ -2,6 +2,8 @@
 
 本文档给部署端 AI 使用，用于把开发分支改动拆分到 `release/linux-prod` 和 `release/windows-prod`。当前开发分支已经引入部署边界显性化机制，后续不要再完全按旧方式人工扫所有 diff，应优先使用仓库内的分类器和部署目标清单。
 
+2026-05-26 生产调试部署阶段的通用坑点和经验已沉淀到 `docs/production-debugging-lessons.md`。后续拆分、部署或排查 TCSD/SLX/Hermes 问题时，建议先读本文的部署边界，再读该经验记录。
+
 ## 关键提交
 
 与新拆分流程相关的提交：
