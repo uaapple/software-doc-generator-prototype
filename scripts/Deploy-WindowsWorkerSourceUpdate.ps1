@@ -100,6 +100,30 @@ function Resolve-BundleRoot {
   throw "Expanded package is invalid: missing app\package.json"
 }
 
+function Expand-SourcePackage {
+  param(
+    [string]$Package,
+    [string]$DestinationPath
+  )
+
+  $tar = (Get-Command "tar.exe" -ErrorAction SilentlyContinue).Source
+  if ($tar) {
+    Write-Host "Expanding package with tar.exe..."
+    & $tar -xf $Package -C $DestinationPath
+    if ($LASTEXITCODE -eq 0) {
+      return
+    }
+    Write-Warning "tar.exe failed with exit code $LASTEXITCODE; falling back to Expand-Archive."
+    if (Test-Path -LiteralPath $DestinationPath) {
+      Remove-Item -LiteralPath $DestinationPath -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $DestinationPath | Out-Null
+  }
+
+  Write-Host "Expanding package with Expand-Archive..."
+  Expand-Archive -LiteralPath $Package -DestinationPath $DestinationPath -Force
+}
+
 function Read-EnvFile {
   param([string]$Path)
   $values = @{}
@@ -201,8 +225,7 @@ try {
   }
   New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
 
-  Write-Host "Expanding package..."
-  Expand-Archive -LiteralPath $packageItem.FullName -DestinationPath $extractDir -Force
+  Expand-SourcePackage -Package $packageItem.FullName -DestinationPath $extractDir
   $bundleRoot = Resolve-BundleRoot -ExtractDir $extractDir
   $updateScript = Join-Path $bundleRoot "Update-WindowsWorkerSource.ps1"
   if (-not (Test-Path -LiteralPath $updateScript)) {
