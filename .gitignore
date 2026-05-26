@@ -22,5 +22,8 @@ docs/skill-overview.html
 .DS_Store
 tmp/
 release-dist/
+offline-installers/
+tools/matlab-mcp-core-server.exe
+tools/simulink-agentic-toolkit/
 ~$*.docx
 ~$*.pptx
