@@ -1863,7 +1863,10 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
               mimeType: String(
                 item.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               ).trim(),
-              description: String(item.description || "").trim()
+              description: String(item.description || "").trim(),
+              contentBase64: String(item.contentBase64 || item.base64 || "").trim(),
+              encoding: String(item.encoding || "").trim(),
+              size: Number(item.size || 0) || 0
             };
           })
           .filter((item) => item && (item.relativePath || item.absolutePath))
@@ -2047,6 +2050,129 @@ async function postJsonWithTimeout(url, payload, timeoutMs) {
     request.write(body);
     request.end();
   });
+}
+
+function escapeMultipartHeaderValue(value = "") {
+  return String(value || "")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+}
+
+async function postMultipartWithTimeout(url, fields = {}, files = [], headers = {}, timeoutMs) {
+  const target = new URL(url);
+  const transport = target.protocol === "https:" ? https : http;
+  const boundary = `----software-doc-hermes-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
+  const chunks = [];
+
+  for (const [name, value] of Object.entries(fields || {})) {
+    chunks.push(Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="${escapeMultipartHeaderValue(name)}"\r\n` +
+      "Content-Type: application/json; charset=utf-8\r\n\r\n" +
+      `${String(value ?? "")}\r\n`,
+      "utf8"
+    ));
+  }
+
+  for (const file of files || []) {
+    const fileBuffer = await fs.readFile(file.sourcePath);
+    chunks.push(Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="${escapeMultipartHeaderValue(file.fieldName)}"; filename="${escapeMultipartHeaderValue(path.basename(file.sourcePath))}"\r\n` +
+      "Content-Type: application/octet-stream\r\n\r\n",
+      "utf8"
+    ));
+    chunks.push(fileBuffer);
+    chunks.push(Buffer.from("\r\n", "utf8"));
+  }
+
+  chunks.push(Buffer.from(`--${boundary}--\r\n`, "utf8"));
+  const body = Buffer.concat(chunks);
+
+  return new Promise((resolve, reject) => {
+    const request = transport.request(
+      target,
+      {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "Content-Length": body.length
+        }
+      },
+      (response) => {
+        response.setEncoding("utf8");
+        let text = "";
+        response.on("data", (chunk) => {
+          text += chunk;
+        });
+        response.on("end", () => {
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            status: response.statusCode,
+            text,
+            async json() {
+              return text ? JSON.parse(text) : {};
+            }
+          });
+        });
+      }
+    );
+
+    request.setTimeout(timeoutMs, () => {
+      const error = new Error(`Hermes request timed out after ${timeoutMs}ms`);
+      error.name = "AbortError";
+      request.destroy(error);
+    });
+    request.on("error", reject);
+    request.end(body);
+  });
+}
+
+function isConnectionError(error) {
+  return ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EAI_AGAIN"].includes(String(error?.code || ""));
+}
+
+function normalizeTransferredOutputPath(value = "") {
+  const normalized = String(value || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
+    return "";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) {
+    return "";
+  }
+  if (parts.length !== 2 || parts[0] !== "outputs" || !parts[1].toLowerCase().endsWith(".xlsx")) {
+    return "";
+  }
+  return parts.join("/");
+}
+
+async function materializeTransferredOutputFiles(artifact = {}, payload = {}) {
+  if (payload.stepType !== "simulink_ut_tcsd_generate") {
+    return;
+  }
+  const workspaceDir = path.resolve(String(payload.inputArtifact?.workspaceDir || ""));
+  if (!workspaceDir) {
+    return;
+  }
+
+  for (const item of Array.isArray(artifact.outputFiles) ? artifact.outputFiles : []) {
+    if (!item || typeof item !== "object" || !item.contentBase64) {
+      continue;
+    }
+    const relativePath = normalizeTransferredOutputPath(item.relativePath || item.path || item.filePath);
+    if (!relativePath) {
+      continue;
+    }
+    const absolutePath = path.resolve(workspaceDir, ...relativePath.split("/"));
+    if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`)) {
+      continue;
+    }
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, Buffer.from(String(item.contentBase64 || ""), "base64"));
+  }
 }
 
 function buildProfiledCliArgs(profile = "", args = []) {
@@ -2241,25 +2367,19 @@ export class HermesAgentClient {
       elapsedMs: 0
     });
 
-    const form = new FormData();
-    form.set("payload", JSON.stringify(payload));
-    form.set("uploadManifest", JSON.stringify(uploadManifest));
-    for (const file of uploadManifest.files) {
-      const fileBuffer = await fs.readFile(file.sourcePath);
-      form.set(file.fieldName, new Blob([fileBuffer], { type: "application/octet-stream" }), path.basename(file.sourcePath));
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
     try {
-      const response = await fetch(`${this.baseURL}/internal/steps/execute-upload`, {
-        method: "POST",
-        headers: this._authHeaders(),
-        body: form,
-        signal: controller.signal
-      });
+      const response = await postMultipartWithTimeout(
+        `${this.baseURL}/internal/steps/execute-upload`,
+        {
+          payload: JSON.stringify(payload),
+          uploadManifest: JSON.stringify(uploadManifest)
+        },
+        uploadManifest.files,
+        this._authHeaders(),
+        timeoutMs
+      );
       const body = await this._parseApiResponse(response, payload);
+      await materializeTransferredOutputFiles(body.artifact, payload);
 
       await emitHermesEvent(runtime.onEvent, {
         type: "agent_runtime",
@@ -2297,7 +2417,7 @@ export class HermesAgentClient {
         });
         throw timeoutError;
       }
-      if (error instanceof TypeError) {
+      if (error instanceof TypeError || isConnectionError(error)) {
         const connectionError = new Error(`Hermes is unavailable at ${this.baseURL}`);
         connectionError.code = "hermes_unavailable";
         await emitHermesEvent(runtime.onEvent, {
