@@ -106,7 +106,7 @@ function ConvertTo-DependencyMap {
 
 function Set-RuntimeRecord {
   param(
-    [hashtable]$Map,
+    [System.Collections.IDictionary]$Map,
     [string]$Name,
     [object]$BundleRecord,
     [hashtable]$Extra = @{}
@@ -128,7 +128,7 @@ function Set-RuntimeRecord {
 function Save-RuntimeManifest {
   param(
     [string]$Path,
-    [hashtable]$Map
+    [System.Collections.IDictionary]$Map
   )
   Write-JsonFile -Path $Path -Value ([ordered]@{
     version = 1
@@ -345,7 +345,7 @@ function Ensure-HermesAgent {
   param(
     [object]$BundleManifest,
     [object]$RuntimeManifest,
-    [hashtable]$RuntimeMap
+    [System.Collections.IDictionary]$RuntimeMap
   )
   $bundleRecord = Get-DependencyRecord -Manifest $BundleManifest -Name "hermesAgent"
   $bundleVersion = Get-DependencyVersion -Manifest $BundleManifest -Name "hermesAgent"
@@ -382,7 +382,7 @@ function Ensure-MatlabMcp {
   param(
     [object]$BundleManifest,
     [object]$RuntimeManifest,
-    [hashtable]$RuntimeMap
+    [System.Collections.IDictionary]$RuntimeMap
   )
   $bundleRecord = Get-DependencyRecord -Manifest $BundleManifest -Name "matlabMcp"
   $bundleVersion = Get-DependencyVersion -Manifest $BundleManifest -Name "matlabMcp"
@@ -418,7 +418,7 @@ function Ensure-SimulinkToolkit {
   param(
     [object]$BundleManifest,
     [object]$RuntimeManifest,
-    [hashtable]$RuntimeMap
+    [System.Collections.IDictionary]$RuntimeMap
   )
   $bundleRecord = Get-DependencyRecord -Manifest $BundleManifest -Name "simulinkAgenticToolkit"
   $bundleVersion = Get-DependencyVersion -Manifest $BundleManifest -Name "simulinkAgenticToolkit"
@@ -456,7 +456,7 @@ function Ensure-TcsdSkill {
   param(
     [object]$BundleManifest,
     [object]$RuntimeManifest,
-    [hashtable]$RuntimeMap
+    [System.Collections.IDictionary]$RuntimeMap
   )
   $bundleRecord = Get-DependencyRecord -Manifest $BundleManifest -Name "simulinkUtTcsdGeneratorSkill"
   $bundleVersion = Get-DependencyVersion -Manifest $BundleManifest -Name "simulinkUtTcsdGeneratorSkill"

@@ -66,6 +66,27 @@ function Invoke-GitHubDownload {
     [string]$Destination
   )
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
+  $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
+  if ($curl) {
+    $curlArgs = @(
+      "-L",
+      "--fail",
+      "--silent",
+      "--show-error",
+      "--max-time", "600",
+      "-H", "User-Agent: software-doc-generator-dependency-sync",
+      "-H", "Accept: application/vnd.github+json"
+    )
+    if ($env:GITHUB_TOKEN) {
+      $curlArgs += @("-H", "Authorization: Bearer $env:GITHUB_TOKEN")
+    }
+    $curlArgs += @("-o", $Destination, $Url)
+    & $curl.Source @curlArgs
+    if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $Destination)) {
+      return
+    }
+    Write-Warning "curl.exe download failed for $Url; falling back to Invoke-WebRequest."
+  }
   Invoke-WebRequest -Uri $Url -Headers (New-GitHubHeaders) -OutFile $Destination -TimeoutSec 120
 }
 
@@ -143,7 +164,7 @@ function ConvertTo-DependencyMap {
 function Save-Manifest {
   param(
     [string]$Path,
-    [hashtable]$Dependencies
+    [System.Collections.IDictionary]$Dependencies
   )
   Write-JsonFile -Path $Path -Value ([ordered]@{
     version = 1
@@ -154,7 +175,7 @@ function Save-Manifest {
 
 function Set-DependencyRecord {
   param(
-    [hashtable]$Dependencies,
+    [System.Collections.IDictionary]$Dependencies,
     [string]$Name,
     [hashtable]$Record
   )
@@ -322,10 +343,60 @@ function Copy-DirectoryContents {
   Copy-Item -Path (Join-Path $Source "*") -Destination $Destination -Recurse -Force
 }
 
+function ConvertTo-GitHubApiPath {
+  param([string]$Path)
+  return (($Path -split "[/\\]+" | Where-Object { $_ }) | ForEach-Object { [Uri]::EscapeDataString($_) }) -join "/"
+}
+
+function Download-GitHubDirectory {
+  param(
+    [string]$Repo,
+    [string]$Ref,
+    [string]$RemotePath,
+    [string]$Destination
+  )
+  New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+  $apiPath = ConvertTo-GitHubApiPath -Path $RemotePath
+  $url = "https://api.github.com/repos/$Repo/contents/$apiPath`?ref=$Ref"
+  $rawItems = Invoke-GitHubJson -Url $url
+  $items = @()
+  foreach ($rawItem in $rawItems) {
+    $items += $rawItem
+  }
+  foreach ($item in $items) {
+    $name = [string](Get-ObjectProperty -Object $item -Name "name")
+    $type = [string](Get-ObjectProperty -Object $item -Name "type")
+    if (-not $name -or $name -in @(".git", ".github")) {
+      continue
+    }
+    $target = Join-Path $Destination $name
+    if ($type -eq "dir") {
+      Download-GitHubDirectory -Repo $Repo -Ref $Ref -RemotePath (Get-ObjectProperty -Object $item -Name "path") -Destination $target
+    } elseif ($type -eq "file") {
+      $downloadUrl = [string](Get-ObjectProperty -Object $item -Name "download_url")
+      if ($downloadUrl) {
+        Invoke-GitHubDownload -Url $downloadUrl -Destination $target
+      } else {
+        $fileUrl = [string](Get-ObjectProperty -Object $item -Name "url")
+        if (-not $fileUrl) {
+          throw "GitHub contents item does not expose API url: $RemotePath/$name"
+        }
+        $file = Invoke-GitHubJson -Url $fileUrl
+        $content = ([string](Get-ObjectProperty -Object $file -Name "content")).Replace("`n", "").Replace("`r", "")
+        if (-not $content) {
+          throw "GitHub contents API returned no file content: $RemotePath/$name"
+        }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+        [IO.File]::WriteAllBytes($target, [Convert]::FromBase64String($content))
+      }
+    }
+  }
+}
+
 function Sync-HermesAgent {
   param(
     [string]$Root,
-    [hashtable]$Dependencies,
+    [System.Collections.IDictionary]$Dependencies,
     [object]$Manifest
   )
   if ($SkipHermes) {
@@ -402,7 +473,7 @@ function Sync-HermesAgent {
 function Sync-MatlabMcp {
   param(
     [string]$Root,
-    [hashtable]$Dependencies,
+    [System.Collections.IDictionary]$Dependencies,
     [object]$Manifest
   )
   if ($SkipMatlabMcp) {
@@ -488,7 +559,7 @@ function Sync-MatlabMcp {
 function Sync-SimulinkToolkit {
   param(
     [string]$Root,
-    [hashtable]$Dependencies,
+    [System.Collections.IDictionary]$Dependencies,
     [object]$Manifest
   )
   if ($SkipSimulinkToolkit) {
@@ -546,7 +617,7 @@ function Sync-SimulinkToolkit {
 function Sync-TcsdSkill {
   param(
     [string]$Root,
-    [hashtable]$Dependencies,
+    [System.Collections.IDictionary]$Dependencies,
     [object]$Manifest
   )
   if ($SkipTcsdSkill) {
@@ -579,25 +650,17 @@ function Sync-TcsdSkill {
     return
   }
 
-  $archivePath = Join-Path ([IO.Path]::GetTempPath()) ("sdg-tcsd-skill-" + [guid]::NewGuid().ToString("N") + ".zip")
-  $extractDir = Join-Path ([IO.Path]::GetTempPath()) ("sdg-tcsd-skill-" + [guid]::NewGuid().ToString("N"))
-  Invoke-GitHubDownload -Url "https://github.com/$TcsdSkillRepo/archive/$TcsdSkillRef.zip" -Destination $archivePath
-  New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+  $downloadDir = Join-Path ([IO.Path]::GetTempPath()) ("sdg-tcsd-skill-" + [guid]::NewGuid().ToString("N"))
   try {
-    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractDir -Force
-    $rootDir = Get-ChildItem -LiteralPath $extractDir -Directory | Select-Object -First 1
-    if (-not $rootDir) {
-      throw "Skill archive did not contain a root directory."
-    }
-    $skillSource = Join-Path $rootDir.FullName $TcsdSkillPath
-    if (-not (Test-Path -LiteralPath (Join-Path $skillSource "SKILL.md"))) {
-      throw "Skill archive did not contain $TcsdSkillPath/SKILL.md."
+    Download-GitHubDirectory -Repo $TcsdSkillRepo -Ref $TcsdSkillRef -RemotePath $TcsdSkillPath -Destination $downloadDir
+    if (-not (Test-Path -LiteralPath (Join-Path $downloadDir "SKILL.md"))) {
+      $downloaded = @(Get-ChildItem -LiteralPath $downloadDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName.Replace($downloadDir, "").TrimStart("\") })
+      throw "Skill directory did not contain SKILL.md: $TcsdSkillRepo/$TcsdSkillPath@$TcsdSkillRef. Downloaded files: $($downloaded -join ', ')"
     }
     $skillTarget = Join-Path $Root "skills\hermes\simulink-ut-tcsd-generator"
-    Copy-DirectoryContents -Source $skillSource -Destination $skillTarget
+    Copy-DirectoryContents -Source $downloadDir -Destination $skillTarget
   } finally {
-    Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $downloadDir -Recurse -Force -ErrorAction SilentlyContinue
   }
 
   Set-DependencyRecord -Dependencies $Dependencies -Name "simulinkUtTcsdGeneratorSkill" -Record @{
