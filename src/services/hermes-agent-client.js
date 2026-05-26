@@ -1885,7 +1885,10 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
               mimeType: String(
                 item.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               ).trim(),
-              description: String(item.description || "").trim()
+              description: String(item.description || "").trim(),
+              contentBase64: String(item.contentBase64 || item.base64 || "").trim(),
+              encoding: String(item.encoding || "").trim(),
+              size: Number(item.size || 0) || 0
             };
           })
           .filter((item) => item && (item.relativePath || item.absolutePath))
@@ -2112,6 +2115,47 @@ async function postMultipartWithTimeout(url, fields = {}, files = [], headers = 
 
 function isConnectionError(error) {
   return ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EAI_AGAIN"].includes(String(error?.code || ""));
+}
+
+function normalizeTransferredOutputPath(value = "") {
+  const normalized = String(value || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
+    return "";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) {
+    return "";
+  }
+  if (parts.length !== 2 || parts[0] !== "outputs" || !parts[1].toLowerCase().endsWith(".xlsx")) {
+    return "";
+  }
+  return parts.join("/");
+}
+
+async function materializeTransferredOutputFiles(artifact = {}, payload = {}) {
+  if (payload.stepType !== "simulink_ut_tcsd_generate") {
+    return;
+  }
+  const workspaceDir = path.resolve(String(payload.inputArtifact?.workspaceDir || ""));
+  if (!workspaceDir) {
+    return;
+  }
+
+  for (const item of Array.isArray(artifact.outputFiles) ? artifact.outputFiles : []) {
+    if (!item || typeof item !== "object" || !item.contentBase64) {
+      continue;
+    }
+    const relativePath = normalizeTransferredOutputPath(item.relativePath || item.path || item.filePath);
+    if (!relativePath) {
+      continue;
+    }
+    const absolutePath = path.resolve(workspaceDir, ...relativePath.split("/"));
+    if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`)) {
+      continue;
+    }
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, Buffer.from(String(item.contentBase64 || ""), "base64"));
+  }
 }
 
 function buildProfiledCliArgs(profile = "", args = []) {
@@ -2602,6 +2646,7 @@ export class HermesAgentClient {
         timeoutMs
       );
       const body = await this._parseApiResponse(response, payload);
+      await materializeTransferredOutputFiles(body.artifact, payload);
 
       await emitHermesEvent(runtime.onEvent, {
         type: "agent_runtime",

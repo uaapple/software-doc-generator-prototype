@@ -16,6 +16,8 @@ import { SlxModelAnalysisService } from "./services/slx-model-analysis-service.j
 import { ModelRequirementViewService } from "./services/model-requirement-view-service.js";
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
 
+const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
+
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -278,6 +280,90 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
     expectedOutputPattern: String(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx").trim(),
     modelSlxFileName: inputArtifact.modelSlxFileName || path.basename(modelSlxPath),
     modelMatFileName: inputArtifact.modelMatFileName || path.basename(modelMatPath)
+  };
+}
+
+function normalizeTcsdOutputRelativePath(value = "") {
+  const normalized = String(value || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
+    return "";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) {
+    return "";
+  }
+  if (parts.length !== 2 || parts[0] !== "outputs" || !parts[1].toLowerCase().endsWith(".xlsx")) {
+    return "";
+  }
+  return parts.join("/");
+}
+
+async function attachUnitTestCaseOutputFiles(artifact = {}, inputArtifact = {}) {
+  const workspaceDir = path.resolve(String(inputArtifact.workspaceDir || ""));
+  const outputDir = path.resolve(String(inputArtifact.outputDir || path.join(workspaceDir, "outputs")));
+  if (!workspaceDir || !isPathAllowed(outputDir, [workspaceDir])) {
+    return artifact;
+  }
+
+  const candidates = new Map();
+  const addCandidate = (relativePath = "", meta = {}) => {
+    const normalized = normalizeTcsdOutputRelativePath(relativePath);
+    if (normalized) {
+      candidates.set(normalized, { ...meta, relativePath: normalized });
+    }
+  };
+
+  for (const item of Array.isArray(artifact.outputFiles) ? artifact.outputFiles : []) {
+    if (typeof item === "string") {
+      addCandidate(item);
+      continue;
+    }
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const itemPath = item.relativePath || item.path || item.filePath || item.absolutePath || "";
+    if (path.isAbsolute(String(itemPath))) {
+      const absolute = path.resolve(String(itemPath));
+      if (absolute.startsWith(`${workspaceDir}${path.sep}`)) {
+        addCandidate(path.relative(workspaceDir, absolute), item);
+      }
+    } else {
+      addCandidate(itemPath, item);
+    }
+  }
+
+  const entries = await fs.readdir(outputDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.toLowerCase().endsWith(".xlsx")) {
+      addCandidate(path.join("outputs", entry.name));
+    }
+  }
+
+  const outputFiles = [];
+  for (const candidate of candidates.values()) {
+    const absolutePath = path.resolve(workspaceDir, ...candidate.relativePath.split("/"));
+    if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`)) {
+      continue;
+    }
+    const stat = await fs.stat(absolutePath).catch(() => null);
+    if (!stat?.isFile() || stat.size > MAX_TRANSFERRED_TCSD_OUTPUT_BYTES) {
+      continue;
+    }
+    outputFiles.push({
+      relativePath: candidate.relativePath,
+      fileName: candidate.fileName || path.basename(absolutePath),
+      kind: candidate.kind || "tcsd_workbook",
+      mimeType: candidate.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      description: candidate.description || "Generated TCSD Excel workbook",
+      size: stat.size,
+      encoding: "base64",
+      contentBase64: (await fs.readFile(absolutePath)).toString("base64")
+    });
+  }
+
+  return {
+    ...artifact,
+    outputFiles
   };
 }
 
@@ -1180,8 +1266,9 @@ export async function createHermesApp() {
           },
           {}
         );
+        const artifact = await attachUnitTestCaseOutputFiles(result.artifact || {}, inputArtifact);
         return res.json(
-          buildStepResponse(stepType, result.artifact || {}, startedAt, {
+          buildStepResponse(stepType, artifact, startedAt, {
             metrics: result.metrics || {},
             logs: result.logs || []
           })
