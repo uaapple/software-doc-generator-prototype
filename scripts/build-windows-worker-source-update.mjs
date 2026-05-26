@@ -144,12 +144,21 @@ function gitValue(args) {
 
 function zipDirectory(sourceDir, zipPath) {
   fs.rmSync(zipPath, { force: true });
+  try {
+    run("tar.exe", ["-a", "-cf", zipPath, "-C", sourceDir, "."]);
+    return;
+  } catch (error) {
+    console.warn(`tar.exe zip failed; falling back to Compress-Archive: ${error.message}`);
+  }
   run("powershell.exe", [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-Command",
-    `Compress-Archive -Path '${path.join(sourceDir, "*").replaceAll("'", "''")}' -DestinationPath '${zipPath.replaceAll("'", "''")}' -Force`
+    [
+      "$ErrorActionPreference='Stop'",
+      `Compress-Archive -Path '${path.join(sourceDir, "*").replaceAll("'", "''")}' -DestinationPath '${zipPath.replaceAll("'", "''")}' -Force`
+    ].join("; ")
   ]);
 }
 

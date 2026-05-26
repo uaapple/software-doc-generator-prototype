@@ -284,6 +284,80 @@ function Invoke-Python {
   throw "Python 3.11 is required to refresh the Hermes offline wheelhouse. Install Python or pass -SkipHermesWheelhouse."
 }
 
+function Invoke-Git {
+  param(
+    [string[]]$Arguments,
+    [string]$WorkingDirectory = ""
+  )
+  $git = Resolve-CommandPath -Command "git.exe"
+  if (-not $git) {
+    $git = Resolve-CommandPath -Command "git"
+  }
+  if (-not $git) {
+    throw "git is required to sync external skill repositories."
+  }
+  $previous = (Get-Location).Path
+  $oldGitTerminalPrompt = $env:GIT_TERMINAL_PROMPT
+  $oldGcmInteractive = $env:GCM_INTERACTIVE
+  try {
+    $env:GIT_TERMINAL_PROMPT = "0"
+    $env:GCM_INTERACTIVE = "Never"
+    if ($WorkingDirectory) {
+      Set-Location -LiteralPath $WorkingDirectory
+    }
+    & $git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+      throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+    }
+  } finally {
+    Set-Location -LiteralPath $previous
+    $env:GIT_TERMINAL_PROMPT = $oldGitTerminalPrompt
+    $env:GCM_INTERACTIVE = $oldGcmInteractive
+  }
+}
+
+function Invoke-GitOutput {
+  param([string[]]$Arguments)
+  $git = Resolve-CommandPath -Command "git.exe"
+  if (-not $git) {
+    $git = Resolve-CommandPath -Command "git"
+  }
+  if (-not $git) {
+    throw "git is required to sync external skill repositories."
+  }
+  $oldGitTerminalPrompt = $env:GIT_TERMINAL_PROMPT
+  $oldGcmInteractive = $env:GCM_INTERACTIVE
+  try {
+    $env:GIT_TERMINAL_PROMPT = "0"
+    $env:GCM_INTERACTIVE = "Never"
+    $output = & $git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+      throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+    }
+  } finally {
+    $env:GIT_TERMINAL_PROMPT = $oldGitTerminalPrompt
+    $env:GCM_INTERACTIVE = $oldGcmInteractive
+  }
+  return [string]($output -join "`n")
+}
+
+function Get-GitRemoteRefSha {
+  param(
+    [string]$Repo,
+    [string]$Ref
+  )
+  $repoUrl = "https://github.com/$Repo.git"
+  $output = Invoke-GitOutput -Arguments @("ls-remote", $repoUrl, "refs/heads/$Ref")
+  if (-not $output.Trim()) {
+    $output = Invoke-GitOutput -Arguments @("ls-remote", $repoUrl, $Ref)
+  }
+  $firstLine = ($output -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+  if ($firstLine -match "^([0-9a-f]{40})\s+") {
+    return $Matches[1]
+  }
+  throw "Could not resolve $Repo ref $Ref."
+}
+
 function Get-ArchiveTagFromFolder {
   param(
     [string]$Folder,
@@ -623,8 +697,7 @@ function Sync-TcsdSkill {
   if ($SkipTcsdSkill) {
     return
   }
-  $commit = Get-BranchCommit -Repo $TcsdSkillRepo -Ref $TcsdSkillRef
-  $latest = [string](Get-ObjectProperty -Object $commit -Name "sha")
+  $latest = Get-GitRemoteRefSha -Repo $TcsdSkillRepo -Ref $TcsdSkillRef
   $current = Get-DependencyVersion -Manifest $Manifest -Name "simulinkUtTcsdGeneratorSkill"
   Write-Host "simulink-ut-tcsd-generator skill: local='$current' latest='$latest'"
   if (-not (Test-NeedsUpdate -Name "simulink-ut-tcsd-generator skill" -Current $current -Latest $latest)) {
@@ -650,17 +723,23 @@ function Sync-TcsdSkill {
     return
   }
 
-  $downloadDir = Join-Path ([IO.Path]::GetTempPath()) ("sdg-tcsd-skill-" + [guid]::NewGuid().ToString("N"))
+  $cloneDir = Join-Path ([IO.Path]::GetTempPath()) ("sdg-tcsd-skill-" + [guid]::NewGuid().ToString("N"))
   try {
-    Download-GitHubDirectory -Repo $TcsdSkillRepo -Ref $TcsdSkillRef -RemotePath $TcsdSkillPath -Destination $downloadDir
-    if (-not (Test-Path -LiteralPath (Join-Path $downloadDir "SKILL.md"))) {
-      $downloaded = @(Get-ChildItem -LiteralPath $downloadDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName.Replace($downloadDir, "").TrimStart("\") })
-      throw "Skill directory did not contain SKILL.md: $TcsdSkillRepo/$TcsdSkillPath@$TcsdSkillRef. Downloaded files: $($downloaded -join ', ')"
+    Invoke-Git -Arguments @(
+      "clone",
+      "--depth", "1",
+      "--branch", $TcsdSkillRef,
+      "https://github.com/$TcsdSkillRepo.git",
+      $cloneDir
+    )
+    $skillSource = Join-Path $cloneDir $TcsdSkillPath
+    if (-not (Test-Path -LiteralPath (Join-Path $skillSource "SKILL.md"))) {
+      throw "Cloned repository did not contain $TcsdSkillPath/SKILL.md."
     }
     $skillTarget = Join-Path $Root "skills\hermes\simulink-ut-tcsd-generator"
-    Copy-DirectoryContents -Source $downloadDir -Destination $skillTarget
+    Copy-DirectoryContents -Source $skillSource -Destination $skillTarget
   } finally {
-    Remove-Item -LiteralPath $downloadDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $cloneDir -Recurse -Force -ErrorAction SilentlyContinue
   }
 
   Set-DependencyRecord -Dependencies $Dependencies -Name "simulinkUtTcsdGeneratorSkill" -Record @{
@@ -668,7 +747,7 @@ function Sync-TcsdSkill {
     ref = $TcsdSkillRef
     path = $TcsdSkillPath
     version = $latest
-    source = "github-tree"
+    source = "git-clone"
     installPath = "skills/hermes/simulink-ut-tcsd-generator"
     refreshedAt = (Get-Date).ToUniversalTime().ToString("o")
   }
