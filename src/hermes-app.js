@@ -930,16 +930,18 @@ async function buildSlxParseFallbackArtifact(inputArtifact = {}, allowedPaths = 
   };
 }
 
-function normalizeSlxInterpretEvidence(item = {}, fallbackFile = "") {
-  return {
-    fileName: String(item.fileName || item.originalName || fallbackFile || "").trim(),
-    fileRole: String(item.fileRole || item.role || "simulink_slx").trim(),
-    location: String(item.location || "").trim(),
-    excerpt: truncateText(item.excerpt || item.summary || item.behavior || "", 260)
-  };
+function buildSlxInterpretAgentPrompt(inputArtifact = {}, absolutePath = "") {
+  const model = inputArtifact?.model || {};
+  const fileName = String(model.fileName || model.originalName || path.basename(absolutePath || "model.slx")).trim();
+  const question = String(inputArtifact.question || "").trim();
+  return [
+    `使用 MCP/SATK 基于模型文件 ${fileName}，回答问题：“${question}”。`,
+    absolutePath ? `模型文件绝对路径：${absolutePath}` : "",
+    "如果无法调用 MCP/SATK 或无法读取模型文件，请直接说明失败原因。"
+  ].filter(Boolean).join("\n");
 }
 
-async function buildSlxInterpretFallbackArtifact(inputArtifact = {}, allowedPaths = []) {
+async function buildSlxInterpretArtifact(inputArtifact = {}, allowedPaths = []) {
   const model = inputArtifact?.model || {};
   const absolutePath = path.resolve(String(model.absolutePath || ""));
   if (!absolutePath || !isPathAllowed(absolutePath, allowedPaths)) {
@@ -950,61 +952,40 @@ async function buildSlxInterpretFallbackArtifact(inputArtifact = {}, allowedPath
     );
   }
 
-  const file = {
-    id: model.assetId || model.id || "",
-    role: "simulink_slx",
-    fileRole: "simulink_slx",
-    originalName: model.fileName || model.originalName || path.basename(absolutePath),
-    absolutePath
-  };
-  const slxAnalysisService = new SlxModelAnalysisService();
-  const extraction = await slxAnalysisService.analyzeAndConvertToExtraction(file, { documentType: "software_requirement" });
-  const modelRequirementView = new ModelRequirementViewService().build({
-    project: inputArtifact.project || {},
-    assets: [{
-      assetId: file.id,
-      fileName: file.originalName,
-      fileRole: "simulink_slx",
-      absolutePath
-    }],
-    extractions: [extraction]
+  const prompt = String(inputArtifact.prompt || "").trim() || buildSlxInterpretAgentPrompt(inputArtifact, absolutePath);
+  const fileName = String(model.fileName || model.originalName || path.basename(absolutePath)).trim();
+  const hermesClient = new HermesAgentClient({
+    transport: "cli",
+    command: config.hermes.command,
+    timeoutMs: config.hermes.timeoutMs,
+    stepTimeoutMs: config.hermes.stepTimeoutMs,
+    maxTurns: config.hermes.maxTurns,
+    heartbeatIntervalMs: config.hermes.heartbeatIntervalMs,
+    workdir: config.rootDir,
+    stateDbPath: config.hermes.stateDbPath
   });
-
-  const facts = Array.isArray(modelRequirementView.facts) ? modelRequirementView.facts.slice(0, 8) : [];
-  const evidence = facts
-    .flatMap((fact) => Array.isArray(fact.sourceRefs) ? fact.sourceRefs : [])
-    .map((item) => normalizeSlxInterpretEvidence(item, file.originalName))
-    .filter((item) => item.fileName || item.location || item.excerpt)
-    .slice(0, 8);
-  const fallbackEvidence = evidence.length
-    ? evidence
-    : (Array.isArray(extraction.evidence) ? extraction.evidence : [])
-        .map((item) => normalizeSlxInterpretEvidence(item, file.originalName))
-        .filter((item) => item.fileName || item.location || item.excerpt)
-        .slice(0, 8);
-  const question = String(inputArtifact.question || "").trim();
-  const factLines = facts.length
-    ? facts.map((fact, index) => `${index + 1}. ${truncateText(fact.behavior || fact.topic || "", 220)}`).join("\n")
-    : "- 当前回退解释未识别到可结构化展示的模型事实。";
-
-  return {
-    answerMarkdown: [
-      `已读取选定模型 **${file.originalName}**，并基于 Simulink Agentic Toolkit 可获得的模型事实回答：${question || "当前问题"}`,
-      "",
-      "### 模型事实摘要",
-      factLines,
-      "",
-      "### 结论",
-      facts.length
-        ? "上面的事实是本次回答的主要依据；请结合 evidence 中的 block path / source ref 复核具体模型位置。"
-        : "当前环境未返回足够的结构化事实，建议确认 MATLAB MCP / SATK 是否能读取该模型。"
-    ].join("\n"),
-    summary: facts.length
-      ? `已读取 ${file.originalName} 并提取 ${facts.length} 条模型事实。`
-      : `已尝试读取 ${file.originalName}，但未得到足够模型事实。`,
-    evidence: fallbackEvidence,
-    warnings: facts.length ? [] : ["未识别到可用于结构化回答的模型事实，请检查 MATLAB MCP / SATK 可用性。"]
-  };
+  const response = await hermesClient.executeCliStep({
+    taskId: inputArtifact.taskId || "",
+    stepType: "slx_interpret_answer",
+    allowedPaths: [absolutePath],
+    workdir: config.rootDir,
+    inputArtifact: {
+      ...inputArtifact,
+      prompt,
+      model: {
+        ...model,
+        fileName,
+        absolutePath
+      },
+      history: []
+    }
+  });
+  const artifact = response.artifact || {};
+  const answerMarkdown = String(artifact.answerMarkdown || "").trim();
+  if (!answerMarkdown) {
+    throw createHttpError("Hermes Agent did not return an SLX interpreter answer", 502, "hermes_slx_interpret_empty_answer");
+  }
+  return artifact;
 }
 
 export async function createHermesApp() {
@@ -1226,7 +1207,7 @@ export async function createHermesApp() {
 
       if (stepType === "slx_interpret_answer") {
         const allowedPaths = normalizeAllowedPaths(payload.allowedPaths);
-        const artifact = await buildSlxInterpretFallbackArtifact(payload.inputArtifact || {}, allowedPaths);
+        const artifact = await buildSlxInterpretArtifact(payload.inputArtifact || {}, allowedPaths);
         return res.json(
           buildStepResponse(stepType, artifact, startedAt, {
             metrics: {

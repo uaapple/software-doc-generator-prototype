@@ -6,6 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.resolve(process.argv[2] || path.join(projectRoot, "release-dist", "windows-worker-source"));
+const offlineSourceRoot = path.join(projectRoot, "offline-installers");
+const hermesOfflineInputs = [
+  process.env.HERMES_INSTALLER_PATH || "",
+  process.env.HERMES_INSTALL_SCRIPT_PATH || "",
+  process.env.HERMES_PORTABLE_PATH || ""
+];
 
 const appPaths = [
   ".env.defaults",
@@ -55,6 +61,66 @@ function copyPath(relativePath, destinationRoot) {
   });
 }
 
+function copyExternalPath(sourcePath, destinationDir) {
+  if (!sourcePath) {
+    return false;
+  }
+  const resolved = path.resolve(sourcePath);
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`Hermes offline asset does not exist: ${sourcePath}`);
+  }
+  fs.mkdirSync(destinationDir, { recursive: true });
+  fs.cpSync(resolved, path.join(destinationDir, path.basename(resolved)), { recursive: true, force: true });
+  return true;
+}
+
+function copyHermesOfflineAssets(bundleRoot) {
+  const destinationDir = path.join(bundleRoot, "offline-installers", "hermes");
+  let copied = false;
+  const sourceDir = path.join(offlineSourceRoot, "hermes");
+  if (fs.existsSync(sourceDir)) {
+    fs.mkdirSync(destinationDir, { recursive: true });
+    fs.cpSync(sourceDir, destinationDir, { recursive: true, force: true });
+    copied = true;
+  }
+  for (const input of hermesOfflineInputs) {
+    copied = copyExternalPath(input, destinationDir) || copied;
+  }
+  if (copied) {
+    writeText(path.join(destinationDir, "README.txt"), [
+      "Hermes CLI assets bundled with this source update.",
+      "Update-WindowsWorkerSource.ps1 installs a portable hermes.exe/hermes.cmd/hermes.ps1 from this folder into C:\\SoftwareDocWorker\\runtime\\hermes when HERMES_COMMAND is missing or invalid."
+    ]);
+  }
+  return copied;
+}
+
+function copyOfflineFolder(category, bundleRoot) {
+  const sourceDir = path.join(offlineSourceRoot, category);
+  if (!fs.existsSync(sourceDir)) {
+    return false;
+  }
+  const destinationDir = path.join(bundleRoot, "offline-installers", category);
+  fs.mkdirSync(destinationDir, { recursive: true });
+  fs.cpSync(sourceDir, destinationDir, { recursive: true, force: true });
+  return true;
+}
+
+function copyOfficialOfflineAssets(bundleRoot) {
+  let copied = copyHermesOfflineAssets(bundleRoot);
+  for (const category of ["matlab-mcp", "simulink-agentic-toolkit"]) {
+    copied = copyOfflineFolder(category, bundleRoot) || copied;
+  }
+  const manifest = path.join(offlineSourceRoot, "official-dependencies.json");
+  if (fs.existsSync(manifest)) {
+    const destinationDir = path.join(bundleRoot, "offline-installers");
+    fs.mkdirSync(destinationDir, { recursive: true });
+    fs.copyFileSync(manifest, path.join(destinationDir, "official-dependencies.json"));
+    copied = true;
+  }
+  return copied;
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd || projectRoot,
@@ -102,6 +168,7 @@ try {
   for (const relativePath of appPaths) {
     copyPath(relativePath, appRoot);
   }
+  const bundledOfficialAssets = copyOfficialOfflineAssets(bundleRoot);
 
   fs.copyFileSync(
     path.join(projectRoot, "scripts", "update-windows-worker-source.ps1"),
@@ -139,6 +206,10 @@ try {
     "",
     "The deployer automatically finds the newest software-doc-windows-worker-source*.zip in C:\\temp, expands it, applies the update to C:\\SoftwareDocWorker, restarts worker tasks, and checks health.",
     "",
+    "Before building a production source update, run:",
+    "npm run windows-worker:sync-official-deps",
+    "This refreshes Hermes Agent, MATLAB MCP, Simulink Agentic Toolkit, and the simulink-ut-tcsd-generator skill from their configured upstream GitHub sources.",
+    "",
     "Manual fallback:",
     "Copy this zip to the Windows VM, expand it, then run from an elevated PowerShell:",
     "powershell -NoProfile -ExecutionPolicy Bypass -File .\\Update-WindowsWorkerSource.ps1",
@@ -153,6 +224,10 @@ try {
     "- C:\\SoftwareDocWorker\\app\\tools\\matlab-mcp-core-server.exe",
     "- C:\\SoftwareDocWorker\\config\\hermes-llm-secrets.env",
     "- C:\\SoftwareDocWorker\\config\\hermes-llm.active.env",
+    "",
+    bundledOfficialAssets
+      ? "This package includes official runtime dependency assets under offline-installers; the deployer will install/update Hermes, MATLAB MCP, SATK, and Hermes skills when a newer bundled version is present."
+      : "This package does not include official runtime dependency assets. Run npm run windows-worker:sync-official-deps before building when Hermes, MATLAB MCP, SATK, or Hermes skills must be refreshed.",
     "",
     "Hermes LLM profile switcher:",
     "Double-click after update:",

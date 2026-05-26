@@ -49,6 +49,10 @@ function Ensure-AppRuntimeDirectories {
 
 $appDir = Join-Path $InstallDir "app"
 $envFile = Join-Path $InstallDir "software-doc-worker.env"
+$logDir = Join-Path $InstallDir "logs"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$logPath = Join-Path $logDir ("{0}-{1}.log" -f $Service, (Get-Date -Format "yyyyMMdd"))
+Start-Transcript -Path $logPath -Append | Out-Null
 Import-EnvFile -Path $envFile -Required
 Import-EnvFile -Path (Join-Path $InstallDir "config\hermes-llm-secrets.env")
 Import-EnvFile -Path (Join-Path $InstallDir "config\hermes-llm.active.env")

@@ -77,14 +77,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scr
 npm run windows-worker:zip
 ```
 
-如果手头有独立 Hermes CLI 安装器，可以打包时一并放入 `hermes-cli-installer/`：
+SLX 交互解释需要 Windows VM 上存在真正的 Hermes CLI。打包时应把 Hermes CLI portable 目录或安装器放入 `offline-installers/hermes`，也可以通过环境变量指定：
 
 ```powershell
 $env:HERMES_INSTALLER_PATH = "C:\path\to\HermesSetup.exe"
 npm run windows-worker:zip
 ```
 
-如果不提供安装器，Windows Worker 包仍包含本项目的 Hermes Agent 服务脚本，默认调用 VM `PATH` 中已有的 `hermes` 命令。
+如果不提供 Hermes CLI，部署器会要求 VM `PATH` 中已有 `hermes` 命令；否则部署会失败，避免留下无法执行 MCP/SATK 的 `HERMES_COMMAND` 配置。
 
 日常源码更新只需要使用 source update 包：
 

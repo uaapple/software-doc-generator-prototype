@@ -14,6 +14,8 @@
     "release:zip": "node scripts/build-release-zip.mjs",
     "windows-worker:zip": "node scripts/build-windows-worker-bundle.mjs",
     "windows-worker:source-zip": "node scripts/build-windows-worker-source-update.mjs",
+    "windows-worker:check-official-deps": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Sync-WindowsWorkerOfficialDependencies.ps1 -CheckOnly",
+    "windows-worker:sync-official-deps": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Sync-WindowsWorkerOfficialDependencies.ps1",
     "test": "node --disable-warning=ExperimentalWarning tests/run-tests.js && node tests/slx-parser-tests.js",
     "check:wiki": "node scripts/check-wiki.mjs",
     "check:skills-db-diff": "node scripts/check-skills-db-diff.mjs",

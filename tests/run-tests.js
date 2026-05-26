@@ -2935,8 +2935,8 @@ const tests = [
 
         assert.equal(invocations.length, 1);
         assert.equal(invocations[0].command, "hermes");
-        assert.ok(invocations[0].args.includes("chat"));
-        assert.ok(invocations[0].args.includes("-Q"));
+        assert.ok(invocations[0].args.includes("-z"));
+        assert.ok(invocations[0].args.includes("--yolo"));
         assert.equal(response.status, "succeeded");
         assert.equal(response.sessionId, "20260421_144500_abcd12");
         assert.equal(response.artifact.items[0].title, "CLI item");
@@ -2994,7 +2994,7 @@ const tests = [
 
         assert.equal(invocations.length, 1);
         assert.equal(invocations[0].command, "hermes");
-        assert.deepEqual(invocations[0].args.slice(0, 3), ["-p", "deepseek", "chat"]);
+        assert.deepEqual(invocations[0].args.slice(0, 4), ["-p", "deepseek", "--yolo", "-z"]);
         assert.deepEqual(usageReaderInvocations, [
           {
             sessionId: "20260522_170000_deepseek",
@@ -3199,14 +3199,15 @@ const tests = [
 
         assert.equal(invocations.length, 1);
         assert.equal(invocations[0].options.timeout, 3600000);
-        assert.equal(invocations[0].args[invocations[0].args.indexOf("--max-turns") + 1], "10000");
-        assert.match(invocations[0].args[2], /simulink_ut_tcsd_generate/);
-        assert.match(invocations[0].args[2], /simulink-ut-tcsd-generator/);
-        assert.match(invocations[0].args[2], /Demo\.slx/);
-        assert.match(invocations[0].args[2], /Demo\.mat/);
-        assert.match(invocations[0].args[2], /outputs\/\*_tcsd\.xlsx/);
-        assert.match(invocations[0].args[2], /MATLAB Cleanup Contract/);
-        assert.match(invocations[0].args[2], /build_tcsd_from_json\.py/);
+        assert.ok(invocations[0].args.includes("-z"));
+        const promptArg = invocations[0].args[invocations[0].args.indexOf("-z") + 1];
+        assert.match(promptArg, /simulink_ut_tcsd_generate/);
+        assert.match(promptArg, /simulink-ut-tcsd-generator/);
+        assert.match(promptArg, /Demo\.slx/);
+        assert.match(promptArg, /Demo\.mat/);
+        assert.match(promptArg, /outputs\/\*_tcsd\.xlsx/);
+        assert.match(promptArg, /MATLAB Cleanup Contract/);
+        assert.match(promptArg, /build_tcsd_from_json\.py/);
         assert.equal(result.artifact.outputFiles[0].relativePath, "outputs/Demo_Test0001_tcsd.xlsx");
       });
     }

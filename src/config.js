@@ -193,7 +193,7 @@ function buildMatlabMcpServerArgs() {
   const analysisBackend = String(process.env.SLX_ANALYSIS_BACKEND || "satk").trim().toLowerCase();
   if (analysisBackend === "legacy") {
     return [
-      "--matlab-root=" + (process.env.MATLAB_ROOT || "/Applications/MATLAB_R2026a.app"),
+      "--matlab-root=" + (process.env.MATLAB_ROOT || deriveMatlabRoot(process.env.MATLAB_EXECUTABLE || "")),
       "--matlab-display-mode=nodesktop",
       "--extension-file=" + path.join(rootDir, "tools", "matlab-mcp-extension.json"),
       "--initial-working-folder=" + path.join(rootDir, "tools", "matlab-functions")
@@ -205,6 +205,15 @@ function buildMatlabMcpServerArgs() {
     "--matlab-session-mode=existing",
     "--extension-file=" + (process.env.SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE || path.join(toolkitRoot, "tools", "tools.json"))
   ];
+}
+
+function deriveMatlabRoot(matlabExecutable = "") {
+  const executable = String(matlabExecutable || "").trim();
+  if (!executable) {
+    return process.platform === "win32" ? "C:\\Program Files\\MATLAB\\R2025b" : "/Applications/MATLAB_R2026a.app";
+  }
+  const binDir = path.dirname(executable);
+  return path.basename(binDir).toLowerCase() === "bin" ? path.dirname(binDir) : binDir;
 }
 
 function firstExistingPath(paths = []) {

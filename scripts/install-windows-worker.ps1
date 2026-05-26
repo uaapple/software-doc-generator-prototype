@@ -117,6 +117,14 @@ function Test-CommandAvailable {
   return [bool](Resolve-CommandPath -Command $Command)
 }
 
+function Assert-HermesCommandIsExecutable {
+  param([string]$Command)
+  $commandName = [IO.Path]::GetFileName(([string]$Command).Trim()).ToLowerInvariant()
+  if ($commandName -in @("powershell.exe", "powershell", "pwsh.exe", "pwsh", "cmd.exe", "cmd")) {
+    throw "Invalid Hermes CLI command '$Command'. HERMES_COMMAND must point to hermes.exe/hermes.cmd/hermes.ps1, not a shell."
+  }
+}
+
 function Find-FirstFile {
   param(
     [string[]]$Directories,
@@ -150,21 +158,29 @@ function Start-Installer {
 
   $extension = [IO.Path]::GetExtension($Path).ToLowerInvariant()
   Write-Host "Running ${Name}: $Path"
+  $logDir = Join-Path $InstallDir "logs"
+  New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+  $safeName = ($Name -replace "[^A-Za-z0-9_-]", "-").Trim("-").ToLowerInvariant()
+  if (-not $safeName) {
+    $safeName = "installer"
+  }
+  $stdoutLog = Join-Path $logDir ("{0}-{1}.out.log" -f $safeName, (Get-Date -Format "yyyyMMdd-HHmmss"))
+  $stderrLog = Join-Path $logDir ("{0}-{1}.err.log" -f $safeName, (Get-Date -Format "yyyyMMdd-HHmmss"))
 
   if ($extension -eq ".msi") {
-    $process = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", $Path, "/qn", "/norestart") -Wait -PassThru
+    $process = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", $Path, "/qn", "/norestart") -Wait -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
   } elseif ($extension -eq ".ps1") {
     $commandLine = "-NoProfile -ExecutionPolicy Bypass -File `"$Path`" $Arguments"
-    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $commandLine -Wait -PassThru
+    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $commandLine -Wait -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
   } elseif ($extension -eq ".cmd" -or $extension -eq ".bat") {
     $commandLine = "/c `"$Path`" $Arguments"
-    $process = Start-Process -FilePath "cmd.exe" -ArgumentList $commandLine -Wait -PassThru
+    $process = Start-Process -FilePath "cmd.exe" -ArgumentList $commandLine -Wait -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
   } else {
-    $process = Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru
+    $process = Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
   }
 
   if ($process.ExitCode -notin @(0, 3010)) {
-    throw "$Name failed with exit code $($process.ExitCode): $Path"
+    throw "$Name failed with exit code $($process.ExitCode): $Path. Logs: $stdoutLog ; $stderrLog"
   }
 }
 
@@ -278,6 +294,53 @@ function Install-PortableHermes {
   return $targetCommand
 }
 
+function Resolve-HermesInstaller {
+  if ($HermesInstallerPath) {
+    return $HermesInstallerPath
+  }
+  $offlineInstaller = Join-Path $Script:OfflineRoot "hermes\Install-HermesOffline.ps1"
+  if (Test-Path -LiteralPath $offlineInstaller) {
+    return $offlineInstaller
+  }
+  return Find-FirstFile -Directories @(
+    (Join-Path $Script:OfflineRoot "hermes"),
+    (Join-Path $Script:BundleRoot "hermes-cli-installer")
+  ) -Patterns @("install.ps1", "*.msi", "*setup*.exe", "*installer*.exe", "*.cmd", "*.bat")
+}
+
+function Get-BundledHermesTag {
+  $sourceRoot = Join-Path $Script:OfflineRoot "hermes"
+  if (-not (Test-Path -LiteralPath $sourceRoot)) {
+    return ""
+  }
+  $archive = Get-ChildItem -LiteralPath $sourceRoot -Filter "hermes-agent-v*.zip" -File -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending |
+    Select-Object -First 1
+  if (-not $archive) {
+    return ""
+  }
+  if ($archive.Name -match "hermes-agent-(v[0-9][0-9A-Za-z\.\-]*)-github-source\.zip") {
+    return $Matches[1]
+  }
+  return ""
+}
+
+function Find-InstalledHermesCommand {
+  $candidates = @(
+    (Join-Path $InstallDir "runtime\hermes-agent\venv\Scripts"),
+    (Join-Path $InstallDir "runtime\hermes-agent"),
+    (Join-Path $InstallDir "runtime\hermes"),
+    (Join-Path $env:LOCALAPPDATA "hermes"),
+    (Join-Path $env:USERPROFILE ".local"),
+    $env:APPDATA
+  )
+  $fromPath = Resolve-CommandPath -Command "hermes"
+  if ($fromPath) {
+    return $fromPath
+  }
+  return Find-FirstFile -Directories $candidates -Patterns @("hermes.exe", "hermes.cmd", "hermes.ps1")
+}
+
 function Ensure-AppRuntimeDirectories {
   param([string]$TargetAppDir)
   $directories = @(
@@ -341,38 +404,51 @@ function Write-SourceUpdateDeployerLauncher {
 }
 
 function Ensure-Hermes {
+  Assert-HermesCommandIsExecutable -Command $HermesCommand
   if (Test-CommandAvailable -Command $HermesCommand) {
     $resolved = Resolve-CommandPath -Command $HermesCommand
     if ($resolved) {
+      Assert-HermesCommandIsExecutable -Command $resolved
       Add-RuntimePathEntry -PathEntry (Split-Path -Parent $resolved)
+      $script:HermesCommand = $resolved
     }
     return
   }
 
   $portableHermes = Install-PortableHermes
   if ($portableHermes) {
+    Assert-HermesCommandIsExecutable -Command $portableHermes
     $script:HermesCommand = $portableHermes
     return
   }
 
-  if ($HermesInstallerPath) {
+  $installerPath = Resolve-HermesInstaller
+  if ($installerPath) {
     $installerArgs = $HermesInstallerArgs
-    if (-not $installerArgs -and ([IO.Path]::GetExtension($HermesInstallerPath).ToLowerInvariant() -eq ".ps1")) {
-      $installerArgs = "-SkipSetup"
+    if (-not $installerArgs -and ([IO.Path]::GetFileName($installerPath)).Equals("Install-HermesOffline.ps1", [System.StringComparison]::OrdinalIgnoreCase)) {
+      $hermesHome = Join-Path $InstallDir "runtime\hermes-home"
+      $hermesInstallDir = Join-Path $InstallDir "runtime\hermes-agent"
+      $installerArgs = "-SkipWorkerEnvUpdate -HermesHome `"$hermesHome`" -InstallDir `"$hermesInstallDir`""
+    } elseif (-not $installerArgs -and ([IO.Path]::GetExtension($installerPath).ToLowerInvariant() -eq ".ps1")) {
+      $tag = Get-BundledHermesTag
+      $tagArg = if ($tag) { " -Tag `"$tag`"" } else { "" }
+      $hermesHome = Join-Path $InstallDir "runtime\hermes-home"
+      $hermesInstallDir = Join-Path $InstallDir "runtime\hermes-agent"
+      $installerArgs = "-SkipSetup -NonInteractive -HermesHome `"$hermesHome`" -InstallDir `"$hermesInstallDir`"$tagArg"
     }
-    Start-Installer -Path $HermesInstallerPath -Arguments $installerArgs -Name "Hermes CLI installer"
+    Start-Installer -Path $installerPath -Arguments $installerArgs -Name "Hermes CLI installer"
     Sync-ProcessPath
 
-    if (Test-CommandAvailable -Command $HermesCommand) {
-      $resolved = Resolve-CommandPath -Command $HermesCommand
-      if ($resolved) {
-        Add-RuntimePathEntry -PathEntry (Split-Path -Parent $resolved)
-      }
+    $installedHermes = Find-InstalledHermesCommand
+    if ($installedHermes) {
+      Assert-HermesCommandIsExecutable -Command $installedHermes
+      Add-RuntimePathEntry -PathEntry (Split-Path -Parent $installedHermes)
+      $script:HermesCommand = $installedHermes
       return
     }
   }
 
-  Write-Warning "Hermes CLI command '$HermesCommand' was not found. Continuing because the bundled Software Doc Hermes Agent runs as a Node service. Pass -HermesInstallerPath only if an external Hermes CLI is required."
+  throw "Hermes CLI is required for SLX interpretation, but command '$HermesCommand' was not found. Bundle a portable hermes.exe/hermes.cmd/hermes.ps1 under offline-installers\hermes, pass -HermesInstallerPath, or install Hermes CLI on PATH."
 }
 
 function Resolve-McpServerCommand {
@@ -425,6 +501,8 @@ function Write-EnvFile {
     "MATLAB_WORKER_HOST=0.0.0.0",
     "MATLAB_WORKER_PORT=5100",
     "MATLAB_EXECUTABLE=$MatlabExecutable",
+    "MATLAB_ROOT=$(Split-Path -Parent (Split-Path -Parent $MatlabExecutable))",
+    "SLX_ANALYSIS_BACKEND=legacy",
     "MATLAB_MCP_SERVER_COMMAND=$McpServerCommand",
     "MATLAB_MCP_TIMEOUT_MS=600000",
     "MATLAB_MCP_TMPDIR=$InstallDir\tmp\matlab",
@@ -448,8 +526,47 @@ function Register-WorkerTask {
   ) -join " "
   $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arguments -WorkingDirectory $InstallDir
   $trigger = New-ScheduledTaskTrigger -AtLogOn
-  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Description "Software document generator $Service worker" -Force | Out-Null
+  $principal = New-ScheduledTaskPrincipal `
+    -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+    -LogonType Interactive `
+    -RunLevel Highest
+  Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Description "Software document generator $Service worker" -Force | Out-Null
   Start-ScheduledTask -TaskName $TaskName
+}
+
+function Wait-WorkerPorts {
+  param(
+    [hashtable]$TaskPorts,
+    [int]$TimeoutSeconds = 45
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    $missing = @()
+    foreach ($entry in $TaskPorts.GetEnumerator()) {
+      $port = [int]$entry.Value
+      $listener = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue
+      if (-not $listener) {
+        $missing += "$($entry.Key):$port"
+      }
+    }
+    if (-not $missing.Count) {
+      Write-Host "Worker ports are listening: $($TaskPorts.Values -join ', ')"
+      return
+    }
+    Start-Sleep -Seconds 1
+  } while ((Get-Date) -lt $deadline)
+
+  foreach ($taskName in $TaskPorts.Keys) {
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+    if ($task) {
+      Write-Warning "$taskName state=$($task.State) lastResult=$($info.LastTaskResult) lastRun=$($info.LastRunTime)"
+    } else {
+      Write-Warning "$taskName is not registered."
+    }
+  }
+  throw "Worker services did not start listening on expected ports within $TimeoutSeconds seconds: $($missing -join ', ')"
 }
 
 if (-not $MatlabAuthToken) {
@@ -493,9 +610,23 @@ if (-not (Test-Path -LiteralPath (Join-Path $targetAppDir "node_modules"))) {
 $envFile = Join-Path $InstallDir "software-doc-worker.env"
 Write-EnvFile -Path $envFile
 
+$officialDependenciesInstaller = Join-Path $targetAppDir "scripts\Install-WindowsWorkerOfficialDependencies.ps1"
+if (Test-Path -LiteralPath $officialDependenciesInstaller) {
+  & $officialDependenciesInstaller `
+    -InstallDir $InstallDir `
+    -BundleRoot $Script:BundleRoot `
+    -TargetAppDir $targetAppDir `
+    -WorkerEnvPath $envFile `
+    -FreshInstall
+}
+
 if (-not $SkipTaskRegistration) {
   Register-WorkerTask -TaskName "SoftwareDocHermesAgent" -Service "hermes"
   Register-WorkerTask -TaskName "SoftwareDocMatlabWorker" -Service "matlab"
+  Wait-WorkerPorts -TaskPorts @{
+    SoftwareDocHermesAgent = 3101
+    SoftwareDocMatlabWorker = 5100
+  }
 }
 
 Write-Host "Windows worker installed at $InstallDir"

@@ -172,9 +172,9 @@ try {
   ]);
 
   writeReadme(path.join(offlineRoot, "hermes", "README.txt"), [
-    "Hermes CLI is optional for the current Software Doc Hermes Agent; the bundled agent runs as a Node service.",
-    "Put a portable hermes.exe/hermes.cmd/hermes.ps1 here only if an external Hermes CLI is required.",
-    "Installer scripts are not run automatically. Pass -HermesInstallerPath explicitly if you need to run an installer.",
+    "Hermes CLI is required for SLX interpretation and any workflow that asks the Windows Agent to run MCP/SATK through Hermes.",
+    "Put a portable hermes.exe/hermes.cmd/hermes.ps1 here, or a Hermes CLI installer/script.",
+    "The deploy script automatically installs a portable Hermes command from this folder, or runs install.ps1 / MSI / setup installer when no portable command is present.",
     "Supported explicit installer/script types: .msi, .exe, .ps1, .cmd, .bat.",
     "Supported portable command files: hermes.exe, hermes.cmd, hermes.ps1.",
     "If the installer needs silent flags, pass -HermesInstallerArgs when running Deploy-WindowsWorker.ps1."
@@ -202,9 +202,15 @@ try {
     "",
     "The deploy script checks and installs missing local prerequisites from offline-installers:",
     "- Node.js 22+",
-    "- optional Hermes CLI portable command",
+    "- Hermes CLI",
     "- matlab-mcp-core-server.exe",
+    "- Simulink Agentic Toolkit",
+    "- Hermes skill simulink-ut-tcsd-generator",
     "- optional MATLAB offline installer",
+    "",
+    "Before building a production package, run:",
+    "npm run windows-worker:sync-official-deps",
+    "This refreshes Hermes Agent, MATLAB MCP, Simulink Agentic Toolkit, and the simulink-ut-tcsd-generator skill from their configured upstream GitHub sources.",
     "",
     "After installation, the script prints the Linux backend environment variables needed to connect to this Windows worker."
   ]);

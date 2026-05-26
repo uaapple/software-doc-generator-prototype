@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fsSync from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -667,8 +668,44 @@ function normalizeWorkspaceDescriptor(workspace = {}) {
   };
 }
 
+function quoteWindowsCmdArg(value = "") {
+  const text = String(value);
+  if (!text) {
+    return '""';
+  }
+  const escaped = text
+    .replace(/%/g, "%%")
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\+)$/g, "$1$1");
+  if (!/[\s"&|<>^()%!]/.test(text)) {
+    return escaped;
+  }
+  return `"${escaped}"`;
+}
+
+function buildCommandRunnerInvocation(command, args = []) {
+  const extension = path.extname(String(command || "").trim()).toLowerCase();
+  if (process.platform === "win32" && extension === ".cmd") {
+    const embeddedPython = path.join(path.dirname(command), "python", "python.exe");
+    if (path.basename(command).toLowerCase() === "hermes.cmd" && fsSync.existsSync(embeddedPython)) {
+      return {
+        command: embeddedPython,
+        args: ["-m", "hermes_cli.main", ...args]
+      };
+    }
+  }
+  if (process.platform === "win32" && [".cmd", ".bat"].includes(extension)) {
+    return {
+      command: "cmd.exe",
+      args: ["/d", "/s", "/c", [quoteWindowsCmdArg(command), ...args.map(quoteWindowsCmdArg)].join(" ")]
+    };
+  }
+  return { command, args };
+}
+
 async function defaultCommandRunner(command, args, options = {}) {
-  return execFileAsync(command, args, {
+  const invocation = buildCommandRunnerInvocation(command, args);
+  return execFileAsync(invocation.command, invocation.args, {
     cwd: options.cwd,
     timeout: options.timeout,
     maxBuffer: options.maxBuffer,
@@ -795,7 +832,7 @@ export class SoftwareRequirementMarkdownAgentService {
           this.timeoutMs
       ) || this.timeoutMs
     );
-    const args = ["chat", "-q", prompt, "-Q", "--source", "tool", "--max-turns", String(maxTurns), "--yolo"];
+    const args = ["--yolo", "-z", prompt];
     return runner(command, args, {
       cwd: workspace.workspaceDir,
       timeout: timeoutMs,

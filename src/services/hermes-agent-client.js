@@ -1128,66 +1128,20 @@ function buildSlxParsePrompt(payload = {}) {
   ].join("\n");
 }
 
-function sanitizeSlxInterpreterHistory(history = []) {
-  return Array.isArray(history)
-    ? history.map((message) => ({
-        role: String(message?.role || "").trim() === "user" ? "user" : "assistant",
-        content: clipText(message?.content || "", 2400),
-        status: String(message?.status || "").trim(),
-        createdAt: String(message?.createdAt || "").trim()
-      })).filter((message) => message.content)
-    : [];
-}
-
 function buildSlxInterpretPrompt(payload = {}) {
   const inputArtifact = payload.inputArtifact || {};
-  const project = sanitizeProjectContext(inputArtifact.project || {});
-  const model = sanitizeAssetItem(inputArtifact.model || {});
+  const directPrompt = String(inputArtifact.prompt || "").trim();
+  if (directPrompt) {
+    return directPrompt;
+  }
+  const model = inputArtifact.model || {};
+  const absolutePath = String(model.absolutePath || "").trim();
+  const fileName = String(model.fileName || model.originalName || path.basename(absolutePath || "model.slx")).trim();
   const question = clipText(inputArtifact.question || "", 8000);
-  const history = sanitizeSlxInterpreterHistory(inputArtifact.history || []);
   return [
-    "You are executing the Hermes step `slx_interpret_answer` for an interactive SLX model interpreter.",
-    "Answer the user's question about exactly one selected Simulink .slx model.",
-    "You must inspect the selected model with the available Simulink Agentic Toolkit / MATLAB MCP capabilities before answering.",
-    "Prefer these tools when available: model_overview, model_read, model_query_params, model_resolve_params.",
-    "Do not answer from cached modelRequirementView JSON unless the tool path is unavailable; the selected .slx model is the source of truth.",
-    "Return strict JSON only. No markdown fences. No explanation outside JSON.",
-    "",
-    "Project and module context:",
-    JSON.stringify(project, null, 2),
-    "",
-    "Selected SLX model:",
-    JSON.stringify(model, null, 2),
-    "",
-    "Conversation history:",
-    JSON.stringify(history, null, 2),
-    "",
-    "User question:",
-    question,
-    "",
-    "Required JSON shape:",
-    JSON.stringify(
-      {
-        answerMarkdown: "A concise but useful Markdown answer in Chinese unless the user asked otherwise.",
-        summary: "One-sentence task summary.",
-        evidence: [{
-          fileName: "model.slx",
-          fileRole: "simulink_slx",
-          location: "model/block/path or SATK scope",
-          excerpt: "Short evidence from the model or tool result"
-        }],
-        warnings: ["Optional limitations, unavailable tools, or assumptions"]
-      },
-      null,
-      2
-    ),
-    "",
-    "Rules:",
-    "- Use only the selected SLX model and the explicit conversation context.",
-    "- If MATLAB MCP / SATK is unavailable, say so in warnings and answer only what can be supported by available evidence.",
-    "- Preserve block paths, signal names, state names, parameter names, and threshold values exactly.",
-    "- Keep the answer focused on the user's question; do not dump the full model structure.",
-    "- evidence must cite the model file and the most relevant scope/block/path or tool excerpt."
+    `使用 MCP/SATK 基于模型文件 ${fileName}，回答问题：“${question}”。`,
+    absolutePath ? `模型文件绝对路径：${absolutePath}` : "",
+    "如果无法调用 MCP/SATK 或无法读取模型文件，请直接说明失败原因。"
   ].join("\n");
 }
 
@@ -2447,20 +2401,7 @@ export class HermesAgentClient {
   async executeCliStep(payload = {}, runtime = {}) {
     assertHermesCliCommand(this.command);
     const prompt = buildCliPrompt(payload);
-    const maxTurns = this.getMaxTurnsForStep(payload.stepType);
-    const rawArgs = [
-      "chat",
-      "-q",
-      prompt,
-      "-Q",
-      "--source",
-      "tool"
-    ];
-    if (maxTurns > 0) {
-      rawArgs.push("--max-turns", String(maxTurns));
-    }
-    rawArgs.push("--yolo");
-    const args = buildProfiledCliArgs(this.profile, rawArgs);
+    const args = buildProfiledCliArgs(this.profile, ["--yolo", "-z", prompt]);
     const startedAt = Date.now();
     const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
     const workdir = String(payload.workdir || payload.inputArtifact?.workspaceDir || this.workdir || process.cwd());
@@ -2515,6 +2456,39 @@ export class HermesAgentClient {
       try {
         parsed = JSON.parse(extractJsonText(body));
       } catch (_error) {
+        if (payload.stepType === "slx_interpret_answer" && String(body || "").trim()) {
+          const rawArtifact = {
+            answerMarkdown: String(body || "").trim(),
+            summary: "Hermes Agent returned a raw SLX interpretation answer.",
+            evidence: [],
+            warnings: []
+          };
+          await emitHermesEvent(runtime.onEvent, {
+            type: "agent_runtime",
+            transport: "cli",
+            stepType: payload.stepType || "",
+            status: "completed",
+            label: "Hermes CLI 已返回文本答案",
+            message: "Hermes CLI 返回了文本答案，后端将原样写回聊天窗口。",
+            sessionId,
+            startedAt: new Date(startedAt).toISOString(),
+            heartbeatAt: new Date().toISOString(),
+            elapsedMs: Date.now() - startedAt,
+            tokenUsage,
+            stdoutExcerpt: clipText(body, 2000),
+            stderrExcerpt: clipText(stderr, 2000)
+          });
+          return {
+            status: "succeeded",
+            stepType: payload.stepType,
+            artifact: normalizeCliArtifact(payload.stepType, rawArtifact, payload),
+            metrics: tokenUsage ? { tokenUsage } : {},
+            logs: stderr ? [clipText(stderr, 4000)] : [],
+            error: null,
+            sessionId
+          };
+        }
+
         const fallbackArtifact = await buildMarkdownArtifactFromWorkspace(payload, workdir);
         if (fallbackArtifact) {
           const fallbackLabel =
