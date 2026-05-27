@@ -113,6 +113,36 @@ For stateful top-level outputs fed by Stateflow Charts, UnitDelay/Delay/Memory, 
 
 Stimulus coverage and expected-output backfill are separate concerns. Keep a Test/action step when it is needed to cover a decision outcome even if the relevant top-level output is dynamic and therefore omitted from expected outputs.
 
+### Semantic Claim Consistency Gate
+
+After simulation backfill, every Test must pass semantic claim consistency before delivery.
+
+A semantic claim is any Test name, description, or Action comment that says a gear, state, or mode was reached, entered, shifted to, activated, allowed, blocked, or assigned a concrete value.
+
+For each claim:
+
+1. Identify the top-level output that proves or disproves the claim.
+2. Resolve the claimed state value from model constants, enum values, or trusted simulation evidence.
+3. Compare the claim with the `expValue(...)` lines in the same action step.
+
+Rules:
+
+- Before simulation evidence exists, use only request/target/attempt wording.
+- After backfill, success wording such as `shifted`, `reached`, `entered`, `切换到`, or `进入` is allowed only when `expValue(...)` proves it.
+- Inline comments such as `stDrvGear=1(D)` must exactly match the corresponding `GearLvr_stDrvGear = expValue(...)` value.
+- If a mismatch is found, the workbook is not deliverable. Repair the stimulus and rerun backfill, rewrite the Test as blocked/not-reached/inhibited, or remove the success claim.
+- Never keep a row where text says the transition succeeded while the simulation-backed expectation shows the old/default state.
+- Do not set `Work Status = reviewed` for any Test with an unresolved semantic mismatch.
+
+### Default Root-Output Backfill
+
+For simulation backfill, pass all model-derived scalar root Outports to `backfill_expected_outputs.py --outputs` by default. Do not manually restrict `--outputs` to a small subset merely to keep the Action cell short.
+
+- Let simulation results mark unstable outputs as `stable=false`; `backfill_expected_outputs.py` will omit those outputs from the affected Test.
+- Stateful-risk root outputs identified during model inspection, such as Stateflow/Delay/Latch/Memory/edge-derived outputs, must be passed through `--exclude-outputs` unless a trusted simulation trace proves stable post-delay behavior.
+- Vector root outputs are excluded by default unless the TCSD vector macro syntax and element/port mapping are confirmed.
+- A smaller output allowlist is acceptable only with an explicit reason, such as confirmed importer limits, severe workbook readability/performance issues, or an intentionally scoped diagnostic run.
+
 ## Multidimensional Signals
 
 The UT guidance shows vector I/O can use macro syntax such as:
@@ -136,4 +166,7 @@ Before finishing, check:
 - Selector values are in valid model ranges.
 - MultiPortSwitch invalid-selector errors have been repaired by changing stimulus, settle time, or justified scalar overrides; they are not hidden by global diagnostic suppression in normal generation.
 - Uncovered `MinMax`, `MultiPortSwitch`, and `Saturate` outcomes are either covered by supplemental tests or explicitly justified as unreachable/invalid for simulation.
+- `backfill_expected_outputs.py --outputs` was given all scalar root Outports unless a documented exception applies; unverified stateful outputs are excluded through `--exclude-outputs`.
+- Any Test name, description, or Action comment claiming a state/gear/mode was reached matches the relevant top-level output `expValue(...)` in the same action step. Inline `Signal=value` comments match the corresponding `expValue(...)`. If the output still shows the old/default state, revise the stimulus/hold timing, rewrite the text as a blocked/not-reached path, or remove the success claim.
+- No Test with an unresolved semantic mismatch has `Work Status = reviewed`.
 - Workbook opens and imports.
