@@ -165,6 +165,7 @@ async function cleanupTempFiles(files = {}) {
 export class UnitTestCaseGenerationService {
   constructor(options = {}) {
     this.hermesAgentClient = options.hermesAgentClient || new HermesAgentClient();
+    this.deletedTaskIds = new Set();
   }
 
   get storeDir() {
@@ -176,7 +177,13 @@ export class UnitTestCaseGenerationService {
   }
 
   getTaskDir(taskId = "") {
-    return path.join(this.storeDir, String(taskId || ""));
+    const id = String(taskId || "").trim();
+    const storeDir = path.resolve(this.storeDir);
+    const taskDir = path.resolve(storeDir, id);
+    if (!id || taskDir === storeDir || !taskDir.startsWith(`${storeDir}${path.sep}`)) {
+      throw createHttpError("任务 ID 非法。", 400, "unit_test_case_invalid_task_id");
+    }
+    return taskDir;
   }
 
   async ensureDirs() {
@@ -213,10 +220,30 @@ export class UnitTestCaseGenerationService {
   }
 
   async saveTask(task = {}) {
+    if (this.deletedTaskIds.has(task.id)) {
+      return publicTask(task);
+    }
     const taskDir = this.getTaskDir(task.id);
     await fs.mkdir(taskDir, { recursive: true });
     await writeJson(taskFilePath(taskDir), task);
     return publicTask(task);
+  }
+
+  async deleteTask(taskId = "") {
+    const task = await this.readTask(taskId);
+    if (!task) {
+      throw createHttpError("任务不存在。", 404, "unit_test_case_task_not_found");
+    }
+    this.deletedTaskIds.add(task.id);
+    const taskDir = this.getTaskDir(task.id);
+    await fs.rm(taskDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    return {
+      deleted: true,
+      taskId: task.id,
+      status: task.status || "",
+      removedArtifacts: Array.isArray(task.artifacts) ? task.artifacts.length : 0,
+      removedWorkspace: true
+    };
   }
 
   validateUploadFiles(files = {}) {

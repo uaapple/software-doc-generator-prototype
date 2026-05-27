@@ -9626,10 +9626,16 @@ const tests = [
     name: "Project list replaces Skill Refinement shortcut with unit test case generation workbench",
     run: async () => {
       const indexHtml = await fs.readFile(path.join(config.rootDir, "public", "index.html"), "utf8");
+      const unitScript = await fs.readFile(path.join(config.rootDir, "public", "unit-test-case-generation.js"), "utf8");
+      const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "app.css"), "utf8");
 
       assert.ok(indexHtml.includes('href="/unit-test-case-generation"'));
       assert.ok(indexHtml.includes("单元测试用例生成"));
       assert.equal(indexHtml.includes('href="/skill-refinement">Skill Refinement'), false);
+      assert.ok(unitScript.includes("data-delete-task-id"));
+      assert.ok(unitScript.includes('method: "DELETE"'));
+      assert.ok(unitScript.includes("任务已删除，相关文件已清理。"));
+      assert.ok(stylesheet.includes(".unit-task-delete"));
 
       await withTestServer(async ({ baseUrl }) => {
         const response = await fetch(`${baseUrl}/unit-test-case-generation`);
@@ -9693,6 +9699,21 @@ const tests = [
           assert.equal(listResponse.status, 200);
           const listBody = await listResponse.json();
           assert.ok(listBody.tasks.some((task) => task.id === validBody.task.id));
+
+          const taskDir = path.join(config.unitTestCase.taskStoreDir, validBody.task.id);
+          await fs.access(taskDir);
+
+          const deleteResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks/${validBody.task.id}`, {
+            method: "DELETE"
+          });
+          assert.equal(deleteResponse.status, 200);
+          const deleteBody = await deleteResponse.json();
+          assert.equal(deleteBody.deleted, true);
+          assert.equal(deleteBody.taskId, validBody.task.id);
+          await assert.rejects(() => fs.access(taskDir));
+
+          const deletedDetailResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks/${validBody.task.id}`);
+          assert.equal(deletedDetailResponse.status, 404);
         });
       });
     }
@@ -9758,6 +9779,15 @@ const tests = [
           () => service.getArtifact(task.id, "bad-artifact"),
           /outputs\/\*\.xlsx/
         );
+
+        const taskDir = service.getTaskDir(task.id);
+        await fs.access(taskDir);
+        const deleted = await service.deleteTask(task.id);
+        assert.equal(deleted.deleted, true);
+        assert.equal(deleted.removedArtifacts, 2);
+        await assert.rejects(() => fs.access(taskDir));
+        assert.equal(await service.getTask(task.id), null);
+        await assert.rejects(() => service.deleteTask(task.id), /任务不存在/);
       });
     }
   },
@@ -9888,6 +9918,41 @@ const tests = [
       releaseFirst();
       await Promise.all([first, second, third]);
       assert.deepEqual(events, ["start-1", "run-1", "done-1", "start-2", "run-2", "start-3", "run-3"]);
+    }
+  },
+  {
+    name: "Hermes task queue can cancel queued unit test case tasks",
+    run: async () => {
+      const events = [];
+      let releaseFirst = null;
+      const firstCanFinish = new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+      const queue = new HermesTaskQueueService({ concurrency: 1 });
+
+      const first = queue.enqueue({
+        id: "task-1",
+        type: "unit_test_case_generation",
+        run: async () => {
+          events.push("run-1");
+          await firstCanFinish;
+        }
+      });
+      const second = queue.enqueue({
+        id: "task-2",
+        type: "unit_test_case_generation",
+        run: async () => {
+          events.push("run-2");
+        }
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(queue.cancelQueued("unit_test_case_generation", "task-2"), true);
+      assert.equal(queue.getQueuePosition("unit_test_case_generation", "task-2"), 0);
+      releaseFirst();
+      await Promise.all([first, second]);
+      assert.deepEqual(events, ["run-1"]);
+      assert.equal(queue.cancelQueued("unit_test_case_generation", "task-2"), false);
     }
   },
   {

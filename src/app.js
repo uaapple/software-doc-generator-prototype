@@ -402,6 +402,16 @@ export async function createApp() {
     }
   });
 
+  app.delete("/api/unit-test-case-generation/tasks/:taskId", async (req, res, next) => {
+    try {
+      const queueCancelled = hermesTaskQueueService.cancelQueued("unit_test_case_generation", req.params.taskId);
+      const result = await unitTestCaseGenerationService.deleteTask(req.params.taskId);
+      res.json({ ...result, queueCancelled });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post(
     "/api/unit-test-case-generation/tasks",
     unitTestUpload.fields([

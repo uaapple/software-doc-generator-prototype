@@ -2,7 +2,8 @@ const state = {
   tasks: [],
   selectedTaskId: new URLSearchParams(window.location.search).get("taskId") || "",
   polling: null,
-  submitting: false
+  submitting: false,
+  deletingTaskIds: new Set()
 };
 
 const elements = {
@@ -153,7 +154,19 @@ async function loadSelectedTask() {
     renderTaskDetail(null);
     return null;
   }
-  const task = await requestJson(`/api/unit-test-case-generation/tasks/${encodeURIComponent(state.selectedTaskId)}`);
+  let task = null;
+  try {
+    task = await requestJson(`/api/unit-test-case-generation/tasks/${encodeURIComponent(state.selectedTaskId)}`);
+  } catch (error) {
+    if (error.code === "unit_test_case_task_not_found") {
+      state.selectedTaskId = state.tasks[0]?.id || "";
+      updateUrlTaskId(state.selectedTaskId);
+      renderTaskList();
+      renderTaskDetail(null);
+      return null;
+    }
+    throw error;
+  }
   const index = state.tasks.findIndex((item) => item.id === task.id);
   if (index >= 0) {
     state.tasks[index] = task;
@@ -174,18 +187,72 @@ function renderTaskList() {
     .map((task) => {
       const selected = task.id === state.selectedTaskId ? " selected" : "";
       const progress = task.progress?.percent ?? (task.status === "completed" ? 100 : 0);
+      const taskName = task.inputs?.modelSlx?.originalName || "Simulink 模型";
+      const deleting = state.deletingTaskIds.has(task.id);
       return `
-        <button class="unit-task-card${selected}" type="button" data-task-id="${escapeHtml(task.id)}">
-          <span class="unit-task-card-top">
-            <strong>${escapeHtml(task.inputs?.modelSlx?.originalName || "Simulink 模型")}</strong>
-            <span class="unit-status unit-status-${escapeHtml(task.status)}">${escapeHtml(STATUS_LABELS[task.status] || task.status || "未知")}</span>
-          </span>
-          <span class="unit-task-card-meta">${escapeHtml(formatTime(task.updatedAt || task.createdAt))}</span>
-          <span class="unit-progress"><span style="width:${Math.max(2, Math.min(100, Number(progress || 0)))}%"></span></span>
-        </button>
+        <div class="unit-task-card${selected}" data-task-card-id="${escapeHtml(task.id)}">
+          <button class="unit-task-card-main" type="button" data-task-id="${escapeHtml(task.id)}">
+            <span class="unit-task-card-top">
+              <strong>${escapeHtml(taskName)}</strong>
+              <span class="unit-status unit-status-${escapeHtml(task.status)}">${escapeHtml(STATUS_LABELS[task.status] || task.status || "未知")}</span>
+            </span>
+            <span class="unit-task-card-meta">${escapeHtml(formatTime(task.updatedAt || task.createdAt))}</span>
+            <span class="unit-progress"><span style="width:${Math.max(2, Math.min(100, Number(progress || 0)))}%"></span></span>
+          </button>
+          <button
+            class="unit-task-delete"
+            type="button"
+            data-delete-task-id="${escapeHtml(task.id)}"
+            aria-label="删除任务 ${escapeHtml(taskName)}"
+            title="删除任务"
+            ${deleting ? "disabled" : ""}
+          >×</button>
+        </div>
       `;
     })
     .join("");
+}
+
+async function deleteTask(taskId = "") {
+  if (!taskId || state.deletingTaskIds.has(taskId)) {
+    return;
+  }
+  const task = state.tasks.find((item) => item.id === taskId);
+  const taskName = task?.inputs?.modelSlx?.originalName || "这条生成任务";
+  const confirmed = window.confirm(`确认删除 ${taskName}？\n这会清除该任务上传文件、workspace 和生成产物。`);
+  if (!confirmed) {
+    return;
+  }
+
+  state.deletingTaskIds.add(taskId);
+  renderTaskList();
+  setStatus("正在删除任务并清理产物。", "busy");
+  try {
+    await requestJson(`/api/unit-test-case-generation/tasks/${encodeURIComponent(taskId)}`, {
+      method: "DELETE"
+    });
+    state.tasks = state.tasks.filter((item) => item.id !== taskId);
+    if (state.selectedTaskId === taskId) {
+      state.selectedTaskId = state.tasks[0]?.id || "";
+      updateUrlTaskId(state.selectedTaskId);
+    }
+    await loadTasks({ preserveSelection: true });
+    if (state.selectedTaskId) {
+      await loadSelectedTask();
+    } else {
+      renderTaskDetail(null);
+    }
+    const hasActive = state.tasks.some((item) => isActiveStatus(item.status));
+    if (!hasActive) {
+      stopPolling();
+    }
+    setStatus("任务已删除，相关文件已清理。", "success");
+  } catch (error) {
+    setStatus(error.message || "任务删除失败。", "error");
+  } finally {
+    state.deletingTaskIds.delete(taskId);
+    renderTaskList();
+  }
 }
 
 function renderTaskDetail(task) {
@@ -324,6 +391,13 @@ function stopPolling() {
 
 elements.form?.addEventListener("submit", submitTask);
 elements.taskList?.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest("[data-delete-task-id]");
+  if (deleteButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    void deleteTask(deleteButton.dataset.deleteTaskId || "");
+    return;
+  }
   const button = event.target.closest("[data-task-id]");
   if (!button) return;
   state.selectedTaskId = button.dataset.taskId || "";
