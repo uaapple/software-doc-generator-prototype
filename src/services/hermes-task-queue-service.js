@@ -142,6 +142,18 @@ export class HermesTaskQueueService {
     return index >= 0 ? index + 1 : 0;
   }
 
+  cancelQueued(type = "", id = "") {
+    const key = buildQueueKey(type, id);
+    const item = this.items.find((candidate) => candidate.key === key && candidate.status === "queued");
+    if (!item) {
+      return false;
+    }
+    item.status = "cancelled";
+    this.items = this.items.filter((candidate) => candidate !== item);
+    item.resolve?.(null);
+    return true;
+  }
+
   getRuntimeSnapshot(type = "", id = "") {
     const key = buildQueueKey(type, id);
     return this.items.find((item) => item.key === key) || null;

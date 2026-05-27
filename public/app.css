@@ -2993,10 +2993,11 @@ body[data-page-kind="unit-test-case-generation"] .unit-task-list {
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-task-card {
-  display: grid;
-  gap: 7px;
+  position: relative;
+  display: block;
   width: 100%;
-  padding: 12px 14px;
+  padding: 0;
+  overflow: hidden;
   color: var(--ink);
   text-align: left;
   border: 1px solid var(--line);
@@ -3005,10 +3006,62 @@ body[data-page-kind="unit-test-case-generation"] .unit-task-card {
   box-shadow: none;
 }
 
+body[data-page-kind="unit-test-case-generation"] .unit-task-card-main {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  min-height: 100%;
+  padding: 12px 48px 12px 14px;
+  color: inherit;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 body[data-page-kind="unit-test-case-generation"] .unit-task-card.selected {
   border-color: rgba(19, 81, 151, 0.55);
   background: #f4f9ff;
   box-shadow: inset 4px 0 0 var(--brand);
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: var(--danger);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  border: 1px solid rgba(181, 72, 67, 0.2);
+  border-radius: 999px;
+  background: var(--danger-soft);
+  box-shadow: none;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-delete:hover {
+  color: #fff;
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-delete:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-card-main:focus-visible,
+body[data-page-kind="unit-test-case-generation"] .unit-task-delete:focus-visible {
+  outline: 3px solid rgba(19, 81, 151, 0.22);
+  outline-offset: 2px;
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-task-card-top,
