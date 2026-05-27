@@ -21,6 +21,7 @@ The agent must automatically:
 - copy `assets/support-package` into the workdir;
 - use Simulink Agentic Toolkit / SATK to read the model;
 - generate coverage-first unit-test TCSD cases, prioritizing decision coverage;
+- derive Condition, Decision, and MCDC obligations from the model itself before writing TCSD rows;
 - write expected values only for top-level Outports;
 - simulate when possible and backfill stable top-level outputs from simulation;
 - omit hold-style expectations for ramping or continuously changing outputs;
@@ -80,7 +81,7 @@ cp -R <skill_dir>/assets/support-package/. <model_workdir>/
 
 ## Preferred End-to-End Workflow
 
-Production invocation is intentionally minimal: the backend may provide only `<model>.slx`, `<model>.mat`, and this skill. The agent must not wait for screenshots, prior chat context, or MQTester reports before generating AND/OR MC/DC stimuli.
+Production invocation is intentionally minimal: the backend may provide only `<model>.slx`, `<model>.mat`, and this skill. The agent must not wait for screenshots, prior chat context, feedback documents, or MQTester reports before generating model-derived Condition, Decision, and AND/OR MC/DC stimuli.
 
 ### Artifact-First Failure Policy
 
@@ -100,7 +101,7 @@ If the post-workbook simulation/backfill phase hits any MATLAB/MCP/SATK timeout 
 5. Verify `which model_read` and `which model_overview` are nonempty after MATLAB setup. If not, restore the SATK tools path before deriving model facts.
 6. Derive root Inports and Outports from the model, including port order, data type, and dimensions. Do not guess.
 7. Inspect hierarchy and decision-producing blocks: Switch, RelationalOperator, Logical Operator, MinMax, MultiPortSwitch, Saturate, Lookup, Safe_Divide, Delay, Latch, StopWatch, LowPass, GradientLimiter.
-8. Build a coverage-obligation checklist before writing TCSD rows.
+8. Build a coverage-obligation matrix before writing TCSD rows. Include `block path/SID`, `coverage class` (`Condition`, `Decision`, `MCDC`), `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`.
 9. Create a JSON spec or workbook draft, then build the final workbook from `assets/templates/tcsd_template.xlsx`.
 10. Validate workbook existence, sheet shape, self-contained Test initialization, final action delays, and Excel zip integrity before starting simulation/backfill.
 11. Extract TCSD actions to simulation JSON.
@@ -179,6 +180,31 @@ By default, call `scripts/backfill_expected_outputs.py --outputs` with every sca
 - Omit vector root outputs unless the target TCSD/MQT vector macro syntax and element mapping are confirmed.
 - A smaller output allowlist is acceptable only for a documented importer/readability/performance limit or an intentionally narrow diagnostic run.
 
+## Continuous Output Plausibility
+
+Continuous physical outputs need an engineering-scale sanity check after backfill.
+
+Treat root Outports as continuous when names or metadata indicate power, torque, voltage, current, speed, temperature, SOC, pressure, gradient, limit, maximum/minimum, peak, continuous, or threshold quantities. Examples include `pwr*`, `tq*`, voltage/current/speed/temperature/SOC signals, `*Max*`, `*Min*`, `*Peak*`, `*Contns*`, and `*Lim*`.
+
+For each continuous output:
+
+- compare values across Tests and action steps;
+- flag unexplained `expValue(0)` or `expValue(1)` for non-Boolean continuous outputs;
+- flag order-of-magnitude jumps relative to neighboring steps or same-family outputs;
+- flag implausible family ordering, such as peak/maximum limits lower than continuous limits, unless model logic explains it;
+- flag default/sentinel values when the Test claims a limiting path is active.
+
+Suspicious values are not automatically wrong, but they must be justified with simulation/probe evidence, repaired by changing stimulus/hold timing and rerunning backfill, or omitted from the affected Test. Do not return a reviewed workbook with unexplained rows such as `pwrMax... = expValue(1)` when neighboring power expectations are in the thousands or tens of thousands.
+
+## Output Family Consistency
+
+Group related outputs before final validation:
+
+- Boolean `b*` outputs may use `0`/`1`.
+- Enum/state `st*` outputs may use small integers when resolved from model constants.
+- Continuous family outputs such as `pwrMax*`, `pwrPeak*`, `pwrContns*`, torque limits, voltage/current limits, SOC limits, and threshold/limit signals should remain in a plausible engineering scale unless model evidence says otherwise.
+- Charge/discharge sign conventions and zero-limit protective states must be explained when they produce values that look unusual.
+
 ## State Transition Design Rules
 
 For Stateflow charts, enum state outputs, latches, edge-triggered paths, and mode/gear state machines:
@@ -210,13 +236,14 @@ Treat every decision outcome as an obligation:
 - `MultiPortSwitch`: cover every valid selector value and default/otherwise only if the model safely accepts that selector.
 - Invalid `MultiPortSwitch` selector errors must be diagnosed, not hidden. The simulation script reports `simulate_tcsd_cases:InvalidMultiPortSwitchSelector` with block/source/indexing details. Fix the TCSD stimulus, settle time, or safe scalar override first; use `TCSD_ALLOW_MPS_DEFAULT_OVERRIDE=1` only for temporary diagnosis and do not use that run for trusted expected-output backfill unless the default behavior is intentionally justified.
 - `Saturate`: cover below-low, pass-through, and above-high regions by proving the pre-saturation input crosses the limits. If calibration/lookup values can never exceed a limit, record the remaining region as unreachable rather than unsafe table manipulation.
-- `RelationalOperator`/`Switch`: cover both true and false by driving the actual trigger signal across the block criterion. For sign criteria such as `< 0`, `<= 0`, `~= 0`, or `u2 ~= 0`, include negative, zero, and positive/equality-side values as applicable.
-- `Logical Operator`: satisfy MC/DC from model structure during the initial production run. For N-input OR, use all inputs false plus one case for each single true input. For N-input AND, use all inputs true plus one case for each single false input. For chained logic, NOT-fed inputs, relational outputs, and enum equality banks, target the truth vector at the logical operator input ports and resolve the raw root-input values needed to produce that vector. Write the resolved enum/state values into TCSD root-input assignments, such as BMS activity states `4/8/9` or relay closed state `2`, when those constants are present in the loaded model data.
+- `RelationalOperator`/`Switch`: cover both true and false by driving the actual trigger signal across the block criterion. For `==`/`~=` comparisons, resolve the compared enum/constant and include matching and non-matching values. For `>` / `<` / `>=` / `<=`, include below/equal/above when equality changes the outcome. For sign criteria such as `< 0`, `<= 0`, `~= 0`, or `u2 ~= 0`, include negative, zero, and positive/equality-side values as applicable. If a mode/config signal is checked against several constants, such as `stMod == 2` and `stMod == 3`, generate cases for each compared value; a default `stMod = 1` case alone is not coverage for those conditions.
+- `Logical Operator`: satisfy MC/DC from model structure during the initial production run. For N-input OR, use all inputs false plus one case for each single true input. For N-input AND, use all inputs true plus one case for each single false input. For chained logic, NOT-fed inputs, relational outputs, and enum equality banks, target the truth vector at the logical operator input ports and resolve the raw root-input values needed to produce that vector. Write the resolved enum/state values into TCSD root-input assignments, such as BMS activity states `4/8/9` or relay closed state `2`, when those constants are present in the loaded model data. Record the mapping from desired operator-input truth vector to raw TCSD assignments so the case is auditable.
 - `Safe_Divide`: denominator zero/protected path and normal nonzero path.
 - `Lookup_n-D`: use low/mid/high and edge breakpoints that influence downstream decisions.
 - `LowPass`/filter/GradientLimiter upstream of a selector: use Initialization, longer hold time, or explicit scalar parameter override so the intended selector/result actually settles.
 - Delay/latch/StopWatch: use multi-step action sequences for initial, set, hold, reset, and timeout states.
 - Coverage closure requires evidence. Do not mark a feedback item fixed only because a Test comment says it targets that outcome; confirm with a coverage rerun or a focused probe of the relevant internal block inputs/selectors.
+- A coverage-obligation item is complete only when it is mapped to a TCSD Test/action that drives the relevant block input, or it is marked unreachable/invalid with a concrete model reason. Otherwise report it as unresolved instead of implying the workbook is coverage-closed.
 
 ## Static SLX Inspection
 
@@ -342,11 +369,14 @@ HvCoorn also exposed a state-machine expected-output failure pattern:
 - Every `expValue(...)` left-hand side is a top-level Outport.
 - No internal/local/MIL signal names appear as expected outputs.
 - No three-argument `expValue` is present unless it is intentionally checking a stable window.
+- Continuous physical outputs have no unexplained Boolean-scale `0`/`1` expectations, order-of-magnitude jumps, default/sentinel values, or impossible same-family ordering.
+- Output families such as `pwrMax*` / `pwrPeak*` / `pwrContns*` were checked together; Boolean `b*` and enum/state `st*` outputs were classified separately.
 - Vector outputs are omitted unless explicitly supported.
 - Vector root inputs are not written as whole-vector bracket assignments in the final workbook.
 - Every Test `Action` has a final relative delay marker such as `[+0.1s]`.
 - Selector values do not make simulation stop.
 - AND/OR `Logical Operator` blocks have MC/DC-style truth vectors, not only the nominal all-true/all-false case.
+- RelationalOperator equality banks, Switch trigger sides, MinMax candidate winners, MultiPortSwitch selectors, and Abs source signs have traceable TCSD assignments or explicit unreachable/unresolved notes.
 - Coverage feedback, if available, has been translated into supplemental Tests or justified as unreachable/invalid.
 
 ## Readiness for Hermes

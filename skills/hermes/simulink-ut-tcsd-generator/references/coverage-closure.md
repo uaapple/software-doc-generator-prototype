@@ -6,6 +6,8 @@ Use this reference when designing or repairing TCSD cases for model coverage. Co
 
 Create a short checklist before writing the workbook:
 
+- `Condition` coverage: every `RelationalOperator` and Switch trigger condition must have explicit true/false-driving values derived from the actual block criterion.
+- `RelationalOperator` equality banks: when one root signal or mode/config signal is compared against multiple constants, such as `stMod == 2` and `stMod == 3`, include a matching case for each compared constant plus a valid non-matching baseline. A nominal default such as `stMod = 1` does not cover the `2` or `3` comparisons.
 - `Switch` / relational logic: true and false outcomes.
 - `Logical Operator` AND/OR: production-default MC/DC at the operator input ports. This is required from the model structure itself and does not depend on an external coverage report.
 - `MinMax`: each input port is the selected maximum/minimum at least once.
@@ -19,17 +21,20 @@ Create a short checklist before writing the workbook:
 
 For every item, write one of: `covered by TC_xxx`, `needs supplemental test`, or `unreachable because ...`.
 
+Keep this as a model-derived obligation matrix while drafting Tests. Recommended columns are `block path/SID`, `coverage class` (`Condition`, `Decision`, `MCDC`), `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`. The matrix may live in the JSON spec or a sidecar note, but the workbook design should be traceable to it.
+
 ## Generate Targeted Stimuli
 
 - Make one condition dominate at a time. For `MinMax`, set a clear margin so the intended port wins; avoid equal values because coverage tools may attribute ties unexpectedly.
 - For `MultiPortSwitch`, derive selector values from the actual block and upstream logic. Do not assume a model-wide enum is valid for every switch.
 - If a generated case makes a `MultiPortSwitch` selector invalid during simulation, do not keep it by suppressing the default-case diagnostic. Inspect the diagnostic summary, then fix the root-input values, settle time, or safe scalar overrides that drive the selector. Use `TCSD_ALLOW_MPS_DEFAULT_OVERRIDE=1` only for a temporary diagnosis run, not for trusted backfill.
-- For `Switch` and `RelationalOperator`, read the block criterion/threshold first, then choose root input values on both sides of that exact condition. For sign-based conditions, use negative, zero, and positive values rather than only "normal positive" values.
+- For `Switch` and `RelationalOperator`, read the block criterion/threshold first, then choose root input values on both sides of that exact condition. For `==` and `~=` comparisons, use the resolved matching constant plus a model-valid non-matching value. For `>` / `<` / `>=` / `<=`, use below/equal/above when the equality boundary can affect coverage. For sign-based conditions, use negative, zero, and positive values rather than only "normal positive" values.
 - For an N-input OR, generate an all-false baseline to get false output, then N single-true cases such as `TFF`, `FTF`, `FFT` so each input independently drives true output.
 - For an N-input AND, generate an all-true baseline to get true output, then N single-false cases such as `FTT`, `TFT`, `TTF` so each input independently drives false output.
 - MC/DC is not full combinational coverage. Do not generate `2^N` combinations unless the user explicitly asks for truth-table exhaustion; the default obligation is the baseline plus one independent-toggle case per input.
 - For nested or chained logical expressions, target the effective logical operator input values. If an upstream NOT feeds the operator, invert the raw stimulus so the operator input receives the intended true/false value.
 - For enum/constant equality inputs, resolve the constant value from the loaded MAT/init/data-dictionary/model workspace before writing TCSD. Example: if a logical input is `icbms_stHvBat == BMSActSt_ACChrg`, the action must use the resolved value of `BMSActSt_ACChrg`, not a guessed Boolean `1`. In BMS-style models, mappings such as `BMSActSt_online=4`, `BMSActSt_DCChrg=8`, `BMSActSt_ACChrg=9`, and relay closed `=2` are enum/state values that must be written as root-input assignments when they are the resolved comparison constants.
+- For mode/config signals such as `stMod`, `stMode`, `stCfg`, gear request, or charge mode, scan all relational comparisons that consume the same signal before selecting cases. Generate one case for every model-visible compared value, then add a baseline outside that set only if the value is valid for the model. Do not let one default mode stand in for the whole comparison bank.
 - When a selector is produced by voltage/current/speed filtering or lookup logic, hold the source input long enough for the selector to settle, or put the desired source value in Initialization.
 - For `Saturate`, identify `UpperLimit`, `LowerLimit`, and the pre-saturation input before writing stimuli. If that input is produced by lookup tables or calibration arithmetic, inspect the MAT/table min/max over valid input ranges first. Design root inputs or safe explicit parameter overrides that make the pre-saturation value lower than the lower limit, inside range, and higher than the upper limit; exact boundary values usually do not close both decisions.
 - If a value causes simulation to stop because the selector is invalid, do not keep it as a normal unit-test case. Cover the default branch only when the block and model allow that selector safely.

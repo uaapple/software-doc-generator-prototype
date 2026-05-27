@@ -143,6 +143,38 @@ For simulation backfill, pass all model-derived scalar root Outports to `backfil
 - Vector root outputs are excluded by default unless the TCSD vector macro syntax and element/port mapping are confirmed.
 - A smaller output allowlist is acceptable only with an explicit reason, such as confirmed importer limits, severe workbook readability/performance issues, or an intentionally scoped diagnostic run.
 
+### Continuous Output Plausibility Gate
+
+After simulation backfill, continuous physical outputs must pass a plausibility check before delivery.
+
+Treat root Outports as continuous physical outputs when their names or metadata indicate power, torque, voltage, current, speed, temperature, SOC, pressure, gradient, limit, max/min, peak, continuous, or threshold values. Common name fragments include `pwr`, `tq`, `volt`, `curr`, `u`, `i`, `spd`, `temp`, `soc`, `pct`, `lim`, `max`, `min`, `peak`, `contns`, and `thd`.
+
+For each continuous output:
+
+1. Compare values across all Tests and action steps.
+2. Flag suspicious values when:
+   - a non-Boolean continuous output is exactly `0` or `1` without a matching description or model fact explaining why;
+   - the value changes by more than one order of magnitude compared with neighboring steps or same-family outputs;
+   - same-family outputs such as `pwrMax*`, `pwrPeak*`, and `pwrContns*` disagree in an implausible way;
+   - a max/peak/continuous limit output violates expected ordering, for example `pwrMax < pwrContns`, unless model logic explicitly explains it;
+   - the output remains at an initialization/default/sentinel value while the Test claims a limiting path is active.
+3. For every suspicious value, either:
+   - confirm it with simulation/probe evidence and add a concise explanatory comment;
+   - repair stimulus/hold timing and rerun backfill;
+   - remove that output expectation from the affected Test when it is not stable or not trustworthy.
+
+Suspicious values are not automatically wrong, but they are not deliverable without evidence. Do not deliver a reviewed workbook containing unexplained expectations such as `pwrMax... = expValue(1)` when neighboring power expectations are in the thousands or tens of thousands.
+
+### Output Family Consistency
+
+Group top-level outputs by common physical quantity and suffix, such as charge/discharge power limits, torque limits, voltage limits, current limits, and diagnostic flags.
+
+- Boolean outputs such as `b*` may use `0`/`1`.
+- Enum/state outputs such as `st*` may use small integers when resolved from model constants.
+- Continuous limit outputs such as `pwr*`, `tq*`, voltage/current/speed/temperature/SOC, `*Max*`, `*Min*`, `*Peak*`, and `*Contns*` should use engineering-scale values unless the model evidence says otherwise.
+- If a continuous output has `expValue(0)` or `expValue(1)`, verify whether zero/one is physically meaningful for that condition.
+- Check expected ordering when names imply it: peak limit should usually be greater than or equal to continuous limit, max should usually be greater than or equal to min, and charge/discharge sign conventions must be explained when negative values are expected.
+
 ## Multidimensional Signals
 
 The UT guidance shows vector I/O can use macro syntax such as:
@@ -157,6 +189,8 @@ Here `4` is the vector output port index. Equivalent macro syntax can be used fo
 
 Before finishing, check:
 
+- The workbook was designed from a model-derived coverage-obligation matrix for Condition, Decision, and MCDC items, not only from scenario names or comments.
+- RelationalOperator equality banks are represented by actual TCSD root-input assignments for every compared constant and a valid non-matching baseline where applicable.
 - Every `expValue(...)` line uses a root Outport name.
 - No `expValue(value,duration,offset)` is used as a numeric tolerance. If the 3-argument form is present, the output must be stable over that offset/duration window.
 - No internal signals, local logging names, or `out_mil_ec` names are present.
@@ -166,7 +200,10 @@ Before finishing, check:
 - Selector values are in valid model ranges.
 - MultiPortSwitch invalid-selector errors have been repaired by changing stimulus, settle time, or justified scalar overrides; they are not hidden by global diagnostic suppression in normal generation.
 - Uncovered `MinMax`, `MultiPortSwitch`, and `Saturate` outcomes are either covered by supplemental tests or explicitly justified as unreachable/invalid for simulation.
+- Uncovered `RelationalOperator`, `Switch`, `Abs`, and AND/OR MC/DC outcomes are either covered by TCSD assignments that drive the relevant block input, explicitly justified as unreachable/invalid, or reported as unresolved. A Test description that names a condition is not enough.
 - `backfill_expected_outputs.py --outputs` was given all scalar root Outports unless a documented exception applies; unverified stateful outputs are excluded through `--exclude-outputs`.
+- Continuous physical outputs passed the plausibility gate: unexplained Boolean-scale values, large order-of-magnitude jumps, default/sentinel values, and impossible family ordering were justified, repaired, or omitted.
+- Output family consistency was checked for groups such as `pwrMax*` / `pwrPeak*` / `pwrContns*`; Boolean `b*` and enum/state `st*` outputs are not judged by continuous-output scale rules.
 - Any Test name, description, or Action comment claiming a state/gear/mode was reached matches the relevant top-level output `expValue(...)` in the same action step. Inline `Signal=value` comments match the corresponding `expValue(...)`. If the output still shows the old/default state, revise the stimulus/hold timing, rewrite the text as a blocked/not-reached path, or remove the success claim.
 - No Test with an unresolved semantic mismatch has `Work Status = reviewed`.
 - Workbook opens and imports.

@@ -64,6 +64,9 @@ Collect:
 - Subsystem hierarchy.
 - Parameters from block masks, descriptions, `CornexCsc.Parameter.Value`, lookup tables, constants, and data dictionaries.
 - Decision-producing blocks and their required outcomes: Switch true/false, RelationalOperator true/false, Logical Operator input truth vectors, each `MinMax` winning input, each `MultiPortSwitch` selector/default, each Saturate low/pass/high region.
+- Condition-producing comparison banks: all `RelationalOperator` blocks grouped by controlling root signal or parameter, especially mode/config signals such as `stMod`, `stMode`, and `stCfg`. If one signal is compared to several constants, each constant becomes its own required Condition outcome.
+
+Before drafting TCSD rows, turn these facts into a coverage-obligation matrix with `block path/SID`, `coverage class`, `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`. This matrix is the working checklist; Test names and comments are not coverage evidence.
 
 Do not assume `.mat` variables are valid until `CornexCsc.Signal` and `CornexCsc.Parameter` resolve to classes.
 
@@ -113,13 +116,14 @@ For each major subsystem, create one or more Test rows that cover:
 - Nominal enabled path.
 - Each Boolean/condition input flipped one at a time.
 - Threshold low/equal/high values.
+- Relational equality banks: every compared enum/constant value and one valid non-matching baseline. For example, if the model checks a mode signal against `2` and `3`, generate cases that set the signal to `2`, to `3`, and to a valid non-matching value instead of leaving all Tests at the nominal default.
 - Lookup table representative regions and edge breakpoints.
 - Saturation and Min/Max limits.
 - For `MinMax` blocks, every input port must win at least once unless it is unreachable; equality/tie cases do not count as a reliable win.
 - For `MultiPortSwitch` blocks, cover every valid selector value and any default/otherwise branch. Derive selector legality per block, not from a similarly named enum elsewhere in the model.
 - A `MultiPortSwitch` invalid-selector simulation stop is useful feedback. Do not globally change MPS default diagnostics to make the model run. Use the enriched `simulate_tcsd_cases.m` error to find the block and selector source, then adjust the stimulus, hold duration, or safe scalar parameter override so the selector reaches a valid intended value.
 - For `Saturate` blocks, cover input below lower limit, inside limits, and above upper limit.
-- For `Logical Operator` AND/OR blocks, cover MC/DC-style vectors. OR needs all-false and single-true-per-input cases. AND needs all-true and single-false-per-input cases. Apply upstream NOT/inversion before deciding root input values.
+- For `Logical Operator` AND/OR blocks, cover MC/DC-style vectors. OR needs all-false and single-true-per-input cases. AND needs all-true and single-false-per-input cases. Apply upstream NOT/inversion before deciding root input values, and keep the mapping from operator-input truth vector to raw TCSD assignments in the obligation matrix.
 - Safe divide denominator zero and nonzero cases.
 - Delay, latch, stopwatch, and edge-detect transitions.
 - Gradient limiter/ramp behavior with enough time steps.
@@ -170,9 +174,15 @@ State-machine and history-feedback outputs need an additional guard. If a root O
 
 By default, pass every model-derived scalar root Outport to `backfill_expected_outputs.py --outputs`. Let the simulation `stable=false` flags suppress dynamic outputs, and use `--exclude-outputs` for unverified stateful-risk outputs. Do not hand-pick a small output subset unless the reason is documented, such as confirmed importer limits or a narrow diagnostic run. Vector outputs remain omitted unless the TCSD vector macro mapping is known.
 
+After backfill, run a continuous-output plausibility pass. Treat physical outputs such as power, torque, voltage, current, speed, temperature, SOC, pressure, and limit/max/min/peak/continuous/threshold signals as continuous unless metadata proves they are Boolean or enum. Flag unexplained `0`/`1` values, order-of-magnitude jumps, default/sentinel values, and implausible output-family ordering.
+
 After backfill, cross-check state/gear/mode claims against the output expectations. For each claim, identify the proof output, resolve the claimed numeric value from model constants or trusted simulation evidence, and compare it with `expValue(...)` in the same step. If a Test description or Action comment says a transition succeeded but the corresponding top-level output still has the previous/default value, the result is not deliverable: fix the prerequisite inputs or hold timing and rerun backfill, rewrite the text to describe a blocked/not-reached path, or remove the success claim. Inline comments like `stDrvGear=1(D)` must match the corresponding `expValue(...)`.
 
+For output-family checks, group related top-level outputs by signal name fragments and physical quantity. Examples include charge/discharge power limits (`pwrMax*`, `pwrPeak*`, `pwrContns*`), torque limits, voltage/current limits, SOC limits, and diagnostic flags. Boolean `b*` outputs may be `0`/`1`; enum/state `st*` outputs may be small integers when resolved from constants. Continuous `pwr*`, `tq*`, voltage/current/speed/temperature/SOC, `*Max*`, `*Peak*`, and `*Contns*` values need engineering-scale or model-evidence justification. If a value is suspicious, confirm it with probe evidence, repair stimulus/hold timing and rerun backfill, or omit the expectation from that Test.
+
 Do not let expected-output stability rules reduce stimulus coverage. It is acceptable for a Test to exist mainly to cover a decision outcome and contain few or no `expValue(...)` lines for dynamic outputs.
+
+At validation time, compare the workbook back to the coverage-obligation matrix. Every traceable RelationalOperator condition, Switch side, MinMax candidate winner, MultiPortSwitch selector/default, Abs source sign, and AND/OR MC/DC vector should be `covered`, `unreachable/invalid` with a specific model reason, or `unresolved` and called out in the task result.
 
 For larger modules such as HvGrid, many root outputs may be vectors or unsupported by the target TCSD import. Build a root-output allowlist from model metadata and backfill scalar top-level outputs first. Validate vector outputs are absent unless the vector macro syntax and element mapping are confirmed.
 
