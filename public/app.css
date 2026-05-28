@@ -249,6 +249,12 @@ summary,
   padding: 0 16px;
   border-radius: 10px;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.strip-actions .hero-link {
+  flex: 0 0 auto;
+  min-width: 112px;
 }
 
 .hero-link.primary,
