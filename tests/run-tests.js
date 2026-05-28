@@ -9405,6 +9405,8 @@ const tests = [
       assert.ok(unitScript.includes("任务已删除，相关文件已清理。"));
       assert.ok(unitScript.includes("taskProjectFilter"));
       assert.ok(unitScript.includes("projectId="));
+      assert.ok(unitScript.includes("taskMatchesProjectFilter"));
+      assert.ok(unitScript.includes(".filter(taskMatchesProjectFilter)"));
       assert.ok(stylesheet.includes(".unit-task-delete"));
       assert.ok(stylesheet.includes(".unit-task-filter"));
 

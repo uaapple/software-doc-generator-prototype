@@ -127,6 +127,11 @@ function normalizeTaskProject(project = null) {
   return normalized.id ? normalized : defaultTaskProject();
 }
 
+function taskMatchesProjectFilter(task = {}) {
+  if (!state.taskProjectFilterId) return true;
+  return normalizeTaskProject(task.unitTestProject).id === state.taskProjectFilterId;
+}
+
 function getSelectedProject() {
   const selectedId = elements.projectSelect?.value || "";
   return state.projects.find((project) => project.id === selectedId) || null;
@@ -336,7 +341,7 @@ async function loadTasks(options = {}) {
     ? `?projectId=${encodeURIComponent(state.taskProjectFilterId)}`
     : "";
   const body = await requestJson(`/api/unit-test-case-generation/tasks${query}`);
-  state.tasks = Array.isArray(body.tasks) ? body.tasks : [];
+  state.tasks = (Array.isArray(body.tasks) ? body.tasks : []).filter(taskMatchesProjectFilter);
   if (!options.preserveSelection && !state.selectedTaskId && state.tasks.length) {
     state.selectedTaskId = state.tasks[0].id;
     updateUrlTaskId(state.selectedTaskId);
@@ -365,6 +370,16 @@ async function loadSelectedTask() {
       return null;
     }
     throw error;
+  }
+  if (!taskMatchesProjectFilter(task)) {
+    state.selectedTaskId = state.tasks[0]?.id || "";
+    updateUrlTaskId(state.selectedTaskId);
+    renderTaskList();
+    if (!state.selectedTaskId) {
+      renderTaskDetail(null);
+      return null;
+    }
+    return loadSelectedTask();
   }
   const index = state.tasks.findIndex((item) => item.id === task.id);
   if (index >= 0) {
