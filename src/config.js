@@ -77,6 +77,13 @@ const skillsRootDir = resolveRuntimePath(process.env.APP_SKILLS_DIR, path.join(r
 const hermesHomeDir = resolveRuntimePath(process.env.HERMES_HOME, path.join(homeDir, ".hermes"));
 const hermesProfile = String(process.env.HERMES_PROFILE || "").trim();
 
+function resolveDefaultUnitTestProjectAddonRoot() {
+  if (process.platform === "win32") {
+    return "C:\\ProgramData\\SoftwareDocGenerator\\project-addons";
+  }
+  return path.join(rootDir, ".local", "project-addons");
+}
+
 function resolveHermesStateDbPath() {
   if (process.env.HERMES_STATE_DB_PATH) {
     return resolveRuntimePath(process.env.HERMES_STATE_DB_PATH, "");
@@ -103,6 +110,13 @@ const appConfig = {
   unitTestCase: {
     taskStoreDir: path.join(dataDir, "unit-test-case-generation", "tasks"),
     uploadTempDir: path.join(dataDir, "unit-test-case-generation", "_incoming"),
+    projectRegistryPath: path.join(dataDir, "unit-test-case-generation", "projects.json"),
+    projectAdminCode: process.env.UNIT_TEST_CASE_PROJECT_ADMIN_CODE || "114301",
+    defaultProjects: process.env.UNIT_TEST_CASE_DEFAULT_PROJECTS || "01_楚能,02_TMS",
+    projectAddonRoot: resolveRuntimePath(
+      process.env.UNIT_TEST_CASE_PROJECT_ADDON_ROOT,
+      resolveDefaultUnitTestProjectAddonRoot()
+    ),
     skillName: process.env.UNIT_TEST_CASE_SKILL_NAME || "simulink-ut-tcsd-generator",
     expectedOutputPattern: process.env.UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN || "outputs/*_tcsd.xlsx",
     agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || ""

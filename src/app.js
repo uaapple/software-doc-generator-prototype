@@ -243,6 +243,33 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/unit-test-case-generation/projects", async (_req, res, next) => {
+    try {
+      const projects = await unitTestCaseGenerationService.listProjects();
+      res.json({ projects });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/unit-test-case-generation/projects", async (req, res, next) => {
+    try {
+      const project = await unitTestCaseGenerationService.createProject(req.body || {});
+      res.status(201).json({ project });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/unit-test-case-generation/projects/:projectId", async (req, res, next) => {
+    try {
+      const result = await unitTestCaseGenerationService.deleteProject(req.params.projectId, req.body || {});
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/unit-test-case-generation/tasks/:taskId", async (req, res, next) => {
     try {
       const task = await unitTestCaseGenerationService.getTask(req.params.taskId);

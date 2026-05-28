@@ -2980,6 +2980,49 @@ body[data-page-kind="unit-test-case-generation"] .unit-file-field span {
   font-weight: 700;
 }
 
+body[data-page-kind="unit-test-case-generation"] .unit-project-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-project-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-project-head label {
+  width: auto;
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-project-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-project-actions button {
+  width: auto;
+  min-width: 64px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-project-field select {
+  margin-top: 0;
+}
+
+body[data-page-kind="unit-test-case-generation"] #unit-project-status {
+  margin: 0;
+}
+
 body[data-page-kind="unit-test-case-generation"] #unit-test-form > button {
   margin-top: 16px;
 }
@@ -3075,6 +3118,19 @@ body[data-page-kind="unit-test-case-generation"] .unit-detail-summary {
 body[data-page-kind="unit-test-case-generation"] .unit-task-card-meta {
   color: var(--ink-soft);
   font-size: 13px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-card-project {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  background: #edf4fb;
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-progress {
@@ -3316,15 +3372,18 @@ body[data-page-kind="unit-test-case-generation"] .unit-plain-list {
   padding-left: 18px;
 }
 
-body[data-page-kind="unit-test-case-generation"] #unit-form-status[data-tone="success"] {
+body[data-page-kind="unit-test-case-generation"] #unit-form-status[data-tone="success"],
+body[data-page-kind="unit-test-case-generation"] #unit-project-status[data-tone="success"] {
   color: var(--success);
 }
 
-body[data-page-kind="unit-test-case-generation"] #unit-form-status[data-tone="error"] {
+body[data-page-kind="unit-test-case-generation"] #unit-form-status[data-tone="error"],
+body[data-page-kind="unit-test-case-generation"] #unit-project-status[data-tone="error"] {
   color: var(--danger);
 }
 
-body[data-page-kind="unit-test-case-generation"] #unit-form-status[data-tone="busy"] {
+body[data-page-kind="unit-test-case-generation"] #unit-form-status[data-tone="busy"],
+body[data-page-kind="unit-test-case-generation"] #unit-project-status[data-tone="busy"] {
   color: var(--warning);
 }
 
@@ -3376,5 +3435,18 @@ body[data-page-kind="unit-test-case-generation"] #unit-form-status[data-tone="bu
   body[data-page-kind="unit-test-case-generation"] .unit-detail-summary {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  body[data-page-kind="unit-test-case-generation"] .unit-project-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body[data-page-kind="unit-test-case-generation"] .unit-project-actions {
+    width: 100%;
+  }
+
+  body[data-page-kind="unit-test-case-generation"] .unit-project-actions button {
+    flex: 1 1 0;
   }
 }

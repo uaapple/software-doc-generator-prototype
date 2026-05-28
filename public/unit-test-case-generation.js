@@ -1,8 +1,12 @@
 const state = {
   tasks: [],
+  projects: [],
   selectedTaskId: new URLSearchParams(window.location.search).get("taskId") || "",
   polling: null,
   submitting: false,
+  loadingProjects: false,
+  projectMutating: false,
+  projectLoadError: "",
   deletingTaskIds: new Set()
 };
 
@@ -10,8 +14,12 @@ const elements = {
   form: document.querySelector("#unit-test-form"),
   slxInput: document.querySelector("#model-slx-input"),
   matInput: document.querySelector("#model-mat-input"),
+  projectSelect: document.querySelector("#unit-project-select"),
+  addProjectButton: document.querySelector("#unit-add-project-button"),
+  deleteProjectButton: document.querySelector("#unit-delete-project-button"),
   startButton: document.querySelector("#unit-start-button"),
   formStatus: document.querySelector("#unit-form-status"),
+  projectStatus: document.querySelector("#unit-project-status"),
   taskList: document.querySelector("#unit-task-list"),
   taskDetail: document.querySelector("#unit-task-detail"),
   detailSubtitle: document.querySelector("#unit-task-detail-subtitle")
@@ -58,6 +66,13 @@ function setStatus(message = "", tone = "") {
   elements.formStatus.dataset.tone = tone;
 }
 
+function setProjectStatus(message = "", tone = "") {
+  if (!elements.projectStatus) return;
+  elements.projectStatus.hidden = !message;
+  elements.projectStatus.textContent = message;
+  elements.projectStatus.dataset.tone = tone;
+}
+
 async function requestJson(url, options = {}) {
   let response = null;
   try {
@@ -94,17 +109,159 @@ function validateFile(input, extension, label) {
   return files[0];
 }
 
+function normalizeProject(project = {}) {
+  const id = String(project.id || "").trim();
+  const name = String(project.name || "").trim();
+  const label = String(project.label || (id && name ? `${id}_${name}` : id || name)).trim();
+  return { id, name, label };
+}
+
+function getSelectedProject() {
+  const selectedId = elements.projectSelect?.value || "";
+  return state.projects.find((project) => project.id === selectedId) || null;
+}
+
+function syncProjectControls() {
+  const hasProjects = state.projects.length > 0;
+  if (elements.projectSelect) {
+    elements.projectSelect.disabled = state.loadingProjects || state.projectMutating || !hasProjects;
+  }
+  if (elements.addProjectButton) {
+    elements.addProjectButton.disabled = state.loadingProjects || state.projectMutating;
+  }
+  if (elements.deleteProjectButton) {
+    elements.deleteProjectButton.disabled = state.loadingProjects || state.projectMutating || !hasProjects;
+  }
+  if (elements.startButton) {
+    elements.startButton.disabled = state.submitting || !hasProjects;
+  }
+}
+
+function renderProjects(preferredProjectId = "") {
+  if (!elements.projectSelect) return;
+  const currentValue = preferredProjectId || elements.projectSelect.value || "";
+  if (state.loadingProjects) {
+    elements.projectSelect.innerHTML = '<option value="">正在加载项目...</option>';
+  } else if (state.projectLoadError) {
+    elements.projectSelect.innerHTML = '<option value="">项目加载失败</option>';
+  } else if (!state.projects.length) {
+    elements.projectSelect.innerHTML = '<option value="">暂无项目</option>';
+  } else {
+    elements.projectSelect.innerHTML = state.projects
+      .map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.label)}</option>`)
+      .join("");
+    const nextValue = state.projects.some((project) => project.id === currentValue)
+      ? currentValue
+      : state.projects[0]?.id || "";
+    elements.projectSelect.value = nextValue;
+  }
+  syncProjectControls();
+}
+
+async function loadProjects(options = {}) {
+  let preferredProjectId = options.selectProjectId || "";
+  state.loadingProjects = true;
+  state.projectLoadError = "";
+  renderProjects(preferredProjectId);
+  try {
+    const body = await requestJson("/api/unit-test-case-generation/projects");
+    state.projects = Array.isArray(body.projects) ? body.projects.map(normalizeProject).filter((project) => project.id) : [];
+    if (!preferredProjectId) {
+      preferredProjectId = elements.projectSelect?.value || state.projects[0]?.id || "";
+    }
+    if (!state.projects.length) {
+      setProjectStatus("暂无可选项目，请先新增项目。", "error");
+    } else if (!options.preserveStatus) {
+      setProjectStatus("", "");
+    }
+  } catch (error) {
+    state.projects = [];
+    state.projectLoadError = error.message || "项目列表加载失败。";
+    setProjectStatus(state.projectLoadError, "error");
+    throw error;
+  } finally {
+    state.loadingProjects = false;
+    renderProjects(preferredProjectId);
+  }
+}
+
+async function addProject() {
+  if (state.projectMutating) return;
+  const rawName = window.prompt("请输入项目名，例如 VCU：");
+  if (rawName === null) return;
+  const name = rawName.trim();
+  if (!name) {
+    setProjectStatus("项目名不能为空。", "error");
+    return;
+  }
+  const authCode = window.prompt("请输入授权码：", "114301");
+  if (authCode === null) return;
+
+  state.projectMutating = true;
+  syncProjectControls();
+  setProjectStatus("正在新增项目。", "busy");
+  try {
+    const body = await requestJson("/api/unit-test-case-generation/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, authCode })
+    });
+    const project = normalizeProject(body.project || {});
+    await loadProjects({ selectProjectId: project.id, preserveStatus: true });
+    setProjectStatus(`已新增项目 ${project.label || name}。`, "success");
+  } catch (error) {
+    setProjectStatus(error.message || "新增项目失败。", "error");
+  } finally {
+    state.projectMutating = false;
+    syncProjectControls();
+  }
+}
+
+async function deleteProject() {
+  if (state.projectMutating) return;
+  const project = getSelectedProject();
+  if (!project) {
+    setProjectStatus("请先选择要删除的项目。", "error");
+    return;
+  }
+  const authCode = window.prompt(`请输入授权码以删除 ${project.label}：`, "114301");
+  if (authCode === null) return;
+
+  state.projectMutating = true;
+  syncProjectControls();
+  setProjectStatus("正在删除项目登记。", "busy");
+  try {
+    await requestJson(`/api/unit-test-case-generation/projects/${encodeURIComponent(project.id)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ authCode })
+    });
+    await loadProjects({ preserveStatus: true });
+    setProjectStatus(`已删除项目 ${project.label}。`, "success");
+  } catch (error) {
+    setProjectStatus(error.message || "删除项目失败。", "error");
+  } finally {
+    state.projectMutating = false;
+    syncProjectControls();
+  }
+}
+
 async function submitTask(event) {
   event.preventDefault();
   if (state.submitting) return;
   try {
     validateFile(elements.slxInput, ".slx", "模型文件");
     validateFile(elements.matInput, ".mat", "数据文件");
+    const selectedProject = getSelectedProject();
+    if (!selectedProject) {
+      throw new Error("请选择项目。");
+    }
     state.submitting = true;
-    elements.startButton.disabled = true;
+    syncProjectControls();
     setStatus("正在创建任务并加入 Hermes 队列。", "busy");
 
     const formData = new FormData(elements.form);
+    formData.set("unitTestProjectId", selectedProject.id);
     const body = await requestJson("/api/unit-test-case-generation/tasks", {
       method: "POST",
       body: formData
@@ -116,12 +273,13 @@ async function submitTask(event) {
     await loadSelectedTask();
     startPolling();
     elements.form.reset();
+    renderProjects(selectedProject.id);
     setStatus("任务已发起。", "success");
   } catch (error) {
     setStatus(error.message || "任务创建失败。", "error");
   } finally {
     state.submitting = false;
-    elements.startButton.disabled = false;
+    syncProjectControls();
   }
 }
 
@@ -188,6 +346,7 @@ function renderTaskList() {
       const selected = task.id === state.selectedTaskId ? " selected" : "";
       const progress = task.progress?.percent ?? (task.status === "completed" ? 100 : 0);
       const taskName = task.inputs?.modelSlx?.originalName || "Simulink 模型";
+      const projectLabel = task.unitTestProject?.label || "";
       const deleting = state.deletingTaskIds.has(task.id);
       return `
         <div class="unit-task-card${selected}" data-task-card-id="${escapeHtml(task.id)}">
@@ -197,6 +356,7 @@ function renderTaskList() {
               <span class="unit-status unit-status-${escapeHtml(task.status)}">${escapeHtml(STATUS_LABELS[task.status] || task.status || "未知")}</span>
             </span>
             <span class="unit-task-card-meta">${escapeHtml(formatTime(task.updatedAt || task.createdAt))}</span>
+            ${projectLabel ? `<span class="unit-task-card-project">${escapeHtml(projectLabel)}</span>` : ""}
             <span class="unit-progress"><span style="width:${Math.max(2, Math.min(100, Number(progress || 0)))}%"></span></span>
           </button>
           <button
@@ -261,7 +421,14 @@ function renderTaskDetail(task) {
     elements.taskDetail.innerHTML = '<div class="empty-state">暂无选中的生成任务。</div>';
     return;
   }
-  elements.detailSubtitle.textContent = `${task.inputs?.modelSlx?.originalName || "Simulink 模型"} · ${STATUS_LABELS[task.status] || task.status}`;
+  const projectLabel = task.unitTestProject?.label || "";
+  elements.detailSubtitle.textContent = [
+    task.inputs?.modelSlx?.originalName || "Simulink 模型",
+    projectLabel,
+    STATUS_LABELS[task.status] || task.status
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const artifactHtml = (task.artifacts || []).length
     ? `
       <div class="unit-detail-section unit-artifact-section">
@@ -347,6 +514,7 @@ function renderTaskDetail(task) {
         <dl class="unit-meta-list">
           <div><dt>SLX</dt><dd>${escapeHtml(task.inputs?.modelSlx?.originalName || "")}</dd></div>
           <div><dt>MAT</dt><dd>${escapeHtml(task.inputs?.modelMat?.originalName || "")}</dd></div>
+          <div><dt>项目</dt><dd>${escapeHtml(projectLabel || "未记录")}</dd></div>
           <div><dt>创建时间</dt><dd>${escapeHtml(formatTime(task.createdAt))}</dd></div>
           <div><dt>更新时间</dt><dd>${escapeHtml(formatTime(task.updatedAt))}</dd></div>
         </dl>
@@ -390,6 +558,8 @@ function stopPolling() {
 }
 
 elements.form?.addEventListener("submit", submitTask);
+elements.addProjectButton?.addEventListener("click", addProject);
+elements.deleteProjectButton?.addEventListener("click", deleteProject);
 elements.taskList?.addEventListener("click", (event) => {
   const deleteButton = event.target.closest("[data-delete-task-id]");
   if (deleteButton) {
@@ -404,6 +574,12 @@ elements.taskList?.addEventListener("click", (event) => {
   updateUrlTaskId(state.selectedTaskId);
   void loadSelectedTask();
 });
+
+try {
+  await loadProjects();
+} catch (_error) {
+  syncProjectControls();
+}
 
 try {
   await loadTasks();

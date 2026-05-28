@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { inflateRawSync } from "node:zlib";
 import { config } from "../config.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
 import { readJson, writeJson, pathExists } from "./storage.js";
 import { normalizeUploadedFileName } from "./upload-filename.js";
 
 const TASK_FILE_NAME = "task.json";
+const PROJECTS_FILE_NAME = "projects.json";
 const QUEUE_TYPE = "unit_test_case_generation";
 const STEP_TYPE = "simulink_ut_tcsd_generate";
+const PROJECT_ID_PATTERN = /^\d{2,}$/;
 
 function now() {
   return new Date().toISOString();
@@ -26,10 +29,89 @@ function unitTestCaseConfig() {
   return {
     taskStoreDir: config.unitTestCase?.taskStoreDir || path.join(config.dataDir, "unit-test-case-generation", "tasks"),
     uploadTempDir: config.unitTestCase?.uploadTempDir || path.join(config.dataDir, "unit-test-case-generation", "_incoming"),
+    projectRegistryPath: config.unitTestCase?.projectRegistryPath || path.join(config.dataDir, "unit-test-case-generation", PROJECTS_FILE_NAME),
+    projectAdminCode: String(config.unitTestCase?.projectAdminCode || "114301"),
+    defaultProjects: config.unitTestCase?.defaultProjects || "01_楚能,02_TMS",
     skillName: config.unitTestCase?.skillName || "simulink-ut-tcsd-generator",
     expectedOutputPattern: config.unitTestCase?.expectedOutputPattern || "outputs/*_tcsd.xlsx",
     agentWorkspaceRoot: String(config.unitTestCase?.agentWorkspaceRoot || "").trim()
   };
+}
+
+function normalizeProjectName(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .slice(0, 60);
+}
+
+function normalizeProjectId(value = "") {
+  return String(value || "").trim();
+}
+
+function normalizeProjectRecord(project = {}) {
+  const id = normalizeProjectId(project.id);
+  const name = normalizeProjectName(project.name || String(project.label || "").replace(/^\d{2,}_/, ""));
+  if (!PROJECT_ID_PATTERN.test(id) || !name) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    label: `${id}_${name}`
+  };
+}
+
+function parseDefaultProjects(value = "") {
+  const projects = String(value || "01_楚能,02_TMS")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = item.match(/^(\d{2,})_(.+)$/);
+      if (!match) {
+        return null;
+      }
+      return normalizeProjectRecord({ id: match[1], name: match[2] });
+    })
+    .filter(Boolean);
+  return projects.length ? projects : [
+    { id: "01", name: "楚能", label: "01_楚能" },
+    { id: "02", name: "TMS", label: "02_TMS" }
+  ];
+}
+
+function buildProjectRegistry(projects = []) {
+  const normalized = [];
+  const seen = new Set();
+  for (const project of projects) {
+    const record = normalizeProjectRecord(project);
+    if (!record || seen.has(record.id)) {
+      continue;
+    }
+    seen.add(record.id);
+    normalized.push(record);
+  }
+  normalized.sort((a, b) => a.id.localeCompare(b.id, "zh-CN", { numeric: true }));
+  const maxNumber = normalized.reduce((max, project) => Math.max(max, Number(project.id) || 0), 0);
+  return {
+    version: 1,
+    nextProjectNumber: Math.max(1, maxNumber + 1),
+    projects: normalized
+  };
+}
+
+function publicProject(project = {}) {
+  const normalized = normalizeProjectRecord(project);
+  return normalized ? { ...normalized } : null;
+}
+
+function assertProjectAdminCode(authCode = "") {
+  const expected = unitTestCaseConfig().projectAdminCode;
+  if (String(authCode || "") !== expected) {
+    throw createHttpError("项目授权码不正确。", 403, "unit_test_case_project_auth_failed");
+  }
 }
 
 function normalizeExtension(fileName = "") {
@@ -81,6 +163,89 @@ function isWorkbookOutput(relativePath = "") {
   }
   const parts = normalized.split("/").filter(Boolean);
   return parts.length === 2 && parts[0] === "outputs" && parts[1].toLowerCase().endsWith(".xlsx");
+}
+
+function countTextOccurrences(text = "", needle = "") {
+  if (!needle) {
+    return 0;
+  }
+  let count = 0;
+  let offset = 0;
+  while (true) {
+    const index = text.indexOf(needle, offset);
+    if (index === -1) {
+      return count;
+    }
+    count += 1;
+    offset = index + needle.length;
+  }
+}
+
+function findZipEndOfCentralDirectory(buffer) {
+  const signature = 0x06054b50;
+  const start = Math.max(0, buffer.length - 66000);
+  for (let offset = buffer.length - 22; offset >= start; offset -= 1) {
+    if (buffer.readUInt32LE(offset) === signature) {
+      return offset;
+    }
+  }
+  return -1;
+}
+
+function unzipXmlEntries(buffer) {
+  const entries = [];
+  const eocdOffset = findZipEndOfCentralDirectory(buffer);
+  if (eocdOffset < 0) {
+    throw new Error("Invalid xlsx zip: end of central directory not found");
+  }
+  const totalEntries = buffer.readUInt16LE(eocdOffset + 10);
+  let offset = buffer.readUInt32LE(eocdOffset + 16);
+  for (let index = 0; index < totalEntries; index += 1) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error("Invalid xlsx zip: central directory entry not found");
+    }
+    const compressionMethod = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const fileNameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
+    const fileName = buffer.subarray(offset + 46, offset + 46 + fileNameLength).toString("utf8");
+
+    offset += 46 + fileNameLength + extraLength + commentLength;
+    if (!fileName.endsWith(".xml")) {
+      continue;
+    }
+    if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
+      throw new Error("Invalid xlsx zip: local file header not found");
+    }
+    const localFileNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
+    const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
+    const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
+    let data = null;
+    if (compressionMethod === 0) {
+      data = compressed;
+    } else if (compressionMethod === 8) {
+      data = inflateRawSync(compressed);
+    } else {
+      continue;
+    }
+    entries.push({ fileName, text: data.toString("utf8") });
+  }
+  return entries;
+}
+
+async function summarizeWorkbookExpectedValues(absolutePath = "") {
+  const buffer = await fs.readFile(absolutePath);
+  let expValueCount = 0;
+  for (const entry of unzipXmlEntries(buffer)) {
+    if (!entry.fileName.startsWith("xl/worksheets/") && entry.fileName !== "xl/sharedStrings.xml") {
+      continue;
+    }
+    expValueCount += countTextOccurrences(entry.text, "expValue(");
+  }
+  return { expValueCount };
 }
 
 function toPlatformPath(filePath = "") {
@@ -190,8 +355,98 @@ export class UnitTestCaseGenerationService {
     const cfg = unitTestCaseConfig();
     await Promise.all([
       fs.mkdir(cfg.taskStoreDir, { recursive: true }),
-      fs.mkdir(cfg.uploadTempDir, { recursive: true })
+      fs.mkdir(cfg.uploadTempDir, { recursive: true }),
+      fs.mkdir(path.dirname(cfg.projectRegistryPath), { recursive: true })
     ]);
+  }
+
+  async readProjectRegistry() {
+    await this.ensureDirs();
+    const cfg = unitTestCaseConfig();
+    const fallback = buildProjectRegistry(parseDefaultProjects(cfg.defaultProjects));
+    const stored = await readJson(cfg.projectRegistryPath, null);
+    if (!stored || !Array.isArray(stored.projects)) {
+      await writeJson(cfg.projectRegistryPath, fallback);
+      return fallback;
+    }
+    const normalized = buildProjectRegistry(stored.projects);
+    normalized.nextProjectNumber = Math.max(
+      Number(stored.nextProjectNumber || 0) || 0,
+      normalized.nextProjectNumber
+    );
+    if (JSON.stringify(stored) !== JSON.stringify(normalized)) {
+      await writeJson(cfg.projectRegistryPath, normalized);
+    }
+    return normalized;
+  }
+
+  async saveProjectRegistry(registry = {}) {
+    await this.ensureDirs();
+    const normalized = buildProjectRegistry(registry.projects || []);
+    normalized.nextProjectNumber = Math.max(
+      Number(registry.nextProjectNumber || 0) || 0,
+      normalized.nextProjectNumber
+    );
+    await writeJson(unitTestCaseConfig().projectRegistryPath, normalized);
+    return normalized;
+  }
+
+  async listProjects() {
+    const registry = await this.readProjectRegistry();
+    return registry.projects.map(publicProject).filter(Boolean);
+  }
+
+  async getUnitTestProject(projectId = "") {
+    const id = normalizeProjectId(projectId);
+    if (!PROJECT_ID_PATTERN.test(id)) {
+      throw createHttpError("请选择有效的项目编号。", 400, "unit_test_case_invalid_project_id");
+    }
+    const projects = await this.listProjects();
+    const project = projects.find((item) => item.id === id);
+    if (!project) {
+      throw createHttpError("单元测试项目不存在。", 400, "unit_test_case_project_not_found", { projectId: id });
+    }
+    return project;
+  }
+
+  async createProject(input = {}) {
+    assertProjectAdminCode(input.authCode);
+    const name = normalizeProjectName(input.name);
+    if (!name) {
+      throw createHttpError("项目名不能为空。", 400, "unit_test_case_project_name_required");
+    }
+    const registry = await this.readProjectRegistry();
+    const usedIds = new Set(registry.projects.map((project) => project.id));
+    let candidateNumber = Math.max(1, Number(registry.nextProjectNumber || 1) || 1);
+    let id = String(candidateNumber).padStart(2, "0");
+    while (usedIds.has(id)) {
+      candidateNumber += 1;
+      id = String(candidateNumber).padStart(2, "0");
+    }
+    const project = { id, name, label: `${id}_${name}` };
+    const saved = await this.saveProjectRegistry({
+      nextProjectNumber: candidateNumber + 1,
+      projects: [...registry.projects, project]
+    });
+    return publicProject(saved.projects.find((item) => item.id === id));
+  }
+
+  async deleteProject(projectId = "", input = {}) {
+    assertProjectAdminCode(input.authCode);
+    const id = normalizeProjectId(projectId);
+    if (!PROJECT_ID_PATTERN.test(id)) {
+      throw createHttpError("项目编号非法。", 400, "unit_test_case_invalid_project_id");
+    }
+    const registry = await this.readProjectRegistry();
+    const nextProjects = registry.projects.filter((project) => project.id !== id);
+    if (nextProjects.length === registry.projects.length) {
+      throw createHttpError("单元测试项目不存在。", 404, "unit_test_case_project_not_found", { projectId: id });
+    }
+    await this.saveProjectRegistry({
+      nextProjectNumber: registry.nextProjectNumber,
+      projects: nextProjects
+    });
+    return { deleted: true, projectId: id };
   }
 
   async listTasks() {
@@ -272,6 +527,7 @@ export class UnitTestCaseGenerationService {
     const normalized = normalizeTaskFiles(files);
     try {
       const { modelSlx, modelMat } = this.validateUploadFiles(normalized);
+      const unitTestProject = await this.getUnitTestProject(metadata.unitTestProjectId || metadata.projectId || "");
       const taskId = randomUUID();
       const taskDir = this.getTaskDir(taskId);
       const inputDir = path.join(taskDir, "inputs");
@@ -330,6 +586,7 @@ export class UnitTestCaseGenerationService {
         summary: "",
         errorMessage: "",
         progress: buildProgress("queued"),
+        unitTestProject,
         inputs: {
           modelSlx: {
             originalName: normalizeUploadedFileName(modelSlx.originalname),
@@ -377,7 +634,7 @@ export class UnitTestCaseGenerationService {
           {
             at: createdAt,
             status: "queued",
-            message: "任务已创建并等待 Hermes Agent 执行。"
+            message: `任务已创建并等待 Hermes Agent 执行，项目：${unitTestProject.label}。`
           }
         ]
       };
@@ -460,6 +717,7 @@ export class UnitTestCaseGenerationService {
         modelSlxPath,
         modelMatPath,
         outputDir,
+        unitTestProject: task.unitTestProject || null,
         skillName: cfg.skillName,
         expectedOutputPattern: cfg.expectedOutputPattern,
         localPlatformWorkspaceDir: task.workspace?.directory || "",
@@ -545,6 +803,7 @@ export class UnitTestCaseGenerationService {
       if (!stat.isFile()) {
         continue;
       }
+      const expectedValueSummary = await summarizeWorkbookExpectedValues(absolutePath);
       artifacts.push({
         id: randomUUID(),
         kind: candidate.kind || "tcsd_workbook",
@@ -553,6 +812,7 @@ export class UnitTestCaseGenerationService {
         size: stat.size,
         mimeType: candidate.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         description: candidate.description || "生成的 TCSD 单元测试用例 Excel",
+        expectedValueCount: expectedValueSummary.expValueCount,
         createdAt: now()
       });
     }
@@ -569,6 +829,20 @@ export class UnitTestCaseGenerationService {
       throw createHttpError("Hermes 已返回，但未在 workspace/outputs 下找到 .xlsx 结果。", 502, "unit_test_case_output_missing", {
         expectedOutputPattern: task.hermes?.expectedOutputPattern || unitTestCaseConfig().expectedOutputPattern
       });
+    }
+    const usableArtifacts = artifacts.filter((artifact) => Number(artifact.expectedValueCount || 0) > 0);
+    if (!usableArtifacts.length) {
+      throw createHttpError(
+        "Hermes 已生成 TCSD workbook，但未检测到 expValue(...) 期望值；该用例无法作为自动化测试执行结果使用。",
+        502,
+        "unit_test_case_expected_values_missing",
+        {
+          artifacts: artifacts.map((artifact) => ({
+            relativePath: artifact.relativePath,
+            expectedValueCount: artifact.expectedValueCount || 0
+          }))
+        }
+      );
     }
     const timestamp = now();
     task.status = "completed";

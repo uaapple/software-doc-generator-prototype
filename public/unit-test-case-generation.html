@@ -56,6 +56,20 @@
             <input id="model-mat-input" type="file" name="modelMat" accept=".mat" required />
           </label>
 
+          <div class="unit-project-field">
+            <div class="unit-project-head">
+              <label for="unit-project-select">项目</label>
+              <div class="unit-project-actions">
+                <button id="unit-add-project-button" type="button">新增</button>
+                <button id="unit-delete-project-button" type="button" class="danger">删除</button>
+              </div>
+            </div>
+            <select id="unit-project-select" name="unitTestProjectId" required>
+              <option value="">正在加载项目...</option>
+            </select>
+            <p id="unit-project-status" class="status" hidden></p>
+          </div>
+
           <p id="unit-form-status" class="status" hidden></p>
           <button id="unit-start-button" type="submit">发起生成任务</button>
         </form>
