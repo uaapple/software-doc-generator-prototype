@@ -18,7 +18,7 @@ A minimal prompt is sufficient:
 
 The agent must automatically:
 
-- copy `assets/support-package` into the workdir;
+- assume the platform/Hermes Agent has already copied the selected project addon into the workspace root before skill execution;
 - use Simulink Agentic Toolkit / SATK to read the model;
 - generate coverage-first unit-test TCSD cases, prioritizing decision coverage;
 - derive Condition, Decision, and MCDC obligations from the model itself before writing TCSD rows;
@@ -30,7 +30,7 @@ The agent must automatically:
 - deliver the Excel workbook with `expValue(...)` expectations as the required output. JSON/spec/simulation files may be used as internal script artifacts, but a separate validation report is not required unless the user explicitly asks for one.
 - build and validate the `.xlsx` before any simulation, coverage run, or expected-output backfill. In Hermes/production, this workbook is an artifact checkpoint; final success still requires simulation-backed top-level `expValue(...)` lines.
 - stop simulation/backfill after the first MATLAB/MCP/SATK timeout, including a 600s `mcp_matlab_satk_evaluate_matlab_code` timeout, and return `status: "failed"` with a clear warning rather than marking a workbook without expectations as completed.
-- clean the MATLAB/SATK session before returning, so later Hermes tasks do not inherit loaded models, copied support paths, or stale MCP state from this task.
+- clean the MATLAB/SATK session before returning, so later Hermes tasks do not inherit loaded models, project-addon support paths, or stale MCP state from this task.
 
 Only ask for clarification when the `.slx`, matching `.mat`, MATLAB/SATK runtime, or a required dependency is actually missing.
 
@@ -39,20 +39,28 @@ Only ask for clarification when the `.slx`, matching `.mat`, MATLAB/SATK runtime
 - The agent runs on the same machine/user account that can read this skill directory.
 - MATLAB, Simulink, Simulink Agentic Toolkit, and the local SATK bridge are available.
 - The supplied `.mat` is the model-specific authority for signal objects, calibration objects, lookup tables, and parameter values.
-- The user normally provides only `<model>.slx` and `<model>.mat`; reusable Cornex/ITK dependencies must come from this skill.
+- The user normally provides only `<model>.slx` and `<model>.mat`; reusable project-specific dependencies must already be present in the workspace because the platform/Hermes Agent copied the selected project addon there.
 - Direct `model_read` / `model_overview` can appear in the agent tool list while MATLAB cannot find the backing SATK functions. If MATLAB reports `函数或变量 'model_read' 无法识别`, repair the SATK tools path first instead of treating MCP model reading as unavailable.
 
 If any of those assumptions are false, stop and report the missing runtime or file dependency before inventing cases.
 
-## Support Package
+## Project Addon Support Files
 
-The reusable dependency package is bundled at:
+Project-specific reusable dependencies are no longer a production default bundled inside this skill. They are maintained outside the skill and copied into the task workspace before the skill starts.
 
 ```text
-assets/support-package/
+Windows production: C:\ProgramData\SoftwareDocGenerator\project-addons\<projectId>\
+Mac local dev: .local/project-addons/<projectId>
 ```
 
-It contains:
+For example, the 楚能 support package should be migrated to project `01`:
+
+```text
+C:\ProgramData\SoftwareDocGenerator\project-addons\01\
+.local/project-addons/01
+```
+
+The copied workspace contents are project-specific. File names, file types, folder layout, and file count may differ by project. The following are examples from a Cornex/ITK-style package, not required names for every project:
 
 - `Cornex_Config.sldd`
 - `CornexMdlCfg.mat`
@@ -61,27 +69,21 @@ It contains:
 - `ITKCToolsV015/ModelingTools/01_Csc` including `+CornexCsc`
 - `ITKCToolsV015/GenLib`
 
-For a fresh work folder, copy it before loading the model:
-
-```bash
-cp -R <skill_dir>/assets/support-package/. <model_workdir>/
-```
-
-`<skill_dir>` is the folder containing this `SKILL.md`. Do not rely on the old conversation’s workspace having those files already.
+The skill should inspect the current workspace and load the actual support files found there. Add relevant support/tool folders to the MATLAB path, run initialization scripts only when present or explicitly identified, and load target-model-referenced libraries and data dictionaries from the workspace. The skill still owns the canonical TCSD template and reusable scripts, but it should not copy the old `assets/support-package` as the production source of project dependencies.
 
 ## Known Dependency Lessons
 
-- If `CornexCsc.Signal` or `CornexCsc.Parameter` is missing, MATLAB may load MAT variables as raw numeric arrays such as `uint32 [6x1]`. Fix the path, clear the workspace, and reload the MAT.
-- Add `ITKCToolsV015/ModelingTools/01_Csc`, `ITKCToolsV015/GenLib`, the model workdir, and the skill `scripts/` folder to the MATLAB path before loading/simulating.
+- For Cornex/ITK packages, if `CornexCsc.Signal` or `CornexCsc.Parameter` is missing, MATLAB may load MAT variables as raw numeric arrays such as `uint32 [6x1]`. Fix the path, clear the workspace, and reload the MAT.
+- Add the model workdir, the skill `scripts/` folder, and any actual project support/tool folders discovered in the workspace to the MATLAB path before loading/simulating. For Cornex/ITK packages, this usually includes folders such as `ITKCToolsV015/ModelingTools/01_Csc` and `ITKCToolsV015/GenLib`; other projects may use different names.
 - If any helper calls `restoredefaultpath`, add the SATK root and `simulink/tools` tree back to the MATLAB path before later direct MCP calls. The bundled `scripts/setup_ut_support.m` does this automatically, and also restores the MATLAB MCP Core add-on path when it can find it; keep that behavior in copied model-specific helpers.
 - If the model’s original config references missing generated-code headers such as `rte_bsw_analog.h`, attach an in-memory `CodexSimOnlyCfg` and simulate with that. Do not edit the source `.slx`.
-- Load `ITKLib.slx` before the model if present.
-- Treat MATLAB as a reusable long-lived process unless production explicitly uses `SATK_MATLAB_SESSION_MODE=new`. If a model or library such as `ITKLib` is already loaded from a path outside the current workdir, close that loaded instance before loading the current workdir copy.
+- Load workspace support libraries required by the target model before the model when they are present or referenced. Do not assume a fixed library name such as `ITKLib.slx`.
+- Treat MATLAB as a reusable long-lived process unless production explicitly uses `SATK_MATLAB_SESSION_MODE=new`. If a model or library required by this task is already loaded from a path outside the current workdir, close that loaded instance before loading the current workdir copy.
 - Kill stale task-owned `matlab-mcp-core-server` processes after SATK calls if they remain running and block later calls.
 
 ## Preferred End-to-End Workflow
 
-Production invocation is intentionally minimal: the backend may provide only `<model>.slx`, `<model>.mat`, and this skill. The agent must not wait for screenshots, prior chat context, feedback documents, or MQTester reports before generating model-derived Condition, Decision, and AND/OR MC/DC stimuli.
+Production invocation is intentionally minimal: the backend may provide only `<model>.slx`, `<model>.mat`, the selected project metadata, and this skill. The platform/Hermes Agent must prepare the project addon in the workspace before invoking the skill. The agent must not wait for screenshots, prior chat context, feedback documents, or MQTester reports before generating model-derived Condition, Decision, and AND/OR MC/DC stimuli.
 
 ### Artifact-First Failure Policy
 
@@ -95,9 +97,9 @@ For Hermes and Windows VM runs, artifact creation is a hard gate:
 If the post-workbook simulation/backfill phase hits any MATLAB/MCP/SATK timeout or instability, stop that phase immediately. Do not retry `sim()`, do not run extra coverage exploration, and do not let the outer Hermes request reach its one-hour timeout. Return strict JSON with `status: "failed"`, a clear `errorMessage`, and a warning that expected-output backfill was skipped or partial. A checkpoint workbook may be included in `outputFiles` for diagnosis, but it must not be presented as a completed automated-test deliverable.
 
 1. Create or select a clean model workdir.
-2. Copy `assets/support-package/.` into the workdir.
-3. Place the user’s `<model>.slx` and `<model>.mat` in the same workdir.
-4. Load support paths, run `init_Global.m`, load the MAT, load `ITKLib.slx`, then load the model.
+2. Confirm the platform/Hermes Agent has copied the selected project addon into the workdir root.
+3. Place the user’s `<model>.slx` and `<model>.mat` in the same workdir; these user-provided files remain authoritative.
+4. Load support paths from the workdir, run project initialization scripts only when present or explicitly identified, load the MAT, load any workspace libraries/data dictionaries referenced by the target model, then load the model.
 5. Verify `which model_read` and `which model_overview` are nonempty after MATLAB setup. If not, restore the SATK tools path before deriving model facts.
 6. Derive root Inports and Outports from the model, including port order, data type, and dimensions. Do not guess.
 7. Inspect hierarchy and decision-producing blocks: Switch, RelationalOperator, Logical Operator, MinMax, MultiPortSwitch, Saturate, Lookup, Safe_Divide, Delay, Latch, StopWatch, LowPass, GradientLimiter.
@@ -119,7 +121,7 @@ At task start:
 
 - Record the original MATLAB current folder and path.
 - Record models/libraries already loaded before the task.
-- If `ITKLib` or the target model is already loaded from another path, close that loaded instance with `bdclose(name)` before loading the workspace copy.
+- If a project support library/model or the target model is already loaded from another path, close that loaded instance with `bdclose(name)` before loading the workspace copy.
 
 During the task:
 
@@ -130,7 +132,7 @@ At task completion, including failures:
 
 - Close every model/library loaded by this task whose `FileName` is under the task workdir.
 - Clear task-local variables and simulation outputs.
-- Restore the original current folder and path when possible; otherwise remove the task workdir, support-package paths, and skill script paths that were added by this run.
+- Restore the original current folder and path when possible; otherwise remove the task workdir, project-addon support paths, and skill script paths that were added by this run.
 - Shut down task-owned MCP/SATK sessions. If a task-owned `matlab-mcp-core-server` remains and blocks future calls, terminate only that stale task-owned process and report it in the task warnings.
 - Put cleanup in `try`/`catch` or MATLAB `onCleanup` so it runs after model-load errors, failed simulations, timeouts, and interrupted Hermes runs.
 
@@ -384,7 +386,7 @@ HvCoorn also exposed a state-machine expected-output failure pattern:
 This skill is suitable for a Hermes-style agent if it can:
 
 - read the skill directory and its `assets/`, `references/`, and `scripts/`;
-- copy `assets/support-package/.` into the model workdir;
+- receive a workspace where the selected project addon has already been copied by the platform/Hermes Agent;
 - run Python with `openpyxl`;
 - run SATK/MATLAB to load and simulate the model;
 - create local MCP watchdog sockets in `SATK_MCP_LOG_FOLDER`;

@@ -1,4 +1,7 @@
-function setup_ut_support(rootDir)
+function setup_ut_support(rootDir, initScripts)
+if nargin < 2
+    initScripts = {};
+end
 cd(rootDir);
 warning('off', 'all');
 restoredefaultpath;
@@ -6,14 +9,111 @@ rehash toolboxcache;
 scriptDir = fileparts(mfilename('fullpath'));
 restore_matlab_mcp_core_path();
 restore_satk_tools_path();
-addpath(fullfile(rootDir, 'ITKCToolsV015', 'ModelingTools', '01_Csc'));
-addpath(fullfile(rootDir, 'ITKCToolsV015', 'ModelingTools'));
-addpath(fullfile(rootDir, 'ITKCToolsV015', 'GenLib'));
+add_workspace_support_paths(rootDir, scriptDir);
+run_project_init_scripts(rootDir, initScripts);
+end
+
+function add_workspace_support_paths(rootDir, scriptDir)
 addpath(rootDir);
 addpath(scriptDir);
-if exist(fullfile(rootDir, 'init_Global.m'), 'file')
-    evalin('base', sprintf('run(''%s'');', fullfile(rootDir, 'init_Global.m')));
+
+allPaths = strsplit(genpath(rootDir), pathsep);
+for i = 1:numel(allPaths)
+    candidate = allPaths{i};
+    if isempty(candidate) || ~exist(candidate, 'dir')
+        continue;
+    end
+    if should_skip_project_path(candidate, rootDir)
+        continue;
+    end
+    addpath(candidate);
 end
+end
+
+function skip = should_skip_project_path(candidate, rootDir)
+skip = false;
+if strcmp(candidate, rootDir)
+    return;
+end
+rootPrefix = [rootDir filesep];
+if strncmp(candidate, rootPrefix, length(rootPrefix))
+    relativePath = candidate(length(rootPrefix) + 1:end);
+else
+    relativePath = candidate;
+end
+parts = strsplit(strrep(relativePath, '/', filesep), filesep);
+excludedNames = {'.git', '.svn', 'outputs', 'output', 'slprj', '__pycache__'};
+for i = 1:numel(parts)
+    if any(strcmpi(parts{i}, excludedNames))
+        skip = true;
+        return;
+    end
+end
+end
+
+function run_project_init_scripts(rootDir, initScripts)
+scripts = normalize_init_scripts(initScripts);
+if isempty(scripts)
+    scripts = split_init_script_list(getenv('TCSD_PROJECT_INIT_SCRIPTS'));
+end
+if isempty(scripts) && exist(fullfile(rootDir, 'init_Global.m'), 'file')
+    scripts = {'init_Global.m'};
+end
+
+for i = 1:numel(scripts)
+    scriptPath = strtrim(char(scripts{i}));
+    if isempty(scriptPath)
+        continue;
+    end
+    if is_absolute_path(scriptPath)
+        candidate = scriptPath;
+    else
+        candidate = fullfile(rootDir, scriptPath);
+    end
+    if exist(candidate, 'file')
+        evalin('base', sprintf('run(''%s'');', escape_matlab_string(candidate)));
+    else
+        warning('setup_ut_support:ProjectInitMissing', ...
+            'Project init script was requested but does not exist: %s', scriptPath);
+    end
+end
+end
+
+function scripts = normalize_init_scripts(initScripts)
+if ischar(initScripts)
+    scripts = split_init_script_list(initScripts);
+elseif isstring(initScripts)
+    scripts = cellstr(initScripts);
+elseif iscell(initScripts)
+    scripts = initScripts;
+else
+    scripts = {};
+end
+end
+
+function scripts = split_init_script_list(value)
+if isempty(value)
+    scripts = {};
+    return;
+end
+rawParts = regexp(char(value), '[;,]', 'split');
+scripts = {};
+for i = 1:numel(rawParts)
+    item = strtrim(rawParts{i});
+    if ~isempty(item)
+        scripts{end + 1} = item; %#ok<AGROW>
+    end
+end
+end
+
+function tf = is_absolute_path(filePath)
+tf = strncmp(filePath, filesep, 1) || ...
+    strncmp(filePath, '\\', 2) || ...
+    ~isempty(regexp(filePath, '^[A-Za-z]:[\\/]', 'once'));
+end
+
+function escaped = escape_matlab_string(value)
+escaped = strrep(value, '''', '''''');
 end
 
 function restore_matlab_mcp_core_path()

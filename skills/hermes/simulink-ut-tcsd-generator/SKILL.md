@@ -19,7 +19,7 @@ Minimal user prompt is enough:
 
 By default, you must:
 
-- Copy `assets/support-package` into the model workdir before loading the model unless equivalent dependencies already exist there.
+- Assume the platform/Hermes Agent has already copied the selected project addon into the workspace root before this skill starts. Project addon contents are project-specific: file names, file types, folder layout, and file count may vary. Do not assume fixed support files such as `init_Global.m`, `ITKLib.slx`, or a specific `.sldd`; inspect the workspace, add relevant support/tool folders, run project initialization scripts only when they are present or identified, and load libraries/data dictionaries referenced by the target model from the workspace. Do not copy the skill's old `assets/support-package` as the production default.
 - Use Simulink Agentic Toolkit / SATK for model reading and MATLAB evaluation.
 - Generate coverage-first unit-test cases, with decision coverage as the first optimization target.
 - Derive Condition, Decision, and MCDC obligations directly from the model before writing TCSD rows; external feedback documents or screenshots may inform future repairs, but they are not required generation inputs.
@@ -34,7 +34,7 @@ By default, you must:
 - If a post-workbook simulation or backfill MATLAB/MCP/SATK call times out once, including a 600s MCP timeout, stop retrying simulation/backfill in the same request and return `status=failed` with a clear warning rather than marking a workbook without expectations as completed.
 - Leave MATLAB clean after the task: close any model or library loaded from the task workspace, clear task-local variables, restore MATLAB path/current folder when possible, and stop task-owned MCP/SATK sessions so later Hermes tasks cannot inherit stale loaded models.
 
-Ask the user only when required input files or runtime dependencies are missing, or when the model cannot be loaded after applying the bundled support package.
+Ask the user only when required input files or runtime dependencies are missing, or when the model cannot be loaded after the project addon files prepared in the workspace have been applied.
 
 ## Core Rules
 
@@ -44,7 +44,7 @@ Ask the user only when required input files or runtime dependencies are missing,
 - For Hermes/production runs, make SATK startup deterministic: run `scripts/satk_eval.py` in an environment that allows the MCP server to create its local watchdog socket, and set a short ASCII `SATK_MCP_LOG_FOLDER` such as `C:\Temp\matlab-mcp-core-server-codex` on Windows or `/private/tmp/matlab-mcp-core-server-codex` on macOS. If initialization logs show `watchdog`, `socket file access timed out`, `bind: invalid argument`, or `bind: operation not permitted`, treat it as a runtime/sandbox problem and rerun SATK outside that sandbox rather than falling back to static SLX parsing.
 - Do not replace SATK/MCP/MATLAB model reading with static `.slx` XML parsing. Static XML is only a supplement after SATK/MCP/MATLAB has been attempted or used, and only for exact SIDs, block parameters, or connectivity.
 - Do not pipe `.slx`/zip/XML output directly into interpreters such as `python3 -c`, `perl`, `ruby`, or `node -e`. If static XML inspection is needed, use `scripts/inspect_slx_xml.py MODEL.slx --pattern REGEX` or a checked-in file-reading script.
-- Copy `assets/support-package` into the working folder before loading the model unless the project already has equivalent Cornex/ITK dependencies.
+- Load project support files from the current workspace. In platform/Hermes runs, those files must already have been copied from the selected project addon package into the workspace root before this skill starts. Treat addon contents as variable by project; discover actual support folders, initialization scripts, libraries, and data dictionaries from the workspace instead of assuming fixed names. `assets/support-package` is no longer the production default source for project-specific dependencies.
 - Treat MATLAB as a reusable long-lived process unless `SATK_MATLAB_SESSION_MODE=new` guarantees isolation. At task start, close any preloaded model/library whose loaded file path is outside the current workspace before loading the current workspace copy. At task end, run the cleanup rules in **MATLAB Cleanup Contract** even after failures.
 - Use `assets/templates/tcsd_template.xlsx` as the required TCSD workbook template. Preserve its `TCSD` sheet, columns, row conventions, freeze pane, styles, comments/status options, and workbook structure so the downstream automatic test software can import it.
 - Artifact-first checkpoint rule for Hermes/production: do not call `simulate_tcsd_cases`, `sim`, coverage APIs, or expected-output backfill until `outputs/<model>_Test0001_tcsd.xlsx` or the next versioned workbook has been written and basic workbook validation has passed. Final success still requires simulation-backed top-level `expValue(...)`.
@@ -69,7 +69,7 @@ Ask the user only when required input files or runtime dependencies are missing,
 - If simulation fails because a `MultiPortSwitch` selector value is invalid, treat it as a stimulus/design problem first. Use the `simulate_tcsd_cases.m` diagnostic summary to identify the block, selector source, and indexing mode, then repair TCSD inputs or safe scalar overrides. Do not silently set `DiagnosticForDefault=None` for all MPS blocks in normal generation.
 - `TCSD_ALLOW_MPS_DEFAULT_OVERRIDE=1` is allowed only for an explicitly diagnostic simulation run. It may suppress MPS default-case errors without saving the model, but results from that run must not be used as trusted expected-output backfill unless the selector/default behavior has been deliberately justified.
 - Treat every `Logical Operator` AND/OR block as a production-default MC/DC obligation, even when the only inputs are the user-provided `.slx` and `.mat`. For N-input OR, include an all-false case plus one case per input where only that input is true. For N-input AND, include an all-true case plus one case per input where only that input is false. Target the truth vector at the logical-operator input ports, not the Test description or final output.
-- For logical inputs driven by `RelationalOperator` or `Switch` criteria, trace the immediate upstream condition back to root inputs or parameters. If the condition compares a root signal with an enum/constant, resolve that value from the loaded `.mat`, `init_Global.m`, model workspace, or data dictionary; do not use generic Boolean `0/1` unless the resolved value is actually `0` or `1`. Write the resolved values directly into TCSD root-input assignments, for example BMS-style states such as `BMSActSt_online=4`, `BMSActSt_DCChrg=8`, `BMSActSt_ACChrg=9`, or relay closed values such as `2` when those mappings exist in the model data. If the same root signal feeds multiple equality comparisons, such as `stMod == 2` and `stMod == 3`, generate cases that hit each compared value plus a non-matching baseline instead of leaving only the nominal default value.
+- For logical inputs driven by `RelationalOperator` or `Switch` criteria, trace the immediate upstream condition back to root inputs or parameters. If the condition compares a root signal with an enum/constant, resolve that value from the loaded `.mat`, project initialization scripts when present, model workspace, or data dictionary; do not use generic Boolean `0/1` unless the resolved value is actually `0` or `1`. Write the resolved values directly into TCSD root-input assignments, for example BMS-style states such as `BMSActSt_online=4`, `BMSActSt_DCChrg=8`, `BMSActSt_ACChrg=9`, or relay closed values such as `2` when those mappings exist in the model data. If the same root signal feeds multiple equality comparisons, such as `stMod == 2` and `stMod == 3`, generate cases that hit each compared value plus a non-matching baseline instead of leaving only the nominal default value.
 - For every `RelationalOperator`, cover the exact condition outcome from the block criterion: `==`/`~=` comparisons need matching and non-matching values, ordered comparisons need below/equal/above when equality changes the outcome, and sign comparisons need negative/zero/positive as applicable. Resolve the compared constants before writing TCSD assignments.
 - For every `Saturate` block, identify the pre-saturation input signal and prove it is below the lower limit, inside range, and above the upper limit. Do not infer saturation coverage only from extreme root inputs or from the saturated output value. If the upstream lookup/calibration range cannot cross a limit with valid inputs, mark that outcome unreachable rather than forcing unsafe table edits.
 - For every `Abs` block, design coverage on the pre-Abs source signal: negative, zero, and positive values. Do not treat a positive `Abs` output as covering a positive source input.
@@ -86,11 +86,11 @@ Ask the user only when required input files or runtime dependencies are missing,
 Hermes may reuse the same MATLAB desktop/session across generation tasks. Always make the MATLAB side idempotent:
 
 - Record the original MATLAB current folder and path before adding task support paths.
-- Keep a list of models/libraries loaded by this task, including `ITKLib` and the target model.
+- Keep a list of models/libraries loaded by this task, including any project support libraries and the target model.
 - Before loading a model or library, if `bdIsLoaded(name)` is true and `get_param(name, "FileName")` points outside the current task workspace, close that loaded instance with `bdclose(name)` and then load the workspace copy.
 - At task completion, whether success or failure, close all task-loaded models/libraries whose `FileName` is under the current task workspace. Use `bdclose(modelName)` / `bdclose(libraryName)`; do not save them unless the user explicitly asked to modify the source model.
 - Clear task-local variables and simulation outputs with `clearvars` or a scoped cleanup script, but do not clear user/global MATLAB preferences or unrelated models that were open before the task.
-- Restore the original current folder and path when possible. If exact path restoration is unsafe, at least remove the task workspace, copied support-package paths, and skill script paths that were added during this run.
+- Restore the original current folder and path when possible. If exact path restoration is unsafe, at least remove the task workspace, project-addon support paths, and skill script paths that were added during this run.
 - If SATK/MCP started a task-owned MATLAB or MCP server process, shut it down cleanly. If the process remains and blocks later calls, report it and terminate only that task-owned stale `matlab-mcp-core-server` process.
 - Put cleanup in `try`/`catch` or `onCleanup` so it runs after errors, timeouts, or failed simulations.
 
@@ -98,14 +98,13 @@ Hermes may reuse the same MATLAB desktop/session across generation tasks. Always
 
 1. **Prepare workspace**
    - Confirm the user-provided `.slx` and matching `.mat` are in the working folder.
-   - Copy the support package:
-     ```bash
-     cp -R /path/to/skill/assets/support-package/. .
-     ```
-   - Keep the model-specific `.slx` and `.mat` supplied by the user as the authority.
+   - Confirm the project addon has already been copied into the workspace root by the platform/Hermes Agent. The addon is selected by project number, for example `01` or `02`, outside this skill.
+   - Treat project numbers and known packages as selection examples only. A project addon may contain different file names, file types, folder layouts, and file counts; do not fail merely because `init_Global.m`, `ITKLib.slx`, or a known `.sldd` is absent.
+   - In production Windows runs, the 楚能-specific support package migration target is `C:\ProgramData\SoftwareDocGenerator\project-addons\01\`. In local Mac development, the equivalent source can be `.local/project-addons/01`. Other projects use their own numbered addon folders with their own contents.
+   - Do not copy the skill's old `assets/support-package` as a production default; keep the user-provided model-specific `.slx` and `.mat` as the authority if addon files contain similarly named examples or historical files.
 
 2. **Load and inspect the model**
-   - Use SATK to load support paths, run `init_Global.m`, load the `.mat`, load `ITKLib.slx`, then load the model.
+   - Use SATK to inspect the workspace, add actual support/tool folders, run project initialization scripts only when present or explicitly identified, load the `.mat`, load any target-model-referenced libraries/data dictionaries from the workspace, then load the model.
    - After any MATLAB setup that calls `restoredefaultpath`, verify `which model_read` and `which model_overview` find SATK tool functions before calling direct MCP `model_read` / `model_overview`. If not, restore the SATK tools path as documented in `references/workflow-details.md`.
    - Derive root Inport and Outport order from the model, not from guesses.
    - Read the subsystem hierarchy and the blocks around Switch, Multiport Switch, Lookup Table, Delay, Latch, GradientLimiter, Safe_Divide, Min/Max, and logical operators.
