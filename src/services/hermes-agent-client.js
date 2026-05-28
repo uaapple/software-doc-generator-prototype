@@ -1240,11 +1240,21 @@ function buildSoftwareRequirementMarkdownPrompt(payload = {}) {
 }
 
 function sanitizeSimulinkUtTcsdArtifact(inputArtifact = {}) {
+  const project = inputArtifact.unitTestProject && typeof inputArtifact.unitTestProject === "object"
+    ? inputArtifact.unitTestProject
+    : null;
   return {
     workspaceDir: clipText(inputArtifact.workspaceDir || "", CLI_PATH_MAX_LENGTH),
     modelSlxPath: clipText(inputArtifact.modelSlxPath || "", CLI_PATH_MAX_LENGTH),
     modelMatPath: clipText(inputArtifact.modelMatPath || "", CLI_PATH_MAX_LENGTH),
     outputDir: clipText(inputArtifact.outputDir || "", CLI_PATH_MAX_LENGTH),
+    unitTestProject: project
+      ? {
+          id: clipText(project.id || "", 40),
+          name: clipText(project.name || "", 120),
+          label: clipText(project.label || "", 180)
+        }
+      : null,
     skillName: clipText(inputArtifact.skillName || "simulink-ut-tcsd-generator", 160),
     expectedOutputPattern: clipText(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx", 200),
     modelSlxFileName: clipText(inputArtifact.modelSlxFileName || path.basename(inputArtifact.modelSlxPath || "model.slx"), 200),
@@ -1265,14 +1275,21 @@ function buildSimulinkUtTcsdPrompt(payload = {}) {
     "Execution contract:",
     "- Treat `workspaceDir` as the sandbox root. Do not read or write outside it.",
     "- The model input is `modelSlxPath`; the matching data file is `modelMatPath`.",
+    "- `unitTestProject.id` is the internal project number, such as `01`; display labels such as `01_楚能` must never be used as paths.",
+    "- The Hermes Agent service has already copied the selected project's addon package into `workspaceDir` before this CLI run. Load support files such as `init_Global.m`, `ITKLib.slx`, `.sldd`, and project tool folders from the workspace, not from the external addon root.",
     "- Before loading Simulink files, change MATLAB current folder to `workspaceDir`.",
     "- If `ITKLib` or the target model is already loaded from another path, close that loaded model first with `bdclose` before calling `load_system`.",
     "- Prefer the canonical workspace filenames `modelSlxFileName` and `modelMatFileName` for MATLAB `load`, `load_system`, and simulation steps; avoid loading timestamped upload archive names.",
     "- Use the skill named by `skillName` and follow its SATK/MATLAB/TCSD rules.",
     "- In this environment, `model_overview` and `model_read` can be registered but fail because the backing MATLAB functions are unavailable; do not spend repeated retries on them. Prefer `evaluate_matlab_code` for MATLAB inspection, and use static SLX XML inspection only as a fallback.",
-    "- Start TCSD workbook construction early. Use the skill's `scripts/build_tcsd_from_json.py` from a terminal command with `python3` so it can access the installed `openpyxl`; do not rely on the isolated `execute_code` Python environment for openpyxl.",
-    "- If simulation or expected-output backfill is blocked by MATLAB/MCP instability, still generate a best-effort TCSD workbook under `outputDir` with clear warnings instead of ending without an `.xlsx` artifact.",
-    "- Before finishing, verify the workbook file exists under `outputDir` and include it in `outputFiles` using a relative path that matches `outputs/*_tcsd.xlsx`.",
+    "- Artifact-first checkpointing is mandatory: after model inspection and case design, immediately build and verify the TCSD workbook under `outputDir` before extracting cases, running `simulate_tcsd_cases`, running coverage, or doing expected-output backfill. This checkpoint is not sufficient for final completion by itself.",
+    "- Use the skill's `scripts/build_tcsd_from_json.py` from a terminal command with `python3` so it can access the installed `openpyxl`; do not rely on the isolated `execute_code` Python environment for openpyxl.",
+    "- Do not start any long MATLAB simulation/backfill step until an `outputs/*_tcsd.xlsx` workbook already exists and `unzip -t` or equivalent workbook validation has passed.",
+    "- Simulation-backed expected-output backfill is required for final `status: \"completed\"`. The final workbook must contain top-level Outport `expValue(...)` lines suitable for automated test execution.",
+    "- Keep simulation bounded and checkpointed: run a focused backfill pass from the already-built workbook, avoid unbounded coverage repair loops, and write the workbook after successful backfill.",
+    "- If any simulation/backfill MATLAB, MCP, or SATK call times out once, including `mcp_matlab_satk_evaluate_matlab_code timed out after 600.0s`, stop simulation/backfill immediately. Do not retry `sim()`, output extraction, or coverage exploration in the same Hermes request.",
+    "- If expected-output backfill cannot complete, return strict JSON with `status: \"failed\"`, an `errorMessage`, and warnings. You may include the checkpoint workbook in `outputFiles` for diagnosis, but do not mark the task completed.",
+    "- Before returning `status: \"completed\"`, verify the workbook file exists under `outputDir`, contains at least one `expValue(...)` expectation, and include it in `outputFiles` using a relative path that matches `outputs/*_tcsd.xlsx`.",
     "- Before returning, clean up MATLAB state per the skill's MATLAB Cleanup Contract: close task-loaded workspace models/libraries, clear task-local variables, restore current folder/path when possible, and report cleanup warnings.",
     "- Write generated workbooks only under `outputDir`.",
     "- The expected final workbook pattern is `outputs/*_tcsd.xlsx`.",
@@ -1292,6 +1309,11 @@ function buildSimulinkUtTcsdPrompt(payload = {}) {
             description: "Generated TCSD Excel workbook"
           }
         ],
+        expectedValueSummary: {
+          backfillStatus: "completed",
+          expValueCount: 1,
+          testsWithoutExpectedValue: 0
+        },
         warnings: []
       },
       null,

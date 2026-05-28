@@ -9669,6 +9669,7 @@ const tests = [
           const wrongExt = new FormData();
           wrongExt.append("modelSlx", new Blob(["txt"]), "Demo.txt");
           wrongExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongExt.append("unitTestProjectId", "01");
           const wrongExtResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
             method: "POST",
             body: wrongExt
@@ -9680,6 +9681,7 @@ const tests = [
           const valid = new FormData();
           valid.append("modelSlx", new Blob(["slx"]), "Demo.slx");
           valid.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          valid.append("unitTestProjectId", "01");
           const validResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
             method: "POST",
             body: valid
@@ -9694,6 +9696,7 @@ const tests = [
           assert.equal(validBody.task.inputs.modelMat.workspaceName, "Demo.mat");
           assert.equal(validBody.task.inputs.modelSlx.workspaceRelativePath, "Demo.slx");
           assert.equal(validBody.task.inputs.modelMat.workspaceRelativePath, "Demo.mat");
+          assert.equal(validBody.task.unitTestProject.id, "01");
 
           const listResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`);
           assert.equal(listResponse.status, 200);
@@ -9733,7 +9736,12 @@ const tests = [
               });
               const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
               await fs.mkdir(path.dirname(outputPath), { recursive: true });
-              await fs.writeFile(outputPath, "xlsx");
+              await createMinimalXlsx(outputPath, {
+                TCSD: [
+                  ["TestID", "Name", "Type", "Expected"],
+                  ["TC_001", "Case", "Test", "expValue(Out1, 1)"]
+                ]
+              });
               return {
                 status: "succeeded",
                 stepType: "simulink_ut_tcsd_generate",
@@ -9748,10 +9756,13 @@ const tests = [
             }
           }
         });
-        const task = await service.createTask({
-          modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
-          modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
-        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
         const created = await service.readTask(task.id);
         assert.equal(created.inputs.modelSlx.workspaceName, "Demo.slx");
         assert.equal(created.inputs.modelMat.workspaceName, "Demo.mat");
@@ -9804,10 +9815,13 @@ const tests = [
             }
           }
         });
-        const task = await service.createTask({
-          modelSlx: [await createMockUploadFile(tempDir, "Fail.slx", "slx")],
-          modelMat: [await createMockUploadFile(tempDir, "Fail.mat", "mat")]
-        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Fail.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Fail.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
         await assert.rejects(() => service.runTask(task.id), /MATLAB unavailable/);
         const failed = await service.getTask(task.id);
         assert.equal(failed.status, "failed");
