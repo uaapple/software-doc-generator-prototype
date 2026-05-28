@@ -230,6 +230,99 @@ async function buildWindowsWorkerProbeArtifact(inputArtifact = {}, allowedPaths 
   };
 }
 
+function normalizeUnitTestProject(project = {}) {
+  const id = String(project?.id || "").trim();
+  if (!/^\d{2,}$/.test(id)) {
+    throw createHttpError("unitTestProject.id must be a numeric project number such as 01", 400, "hermes_invalid_unit_test_project");
+  }
+  return {
+    id,
+    name: String(project.name || "").trim(),
+    label: String(project.label || `${id}_${String(project.name || "").trim()}`).trim()
+  };
+}
+
+async function assertNoSymlinks(rootDir = "", currentDir = rootDir) {
+  const entries = await fs.readdir(currentDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const absolutePath = path.join(currentDir, entry.name);
+    const stat = await fs.lstat(absolutePath);
+    if (stat.isSymbolicLink()) {
+      throw createHttpError(
+        `Project addon package cannot contain symbolic links: ${path.relative(rootDir, absolutePath)}`,
+        400,
+        "hermes_project_addon_symlink_forbidden"
+      );
+    }
+    if (entry.isDirectory()) {
+      await assertNoSymlinks(rootDir, absolutePath);
+    }
+  }
+}
+
+async function listAddonFileTargets(sourceDir = "", workspaceDir = "") {
+  const targets = [];
+  async function walk(currentDir) {
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      const relativePath = path.relative(sourceDir, absolutePath);
+      if (entry.isDirectory()) {
+        await walk(absolutePath);
+        continue;
+      }
+      if (entry.isFile()) {
+        targets.push(path.resolve(workspaceDir, relativePath));
+      }
+    }
+  }
+  await walk(sourceDir);
+  return targets;
+}
+
+async function copyUnitTestProjectAddon(inputArtifact = {}) {
+  const unitTestProject = normalizeUnitTestProject(inputArtifact.unitTestProject || {});
+  const addonRoot = path.resolve(config.unitTestCase?.projectAddonRoot || path.join(config.rootDir, ".local", "project-addons"));
+  const sourceDir = path.resolve(addonRoot, unitTestProject.id);
+  const realAddonRoot = await fs.realpath(addonRoot).catch(() => {
+    throw createHttpError(`Project addon root does not exist: ${addonRoot}`, 400, "hermes_project_addon_root_missing");
+  });
+  const realSourceDir = await fs.realpath(sourceDir).catch(() => {
+    throw createHttpError(`Project addon folder does not exist for ${unitTestProject.label}: ${sourceDir}`, 400, "hermes_project_addon_missing");
+  });
+  if (!isPathAllowed(realSourceDir, [realAddonRoot])) {
+    throw createHttpError("Project addon folder escaped the configured addon root.", 403, "hermes_project_addon_path_forbidden");
+  }
+  const sourceStat = await fs.stat(realSourceDir);
+  if (!sourceStat.isDirectory()) {
+    throw createHttpError(`Project addon path is not a folder: ${sourceDir}`, 400, "hermes_project_addon_not_directory");
+  }
+
+  await assertNoSymlinks(realSourceDir);
+  const workspaceDir = path.resolve(inputArtifact.workspaceDir);
+  const protectedInputs = new Set([
+    path.resolve(inputArtifact.modelSlxPath),
+    path.resolve(inputArtifact.modelMatPath)
+  ]);
+  const targets = await listAddonFileTargets(realSourceDir, workspaceDir);
+  for (const target of targets) {
+    if (protectedInputs.has(target)) {
+      throw createHttpError(
+        `Project addon package would overwrite uploaded model/data file: ${path.basename(target)}`,
+        400,
+        "hermes_project_addon_input_conflict"
+      );
+    }
+  }
+  await fs.cp(realSourceDir, workspaceDir, { recursive: true, force: true, errorOnExist: false });
+  return {
+    unitTestProject,
+    addonRoot,
+    sourceDir: realSourceDir,
+    copiedFileCount: targets.length
+  };
+}
+
 function normalizeMaterialFiles(files = [], allowedPaths = []) {
   return (Array.isArray(files) ? files : []).map((file) => {
     const absolutePath = path.resolve(String(file.absolutePath || ""));
@@ -297,6 +390,9 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
     modelSlxPath,
     modelMatPath,
     outputDir,
+    unitTestProject: inputArtifact.unitTestProject && typeof inputArtifact.unitTestProject === "object"
+      ? normalizeUnitTestProject(inputArtifact.unitTestProject)
+      : null,
     skillName: String(inputArtifact.skillName || "simulink-ut-tcsd-generator").trim(),
     expectedOutputPattern: String(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx").trim(),
     modelSlxFileName: inputArtifact.modelSlxFileName || path.basename(modelSlxPath),
@@ -1266,6 +1362,7 @@ export async function createHermesApp() {
       if (stepType === "simulink_ut_tcsd_generate") {
         const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
         const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
+        const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
         const hermesClient = new HermesAgentClient({
           transport: "cli",
           workdir: inputArtifact.workspaceDir
@@ -1276,7 +1373,13 @@ export async function createHermesApp() {
             stepType,
             workdir: inputArtifact.workspaceDir,
             allowedPaths: [inputArtifact.workspaceDir],
-            inputArtifact
+            inputArtifact: {
+              ...inputArtifact,
+              projectAddonCopy: {
+                copiedFileCount: addonCopy.copiedFileCount,
+                unitTestProject: addonCopy.unitTestProject
+              }
+            }
           },
           {}
         );

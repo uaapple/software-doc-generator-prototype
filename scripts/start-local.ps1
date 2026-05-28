@@ -134,6 +134,9 @@ if ((-not $NoHermesAgent) -and ($platformHermesTransport -eq "api")) {
         HERMES_SERVER_REQUEST_TIMEOUT_MS = "0"
         HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS = "3600000"
         HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE = "10000"
+        UNIT_TEST_CASE_PROJECT_ADMIN_CODE = "114301"
+        UNIT_TEST_CASE_DEFAULT_PROJECTS = "01_楚能,02_TMS"
+        UNIT_TEST_CASE_PROJECT_ADDON_ROOT = (Join-Path $projectRoot ".local/project-addons")
         UNIT_TEST_CASE_SKILL_NAME = "simulink-ut-tcsd-generator"
         UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN = "outputs/*_tcsd.xlsx"
       }
@@ -166,6 +169,9 @@ $serverProcess = Start-ProcessWithEnv `
     HERMES_SERVER_REQUEST_TIMEOUT_MS = "0"
     HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS = "3600000"
     HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE = "10000"
+    UNIT_TEST_CASE_PROJECT_ADMIN_CODE = "114301"
+    UNIT_TEST_CASE_DEFAULT_PROJECTS = "01_楚能,02_TMS"
+    UNIT_TEST_CASE_PROJECT_ADDON_ROOT = (Join-Path $projectRoot ".local/project-addons")
     UNIT_TEST_CASE_SKILL_NAME = "simulink-ut-tcsd-generator"
     UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN = "outputs/*_tcsd.xlsx"
   }
