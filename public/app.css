@@ -3106,11 +3106,19 @@ body[data-page-kind="unit-test-case-generation"] .unit-project-actions {
 
 body[data-page-kind="unit-test-case-generation"] .unit-project-actions button {
   width: auto;
-  min-width: 64px;
+  min-width: 82px;
   min-height: 34px;
-  padding: 0 12px;
+  padding: 0 14px;
   border-radius: 8px;
   font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+body[data-page-kind="unit-test-case-generation"] #unit-delete-project-button {
+  color: #fff;
+  background: linear-gradient(135deg, #c74c46, #8a332f);
+  box-shadow: 0 8px 16px rgba(181, 72, 67, 0.18);
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-project-field select {
@@ -3123,6 +3131,25 @@ body[data-page-kind="unit-test-case-generation"] #unit-project-status {
 
 body[data-page-kind="unit-test-case-generation"] #unit-test-form > button {
   margin-top: 16px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-filter {
+  display: grid;
+  gap: 6px;
+  margin: -4px 0 14px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-filter span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-filter select {
+  margin-top: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-task-list {

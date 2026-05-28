@@ -9635,7 +9635,10 @@ const tests = [
       assert.ok(unitScript.includes("data-delete-task-id"));
       assert.ok(unitScript.includes('method: "DELETE"'));
       assert.ok(unitScript.includes("任务已删除，相关文件已清理。"));
+      assert.ok(unitScript.includes("taskProjectFilter"));
+      assert.ok(unitScript.includes("projectId="));
       assert.ok(stylesheet.includes(".unit-task-delete"));
+      assert.ok(stylesheet.includes(".unit-task-filter"));
 
       await withTestServer(async ({ baseUrl }) => {
         const response = await fetch(`${baseUrl}/unit-test-case-generation`);
@@ -9646,6 +9649,10 @@ const tests = [
         assert.ok(html.includes('id="unit-test-form"'));
         assert.ok(html.includes('name="modelSlx"'));
         assert.ok(html.includes('name="modelMat"'));
+        assert.ok(html.includes('name="unitTestProjectId"'));
+        assert.ok(html.includes('id="unit-add-project-button"'));
+        assert.ok(html.includes('id="unit-delete-project-button"'));
+        assert.ok(html.includes('id="unit-task-project-filter"'));
         assert.ok(html.includes('id="unit-start-button"'));
         assert.ok(html.includes('/unit-test-case-generation.js'));
       });
@@ -9703,6 +9710,17 @@ const tests = [
           const listBody = await listResponse.json();
           assert.ok(listBody.tasks.some((task) => task.id === validBody.task.id));
 
+          const filteredListResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks?projectId=01`);
+          assert.equal(filteredListResponse.status, 200);
+          const filteredListBody = await filteredListResponse.json();
+          assert.ok(filteredListBody.tasks.some((task) => task.id === validBody.task.id));
+          assert.ok(filteredListBody.tasks.every((task) => task.unitTestProject.id === "01"));
+
+          const invalidFilterResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks?projectId=01_%E6%A5%9A%E8%83%BD`);
+          assert.equal(invalidFilterResponse.status, 400);
+          const invalidFilterBody = await invalidFilterResponse.json();
+          assert.equal(invalidFilterBody.code, "unit_test_case_invalid_project_id");
+
           const taskDir = path.join(config.unitTestCase.taskStoreDir, validBody.task.id);
           await fs.access(taskDir);
 
@@ -9718,6 +9736,57 @@ const tests = [
           const deletedDetailResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks/${validBody.task.id}`);
           assert.equal(deletedDetailResponse.status, 404);
         });
+      });
+    }
+  },
+  {
+    name: "UnitTestCaseGenerationService assigns legacy tasks to project 01 and filters by project",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new UnitTestCaseGenerationService();
+        await service.saveTask({
+          id: "legacy-task",
+          type: "unit_test_case_generation",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          inputs: {
+            modelSlx: { originalName: "Legacy.slx" },
+            modelMat: { originalName: "Legacy.mat" }
+          },
+          workspace: {},
+          hermes: {},
+          artifacts: []
+        });
+        await service.saveTask({
+          id: "project-02-task",
+          type: "unit_test_case_generation",
+          status: "completed",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          unitTestProject: { id: "02", name: "TMS", label: "02_TMS" },
+          inputs: {
+            modelSlx: { originalName: "Tms.slx" },
+            modelMat: { originalName: "Tms.mat" }
+          },
+          workspace: {},
+          hermes: {},
+          artifacts: []
+        });
+
+        const legacyTask = await service.getTask("legacy-task");
+        assert.equal(legacyTask.unitTestProject.id, "01");
+        assert.equal(legacyTask.unitTestProject.label, "01_楚能");
+
+        const project01Tasks = await service.listTasks({ projectId: "01" });
+        assert.deepEqual(project01Tasks.map((task) => task.id), ["legacy-task"]);
+
+        const project02Tasks = await service.listTasks({ projectId: "02" });
+        assert.deepEqual(project02Tasks.map((task) => task.id), ["project-02-task"]);
+
+        const allTasks = await service.listTasks();
+        assert.deepEqual(allTasks.map((task) => task.id), ["project-02-task", "legacy-task"]);
+        await assert.rejects(() => service.listTasks({ projectId: "01_楚能" }), /项目编号非法/);
       });
     }
   },

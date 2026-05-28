@@ -372,9 +372,11 @@ export async function createApp() {
     }
   });
 
-  app.get("/api/unit-test-case-generation/tasks", async (_req, res, next) => {
+  app.get("/api/unit-test-case-generation/tasks", async (req, res, next) => {
     try {
-      const tasks = await unitTestCaseGenerationService.listTasks();
+      const tasks = await unitTestCaseGenerationService.listTasks({
+        projectId: req.query.projectId
+      });
       res.json({ tasks });
     } catch (error) {
       next(error);
