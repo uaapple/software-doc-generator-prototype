@@ -3035,6 +3035,25 @@ body[data-page-kind="unit-test-case-generation"] #unit-test-form > button {
   margin-top: 16px;
 }
 
+body[data-page-kind="unit-test-case-generation"] .unit-task-filter {
+  display: grid;
+  gap: 6px;
+  margin: -4px 0 14px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-filter span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-task-filter select {
+  margin-top: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
 body[data-page-kind="unit-test-case-generation"] .unit-task-list {
   display: grid;
   gap: 10px;

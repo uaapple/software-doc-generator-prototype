@@ -51,6 +51,7 @@ function normalizeProjectId(value = "") {
 }
 
 function normalizeProjectRecord(project = {}) {
+  project ||= {};
   const id = normalizeProjectId(project.id);
   const name = normalizeProjectName(project.name || String(project.label || "").replace(/^\d{2,}_/, ""));
   if (!PROJECT_ID_PATTERN.test(id) || !name) {
@@ -105,6 +106,17 @@ function buildProjectRegistry(projects = []) {
 function publicProject(project = {}) {
   const normalized = normalizeProjectRecord(project);
   return normalized ? { ...normalized } : null;
+}
+
+function defaultLegacyProject() {
+  return (
+    parseDefaultProjects(unitTestCaseConfig().defaultProjects).find((project) => project.id === "01") ||
+    { id: "01", name: "楚能", label: "01_楚能" }
+  );
+}
+
+function normalizeTaskProjectSnapshot(project = null) {
+  return publicProject(project) || defaultLegacyProject();
 }
 
 function assertProjectAdminCode(authCode = "") {
@@ -300,6 +312,7 @@ function taskFilePath(taskDir = "") {
 
 function publicTask(task = {}) {
   const clone = structuredClone(task);
+  clone.unitTestProject = normalizeTaskProjectSnapshot(clone.unitTestProject);
   if (clone.workspace) {
     clone.workspace = {
       directory: clone.workspace.directory,
@@ -449,8 +462,12 @@ export class UnitTestCaseGenerationService {
     return { deleted: true, projectId: id };
   }
 
-  async listTasks() {
+  async listTasks(options = {}) {
     await this.ensureDirs();
+    const filterProjectId = normalizeProjectId(options.projectId || "");
+    if (filterProjectId && !PROJECT_ID_PATTERN.test(filterProjectId)) {
+      throw createHttpError("项目编号非法。", 400, "unit_test_case_invalid_project_id");
+    }
     const entries = await fs.readdir(this.storeDir, { withFileTypes: true }).catch(() => []);
     const tasks = [];
     for (const entry of entries) {
@@ -459,7 +476,10 @@ export class UnitTestCaseGenerationService {
       }
       const task = await readJson(taskFilePath(path.join(this.storeDir, entry.name)), null);
       if (task?.id) {
-        tasks.push(publicTask(task));
+        const publicRecord = publicTask(task);
+        if (!filterProjectId || publicRecord.unitTestProject?.id === filterProjectId) {
+          tasks.push(publicRecord);
+        }
       }
     }
     return tasks.sort((a, b) => Date.parse(b.updatedAt || b.createdAt || "") - Date.parse(a.updatedAt || a.createdAt || ""));
@@ -717,7 +737,7 @@ export class UnitTestCaseGenerationService {
         modelSlxPath,
         modelMatPath,
         outputDir,
-        unitTestProject: task.unitTestProject || null,
+        unitTestProject: normalizeTaskProjectSnapshot(task.unitTestProject),
         skillName: cfg.skillName,
         expectedOutputPattern: cfg.expectedOutputPattern,
         localPlatformWorkspaceDir: task.workspace?.directory || "",

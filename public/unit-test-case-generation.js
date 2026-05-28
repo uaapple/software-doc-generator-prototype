@@ -2,6 +2,7 @@ const state = {
   tasks: [],
   projects: [],
   selectedTaskId: new URLSearchParams(window.location.search).get("taskId") || "",
+  taskProjectFilterId: new URLSearchParams(window.location.search).get("projectId") || "",
   polling: null,
   submitting: false,
   loadingProjects: false,
@@ -20,6 +21,7 @@ const elements = {
   startButton: document.querySelector("#unit-start-button"),
   formStatus: document.querySelector("#unit-form-status"),
   projectStatus: document.querySelector("#unit-project-status"),
+  taskProjectFilter: document.querySelector("#unit-task-project-filter"),
   taskList: document.querySelector("#unit-task-list"),
   taskDetail: document.querySelector("#unit-task-detail"),
   detailSubtitle: document.querySelector("#unit-task-detail-subtitle")
@@ -116,6 +118,15 @@ function normalizeProject(project = {}) {
   return { id, name, label };
 }
 
+function defaultTaskProject() {
+  return state.projects.find((project) => project.id === "01") || { id: "01", name: "楚能", label: "01_楚能" };
+}
+
+function normalizeTaskProject(project = null) {
+  const normalized = normalizeProject(project || {});
+  return normalized.id ? normalized : defaultTaskProject();
+}
+
 function getSelectedProject() {
   const selectedId = elements.projectSelect?.value || "";
   return state.projects.find((project) => project.id === selectedId) || null;
@@ -135,6 +146,22 @@ function syncProjectControls() {
   if (elements.startButton) {
     elements.startButton.disabled = state.submitting || !hasProjects;
   }
+  if (elements.taskProjectFilter) {
+    elements.taskProjectFilter.disabled = state.loadingProjects;
+  }
+}
+
+function renderTaskProjectFilter(preferredProjectId = "") {
+  if (!elements.taskProjectFilter) return;
+  const currentValue = preferredProjectId || state.taskProjectFilterId || elements.taskProjectFilter.value || "";
+  const options = [
+    '<option value="">全部项目</option>',
+    ...state.projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.label)}</option>`)
+  ];
+  elements.taskProjectFilter.innerHTML = options.join("");
+  const nextValue = state.projects.some((project) => project.id === currentValue) ? currentValue : "";
+  elements.taskProjectFilter.value = nextValue;
+  state.taskProjectFilterId = nextValue;
 }
 
 function renderProjects(preferredProjectId = "") {
@@ -155,6 +182,7 @@ function renderProjects(preferredProjectId = "") {
       : state.projects[0]?.id || "";
     elements.projectSelect.value = nextValue;
   }
+  renderTaskProjectFilter();
   syncProjectControls();
 }
 
@@ -293,8 +321,21 @@ function updateUrlTaskId(taskId = "") {
   window.history.replaceState({}, "", url);
 }
 
+function updateUrlProjectFilter(projectId = "") {
+  const url = new URL(window.location.href);
+  if (projectId) {
+    url.searchParams.set("projectId", projectId);
+  } else {
+    url.searchParams.delete("projectId");
+  }
+  window.history.replaceState({}, "", url);
+}
+
 async function loadTasks(options = {}) {
-  const body = await requestJson("/api/unit-test-case-generation/tasks");
+  const query = state.taskProjectFilterId
+    ? `?projectId=${encodeURIComponent(state.taskProjectFilterId)}`
+    : "";
+  const body = await requestJson(`/api/unit-test-case-generation/tasks${query}`);
   state.tasks = Array.isArray(body.tasks) ? body.tasks : [];
   if (!options.preserveSelection && !state.selectedTaskId && state.tasks.length) {
     state.selectedTaskId = state.tasks[0].id;
@@ -338,7 +379,9 @@ async function loadSelectedTask() {
 
 function renderTaskList() {
   if (!state.tasks.length) {
-    elements.taskList.innerHTML = '<div class="empty-state">还没有单元测试用例生成任务。</div>';
+    elements.taskList.innerHTML = state.taskProjectFilterId
+      ? '<div class="empty-state">该项目下暂无单元测试用例生成任务。</div>'
+      : '<div class="empty-state">还没有单元测试用例生成任务。</div>';
     return;
   }
   elements.taskList.innerHTML = state.tasks
@@ -346,7 +389,7 @@ function renderTaskList() {
       const selected = task.id === state.selectedTaskId ? " selected" : "";
       const progress = task.progress?.percent ?? (task.status === "completed" ? 100 : 0);
       const taskName = task.inputs?.modelSlx?.originalName || "Simulink 模型";
-      const projectLabel = task.unitTestProject?.label || "";
+      const projectLabel = normalizeTaskProject(task.unitTestProject).label;
       const deleting = state.deletingTaskIds.has(task.id);
       return `
         <div class="unit-task-card${selected}" data-task-card-id="${escapeHtml(task.id)}">
@@ -421,7 +464,7 @@ function renderTaskDetail(task) {
     elements.taskDetail.innerHTML = '<div class="empty-state">暂无选中的生成任务。</div>';
     return;
   }
-  const projectLabel = task.unitTestProject?.label || "";
+  const projectLabel = normalizeTaskProject(task.unitTestProject).label;
   elements.detailSubtitle.textContent = [
     task.inputs?.modelSlx?.originalName || "Simulink 模型",
     projectLabel,
@@ -560,6 +603,17 @@ function stopPolling() {
 elements.form?.addEventListener("submit", submitTask);
 elements.addProjectButton?.addEventListener("click", addProject);
 elements.deleteProjectButton?.addEventListener("click", deleteProject);
+elements.taskProjectFilter?.addEventListener("change", async () => {
+  state.taskProjectFilterId = elements.taskProjectFilter.value || "";
+  updateUrlProjectFilter(state.taskProjectFilterId);
+  try {
+    await loadTasks();
+    await loadSelectedTask();
+  } catch (error) {
+    elements.taskList.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "任务列表加载失败。")}</div>`;
+    renderTaskDetail(null);
+  }
+});
 elements.taskList?.addEventListener("click", (event) => {
   const deleteButton = event.target.closest("[data-delete-task-id]");
   if (deleteButton) {
