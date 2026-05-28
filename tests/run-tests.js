@@ -68,6 +68,10 @@ async function withTempConfig(run) {
     unitTestCase: {
       taskStoreDir: path.join(tempDir, "data", "unit-test-case-generation", "tasks"),
       uploadTempDir: path.join(tempDir, "data", "unit-test-case-generation", "_incoming"),
+      projectRegistryPath: path.join(tempDir, "data", "unit-test-case-generation", "projects.json"),
+      projectAdminCode: "114301",
+      defaultProjects: "01_楚能,02_TMS",
+      projectAddonRoot: path.join(tempDir, "project-addons"),
       skillName: "simulink-ut-tcsd-generator",
       expectedOutputPattern: "outputs/*_tcsd.xlsx",
       agentWorkspaceRoot: ""
@@ -2987,6 +2991,7 @@ const tests = [
             modelSlxPath: path.join(workspaceDir, "Demo.slx"),
             modelMatPath: path.join(workspaceDir, "Demo.mat"),
             outputDir,
+            unitTestProject: { id: "01", name: "楚能", label: "01_楚能" },
             skillName: "simulink-ut-tcsd-generator",
             expectedOutputPattern: "outputs/*_tcsd.xlsx"
           }
@@ -3000,9 +3005,110 @@ const tests = [
         assert.match(invocations[0].args[2], /Demo\.slx/);
         assert.match(invocations[0].args[2], /Demo\.mat/);
         assert.match(invocations[0].args[2], /outputs\/\*_tcsd\.xlsx/);
+        assert.match(invocations[0].args[2], /unitTestProject/);
+        assert.match(invocations[0].args[2], /01_楚能/);
+        assert.match(invocations[0].args[2], /addon package into `workspaceDir`/);
         assert.match(invocations[0].args[2], /MATLAB Cleanup Contract/);
         assert.match(invocations[0].args[2], /build_tcsd_from_json\.py/);
+        assert.match(invocations[0].args[2], /Artifact-first checkpointing is mandatory/);
+        assert.match(invocations[0].args[2], /before extracting cases, running `simulate_tcsd_cases`/);
+        assert.match(invocations[0].args[2], /timed out after 600\.0s/);
+        assert.match(invocations[0].args[2], /Simulation-backed expected-output backfill is required/);
+        assert.match(invocations[0].args[2], /do not mark the task completed/);
+        assert.match(invocations[0].args[2], /contains at least one `expValue\(\.\.\.\)` expectation/);
         assert.equal(result.artifact.outputFiles[0].relativePath, "outputs/Demo_Test0001_tcsd.xlsx");
+      });
+    }
+  },
+  {
+    name: "Hermes API copies selected unit-test project addon before running CLI",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(addonDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(addonDir, "init_Global.m"), "% addon marker", "utf8");
+
+        const commandPath = path.join(tempDir, "fake-hermes-cli.js");
+        await fs.writeFile(
+          commandPath,
+          [
+            "#!/usr/bin/env node",
+            "const fs = require('fs');",
+            "if (!fs.existsSync('init_Global.m')) {",
+            "  console.error('addon marker missing');",
+            "  process.exit(3);",
+            "}",
+            "console.log(JSON.stringify({ status: 'completed', summary: 'addon copied', outputFiles: [], warnings: [] }));"
+          ].join("\n"),
+          "utf8"
+        );
+        await fs.chmod(commandPath, 0o755);
+        config.hermes.command = commandPath;
+        config.hermes.transport = "cli";
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_ut_tcsd_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 200);
+          const body = await response.json();
+          assert.equal(body.status, "succeeded");
+          assert.equal(body.artifact.summary, "addon copied");
+          assert.equal(await fs.readFile(path.join(workspaceDir, "init_Global.m"), "utf8"), "% addon marker");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects unit-test project addons that overwrite uploaded model files",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(addonDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(addonDir, "Demo.slx"), "conflict", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_ut_tcsd_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_input_conflict");
+        });
       });
     }
   },
@@ -9308,8 +9414,54 @@ const tests = [
         assert.ok(html.includes('id="unit-test-form"'));
         assert.ok(html.includes('name="modelSlx"'));
         assert.ok(html.includes('name="modelMat"'));
+        assert.ok(html.includes('name="unitTestProjectId"'));
+        assert.ok(html.includes('id="unit-add-project-button"'));
+        assert.ok(html.includes('id="unit-delete-project-button"'));
         assert.ok(html.includes('id="unit-start-button"'));
         assert.ok(html.includes('/unit-test-case-generation.js'));
+      });
+    }
+  },
+  {
+    name: "Unit test case generation project API manages numbered display projects",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl }) => {
+          const listResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/projects`);
+          assert.equal(listResponse.status, 200);
+          const listBody = await listResponse.json();
+          assert.deepEqual(
+            listBody.projects.map((project) => project.label),
+            ["01_楚能", "02_TMS"]
+          );
+
+          const deniedResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/projects`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "VCU", authCode: "bad" })
+          });
+          assert.equal(deniedResponse.status, 403);
+
+          const createResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/projects`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "VCU", authCode: "114301" })
+          });
+          assert.equal(createResponse.status, 201);
+          const createBody = await createResponse.json();
+          assert.equal(createBody.project.id, "03");
+          assert.equal(createBody.project.label, "03_VCU");
+
+          const deleteResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/projects/03`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ authCode: "114301" })
+          });
+          assert.equal(deleteResponse.status, 200);
+          const deleteBody = await deleteResponse.json();
+          assert.equal(deleteBody.deleted, true);
+          assert.equal(deleteBody.projectId, "03");
+        });
       });
     }
   },
@@ -9331,6 +9483,7 @@ const tests = [
           const wrongExt = new FormData();
           wrongExt.append("modelSlx", new Blob(["txt"]), "Demo.txt");
           wrongExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongExt.append("unitTestProjectId", "01");
           const wrongExtResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
             method: "POST",
             body: wrongExt
@@ -9339,9 +9492,21 @@ const tests = [
           const wrongExtBody = await wrongExtResponse.json();
           assert.equal(wrongExtBody.code, "unit_test_case_invalid_slx_extension");
 
+          const missingProject = new FormData();
+          missingProject.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          missingProject.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          const missingProjectResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: missingProject
+          });
+          assert.equal(missingProjectResponse.status, 400);
+          const missingProjectBody = await missingProjectResponse.json();
+          assert.equal(missingProjectBody.code, "unit_test_case_invalid_project_id");
+
           const valid = new FormData();
           valid.append("modelSlx", new Blob(["slx"]), "Demo.slx");
           valid.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          valid.append("unitTestProjectId", "01");
           const validResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
             method: "POST",
             body: valid
@@ -9356,6 +9521,8 @@ const tests = [
           assert.equal(validBody.task.inputs.modelMat.workspaceName, "Demo.mat");
           assert.equal(validBody.task.inputs.modelSlx.workspaceRelativePath, "Demo.slx");
           assert.equal(validBody.task.inputs.modelMat.workspaceRelativePath, "Demo.mat");
+          assert.equal(validBody.task.unitTestProject.id, "01");
+          assert.equal(validBody.task.unitTestProject.label, "01_楚能");
 
           const listResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`);
           assert.equal(listResponse.status, 200);
@@ -9395,7 +9562,23 @@ const tests = [
               });
               const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
               await fs.mkdir(path.dirname(outputPath), { recursive: true });
-              await fs.writeFile(outputPath, "xlsx");
+              await createMinimalXlsx(outputPath, {
+                TCSD: [
+                  ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action", "Work Status", "Report Links"],
+                  ["TG_001", "Group", "TestGroup", "", "", "", "", "", ""],
+                  [
+                    "TC_001",
+                    "Case",
+                    "Test",
+                    "REQ-1",
+                    "测试方法：等价类。",
+                    "InputA = 0;",
+                    "[+0.1s]\nOutA = expValue(1);\n[+0.1s]",
+                    "reviewed",
+                    ""
+                  ]
+                ]
+              });
               return {
                 status: "succeeded",
                 stepType: "simulink_ut_tcsd_generate",
@@ -9410,10 +9593,13 @@ const tests = [
             }
           }
         });
-        const task = await service.createTask({
-          modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
-          modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
-        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
         const created = await service.readTask(task.id);
         assert.equal(created.inputs.modelSlx.workspaceName, "Demo.slx");
         assert.equal(created.inputs.modelMat.workspaceName, "Demo.mat");
@@ -9426,6 +9612,7 @@ const tests = [
         assert.equal(completed.status, "completed");
         assert.equal(completed.artifacts.length, 1);
         assert.equal(completed.artifacts[0].fileName, "Demo_Test0001_tcsd.xlsx");
+        assert.equal(completed.artifacts[0].expectedValueCount, 1);
         const artifact = await service.getArtifact(task.id, completed.artifacts[0].id);
         assert.equal(path.basename(artifact.absolutePath), "Demo_Test0001_tcsd.xlsx");
 
@@ -9454,6 +9641,50 @@ const tests = [
     }
   },
   {
+    name: "UnitTestCaseGenerationService rejects TCSD workbooks without expValue expectations",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const service = new UnitTestCaseGenerationService({
+          hermesAgentClient: {
+            async executeStep(payload) {
+              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
+              await fs.mkdir(path.dirname(outputPath), { recursive: true });
+              await createMinimalXlsx(outputPath, {
+                TCSD: [
+                  ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action", "Work Status", "Report Links"],
+                  ["TG_001", "Group", "TestGroup", "", "", "", "", "", ""],
+                  ["TC_001", "Case", "Test", "REQ-1", "测试方法：等价类。", "InputA = 0;", "[+0.1s]\nInputA = 1;\n[+0.1s]", "reviewed", ""]
+                ]
+              });
+              return {
+                status: "succeeded",
+                stepType: "simulink_ut_tcsd_generate",
+                artifact: {
+                  status: "completed",
+                  summary: "生成了没有期望值的 workbook。",
+                  outputFiles: [{ relativePath: "outputs/Demo_Test0001_tcsd.xlsx" }]
+                },
+                logs: []
+              };
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
+
+        await assert.rejects(() => service.runTask(task.id), /未检测到 expValue/);
+        const stored = await service.readTask(task.id);
+        assert.equal(stored.status, "failed");
+        assert.equal(stored.hermes.errorCode, "unit_test_case_expected_values_missing");
+      });
+    }
+  },
+  {
     name: "UnitTestCaseGenerationService records Hermes failures",
     run: async () => {
       await withTempConfig(async (tempDir) => {
@@ -9466,10 +9697,13 @@ const tests = [
             }
           }
         });
-        const task = await service.createTask({
-          modelSlx: [await createMockUploadFile(tempDir, "Fail.slx", "slx")],
-          modelMat: [await createMockUploadFile(tempDir, "Fail.mat", "mat")]
-        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Fail.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Fail.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
         await assert.rejects(() => service.runTask(task.id), /MATLAB unavailable/);
         const failed = await service.getTask(task.id);
         assert.equal(failed.status, "failed");
