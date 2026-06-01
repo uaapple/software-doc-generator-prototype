@@ -47,7 +47,8 @@ Collect:
 
 - Root input names and port order.
 - Root output names and port order.
-- Data types from `CornexCsc.Signal.DataType` where available.
+- Data types from `CornexCsc.Signal.DataType` where available for documentation and initial stimulus design.
+- Compiled root Inport data types and dimensions for simulation. This is the authoritative source for Dataset external-input typing. Compile or update the model after attaching the simulation-only config, then query each root Inport's output port for `CompiledPortDataType` and `CompiledPortDimensions`. Do not cast by signal name, Boolean-looking values, or MAT object type alone.
 - Subsystem hierarchy.
 - Parameters from block masks, descriptions, `CornexCsc.Parameter.Value`, lookup tables, constants, and data dictionaries.
 - Decision-producing blocks and their required outcomes: Switch true/false, RelationalOperator true/false, Logical Operator input truth vectors, each `MinMax` winning input, each `MultiPortSwitch` selector/default, each Saturate low/pass/high region.
@@ -55,7 +56,9 @@ Collect:
 
 Before drafting TCSD rows, turn these facts into a coverage-obligation matrix with `block path/SID`, `coverage class`, `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`. This matrix is the working checklist; Test names and comments are not coverage evidence.
 
-Do not assume `.mat` variables are valid until `CornexCsc.Signal` and `CornexCsc.Parameter` resolve to classes.
+Do not assume `.mat` variables are valid until `CornexCsc.Signal` and `CornexCsc.Parameter` resolve to classes. Also do not assume those objects match the root Inport compiled contract; for split models the same MAT may contain a `boolean` or `single` signal object while the root Inport expects `double`, or vice versa.
+
+When reading parameters, never call `double(obj)` on a `CornexCsc.Parameter` / `Simulink.Parameter` object directly. Read `obj.Value` first, and only convert the numeric `Value` when needed. If a block, root model, or Outport does not support a queried parameter such as `BlockType` or `DataLogging`, treat that fact as nonfatal metadata absence and move on; do not retry the same unsupported query until the Hermes request reaches its outer timeout.
 
 ### Static SLX Inspection
 
@@ -152,6 +155,18 @@ When repairing coverage after a reviewed workbook already exists:
 ## Simulation Backfill
 
 Use simulation to compute expected values for top-level outputs only. If internal signals are useful for reasoning, keep them in notes, not as TCSD expectations.
+
+For Dataset external input, build the Dataset from compiled root Inport metadata:
+
+1. Load support files and MAT data.
+2. Attach the in-memory `CodexSimOnlyCfg` when needed.
+3. Compile/update the model and query each root Inport's `CompiledPortDataType` and `CompiledPortDimensions`.
+4. Cast each timeseries independently to the compiled type (`single`, `double`, `boolean`, integer, enum fallback, etc.).
+5. Set `LoadExternalInput=on` and pass the Dataset through `SimulationInput.setExternalInput`.
+
+Do not use a global retry sequence that changes all Boolean-looking signals from `logical` to `single` or `double`. Mixed root-port models need per-port typing in the first trusted simulation attempt. A log containing `LoadExternalInput: off` or `Parameter 'ExternalInput' is ignored when 'LoadExternalInput' is off` means the simulation run did not use the TCSD stimulus and must be fixed before backfill.
+
+If root Outport input lines are blank, retrieve `yout` by root Outport order as a fallback. This prevents successful numeric simulations from producing empty or unmapped `expValue()` rows. Avoid renaming model lines solely for backfill: if the new line name matches a non-`Simulink.Signal` variable in the base workspace, Simulink can fail during signal-object resolution.
 
 `expValue(var1,duration,offset)` uses time-window controls: `duration` is the check duration and `offset` is the offset from the current interval. These are not numeric tolerance arguments.
 

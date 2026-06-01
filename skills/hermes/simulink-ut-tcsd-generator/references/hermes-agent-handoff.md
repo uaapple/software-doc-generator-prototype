@@ -78,6 +78,9 @@ The skill should inspect the current workspace and load the actual support files
 - If any helper calls `restoredefaultpath`, add the SATK root and `simulink/tools` tree back to the MATLAB path before later direct MCP calls. The bundled `scripts/setup_ut_support.m` does this automatically, and also restores the MATLAB MCP Core add-on path when it can find it; keep that behavior in copied model-specific helpers.
 - If the model’s original config references missing generated-code headers such as `rte_bsw_analog.h`, attach an in-memory `CodexSimOnlyCfg` and simulate with that. Do not edit the source `.slx`.
 - Load workspace support libraries required by the target model before the model when they are present or referenced. Do not assume a fixed library name such as `ITKLib.slx`.
+- For simulation/backfill, root Inport compiled metadata is authoritative. After loading support files and attaching any simulation-only config, compile/update the model and query each root Inport's `CompiledPortDataType` and `CompiledPortDimensions`. Build Dataset timeseries per port from those values. Do not infer external-input types from `CornexCsc.Signal` / `Simulink.Signal` objects alone, do not rely on signal-name prefixes such as `b*`, and do not convert all Boolean-looking inputs to `single`.
+- Explicitly enable external input loading for simulation. If logs show `LoadExternalInput: off` or `Parameter 'ExternalInput' is ignored when 'LoadExternalInput' is off`, the run did not exercise the TCSD stimulus and must be repaired immediately.
+- When reading calibration objects, use `.Value` on `CornexCsc.Parameter` / `Simulink.Parameter`; `double(parameterObject)` is not a valid general conversion. Unsupported metadata queries such as `BlockType` on a block diagram or `DataLogging` on an Outport are nonfatal and should be skipped after one failure, not retried until the outer request times out.
 - Treat MATLAB as a reusable long-lived process unless production explicitly uses `SATK_MATLAB_SESSION_MODE=new`. If a model or library required by this task is already loaded from a path outside the current workdir, close that loaded instance before loading the current workdir copy.
 - Kill stale task-owned `matlab-mcp-core-server` processes after SATK calls if they remain running and block later calls.
 
@@ -102,12 +105,14 @@ If the post-workbook simulation/backfill phase hits any MATLAB/MCP/SATK timeout 
 4. Load support paths from the workdir, run project initialization scripts only when present or explicitly identified, load the MAT, load any workspace libraries/data dictionaries referenced by the target model, then load the model.
 5. Verify `which model_read` and `which model_overview` are nonempty after MATLAB setup. If not, restore the SATK tools path before deriving model facts.
 6. Derive root Inports and Outports from the model, including port order, data type, and dimensions. Do not guess.
+   For simulation data type and width, use compiled root Inport metadata, not only MAT object metadata.
 7. Inspect hierarchy and decision-producing blocks: Switch, RelationalOperator, Logical Operator, MinMax, MultiPortSwitch, Saturate, Lookup, Safe_Divide, Delay, Latch, StopWatch, LowPass, GradientLimiter.
 8. Build a coverage-obligation matrix before writing TCSD rows. Include `block path/SID`, `coverage class` (`Condition`, `Decision`, `MCDC`), `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`.
 9. Create a JSON spec or workbook draft, then build the final workbook from `assets/templates/tcsd_template.xlsx`.
 10. Validate workbook existence, sheet shape, self-contained Test initialization, final action delays, and Excel zip integrity before starting simulation/backfill.
 11. Extract TCSD actions to simulation JSON.
 12. Run one bounded simulation pass and export results.
+    Use per-port compiled Dataset typing, set `LoadExternalInput=on`, and map outputs by root Outport names or port order if logged line names are blank. Prefer port-order fallback over renaming model lines, because line names that match non-`Simulink.Signal` base variables can cause signal-object resolution errors.
 13. Backfill stable top-level output expectations when simulation succeeds within the time budget.
 14. Validate workbook shape, `expValue` left-hand names, vector-output omissions, and Excel zip integrity.
 15. Run the MATLAB cleanup contract before returning the final artifact JSON.

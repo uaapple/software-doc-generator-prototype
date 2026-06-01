@@ -1,15 +1,9 @@
 function simulate_tcsd_cases(rootDir, modelName, matFile, caseJson, resultJson)
 modelName = char(string(modelName));
 matFile = char(string(matFile));
+cleanupObj = onCleanup(@() cleanup_task_models({modelName, 'ITKLib'}));
 setup_ut_support(rootDir);
-try
-    bdclose(modelName);
-catch
-end
-try
-    bdclose('ITKLib');
-catch
-end
+cleanup_task_models({modelName, 'ITKLib'});
 load_mat_to_base(fullfile(rootDir, matFile));
 if exist(fullfile(rootDir, 'ITKLib.slx'), 'file')
     load_system(fullfile(rootDir, 'ITKLib.slx'));
@@ -38,20 +32,7 @@ outputBlocks = find_system(modelName, 'SearchDepth', 1, 'BlockType', 'Outport');
 outputBlocks = outputBlocks(outputOrder);
 outputNames = cellfun(@(p) get_param(p, 'Name'), outputBlocks, 'UniformOutput', false);
 
-inputTypes = struct();
-inputDims = struct();
-for i = 1:numel(inputNames)
-    dtype = 'single';
-    dims = 1;
-    try
-        obj = evalin('base', inputNames{i});
-        dtype = obj.DataType;
-        dims = double(obj.Dimensions);
-    catch
-    end
-    inputTypes.(inputNames{i}) = dtype;
-    inputDims.(inputNames{i}) = max(1, prod(dims));
-end
+[inputTypes, inputDims] = compiled_input_metadata(modelName, inputBlocks, inputNames);
 
 spec = jsondecode(fileread(caseJson));
 results = struct('row', {}, 'test_id', {}, 'steps', {});
@@ -126,6 +107,7 @@ payload.tests = results;
 fid = fopen(resultJson, 'w');
 fprintf(fid, '%s', jsonencode(payload, PrettyPrint=true));
 fclose(fid);
+cleanup_task_models({modelName, 'ITKLib'});
 end
 
 function stepResults = run_segment(modelName, matFile, rootDir, inputNames, inputTypes, inputDims, outputNames, initialValues, paramOverrides, steps)
@@ -199,8 +181,9 @@ for k = 1:numel(inputNames)
 end
 
 in = Simulink.SimulationInput(modelName);
-in = in.setModelParameter('StopTime', num2str(stopTime), 'SolverType', 'Fixed-step', 'Solver', 'FixedStepDiscrete', 'FixedStep', num2str(dt), 'SaveOutput', 'on', 'ReturnWorkspaceOutputs', 'on');
-in = in.setExternalInput(ds);
+externalInputVar = 'tc_sd_external_input_ds';
+in = in.setVariable(externalInputVar, ds);
+in = in.setModelParameter('StopTime', num2str(stopTime), 'SolverType', 'Fixed-step', 'Solver', 'FixedStepDiscrete', 'FixedStep', num2str(dt), 'SaveOutput', 'on', 'ReturnWorkspaceOutputs', 'on', 'LoadExternalInput', 'on', 'ExternalInput', externalInputVar);
 try
     out = sim(in);
 catch ME
@@ -217,23 +200,24 @@ for k = 1:numel(steps)
     stable = struct();
     for j = 1:numel(outputNames)
         signalName = outputNames{j};
-        sig = out.yout.get(signalName);
-        vals = sig.Values;
+        vals = get_output_values(out, signalName, j);
         [~, sampleIndex] = min(abs(vals.Time - eventTimes(k)));
         data = vals.Data;
         sampleValue = sample_output_value(data, vals.Time, sampleIndex);
-        outputs.(signalName) = double(sampleValue);
-        if k < numel(steps)
-            intervalMask = vals.Time >= (eventTimes(k) - (dt / 100)) & vals.Time < (eventTimes(k + 1) - (dt / 100));
-        else
-            intervalMask = abs(vals.Time - eventTimes(k)) <= (dt / 100);
-        end
-        intervalData = interval_output_data(data, vals.Time, intervalMask);
-        if isempty(intervalData)
-            stable.(signalName) = true;
-        else
-            intervalData = double(intervalData(:));
-            stable.(signalName) = (max(intervalData) - min(intervalData)) <= stability_tolerance(signalName);
+        if isscalar(sampleValue)
+            outputs.(signalName) = double(sampleValue);
+            if k < numel(steps)
+                intervalMask = vals.Time >= (eventTimes(k) - (dt / 100)) & vals.Time < (eventTimes(k + 1) - (dt / 100));
+            else
+                intervalMask = abs(vals.Time - eventTimes(k)) <= (dt / 100);
+            end
+            intervalData = interval_output_data(data, vals.Time, intervalMask);
+            if isempty(intervalData)
+                stable.(signalName) = true;
+            else
+                intervalData = double(intervalData(:));
+                stable.(signalName) = (max(intervalData) - min(intervalData)) <= stability_tolerance(signalName);
+            end
         end
     end
     stepResults(k).index = steps(k).index;
@@ -243,13 +227,101 @@ for k = 1:numel(steps)
 end
 end
 
+function [inputTypes, inputDims] = compiled_input_metadata(modelName, inputBlocks, inputNames)
+inputTypes = struct();
+inputDims = struct();
+for i = 1:numel(inputNames)
+    inputTypes.(inputNames{i}) = 'single';
+    inputDims.(inputNames{i}) = 1;
+end
+
+compiled = false;
+try
+    feval(modelName, [], [], [], 'compile');
+    compiled = true;
+    cleanupObj = onCleanup(@() feval(modelName, [], [], [], 'term'));
+    for i = 1:numel(inputNames)
+        portHandles = get_param(inputBlocks{i}, 'PortHandles');
+        dtype = get_param(portHandles.Outport, 'CompiledPortDataType');
+        dims = get_param(portHandles.Outport, 'CompiledPortDimensions');
+        inputTypes.(inputNames{i}) = char(string(dtype));
+        inputDims.(inputNames{i}) = compiled_width(dims);
+    end
+catch
+    for i = 1:numel(inputNames)
+        [dtype, width] = workspace_input_metadata(inputNames{i});
+        inputTypes.(inputNames{i}) = dtype;
+        inputDims.(inputNames{i}) = width;
+    end
+end
+if compiled
+    clear cleanupObj;
+end
+end
+
+function width = compiled_width(dims)
+dims = double(dims);
+if isempty(dims)
+    width = 1;
+elseif isscalar(dims)
+    width = max(1, dims(1));
+elseif numel(dims) >= 2
+    width = max(1, prod(dims(2:end)));
+else
+    width = 1;
+end
+end
+
+function [dtype, width] = workspace_input_metadata(inputName)
+dtype = 'single';
+width = 1;
+try
+    obj = evalin('base', inputName);
+    if isprop(obj, 'DataType') && ~isempty(obj.DataType)
+        dtype = char(string(obj.DataType));
+    end
+    if isprop(obj, 'Dimensions')
+        dims = double(obj.Dimensions);
+        if ~isempty(dims) && all(dims > 0)
+            width = max(1, prod(dims));
+        end
+    end
+catch
+end
+end
+
+function vals = get_output_values(out, signalName, index)
+try
+    sig = out.yout.get(signalName);
+    if ~isempty(sig)
+        vals = sig.Values;
+        return;
+    end
+catch
+end
+sig = out.yout{index};
+vals = sig.Values;
+end
+
+function cleanup_task_models(modelNames)
+for i = 1:numel(modelNames)
+    modelName = modelNames{i};
+    try
+        if bdIsLoaded(modelName)
+            close_system(modelName, 0);
+        end
+    catch
+    end
+end
+end
+
 function value = normalize_input_value(value, width)
 value = double(value);
 value = value(:)';
 if numel(value) == width
     return;
 end
-if numel(value) == 1
+if isscalar(value)
     value = repmat(value, 1, width);
 else
     value = value(1:min(end, width));
