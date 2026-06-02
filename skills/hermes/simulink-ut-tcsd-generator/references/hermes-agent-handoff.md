@@ -53,12 +53,14 @@ Windows production: C:\ProgramData\SoftwareDocGenerator\project-addons\<projectI
 Mac local dev: .local/project-addons/<projectId>
 ```
 
-For example, the 楚能 support package should be migrated to project `01`:
+External source path examples only, handled by the platform/Hermes Agent before this skill runs. If an operator registers 楚能 as project `01`, its addon source may be maintained at:
 
 ```text
 C:\ProgramData\SoftwareDocGenerator\project-addons\01\
 .local/project-addons/01
 ```
+
+The skill does not read those external paths and has no special behavior for `01` or 楚能.
 
 The copied workspace contents are project-specific. File names, file types, folder layout, and file count may differ by project. The following are examples from a Cornex/ITK-style package, not required names for every project:
 
@@ -69,14 +71,14 @@ The copied workspace contents are project-specific. File names, file types, fold
 - `ITKCToolsV015/ModelingTools/01_Csc` including `+CornexCsc`
 - `ITKCToolsV015/GenLib`
 
-The skill should inspect the current workspace and load the actual support files found there. Add relevant support/tool folders to the MATLAB path, run initialization scripts only when present or explicitly identified, and load target-model-referenced libraries and data dictionaries from the workspace. The skill still owns the canonical TCSD template and reusable scripts, but it should not copy the old `assets/support-package` as the production source of project dependencies.
+The skill should inspect the current workspace and load the actual support files found there. Add relevant support/tool folders to the MATLAB path, run initialization scripts only when present or explicitly identified, and load target-model-referenced libraries and data dictionaries from the workspace. The selected project addon source folder is handled by the platform/Hermes Agent before skill execution; the skill must not read from the external addon root. The skill still owns the canonical TCSD template and reusable scripts, but it should not copy the old `assets/support-package` as the production source of project dependencies.
 
 ## Known Dependency Lessons
 
 - For Cornex/ITK packages, if `CornexCsc.Signal` or `CornexCsc.Parameter` is missing, MATLAB may load MAT variables as raw numeric arrays such as `uint32 [6x1]`. Fix the path, clear the workspace, and reload the MAT.
 - Add the model workdir, the skill `scripts/` folder, and any actual project support/tool folders discovered in the workspace to the MATLAB path before loading/simulating. For Cornex/ITK packages, this usually includes folders such as `ITKCToolsV015/ModelingTools/01_Csc` and `ITKCToolsV015/GenLib`; other projects may use different names.
 - If any helper calls `restoredefaultpath`, add the SATK root and `simulink/tools` tree back to the MATLAB path before later direct MCP calls. The bundled `scripts/setup_ut_support.m` does this automatically, and also restores the MATLAB MCP Core add-on path when it can find it; keep that behavior in copied model-specific helpers.
-- If the model’s original config references missing generated-code headers such as `rte_bsw_analog.h`, attach an in-memory `CodexSimOnlyCfg` and simulate with that. Do not edit the source `.slx`.
+- If the model’s original config references generated-code headers such as `rte_bsw_analog.h`, search the current workspace for copied addon header folders first. Some project packages may provide them under `VC600M_Interface*`; this folder is optional and must not be treated as a universal dependency. Append discovered folders to the in-memory simulation config's `SimUserIncludeDirs`; if any referenced header is still missing, attach `CodexSimOnlyCfg` with custom-code parsing disabled and simulate with that. Do not edit the source `.slx`.
 - Load workspace support libraries required by the target model before the model when they are present or referenced. Do not assume a fixed library name such as `ITKLib.slx`.
 - For simulation/backfill, root Inport compiled metadata is authoritative. After loading support files and attaching any simulation-only config, compile/update the model and query each root Inport's `CompiledPortDataType` and `CompiledPortDimensions`. Build Dataset timeseries per port from those values. Do not infer external-input types from `CornexCsc.Signal` / `Simulink.Signal` objects alone, do not rely on signal-name prefixes such as `b*`, and do not convert all Boolean-looking inputs to `single`.
 - Explicitly enable external input loading for simulation. If logs show `LoadExternalInput: off` or `Parameter 'ExternalInput' is ignored when 'LoadExternalInput' is off`, the run did not exercise the TCSD stimulus and must be repaired immediately.

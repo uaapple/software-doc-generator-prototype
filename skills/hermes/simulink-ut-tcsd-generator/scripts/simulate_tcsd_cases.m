@@ -5,22 +5,10 @@ cleanupObj = onCleanup(@() cleanup_task_models({modelName, 'ITKLib'}));
 setup_ut_support(rootDir);
 cleanup_task_models({modelName, 'ITKLib'});
 load_mat_to_base(fullfile(rootDir, matFile));
-if exist(fullfile(rootDir, 'ITKLib.slx'), 'file')
-    load_system(fullfile(rootDir, 'ITKLib.slx'));
-end
+load_support_library(rootDir, 'ITKLib.slx');
 load_system(fullfile(rootDir, [modelName '.slx']));
 maybe_apply_mps_default_override(modelName);
-
-try
-    if any(strcmp(getConfigSets(modelName), 'CodexSimOnlyCfg'))
-        detachConfigSet(modelName, 'CodexSimOnlyCfg');
-    end
-catch
-end
-cs = Simulink.ConfigSet;
-set_param(cs, 'Name', 'CodexSimOnlyCfg');
-attachConfigSet(modelName, cs, true);
-setActiveConfigSet(modelName, 'CodexSimOnlyCfg');
+configure_tcsd_sim_config(modelName, rootDir);
 
 inputBlocks = find_system(modelName, 'SearchDepth', 1, 'BlockType', 'Inport');
 [~, inputOrder] = sort(str2double(get_param(inputBlocks, 'Port')));
@@ -444,6 +432,18 @@ try
     value = char(string(get_param(block, paramName)));
 catch
     value = '<unavailable>';
+end
+end
+
+function load_support_library(rootDir, libraryFile)
+candidate = fullfile(rootDir, libraryFile);
+if exist(candidate, 'file')
+    load_system(candidate);
+    return;
+end
+candidate = which(libraryFile);
+if ~isempty(candidate)
+    load_system(candidate);
 end
 end
 

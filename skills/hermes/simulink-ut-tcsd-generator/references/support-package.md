@@ -24,12 +24,14 @@ Windows production: C:\ProgramData\SoftwareDocGenerator\project-addons\<projectI
 Mac local dev: .local/project-addons/<projectId>
 ```
 
-For example, the 楚能 support package should be migrated to project `01`:
+External source path examples only, handled by the platform/Hermes Agent before this skill runs. If an operator registers 楚能 as project `01`, its addon source may be maintained at:
 
 ```text
 C:\ProgramData\SoftwareDocGenerator\project-addons\01\
 .local/project-addons/01
 ```
+
+The skill does not read those external paths and has no special behavior for `01` or 楚能.
 
 The platform/Hermes Agent copies the selected directory into the model working folder before invoking this skill. Then the user-provided `.slx` and `.mat` live in the same workspace and remain the authoritative model inputs. Skill execution should inspect the actual workspace contents, add relevant support/tool folders, run initialization scripts only when present or explicitly identified, and load target-model-referenced libraries/data dictionaries from the workspace.
 
@@ -39,4 +41,4 @@ The platform/Hermes Agent copies the selected directory into the model working f
 - Cornex/ITK packages only: `CornexCsc.Signal` / `CornexCsc.Parameter` not found means the package's modeling tools folder is missing from the MATLAB path before loading the MAT.
 - Cornex/ITK packages only: MAT variables load as `uint32 [6x1]` when Cornex classes were missing during MAT load; clear and reload after fixing the path.
 - Cornex/ITK packages only: `CornexMdlCfg` conflict means the data dictionary and base workspace may both define it. Prefer loading the model with the dictionary and use a simulation-only config when necessary.
-- Missing `rte_bsw_analog.h` or similar custom code headers: original production config references RTE/BSW custom code. For expectation generation, attach `CodexSimOnlyCfg` to run simulation without changing source files.
+- Missing `rte_bsw_analog.h` or similar custom code headers: original production config references RTE/BSW custom code. First search the current workspace for copied addon header folders such as the optional `VC600M_Interface*` package and append discovered directories to the in-memory simulation config's `SimUserIncludeDirs`. If required headers are still absent, attach `CodexSimOnlyCfg` with custom-code parsing disabled to run expectation-generation simulation without changing source files.

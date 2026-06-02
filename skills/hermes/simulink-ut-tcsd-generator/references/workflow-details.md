@@ -27,18 +27,12 @@ assert(~isempty(which('model_read')), 'SATK model_read is not on the MATLAB path
 assert(~isempty(which('model_overview')), 'SATK model_overview is not on the MATLAB path');
 ```
 
-`scripts/setup_ut_support.m` performs SATK tools path restoration after `restoredefaultpath`, restores the MATLAB MCP Core add-on path when it can find it, and adds project support folders discovered under the workspace while excluding generated output/cache folders. It accepts explicit project init scripts as a second argument, and `TCSD_PROJECT_INIT_SCRIPTS` can provide a `;`/`,` separated list for unattended runs. Keep that behavior in any copied or model-specific MATLAB helper so simulation/backfill does not leave a reused MATLAB session unable to service later `model_read` calls.
+`scripts/setup_ut_support.m` performs SATK tools path restoration after `restoredefaultpath`, restores the MATLAB MCP Core add-on path when it can find it, and adds project support folders discovered under the workspace while excluding generated output/cache folders. A project's common support files should already be present in this task workspace because the platform/Hermes Agent copied the selected project addon contents before invoking the skill. The setup helper accepts explicit project init scripts as a second argument, and `TCSD_PROJECT_INIT_SCRIPTS` can provide a `;`/`,` separated list for unattended runs. Keep that behavior in any copied or model-specific MATLAB helper so simulation/backfill does not leave a reused MATLAB session unable to service later `model_read` calls.
 
-If the original config references missing RTE/BSW custom code headers, attach a simulation-only config instead of changing the model file:
+If the original config references RTE/BSW custom code headers, first search the task workspace for the referenced headers. Some project packages may provide them under a folder such as `VC600M_Interface*`, but this folder is optional and must not be assumed for other projects. Append discovered header folders to the in-memory simulation config's `SimUserIncludeDirs`; if any referenced header is still missing, attach a simulation-only config with custom-code parsing disabled instead of changing the source model file:
 
 ```matlab
-if any(strcmp(getConfigSets(modelName), 'CodexSimOnlyCfg'))
-    detachConfigSet(modelName, 'CodexSimOnlyCfg');
-end
-cs = Simulink.ConfigSet;
-set_param(cs, 'Name', 'CodexSimOnlyCfg');
-attachConfigSet(modelName, cs, true);
-setActiveConfigSet(modelName, 'CodexSimOnlyCfg');
+configure_tcsd_sim_config(modelName, rootDir);
 ```
 
 ## Model Reading
@@ -159,7 +153,7 @@ Use simulation to compute expected values for top-level outputs only. If interna
 For Dataset external input, build the Dataset from compiled root Inport metadata:
 
 1. Load support files and MAT data.
-2. Attach the in-memory `CodexSimOnlyCfg` when needed.
+2. Attach the in-memory `CodexSimOnlyCfg` with `configure_tcsd_sim_config(modelName, rootDir)`, which uses addon-provided custom-code include folders when all referenced headers are present and otherwise disables custom-code parsing for expectation generation.
 3. Compile/update the model and query each root Inport's `CompiledPortDataType` and `CompiledPortDimensions`.
 4. Cast each timeseries independently to the compiled type (`single`, `double`, `boolean`, integer, enum fallback, etc.).
 5. Set `LoadExternalInput=on` and pass the Dataset through `SimulationInput.setExternalInput`.
