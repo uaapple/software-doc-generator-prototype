@@ -33,7 +33,7 @@ C:\ProgramData\SoftwareDocGenerator\project-addons\01\
 
 The skill does not read those external paths and has no special behavior for `01` or 楚能.
 
-The platform/Hermes Agent copies the selected directory into the model working folder before invoking this skill. Then the user-provided `.slx` and `.mat` live in the same workspace and remain the authoritative model inputs. Skill execution should inspect the actual workspace contents, add relevant support/tool folders, run initialization scripts only when present or explicitly identified, and load target-model-referenced libraries/data dictionaries from the workspace.
+The platform/Hermes Agent copies the selected directory into the model working folder before invoking this skill. Then the user-provided `.slx` and `.mat` live in the same workspace and remain the authoritative model inputs. Skill execution should treat every copied addon file/folder as intentionally provided project context: run `setup_ut_support(rootDir)` before model load/SATK/simulation so the full workspace tree is on the MATLAB path, explicit or recognized initialization scripts have run, and target-model-referenced libraries/data dictionaries can be loaded from the workspace. Do not wait for dependency errors before using copied addon content.
 
 ## Known Failure Modes
 

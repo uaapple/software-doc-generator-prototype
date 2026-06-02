@@ -27,7 +27,11 @@ assert(~isempty(which('model_read')), 'SATK model_read is not on the MATLAB path
 assert(~isempty(which('model_overview')), 'SATK model_overview is not on the MATLAB path');
 ```
 
-`scripts/setup_ut_support.m` performs SATK tools path restoration after `restoredefaultpath`, restores the MATLAB MCP Core add-on path when it can find it, and adds project support folders discovered under the workspace while excluding generated output/cache folders. A project's common support files should already be present in this task workspace because the platform/Hermes Agent copied the selected project addon contents before invoking the skill. The setup helper accepts explicit project init scripts as a second argument, and `TCSD_PROJECT_INIT_SCRIPTS` can provide a `;`/`,` separated list for unattended runs. Keep that behavior in any copied or model-specific MATLAB helper so simulation/backfill does not leave a reused MATLAB session unable to service later `model_read` calls.
+`scripts/setup_ut_support.m` is a mandatory pre-load bootstrap, not a recovery step. Run it before `load`, `load_system`, SATK `model_read`/`model_overview`/`model_check`, simulation, or expected-output backfill. It performs SATK tools path restoration after `restoredefaultpath`, restores the MATLAB MCP Core add-on path when it can find it, and adds the whole workspace tree to the MATLAB path while excluding generated output/cache folders. A project's common support files should already be present in this task workspace because the platform/Hermes Agent copied the selected project addon contents before invoking the skill. Treat all copied addon files/folders as intentionally provided project context; do not wait for a missing-library or missing-class error before adding them to MATLAB path.
+
+The setup helper accepts explicit project init scripts as a second argument, and `TCSD_PROJECT_INIT_SCRIPTS` can provide a `;`/`,` separated list for unattended runs. If no explicit list is provided, it auto-runs recognized project bootstrap names discovered in the workspace, such as `init_Global.m`, `startup.m`, `setup.m`, `initialize.m`, `init_*.m`, `*_init.m`, and similar setup/init patterns, while skipping generated/cache folders and this skill's own helper scripts. Keep that behavior in any copied or model-specific MATLAB helper so simulation/backfill does not leave a reused MATLAB session unable to service later `model_read` calls.
+
+SATK 2026.06.01 and newer expose `model_check` for structural validation. Run it once after the workspace-supported model is loadable and before TCSD drafting when the tool exists. Use it to surface unconnected ports, dangling lines, and edit-time Stateflow issues early. Treat the output as a diagnostic gate, not as a replacement for model inspection or simulation: fail only when the issue affects root I/O, compile/update, simulation/backfill, or a requested coverage target. If `model_check` is not on the installed SATK path, record that and continue.
 
 If the original config references RTE/BSW custom code headers, first search the task workspace for the referenced headers. Some project packages may provide them under a folder such as `VC600M_Interface*`, but this folder is optional and must not be assumed for other projects. Append discovered header folders to the in-memory simulation config's `SimUserIncludeDirs`; if any referenced header is still missing, attach a simulation-only config with custom-code parsing disabled instead of changing the source model file:
 
@@ -43,10 +47,11 @@ Collect:
 - Root output names and port order.
 - Data types from `CornexCsc.Signal.DataType` where available for documentation and initial stimulus design.
 - Compiled root Inport data types and dimensions for simulation. This is the authoritative source for Dataset external-input typing. Compile or update the model after attaching the simulation-only config, then query each root Inport's output port for `CompiledPortDataType` and `CompiledPortDimensions`. Do not cast by signal name, Boolean-looking values, or MAT object type alone.
-- Subsystem hierarchy.
+- Subsystem hierarchy and SATK container classification. Distinguish normal Subsystems from Enabled, Triggered, If Action, Function-call, Variant, and similar execution-gated containers. For execution-gated containers, derive the enable/trigger/if-action prerequisites before claiming coverage of blocks inside them.
 - Parameters from block masks, descriptions, `CornexCsc.Parameter.Value`, lookup tables, constants, and data dictionaries.
 - Decision-producing blocks and their required outcomes: Switch true/false, RelationalOperator true/false, Logical Operator input truth vectors, each `MinMax` winning input, each `MultiPortSwitch` selector/default, each Saturate low/pass/high region.
 - Condition-producing comparison banks: all `RelationalOperator` blocks grouped by controlling root signal or parameter, especially mode/config signals such as `stMod`, `stMode`, and `stCfg`. If one signal is compared to several constants, each constant becomes its own required Condition outcome.
+- MATLAB Function block conditions exposed by SATK `model_read`, including visible branch guards, protection logic, saturation/error handling, and mode decisions.
 
 Before drafting TCSD rows, turn these facts into a coverage-obligation matrix with `block path/SID`, `coverage class`, `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`. This matrix is the working checklist; Test names and comments are not coverage evidence.
 
@@ -79,6 +84,7 @@ Do not use XML alone for final values. Run simulation after drafting the stimuli
 Before writing TCSD rows for a Stateflow chart, enum state output, latch, edge-triggered path, or state-machine-like mode/gear output, trace the transition path back to root inputs or scalar parameters.
 
 - Read Stateflow transition labels, entry/exit actions, and guard conditions where available.
+- On SATK 2026.06.01+, use `model_query_params` for Stateflow and nested-block targets to retrieve state names, transition labels, guard conditions, entry/exit/during actions, and target/source relationships before falling back to static XML. If a query is unsupported, treat that as nonfatal and continue with other SATK/MATLAB evidence.
 - Cross-check upstream `Switch` and `RelationalOperator` criteria that gate the transition, including brake, door, seatbelt, ready, authentication, speed, voltage, mode, and fault-validity prerequisites.
 - Resolve enum and constant values from the loaded MAT/init/data dictionary/model workspace before writing TCSD assignments.
 - Do not assume setting one request signal is enough. A request such as `icgsm_stGearShiftLvrPosnReq = 4` is only useful after the prerequisite gates that allow the state transition are also true.
@@ -112,6 +118,7 @@ For each major subsystem, create one or more Test rows that cover:
 - Delay, latch, stopwatch, and edge-detect transitions.
 - Gradient limiter/ramp behavior with enough time steps.
 - Mode switches with only model-valid selector values.
+- MATLAB Function block branches when SATK exposes their conditions. Include normal, boundary/protection, and error-handling paths when they can be driven through root inputs or scalar parameters.
 
 Prefer fewer meaningful tests over many random tests. Coverage is the first priority, but invalid selector values that make the model stop are not useful unit-test cases unless the test explicitly targets diagnostic behavior.
 

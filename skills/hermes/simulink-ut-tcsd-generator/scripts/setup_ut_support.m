@@ -56,8 +56,8 @@ scripts = normalize_init_scripts(initScripts);
 if isempty(scripts)
     scripts = split_init_script_list(getenv('TCSD_PROJECT_INIT_SCRIPTS'));
 end
-if isempty(scripts) && exist(fullfile(rootDir, 'init_Global.m'), 'file')
-    scripts = {'init_Global.m'};
+if isempty(scripts)
+    scripts = discover_project_init_scripts(rootDir);
 end
 
 for i = 1:numel(scripts)
@@ -76,6 +76,89 @@ for i = 1:numel(scripts)
         warning('setup_ut_support:ProjectInitMissing', ...
             'Project init script was requested but does not exist: %s', scriptPath);
     end
+end
+end
+
+function scripts = discover_project_init_scripts(rootDir)
+scripts = {};
+preferredNames = {
+    'init_Global.m'
+    'init_global.m'
+    'init.m'
+    'startup.m'
+    'setup.m'
+    'initialize.m'
+};
+for i = 1:numel(preferredNames)
+    scripts = add_discovered_init_scripts(scripts, rootDir, preferredNames{i});
+end
+
+patterns = {
+    'init_*.m'
+    '*_init.m'
+    '*_init_*.m'
+    'setup_*.m'
+    '*_setup.m'
+    'initialize_*.m'
+    '*_initialize.m'
+};
+for i = 1:numel(patterns)
+    scripts = add_discovered_init_scripts(scripts, rootDir, patterns{i});
+end
+
+if ~isempty(scripts)
+    fprintf('TCSD_PROJECT_INIT_SCRIPTS_AUTO=%s\n', strjoin(scripts, ';'));
+end
+end
+
+function scripts = add_discovered_init_scripts(scripts, rootDir, pattern)
+hits = dir(fullfile(rootDir, '**', pattern));
+for i = 1:numel(hits)
+    if hits(i).isdir
+        continue;
+    end
+    scriptPath = fullfile(hits(i).folder, hits(i).name);
+    if should_skip_init_script(scriptPath, rootDir)
+        continue;
+    end
+    scripts = add_unique_script(scripts, relative_to_root(scriptPath, rootDir));
+end
+end
+
+function skip = should_skip_init_script(scriptPath, rootDir)
+skip = false;
+scriptDir = fileparts(scriptPath);
+if should_skip_project_path(scriptDir, rootDir)
+    skip = true;
+    return;
+end
+[~, name, ext] = fileparts(scriptPath);
+excludedNames = {
+    'setup_ut_support.m'
+    'simulate_tcsd_cases.m'
+    'configure_tcsd_sim_config.m'
+    'cast_input_for_simulink_ut.m'
+};
+if any(strcmpi([name ext], excludedNames))
+    skip = true;
+end
+end
+
+function relPath = relative_to_root(filePath, rootDir)
+rootPrefix = [rootDir filesep];
+if strncmp(filePath, rootPrefix, length(rootPrefix))
+    relPath = filePath(length(rootPrefix) + 1:end);
+else
+    relPath = filePath;
+end
+end
+
+function scripts = add_unique_script(scripts, scriptPath)
+if isempty(scriptPath)
+    return;
+end
+if ~any(strcmpi(scripts, scriptPath))
+    scripts{end + 1} = scriptPath;
 end
 end
 
