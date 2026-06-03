@@ -300,15 +300,21 @@ async function copyUnitTestProjectAddon(inputArtifact = {}) {
 
   await assertNoSymlinks(realSourceDir);
   const workspaceDir = path.resolve(inputArtifact.workspaceDir);
-  const protectedInputs = new Set([
-    path.resolve(inputArtifact.modelSlxPath),
-    path.resolve(inputArtifact.modelMatPath)
-  ]);
+  const protectedInputs = new Set(
+    [
+      inputArtifact.modelSlxPath,
+      inputArtifact.modelMatPath,
+      inputArtifact.modelInitScriptPath
+    ]
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+      .map((item) => path.resolve(item))
+  );
   const targets = await listAddonFileTargets(realSourceDir, workspaceDir);
   for (const target of targets) {
     if (protectedInputs.has(target)) {
       throw createHttpError(
-        `Project addon package would overwrite uploaded model/data file: ${path.basename(target)}`,
+        `Project addon package would overwrite uploaded input file: ${path.basename(target)}`,
         400,
         "hermes_project_addon_input_conflict"
       );
@@ -347,6 +353,33 @@ function normalizeMaterialFiles(files = [], allowedPaths = []) {
   });
 }
 
+async function normalizeProjectInitScripts(inputArtifact = {}, workspaceDir = "", allowedPaths = []) {
+  const rawScripts = Array.isArray(inputArtifact.projectInitScripts) ? inputArtifact.projectInitScripts : [];
+  const normalized = [];
+  for (const rawScript of rawScripts) {
+    const scriptValue = String(rawScript || "").trim();
+    if (!scriptValue) {
+      continue;
+    }
+    const absolutePath = path.isAbsolute(scriptValue) ? path.resolve(scriptValue) : path.resolve(workspaceDir, scriptValue);
+    if (!isPathAllowed(absolutePath, allowedPaths)) {
+      throw createHttpError(`projectInitScripts contains a path outside workspace: ${scriptValue}`, 403, "hermes_path_forbidden");
+    }
+    if (path.extname(absolutePath).toLowerCase() !== ".m") {
+      throw createHttpError("projectInitScripts entries must point to .m files", 400, "hermes_invalid_init_script_path");
+    }
+    await fs.access(absolutePath);
+    const relativePath = path.relative(workspaceDir, absolutePath).replace(/\\/g, "/");
+    if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      throw createHttpError(`projectInitScripts contains a path outside workspace: ${scriptValue}`, 403, "hermes_path_forbidden");
+    }
+    if (!normalized.some((item) => item.toLowerCase() === relativePath.toLowerCase())) {
+      normalized.push(relativePath);
+    }
+  }
+  return normalized;
+}
+
 async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = []) {
   const workspaceValue = String(inputArtifact.workspaceDir || "").trim();
   if (!workspaceValue) {
@@ -365,12 +398,18 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
   }
   const modelSlxPath = path.resolve(modelSlxValue);
   const modelMatPath = path.resolve(modelMatValue);
+  const modelInitScriptValue = String(inputArtifact.modelInitScriptPath || "").trim();
+  const modelInitScriptPath = modelInitScriptValue ? path.resolve(modelInitScriptValue) : "";
   const outputDir = path.resolve(String(inputArtifact.outputDir || path.join(workspaceDir, "outputs")));
   for (const [label, filePath] of [
     ["modelSlxPath", modelSlxPath],
     ["modelMatPath", modelMatPath],
+    ["modelInitScriptPath", modelInitScriptPath],
     ["outputDir", outputDir]
   ]) {
+    if (!filePath) {
+      continue;
+    }
     if (!isPathAllowed(filePath, effectiveAllowedPaths)) {
       throw createHttpError(`${label} is not allowed: ${filePath}`, 403, "hermes_path_forbidden");
     }
@@ -381,14 +420,25 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
   if (path.extname(modelMatPath).toLowerCase() !== ".mat") {
     throw createHttpError("modelMatPath must point to a .mat file", 400, "hermes_invalid_mat_path");
   }
+  if (modelInitScriptPath && path.extname(modelInitScriptPath).toLowerCase() !== ".m") {
+    throw createHttpError("modelInitScriptPath must point to a .m file", 400, "hermes_invalid_init_script_path");
+  }
   await fs.access(modelSlxPath);
   await fs.access(modelMatPath);
+  if (modelInitScriptPath) {
+    await fs.access(modelInitScriptPath);
+  }
   await fs.mkdir(outputDir, { recursive: true });
+  let projectInitScripts = await normalizeProjectInitScripts(inputArtifact, workspaceDir, effectiveAllowedPaths);
+  if (modelInitScriptPath && projectInitScripts.length === 0) {
+    projectInitScripts = [path.relative(workspaceDir, modelInitScriptPath).replace(/\\/g, "/")];
+  }
 
   return {
     workspaceDir,
     modelSlxPath,
     modelMatPath,
+    modelInitScriptPath,
     outputDir,
     unitTestProject: inputArtifact.unitTestProject && typeof inputArtifact.unitTestProject === "object"
       ? normalizeUnitTestProject(inputArtifact.unitTestProject)
@@ -396,7 +446,11 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
     skillName: String(inputArtifact.skillName || "simulink-ut-tcsd-generator").trim(),
     expectedOutputPattern: String(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx").trim(),
     modelSlxFileName: inputArtifact.modelSlxFileName || path.basename(modelSlxPath),
-    modelMatFileName: inputArtifact.modelMatFileName || path.basename(modelMatPath)
+    modelMatFileName: inputArtifact.modelMatFileName || path.basename(modelMatPath),
+    modelInitScriptFileName: modelInitScriptPath
+      ? inputArtifact.modelInitScriptFileName || path.basename(modelInitScriptPath)
+      : "",
+    projectInitScripts
   };
 }
 

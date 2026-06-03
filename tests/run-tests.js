@@ -2811,6 +2811,84 @@ const tests = [
     }
   },
   {
+    name: "Hermes API rejects unit-test project addons that overwrite uploaded init scripts",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const workspaceInputDir = path.join(workspaceDir, "inputs");
+        const outputDir = path.join(workspaceDir, "outputs");
+        config.unitTestCase.projectAddonRoot = path.join(tempDir, "project-addons");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(workspaceInputDir, { recursive: true });
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(path.join(addonDir, "inputs"), { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(workspaceInputDir, "Demo_init.m"), "% upload init", "utf8");
+        await fs.writeFile(path.join(addonDir, "inputs", "Demo_init.m"), "% conflict", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_ut_tcsd_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                modelInitScriptPath: path.join(workspaceInputDir, "Demo_init.m"),
+                outputDir,
+                projectInitScripts: ["inputs/Demo_init.m"],
+                unitTestProject: { id: "01", name: "??", label: "01_??" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_input_conflict");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects uploaded init scripts outside the unit-test workspace",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const outsideInit = path.join(tempDir, "Demo_init.m");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(outsideInit, "% outside init", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_ut_tcsd_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                modelInitScriptPath: outsideInit,
+                outputDir,
+                unitTestProject: { id: "01", name: "??", label: "01_??" }
+              }
+            })
+          });
+          assert.equal(response.status, 403);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_path_forbidden");
+        });
+      });
+    }
+  },
+  {
     name: "Hermes agent client materializes transferred TCSD workbook from API multipart response",
     run: async () => {
       await withTempConfig(async () => {
@@ -3191,9 +3269,12 @@ const tests = [
             workspaceDir,
             modelSlxPath: path.join(workspaceDir, "Demo.slx"),
             modelMatPath: path.join(workspaceDir, "Demo.mat"),
+            modelInitScriptPath: path.join(workspaceDir, "inputs", "Demo_init.m"),
             outputDir,
             skillName: "simulink-ut-tcsd-generator",
-            expectedOutputPattern: "outputs/*_tcsd.xlsx"
+            expectedOutputPattern: "outputs/*_tcsd.xlsx",
+            modelInitScriptFileName: "Demo_init.m",
+            projectInitScripts: ["inputs/Demo_init.m"]
           }
         });
 
@@ -3205,6 +3286,10 @@ const tests = [
         assert.match(promptArg, /simulink-ut-tcsd-generator/);
         assert.match(promptArg, /Demo\.slx/);
         assert.match(promptArg, /Demo\.mat/);
+        assert.match(promptArg, /Demo_init\.m/);
+        assert.match(promptArg, /projectInitScripts/);
+        assert.match(promptArg, /setup_ut_support\(rootDir, projectInitScripts\)/);
+        assert.match(promptArg, /no model-specific init script was uploaded/);
         assert.match(promptArg, /outputs\/\*_tcsd\.xlsx/);
         assert.match(promptArg, /MATLAB Cleanup Contract/);
         assert.match(promptArg, /build_tcsd_from_json\.py/);
