@@ -143,7 +143,7 @@ Windows VM 负责运行 Hermes Agent、MATLAB Worker 和 MATLAB/MCP 相关能力
 
 ## 单元测试 TCSD 生成 V1
 
-本功能新增顶层页面 `/unit-test-case-generation`，平台端接收 1 个 `.slx`、1 个 `.mat` 和 1 个项目编号，在 `data/unit-test-case-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并通过 Hermes step `simulink_ut_tcsd_generate` 发给 Windows VM。平台端只登记项目、任务和下载 `workspace/outputs/*.xlsx`，上传的模型、MAT 数据、项目登记 JSON 和生成的 Excel 都属于运行态数据，不进入 release 分支。
+本功能新增顶层页面 `/unit-test-case-generation`，平台端接收 1 个 `.slx`、1 个 `.mat`、可选 1 个模型初始化 `.m` 脚本和 1 个项目编号，在 `data/unit-test-case-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并通过 Hermes step `simulink_ut_tcsd_generate` 发给 Windows VM。平台端只登记项目、任务和下载 `workspace/outputs/*.xlsx`，上传的模型、MAT 数据、初始化脚本、项目登记 JSON 和生成的 Excel 都属于运行态数据，不进入 release 分支。
 
 TCSD workbook 现在增加 workbook-vs-rootPorts 校验门禁。平台端在 `simulink_ut_tcsd_generate` prompt 中要求 Hermes Agent 在 checkpoint workbook 生成后运行 `simulink-ut-tcsd-generator` skill 的 `scripts/validate_tcsd_workbook.py`，用模型编译得到的 root Inport/Outport 列表检查 `Initialization`、`Action` 和 `expValue(...)` 左侧信号名。如果校验报告未知输入、未知输出、向量语法问题或缺少最终延时，这属于 Hermes Agent 生成的候选 workbook/spec 缺陷，Agent 应在同一任务内根据报告的 row/cell/test_id/signal/line 修复用例、重建 workbook、重新校验后再进入仿真/回填；不要直接把第一版 workbook 校验失败作为平台任务失败返回给前端。只有 root-port 接口无法获取，或有限修复后仍无法得到合法 workbook，Hermes Agent 才应向平台返回 `status: "failed"`。
 
@@ -151,8 +151,8 @@ TCSD workbook 现在增加 workbook-vs-rootPorts 校验门禁。平台端在 `si
 
 - Linux 平台端只负责页面、项目登记、上传下载、任务 JSON、队列状态和向 Hermes Agent HTTP 服务发起请求，不直接运行 MATLAB，也不解析 Windows 附加包路径。
 - Windows VM 端负责 Hermes Agent step、项目附加包复制、Hermes CLI、MATLAB/SATK 和 `simulink-ut-tcsd-generator` skill 的实际执行。
-- Shared 协议负责把 `workspaceDir/modelSlxPath/modelMatPath/outputDir/unitTestProject/skillName/expectedOutputPattern` 固定传给 Hermes，并把 workbook/rootPorts 校验与内部修复语义写入 Hermes prompt，再把返回或回收得到的 `outputs/*.xlsx` 归一化成平台 artifact。
-- 运行态数据只留在 `data/unit-test-case-generation/**`；外部项目附加包只放在 Agent 机器配置的 addon root 下，部署端不要把用户上传的 `.slx/.mat`、项目登记 JSON、生成的 `.xlsx` 或 addon 包内容带进 release 分支。
+- Shared 协议负责把 `workspaceDir/modelSlxPath/modelMatPath/outputDir/unitTestProject/skillName/expectedOutputPattern` 固定传给 Hermes；如果用户上传模型级初始化脚本，还会传 `modelInitScriptPath/modelInitScriptFileName/projectInitScripts`，并要求 Hermes/skill 优先执行这个显式脚本。协议同时把 workbook/rootPorts 校验与内部修复语义写入 Hermes prompt，再把返回或回收得到的 `outputs/*.xlsx` 归一化成平台 artifact。
+- 运行态数据只留在 `data/unit-test-case-generation/**`；外部项目附加包只放在 Agent 机器配置的 addon root 下，部署端不要把用户上传的 `.slx/.mat/.m`、项目登记 JSON、生成的 `.xlsx` 或 addon 包内容带进 release 分支。
 
 拆分建议：
 
@@ -164,6 +164,8 @@ TCSD workbook 现在增加 workbook-vs-rootPorts 校验门禁。平台端在 `si
 Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent sidecar：平台端监听 `3000`，Hermes Agent 监听 `3101`，平台端通过 `HERMES_TRANSPORT=api` 调用 sidecar，并将 sidecar 的 `HERMES_SERVER_REQUEST_TIMEOUT_MS` 设为 `0` 以支持 TCSD/MATLAB 长任务。`simulink_ut_tcsd_generate` 默认使用 60 分钟超时；由于 Hermes CLI 本身没有 unlimited turn 开关且省略 `--max-turns` 会回落到默认 `90`，平台将 `HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE` 设为 `10000`，让复杂 Simulink 模型的实际约束落在超时而不是工具调用轮次。可以通过 `HERMES_PROFILE=deepseek` 让 Hermes Agent 内部调用 CLI 时显式走 `~/.hermes/profiles/deepseek`。该变量只影响 CLI transport；Linux 平台端走 `HERMES_TRANSPORT=api` 时不直接读取本机 profile。若 Windows VM 也要用命名 profile，需要在 Windows Hermes Agent 进程上设置 `HERMES_PROFILE`，并确保 `HERMES_STATE_DB_PATH` 没有覆盖到默认 profile 的 `state.db`。
 
 项目选择只在平台端保存编号和展示名，例如 `01_楚能`、`02_TMS`；任务 payload 内部只依赖 `unitTestProject.id`，例如 `01`。Hermes Agent 启动 CLI 前会从当前 Agent 进程的 `UNIT_TEST_CASE_PROJECT_ADDON_ROOT/<编号>` 复制全部 addon 内容到 workspace 根目录。Mac 本地默认 addon root 是 `.local/project-addons`，目录示例为 `.local/project-addons/01`；Windows 生产默认 addon root 是 `C:\ProgramData\SoftwareDocGenerator\project-addons`，目录示例为 `C:\ProgramData\SoftwareDocGenerator\project-addons\01`。
+
+初始化脚本支持两种模式：未上传 `.m` 时，Hermes/skill 使用项目 addon 中已经复制到 workspace 的通用初始化脚本，由 `setup_ut_support(rootDir)` 自动发现；上传 `.m` 时，平台把脚本放入 `workspace/inputs` 并通过 `projectInitScripts` 显式传给 Hermes，Hermes/skill 应优先执行该模型级脚本，不再用 addon 自动发现来决定初始化入口。addon 仍会照常复制和加入 MATLAB path，用于库、数据字典、接口包和其他项目依赖。
 
 生产 Linux 和 Windows VM 如果不是同一套绝对路径，需要在 Linux 平台端设置：
 

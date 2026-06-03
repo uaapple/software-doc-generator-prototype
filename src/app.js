@@ -208,7 +208,7 @@ export async function createApp() {
       }
     }),
     limits: {
-      files: 2
+      files: 3
     }
   });
 
@@ -307,7 +307,8 @@ export async function createApp() {
     "/api/unit-test-case-generation/tasks",
     unitTestUpload.fields([
       { name: "modelSlx", maxCount: 1 },
-      { name: "modelMat", maxCount: 1 }
+      { name: "modelMat", maxCount: 1 },
+      { name: "modelInitScript", maxCount: 1 }
     ]),
     async (req, res, next) => {
       try {

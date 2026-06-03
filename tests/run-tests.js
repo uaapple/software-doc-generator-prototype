@@ -2990,10 +2990,13 @@ const tests = [
             workspaceDir,
             modelSlxPath: path.join(workspaceDir, "Demo.slx"),
             modelMatPath: path.join(workspaceDir, "Demo.mat"),
+            modelInitScriptPath: path.join(workspaceDir, "inputs", "Demo_init.m"),
             outputDir,
             unitTestProject: { id: "01", name: "楚能", label: "01_楚能" },
             skillName: "simulink-ut-tcsd-generator",
-            expectedOutputPattern: "outputs/*_tcsd.xlsx"
+            expectedOutputPattern: "outputs/*_tcsd.xlsx",
+            modelInitScriptFileName: "Demo_init.m",
+            projectInitScripts: ["inputs/Demo_init.m"]
           }
         });
 
@@ -3004,6 +3007,10 @@ const tests = [
         assert.match(invocations[0].args[2], /simulink-ut-tcsd-generator/);
         assert.match(invocations[0].args[2], /Demo\.slx/);
         assert.match(invocations[0].args[2], /Demo\.mat/);
+        assert.match(invocations[0].args[2], /Demo_init\.m/);
+        assert.match(invocations[0].args[2], /projectInitScripts/);
+        assert.match(invocations[0].args[2], /setup_ut_support\(rootDir, projectInitScripts\)/);
+        assert.match(invocations[0].args[2], /no model-specific init script was uploaded/);
         assert.match(invocations[0].args[2], /outputs\/\*_tcsd\.xlsx/);
         assert.match(invocations[0].args[2], /unitTestProject/);
         assert.match(invocations[0].args[2], /01_楚能/);
@@ -3108,6 +3115,83 @@ const tests = [
           assert.equal(response.status, 400);
           const body = await response.json();
           assert.equal(body.code, "hermes_project_addon_input_conflict");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects unit-test project addons that overwrite uploaded init scripts",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const workspaceInputDir = path.join(workspaceDir, "inputs");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(workspaceInputDir, { recursive: true });
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(path.join(addonDir, "inputs"), { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(workspaceInputDir, "Demo_init.m"), "% upload init", "utf8");
+        await fs.writeFile(path.join(addonDir, "inputs", "Demo_init.m"), "% conflict", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_ut_tcsd_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                modelInitScriptPath: path.join(workspaceInputDir, "Demo_init.m"),
+                outputDir,
+                projectInitScripts: ["inputs/Demo_init.m"],
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_input_conflict");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects uploaded init scripts outside the unit-test workspace",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const outsideInit = path.join(tempDir, "Demo_init.m");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(outsideInit, "% outside init", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_ut_tcsd_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                modelInitScriptPath: outsideInit,
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 403);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_path_forbidden");
         });
       });
     }
@@ -9407,6 +9491,8 @@ const tests = [
       assert.ok(unitScript.includes("projectId="));
       assert.ok(unitScript.includes("taskMatchesProjectFilter"));
       assert.ok(unitScript.includes(".filter(taskMatchesProjectFilter)"));
+      assert.ok(unitScript.includes("modelInitScript"));
+      assert.ok(unitScript.includes("使用项目 addon 初始化"));
       assert.ok(stylesheet.includes(".unit-task-delete"));
       assert.ok(stylesheet.includes(".unit-task-filter"));
 
@@ -9419,6 +9505,8 @@ const tests = [
         assert.ok(html.includes('id="unit-test-form"'));
         assert.ok(html.includes('name="modelSlx"'));
         assert.ok(html.includes('name="modelMat"'));
+        assert.ok(html.includes('name="modelInitScript"'));
+        assert.ok(html.includes('accept=".m"'));
         assert.ok(html.includes('name="unitTestProjectId"'));
         assert.ok(html.includes('id="unit-add-project-button"'));
         assert.ok(html.includes('id="unit-delete-project-button"'));
@@ -9509,6 +9597,31 @@ const tests = [
           const missingProjectBody = await missingProjectResponse.json();
           assert.equal(missingProjectBody.code, "unit_test_case_invalid_project_id");
 
+          const wrongInitExt = new FormData();
+          wrongInitExt.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          wrongInitExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongInitExt.append("modelInitScript", new Blob(["txt"]), "Demo.txt");
+          wrongInitExt.append("unitTestProjectId", "01");
+          const wrongInitExtResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: wrongInitExt
+          });
+          assert.equal(wrongInitExtResponse.status, 400);
+          const wrongInitExtBody = await wrongInitExtResponse.json();
+          assert.equal(wrongInitExtBody.code, "unit_test_case_invalid_init_script_extension");
+
+          const duplicateInit = new FormData();
+          duplicateInit.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          duplicateInit.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          duplicateInit.append("modelInitScript", new Blob(["init1"]), "Demo_init.m");
+          duplicateInit.append("modelInitScript", new Blob(["init2"]), "Demo_init_2.m");
+          duplicateInit.append("unitTestProjectId", "01");
+          const duplicateInitResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: duplicateInit
+          });
+          assert.equal(duplicateInitResponse.status, 400);
+
           const valid = new FormData();
           valid.append("modelSlx", new Blob(["slx"]), "Demo.slx");
           valid.append("modelMat", new Blob(["mat"]), "Demo.mat");
@@ -9529,6 +9642,22 @@ const tests = [
           assert.equal(validBody.task.inputs.modelMat.workspaceRelativePath, "Demo.mat");
           assert.equal(validBody.task.unitTestProject.id, "01");
           assert.equal(validBody.task.unitTestProject.label, "01_楚能");
+
+          const validWithInit = new FormData();
+          validWithInit.append("modelSlx", new Blob(["slx"]), "DemoWithInit.slx");
+          validWithInit.append("modelMat", new Blob(["mat"]), "DemoWithInit.mat");
+          validWithInit.append("modelInitScript", new Blob(["% init"]), "DemoWithInit_init.m");
+          validWithInit.append("unitTestProjectId", "02");
+          const validWithInitResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: validWithInit
+          });
+          assert.equal(validWithInitResponse.status, 202);
+          const validWithInitBody = await validWithInitResponse.json();
+          assert.equal(validWithInitBody.task.inputs.modelInitScript.originalName, "DemoWithInit_init.m");
+          assert.equal(validWithInitBody.task.inputs.modelInitScript.workspaceName, "DemoWithInit_init.m");
+          assert.equal(validWithInitBody.task.inputs.modelInitScript.workspaceRelativePath, "inputs/DemoWithInit_init.m");
+          assert.equal(validWithInitBody.task.unitTestProject.id, "02");
 
           const listResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`);
           assert.equal(listResponse.status, 200);
@@ -9622,6 +9751,9 @@ const tests = [
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
             async executeStep(payload, runtime = {}) {
+              assert.match(payload.inputArtifact.modelInitScriptPath, /inputs[\\/]Demo_init\.m$/);
+              assert.equal(payload.inputArtifact.modelInitScriptFileName, "Demo_init.m");
+              assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
               await runtime.onEvent?.({
                 status: "completed",
                 label: "Hermes mock completed",
@@ -9664,17 +9796,21 @@ const tests = [
         const task = await service.createTask(
           {
             modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
-            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")],
+            modelInitScript: [await createMockUploadFile(tempDir, "Demo_init.m", "% init")]
           },
           { unitTestProjectId: "01" }
         );
         const created = await service.readTask(task.id);
         assert.equal(created.inputs.modelSlx.workspaceName, "Demo.slx");
         assert.equal(created.inputs.modelMat.workspaceName, "Demo.mat");
+        assert.equal(created.inputs.modelInitScript.workspaceName, "Demo_init.m");
         assert.equal(created.inputs.modelSlx.workspaceRelativePath, "Demo.slx");
         assert.equal(created.inputs.modelMat.workspaceRelativePath, "Demo.mat");
+        assert.equal(created.inputs.modelInitScript.workspaceRelativePath, "inputs/Demo_init.m");
         assert.ok(created.workspace.modelSlxPath.endsWith(`${path.sep}Demo.slx`));
         assert.ok(created.workspace.modelMatPath.endsWith(`${path.sep}Demo.mat`));
+        assert.ok(created.workspace.modelInitScriptPath.endsWith(`${path.sep}inputs${path.sep}Demo_init.m`));
 
         const completed = await service.runTask(task.id);
         assert.equal(completed.status, "completed");

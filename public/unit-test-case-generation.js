@@ -15,6 +15,7 @@ const elements = {
   form: document.querySelector("#unit-test-form"),
   slxInput: document.querySelector("#model-slx-input"),
   matInput: document.querySelector("#model-mat-input"),
+  initScriptInput: document.querySelector("#model-init-script-input"),
   projectSelect: document.querySelector("#unit-project-select"),
   addProjectButton: document.querySelector("#unit-add-project-button"),
   deleteProjectButton: document.querySelector("#unit-delete-project-button"),
@@ -109,6 +110,17 @@ function validateFile(input, extension, label) {
     throw new Error(`${label}只接受 ${extension} 文件。`);
   }
   return files[0];
+}
+
+function validateOptionalFile(input, extension, label) {
+  const files = Array.from(input?.files || []);
+  if (files.length > 1) {
+    throw new Error(`${label}最多上传 1 个文件。`);
+  }
+  if (files.length === 1 && !files[0].name.toLowerCase().endsWith(extension)) {
+    throw new Error(`${label}只接受 ${extension} 文件。`);
+  }
+  return files[0] || null;
 }
 
 function normalizeProject(project = {}) {
@@ -285,6 +297,7 @@ async function submitTask(event) {
   try {
     validateFile(elements.slxInput, ".slx", "模型文件");
     validateFile(elements.matInput, ".mat", "数据文件");
+    validateOptionalFile(elements.initScriptInput, ".m", "初始化脚本");
     const selectedProject = getSelectedProject();
     if (!selectedProject) {
       throw new Error("请选择项目。");
@@ -480,6 +493,7 @@ function renderTaskDetail(task) {
     return;
   }
   const projectLabel = normalizeTaskProject(task.unitTestProject).label;
+  const initScriptLabel = task.inputs?.modelInitScript?.originalName || "使用项目 addon 初始化";
   elements.detailSubtitle.textContent = [
     task.inputs?.modelSlx?.originalName || "Simulink 模型",
     projectLabel,
@@ -572,6 +586,7 @@ function renderTaskDetail(task) {
         <dl class="unit-meta-list">
           <div><dt>SLX</dt><dd>${escapeHtml(task.inputs?.modelSlx?.originalName || "")}</dd></div>
           <div><dt>MAT</dt><dd>${escapeHtml(task.inputs?.modelMat?.originalName || "")}</dd></div>
+          <div><dt>初始化脚本</dt><dd>${escapeHtml(initScriptLabel)}</dd></div>
           <div><dt>项目</dt><dd>${escapeHtml(projectLabel || "未记录")}</dd></div>
           <div><dt>创建时间</dt><dd>${escapeHtml(formatTime(task.createdAt))}</dd></div>
           <div><dt>更新时间</dt><dd>${escapeHtml(formatTime(task.updatedAt))}</dd></div>
