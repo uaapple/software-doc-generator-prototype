@@ -157,7 +157,8 @@ function toMatlabModelBase(originalName = "", fallbackBase = "model") {
 function normalizeTaskFiles(files = {}) {
   return {
     modelSlx: Array.isArray(files.modelSlx) ? files.modelSlx : [],
-    modelMat: Array.isArray(files.modelMat) ? files.modelMat : []
+    modelMat: Array.isArray(files.modelMat) ? files.modelMat : [],
+    modelInitScript: Array.isArray(files.modelInitScript) ? files.modelInitScript : []
   };
 }
 
@@ -332,7 +333,7 @@ async function copyUploadedFile(file = {}, targetPath = "") {
 }
 
 async function cleanupTempFiles(files = {}) {
-  const allFiles = [...(files.modelSlx || []), ...(files.modelMat || [])];
+  const allFiles = [...(files.modelSlx || []), ...(files.modelMat || []), ...(files.modelInitScript || [])];
   await Promise.all(
     allFiles
       .map((file) => file?.path)
@@ -524,30 +525,35 @@ export class UnitTestCaseGenerationService {
 
   validateUploadFiles(files = {}) {
     const normalized = normalizeTaskFiles(files);
-    if (normalized.modelSlx.length !== 1 || normalized.modelMat.length !== 1) {
+    if (normalized.modelSlx.length !== 1 || normalized.modelMat.length !== 1 || normalized.modelInitScript.length > 1) {
       throw createHttpError("需要同时上传 1 个 .slx 模型文件和 1 个 .mat 数据文件。", 400, "unit_test_case_invalid_upload_count", {
         modelSlxCount: normalized.modelSlx.length,
-        modelMatCount: normalized.modelMat.length
+        modelMatCount: normalized.modelMat.length,
+        modelInitScriptCount: normalized.modelInitScript.length
       });
     }
 
     const [modelSlx] = normalized.modelSlx;
     const [modelMat] = normalized.modelMat;
+    const [modelInitScript] = normalized.modelInitScript;
     if (normalizeExtension(modelSlx.originalname) !== ".slx") {
       throw createHttpError("模型文件只接受 .slx。", 400, "unit_test_case_invalid_slx_extension");
     }
     if (normalizeExtension(modelMat.originalname) !== ".mat") {
       throw createHttpError("数据文件只接受 .mat。", 400, "unit_test_case_invalid_mat_extension");
     }
+    if (modelInitScript && normalizeExtension(modelInitScript.originalname) !== ".m") {
+      throw createHttpError("初始化脚本只接受 .m。", 400, "unit_test_case_invalid_init_script_extension");
+    }
 
-    return { modelSlx, modelMat };
+    return { modelSlx, modelMat, modelInitScript: modelInitScript || null };
   }
 
   async createTask(files = {}, metadata = {}) {
     await this.ensureDirs();
     const normalized = normalizeTaskFiles(files);
     try {
-      const { modelSlx, modelMat } = this.validateUploadFiles(normalized);
+      const { modelSlx, modelMat, modelInitScript } = this.validateUploadFiles(normalized);
       const unitTestProject = await this.getUnitTestProject(metadata.unitTestProjectId || metadata.projectId || "");
       const taskId = randomUUID();
       const taskDir = this.getTaskDir(taskId);
@@ -566,14 +572,26 @@ export class UnitTestCaseGenerationService {
       const workspaceModelBase = toMatlabModelBase(modelSlx.originalname, "model");
       const workspaceSlxName = `${workspaceModelBase}.slx`;
       const workspaceMatName = `${workspaceModelBase}.mat`;
+      const initScriptName = modelInitScript ? sanitizeStoredFileName(modelInitScript.originalname, "model_init.m") : "";
+      const workspaceInitScriptName = modelInitScript
+        ? `${toMatlabModelBase(modelInitScript.originalname, `${workspaceModelBase}_init`)}.m`
+        : "";
       const archivedSlxPath = path.join(inputDir, slxName);
       const archivedMatPath = path.join(inputDir, matName);
+      const archivedInitScriptPath = modelInitScript ? path.join(inputDir, initScriptName) : "";
       const workspaceSlxPath = path.join(workspaceDir, workspaceSlxName);
       const workspaceMatPath = path.join(workspaceDir, workspaceMatName);
+      const workspaceInitScriptPath = modelInitScript ? path.join(workspaceInputDir, workspaceInitScriptName) : "";
       await copyUploadedFile(modelSlx, archivedSlxPath);
       await copyUploadedFile(modelMat, archivedMatPath);
+      if (modelInitScript) {
+        await copyUploadedFile(modelInitScript, archivedInitScriptPath);
+      }
       await fs.copyFile(archivedSlxPath, workspaceSlxPath);
       await fs.copyFile(archivedMatPath, workspaceMatPath);
+      if (modelInitScript) {
+        await fs.copyFile(archivedInitScriptPath, workspaceInitScriptPath);
+      }
 
       const cfg = unitTestCaseConfig();
       const agentWorkspaceDir = buildAgentPath(workspaceDir, {
@@ -592,6 +610,21 @@ export class UnitTestCaseGenerationService {
         agentWorkspaceRoot: cfg.agentWorkspaceRoot,
         localTaskStoreDir: cfg.taskStoreDir
       });
+      const agentInitScriptPath = modelInitScript ? buildAgentPath(workspaceInitScriptPath, {
+        agentWorkspaceRoot: cfg.agentWorkspaceRoot,
+        localTaskStoreDir: cfg.taskStoreDir
+      }) : "";
+      const initScriptInput = modelInitScript
+        ? {
+            originalName: normalizeUploadedFileName(modelInitScript.originalname),
+            storedName: initScriptName,
+            workspaceName: workspaceInitScriptName,
+            size: Number(modelInitScript.size || 0) || 0,
+            mimeType: modelInitScript.mimetype || "",
+            archiveRelativePath: normalizeStoredRelativePath(path.relative(taskDir, archivedInitScriptPath)),
+            workspaceRelativePath: normalizeStoredRelativePath(path.relative(workspaceDir, workspaceInitScriptPath))
+          }
+        : null;
 
       const createdAt = now();
       const task = {
@@ -634,9 +667,11 @@ export class UnitTestCaseGenerationService {
           outputDir,
           modelSlxPath: workspaceSlxPath,
           modelMatPath: workspaceMatPath,
+          modelInitScriptPath: workspaceInitScriptPath,
           agentDirectory: agentWorkspaceDir,
           agentModelSlxPath: agentSlxPath,
           agentModelMatPath: agentMatPath,
+          agentModelInitScriptPath: agentInitScriptPath,
           agentOutputDir
         },
         hermes: {
@@ -659,6 +694,9 @@ export class UnitTestCaseGenerationService {
           }
         ]
       };
+      if (initScriptInput) {
+        task.inputs.modelInitScript = initScriptInput;
+      }
       await this.saveTask(task);
       return publicTask(task);
     } finally {
@@ -727,24 +765,32 @@ export class UnitTestCaseGenerationService {
     const workspaceDir = task.workspace?.agentDirectory || task.workspace?.directory || "";
     const modelSlxPath = task.workspace?.agentModelSlxPath || task.workspace?.modelSlxPath || "";
     const modelMatPath = task.workspace?.agentModelMatPath || task.workspace?.modelMatPath || "";
+    const modelInitScriptPath = task.workspace?.agentModelInitScriptPath || task.workspace?.modelInitScriptPath || "";
     const outputDir = task.workspace?.agentOutputDir || task.workspace?.outputDir || "";
+    const modelInitScriptRelativePath = task.inputs?.modelInitScript?.workspaceRelativePath || "";
+    const inputArtifact = {
+      workspaceDir,
+      modelSlxPath,
+      modelMatPath,
+      outputDir,
+      unitTestProject: normalizeTaskProjectSnapshot(task.unitTestProject),
+      skillName: cfg.skillName,
+      expectedOutputPattern: cfg.expectedOutputPattern,
+      localPlatformWorkspaceDir: task.workspace?.directory || "",
+      modelSlxFileName: task.inputs?.modelSlx?.originalName || path.basename(modelSlxPath),
+      modelMatFileName: task.inputs?.modelMat?.originalName || path.basename(modelMatPath)
+    };
+    if (modelInitScriptPath && modelInitScriptRelativePath) {
+      inputArtifact.modelInitScriptPath = modelInitScriptPath;
+      inputArtifact.modelInitScriptFileName = task.inputs?.modelInitScript?.workspaceName || path.basename(modelInitScriptPath);
+      inputArtifact.projectInitScripts = [modelInitScriptRelativePath];
+    }
     return {
       stepType: STEP_TYPE,
       type: QUEUE_TYPE,
       allowedPaths: [workspaceDir],
       workdir: workspaceDir,
-      inputArtifact: {
-        workspaceDir,
-        modelSlxPath,
-        modelMatPath,
-        outputDir,
-        unitTestProject: normalizeTaskProjectSnapshot(task.unitTestProject),
-        skillName: cfg.skillName,
-        expectedOutputPattern: cfg.expectedOutputPattern,
-        localPlatformWorkspaceDir: task.workspace?.directory || "",
-        modelSlxFileName: task.inputs?.modelSlx?.originalName || path.basename(modelSlxPath),
-        modelMatFileName: task.inputs?.modelMat?.originalName || path.basename(modelMatPath)
-      }
+      inputArtifact
     };
   }
 

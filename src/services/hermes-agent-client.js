@@ -1247,6 +1247,7 @@ function sanitizeSimulinkUtTcsdArtifact(inputArtifact = {}) {
     workspaceDir: clipText(inputArtifact.workspaceDir || "", CLI_PATH_MAX_LENGTH),
     modelSlxPath: clipText(inputArtifact.modelSlxPath || "", CLI_PATH_MAX_LENGTH),
     modelMatPath: clipText(inputArtifact.modelMatPath || "", CLI_PATH_MAX_LENGTH),
+    modelInitScriptPath: clipText(inputArtifact.modelInitScriptPath || "", CLI_PATH_MAX_LENGTH),
     outputDir: clipText(inputArtifact.outputDir || "", CLI_PATH_MAX_LENGTH),
     unitTestProject: project
       ? {
@@ -1258,7 +1259,11 @@ function sanitizeSimulinkUtTcsdArtifact(inputArtifact = {}) {
     skillName: clipText(inputArtifact.skillName || "simulink-ut-tcsd-generator", 160),
     expectedOutputPattern: clipText(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx", 200),
     modelSlxFileName: clipText(inputArtifact.modelSlxFileName || path.basename(inputArtifact.modelSlxPath || "model.slx"), 200),
-    modelMatFileName: clipText(inputArtifact.modelMatFileName || path.basename(inputArtifact.modelMatPath || "model.mat"), 200)
+    modelMatFileName: clipText(inputArtifact.modelMatFileName || path.basename(inputArtifact.modelMatPath || "model.mat"), 200),
+    modelInitScriptFileName: clipText(inputArtifact.modelInitScriptFileName || path.basename(inputArtifact.modelInitScriptPath || ""), 200),
+    projectInitScripts: Array.isArray(inputArtifact.projectInitScripts)
+      ? inputArtifact.projectInitScripts.map((item) => clipText(item || "", 240)).filter(Boolean)
+      : []
   };
 }
 
@@ -1277,9 +1282,11 @@ function buildSimulinkUtTcsdPrompt(payload = {}) {
     "- The model input is `modelSlxPath`; the matching data file is `modelMatPath`.",
     "- `unitTestProject.id` is the internal project number, such as `01`; display labels such as `01_楚能` must never be used as paths.",
     "- The Hermes Agent service has already copied the selected project's addon package into `workspaceDir` before this CLI run. Load support files such as `init_Global.m`, `ITKLib.slx`, `.sldd`, and project tool folders from the workspace, not from the external addon root.",
+    "- If `projectInitScripts` is non-empty, it contains the uploaded model-specific initialization `.m` script relative to `workspaceDir`; treat it as the explicit initialization entrypoint and pass it to the skill bootstrap, for example `setup_ut_support(rootDir, projectInitScripts)`, or set `TCSD_PROJECT_INIT_SCRIPTS` to that semicolon-separated list before calling `setup_ut_support(rootDir)`. In that case, do not rely on addon auto-discovery for initialization script selection.",
+    "- If `projectInitScripts` is empty, no model-specific init script was uploaded; rely on `setup_ut_support(rootDir)` to auto-discover common initialization scripts from the copied project addon/workspace.",
     "- Before loading Simulink files, change MATLAB current folder to `workspaceDir`.",
     "- If `ITKLib` or the target model is already loaded from another path, close that loaded model first with `bdclose` before calling `load_system`.",
-    "- Prefer the canonical workspace filenames `modelSlxFileName` and `modelMatFileName` for MATLAB `load`, `load_system`, and simulation steps; avoid loading timestamped upload archive names.",
+    "- Prefer the canonical workspace filenames `modelSlxFileName`, `modelMatFileName`, and when present `modelInitScriptFileName` for MATLAB `load`, `load_system`, init bootstrap, and simulation steps; avoid loading timestamped upload archive names.",
     "- Use the skill named by `skillName` and follow its SATK/MATLAB/TCSD rules.",
     "- In this environment, `model_overview` and `model_read` can be registered but fail because the backing MATLAB functions are unavailable; do not spend repeated retries on them. Prefer `evaluate_matlab_code` for MATLAB inspection, and use static SLX XML inspection only as a fallback.",
     "- Artifact-first checkpointing is mandatory: after model inspection and case design, immediately build and verify the TCSD workbook under `outputDir` before extracting cases, running `simulate_tcsd_cases`, running coverage, or doing expected-output backfill. This checkpoint is not sufficient for final completion by itself.",
