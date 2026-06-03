@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import signal
 import subprocess
 import sys
 import tempfile
@@ -35,7 +36,9 @@ DEFAULT_EXTENSION = (
     if os.environ.get("SATK_MCP_EXTENSION")
     else Path.home() / ".matlab" / "agentic-toolkits" / "simulink" / "tools" / "tools.json"
 )
-SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "existing")
+DEDICATED_WORKER = os.environ.get("TCSD_DEDICATED_WORKER", "").lower() in {"1", "true", "yes", "on"}
+CLEAN_STALE_MCP = DEDICATED_WORKER or os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "true", "yes", "on"}
+SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new" if DEDICATED_WORKER else "existing")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
 LOG_FOLDER = Path(os.environ.get("SATK_MCP_LOG_FOLDER", default_log_folder()))
 
@@ -81,6 +84,126 @@ def wait_for_id(proc: subprocess.Popen[str], msg_id: int, timeout_s: float = 180
     raise TimeoutError(f"Timed out waiting for MCP response id={msg_id}")
 
 
+def process_rows() -> list[tuple[int, str]]:
+    if platform.system() == "Windows":
+        return windows_process_rows()
+    try:
+        completed = subprocess.run(
+            ["ps", "-eo", "pid=,command="],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception:
+        return []
+    rows: list[tuple[int, str]] = []
+    for line in completed.stdout.splitlines():
+        parts = line.strip().split(maxsplit=1)
+        if len(parts) != 2:
+            continue
+        try:
+            rows.append((int(parts[0]), parts[1]))
+        except ValueError:
+            continue
+    return rows
+
+
+def windows_process_rows() -> list[tuple[int, str]]:
+    commands = [
+        [
+            "wmic",
+            "process",
+            "where",
+            "name='matlab-mcp-core-server.exe'",
+            "get",
+            "ProcessId,CommandLine",
+            "/FORMAT:CSV",
+        ],
+        [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            (
+                "Get-CimInstance Win32_Process -Filter \"name='matlab-mcp-core-server.exe'\" | "
+                "ForEach-Object { \"$($_.ProcessId)|$($_.CommandLine)\" }"
+            ),
+        ],
+    ]
+    for command in commands:
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except Exception:
+            continue
+        rows = parse_windows_process_output(completed.stdout)
+        if rows:
+            return rows
+    return []
+
+
+def parse_windows_process_output(output: str) -> list[tuple[int, str]]:
+    rows: list[tuple[int, str]] = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or "CommandLine" in line and "ProcessId" in line:
+            continue
+        if "|" in line:
+            pid_text, command = line.split("|", 1)
+        else:
+            parts = line.rsplit(",", 1)
+            if len(parts) != 2:
+                continue
+            command, pid_text = parts
+        try:
+            rows.append((int(pid_text.strip()), command.strip()))
+        except ValueError:
+            continue
+    return rows
+
+
+def command_matches_task_mcp(command: str) -> bool:
+    lower = command.lower()
+    server_name = executable_name("matlab-mcp-core-server").lower()
+    log_folder = str(LOG_FOLDER).lower()
+    alt_log_folder = log_folder.replace("\\", "/")
+    return server_name in lower and (log_folder in lower or alt_log_folder in lower)
+
+
+def terminate_process(pid: int) -> bool:
+    if pid == os.getpid():
+        return False
+    try:
+        if platform.system() == "Windows":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False, capture_output=True)
+        else:
+            os.kill(pid, signal.SIGTERM)
+        return True
+    except Exception:
+        return False
+
+
+def clean_stale_mcp_processes() -> None:
+    if not CLEAN_STALE_MCP:
+        return
+    terminated: list[int] = []
+    for pid, command in process_rows():
+        if command_matches_task_mcp(command) and terminate_process(pid):
+            terminated.append(pid)
+    if terminated:
+        print(
+            f"terminated stale task-owned matlab-mcp-core-server processes: {terminated}",
+            file=sys.stderr,
+        )
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: satk_eval.py MATLAB_CODE_FILE", file=sys.stderr)
@@ -95,6 +218,7 @@ def main() -> int:
 
     code = Path(sys.argv[1]).read_text(encoding="utf-8")
     LOG_FOLDER.mkdir(parents=True, exist_ok=True)
+    clean_stale_mcp_processes()
     command = [
         str(DEFAULT_SERVER),
         f"--matlab-session-mode={SESSION_MODE}",

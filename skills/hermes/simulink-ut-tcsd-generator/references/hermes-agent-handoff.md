@@ -133,6 +133,7 @@ At task start:
 - Record the original MATLAB current folder and path.
 - Record models/libraries already loaded before the task.
 - If a project support library/model or the target model is already loaded from another path, close that loaded instance with `bdclose(name)` before loading the workspace copy.
+- On a dedicated unattended Windows Worker / Hermes Agent with no interactive user MATLAB Desktop, run SATK through a task-owned new session and pre-clean stale task-owned `matlab-mcp-core-server` processes that use the configured `SATK_MCP_LOG_FOLDER`. This is the aggressive cleanup mode; it is not the default rule for developer Macs or shared MATLAB desktops.
 
 During the task:
 
@@ -144,7 +145,7 @@ At task completion, including failures:
 - Close every model/library loaded by this task whose `FileName` is under the task workdir.
 - Clear task-local variables and simulation outputs.
 - Restore the original current folder and path when possible; otherwise remove the task workdir, project-addon support paths, and skill script paths that were added by this run.
-- Shut down task-owned MCP/SATK sessions. If a task-owned `matlab-mcp-core-server` remains and blocks future calls, terminate only that stale task-owned process and report it in the task warnings.
+- Shut down task-owned MCP/SATK sessions. If a task-owned `matlab-mcp-core-server` remains and blocks future calls, terminate only that stale task-owned process and report it in the task warnings. On dedicated Windows Workers, close a previous task-owned MATLAB session when necessary; on interactive developer machines, do not force-close unrelated MATLAB Desktop sessions unless the user explicitly approves it.
 - Put cleanup in `try`/`catch` or MATLAB `onCleanup` so it runs after model-load errors, failed simulations, timeouts, and interrupted Hermes runs.
 
 ## TCSD Style Learned From ACCtl/PwrLimEng
@@ -306,11 +307,14 @@ Hermes production must make SATK startup deterministic. The skill's `scripts/sat
 - `SATK_MCP_LOG_FOLDER`: short ASCII log/socket folder. Use `C:\Temp\matlab-mcp-core-server-codex` on Windows when possible.
 - `SATK_MATLAB_SESSION_MODE`: use `new` for unattended production VMs, or `existing` only when MATLAB is already open and intended to be reused.
 - `SATK_MATLAB_ROOT`: MATLAB installation root, for example `C:\Program Files\MATLAB\R2026a`; this is passed only when `SATK_MATLAB_SESSION_MODE` is not `existing`.
+- `TCSD_DEDICATED_WORKER`: set to `1` only on unattended worker hosts. This makes `scripts/satk_eval.py` default to a task-owned `new` MATLAB session and terminate stale task-owned `matlab-mcp-core-server` processes that match the same `SATK_MCP_LOG_FOLDER` before startup.
+- `TCSD_CLEAN_STALE_MCP`: set to `1` to enable only the same-log-folder stale MCP cleanup without changing the MATLAB session-mode default.
 
 Recommended Windows VM bootstrap before invoking Hermes generation:
 
 ```bat
 set SATK_MCP_LOG_FOLDER=C:\Temp\matlab-mcp-core-server-codex
+set TCSD_DEDICATED_WORKER=1
 set SATK_MATLAB_SESSION_MODE=new
 set SATK_MATLAB_ROOT=C:\Program Files\MATLAB\R2026a
 ```
