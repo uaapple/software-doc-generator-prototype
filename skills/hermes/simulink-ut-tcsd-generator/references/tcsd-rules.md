@@ -43,6 +43,8 @@ Use `p Param = value;` for parameter overrides.
 
 Do not rely on downstream tools inheriting TestGroup initialization. TestGroup initialization may be kept as a readable common-default block, but final Test rows must repeat the merged defaults. When a Test needs a different value, put that assignment in the Test row and let it override the common default.
 
+Every executable signal assignment in `Initialization` must target a compiled root Inport. Do not carry over common initialization from a previous model, do not write model-family signals that are present in the shared MAT but absent from the target model root ports, and do not invent aliases by naming convention. For example, if the target root Inport is `DrvMod_bRoughness`, `DrvMod_bSelRoughness` is invalid unless that exact Inport exists in the compiled model.
+
 For vector root inputs, use element assignments unless the target importer is explicitly confirmed to support whole-vector syntax:
 
 ```text
@@ -75,10 +77,13 @@ Rules from the UT guidance:
 - Add comments in `Action` to describe input/output signal meaning or condition changes when that helps review.
 - Put the test method in `Test Case Description`, for example boundary value, equivalence class, or requirement analysis.
 - End every Test `Action` with a final relative delay marker, for example `[+0.1s]`, after the last assignment or `expValue(...)` line.
+- Ordinary executable assignments in `Action`, such as `InputA = 1;` or `VectorSig 2=5000;`, must target compiled root Inports. Expected-output assignments are the separate form `OutSig = expValue(...);` and the left-hand side must target a root Outport.
 
 ## Expected Outputs
 
 Only top-level Outports may appear as `expValue(...)` expectations in this workflow.
+
+Validate the Excel text, not only the extracted simulation Dataset. A simulation helper may ignore unknown input assignments when building external inputs, but downstream TCSD importers check the workbook text and will reject non-root input names. Validation failure means the candidate workbook/spec must be repaired and rebuilt inside the Hermes task before simulation or delivery; it is not a reason to immediately report a user-facing platform failure unless the agent cannot derive the model interface or cannot repair the defect after a bounded pass.
 
 Allowed example:
 
@@ -190,7 +195,9 @@ Here `4` is the vector output port index. Equivalent macro syntax can be used fo
 Before finishing, check:
 
 - The workbook was designed from a model-derived coverage-obligation matrix for Condition, Decision, and MCDC items, not only from scenario names or comments.
+- `scripts/validate_tcsd_workbook.py` was run with the model-derived root Inport and Outport list after workbook construction and again after expected-output backfill. Final delivery uses `--require-exp-values`. Any validation error was used to repair and regenerate the candidate workbook before returning success.
 - RelationalOperator equality banks are represented by actual TCSD root-input assignments for every compared constant and a valid non-matching baseline where applicable.
+- Every ordinary executable assignment in `Initialization` and `Action` uses a root Inport name. Unknown names invalidate the candidate workbook even when `extract_tcsd_cases.py` or `sim()` would silently ignore them; repair the generated cases rather than passing that workbook through to the user.
 - Every `expValue(...)` line uses a root Outport name.
 - No `expValue(value,duration,offset)` is used as a numeric tolerance. If the 3-argument form is present, the output must be stable over that offset/duration window.
 - No internal signals, local logging names, or `out_mil_ec` names are present.

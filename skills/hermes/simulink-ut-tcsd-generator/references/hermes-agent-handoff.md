@@ -97,8 +97,8 @@ For Hermes and Windows VM runs, artifact creation is a hard gate:
 
 1. Inspect the model and design coverage-oriented Tests.
 2. Build `outputs/<model>_Test0001_tcsd.xlsx` from `assets/templates/tcsd_template.xlsx`.
-3. Verify the workbook exists and passes basic workbook/TCSD validation.
-4. Only then extract cases, run simulation, collect coverage, or backfill `expValue(...)`.
+3. Verify the workbook exists and passes basic workbook/TCSD validation, including `scripts/validate_tcsd_workbook.py` against the compiled root Inport/Outport interface.
+4. If workbook validation reports unknown signal names, vector assignment issues, or final-delay problems, treat the generated workbook/spec as invalid, repair it in the same Hermes task, rebuild, and rerun validation. Only after validation passes should you extract cases, run simulation, collect coverage, or backfill `expValue(...)`.
 
 If the post-workbook simulation/backfill phase hits any MATLAB/MCP/SATK timeout or instability, stop that phase immediately. Do not retry `sim()`, do not run extra coverage exploration, and do not let the outer Hermes request reach its one-hour timeout. Return strict JSON with `status: "failed"`, a clear `errorMessage`, and a warning that expected-output backfill was skipped or partial. A checkpoint workbook may be included in `outputFiles` for diagnosis, but it must not be presented as a completed automated-test deliverable.
 
@@ -115,12 +115,12 @@ If the post-workbook simulation/backfill phase hits any MATLAB/MCP/SATK timeout 
 10. For Stateflow charts and nested blocks, prefer SATK 2026.06.01+ `model_query_params` to read state names, transition labels, guards, and entry/exit/during actions before falling back to static XML.
 11. Build a coverage-obligation matrix before writing TCSD rows. Include `block path/SID`, `coverage class` (`Condition`, `Decision`, `MCDC`), `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`.
 12. Create a JSON spec or workbook draft, then build the final workbook from `assets/templates/tcsd_template.xlsx`.
-13. Validate workbook existence, sheet shape, self-contained Test initialization, final action delays, and Excel zip integrity before starting simulation/backfill.
+13. Validate workbook existence, sheet shape, self-contained Test initialization, final action delays, Excel zip integrity, and workbook-vs-rootPorts signal names before starting simulation/backfill. If validation fails, repair the candidate workbook/spec and rerun this validation before moving on.
 14. Extract TCSD actions to simulation JSON.
 15. Run one bounded simulation pass and export results.
     Use per-port compiled Dataset typing, set `LoadExternalInput=on`, and map outputs by root Outport names or port order if logged line names are blank. Prefer port-order fallback over renaming model lines, because line names that match non-`Simulink.Signal` base variables can cause signal-object resolution errors.
 16. Backfill stable top-level output expectations when simulation succeeds within the time budget.
-17. Validate workbook shape, `expValue` left-hand names, vector-output omissions, and Excel zip integrity.
+17. Rerun workbook validation with `--require-exp-values`; validate workbook shape, ordinary input assignment left-hand names, `expValue` left-hand names, vector-output omissions, and Excel zip integrity. If this final validation fails, repair and rerun the necessary downstream steps before returning `status: "completed"`.
 18. Run the MATLAB cleanup contract before returning the final artifact JSON.
 19. If coverage feedback exists and the user explicitly asks for a repair iteration, add versioned supplemental Tests and repeat. Do not start unbounded repair loops during the first production generation task.
 
@@ -156,6 +156,7 @@ At task completion, including failures:
 - Preserve the template's columns, freeze pane, cell styles, comments/status options, and workbook structure.
 - `Test Case Description` should include a method, such as requirement analysis, boundary value, equivalence class, or coverage feedback.
 - Each Test row's `Initialization` assigns all root inputs required for deterministic startup, plus explicit parameter overrides as `p ParamName = value;`. Do not rely on the TestGroup row or previous Tests being inherited by the downstream runner.
+- Every ordinary executable assignment in `Initialization` or `Action` must use an exact compiled root Inport name. Do not carry over common initialization from another model or invent naming aliases such as adding `bSel` unless that exact root Inport exists.
 - If using a JSON spec, keep shared startup values in `test_group.initialization_1/2` for readability and put only per-Test overrides in `test.initialization`; `scripts/build_tcsd_from_json.py` expands the shared startup values into every Test row and lets the Test-specific values win.
 - `Action` uses relative time markers like `[+100ms]` or `[+0.2s]`.
 - Vector root inputs are initialized element by element, for example `VectorSig 1=5000;`, not as `VectorSig = [5000 5000];`.
@@ -384,9 +385,11 @@ HvCoorn also exposed a state-machine expected-output failure pattern:
 - Workbook path is under `outputs/`.
 - Source `.slx` and `.mat` are unchanged.
 - `unzip -t <workbook>.xlsx` succeeds.
+- `scripts/validate_tcsd_workbook.py` passes against the model-derived root Inport/Outport list; final delivery uses `--require-exp-values`. Any validation failure was handled as an internal repair loop before platform delivery, unless the interface could not be derived or the bounded repair pass was exhausted.
 - Sheet name is `TCSD`.
 - Test rows have `Type = Test` and `Work Status = reviewed`.
 - Every Test row is independently runnable: all root inputs needed for startup are initialized in that row, not only in the TestGroup row.
+- Every ordinary executable assignment in `Initialization` and `Action` has a root Inport left-hand side. Unknown input names invalidate the candidate workbook even if simulation extraction would ignore them; repair them before returning success.
 - Every `expValue(...)` left-hand side is a top-level Outport.
 - No internal/local/MIL signal names appear as expected outputs.
 - No three-argument `expValue` is present unless it is intentionally checking a stable window.

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -38,9 +39,18 @@ def set_indexed_value(inputs: dict[str, object], name: str, index_text: str, val
     inputs[name] = values
 
 
-def parse_assignments(text: str, input_names: set[str]) -> tuple[dict[str, object], dict[str, object]]:
+def unknown_assignment(context: str, signal: str, line: str) -> dict[str, str]:
+    return {"context": context, "signal": signal, "line": line}
+
+
+def parse_assignments(
+    text: str,
+    input_names: set[str],
+    context: str,
+) -> tuple[dict[str, object], dict[str, object], list[dict[str, str]]]:
     inputs: dict[str, object] = {}
     params: dict[str, object] = {}
+    unknowns: list[dict[str, str]] = []
     for raw in (text or "").splitlines():
         line = raw.strip()
         if not line or line.startswith("//"):
@@ -50,13 +60,19 @@ def parse_assignments(text: str, input_names: set[str]) -> tuple[dict[str, objec
             params[param_match.group(1)] = parse_value(param_match.group(2))
             continue
         index_match = INDEX_ASSIGN_RE.match(line)
-        if index_match and index_match.group(1) in input_names:
-            set_indexed_value(inputs, index_match.group(1), index_match.group(2), index_match.group(3))
+        if index_match:
+            if index_match.group(1) in input_names:
+                set_indexed_value(inputs, index_match.group(1), index_match.group(2), index_match.group(3))
+            else:
+                unknowns.append(unknown_assignment(context, index_match.group(1), line))
             continue
         assign_match = ASSIGN_RE.match(line)
-        if assign_match and assign_match.group(1) in input_names:
-            inputs[assign_match.group(1)] = parse_value(assign_match.group(2))
-    return inputs, params
+        if assign_match:
+            if assign_match.group(1) in input_names:
+                inputs[assign_match.group(1)] = parse_value(assign_match.group(2))
+            else:
+                unknowns.append(unknown_assignment(context, assign_match.group(1), line))
+    return inputs, params, unknowns
 
 
 def merge_assignments(
@@ -78,8 +94,14 @@ def delay_seconds(amount: str, unit: str) -> float:
     return value / 1000.0 if unit.lower() == "ms" else value
 
 
-def parse_steps(action: str, input_names: set[str]) -> list[dict]:
+def parse_steps(
+    action: str,
+    input_names: set[str],
+    row: int,
+    test_id: str,
+) -> tuple[list[dict], list[dict[str, str]]]:
     steps: list[dict] = []
+    unknowns: list[dict[str, str]] = []
     current: dict | None = None
     for raw in (action or "").splitlines():
         match = STEP_RE.match(raw)
@@ -95,14 +117,16 @@ def parse_steps(action: str, input_names: set[str]) -> list[dict]:
             continue
         if current is None:
             continue
-        inputs, params = parse_assignments(raw, input_names)
+        context = f"row {row} test {test_id} action step {len(steps) + 1}"
+        inputs, params, line_unknowns = parse_assignments(raw, input_names, context)
+        unknowns.extend(line_unknowns)
         current["input_updates"].update(inputs)
         current["param_updates"].update(params)
     if current is not None:
         steps.append(current)
     for idx, step in enumerate(steps, start=1):
         step["index"] = idx
-    return steps
+    return steps, unknowns
 
 
 def main() -> int:
@@ -110,6 +134,11 @@ def main() -> int:
     parser.add_argument("--workbook", required=True)
     parser.add_argument("--inputs", required=True, help="Comma-separated root input names")
     parser.add_argument("--output", required=True)
+    parser.add_argument(
+        "--allow-unknown-assignments",
+        action="store_true",
+        help="Ignore executable assignments whose left-hand side is not a root input",
+    )
     args = parser.parse_args()
 
     input_names = {name.strip() for name in args.inputs.split(",") if name.strip()}
@@ -117,11 +146,14 @@ def main() -> int:
     ws = wb["TCSD"]
     group_inputs: dict[str, object] = {}
     group_params: dict[str, object] = {}
+    unknown_assignments: list[dict[str, str]] = []
     for row in range(1, ws.max_row + 1):
         if ws.cell(row, 3).value != "TestGroup":
             continue
         for offset in range(0, 2):
-            inputs, params = parse_assignments(ws.cell(row + offset, 6).value or "", input_names)
+            context = f"row {row + offset} TestGroup initialization"
+            inputs, params, unknowns = parse_assignments(ws.cell(row + offset, 6).value or "", input_names, context)
+            unknown_assignments.extend(unknowns)
             group_inputs.update(inputs)
             group_params.update(params)
         break
@@ -130,18 +162,29 @@ def main() -> int:
     for row in range(1, ws.max_row + 1):
         if ws.cell(row, 3).value != "Test":
             continue
-        test_inputs, test_params = parse_assignments(ws.cell(row, 6).value or "", input_names)
+        test_id = ws.cell(row, 1).value
+        context = f"row {row} test {test_id} initialization"
+        test_inputs, test_params, unknowns = parse_assignments(ws.cell(row, 6).value or "", input_names, context)
+        unknown_assignments.extend(unknowns)
         init_inputs, init_params = merge_assignments(group_inputs, group_params, test_inputs, test_params)
+        steps, step_unknowns = parse_steps(ws.cell(row, 7).value or "", input_names, row, str(test_id or ""))
+        unknown_assignments.extend(step_unknowns)
         tests.append(
             {
                 "row": row,
-                "test_id": ws.cell(row, 1).value,
+                "test_id": test_id,
                 "name": ws.cell(row, 2).value,
                 "init_values": init_inputs,
                 "init_params": init_params,
-                "steps": parse_steps(ws.cell(row, 7).value or "", input_names),
+                "steps": steps,
             }
         )
+    if unknown_assignments and not args.allow_unknown_assignments:
+        print(
+            json.dumps({"error": "unknown_tcsd_input_assignments", "items": unknown_assignments}, ensure_ascii=False, indent=2),
+            file=sys.stderr,
+        )
+        return 1
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"tests": tests}, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -11,6 +11,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from validate_tcsd_workbook import load_interface_names, print_text_report, validate_workbook
+
 
 HEADERS = [
     "TestID",
@@ -112,6 +114,10 @@ def main() -> int:
     parser.add_argument("--template", required=True)
     parser.add_argument("--spec", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--inputs", help="Comma-separated compiled root Inport names for workbook validation")
+    parser.add_argument("--outputs", help="Comma-separated root Outport names for workbook validation")
+    parser.add_argument("--interface-json", help="JSON containing inputs/outputs or rootPorts inputs/outputs")
+    parser.add_argument("--skip-workbook-validation", action="store_true")
     args = parser.parse_args()
 
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
@@ -166,6 +172,12 @@ def main() -> int:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output)
+    if not args.skip_workbook_validation and (args.inputs or args.outputs or args.interface_json):
+        root_inputs, root_outputs = load_interface_names(args.interface_json, args.inputs, args.outputs)
+        report = validate_workbook(output, root_inputs, root_outputs, require_exp_values=False)
+        if report["status"] != "passed":
+            print_text_report(report)
+            return 1
     print(output)
     return 0
 
