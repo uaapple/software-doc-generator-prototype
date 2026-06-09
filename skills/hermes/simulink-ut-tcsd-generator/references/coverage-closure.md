@@ -23,6 +23,70 @@ For every item, write one of: `covered by TC_xxx`, `needs supplemental test`, or
 
 Keep this as a model-derived obligation matrix while drafting Tests. Recommended columns are `block path/SID`, `coverage class` (`Condition`, `Decision`, `MCDC`), `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`. The matrix may live in the JSON spec or a sidecar note, but the workbook design should be traceable to it.
 
+### Skill-only Logical MC/DC gate
+
+For AND/OR `Logical Operator` blocks, do not rely on prompt language or Test descriptions to remember all vectors. Create a machine-checkable port mapping before writing TCSD rows:
+
+```json
+{
+  "model": "ModelName",
+  "operators": [
+    {
+      "id": "LO_001",
+      "block_path": "Model/Sub/Logical Operator",
+      "operator": "AND",
+      "common_inputs": {
+        "EnableRoot": 1
+      },
+      "ports": [
+        {
+          "index": 1,
+          "source": "Mode == 2",
+          "true_inputs": {
+            "Mode": 2
+          },
+          "false_inputs": {
+            "Mode": 1
+          }
+        },
+        {
+          "index": 2,
+          "source": "Voltage > 300",
+          "true_inputs": {
+            "Voltage": 320
+          },
+          "false_inputs": {
+            "Voltage": 280
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Then expand and validate:
+
+```bash
+python3 scripts/build_logical_mcdc_obligations.py \
+  --logical-operators outputs/ModelName_logical_operators.json \
+  --output outputs/ModelName_coverage_obligations.json
+
+python3 scripts/validate_logical_mcdc_mapping.py \
+  --workbook outputs/ModelName_Test0001_tcsd.xlsx \
+  --obligations outputs/ModelName_coverage_obligations.json \
+  --report-json outputs/ModelName_mcdc_validation_report.json
+```
+
+The builder creates these default vectors:
+
+- OR: all-false baseline plus one single-true vector per input port.
+- AND: all-true baseline plus one single-false vector per input port.
+
+If the builder reports a missing or conflicting port mapping, repair the traceability. If the vector is genuinely unreachable, edit the resulting obligation to `status: "unreachable"` or `status: "not_traceable"` and include a concrete `reason`; do not leave it as `unresolved` and do not invent root-input values that cannot drive the operator port.
+
+The mapping validator checks workbook assignment states, not comments. A vector is counted only when a Test initialization or action step contains the root-input and scalar-parameter state declared in the obligation. Passing this gate proves that the workbook contains the intended stimuli; it is still better to confirm actual block-port truth vectors with Simulink Coverage or an internal probe when available.
+
 ## Generate Targeted Stimuli
 
 - Make one condition dominate at a time. For `MinMax`, set a clear margin so the intended port wins; avoid equal values because coverage tools may attribute ties unexpectedly.
@@ -34,6 +98,7 @@ Keep this as a model-derived obligation matrix while drafting Tests. Recommended
 - MC/DC is not full combinational coverage. Do not generate `2^N` combinations unless the user explicitly asks for truth-table exhaustion; the default obligation is the baseline plus one independent-toggle case per input.
 - For nested or chained logical expressions, target the effective logical operator input values. If an upstream NOT feeds the operator, invert the raw stimulus so the operator input receives the intended true/false value.
 - For enum/constant equality inputs, resolve the constant value from the loaded MAT/init/data-dictionary/model workspace before writing TCSD. Example: if a logical input is `icbms_stHvBat == BMSActSt_ACChrg`, the action must use the resolved value of `BMSActSt_ACChrg`, not a guessed Boolean `1`. In BMS-style models, mappings such as `BMSActSt_online=4`, `BMSActSt_DCChrg=8`, `BMSActSt_ACChrg=9`, and relay closed `=2` are enum/state values that must be written as root-input assignments when they are the resolved comparison constants.
+- When two operator ports share the same root signal, check for impossible MC/DC vectors before drafting cases. Equality banks can make an AND all-true vector unreachable, while OR all-false may require one valid baseline outside all compared constants. Record these outcomes explicitly instead of letting the generator produce contradictory assignments.
 - For mode/config signals such as `stMod`, `stMode`, `stCfg`, gear request, or charge mode, scan all relational comparisons that consume the same signal before selecting cases. Generate one case for every model-visible compared value, then add a baseline outside that set only if the value is valid for the model. Do not let one default mode stand in for the whole comparison bank.
 - When a selector is produced by voltage/current/speed filtering or lookup logic, hold the source input long enough for the selector to settle, or put the desired source value in Initialization.
 - For `Saturate`, identify `UpperLimit`, `LowerLimit`, and the pre-saturation input before writing stimuli. If that input is produced by lookup tables or calibration arithmetic, inspect the MAT/table min/max over valid input ranges first. Design root inputs or safe explicit parameter overrides that make the pre-saturation value lower than the lower limit, inside range, and higher than the upper limit; exact boundary values usually do not close both decisions.
@@ -61,6 +126,7 @@ Useful probes for closure, while still keeping TCSD expectations top-level only:
 - `Saturate`: log the pre-saturation value and confirm it is below low, inside range, and above high. Do not claim closure from the saturated output alone. If valid MAT/calibration data keeps the pre-saturation value inside the limits, record the low/high outcomes as unreachable instead of inventing unsafe table edits.
 - `Switch` / relational logic: log the logical trigger value; for sign-based switches, deliberately cover both positive and negative root inputs.
 - `Logical Operator`: log or otherwise prove each operator input port saw the intended truth vector, not just the final output. OR needs all-false and single-true vectors; AND needs all-true and single-false vectors. The generated TCSD workbook must contain the actual root-input assignments for each traceable vector; do not rely on a separate report as the coverage artifact.
+- `Logical Operator` mapping validator: keep `outputs/<model>_coverage_obligations.json` and `outputs/<model>_mcdc_validation_report.json` with the generated workbook. A failed report means the workbook omitted at least one required vector or left a traceability conflict unresolved; repair the workbook before calling it coverage-ready.
 - Filtered or ramp-limited paths: use longer hold time, Initialization, or explicit parameter overrides, then confirm the downstream decision saw the settled value.
 
 ## PwrLimEng Feedback Pattern
