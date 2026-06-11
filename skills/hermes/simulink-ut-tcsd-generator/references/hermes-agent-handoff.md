@@ -419,3 +419,12 @@ This skill is suitable for a Hermes-style agent if it can:
 - create small model-specific JSON/spec helper scripts when model structure requires judgment.
 
 It is not a fully push-button generator. The intended agent still must inspect the model and design coverage-oriented stimuli. The bundled scripts make Excel creation, action extraction, simulation, and expected-output backfill repeatable.
+
+
+## Logical MC/DC Automation Notes
+
+For Windows/Hermes runs, keep the MC/DC loop inside the task workspace. `trace_logical_mcdc.m` and `probe_logical_mcdc_vectors.m` expect the selected addon files to already be copied into `workspaceDir` and should be called after `setup_ut_support(rootDir, initScripts)`.
+
+Probe runs add temporary `To Workspace` blocks and may set linked library parents to `LinkStatus=inactive` in memory. They must close models with `saveflag=0`; never save the probed model or library back to disk.
+
+When `build_probe_mcdc_obligations.py` leaves any vector `unresolved`, do not mark the TCSD task complete. Either add mapped supplemental Tests, rerun the probe after those Tests are extracted, or mark the vector `unreachable` with a concrete structural reason and probe evidence.

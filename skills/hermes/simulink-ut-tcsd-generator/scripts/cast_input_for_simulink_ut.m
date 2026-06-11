@@ -1,5 +1,13 @@
 function data = cast_input_for_simulink_ut(data, dtype)
 dtype = char(string(dtype));
+fixedMatch = regexp(dtype, '^([su])fix(\d+)_En(\d+)$', 'tokens', 'once');
+if ~isempty(fixedMatch)
+    signedFlag = strcmp(fixedMatch{1}, 's');
+    wordLength = str2double(fixedMatch{2});
+    fractionLength = str2double(fixedMatch{3});
+    data = fi(data, signedFlag, wordLength, fractionLength);
+    return;
+end
 switch dtype
     case {'single'}
         data = single(data);

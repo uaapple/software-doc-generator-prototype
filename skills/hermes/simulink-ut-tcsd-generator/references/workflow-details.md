@@ -205,3 +205,13 @@ Scalar calibration overrides are useful when model dynamics hide a decision outc
 - keep the override visible in `Initialization` with `p Param = value;` and describe why in the Test description/action comment.
 
 Avoid table/array overrides unless the parser and target unit-test toolchain support them.
+
+
+## MC/DC Script Shortcut
+
+For logic-heavy split models, prefer the script loop over hand-maintained scratch files:
+
+- `trace_logical_mcdc.m` records the structural source tree for every AND/OR Logical Operator input.
+- `augment_tcsd_for_mcdc.py` appends supplemental Tests only when a missing obligation already has executable root-input/parameter mappings.
+- `probe_logical_mcdc_vectors.m` observes actual operator-input vectors from extracted TCSD cases when static tracing is insufficient.
+- `build_probe_mcdc_obligations.py` converts observed vectors into `simulink-ut-logical-mcdc-obligations/v1`; unobserved vectors remain `unresolved` unless an explicit unreachable override is supplied.

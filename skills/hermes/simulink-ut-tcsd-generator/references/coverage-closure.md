@@ -161,3 +161,16 @@ The HvGrid run exposed issues common to larger integration-style modules:
 - For latch, hysteresis, and delay logic, use multi-step actions that cross low/high thresholds and then return, rather than only one static initialization.
 - For large modules, use JSON specs plus generated Excel instead of hand-editing. Keep a scalar-output allowlist and a validation script that rejects internal, local, and vector expectations.
 - Reject generated rows whose `Action` ends on an assignment or `expValue(...)`; append a short final delay such as `[+0.1s]`.
+
+
+## Automated Logical MC/DC Quality Loop
+
+Use the bundled scripts to reduce repeated manual repair work:
+
+1. Run `trace_logical_mcdc.m` after model load/bootstrap to write structural Logical Operator input traces.
+2. Build normal obligations with `build_logical_mcdc_obligations.py` when true/false mappings are known.
+3. If workbook validation reports missing vectors whose obligations already contain `match.inputs`/`match.params`, run `augment_tcsd_for_mcdc.py` and rebuild the workbook.
+4. If mappings are incomplete or a vector may be structurally unreachable, run `probe_logical_mcdc_vectors.m`, then `build_probe_mcdc_obligations.py`.
+5. Treat unresolved probe vectors as failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason.
+
+The default closure target is `missing_count = 0` and `unresolved_count = 0`; `unreachable_count > 0` is acceptable only when every item has a specific model/probe reason.
