@@ -10,6 +10,7 @@ Create a short checklist before writing the workbook:
 - `RelationalOperator` equality banks: when one root signal or mode/config signal is compared against multiple constants, such as `stMod == 2` and `stMod == 3`, include a matching case for each compared constant plus a valid non-matching baseline. A nominal default such as `stMod = 1` does not cover the `2` or `3` comparisons.
 - `Switch` / relational logic: true and false outcomes.
 - `Logical Operator` AND/OR: production-default MC/DC at the operator input ports. This is required from the model structure itself and does not depend on an external coverage report.
+- Calibration/parameter-fed logic: when a `Constant` block or scalar parameter/calibration such as `*_C` drives a logical input or comparison, include both parameter states needed for coverage and write them as TCSD `p Param=value;` overrides. Do not treat the MAT/default value as immutable unless the source is a literal unmodifiable constant.
 - `MinMax`: each input port is the selected maximum/minimum at least once.
 - `MultiPortSwitch`: every valid selector value, plus default/otherwise branch when the block has one.
 - `Saturate`: below lower limit, pass-through region, above upper limit.
@@ -58,6 +59,16 @@ For AND/OR `Logical Operator` blocks, do not rely on prompt language or Test des
           "false_inputs": {
             "Voltage": 280
           }
+        },
+        {
+          "index": 3,
+          "source": "Constant Value EngStrtStop_bRefuEndGearPShd_C",
+          "true_params": {
+            "EngStrtStop_bRefuEndGearPShd_C": 1
+          },
+          "false_params": {
+            "EngStrtStop_bRefuEndGearPShd_C": 0
+          }
         }
       ]
     }
@@ -98,6 +109,8 @@ The mapping validator checks workbook assignment states, not comments. A vector 
 - MC/DC is not full combinational coverage. Do not generate `2^N` combinations unless the user explicitly asks for truth-table exhaustion; the default obligation is the baseline plus one independent-toggle case per input.
 - For nested or chained logical expressions, target the effective logical operator input values. If an upstream NOT feeds the operator, invert the raw stimulus so the operator input receives the intended true/false value.
 - For enum/constant equality inputs, resolve the constant value from the loaded MAT/init/data-dictionary/model workspace before writing TCSD. Example: if a logical input is `icbms_stHvBat == BMSActSt_ACChrg`, the action must use the resolved value of `BMSActSt_ACChrg`, not a guessed Boolean `1`. In BMS-style models, mappings such as `BMSActSt_online=4`, `BMSActSt_DCChrg=8`, `BMSActSt_ACChrg=9`, and relay closed `=2` are enum/state values that must be written as root-input assignments when they are the resolved comparison constants.
+- For Boolean scalar calibrations/parameters that feed logical ports directly, create paired parameter mappings. For an AND input, the all-true vector needs `p Cal=1;` and that port's single-false vector needs `p Cal=0;`; for an OR input, the all-false baseline needs `p Cal=0;` and that port's single-true vector needs `p Cal=1;`. If the calibration default is `0`, the generated TCSD still must include the `p Cal=1;` override wherever the true state is required.
+- If a calibration participates through a RelationalOperator, resolve the compared threshold/enum first, then choose parameter values on both sides of that exact comparison. Put those values in `true_params` / `false_params`, not in comments.
 - When two operator ports share the same root signal, check for impossible MC/DC vectors before drafting cases. Equality banks can make an AND all-true vector unreachable, while OR all-false may require one valid baseline outside all compared constants. Record these outcomes explicitly instead of letting the generator produce contradictory assignments.
 - For mode/config signals such as `stMod`, `stMode`, `stCfg`, gear request, or charge mode, scan all relational comparisons that consume the same signal before selecting cases. Generate one case for every model-visible compared value, then add a baseline outside that set only if the value is valid for the model. Do not let one default mode stand in for the whole comparison bank.
 - When a selector is produced by voltage/current/speed filtering or lookup logic, hold the source input long enough for the selector to settle, or put the desired source value in Initialization.
@@ -125,7 +138,7 @@ Useful probes for closure, while still keeping TCSD expectations top-level only:
 - `MultiPortSwitch`: log the integer selector at the block input. High source values such as voltage or mode commands do not prove the selector reached the intended port when a filter, lookup, or quantizer is upstream.
 - `Saturate`: log the pre-saturation value and confirm it is below low, inside range, and above high. Do not claim closure from the saturated output alone. If valid MAT/calibration data keeps the pre-saturation value inside the limits, record the low/high outcomes as unreachable instead of inventing unsafe table edits.
 - `Switch` / relational logic: log the logical trigger value; for sign-based switches, deliberately cover both positive and negative root inputs.
-- `Logical Operator`: log or otherwise prove each operator input port saw the intended truth vector, not just the final output. OR needs all-false and single-true vectors; AND needs all-true and single-false vectors. The generated TCSD workbook must contain the actual root-input assignments for each traceable vector; do not rely on a separate report as the coverage artifact.
+- `Logical Operator`: log or otherwise prove each operator input port saw the intended truth vector, not just the final output. OR needs all-false and single-true vectors; AND needs all-true and single-false vectors. The generated TCSD workbook must contain the actual root-input assignments and any required `p Param=value;` calibration overrides for each traceable vector; do not rely on a separate report as the coverage artifact.
 - `Logical Operator` mapping validator: keep `outputs/<model>_coverage_obligations.json` and `outputs/<model>_mcdc_validation_report.json` with the generated workbook. A failed report means the workbook omitted at least one required vector or left a traceability conflict unresolved; repair the workbook before calling it coverage-ready.
 - Filtered or ramp-limited paths: use longer hold time, Initialization, or explicit parameter overrides, then confirm the downstream decision saw the settled value.
 

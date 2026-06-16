@@ -110,6 +110,88 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertIn("p Gain=3;", new_test["initialization"])
             self.assertTrue(new_test["action"].strip().endswith("[+0.1s]"))
 
+    def test_logical_mcdc_validator_counts_parameter_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            logical_ops = {
+                "model": "ModelA",
+                "operators": [
+                    {
+                        "id": "ModelA:AND1",
+                        "block_path": "ModelA/AND1",
+                        "operator": "AND",
+                        "ports": [
+                            {
+                                "index": 1,
+                                "source": "RootA",
+                                "true_inputs": {"RootA": 1},
+                                "false_inputs": {"RootA": 0},
+                            },
+                            {
+                                "index": 2,
+                                "source": "Constant Value RefuEndGearPShd_C",
+                                "true_params": {"RefuEndGearPShd_C": 1},
+                                "false_params": {"RefuEndGearPShd_C": 0},
+                            },
+                        ],
+                    }
+                ],
+            }
+            (work / "logical_ops.json").write_text(json.dumps(logical_ops), encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "build_logical_mcdc_obligations.py"),
+                    "--logical-operators",
+                    str(work / "logical_ops.json"),
+                    "--output",
+                    str(work / "obligations.json"),
+                ],
+                check=True,
+            )
+            obligations = json.loads((work / "obligations.json").read_text(encoding="utf-8"))
+            self.assertEqual(obligations["summary"]["required_count"], 3)
+            self.assertIn(
+                {"RefuEndGearPShd_C": 1},
+                [item["match"]["params"] for item in obligations["obligations"]],
+            )
+
+            from openpyxl import Workbook
+
+            workbook = Workbook()
+            ws = workbook.active
+            ws.title = "TCSD"
+            ws.append(["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action"])
+            ws.append(
+                [
+                    "TC_001",
+                    "Parameter MC/DC",
+                    "Test",
+                    "UT_MCDC",
+                    "Covers AND vectors that require calibration override",
+                    "RootA=1;\np RefuEndGearPShd_C=1;",
+                    "[+0.1s]\nRootA=0;\n[+0.1s]\nRootA=1;\np RefuEndGearPShd_C=0;\n[+0.1s]",
+                ]
+            )
+            workbook.save(work / "cases.xlsx")
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "validate_logical_mcdc_mapping.py"),
+                    "--workbook",
+                    str(work / "cases.xlsx"),
+                    "--obligations",
+                    str(work / "obligations.json"),
+                    "--report-json",
+                    str(work / "validation.json"),
+                ],
+                check=True,
+            )
+            validation = json.loads((work / "validation.json").read_text(encoding="utf-8"))
+            self.assertEqual(validation["status"], "passed")
+            self.assertEqual(validation["summary"]["missing_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
