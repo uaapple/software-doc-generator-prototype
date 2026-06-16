@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -12,7 +13,36 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 
 
+def load_script_module(script_name: str):
+    spec = importlib.util.spec_from_file_location(script_name.removesuffix(".py"), SCRIPTS / script_name)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_backfill_uses_point_window_for_unstable_step(self) -> None:
+        backfill = load_script_module("backfill_expected_outputs.py")
+        action = "\n".join(
+            [
+                "[+0.02s] // start timer branch",
+                "InputA = 1;",
+                "[+6.3s] // timer expired",
+                "[+0.1s]",
+            ]
+        )
+        step_results = {
+            1: {"outputs": {"OutA": 0}, "stable": {"OutA": False}},
+            2: {"outputs": {"OutA": 1}, "stable": {"OutA": True}},
+            3: {"outputs": {"OutA": 1}, "stable": {"OutA": True}},
+        }
+
+        rebuilt = backfill.build_action(action, step_results, ["OutA"])
+
+        self.assertIn("[+0.02s] // start timer branch\nInputA = 1;\nOutA = expValue(0,0.01,0);", rebuilt)
+        self.assertIn("[+6.3s] // timer expired\nOutA = expValue(1);", rebuilt)
+
     def test_probe_obligations_distinguish_required_and_unreachable(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             work = Path(td)
