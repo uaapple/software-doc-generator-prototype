@@ -1,6 +1,6 @@
 ---
 name: simulink-ut-tcsd-generator
-description: Generate coverage-oriented Simulink unit-test TCSD Excel cases from models. Use when the user provides a specific `.slx` model and matching `.mat` data file and asks Codex to create, repair, or backfill unit-test cases in the same TCSD style as the ACCtl/PwrLimEng examples, especially when Simulink Agentic Toolkit, Cornex/ITK dependencies, `.sldd` data dictionaries, or simulation-derived expected outputs are involved. When this skill is named for a model, treat the full coverage-first UT TCSD workflow as the default task contract without requiring the user to repeat it.
+description: Generate and repair coverage-oriented Simulink unit-test TCSD Excel cases from models. Use when the user provides a specific `.slx` model and matching `.mat` data file and asks Codex to create, repair, backfill, or improve unit-test cases in the same TCSD style as the ACCtl/PwrLimEng examples, especially when Simulink Agentic Toolkit, Cornex/ITK dependencies, `.sldd` data dictionaries, Simulink Coverage feedback, MCDC closure, or simulation-derived expected outputs are involved. When this skill is named for a model, treat the full coverage-first UT TCSD workflow as the default task contract without requiring the user to repeat it; when the user asks for MCDC feedback closure, run one bounded Simulink Coverage feedback repair pass by default.
 ---
 
 # Simulink Unit-Test TCSD Generator
@@ -23,6 +23,7 @@ By default, you must:
 - Use Simulink Agentic Toolkit / SATK for model reading, structural checks, and MATLAB evaluation.
 - Generate coverage-first unit-test cases, with decision coverage as the first optimization target.
 - Derive Condition, Decision, and MCDC obligations directly from the model before writing TCSD rows; external feedback documents or screenshots may inform future repairs, but they are not required generation inputs.
+- When the user asks for MCDC feedback improvement or coverage-closure iteration, run one bounded Simulink Coverage feedback repair pass after the first workbook has been built, validated, extracted, simulated/backfilled as far as possible, and coverage collection is available. Use `scripts/collect_mcdc_coverage_feedback.m` to write `outputs/<model>_mcdc_feedback.json`, add focused supplemental Tests for uncovered MCDC items that can be traced to root inputs or scalar parameters, rebuild a versioned workbook, then rerun normal workbook validation and simulation/backfill. Do not start an unbounded repair loop unless explicitly requested.
 - For traceable AND/OR `Logical Operator` blocks, run the skill-side MC/DC quality loop before final delivery: `scripts/trace_logical_mcdc.m` for structural port-source evidence, `scripts/probe_logical_mcdc_vectors.m` when static mapping is incomplete or reachability is doubtful, `scripts/build_probe_mcdc_obligations.py` to convert observed vectors into machine-checkable obligations, `scripts/augment_tcsd_for_mcdc.py` for mapped missing vectors, and `scripts/run_tcsd_quality_loop.py` as the deterministic workbook-side loop. Only `required` obligations covered by the workbook or `unreachable` obligations with concrete model/probe evidence can pass; do not use broad `not_traceable` as a success substitute.
 - For traceable AND/OR `Logical Operator` blocks, make MC/DC a hard workbook-mapping gate, not a prose preference. Before writing Tests, create a logical-operator port mapping such as `outputs/<model>_logical_operators.json`, run `scripts/build_logical_mcdc_obligations.py --logical-operators ... --output outputs/<model>_coverage_obligations.json`, and after workbook generation run `scripts/validate_logical_mcdc_mapping.py --workbook ... --obligations outputs/<model>_coverage_obligations.json --report-json outputs/<model>_mcdc_validation_report.json`. Any `required` obligation that is missing or `unresolved` invalidates the candidate workbook until it is repaired or explicitly marked `unreachable` / `not_traceable` with a concrete model reason.
 - Treat scalar calibration/parameter values that feed Condition, Decision, or MCDC logic as controllable coverage stimuli, not fixed background defaults. If a `Constant` block, data-dictionary entry, `Simulink.Parameter`, `CornexCsc.Parameter`, or `*_C` calibration feeds an AND/OR input directly or through a comparison, derive both true and false parameter states and put them in the logical obligation as `true_params` / `false_params`. The TCSD must contain executable overrides such as `p EngStrtStop_bRefuEndGearPShd_C=1;` in `Initialization` or the relevant `Action` step; a comment that names the calibration is not coverage evidence.
@@ -190,7 +191,15 @@ Hermes may reuse the same MATLAB desktop/session across generation tasks. Always
    - Run the continuous-output plausibility gate after backfill. Check `pwr*`, `tq*`, voltage/current/speed/temperature/SOC, `*Max*`, `*Min*`, `*Peak*`, `*Contns*`, and other physical limit outputs for unexplained Boolean-scale values, large jumps, default/sentinel values, and implausible same-family ordering. Do not deliver `reviewed` rows with suspicious continuous expectations unless they are justified, repaired, or omitted.
    - Validate that the final workbook contains `expValue(...)` expectations before reporting success. A workbook with only stimuli is not a completed TCSD deliverable for automated test execution.
 
-6. **Verify**
+6. **Run one MCDC feedback repair pass when requested**
+   - Use this step when the user asks to feed MATLAB/Simulink Coverage MCDC results back into the agent, or when the task explicitly targets MCDC improvement beyond the skill-only logical MC/DC gate.
+   - Read `references/mcdc-feedback-repair.md`.
+   - Extract cases from the current validated workbook, then run `scripts/collect_mcdc_coverage_feedback.m` through `scripts/satk_eval.py` to produce `outputs/<model>_mcdc_feedback.json` and, when possible, an HTML coverage report.
+   - If coverage feedback collection fails, do not claim MCDC feedback closure; keep the validated/backfilled workbook and report the coverage collection error.
+   - If MCDC is below target and the feedback identifies traceable missing items, add focused supplemental Tests only for those items, rebuild to the next versioned workbook, rerun root-port/workbook validation, rerun logical MC/DC mapping validation if obligations exist, and rerun simulation/backfill for the repaired workbook.
+   - Stop after this one repair pass unless the user explicitly asks for additional iterations. Any remaining uncovered MCDC items must be reported as still uncovered, unreachable candidates, or not traceable with concrete evidence.
+
+7. **Verify**
    - Run `unzip -t` on the output workbook.
    - Inspect the TCSD sheet with a spreadsheet library or artifact-tool.
    - Run `scripts/validate_tcsd_workbook.py` against the compiled root-port interface and treat `unknown_input_assignment`, `unknown_exp_output`, `whole_vector_input_assignment`, `unsupported_vector_output_expectation`, `missing_final_delay`, and final `missing_exp_values` as candidate-workbook failures that must be repaired before delivery.
@@ -204,7 +213,7 @@ Hermes may reuse the same MATLAB desktop/session across generation tasks. Always
    - Check the workbook against the model-derived coverage-obligation matrix: every traceable RelationalOperator condition, MinMax winner, MultiPortSwitch selector, Switch side, Abs source sign, and AND/OR MC/DC vector is either mapped to a Test/action, marked unreachable/invalid with a concrete model reason, or reported as unresolved.
    - If model coverage evidence is available, use it to confirm or refine the generated MC/DC obligations. Coverage feedback is not a prerequisite for generating AND/OR MC/DC cases.
 
-7. **Clean MATLAB session**
+8. **Clean MATLAB session**
    - Run the cleanup contract above before returning the final artifact JSON.
    - Mention any cleanup failure in the task summary or warnings so the platform can surface that the next task may need a fresh MATLAB session.
 
@@ -213,5 +222,6 @@ Hermes may reuse the same MATLAB desktop/session across generation tasks. Always
 - Read `references/hermes-agent-handoff.md` when handing this workflow to another agent, when the agent lacks the original conversation context, or when assessing whether the skill is ready for Hermes-style execution.
 - Read `references/workflow-details.md` when starting a new model.
 - Read `references/coverage-closure.md` when designing or repairing cases for coverage.
+- Read `references/mcdc-feedback-repair.md` when using Simulink Coverage output to perform the one-pass MCDC feedback repair loop.
 - Read `references/tcsd-rules.md` before editing or validating the workbook.
 - Read `references/support-package.md` when dependency loading fails.

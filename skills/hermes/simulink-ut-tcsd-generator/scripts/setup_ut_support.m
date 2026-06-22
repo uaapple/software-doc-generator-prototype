@@ -136,6 +136,7 @@ end
 excludedNames = {
     'setup_ut_support.m'
     'simulate_tcsd_cases.m'
+    'collect_mcdc_coverage_feedback.m'
     'configure_tcsd_sim_config.m'
     'cast_input_for_simulink_ut.m'
 };

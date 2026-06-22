@@ -142,8 +142,27 @@ function gitValue(args) {
   }
 }
 
+function find7z() {
+  for (const exe of ["7z.exe", "7z"]) {
+    const result = spawnSync("where.exe", [exe], { encoding: "utf8" });
+    if (result.status === 0 && result.stdout.trim()) {
+      return result.stdout.trim().split(/\r?\n/)[0].trim();
+    }
+  }
+  return null;
+}
+
 function zipDirectory(sourceDir, zipPath) {
   fs.rmSync(zipPath, { force: true });
+  const sevenZip = find7z();
+  if (sevenZip) {
+    try {
+      run(sevenZip, ["a", "-tzip", "-mx=7", zipPath, path.join(sourceDir, "*")]);
+      return;
+    } catch (error) {
+      console.warn(`7z zip failed; falling back to tar.exe: ${error.message}`);
+    }
+  }
   try {
     run("tar.exe", ["-a", "-cf", zipPath, "-C", sourceDir, "."]);
     return;
