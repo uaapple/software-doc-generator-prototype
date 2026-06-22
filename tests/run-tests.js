@@ -3267,7 +3267,7 @@ const tests = [
       const serverSource = await fs.readFile(new URL("../src/hermes-server.js", import.meta.url), "utf8");
 
       assert.match(configSource, /serverRequestTimeoutMs:\s*Number\(process\.env\.HERMES_SERVER_REQUEST_TIMEOUT_MS\s*\|\|\s*0\)/);
-      assert.match(configSource, /simulink_ut_tcsd_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS\s*\|\|\s*3600000\)/);
+      assert.match(configSource, /simulink_ut_tcsd_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS\s*\|\|\s*7200000\)/);
       assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE[\s\S]*:\s*10000/);
       assert.ok(serverSource.includes("server.requestTimeout = requestTimeoutMs"));
       assert.ok(serverSource.includes("server.timeout = requestTimeoutMs"));
@@ -3285,7 +3285,7 @@ const tests = [
           transport: "cli",
           timeoutMs: 120000,
           stepTimeoutMs: {
-            simulink_ut_tcsd_generate: 3600000
+            simulink_ut_tcsd_generate: 7200000
           },
           stepMaxTurns: {
             simulink_ut_tcsd_generate: 10000
@@ -3320,7 +3320,7 @@ const tests = [
         });
 
         assert.equal(invocations.length, 1);
-        assert.equal(invocations[0].options.timeout, 3600000);
+        assert.equal(invocations[0].options.timeout, 7200000);
         assert.equal(invocations[0].args[invocations[0].args.indexOf("--max-turns") + 1], "10000");
         assert.match(invocations[0].args[2], /simulink_ut_tcsd_generate/);
         assert.match(invocations[0].args[2], /simulink-ut-tcsd-generator/);

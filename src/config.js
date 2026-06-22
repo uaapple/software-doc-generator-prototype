@@ -171,7 +171,7 @@ export const config = {
       software_requirement_markdown_generate: Number(process.env.HERMES_TIMEOUT_SOFTWARE_REQUIREMENT_MARKDOWN_GENERATE_MS || 600000),
       document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
       slx_interpret_answer: Number(process.env.HERMES_TIMEOUT_SLX_INTERPRET_ANSWER_MS || 600000),
-      simulink_ut_tcsd_generate: Number(process.env.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS || 3600000),
+      simulink_ut_tcsd_generate: Number(process.env.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS || 7200000),
       replay_proposal_generate: Number(process.env.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS || 600000)
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
