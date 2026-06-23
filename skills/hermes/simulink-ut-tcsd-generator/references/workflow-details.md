@@ -145,6 +145,10 @@ When a coverage report or screenshot shows uncovered decisions:
 3. Use initialization or a long enough hold when LowPass, Delay, GradientLimiter, or lookup selector logic sits upstream of the decision.
 4. Re-run simulation/backfill and, when possible, coverage. Keep iterating until the target is met or the remaining outcome has a concrete unreachable/invalid reason.
 
+For MC/DC feedback on a logic block whose missing condition is an internal state or inverted internal state, do not stop at root-input truth tables. Backtrace the condition through From/Goto tags, RSLatch/Memory/UnitDelay, EdgeRising/EdgeFalling, CountR/StopWatch, and Switch trigger paths until the prerequisite root inputs, scalar parameters, holds, and reset blockers are known. The supplemental Test must first drive the internal state to the required side, then hold or transition it long enough to exercise the downstream operator-input vector. If the state cannot be reached in the bounded repair pass, mark the coverage obligation `unresolved` or `unreachable` with the exact upstream blocker instead of adding a generic "targets MC/DC" Test.
+
+For latch-controlled Boolean root outputs, include an active-state proof when the coverage report shows the active side is required. A repaired workbook that still contains only `Output = expValue(0)` for that Boolean output, while the coverage report shows a Switch true side, active-latch side, or inverted-state MC/DC side with zero hits, is not a completed repair. Either generate and backfill at least one stable `expValue(1)`/active-state expectation, or report why that active side is unreachable under the model constraints.
+
 ### Regeneration Pattern
 
 When repairing coverage after a reviewed workbook already exists:

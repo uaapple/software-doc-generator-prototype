@@ -55,6 +55,19 @@ For each uncovered MCDC item:
 
 Prefer adding new supplemental Tests over mutating already useful functional Tests. Name the description method `coverage feedback` and include the target block path/outcome.
 
+## Stateful MC/DC Probe Protocol
+
+Use this protocol when an uncovered item is driven by a latch, Memory/UnitDelay history, EdgeRising/EdgeFalling, CountR/StopWatch logic, TurnOnDelay/TurnOffDelay logic, or a Switch whose selector is an internal state rather than a direct root input. Treat the gap as state reachability first, then as MC/DC vector selection.
+
+1. Triage reachability before truth tables. Check whether the current workbook ever drives the relevant root output or internal selector to both Boolean states. If all top-level expectations stay at one value, do not only add static input combinations; find the sequence that enters the missing state.
+2. Backtrace prerequisites from the uncovered block to root inputs, calibrations, counters, reset gates, and delay windows. Record which edge, count, timer, latch, or cancel condition must happen before the uncovered branch is meaningful.
+3. Resolve timing and count semantics from the model, not from naming. Distinguish fast edge counts from long holds, and distinguish within-window pulses from pulses separated far enough to reset a counter or off-delay.
+4. Probe the model in memory when static inspection is not enough. Add temporary observation points or equivalent logging for the latch output, counter value, edge detector output, reset signal, delay output, and Switch selector. Do not save these probes into the model, and do not write internal-signal expectations into the final TCSD workbook.
+5. Synthesize a set sequence that proves the active state can be reached. Prefer compact pulse trains or timed transitions that satisfy the counter/window logic, then hold only as long as required for the root Outport to observe the new state.
+6. Synthesize the matching reset or cancel sequence after the active state is reached. Cancellation chains often need their own ordered prerequisites; a cancel-only test that starts from reset state does not cover the intended branch.
+7. Convert the successful probe into self-contained TCSD Tests. Include the root-input actions, scalar parameter overrides when needed, waits, and root Outport `expValue(...)` checks for both inactive and active states when reachable.
+8. If the state cannot be reached within one bounded pass, mark the uncovered item as `unreachable_candidate` with the observed counter/timer/reset evidence instead of guessing a static vector.
+
 ## Stop Conditions
 
 Stop the feedback repair pass and report partial status when:
