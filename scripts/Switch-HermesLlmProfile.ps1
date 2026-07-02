@@ -173,10 +173,23 @@ function Write-ActiveProfile {
 }
 
 function Restart-HermesTask {
+  $serviceName = "SoftwareDocHermesAgent"
+  $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+  if ($service) {
+    if ($service.Status -eq "Running") {
+      Restart-Service -Name $serviceName -Force
+    } else {
+      Start-Service -Name $serviceName
+    }
+    (Get-Service -Name $serviceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
+    Start-Sleep -Seconds 3
+    return
+  }
+
   $taskName = "SoftwareDocHermesAgent"
   $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
   if (-not $task) {
-    Write-Warning "Scheduled task not found: $taskName"
+    Write-Warning "Hermes service or scheduled task not found: $taskName"
     return
   }
   if ($task.State -eq "Running") {
@@ -186,7 +199,6 @@ function Restart-HermesTask {
   Start-ScheduledTask -TaskName $taskName
   Start-Sleep -Seconds 3
 }
-
 function Test-HermesHealth {
   param([string]$WorkerEnvPath)
   $workerEnv = Read-EnvFile -Path $WorkerEnvPath

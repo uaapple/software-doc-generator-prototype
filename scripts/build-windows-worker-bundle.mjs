@@ -142,6 +142,7 @@ try {
     "install-windows-worker.ps1",
     "start-windows-worker.ps1",
     "run-windows-worker-service.ps1",
+    "Install-WindowsWorkerServices.ps1",
     "start-matlab-worker.ps1"
   ];
   for (const scriptName of deployScripts) {

@@ -11,8 +11,31 @@ if (-not (Test-Path -LiteralPath $runner)) {
   throw "Worker runner not found: $runner"
 }
 
+$serviceNames = @{
+  hermes = "SoftwareDocHermesAgent"
+  matlab = "SoftwareDocMatlabWorker"
+}
+
+function Start-WorkerWindowsService {
+  param([string]$Name)
+  $windowsServiceName = $serviceNames[$Name]
+  $windowsService = Get-Service -Name $windowsServiceName -ErrorAction SilentlyContinue
+  if (-not $windowsService) {
+    return $false
+  }
+  if ($windowsService.Status -ne "Running") {
+    Start-Service -Name $windowsServiceName
+    $windowsService.WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
+  }
+  Write-Host "Windows service $windowsServiceName is running."
+  return $true
+}
+
 function Start-WorkerProcess {
   param([string]$Name)
+  if (Start-WorkerWindowsService -Name $Name) {
+    return
+  }
   $arguments = @(
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",

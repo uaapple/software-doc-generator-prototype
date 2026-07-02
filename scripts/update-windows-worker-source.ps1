@@ -135,6 +135,24 @@ function Stop-WorkerTasks {
   }
 }
 
+function Stop-WorkerServices {
+  param([string[]]$ServiceNames)
+  foreach ($serviceName in $ServiceNames) {
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if (-not $service) {
+      continue
+    }
+    if ($service.Status -ne "Stopped") {
+      Write-Host "Stopping Windows service $serviceName..."
+      Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+      try {
+        $service.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
+      } catch {
+        Write-Warning "Timed out waiting for service ${serviceName} to stop: $($_.Exception.Message)"
+      }
+    }
+  }
+}
 function Get-NormalizedCommandText {
   param([string]$Value)
   return ([string]$Value).ToLowerInvariant().Replace("\", "/")
@@ -248,6 +266,25 @@ function Start-WorkerTasks {
   }
 }
 
+function Install-WorkerServices {
+  param(
+    [string]$ServiceInstallerPath,
+    [string]$WorkerInstallDir
+  )
+  if (-not (Test-Path -LiteralPath $ServiceInstallerPath)) {
+    throw "Worker service installer not found: $ServiceInstallerPath"
+  }
+  & powershell.exe `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File $ServiceInstallerPath `
+    -InstallDir $WorkerInstallDir `
+    -Action Install `
+    -RemoveLegacyTasks
+  if ($LASTEXITCODE -ne 0) {
+    throw "Worker service installer failed with exit code $LASTEXITCODE"
+  }
+}
 function Wait-WorkerPorts {
   param(
     [hashtable]$TaskPorts,
@@ -712,6 +749,7 @@ $oldLockHash = Get-FileHashValue -Path (Join-Path $targetAppDir "package-lock.js
 $newLockHash = Get-FileHashValue -Path (Join-Path $sourceAppDir "package-lock.json")
 $backupDir = Join-Path $InstallDir ("backups\source-update-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 
+Stop-WorkerServices -ServiceNames $taskNames
 Stop-WorkerTasks -TaskNames $taskNames
 Stop-WorkerRuntimeProcesses -WorkerInstallDir $InstallDir
 Backup-ManagedSource -TargetAppDir $targetAppDir -BackupDir $backupDir -ManagedPaths $managedPaths
@@ -751,14 +789,20 @@ if ($shouldInstall) {
 }
 
 if (-not $SkipTaskRestart) {
-  Ensure-WorkerTasks `
-    -TaskServices $taskServices `
-    -RunnerPath (Join-Path $targetAppDir "scripts\run-windows-worker-service.ps1") `
-    -WorkerInstallDir $InstallDir
-  Start-WorkerTasks -TaskNames $taskNames
+  $workerServiceInstaller = Join-Path $targetAppDir "scripts\Install-WindowsWorkerServices.ps1"
+  if (Test-Path -LiteralPath $workerServiceInstaller) {
+    Install-WorkerServices `
+      -ServiceInstallerPath $workerServiceInstaller `
+      -WorkerInstallDir $InstallDir
+  } else {
+    Ensure-WorkerTasks `
+      -TaskServices $taskServices `
+      -RunnerPath (Join-Path $targetAppDir "scripts\run-windows-worker-service.ps1") `
+      -WorkerInstallDir $InstallDir
+    Start-WorkerTasks -TaskNames $taskNames
+  }
   Wait-WorkerPorts -TaskPorts $taskPorts
 }
-
 Write-Host "Windows worker source update applied."
 Write-Host "Install dir: $InstallDir"
 Write-Host "Backup dir: $backupDir"

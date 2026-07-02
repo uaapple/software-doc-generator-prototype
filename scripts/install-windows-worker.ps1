@@ -621,14 +621,27 @@ if (Test-Path -LiteralPath $officialDependenciesInstaller) {
 }
 
 if (-not $SkipTaskRegistration) {
-  Register-WorkerTask -TaskName "SoftwareDocHermesAgent" -Service "hermes"
-  Register-WorkerTask -TaskName "SoftwareDocMatlabWorker" -Service "matlab"
+  $workerServiceInstaller = Join-Path $targetAppDir "scripts\Install-WindowsWorkerServices.ps1"
+  if (Test-Path -LiteralPath $workerServiceInstaller) {
+    & powershell.exe `
+      -NoProfile `
+      -ExecutionPolicy Bypass `
+      -File $workerServiceInstaller `
+      -InstallDir $InstallDir `
+      -Action Install `
+      -RemoveLegacyTasks
+    if ($LASTEXITCODE -ne 0) {
+      throw "Worker service installer failed with exit code $LASTEXITCODE"
+    }
+  } else {
+    Register-WorkerTask -TaskName "SoftwareDocHermesAgent" -Service "hermes"
+    Register-WorkerTask -TaskName "SoftwareDocMatlabWorker" -Service "matlab"
+  }
   Wait-WorkerPorts -TaskPorts @{
     SoftwareDocHermesAgent = 3101
     SoftwareDocMatlabWorker = 5100
   }
 }
-
 Write-Host "Windows worker installed at $InstallDir"
 Write-Host "MATLAB executable: $MatlabExecutable"
 Write-Host "MATLAB MCP server: $McpServerCommand"
