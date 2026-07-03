@@ -74,6 +74,14 @@
             <p id="unit-project-status" class="status" hidden></p>
           </div>
 
+          <label class="unit-worker-field">
+            <span>Worker</span>
+            <select id="unit-worker-select" name="workerId" required>
+              <option value="">Loading workers...</option>
+            </select>
+            <p id="unit-worker-status" class="status" hidden></p>
+          </label>
+
           <p id="unit-form-status" class="status" hidden></p>
           <button id="unit-start-button" type="submit">发起生成任务</button>
         </form>

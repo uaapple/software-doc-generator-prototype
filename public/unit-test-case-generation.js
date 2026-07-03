@@ -1,13 +1,16 @@
 const state = {
   tasks: [],
   projects: [],
+  workers: [],
   selectedTaskId: new URLSearchParams(window.location.search).get("taskId") || "",
   taskProjectFilterId: new URLSearchParams(window.location.search).get("projectId") || "",
   polling: null,
   submitting: false,
   loadingProjects: false,
+  loadingWorkers: false,
   projectMutating: false,
   projectLoadError: "",
+  workerLoadError: "",
   deletingTaskIds: new Set()
 };
 
@@ -17,11 +20,13 @@ const elements = {
   matInput: document.querySelector("#model-mat-input"),
   initScriptInput: document.querySelector("#model-init-script-input"),
   projectSelect: document.querySelector("#unit-project-select"),
+  workerSelect: document.querySelector("#unit-worker-select"),
   addProjectButton: document.querySelector("#unit-add-project-button"),
   deleteProjectButton: document.querySelector("#unit-delete-project-button"),
   startButton: document.querySelector("#unit-start-button"),
   formStatus: document.querySelector("#unit-form-status"),
   projectStatus: document.querySelector("#unit-project-status"),
+  workerStatus: document.querySelector("#unit-worker-status"),
   taskProjectFilter: document.querySelector("#unit-task-project-filter"),
   taskList: document.querySelector("#unit-task-list"),
   taskDetail: document.querySelector("#unit-task-detail"),
@@ -74,6 +79,13 @@ function setProjectStatus(message = "", tone = "") {
   elements.projectStatus.hidden = !message;
   elements.projectStatus.textContent = message;
   elements.projectStatus.dataset.tone = tone;
+}
+
+function setWorkerStatus(message = "", tone = "") {
+  if (!elements.workerStatus) return;
+  elements.workerStatus.hidden = !message;
+  elements.workerStatus.textContent = message;
+  elements.workerStatus.dataset.tone = tone;
 }
 
 async function requestJson(url, options = {}) {
@@ -130,6 +142,21 @@ function normalizeProject(project = {}) {
   return { id, name, label };
 }
 
+function normalizeWorker(worker = {}) {
+  const id = String(worker.id || "").trim();
+  const label = String(worker.label || id).trim();
+  return { id, label, isDefault: Boolean(worker.isDefault) };
+}
+
+function defaultTaskWorker() {
+  return state.workers.find((worker) => worker.isDefault) || state.workers[0] || { id: "", label: "" };
+}
+
+function normalizeTaskWorker(worker = null) {
+  const normalized = normalizeWorker(worker || {});
+  return normalized.id ? normalized : defaultTaskWorker();
+}
+
 function defaultTaskProject() {
   return state.projects.find((project) => project.id === "01") || { id: "01", name: "楚能", label: "01_楚能" };
 }
@@ -149,8 +176,14 @@ function getSelectedProject() {
   return state.projects.find((project) => project.id === selectedId) || null;
 }
 
+function getSelectedWorker() {
+  const selectedId = elements.workerSelect?.value || "";
+  return state.workers.find((worker) => worker.id === selectedId) || null;
+}
+
 function syncProjectControls() {
   const hasProjects = state.projects.length > 0;
+  const hasWorkers = state.workers.length > 0;
   if (elements.projectSelect) {
     elements.projectSelect.disabled = state.loadingProjects || state.projectMutating || !hasProjects;
   }
@@ -160,8 +193,11 @@ function syncProjectControls() {
   if (elements.deleteProjectButton) {
     elements.deleteProjectButton.disabled = state.loadingProjects || state.projectMutating || !hasProjects;
   }
+  if (elements.workerSelect) {
+    elements.workerSelect.disabled = state.loadingWorkers || !hasWorkers;
+  }
   if (elements.startButton) {
-    elements.startButton.disabled = state.submitting || !hasProjects;
+    elements.startButton.disabled = state.submitting || !hasProjects || !hasWorkers;
   }
   if (elements.taskProjectFilter) {
     elements.taskProjectFilter.disabled = state.loadingProjects;
@@ -201,6 +237,54 @@ function renderProjects(preferredProjectId = "") {
   }
   renderTaskProjectFilter();
   syncProjectControls();
+}
+
+function renderWorkers(preferredWorkerId = "") {
+  if (!elements.workerSelect) return;
+  const currentValue = preferredWorkerId || elements.workerSelect.value || "";
+  if (state.loadingWorkers) {
+    elements.workerSelect.innerHTML = '<option value="">Loading workers...</option>';
+  } else if (state.workerLoadError) {
+    elements.workerSelect.innerHTML = '<option value="">Worker load failed</option>';
+  } else if (!state.workers.length) {
+    elements.workerSelect.innerHTML = '<option value="">No worker configured</option>';
+  } else {
+    elements.workerSelect.innerHTML = state.workers
+      .map((worker) => `<option value="${escapeHtml(worker.id)}">${escapeHtml(worker.label)}</option>`)
+      .join("");
+    const nextValue = state.workers.some((worker) => worker.id === currentValue)
+      ? currentValue
+      : state.workers.find((worker) => worker.isDefault)?.id || state.workers[0]?.id || "";
+    elements.workerSelect.value = nextValue;
+  }
+  syncProjectControls();
+}
+
+async function loadWorkers(options = {}) {
+  let preferredWorkerId = options.selectWorkerId || "";
+  state.loadingWorkers = true;
+  state.workerLoadError = "";
+  renderWorkers(preferredWorkerId);
+  try {
+    const body = await requestJson("/api/unit-test-case-generation/workers");
+    state.workers = Array.isArray(body.workers) ? body.workers.map(normalizeWorker).filter((worker) => worker.id) : [];
+    if (!preferredWorkerId) {
+      preferredWorkerId = elements.workerSelect?.value || body.defaultWorkerId || state.workers[0]?.id || "";
+    }
+    if (!state.workers.length) {
+      setWorkerStatus("No available Worker is configured.", "error");
+    } else if (!options.preserveStatus) {
+      setWorkerStatus("", "");
+    }
+  } catch (error) {
+    state.workers = [];
+    state.workerLoadError = error.message || "Worker list failed to load.";
+    setWorkerStatus(state.workerLoadError, "error");
+    throw error;
+  } finally {
+    state.loadingWorkers = false;
+    renderWorkers(preferredWorkerId);
+  }
 }
 
 async function loadProjects(options = {}) {
@@ -302,12 +386,17 @@ async function submitTask(event) {
     if (!selectedProject) {
       throw new Error("请选择项目。");
     }
+    const selectedWorker = getSelectedWorker();
+    if (!selectedWorker) {
+      throw new Error("Please select a Worker.");
+    }
     state.submitting = true;
     syncProjectControls();
     setStatus("正在创建任务并加入 Hermes 队列。", "busy");
 
     const formData = new FormData(elements.form);
     formData.set("unitTestProjectId", selectedProject.id);
+    formData.set("workerId", selectedWorker.id);
     const body = await requestJson("/api/unit-test-case-generation/tasks", {
       method: "POST",
       body: formData
@@ -320,6 +409,7 @@ async function submitTask(event) {
     startPolling();
     elements.form.reset();
     renderProjects(selectedProject.id);
+    renderWorkers(selectedWorker.id);
     setStatus("任务已发起。", "success");
   } catch (error) {
     setStatus(error.message || "任务创建失败。", "error");
@@ -418,6 +508,7 @@ function renderTaskList() {
       const progress = task.progress?.percent ?? (task.status === "completed" ? 100 : 0);
       const taskName = task.inputs?.modelSlx?.originalName || "Simulink 模型";
       const projectLabel = normalizeTaskProject(task.unitTestProject).label;
+      const workerLabel = normalizeTaskWorker(task.workerProfile).label;
       const deleting = state.deletingTaskIds.has(task.id);
       return `
         <div class="unit-task-card${selected}" data-task-card-id="${escapeHtml(task.id)}">
@@ -428,6 +519,7 @@ function renderTaskList() {
             </span>
             <span class="unit-task-card-meta">${escapeHtml(formatTime(task.updatedAt || task.createdAt))}</span>
             ${projectLabel ? `<span class="unit-task-card-project">${escapeHtml(projectLabel)}</span>` : ""}
+            ${workerLabel ? `<span class="unit-task-card-worker">${escapeHtml(workerLabel)}</span>` : ""}
             <span class="unit-progress"><span style="width:${Math.max(2, Math.min(100, Number(progress || 0)))}%"></span></span>
           </button>
           <button
@@ -493,10 +585,12 @@ function renderTaskDetail(task) {
     return;
   }
   const projectLabel = normalizeTaskProject(task.unitTestProject).label;
+  const workerLabel = normalizeTaskWorker(task.workerProfile).label;
   const initScriptLabel = task.inputs?.modelInitScript?.originalName || "使用项目 addon 初始化";
   elements.detailSubtitle.textContent = [
     task.inputs?.modelSlx?.originalName || "Simulink 模型",
     projectLabel,
+    workerLabel,
     STATUS_LABELS[task.status] || task.status
   ]
     .filter(Boolean)
@@ -588,6 +682,7 @@ function renderTaskDetail(task) {
           <div><dt>MAT</dt><dd>${escapeHtml(task.inputs?.modelMat?.originalName || "")}</dd></div>
           <div><dt>初始化脚本</dt><dd>${escapeHtml(initScriptLabel)}</dd></div>
           <div><dt>项目</dt><dd>${escapeHtml(projectLabel || "未记录")}</dd></div>
+          <div><dt>Worker</dt><dd>${escapeHtml(workerLabel || "Not recorded")}</dd></div>
           <div><dt>创建时间</dt><dd>${escapeHtml(formatTime(task.createdAt))}</dd></div>
           <div><dt>更新时间</dt><dd>${escapeHtml(formatTime(task.updatedAt))}</dd></div>
         </dl>
@@ -658,6 +753,12 @@ elements.taskList?.addEventListener("click", (event) => {
   updateUrlTaskId(state.selectedTaskId);
   void loadSelectedTask();
 });
+
+try {
+  await loadWorkers();
+} catch (_error) {
+  syncProjectControls();
+}
 
 try {
   await loadProjects();

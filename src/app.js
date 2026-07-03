@@ -14,7 +14,11 @@ import { LlmProfileService } from "./services/llm-profile-service.js";
 import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
 import { HermesTaskQueueService } from "./services/hermes-task-queue-service.js";
-import { UnitTestCaseGenerationService } from "./services/unit-test-case-generation-service.js";
+import {
+  UnitTestCaseGenerationService,
+  listUnitTestWorkerProfiles,
+  resolveUnitTestWorkerProfile
+} from "./services/unit-test-case-generation-service.js";
 import { ModuleSkillService } from "./services/module-skill-service.js";
 import { SkillManagementService } from "./services/skill-management-service.js";
 import { SkillWorkOrderService } from "./services/skill-work-order-service.js";
@@ -89,18 +93,26 @@ function getBearerHeaders(token = "") {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
 }
 
-function getWorkerDebugConfig() {
+function getWorkerDebugConfig(workerProfile = null) {
   return {
+    worker: workerProfile
+      ? {
+          id: workerProfile.id,
+          label: workerProfile.label,
+          isDefault: Boolean(workerProfile.isDefault)
+        }
+      : null,
     hermes: {
-      baseURL: config.hermes.baseURL,
-      apiMode: config.hermes.apiMode || "json",
-      authConfigured: Boolean(config.hermes.authToken)
+      baseURL: workerProfile?.hermesBaseURL || config.hermes.baseURL,
+      apiMode: workerProfile?.hermesApiMode || config.hermes.apiMode || "json",
+      authConfigured: Boolean(workerProfile?.hermesAuthToken || config.hermes.authToken)
     },
     matlabWorker: {
-      baseURL: config.matlabMcp.baseURL,
-      httpMode: config.matlabMcp.httpMode || "path",
-      authConfigured: Boolean(config.matlabMcp.authToken)
-    }
+      baseURL: workerProfile?.matlabBaseURL || config.matlabMcp.baseURL,
+      httpMode: workerProfile?.matlabHttpMode || config.matlabMcp.httpMode || "path",
+      authConfigured: Boolean(workerProfile?.matlabAuthToken || config.matlabMcp.authToken)
+    },
+    unitTestWorkers: listUnitTestWorkerProfiles()
   };
 }
 
@@ -149,12 +161,12 @@ async function fetchWorkerJson(url, options = {}) {
   }
 }
 
-function createDebugHermesClient(timeoutMs) {
+function createDebugHermesClient(timeoutMs, workerProfile = null) {
   return new HermesAgentClient({
-    transport: "api",
-    baseURL: config.hermes.baseURL,
-    apiMode: config.hermes.apiMode || "json",
-    authToken: config.hermes.authToken || "",
+    transport: workerProfile?.hermesTransport || "api",
+    baseURL: workerProfile?.hermesBaseURL || config.hermes.baseURL,
+    apiMode: workerProfile?.hermesApiMode || config.hermes.apiMode || "json",
+    authToken: workerProfile?.hermesAuthToken || config.hermes.authToken || "",
     timeoutMs,
     stepTimeoutMs: {
       ...(config.hermes.stepTimeoutMs || {}),
@@ -162,6 +174,30 @@ function createDebugHermesClient(timeoutMs) {
       windows_worker_probe: timeoutMs
     }
   });
+}
+
+async function checkWorkerHealth(workerProfile = null, timeoutMs = 10000) {
+  const hermesBaseURL = String(workerProfile?.hermesBaseURL || config.hermes.baseURL || "").replace(/\/+$/, "");
+  const matlabBaseURL = String(workerProfile?.matlabBaseURL || config.matlabMcp.baseURL || "").replace(/\/+$/, "");
+  const [hermes, matlabWorker] = await Promise.all([
+    fetchWorkerJson(`${hermesBaseURL}/api/health`, {
+      timeoutMs,
+      headers: getBearerHeaders(workerProfile?.hermesAuthToken || config.hermes.authToken)
+    }),
+    fetchWorkerJson(`${matlabBaseURL}/health`, {
+      timeoutMs,
+      headers: getBearerHeaders(workerProfile?.matlabAuthToken || config.matlabMcp.authToken)
+    })
+  ]);
+  return {
+    ok: Boolean(hermes.ok && matlabWorker.ok),
+    checkedAt: new Date().toISOString(),
+    config: getWorkerDebugConfig(workerProfile),
+    checks: {
+      hermes,
+      matlabWorker
+    }
+  };
 }
 
 function createRuntimeEventCollector() {
@@ -372,6 +408,23 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/unit-test-case-generation/workers", (_req, res) => {
+    res.json({
+      defaultWorkerId: config.unitTestCase?.defaultWorkerId || "",
+      workers: listUnitTestWorkerProfiles()
+    });
+  });
+
+  app.post("/api/unit-test-case-generation/workers/:workerId/health", async (req, res, next) => {
+    try {
+      const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
+      const workerProfile = resolveUnitTestWorkerProfile(req.params.workerId);
+      res.json(await checkWorkerHealth(workerProfile, timeoutMs));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/unit-test-case-generation/tasks", async (req, res, next) => {
     try {
       const tasks = await unitTestCaseGenerationService.listTasks({
@@ -561,29 +614,14 @@ export async function createApp() {
     res.json(getWorkerDebugConfig());
   });
 
-  app.post("/api/windows-worker-debug/health", async (req, res) => {
-    const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
-    const hermesBaseURL = String(config.hermes.baseURL || "").replace(/\/+$/, "");
-    const matlabBaseURL = String(config.matlabMcp.baseURL || "").replace(/\/+$/, "");
-    const [hermes, matlabWorker] = await Promise.all([
-      fetchWorkerJson(`${hermesBaseURL}/api/health`, {
-        timeoutMs,
-        headers: getBearerHeaders(config.hermes.authToken)
-      }),
-      fetchWorkerJson(`${matlabBaseURL}/health`, {
-        timeoutMs,
-        headers: getBearerHeaders(config.matlabMcp.authToken)
-      })
-    ]);
-    res.json({
-      ok: Boolean(hermes.ok && matlabWorker.ok),
-      checkedAt: new Date().toISOString(),
-      config: getWorkerDebugConfig(),
-      checks: {
-        hermes,
-        matlabWorker
-      }
-    });
+  app.post("/api/windows-worker-debug/health", async (req, res, next) => {
+    try {
+      const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
+      const workerProfile = req.body?.workerId ? resolveUnitTestWorkerProfile(req.body.workerId) : null;
+      res.json(await checkWorkerHealth(workerProfile, timeoutMs));
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post("/api/windows-worker-debug/upload-probe", async (req, res, next) => {

@@ -84,6 +84,108 @@ function resolveHermesStateDbPath() {
   return path.join(hermesHomeDir, "state.db");
 }
 
+function resolveEnvReference(value = "", fallback = "") {
+  const key = String(value || "").trim();
+  return key ? process.env[key] || fallback : fallback;
+}
+
+function normalizeWorkerId(value = "", fallback = "") {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return normalized || fallback;
+}
+
+function normalizeUnitTestWorkerProfile(profile = {}, index = 0, defaults = {}) {
+  const hermes = profile.hermes || {};
+  const matlabWorker = profile.matlabWorker || profile.matlab || {};
+  const id = normalizeWorkerId(profile.id || profile.workerId, `worker-${index + 1}`);
+  const hermesBaseURL = trimTrailingSlash(profile.hermesBaseURL || hermes.baseURL || profile.baseURL || defaults.hermesBaseURL);
+  const matlabBaseURL = trimTrailingSlash(
+    profile.matlabBaseURL || profile.matlabWorkerBaseURL || matlabWorker.baseURL || defaults.matlabBaseURL
+  );
+  if (!id || !hermesBaseURL || !matlabBaseURL) {
+    return null;
+  }
+  return {
+    id,
+    label: String(profile.label || profile.name || id).trim() || id,
+    hermesTransport: String(profile.hermesTransport || hermes.transport || "api").trim().toLowerCase() || "api",
+    hermesBaseURL,
+    hermesApiMode: String(profile.hermesApiMode || hermes.apiMode || defaults.hermesApiMode || "json").trim() || "json",
+    hermesAuthToken: resolveEnvReference(
+      profile.hermesAuthTokenEnv || hermes.authTokenEnv,
+      String(profile.hermesAuthToken ?? hermes.authToken ?? defaults.hermesAuthToken ?? "")
+    ),
+    matlabBaseURL,
+    matlabHttpMode: String(profile.matlabHttpMode || matlabWorker.httpMode || defaults.matlabHttpMode || "path").trim() || "path",
+    matlabAuthToken: resolveEnvReference(
+      profile.matlabAuthTokenEnv || matlabWorker.authTokenEnv,
+      String(profile.matlabAuthToken ?? matlabWorker.authToken ?? defaults.matlabAuthToken ?? "")
+    )
+  };
+}
+
+function buildUnitTestWorkerProfiles() {
+  const defaults = {
+    hermesBaseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
+    hermesApiMode: process.env.HERMES_API_MODE || "json",
+    hermesAuthToken: process.env.HERMES_AUTH_TOKEN || "",
+    matlabBaseURL: process.env.MATLAB_MCP_BASE_URL || "http://127.0.0.1:5100",
+    matlabHttpMode: process.env.MATLAB_MCP_HTTP_MODE || "path",
+    matlabAuthToken: process.env.MATLAB_MCP_AUTH_TOKEN || ""
+  };
+  const raw = String(process.env.UNIT_TEST_WORKER_PROFILES_JSON || process.env.UNIT_TEST_WORKERS_JSON || "").trim();
+  let configuredProfiles = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        configuredProfiles = parsed;
+      } else if (Array.isArray(parsed?.profiles)) {
+        configuredProfiles = parsed.profiles;
+      } else if (Array.isArray(parsed?.workers)) {
+        configuredProfiles = parsed.workers;
+      }
+    } catch (error) {
+      console.warn(`Failed to parse UNIT_TEST_WORKER_PROFILES_JSON: ${error.message}`);
+    }
+  }
+  const profiles = configuredProfiles
+    .map((profile, index) => normalizeUnitTestWorkerProfile(profile, index, defaults))
+    .filter(Boolean);
+  if (!profiles.length) {
+    profiles.push(normalizeUnitTestWorkerProfile({
+      id: process.env.UNIT_TEST_DEFAULT_WORKER_ID || "default",
+      label: process.env.UNIT_TEST_DEFAULT_WORKER_LABEL || "Default Windows Worker"
+    }, 0, defaults));
+  }
+  const deduped = [];
+  const seen = new Set();
+  for (const profile of profiles) {
+    if (!profile || seen.has(profile.id)) {
+      continue;
+    }
+    seen.add(profile.id);
+    deduped.push(profile);
+  }
+  const requestedDefaultId = normalizeWorkerId(process.env.UNIT_TEST_DEFAULT_WORKER_ID || "");
+  const defaultWorkerId = deduped.some((profile) => profile.id === requestedDefaultId)
+    ? requestedDefaultId
+    : deduped[0]?.id || "";
+  return {
+    defaultWorkerId,
+    workerProfiles: deduped.map((profile) => ({
+      ...profile,
+      isDefault: profile.id === defaultWorkerId
+    }))
+  };
+}
+
+const unitTestWorkerConfig = buildUnitTestWorkerProfiles();
+
 export const config = {
   host: process.env.HOST || "::",
   port: Number(process.env.PORT || 3000),
@@ -107,7 +209,9 @@ export const config = {
     ),
     skillName: process.env.UNIT_TEST_CASE_SKILL_NAME || "simulink-ut-tcsd-generator",
     expectedOutputPattern: process.env.UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN || "outputs/*_tcsd.xlsx",
-    agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || ""
+    agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || "",
+    defaultWorkerId: unitTestWorkerConfig.defaultWorkerId,
+    workerProfiles: unitTestWorkerConfig.workerProfiles
   },
   dataDir,
   skillDatabasePath: path.join(dataDir, "skills.sqlite"),

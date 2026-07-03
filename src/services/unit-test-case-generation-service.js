@@ -34,7 +34,9 @@ function unitTestCaseConfig() {
     defaultProjects: config.unitTestCase?.defaultProjects || "01_楚能,02_TMS",
     skillName: config.unitTestCase?.skillName || "simulink-ut-tcsd-generator",
     expectedOutputPattern: config.unitTestCase?.expectedOutputPattern || "outputs/*_tcsd.xlsx",
-    agentWorkspaceRoot: String(config.unitTestCase?.agentWorkspaceRoot || "").trim()
+    agentWorkspaceRoot: String(config.unitTestCase?.agentWorkspaceRoot || "").trim(),
+    defaultWorkerId: String(config.unitTestCase?.defaultWorkerId || "").trim(),
+    workerProfiles: Array.isArray(config.unitTestCase?.workerProfiles) ? config.unitTestCase.workerProfiles : []
   };
 }
 
@@ -117,6 +119,49 @@ function defaultLegacyProject() {
 
 function normalizeTaskProjectSnapshot(project = null) {
   return publicProject(project) || defaultLegacyProject();
+}
+
+function publicUnitTestWorkerProfile(profile = {}) {
+  const id = String(profile?.id || "").trim();
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    label: String(profile.label || id).trim() || id,
+    isDefault: Boolean(profile.isDefault),
+    hermesBaseURL: String(profile.hermesBaseURL || "").trim(),
+    hermesApiMode: String(profile.hermesApiMode || "json").trim() || "json",
+    matlabBaseURL: String(profile.matlabBaseURL || "").trim(),
+    matlabHttpMode: String(profile.matlabHttpMode || "path").trim() || "path",
+    authConfigured: {
+      hermes: Boolean(profile.hermesAuthToken),
+      matlabWorker: Boolean(profile.matlabAuthToken)
+    }
+  };
+}
+
+export function listUnitTestWorkerProfiles() {
+  const cfg = unitTestCaseConfig();
+  const profiles = cfg.workerProfiles.map(publicUnitTestWorkerProfile).filter(Boolean);
+  if (!profiles.length) {
+    return [];
+  }
+  return profiles.map((profile) => ({
+    ...profile,
+    isDefault: profile.id === cfg.defaultWorkerId || profile.isDefault
+  }));
+}
+
+export function resolveUnitTestWorkerProfile(workerId = "") {
+  const cfg = unitTestCaseConfig();
+  const requestedId = String(workerId || cfg.defaultWorkerId || "").trim();
+  const profiles = cfg.workerProfiles.filter((profile) => profile?.id);
+  const profile = profiles.find((item) => item.id === requestedId) || (!requestedId ? profiles[0] : null);
+  if (!profile) {
+    throw createHttpError("Unit test Worker is not configured.", 400, "unit_test_case_worker_not_found", { workerId: requestedId });
+  }
+  return profile;
 }
 
 function assertProjectAdminCode(authCode = "") {
@@ -315,6 +360,7 @@ function taskFilePath(taskDir = "") {
 function publicTask(task = {}) {
   const clone = structuredClone(task);
   clone.unitTestProject = normalizeTaskProjectSnapshot(clone.unitTestProject);
+  clone.workerProfile = publicUnitTestWorkerProfile(clone.workerProfile) || publicUnitTestWorkerProfile(resolveUnitTestWorkerProfile(""));
   if (clone.workspace) {
     clone.workspace = {
       directory: clone.workspace.directory,
@@ -344,7 +390,10 @@ async function cleanupTempFiles(files = {}) {
 
 export class UnitTestCaseGenerationService {
   constructor(options = {}) {
-    this.hermesAgentClient = options.hermesAgentClient || new HermesAgentClient();
+    this.hermesAgentClient = options.hermesAgentClient || null;
+    this.hermesAgentClientFactory = typeof options.hermesAgentClientFactory === "function"
+      ? options.hermesAgentClientFactory
+      : null;
     this.deletedTaskIds = new Set();
   }
 
@@ -555,6 +604,7 @@ export class UnitTestCaseGenerationService {
     try {
       const { modelSlx, modelMat, modelInitScript } = this.validateUploadFiles(normalized);
       const unitTestProject = await this.getUnitTestProject(metadata.unitTestProjectId || metadata.projectId || "");
+      const workerProfile = resolveUnitTestWorkerProfile(metadata.workerId || metadata.unitTestWorkerId || "");
       const taskId = randomUUID();
       const taskDir = this.getTaskDir(taskId);
       const inputDir = path.join(taskDir, "inputs");
@@ -641,6 +691,7 @@ export class UnitTestCaseGenerationService {
         errorMessage: "",
         progress: buildProgress("queued"),
         unitTestProject,
+        workerProfile: publicUnitTestWorkerProfile(workerProfile),
         inputs: {
           modelSlx: {
             originalName: normalizeUploadedFileName(modelSlx.originalname),
@@ -760,6 +811,26 @@ export class UnitTestCaseGenerationService {
     return normalizedEvent;
   }
 
+  getHermesAgentClientForWorker(workerProfile = {}) {
+    if (this.hermesAgentClient) {
+      return this.hermesAgentClient;
+    }
+    if (this.hermesAgentClientFactory) {
+      return this.hermesAgentClientFactory(workerProfile);
+    }
+    return new HermesAgentClient({
+      transport: workerProfile.hermesTransport || "api",
+      baseURL: workerProfile.hermesBaseURL,
+      apiMode: workerProfile.hermesApiMode || config.hermes.apiMode || "json",
+      authToken: workerProfile.hermesAuthToken || "",
+      timeoutMs: config.hermes.timeoutMs,
+      stepTimeoutMs: config.hermes.stepTimeoutMs,
+      maxTurns: config.hermes.maxTurns,
+      stepMaxTurns: config.hermes.stepMaxTurns,
+      heartbeatIntervalMs: config.hermes.heartbeatIntervalMs
+    });
+  }
+
   buildHermesPayload(task = {}) {
     const cfg = unitTestCaseConfig();
     const workspaceDir = task.workspace?.agentDirectory || task.workspace?.directory || "";
@@ -803,7 +874,11 @@ export class UnitTestCaseGenerationService {
     task = await this.readTask(taskId);
 
     try {
-      const result = await this.hermesAgentClient.executeStep(this.buildHermesPayload(task), {
+      const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
+      task.workerProfile = publicUnitTestWorkerProfile(workerProfile);
+      await this.saveTask(task);
+      const hermesAgentClient = this.getHermesAgentClientForWorker(workerProfile);
+      const result = await hermesAgentClient.executeStep(this.buildHermesPayload(task), {
         onEvent: (event) => this.appendRuntimeEvent(taskId, event)
       });
       const artifact = result?.artifact || {};

@@ -70,7 +70,22 @@ async function withTempConfig(run) {
       uploadTempDir: path.join(tempDir, "data", "unit-test-case-generation", "_incoming"),
       skillName: "simulink-ut-tcsd-generator",
       expectedOutputPattern: "outputs/*_tcsd.xlsx",
-      agentWorkspaceRoot: ""
+      agentWorkspaceRoot: "",
+      defaultWorkerId: "default",
+      workerProfiles: [
+        {
+          id: "default",
+          label: "Default Test Worker",
+          hermesTransport: "api",
+          hermesBaseURL: "http://127.0.0.1:0",
+          hermesApiMode: "json",
+          hermesAuthToken: "",
+          matlabBaseURL: "http://127.0.0.1:0",
+          matlabHttpMode: "path",
+          matlabAuthToken: "",
+          isDefault: true
+        }
+      ]
     },
     dataDir: path.join(tempDir, "data"),
     skillDatabasePath: path.join(tempDir, "data", "skills.sqlite"),
@@ -9663,6 +9678,8 @@ const tests = [
         assert.ok(html.includes('name="modelInitScript"'));
         assert.ok(html.includes('accept=".m"'));
         assert.ok(html.includes('name="unitTestProjectId"'));
+        assert.ok(html.includes('name="workerId"'));
+        assert.ok(html.includes('id="unit-worker-select"'));
         assert.ok(html.includes('id="unit-add-project-button"'));
         assert.ok(html.includes('id="unit-delete-project-button"'));
         assert.ok(html.includes('id="unit-task-project-filter"'));
@@ -9676,6 +9693,13 @@ const tests = [
     run: async () => {
       await withTempConfig(async () => {
         await withTestServer(async ({ baseUrl }) => {
+          const workersResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/workers`);
+          assert.equal(workersResponse.status, 200);
+          const workersBody = await workersResponse.json();
+          assert.equal(workersBody.defaultWorkerId, "default");
+          assert.equal(workersBody.workers[0].id, "default");
+          assert.equal(workersBody.workers[0].label, "Default Test Worker");
+
           const missingMat = new FormData();
           missingMat.append("modelSlx", new Blob(["slx"]), "Demo.slx");
           const missingResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
@@ -9723,10 +9747,24 @@ const tests = [
           });
           assert.equal(duplicateInitResponse.status, 400);
 
+          const invalidWorker = new FormData();
+          invalidWorker.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          invalidWorker.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          invalidWorker.append("unitTestProjectId", "01");
+          invalidWorker.append("workerId", "missing-worker");
+          const invalidWorkerResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: invalidWorker
+          });
+          assert.equal(invalidWorkerResponse.status, 400);
+          const invalidWorkerBody = await invalidWorkerResponse.json();
+          assert.equal(invalidWorkerBody.code, "unit_test_case_worker_not_found");
+
           const valid = new FormData();
           valid.append("modelSlx", new Blob(["slx"]), "Demo.slx");
           valid.append("modelMat", new Blob(["mat"]), "Demo.mat");
           valid.append("unitTestProjectId", "01");
+          valid.append("workerId", "default");
           const validResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
             method: "POST",
             body: valid
@@ -9742,12 +9780,14 @@ const tests = [
           assert.equal(validBody.task.inputs.modelSlx.workspaceRelativePath, "Demo.slx");
           assert.equal(validBody.task.inputs.modelMat.workspaceRelativePath, "Demo.mat");
           assert.equal(validBody.task.unitTestProject.id, "01");
+          assert.equal(validBody.task.workerProfile.id, "default");
 
           const validWithInit = new FormData();
           validWithInit.append("modelSlx", new Blob(["slx"]), "DemoWithInit.slx");
           validWithInit.append("modelMat", new Blob(["mat"]), "DemoWithInit.mat");
           validWithInit.append("modelInitScript", new Blob(["% init"]), "DemoWithInit_init.m");
           validWithInit.append("unitTestProjectId", "02");
+          validWithInit.append("workerId", "default");
           const validWithInitResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
             method: "POST",
             body: validWithInit
