@@ -479,6 +479,33 @@ function Ensure-TcsdSkill {
   Write-Host "Hermes skill installed: $skillTarget"
 }
 
+function Ensure-ModuleDescriptionSkill {
+  param(
+    [object]$BundleManifest,
+    [object]$RuntimeManifest,
+    [System.Collections.IDictionary]$RuntimeMap
+  )
+  $bundleRecord = Get-DependencyRecord -Manifest $BundleManifest -Name "simulinkModuleDescriptionGeneratorSkill"
+  $bundleVersion = Get-DependencyVersion -Manifest $BundleManifest -Name "simulinkModuleDescriptionGeneratorSkill"
+  $runtimeVersion = Get-DependencyVersion -Manifest $RuntimeManifest -Name "simulinkModuleDescriptionGeneratorSkill"
+  $skillSource = Join-Path $TargetAppDir "skills\hermes\simulink-module-description-generator"
+  if (-not (Test-Path -LiteralPath (Join-Path $skillSource "SKILL.md"))) {
+    return
+  }
+  $skillTarget = Join-Path $InstallDir "runtime\hermes-home\skills\simulink-module-description-generator"
+  if ($bundleVersion -and $runtimeVersion -eq $bundleVersion -and (Test-Path -LiteralPath (Join-Path $skillTarget "SKILL.md"))) {
+    Write-Host "Hermes skill simulink-module-description-generator is current: $bundleVersion"
+    return
+  }
+  if (Test-Path -LiteralPath $skillTarget) {
+    Remove-Item -LiteralPath $skillTarget -Recurse -Force
+  }
+  New-Item -ItemType Directory -Force -Path $skillTarget | Out-Null
+  Copy-Item -Path (Join-Path $skillSource "*") -Destination $skillTarget -Recurse -Force
+  Set-RuntimeRecord -Map $RuntimeMap -Name "simulinkModuleDescriptionGeneratorSkill" -BundleRecord $bundleRecord -Extra @{ installPath = $skillTarget }
+  Write-Host "Hermes skill installed: $skillTarget"
+}
+
 if (-not $BundleRoot) {
   $BundleRoot = Resolve-DefaultBundleRoot
 }
@@ -504,6 +531,7 @@ Ensure-HermesAgent -BundleManifest $bundleManifest -RuntimeManifest $runtimeMani
 Ensure-MatlabMcp -BundleManifest $bundleManifest -RuntimeManifest $runtimeManifest -RuntimeMap $runtimeMap
 Ensure-SimulinkToolkit -BundleManifest $bundleManifest -RuntimeManifest $runtimeManifest -RuntimeMap $runtimeMap
 Ensure-TcsdSkill -BundleManifest $bundleManifest -RuntimeManifest $runtimeManifest -RuntimeMap $runtimeMap
+Ensure-ModuleDescriptionSkill -BundleManifest $bundleManifest -RuntimeManifest $runtimeManifest -RuntimeMap $runtimeMap
 
 Save-RuntimeManifest -Path $runtimeManifestPath -Map $runtimeMap
 Write-Host "Official dependency runtime manifest updated: $runtimeManifestPath"

@@ -7,12 +7,16 @@ param(
   [switch]$SkipMatlabMcp,
   [switch]$SkipSimulinkToolkit,
   [switch]$SkipTcsdSkill,
+  [switch]$SkipModuleDescriptionSkill,
   [string]$HermesRepo = "NousResearch/hermes-agent",
   [string]$MatlabMcpRepo = "matlab/matlab-mcp-core-server",
   [string]$SimulinkToolkitRepo = "matlab/simulink-agentic-toolkit",
   [string]$TcsdSkillRepo = "uaapple/my-codex-skills",
   [string]$TcsdSkillRef = "main",
-  [string]$TcsdSkillPath = "simulink-ut-tcsd-generator"
+  [string]$TcsdSkillPath = "simulink-ut-tcsd-generator",
+  [string]$ModuleDescriptionSkillRepo = "uaapple/my-codex-skills",
+  [string]$ModuleDescriptionSkillRef = "main",
+  [string]$ModuleDescriptionSkillPath = "simulink-module-description-generator"
 )
 
 $ErrorActionPreference = "Stop"
@@ -688,6 +692,78 @@ function Sync-SimulinkToolkit {
   }
 }
 
+function Sync-HermesSkillDirectory {
+  param(
+    [string]$Root,
+    [System.Collections.IDictionary]$Dependencies,
+    [object]$Manifest,
+    [string]$DependencyName,
+    [string]$DisplayName,
+    [string]$Repo,
+    [string]$Ref,
+    [string]$SkillPath,
+    [string]$InstallPath,
+    [switch]$Skip
+  )
+  if ($Skip) {
+    return
+  }
+  $latest = Get-GitRemoteRefSha -Repo $Repo -Ref $Ref
+  $current = Get-DependencyVersion -Manifest $Manifest -Name $DependencyName
+  Write-Host "$DisplayName skill: local='$current' latest='$latest'"
+  if (-not (Test-NeedsUpdate -Name "$DisplayName skill" -Current $current -Latest $latest)) {
+    Set-DependencyRecord -Dependencies $Dependencies -Name $DependencyName -Record @{
+      repo = $Repo
+      ref = $Ref
+      path = $SkillPath
+      version = $latest
+      source = "github-tree"
+      status = "current"
+    }
+    return
+  }
+  if ($CheckOnly) {
+    Set-DependencyRecord -Dependencies $Dependencies -Name $DependencyName -Record @{
+      repo = $Repo
+      ref = $Ref
+      path = $SkillPath
+      version = $current
+      latest = $latest
+      status = "update-available"
+    }
+    return
+  }
+
+  $cloneDir = Join-Path ([IO.Path]::GetTempPath()) ("sdg-hermes-skill-" + [guid]::NewGuid().ToString("N"))
+  try {
+    Invoke-Git -Arguments @(
+      "clone",
+      "--depth", "1",
+      "--branch", $Ref,
+      "https://github.com/$Repo.git",
+      $cloneDir
+    )
+    $skillSource = Join-Path $cloneDir $SkillPath
+    if (-not (Test-Path -LiteralPath (Join-Path $skillSource "SKILL.md"))) {
+      throw "Cloned repository did not contain $SkillPath/SKILL.md."
+    }
+    $skillTarget = Join-Path $Root $InstallPath
+    Copy-DirectoryContents -Source $skillSource -Destination $skillTarget
+  } finally {
+    Remove-Item -LiteralPath $cloneDir -Recurse -Force -ErrorAction SilentlyContinue
+  }
+
+  Set-DependencyRecord -Dependencies $Dependencies -Name $DependencyName -Record @{
+    repo = $Repo
+    ref = $Ref
+    path = $SkillPath
+    version = $latest
+    source = "git-clone"
+    installPath = $InstallPath.Replace("\", "/")
+    refreshedAt = (Get-Date).ToUniversalTime().ToString("o")
+  }
+}
+
 function Sync-TcsdSkill {
   param(
     [string]$Root,
@@ -753,6 +829,25 @@ function Sync-TcsdSkill {
   }
 }
 
+function Sync-ModuleDescriptionSkill {
+  param(
+    [string]$Root,
+    [System.Collections.IDictionary]$Dependencies,
+    [object]$Manifest
+  )
+  Sync-HermesSkillDirectory `
+    -Root $Root `
+    -Dependencies $Dependencies `
+    -Manifest $Manifest `
+    -DependencyName "simulinkModuleDescriptionGeneratorSkill" `
+    -DisplayName "simulink-module-description-generator" `
+    -Repo $ModuleDescriptionSkillRepo `
+    -Ref $ModuleDescriptionSkillRef `
+    -SkillPath $ModuleDescriptionSkillPath `
+    -InstallPath "skills\hermes\simulink-module-description-generator" `
+    -Skip:$SkipModuleDescriptionSkill
+}
+
 $root = Resolve-ProjectRoot
 $manifestPath = Join-Path $root "offline-installers\official-dependencies.json"
 $existingManifest = Read-JsonFile -Path $manifestPath
@@ -762,6 +857,7 @@ Sync-HermesAgent -Root $root -Dependencies $dependencies -Manifest $existingMani
 Sync-MatlabMcp -Root $root -Dependencies $dependencies -Manifest $existingManifest
 Sync-SimulinkToolkit -Root $root -Dependencies $dependencies -Manifest $existingManifest
 Sync-TcsdSkill -Root $root -Dependencies $dependencies -Manifest $existingManifest
+Sync-ModuleDescriptionSkill -Root $root -Dependencies $dependencies -Manifest $existingManifest
 
 if ($CheckOnly) {
   $reportPath = Join-Path $root "release-dist\official-dependencies-check.json"

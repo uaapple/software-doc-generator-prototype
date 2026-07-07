@@ -1,0 +1,7 @@
+interface:
+  display_name: "Simulink 模块功能描述"
+  short_description: "从 Simulink 模型生成模板化软件模块功能描述"
+  default_prompt: "Use $simulink-module-description-generator to generate a templated software module function description from a Simulink model."
+
+policy:
+  allow_implicit_invocation: true
