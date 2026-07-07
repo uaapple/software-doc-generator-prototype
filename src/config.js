@@ -121,6 +121,16 @@ const appConfig = {
     expectedOutputPattern: process.env.UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN || "outputs/*_tcsd.xlsx",
     agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || ""
   },
+  softwareModuleDescription: {
+    taskStoreDir: path.join(dataDir, "software-module-description-generation", "tasks"),
+    uploadTempDir: path.join(dataDir, "software-module-description-generation", "_incoming"),
+    skillName: process.env.SOFTWARE_MODULE_DESCRIPTION_SKILL_NAME || "simulink-module-description-generator",
+    expectedOutputPattern: process.env.SOFTWARE_MODULE_DESCRIPTION_EXPECTED_OUTPUT_PATTERN || "outputs/*.docx",
+    agentWorkspaceRoot:
+      process.env.SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT ||
+      process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT ||
+      ""
+  },
   dataDir,
   skillDatabasePath: path.join(dataDir, "skills.sqlite"),
   projectStoreDir: path.join(dataDir, "projects"),
@@ -170,6 +180,9 @@ const appConfig = {
       document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
       slx_interpret_answer: Number(process.env.HERMES_TIMEOUT_SLX_INTERPRET_ANSWER_MS || 600000),
       simulink_ut_tcsd_generate: Number(process.env.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS || 3600000),
+      simulink_module_description_generate: Number(
+        process.env.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS || 3600000
+      ),
       replay_proposal_generate: Number(process.env.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS || 600000)
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
@@ -178,6 +191,9 @@ const appConfig = {
     stepMaxTurns: {
       simulink_ut_tcsd_generate: process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE
         ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE)
+        : 10000,
+      simulink_module_description_generate: process.env.HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE
+        ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE)
         : 10000
     },
     maxRecalledAtoms: Number(process.env.HERMES_MAX_RECALLED_ATOMS || 24),

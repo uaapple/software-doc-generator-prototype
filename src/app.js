@@ -14,6 +14,7 @@ import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
 import { HermesTaskQueueService } from "./services/hermes-task-queue-service.js";
 import { UnitTestCaseGenerationService } from "./services/unit-test-case-generation-service.js";
+import { SoftwareModuleDescriptionGenerationService } from "./services/software-module-description-generation-service.js";
 import { ModuleSkillService } from "./services/module-skill-service.js";
 import { SkillManagementService } from "./services/skill-management-service.js";
 import { SkillWorkOrderService } from "./services/skill-work-order-service.js";
@@ -83,7 +84,12 @@ export async function createApp() {
   const app = express();
   const projectService = new ProjectService();
   const unitTestCaseGenerationService = new UnitTestCaseGenerationService();
-  const hermesTaskQueueService = new HermesTaskQueueService({ projectService, unitTestCaseGenerationService });
+  const softwareModuleDescriptionGenerationService = new SoftwareModuleDescriptionGenerationService();
+  const hermesTaskQueueService = new HermesTaskQueueService({
+    projectService,
+    unitTestCaseGenerationService,
+    softwareModuleDescriptionGenerationService
+  });
   const pipelineService = new PipelineService(projectService, { hermesTaskQueueService });
   const benchmarkCaseService = new BenchmarkCaseService();
   const skillRefinementService = new SkillRefinementService();
@@ -102,6 +108,7 @@ export async function createApp() {
   await llmProfileService.ensureInitialized();
   await projectService.recoverStaleGenerationTasks();
   await unitTestCaseGenerationService.recoverStaleTasks();
+  await softwareModuleDescriptionGenerationService.recoverStaleTasks();
 
   async function resolveSkillItemWriteDir(req) {
     const targetBundleId = String(req.body?.targetBundleId || req.query?.targetBundleId || "").trim();
@@ -198,6 +205,26 @@ export async function createApp() {
         try {
           await fs.mkdir(unitTestCaseGenerationService.uploadTempDir, { recursive: true });
           cb(null, unitTestCaseGenerationService.uploadTempDir);
+        } catch (error) {
+          cb(error);
+        }
+      },
+      filename: (_req, file, cb) => {
+        const safeName = buildStoredUploadName(file.originalname);
+        cb(null, safeName);
+      }
+    }),
+    limits: {
+      files: 3
+    }
+  });
+
+  const softwareModuleDescriptionUpload = multer({
+    storage: multer.diskStorage({
+      destination: async (_req, _file, cb) => {
+        try {
+          await fs.mkdir(softwareModuleDescriptionGenerationService.uploadTempDir, { recursive: true });
+          cb(null, softwareModuleDescriptionGenerationService.uploadTempDir);
         } catch (error) {
           cb(error);
         }
@@ -328,6 +355,73 @@ export async function createApp() {
     }
   );
 
+  app.get("/api/software-module-description-generation/tasks", async (req, res, next) => {
+    try {
+      const tasks = await softwareModuleDescriptionGenerationService.listTasks({
+        projectId: req.query.projectId
+      });
+      res.json({ tasks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/software-module-description-generation/tasks/:taskId", async (req, res, next) => {
+    try {
+      const task = await softwareModuleDescriptionGenerationService.getTask(req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "软件详设生成任务不存在", code: "software_module_description_task_not_found" });
+      }
+      res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/software-module-description-generation/tasks/:taskId/artifacts/:artifactId/download", async (req, res, next) => {
+    try {
+      const artifact = await softwareModuleDescriptionGenerationService.getArtifact(req.params.taskId, req.params.artifactId);
+      res.download(artifact.absolutePath, artifact.fileName);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/software-module-description-generation/tasks/:taskId", async (req, res, next) => {
+    try {
+      const queueCancelled = hermesTaskQueueService.cancelQueued("software_module_description_generation", req.params.taskId);
+      const result = await softwareModuleDescriptionGenerationService.deleteTask(req.params.taskId);
+      res.json({ ...result, queueCancelled });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post(
+    "/api/software-module-description-generation/tasks",
+    softwareModuleDescriptionUpload.fields([
+      { name: "modelSlx", maxCount: 1 },
+      { name: "modelMat", maxCount: 1 },
+      { name: "modelInitScript", maxCount: 1 }
+    ]),
+    async (req, res, next) => {
+      try {
+        const task = await softwareModuleDescriptionGenerationService.createTask(req.files || {}, req.body || {});
+        hermesTaskQueueService.enqueue({
+          id: task.id,
+          type: "software_module_description_generation",
+          title: "软件详设生成",
+          run: () => softwareModuleDescriptionGenerationService.runTask(task.id),
+          onError: (error) => softwareModuleDescriptionGenerationService.failTask(task.id, error)
+        });
+        const queuedTask = await softwareModuleDescriptionGenerationService.getTask(task.id);
+        res.status(202).json({ task: queuedTask, taskStarted: true });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
   app.post("/api/feedback-tickets", feedbackUpload.array("images", 6), async (req, res, next) => {
     try {
       const ticket = await feedbackTicketService.createTicket(req.body || {}, req.files || []);
@@ -377,6 +471,12 @@ export async function createApp() {
   });
   app.get("/detail-design-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "detail-design-generation.html"));
+  });
+  app.get("/generation-tools", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "generation-tools.html"));
+  });
+  app.get("/software-detail-design-generation", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "software-detail-design-generation.html"));
   });
   app.get("/document-extractor", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "document-extractor.html"));

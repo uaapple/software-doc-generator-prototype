@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>软件详设生成</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/feedback-widget.css" />
+  </head>
+  <body data-page-kind="software-module-description-generation">
+    <main class="layout">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>软件详设生成</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">工程列表</a>
+          <a class="nav-link active" href="/generation-tools.html">生成工具</a>
+          <a class="nav-link" href="/skill-management">技能管理</a>
+          <a class="nav-link" href="/replay-lab">Replay Lab</a>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">生成工具</p>
+          <h1>软件详设生成</h1>
+          <p class="strip-text">上传 Simulink 模型、同名数据文件和可选初始化脚本后，发起软件详细设计生成任务。</p>
+        </div>
+        <div class="strip-actions">
+          <a class="hero-link secondary" href="/generation-tools.html">返回生成工具</a>
+        </div>
+      </section>
+
+      <section class="module-description-tool-grid">
+        <form id="module-description-form" class="card module-description-launcher" enctype="multipart/form-data">
+          <div class="section-head">
+            <span class="section-index">01</span>
+            <div>
+              <h2>发起任务</h2>
+            </div>
+          </div>
+
+          <label class="module-description-file-field">
+            <span>模型文件</span>
+            <input id="module-description-model-slx-input" type="file" name="modelSlx" accept=".slx" required />
+          </label>
+
+          <label class="module-description-file-field">
+            <span>数据文件</span>
+            <input id="module-description-model-mat-input" type="file" name="modelMat" accept=".mat" required />
+          </label>
+
+          <label class="module-description-file-field">
+            <span>初始化脚本（可选）</span>
+            <input id="module-description-model-init-script-input" type="file" name="modelInitScript" accept=".m" />
+          </label>
+
+          <div class="module-description-project-field">
+            <div class="module-description-project-head">
+              <label for="module-description-project-select">项目</label>
+              <div class="module-description-project-actions">
+                <button id="module-description-add-project-button" type="button">新增项目</button>
+                <button id="module-description-delete-project-button" type="button" class="danger">删除项目</button>
+              </div>
+            </div>
+            <select id="module-description-project-select" name="projectId" required>
+              <option value="">正在加载项目...</option>
+            </select>
+            <p id="module-description-project-status" class="status" hidden></p>
+          </div>
+
+          <p id="module-description-form-status" class="status" hidden></p>
+          <button id="module-description-start-button" type="submit">发起详设生成任务</button>
+        </form>
+
+        <section class="card module-description-task-list-card">
+          <div class="section-head">
+            <span class="section-index">02</span>
+            <div>
+              <h2>任务列表</h2>
+              <p>显示软件详设生成任务状态。</p>
+            </div>
+          </div>
+          <label class="module-description-task-filter">
+            <span>项目筛选</span>
+            <select id="module-description-task-project-filter">
+              <option value="">全部项目</option>
+            </select>
+          </label>
+          <div id="module-description-task-list" class="module-description-task-list"></div>
+        </section>
+
+        <section class="card module-description-task-detail-card">
+          <div class="section-head">
+            <span class="section-index">03</span>
+            <div>
+              <h2>任务详情</h2>
+              <p id="module-description-task-detail-subtitle">选择任务后查看运行摘要、错误信息和生成结果。</p>
+            </div>
+          </div>
+          <div id="module-description-task-detail" class="module-description-task-detail"></div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/software-detail-design-generation.js"></script>
+    <script type="module" src="/task-queue-widget.js"></script>
+    <script type="module" src="/feedback-widget.js"></script>
+  </body>
+</html>

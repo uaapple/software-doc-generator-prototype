@@ -186,10 +186,13 @@ async function normalizeProjectInitScripts(inputArtifact = {}, workspaceDir = ""
   return normalized;
 }
 
-async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = []) {
+async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = [], options = {}) {
+  const stepLabel = options.stepType || "simulink_ut_tcsd_generate";
+  const defaultSkillName = options.defaultSkillName || "simulink-ut-tcsd-generator";
+  const defaultExpectedOutputPattern = options.defaultExpectedOutputPattern || "outputs/*_tcsd.xlsx";
   const workspaceValue = String(inputArtifact.workspaceDir || "").trim();
   if (!workspaceValue) {
-    throw createHttpError("workspaceDir is required for simulink_ut_tcsd_generate");
+    throw createHttpError(`workspaceDir is required for ${stepLabel}`);
   }
   const workspaceDir = path.resolve(workspaceValue);
   const effectiveAllowedPaths = allowedPaths.length ? allowedPaths : [workspaceDir];
@@ -200,7 +203,7 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
   const modelSlxValue = String(inputArtifact.modelSlxPath || "").trim();
   const modelMatValue = String(inputArtifact.modelMatPath || "").trim();
   if (!modelSlxValue || !modelMatValue) {
-    throw createHttpError("modelSlxPath and modelMatPath are required for simulink_ut_tcsd_generate");
+    throw createHttpError(`modelSlxPath and modelMatPath are required for ${stepLabel}`);
   }
   const modelSlxPath = path.resolve(modelSlxValue);
   const modelMatPath = path.resolve(modelMatValue);
@@ -249,8 +252,8 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
     unitTestProject: inputArtifact.unitTestProject && typeof inputArtifact.unitTestProject === "object"
       ? normalizeUnitTestProject(inputArtifact.unitTestProject)
       : null,
-    skillName: String(inputArtifact.skillName || "simulink-ut-tcsd-generator").trim(),
-    expectedOutputPattern: String(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx").trim(),
+    skillName: String(inputArtifact.skillName || defaultSkillName).trim(),
+    expectedOutputPattern: String(inputArtifact.expectedOutputPattern || defaultExpectedOutputPattern).trim(),
     modelSlxFileName: inputArtifact.modelSlxFileName || path.basename(modelSlxPath),
     modelMatFileName: inputArtifact.modelMatFileName || path.basename(modelMatPath),
     modelInitScriptFileName: modelInitScriptPath
@@ -1124,6 +1127,42 @@ export async function createHermesApp() {
       if (stepType === "simulink_ut_tcsd_generate") {
         const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
         const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
+        const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
+        const hermesClient = new HermesAgentClient({
+          transport: "cli",
+          workdir: inputArtifact.workspaceDir
+        });
+        const result = await hermesClient.executeStep(
+          {
+            ...payload,
+            stepType,
+            workdir: inputArtifact.workspaceDir,
+            allowedPaths: [inputArtifact.workspaceDir],
+            inputArtifact: {
+              ...inputArtifact,
+              projectAddonCopy: {
+                copiedFileCount: addonCopy.copiedFileCount,
+                unitTestProject: addonCopy.unitTestProject
+              }
+            }
+          },
+          {}
+        );
+        return res.json(
+          buildStepResponse(stepType, result.artifact || {}, startedAt, {
+            metrics: result.metrics || {},
+            logs: result.logs || []
+          })
+        );
+      }
+
+      if (stepType === "simulink_module_description_generate") {
+        const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
+        const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths, {
+          stepType,
+          defaultSkillName: "simulink-module-description-generator",
+          defaultExpectedOutputPattern: "outputs/*.docx"
+        });
         const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
         const hermesClient = new HermesAgentClient({
           transport: "cli",

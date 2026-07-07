@@ -47,6 +47,7 @@ export class HermesTaskQueueService {
     this.projectService = options.projectService || null;
     this.replayTaskService = options.replayTaskService || null;
     this.unitTestCaseGenerationService = options.unitTestCaseGenerationService || null;
+    this.softwareModuleDescriptionGenerationService = options.softwareModuleDescriptionGenerationService || null;
     this.concurrency = Math.max(1, Number(options.concurrency || config.hermes?.taskConcurrency || 1) || 1);
     this.items = [];
     this.activeCount = 0;
@@ -58,6 +59,10 @@ export class HermesTaskQueueService {
 
   setUnitTestCaseGenerationService(unitTestCaseGenerationService) {
     this.unitTestCaseGenerationService = unitTestCaseGenerationService;
+  }
+
+  setSoftwareModuleDescriptionGenerationService(softwareModuleDescriptionGenerationService) {
+    this.softwareModuleDescriptionGenerationService = softwareModuleDescriptionGenerationService;
   }
 
   enqueue(input = {}) {
@@ -160,12 +165,13 @@ export class HermesTaskQueueService {
   }
 
   async listTaskSummaries() {
-    const [projectTasks, replayTasks, unitTestCaseTasks] = await Promise.all([
+    const [projectTasks, replayTasks, unitTestCaseTasks, softwareModuleDescriptionTasks] = await Promise.all([
       this.listProjectTaskSummaries(),
       this.listReplayTaskSummaries(),
-      this.listUnitTestCaseTaskSummaries()
+      this.listUnitTestCaseTaskSummaries(),
+      this.listSoftwareModuleDescriptionTaskSummaries()
     ]);
-    const sorted = [...projectTasks, ...replayTasks, ...unitTestCaseTasks].sort((a, b) => {
+    const sorted = [...projectTasks, ...replayTasks, ...unitTestCaseTasks, ...softwareModuleDescriptionTasks].sort((a, b) => {
       const rank = { running: 0, queued: 1, failed: 2, completed: 3 };
       const statusDiff = (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
       if (statusDiff) return statusDiff;
@@ -220,6 +226,12 @@ export class HermesTaskQueueService {
     if (!this.unitTestCaseGenerationService) return [];
     const tasks = await this.unitTestCaseGenerationService.listTasks();
     return tasks.map((task) => this.buildUnitTestCaseSummary(task));
+  }
+
+  async listSoftwareModuleDescriptionTaskSummaries() {
+    if (!this.softwareModuleDescriptionGenerationService) return [];
+    const tasks = await this.softwareModuleDescriptionGenerationService.listTasks();
+    return tasks.map((task) => this.buildSoftwareModuleDescriptionSummary(task));
   }
 
   buildGenerationSummary(project = {}, module = {}, documentType = "", task = {}) {
@@ -363,6 +375,30 @@ export class HermesTaskQueueService {
       startedAt: task.startedAt || "",
       updatedAt: task.updatedAt || task.createdAt || "",
       detailUrl: `/unit-test-case-generation?taskId=${task.id}`
+    };
+  }
+
+  buildSoftwareModuleDescriptionSummary(task = {}) {
+    const type = "software_module_description_generation";
+    const status = normalizeStatus(task.status);
+    const modelName = task.inputs?.modelSlx?.originalName || "Simulink 模型";
+    return {
+      id: task.id,
+      type,
+      status,
+      title: `软件详设 · ${modelName}`,
+      projectId: "",
+      projectName: task.unitTestProject?.label || "",
+      moduleId: "",
+      moduleName: modelName,
+      documentType: "software_module_description",
+      queuePosition: status === "queued" ? this.getQueuePosition(type, task.id) : 0,
+      progress: task.progress || null,
+      latestMessage: getLatestMessage(task),
+      createdAt: task.createdAt || "",
+      startedAt: task.startedAt || "",
+      updatedAt: task.updatedAt || task.createdAt || "",
+      detailUrl: `/software-detail-design-generation?taskId=${task.id}`
     };
   }
 }

@@ -21,6 +21,13 @@ if ($NoHermesAgent -and (-not $env:HERMES_TRANSPORT)) {
   $platformHermesTransport = "cli"
 }
 $hermesBaseUrl = if ($env:HERMES_BASE_URL) { $env:HERMES_BASE_URL } else { "http://127.0.0.1:$HermesPort" }
+$softwareModuleDescriptionAgentWorkspaceRoot = if ($env:SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT) {
+  $env:SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT
+} elseif ($env:UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT) {
+  $env:UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT
+} else {
+  ""
+}
 $serverArguments = @("--disable-warning=ExperimentalWarning", "src/server.js")
 $hermesArguments = @("--disable-warning=ExperimentalWarning", "src/hermes-server.js")
 
@@ -133,12 +140,17 @@ if ((-not $NoHermesAgent) -and ($platformHermesTransport -eq "api")) {
         HERMES_TASK_CONCURRENCY = "1"
         HERMES_SERVER_REQUEST_TIMEOUT_MS = "0"
         HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS = "3600000"
+        HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS = "3600000"
         HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE = "10000"
+        HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE = "10000"
         UNIT_TEST_CASE_PROJECT_ADMIN_CODE = "114301"
         UNIT_TEST_CASE_DEFAULT_PROJECTS = "01_楚能,02_TMS"
         UNIT_TEST_CASE_PROJECT_ADDON_ROOT = (Join-Path $projectRoot ".local/project-addons")
         UNIT_TEST_CASE_SKILL_NAME = "simulink-ut-tcsd-generator"
         UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN = "outputs/*_tcsd.xlsx"
+        SOFTWARE_MODULE_DESCRIPTION_SKILL_NAME = "simulink-module-description-generator"
+        SOFTWARE_MODULE_DESCRIPTION_EXPECTED_OUTPUT_PATTERN = "outputs/*.docx"
+        SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT = $softwareModuleDescriptionAgentWorkspaceRoot
       }
 
     New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
@@ -168,12 +180,17 @@ $serverProcess = Start-ProcessWithEnv `
     HERMES_TASK_CONCURRENCY = "1"
     HERMES_SERVER_REQUEST_TIMEOUT_MS = "0"
     HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS = "3600000"
+    HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS = "3600000"
     HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE = "10000"
+    HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE = "10000"
     UNIT_TEST_CASE_PROJECT_ADMIN_CODE = "114301"
     UNIT_TEST_CASE_DEFAULT_PROJECTS = "01_楚能,02_TMS"
     UNIT_TEST_CASE_PROJECT_ADDON_ROOT = (Join-Path $projectRoot ".local/project-addons")
     UNIT_TEST_CASE_SKILL_NAME = "simulink-ut-tcsd-generator"
     UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN = "outputs/*_tcsd.xlsx"
+    SOFTWARE_MODULE_DESCRIPTION_SKILL_NAME = "simulink-module-description-generator"
+    SOFTWARE_MODULE_DESCRIPTION_EXPECTED_OUTPUT_PATTERN = "outputs/*.docx"
+    SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT = $softwareModuleDescriptionAgentWorkspaceRoot
   }
 
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null

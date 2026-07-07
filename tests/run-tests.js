@@ -31,6 +31,7 @@ import { createHermesApp } from "../src/hermes-app.js";
 import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
 import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
+import { SoftwareModuleDescriptionGenerationService } from "../src/services/software-module-description-generation-service.js";
 import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
 import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
 import {
@@ -76,6 +77,13 @@ async function withTempConfig(run) {
       expectedOutputPattern: "outputs/*_tcsd.xlsx",
       agentWorkspaceRoot: ""
     },
+    softwareModuleDescription: {
+      taskStoreDir: path.join(tempDir, "data", "software-module-description-generation", "tasks"),
+      uploadTempDir: path.join(tempDir, "data", "software-module-description-generation", "_incoming"),
+      skillName: "simulink-module-description-generator",
+      expectedOutputPattern: "outputs/*.docx",
+      agentWorkspaceRoot: ""
+    },
     dataDir: path.join(tempDir, "data"),
     skillDatabasePath: path.join(tempDir, "data", "skills.sqlite"),
     projectStoreDir: path.join(tempDir, "data", "projects"),
@@ -117,8 +125,13 @@ async function withTempConfig(run) {
           anchor_index_build: 2000,
           outline_build: 2000,
           content_generate: 4000,
-          simulink_ut_tcsd_generate: 5000
+          simulink_ut_tcsd_generate: 5000,
+          simulink_module_description_generate: 5000
         },
+      stepMaxTurns: {
+        simulink_ut_tcsd_generate: 10000,
+        simulink_module_description_generate: 10000
+      },
       maxTurns: 8,
       maxRecalledAtoms: 24,
       maxOutlineSections: 6,
@@ -2948,7 +2961,9 @@ const tests = [
 
       assert.match(configSource, /serverRequestTimeoutMs:\s*Number\(process\.env\.HERMES_SERVER_REQUEST_TIMEOUT_MS\s*\|\|\s*0\)/);
       assert.match(configSource, /simulink_ut_tcsd_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS\s*\|\|\s*3600000\)/);
+      assert.match(configSource, /simulink_module_description_generate:\s*Number\(\s*process\.env\.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS\s*\|\|\s*3600000\s*\)/);
       assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE[\s\S]*:\s*10000/);
+      assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE[\s\S]*:\s*10000/);
       assert.ok(serverSource.includes("server.requestTimeout = requestTimeoutMs"));
       assert.ok(serverSource.includes("server.timeout = requestTimeoutMs"));
     }
@@ -3028,6 +3043,75 @@ const tests = [
     }
   },
   {
+    name: "Hermes agent client builds simulink_module_description_generate prompt and only normalizes DOCX outputs",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "module-description-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        await fs.mkdir(outputDir, { recursive: true });
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 120000,
+          stepTimeoutMs: {
+            simulink_module_description_generate: 3600000
+          },
+          stepMaxTurns: {
+            simulink_module_description_generate: 10000
+          },
+          usageReader: async () => null,
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"status\":\"completed\",\"summary\":\"完成\",\"outputFiles\":[{\"relativePath\":\"outputs/Demo_软件模块功能描述.docx\"},{\"relativePath\":\"outputs/Demo.md\"}],\"warnings\":[]}\n\nsession_id: 20260702_module_doc\n",
+              stderr: ""
+            };
+          }
+        });
+
+        const result = await client.executeStep({
+          taskId: "module-description-task-1",
+          stepType: "simulink_module_description_generate",
+          allowedPaths: [workspaceDir],
+          workdir: workspaceDir,
+          inputArtifact: {
+            workspaceDir,
+            modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+            modelMatPath: path.join(workspaceDir, "Demo.mat"),
+            modelInitScriptPath: path.join(workspaceDir, "inputs", "Demo_init.m"),
+            outputDir,
+            unitTestProject: { id: "01", name: "楚能", label: "01_楚能" },
+            skillName: "simulink-module-description-generator",
+            expectedOutputPattern: "outputs/*.docx",
+            modelInitScriptFileName: "Demo_init.m",
+            projectInitScripts: ["inputs/Demo_init.m"]
+          }
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].options.timeout, 3600000);
+        assert.equal(invocations[0].args[invocations[0].args.indexOf("--max-turns") + 1], "10000");
+        assert.match(invocations[0].args[2], /simulink_module_description_generate/);
+        assert.match(invocations[0].args[2], /simulink-module-description-generator/);
+        assert.match(invocations[0].args[2], /Template_Software_Detailed_Design\.docx/);
+        assert.match(invocations[0].args[2], /outputs\/\*\.docx/);
+        assert.match(invocations[0].args[2], /软件模块功能描述\.docx/);
+        assert.match(invocations[0].args[2], /does not receive a requirements PDF/);
+        assert.match(invocations[0].args[2], /Do not call or reuse legacy software detail design code paths/);
+        assert.deepEqual(
+          result.artifact.outputFiles.map((item) => item.relativePath),
+          ["outputs/Demo_软件模块功能描述.docx"]
+        );
+        assert.equal(result.artifact.outputFiles[0].kind, "software_module_description_docx");
+        assert.equal(
+          result.artifact.outputFiles[0].mimeType,
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+      });
+    }
+  },
+  {
     name: "Hermes API copies selected unit-test project addon before running CLI",
     run: async () => {
       await withTempConfig(async (tempDir) => {
@@ -3079,6 +3163,155 @@ const tests = [
           assert.equal(body.status, "succeeded");
           assert.equal(body.artifact.summary, "addon copied");
           assert.equal(await fs.readFile(path.join(workspaceDir, "init_Global.m"), "utf8"), "% addon marker");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API copies selected project addon for simulink_module_description_generate",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "module-description-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "02");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(addonDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(addonDir, "module_doc_support.m"), "% module doc addon marker", "utf8");
+
+        const commandPath = path.join(tempDir, "fake-hermes-cli.js");
+        await fs.writeFile(
+          commandPath,
+          [
+            "#!/usr/bin/env node",
+            "const fs = require('fs');",
+            "if (!fs.existsSync('module_doc_support.m')) {",
+            "  console.error('module description addon marker missing');",
+            "  process.exit(3);",
+            "}",
+            "console.log(JSON.stringify({ status: 'completed', summary: 'module addon copied', outputFiles: [{ relativePath: 'outputs/Demo_软件模块功能描述.docx' }], warnings: [] }));"
+          ].join("\n"),
+          "utf8"
+        );
+        await fs.chmod(commandPath, 0o755);
+        config.hermes.command = commandPath;
+        config.hermes.transport = "cli";
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_module_description_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "02", name: "TMS", label: "02_TMS" }
+              }
+            })
+          });
+          assert.equal(response.status, 200);
+          const body = await response.json();
+          assert.equal(body.status, "succeeded");
+          assert.equal(body.artifact.summary, "module addon copied");
+          assert.equal(body.artifact.outputFiles[0].kind, "software_module_description_docx");
+          assert.equal(await fs.readFile(path.join(workspaceDir, "module_doc_support.m"), "utf8"), "% module doc addon marker");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects unsafe project addons for simulink_module_description_generate",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "module-description-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(addonDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(addonDir, "Demo.slx"), "conflict", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_module_description_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_input_conflict");
+        });
+
+        await fs.rm(path.join(addonDir, "Demo.slx"), { force: true });
+        await fs.writeFile(path.join(tempDir, "outside.m"), "% outside init", "utf8");
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_module_description_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                modelInitScriptPath: path.join(tempDir, "outside.m"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 403);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_path_forbidden");
+        });
+
+        const symlinkTarget = path.join(tempDir, "symlink-target.m");
+        await fs.writeFile(symlinkTarget, "% symlink target", "utf8");
+        await fs.symlink(symlinkTarget, path.join(addonDir, "linked_init.m")).catch((error) => {
+          if (error.code !== "EPERM" && error.code !== "ENOTSUP") {
+            throw error;
+          }
+        });
+        const symlinkCreated = await fs.lstat(path.join(addonDir, "linked_init.m")).then((stat) => stat.isSymbolicLink()).catch(() => false);
+        if (!symlinkCreated) {
+          return;
+        }
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_module_description_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_symlink_forbidden");
         });
       });
     }
@@ -9326,6 +9559,8 @@ const tests = [
         "task-detail.html",
         "requirement-generation.html",
         "detail-design-generation.html",
+        "generation-tools.html",
+        "software-detail-design-generation.html",
         "hil-test-case-generation.html",
         "feedback-tickets.html",
         "feedback-pool.html",
@@ -9475,15 +9710,66 @@ const tests = [
     }
   },
   {
-    name: "Project list replaces Skill Refinement shortcut with unit test case generation workbench",
+    name: "Project list opens generation tools with standalone software detail design page",
     run: async () => {
       const indexHtml = await fs.readFile(path.join(config.rootDir, "public", "index.html"), "utf8");
+      const toolsHtml = await fs.readFile(path.join(config.rootDir, "public", "generation-tools.html"), "utf8");
+      const moduleDescriptionHtml = await fs.readFile(path.join(config.rootDir, "public", "software-detail-design-generation.html"), "utf8");
+      const moduleDescriptionScript = await fs.readFile(path.join(config.rootDir, "public", "software-detail-design-generation.js"), "utf8");
       const unitScript = await fs.readFile(path.join(config.rootDir, "public", "unit-test-case-generation.js"), "utf8");
       const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "app.css"), "utf8");
 
-      assert.ok(indexHtml.includes('href="/unit-test-case-generation"'));
-      assert.ok(indexHtml.includes("单元测试用例生成"));
+      assert.ok(indexHtml.includes('href="/generation-tools.html"'));
+      assert.ok(indexHtml.includes("生成工具"));
+      assert.equal(indexHtml.includes('href="/unit-test-case-generation"'), false);
       assert.equal(indexHtml.includes('href="/skill-refinement">Skill Refinement'), false);
+      assert.ok(toolsHtml.includes('href="/unit-test-case-generation"'));
+      assert.ok(toolsHtml.includes('href="/software-detail-design-generation.html"'));
+      assert.ok(toolsHtml.includes("单元测试用例生成"));
+      assert.ok(toolsHtml.includes("软件详设生成"));
+      assert.equal(toolsHtml.includes("/detail-design-generation"), false);
+      assert.equal(toolsHtml.includes("需求 PDF"), false);
+      assert.ok(moduleDescriptionHtml.includes("<title>软件详设生成</title>"));
+      assert.ok(moduleDescriptionHtml.includes('data-page-kind="software-module-description-generation"'));
+      assert.ok(moduleDescriptionHtml.includes('id="module-description-form"'));
+      assert.ok(moduleDescriptionHtml.includes('name="modelSlx"'));
+      assert.ok(moduleDescriptionHtml.includes('name="modelMat"'));
+      assert.ok(moduleDescriptionHtml.includes('name="modelInitScript"'));
+      assert.ok(moduleDescriptionHtml.includes('accept=".slx"'));
+      assert.ok(moduleDescriptionHtml.includes('accept=".mat"'));
+      assert.ok(moduleDescriptionHtml.includes('accept=".m"'));
+      assert.ok(moduleDescriptionHtml.includes('name="projectId"'));
+      assert.ok(moduleDescriptionHtml.includes('id="module-description-add-project-button"'));
+      assert.ok(moduleDescriptionHtml.includes('id="module-description-delete-project-button"'));
+      assert.ok(moduleDescriptionHtml.includes('id="module-description-task-project-filter"'));
+      assert.ok(moduleDescriptionHtml.includes('/software-detail-design-generation.js'));
+      assert.equal(moduleDescriptionHtml.includes('name="systemPdf"'), false);
+      assert.equal(moduleDescriptionHtml.includes('name="modelPdf"'), false);
+      assert.equal(moduleDescriptionHtml.includes('name="referenceExample"'), false);
+      assert.equal(moduleDescriptionHtml.includes("/detail-design-generation"), false);
+      assert.equal(moduleDescriptionHtml.includes("detail_design"), false);
+      assert.ok(moduleDescriptionScript.includes("/api/unit-test-case-generation/projects"));
+      assert.ok(moduleDescriptionScript.includes("/api/software-module-description-generation/tasks"));
+      assert.ok(moduleDescriptionScript.includes('formData.set("projectId"'));
+      assert.ok(moduleDescriptionScript.includes("validateFile(elements.slxInput"));
+      assert.ok(moduleDescriptionScript.includes("validateFile(elements.matInput"));
+      assert.ok(moduleDescriptionScript.includes("validateOptionalFile(elements.initScriptInput"));
+      assert.ok(moduleDescriptionScript.includes("暂无选中的生成任务。"));
+      assert.ok(moduleDescriptionScript.includes("软件详设 DOCX 已生成"));
+      assert.ok(moduleDescriptionScript.includes("下载 DOCX"));
+      assert.ok(moduleDescriptionScript.includes("simulink_module_description_generate"));
+      assert.ok(moduleDescriptionScript.includes("simulink-module-description-generator"));
+      assert.ok(moduleDescriptionScript.includes("outputs/*.docx"));
+      assert.ok(moduleDescriptionScript.includes("data-delete-task-id"));
+      assert.ok(moduleDescriptionScript.includes("taskProjectFilter"));
+      assert.equal(moduleDescriptionScript.includes("输入要求"), false);
+      assert.equal(moduleDescriptionScript.includes("/detail-design-generation"), false);
+      assert.equal(moduleDescriptionScript.includes("detail_design"), false);
+      assert.equal(moduleDescriptionScript.includes("generator.js"), false);
+      assert.equal(moduleDescriptionScript.includes("systemPdf"), false);
+      assert.equal(moduleDescriptionScript.includes("modelPdf"), false);
+      assert.equal(moduleDescriptionScript.includes("referenceExample"), false);
+      assert.equal(moduleDescriptionScript.includes("documentType"), false);
       assert.ok(unitScript.includes("data-delete-task-id"));
       assert.ok(unitScript.includes('method: "DELETE"'));
       assert.ok(unitScript.includes("任务已删除，相关文件已清理。"));
@@ -9493,10 +9779,28 @@ const tests = [
       assert.ok(unitScript.includes(".filter(taskMatchesProjectFilter)"));
       assert.ok(unitScript.includes("modelInitScript"));
       assert.ok(unitScript.includes("使用项目 addon 初始化"));
+      assert.ok(stylesheet.includes(".tool-hub-grid"));
+      assert.ok(stylesheet.includes(".module-description-tool-grid"));
+      assert.ok(stylesheet.includes(".module-description-project-actions"));
+      assert.ok(stylesheet.includes(".module-description-task-filter"));
+      assert.ok(stylesheet.includes(".module-description-task-delete"));
+      assert.ok(stylesheet.includes(".module-description-artifact-link"));
       assert.ok(stylesheet.includes(".unit-task-delete"));
       assert.ok(stylesheet.includes(".unit-task-filter"));
 
       await withTestServer(async ({ baseUrl }) => {
+        const toolsResponse = await fetch(`${baseUrl}/generation-tools`);
+        assert.equal(toolsResponse.status, 200);
+        const servedToolsHtml = await toolsResponse.text();
+        assert.ok(servedToolsHtml.includes("<title>生成工具</title>"));
+        assert.ok(servedToolsHtml.includes('href="/software-detail-design-generation.html"'));
+
+        const moduleDescriptionResponse = await fetch(`${baseUrl}/software-detail-design-generation`);
+        assert.equal(moduleDescriptionResponse.status, 200);
+        const servedModuleDescriptionHtml = await moduleDescriptionResponse.text();
+        assert.ok(servedModuleDescriptionHtml.includes("<title>软件详设生成</title>"));
+        assert.ok(servedModuleDescriptionHtml.includes('id="module-description-form"'));
+
         const response = await fetch(`${baseUrl}/unit-test-case-generation`);
         assert.equal(response.status, 200);
         const html = await response.text();
@@ -9694,6 +9998,114 @@ const tests = [
     }
   },
   {
+    name: "Software module description generation API validates uploads and creates queued DOCX tasks",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl }) => {
+          const missingMat = new FormData();
+          missingMat.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          missingMat.append("projectId", "01");
+          const missingResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: missingMat
+          });
+          assert.equal(missingResponse.status, 400);
+          const missingBody = await missingResponse.json();
+          assert.equal(missingBody.code, "software_module_description_invalid_upload_count");
+
+          const wrongExt = new FormData();
+          wrongExt.append("modelSlx", new Blob(["txt"]), "Demo.txt");
+          wrongExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongExt.append("projectId", "01");
+          const wrongExtResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: wrongExt
+          });
+          assert.equal(wrongExtResponse.status, 400);
+          const wrongExtBody = await wrongExtResponse.json();
+          assert.equal(wrongExtBody.code, "software_module_description_invalid_slx_extension");
+
+          const missingProject = new FormData();
+          missingProject.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          missingProject.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          const missingProjectResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: missingProject
+          });
+          assert.equal(missingProjectResponse.status, 400);
+          const missingProjectBody = await missingProjectResponse.json();
+          assert.equal(missingProjectBody.code, "software_module_description_invalid_project_id");
+
+          const wrongInitExt = new FormData();
+          wrongInitExt.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          wrongInitExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongInitExt.append("modelInitScript", new Blob(["txt"]), "Demo.txt");
+          wrongInitExt.append("projectId", "01");
+          const wrongInitExtResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: wrongInitExt
+          });
+          assert.equal(wrongInitExtResponse.status, 400);
+          const wrongInitExtBody = await wrongInitExtResponse.json();
+          assert.equal(wrongInitExtBody.code, "software_module_description_invalid_init_script_extension");
+
+          const validWithInit = new FormData();
+          validWithInit.append("modelSlx", new Blob(["slx"]), "ModuleDoc.slx");
+          validWithInit.append("modelMat", new Blob(["mat"]), "ModuleDoc.mat");
+          validWithInit.append("modelInitScript", new Blob(["% init"]), "ModuleDoc_init.m");
+          validWithInit.append("projectId", "02");
+          const validResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: validWithInit
+          });
+          assert.equal(validResponse.status, 202);
+          const validBody = await validResponse.json();
+          assert.equal(validBody.taskStarted, true);
+          assert.equal(validBody.task.type, "software_module_description_generation");
+          assert.equal(validBody.task.inputs.modelSlx.originalName, "ModuleDoc.slx");
+          assert.equal(validBody.task.inputs.modelMat.originalName, "ModuleDoc.mat");
+          assert.equal(validBody.task.inputs.modelInitScript.originalName, "ModuleDoc_init.m");
+          assert.equal(validBody.task.inputs.modelInitScript.workspaceRelativePath, "inputs/ModuleDoc_init.m");
+          assert.equal(validBody.task.unitTestProject.id, "02");
+          assert.equal(validBody.task.hermes.stepType, "simulink_module_description_generate");
+          assert.equal(validBody.task.hermes.skillName, "simulink-module-description-generator");
+          assert.equal(validBody.task.hermes.expectedOutputPattern, "outputs/*.docx");
+
+          const detailResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks/${validBody.task.id}`);
+          assert.equal(detailResponse.status, 200);
+          const detailBody = await detailResponse.json();
+          assert.equal(detailBody.id, validBody.task.id);
+
+          const filteredListResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks?projectId=02`);
+          assert.equal(filteredListResponse.status, 200);
+          const filteredListBody = await filteredListResponse.json();
+          assert.ok(filteredListBody.tasks.some((task) => task.id === validBody.task.id));
+          assert.ok(filteredListBody.tasks.every((task) => task.unitTestProject.id === "02"));
+
+          const invalidFilterResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks?projectId=02_TMS`);
+          assert.equal(invalidFilterResponse.status, 400);
+          const invalidFilterBody = await invalidFilterResponse.json();
+          assert.equal(invalidFilterBody.code, "software_module_description_invalid_project_id");
+
+          const taskDir = path.join(config.softwareModuleDescription.taskStoreDir, validBody.task.id);
+          await fs.access(taskDir);
+
+          const deleteResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks/${validBody.task.id}`, {
+            method: "DELETE"
+          });
+          assert.equal(deleteResponse.status, 200);
+          const deleteBody = await deleteResponse.json();
+          assert.equal(deleteBody.deleted, true);
+          assert.equal(deleteBody.taskId, validBody.task.id);
+          await assert.rejects(() => fs.access(taskDir));
+
+          const deletedDetailResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks/${validBody.task.id}`);
+          assert.equal(deletedDetailResponse.status, 404);
+        });
+      });
+    }
+  },
+  {
     name: "UnitTestCaseGenerationService assigns legacy tasks to project 01 and filters by project",
     run: async () => {
       await withTempConfig(async () => {
@@ -9741,6 +10153,134 @@ const tests = [
         const allTasks = await service.listTasks();
         assert.deepEqual(allTasks.map((task) => task.id), ["project-02-task", "legacy-task"]);
         await assert.rejects(() => service.listTasks({ projectId: "01_楚能" }), /项目编号非法/);
+      });
+    }
+  },
+  {
+    name: "SoftwareModuleDescriptionGenerationService builds Hermes payloads and records DOCX artifacts only",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const seenPayloads = [];
+        const service = new SoftwareModuleDescriptionGenerationService({
+          hermesAgentClient: {
+            async executeStep(payload, runtime = {}) {
+              seenPayloads.push(payload);
+              assert.equal(payload.stepType, "simulink_module_description_generate");
+              assert.equal(payload.type, "software_module_description_generation");
+              assert.equal(payload.inputArtifact.skillName, "simulink-module-description-generator");
+              assert.equal(payload.inputArtifact.expectedOutputPattern, "outputs/*.docx");
+              assert.equal(payload.inputArtifact.unitTestProject.id, "01");
+              assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
+              await runtime.onEvent?.({
+                status: "completed",
+                label: "Hermes mock completed",
+                message: "Mock software module description generated.",
+                transport: "mock",
+                stepType: "simulink_module_description_generate"
+              });
+              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_软件模块功能描述.docx");
+              await fs.mkdir(path.dirname(outputPath), { recursive: true });
+              await fs.writeFile(outputPath, "docx");
+              await fs.writeFile(path.join(payload.inputArtifact.outputDir, "Demo.md"), "markdown");
+              return {
+                status: "succeeded",
+                stepType: "simulink_module_description_generate",
+                artifact: {
+                  status: "completed",
+                  summary: "已生成 Demo_软件模块功能描述.docx。",
+                  outputFiles: [
+                    { relativePath: "outputs/Demo_软件模块功能描述.docx" },
+                    { relativePath: "outputs/Demo.md" }
+                  ]
+                },
+                metrics: { tokenUsage: { totalTokens: 12 } },
+                logs: []
+              };
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")],
+            modelInitScript: [await createMockUploadFile(tempDir, "Demo_init.m", "% init")]
+          },
+          { projectId: "01" }
+        );
+        const created = await service.readTask(task.id);
+        const payload = service.buildHermesPayload(created);
+        assert.equal(payload.stepType, "simulink_module_description_generate");
+        assert.equal(payload.inputArtifact.modelInitScriptFileName, "Demo_init.m");
+        assert.equal(payload.inputArtifact.modelSlxFileName, "Demo.slx");
+        assert.equal(payload.inputArtifact.modelMatFileName, "Demo.mat");
+        assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
+        assert.equal(payload.inputArtifact.unitTestProject.id, "01");
+        assert.equal(payload.inputArtifact.skillName, "simulink-module-description-generator");
+        assert.equal(payload.inputArtifact.expectedOutputPattern, "outputs/*.docx");
+
+        const completed = await service.runTask(task.id);
+        assert.equal(seenPayloads.length, 1);
+        assert.equal(completed.status, "completed");
+        assert.equal(completed.artifacts.length, 1);
+        assert.equal(completed.artifacts[0].kind, "software_module_description_docx");
+        assert.equal(completed.artifacts[0].fileName, "Demo_软件模块功能描述.docx");
+        assert.equal(completed.artifacts[0].relativePath, "outputs/Demo_软件模块功能描述.docx");
+        assert.equal(
+          completed.artifacts[0].mimeType,
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+        const artifact = await service.getArtifact(task.id, completed.artifacts[0].id);
+        assert.equal(path.basename(artifact.absolutePath), "Demo_软件模块功能描述.docx");
+
+        const stored = await service.readTask(task.id);
+        stored.artifacts.push({
+          id: "bad-artifact",
+          fileName: "bad.docx",
+          relativePath: "../bad.docx",
+          size: 1
+        });
+        await service.saveTask(stored);
+        await assert.rejects(
+          () => service.getArtifact(task.id, "bad-artifact"),
+          /outputs\/\*\.docx/
+        );
+      });
+    }
+  },
+  {
+    name: "SoftwareModuleDescriptionGenerationService fails when Hermes returns no DOCX outputs",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const service = new SoftwareModuleDescriptionGenerationService({
+          hermesAgentClient: {
+            async executeStep(payload) {
+              await fs.mkdir(payload.inputArtifact.outputDir, { recursive: true });
+              await fs.writeFile(path.join(payload.inputArtifact.outputDir, "Demo.md"), "markdown");
+              return {
+                status: "succeeded",
+                stepType: "simulink_module_description_generate",
+                artifact: {
+                  status: "completed",
+                  summary: "只生成了 Markdown。",
+                  outputFiles: [{ relativePath: "outputs/Demo.md" }]
+                },
+                logs: []
+              };
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+          },
+          { projectId: "01" }
+        );
+
+        await assert.rejects(() => service.runTask(task.id), /未在 workspace\/outputs 下找到 \.docx/);
+        const stored = await service.readTask(task.id);
+        assert.equal(stored.status, "failed");
+        assert.equal(stored.hermes.errorCode, "software_module_description_output_missing");
       });
     }
   },
@@ -10170,7 +10710,29 @@ const tests = [
           ];
         }
       };
-      const queue = new HermesTaskQueueService({ projectService, replayTaskService, unitTestCaseGenerationService });
+      const softwareModuleDescriptionGenerationService = {
+        async listTasks() {
+          return [
+            {
+              id: "module-doc-1",
+              status: "queued",
+              unitTestProject: { id: "02", name: "TMS", label: "02_TMS" },
+              inputs: {
+                modelSlx: { originalName: "ModuleDoc.slx" }
+              },
+              progress: { message: "等待生成软件详设", percent: 5 },
+              createdAt: "2026-04-24T01:08:00.000Z",
+              updatedAt: "2026-04-24T01:08:00.000Z"
+            }
+          ];
+        }
+      };
+      const queue = new HermesTaskQueueService({
+        projectService,
+        replayTaskService,
+        unitTestCaseGenerationService,
+        softwareModuleDescriptionGenerationService
+      });
       queue.enqueue({
         id: "blocker",
         type: "generation",
@@ -10191,6 +10753,11 @@ const tests = [
         type: "unit_test_case_generation",
         run: async () => null
       });
+      queue.enqueue({
+        id: "module-doc-1",
+        type: "software_module_description_generation",
+        run: async () => null
+      });
 
       const summaries = await queue.listTaskSummaries();
       const ids = summaries.map((task) => task.id);
@@ -10200,6 +10767,7 @@ const tests = [
       assert.ok(ids.includes("slx-1"));
       assert.ok(ids.includes("interp-task-1"));
       assert.ok(ids.includes("unit-1"));
+      assert.ok(ids.includes("module-doc-1"));
       assert.equal(summaries.find((task) => task.id === "gen-1").queuePosition, 1);
       assert.equal(summaries.find((task) => task.id === "extract-1").detailUrl, "/projects/project-1/modules/module-1?openHistory=1&highlightTaskId=extract-1");
       assert.equal(summaries.find((task) => task.id === "replay-1").detailUrl, "/feedback-pool?projectId=project-1&moduleId=module-1&taskId=replay-1");
@@ -10220,6 +10788,13 @@ const tests = [
       assert.equal(unitSummary.title, "单元测试用例 · Demo.slx");
       assert.equal(unitSummary.detailUrl, "/unit-test-case-generation?taskId=unit-1");
       assert.equal(unitSummary.queuePosition, 3);
+      const moduleDescriptionSummary = summaries.find((task) => task.id === "module-doc-1");
+      assert.equal(moduleDescriptionSummary.type, "software_module_description_generation");
+      assert.equal(moduleDescriptionSummary.documentType, "software_module_description");
+      assert.equal(moduleDescriptionSummary.title, "软件详设 · ModuleDoc.slx");
+      assert.equal(moduleDescriptionSummary.projectName, "02_TMS");
+      assert.equal(moduleDescriptionSummary.detailUrl, "/software-detail-design-generation?taskId=module-doc-1");
+      assert.equal(moduleDescriptionSummary.queuePosition, 4);
     }
   },
   {
@@ -10233,7 +10808,9 @@ const tests = [
         "document-extractor.html",
         "requirement-generation.html",
         "slx-parser.html",
-        "unit-test-case-generation.html"
+        "unit-test-case-generation.html",
+        "generation-tools.html",
+        "software-detail-design-generation.html"
       ];
       for (const page of pages) {
         const html = await fs.readFile(path.join(config.rootDir, "public", page), "utf8");

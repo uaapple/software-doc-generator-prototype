@@ -1252,6 +1252,86 @@ function buildSimulinkUtTcsdPrompt(payload = {}) {
   ].join("\n");
 }
 
+function sanitizeSimulinkModuleDescriptionArtifact(inputArtifact = {}) {
+  const project = inputArtifact.unitTestProject && typeof inputArtifact.unitTestProject === "object"
+    ? inputArtifact.unitTestProject
+    : null;
+  return {
+    workspaceDir: clipText(inputArtifact.workspaceDir || "", CLI_PATH_MAX_LENGTH),
+    modelSlxPath: clipText(inputArtifact.modelSlxPath || "", CLI_PATH_MAX_LENGTH),
+    modelMatPath: clipText(inputArtifact.modelMatPath || "", CLI_PATH_MAX_LENGTH),
+    modelInitScriptPath: clipText(inputArtifact.modelInitScriptPath || "", CLI_PATH_MAX_LENGTH),
+    outputDir: clipText(inputArtifact.outputDir || "", CLI_PATH_MAX_LENGTH),
+    unitTestProject: project
+      ? {
+          id: clipText(project.id || "", 40),
+          name: clipText(project.name || "", 120),
+          label: clipText(project.label || "", 180)
+        }
+      : null,
+    skillName: clipText(inputArtifact.skillName || "simulink-module-description-generator", 160),
+    expectedOutputPattern: clipText(inputArtifact.expectedOutputPattern || "outputs/*.docx", 200),
+    modelSlxFileName: clipText(inputArtifact.modelSlxFileName || path.basename(inputArtifact.modelSlxPath || "model.slx"), 200),
+    modelMatFileName: clipText(inputArtifact.modelMatFileName || path.basename(inputArtifact.modelMatPath || "model.mat"), 200),
+    modelInitScriptFileName: clipText(inputArtifact.modelInitScriptFileName || path.basename(inputArtifact.modelInitScriptPath || ""), 200),
+    projectInitScripts: Array.isArray(inputArtifact.projectInitScripts)
+      ? inputArtifact.projectInitScripts.map((item) => clipText(item || "", 240)).filter(Boolean)
+      : []
+  };
+}
+
+function buildSimulinkModuleDescriptionPrompt(payload = {}) {
+  const inputArtifact = sanitizeSimulinkModuleDescriptionArtifact(payload.inputArtifact || {});
+  return [
+    "You are executing the Hermes step `simulink_module_description_generate`.",
+    "Use the Codex skill `simulink-module-description-generator` for the full workflow.",
+    "The task is to generate a Chinese software module function description DOCX, shown in the platform UI as software detailed design generation, from one `.slx` model and its matching `.mat` data file.",
+    "",
+    "Workspace artifact:",
+    JSON.stringify(inputArtifact, null, 2),
+    "",
+    "Execution contract:",
+    "- Treat `workspaceDir` as the sandbox root. Do not read or write outside it.",
+    "- The model input is `modelSlxPath`; the matching data file is `modelMatPath`.",
+    "- `unitTestProject.id` is the internal project number, such as `01`; display labels such as `01_楚能` must never be used as paths.",
+    "- The Hermes Agent service has already copied the selected project's addon package into `workspaceDir` before this CLI run. Load support files, project tool folders, dictionaries, `.sldd`, and init files from the workspace, not from the external addon root.",
+    "- If `projectInitScripts` is non-empty, it contains the uploaded model-specific initialization `.m` script relative to `workspaceDir`; treat it as the explicit initialization entrypoint. You may set `MODULE_DOC_PROJECT_INIT_SCRIPTS` to that semicolon-separated list before calling the skill setup.",
+    "- If `projectInitScripts` is empty, no model-specific init script was uploaded; rely on the copied project addon/workspace and the skill setup to discover common initialization scripts.",
+    "- Before loading Simulink files, change MATLAB current folder to `workspaceDir`.",
+    "- Prefer the canonical workspace filenames `modelSlxFileName`, `modelMatFileName`, and when present `modelInitScriptFileName` for MATLAB `load`, `load_system`, and init bootstrap steps.",
+    "- Use the skill named by `skillName`. The default is `simulink-module-description-generator`.",
+    "- Use the skill's bundled setup flow and support scripts, including `scripts/setup_module_doc_support.m` when available.",
+    "- Generate DOCX only. Do not register Markdown, JSON, screenshots, logs, or intermediate files as final outputs.",
+    "- Write generated DOCX files only under `outputDir`.",
+    "- Use the skill's bundled template `assets/templates/Template_Software_Detailed_Design.docx` when the skill provides it.",
+    "- Preferred final filename pattern is `outputs/<ModelName>_软件模块功能描述.docx`; any `outputs/*.docx` is acceptable.",
+    "- This independent flow does not receive a requirements PDF. Do not invent a requirements-PDF dependency and do not fill design-basis body text from a missing PDF.",
+    "- Do not call or reuse legacy software detail design code paths, including `/detail-design-generation`, `detail_design`, `generator.js`, or old document-generation services.",
+    "- Before returning `status: \"completed\"`, verify at least one DOCX file exists under `outputDir` and include it in `outputFiles` using a relative path matching `outputs/*.docx`.",
+    "- If MATLAB, SATK, Simulink, or required skill assets are unavailable, return `status: \"failed\"` with a clear `errorMessage` and warnings.",
+    "",
+    "Return strict JSON only. No markdown fences. No prose outside JSON.",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        status: "completed",
+        summary: "中文摘要，说明已生成软件模块功能描述 DOCX。",
+        outputFiles: [
+          {
+            relativePath: "outputs/model_软件模块功能描述.docx",
+            kind: "software_module_description_docx",
+            mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            description: "Generated software module description DOCX"
+          }
+        ],
+        warnings: []
+      },
+      null,
+      2
+    )
+  ].join("\n");
+}
+
 const REPLAY_PROPOSAL_ALLOWED_LAYERS = new Set(["generic", "docType", "domain", "module"]);
 const REPLAY_PROPOSAL_ALLOWED_ACTIONS = new Set([
   "add_skill_item",
@@ -1716,6 +1796,8 @@ function buildCliPrompt(payload = {}) {
       return buildSoftwareRequirementMarkdownPrompt(payload);
     case "simulink_ut_tcsd_generate":
       return buildSimulinkUtTcsdPrompt(payload);
+    case "simulink_module_description_generate":
+      return buildSimulinkModuleDescriptionPrompt(payload);
     case "anchor_index_build":
       return buildAnchorIndexPrompt(payload);
     case "material_extract":
@@ -1852,6 +1934,56 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
       errorMessage: String(artifact.errorMessage || artifact.error || "").trim()
     };
   }
+  if (stepType === "simulink_module_description_generate") {
+    const artifact = parsed && typeof parsed === "object" ? parsed : {};
+    const outputFiles = Array.isArray(artifact.outputFiles)
+      ? artifact.outputFiles
+          .map((item) => {
+            if (typeof item === "string") {
+              const relativePath = item.trim();
+              if (!relativePath.toLowerCase().endsWith(".docx")) {
+                return null;
+              }
+              return {
+                relativePath,
+                kind: "software_module_description_docx",
+                mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                description: "Generated software module description DOCX"
+              };
+            }
+            if (!item || typeof item !== "object") {
+              return null;
+            }
+            const relativePath = String(item.relativePath || item.path || item.filePath || "").trim();
+            const absolutePath = String(item.absolutePath || "").trim();
+            const fileName = String(item.fileName || "").trim();
+            const candidatePath = relativePath || absolutePath || fileName;
+            if (!candidatePath.toLowerCase().endsWith(".docx")) {
+              return null;
+            }
+            return {
+              relativePath,
+              absolutePath,
+              fileName,
+              kind: String(item.kind || "software_module_description_docx").trim(),
+              mimeType: String(
+                item.mimeType || "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              ).trim(),
+              description: String(item.description || "").trim()
+            };
+          })
+          .filter((item) => item && (item.relativePath || item.absolutePath))
+      : [];
+    return {
+      status: String(artifact.status || "completed").trim(),
+      summary: String(artifact.summary || "").trim(),
+      outputFiles,
+      warnings: Array.isArray(artifact.warnings)
+        ? artifact.warnings.map((item) => clipText(item || "", 300)).filter(Boolean).slice(0, 20)
+        : [],
+      errorMessage: String(artifact.errorMessage || artifact.error || "").trim()
+    };
+  }
   if (stepType === "outline_build") {
     return {
       summary: String(parsed.summary || "").trim(),
@@ -1865,6 +1997,37 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
 }
 
 async function buildMarkdownArtifactFromWorkspace(payload = {}, workdir = "") {
+  if (payload.stepType === "simulink_module_description_generate") {
+    const inputArtifact = payload.inputArtifact || {};
+    const outputDir = inputArtifact.outputDir || path.join(workdir || inputArtifact.workspaceDir || process.cwd(), "outputs");
+    const absoluteOutputDir = path.isAbsolute(outputDir)
+      ? outputDir
+      : path.join(workdir || inputArtifact.workspaceDir || process.cwd(), ...String(outputDir).split("/").filter(Boolean));
+    const entries = await fs.readdir(absoluteOutputDir, { withFileTypes: true }).catch(() => []);
+    const outputFiles = entries
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".docx"))
+      .map((entry) => {
+        const absolutePath = path.join(absoluteOutputDir, entry.name);
+        const relativePath = path
+          .relative(workdir || inputArtifact.workspaceDir || process.cwd(), absolutePath)
+          .replace(/\\/g, "/");
+        return {
+          relativePath,
+          kind: "software_module_description_docx",
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          description: "Generated software module description DOCX"
+        };
+      });
+    if (!outputFiles.length) {
+      return null;
+    }
+    return {
+      status: "completed",
+      summary: "Hermes wrote software module description DOCX artifacts but did not return strict JSON.",
+      outputFiles,
+      warnings: ["Hermes CLI 未返回严格 JSON，后端从 outputs 目录回收了 DOCX 产物。"]
+    };
+  }
   if (payload.stepType === "simulink_ut_tcsd_generate") {
     const inputArtifact = payload.inputArtifact || {};
     const outputDir = inputArtifact.outputDir || path.join(workdir || inputArtifact.workspaceDir || process.cwd(), "outputs");
@@ -2194,11 +2357,17 @@ export class HermesAgentClient {
         const fallbackArtifact = await buildMarkdownArtifactFromWorkspace(payload, workdir);
         if (fallbackArtifact) {
           const fallbackLabel =
-            payload.stepType === "simulink_ut_tcsd_generate" ? "Hermes CLI 已写入 TCSD 产物" : "Hermes CLI 已写入 Markdown 产物";
+            payload.stepType === "simulink_ut_tcsd_generate"
+              ? "Hermes CLI 已写入 TCSD 产物"
+              : payload.stepType === "simulink_module_description_generate"
+                ? "Hermes CLI 已写入软件详设 DOCX 产物"
+                : "Hermes CLI 已写入 Markdown 产物";
           const fallbackMessage =
             payload.stepType === "simulink_ut_tcsd_generate"
               ? "Hermes CLI 未返回严格 JSON，但已写入 TCSD Excel 产物，后端将继续登记结果文件。"
-              : "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。";
+              : payload.stepType === "simulink_module_description_generate"
+                ? "Hermes CLI 未返回严格 JSON，但已写入软件详设 DOCX 产物，后端将继续登记结果文件。"
+                : "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。";
           await emitHermesEvent(runtime.onEvent, {
             type: "agent_runtime",
             transport: "cli",
