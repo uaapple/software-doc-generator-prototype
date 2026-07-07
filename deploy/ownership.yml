@@ -3,6 +3,7 @@
 runtime-data:
   - data/**
   - data/unit-test-case-generation/**
+  - data/software-module-description-generation/**
   - output/**
   - tmp/**
   - release-dist/**
@@ -34,6 +35,7 @@ linux:
   - src/services/benchmark-evaluation-service.js
   - src/services/hermes-task-queue-service.js
   - src/services/unit-test-case-generation-service.js
+  - src/services/software-module-description-generation-service.js
   - src/services/pipeline-service.js
   - src/services/skill-database-service.js
   - src/services/replay-artifact-service.js

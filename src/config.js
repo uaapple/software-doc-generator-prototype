@@ -64,6 +64,24 @@ function trimTrailingSlash(value = "") {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
+function parseCommandArgsPrefix(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return [];
+  }
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item || "").trim()).filter(Boolean);
+      }
+    } catch (_error) {
+      return [];
+    }
+  }
+  return raw.split(/\s+/).map((item) => item.trim()).filter(Boolean);
+}
+
 const hermesHomeDir = path.resolve(process.env.HERMES_HOME || path.join(homeDir, ".hermes"));
 const hermesProfile = String(process.env.HERMES_PROFILE || "").trim();
 
@@ -213,6 +231,16 @@ export const config = {
     defaultWorkerId: unitTestWorkerConfig.defaultWorkerId,
     workerProfiles: unitTestWorkerConfig.workerProfiles
   },
+  softwareModuleDescription: {
+    taskStoreDir: path.join(dataDir, "software-module-description-generation", "tasks"),
+    uploadTempDir: path.join(dataDir, "software-module-description-generation", "_incoming"),
+    skillName: process.env.SOFTWARE_MODULE_DESCRIPTION_SKILL_NAME || "simulink-module-description-generator",
+    expectedOutputPattern: process.env.SOFTWARE_MODULE_DESCRIPTION_EXPECTED_OUTPUT_PATTERN || "outputs/*.docx",
+    agentWorkspaceRoot:
+      process.env.SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT ||
+      process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT ||
+      ""
+  },
   dataDir,
   skillDatabasePath: path.join(dataDir, "skills.sqlite"),
   projectStoreDir: path.join(dataDir, "projects"),
@@ -259,6 +287,7 @@ export const config = {
       approvalChoice: process.env.HERMES_OPENAI_API_APPROVAL_CHOICE || "session"
     },
     command: process.env.HERMES_COMMAND || "hermes",
+    commandArgsPrefix: parseCommandArgsPrefix(process.env.HERMES_COMMAND_ARGS_PREFIX || ""),
     profile: hermesProfile,
     homeDir: hermesHomeDir,
     stateDbPath: resolveHermesStateDbPath(),
@@ -276,6 +305,9 @@ export const config = {
       document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
       slx_interpret_answer: Number(process.env.HERMES_TIMEOUT_SLX_INTERPRET_ANSWER_MS || 600000),
       simulink_ut_tcsd_generate: Number(process.env.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS || 7200000),
+      simulink_module_description_generate: Number(
+        process.env.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS || 3600000
+      ),
       replay_proposal_generate: Number(process.env.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS || 600000)
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
@@ -284,6 +316,9 @@ export const config = {
     stepMaxTurns: {
       simulink_ut_tcsd_generate: process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE
         ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE)
+        : 10000,
+      simulink_module_description_generate: process.env.HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE
+        ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE)
         : 10000
     },
     maxRecalledAtoms: Number(process.env.HERMES_MAX_RECALLED_ATOMS || 24),
