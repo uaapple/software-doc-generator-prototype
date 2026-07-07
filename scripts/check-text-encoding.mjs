@@ -30,6 +30,7 @@ const textExtensions = new Set([
 const includedDotFiles = new Set([".editorconfig", ".gitattributes"]);
 const ignoredDirectories = new Set([
   ".git",
+  "config",
   "node_modules",
   ".local",
   "data",
