@@ -47,20 +47,20 @@ Recommended sequence:
 6. Resolve parameter values through data dictionaries, base workspace, model workspace, masks, and referenced scripts.
 7. Compile or update the model only when needed for resolved types/dimensions/sample times; record any compile failure as a limitation.
 
-When reading a selected module, inspect the final output cone before drafting. Do not stop at the main algorithm DocBlock, the visually dominant left-to-right calculation path, or a signal that merely looks like the module's main result. If downstream logic contains edge detectors, Unit Delay/Memory, latches, restore/rem/remain signals, Switch/Multiport Switch selections, feedback lines, or special-mode gates that can change an externally visible output, capture those as behavior-level evidence.
+When reading a selected module, inspect the final output cone before drafting. Do not stop at the main algorithm DocBlock, the visually dominant left-to-right calculation path, or a signal that merely looks like the module's main result. If downstream logic contains edge detectors, Unit Delay/Memory, latches, restore/rem/remain signals, Switch/Multiport Switch selections, feedback lines, or special-mode gates that can change an externally visible output, capture those as behavior-level evidence. A named internal line in this output-near cone is evidence-bearing when it feeds a final selector, feedback path, delay, latch, or restore path; include it in the ledger even when it is not an Outport.
 
 ## Output Coverage Ledger
 
 Before drafting each module, build a private output coverage ledger. The ledger is evidence for the writer and self-check; it does not need to be printed in the final document.
 
-1. Enumerate the module's externally meaningful outputs: Outport blocks, top-level exported signals, Goto/Data Store outputs that leave the module, EEW/save outputs, display/status outputs, and auxiliary restore/remain outputs.
-2. For each output, record at least: output name, port number when available, direct source signal/block, upstream block types in the output cone, output role, control signals, branch signals, condition groups, and whether the final draft covers it.
-3. Group outputs by role: main state/value, final actuator/request output, automatic/manual calculation flags, EEW/save values, `Rem`/restore/remembered values, raw/final pairs, diagnostic/display states, and mode-dependent held outputs.
+1. Enumerate the module's externally meaningful outputs and named output-near state signals: Outport blocks, top-level exported signals, Goto/Data Store outputs that leave the module, EEW/save outputs, display/status outputs, auxiliary restore/remain outputs, and named internal lines that feed final output selection, feedback, delay, latch, or restore paths.
+2. For each output or named output-near state signal, record at least: exact name, port number when available, direct source signal/block, upstream block types in the output cone, output role, control signals, branch signals, condition groups, and whether the final draft covers it.
+3. Group outputs by role: main state/value, final actuator/request output, automatic/manual calculation flags, EEW/save values, `Rem`/restore/remembered values, raw/final pairs, diagnostic/display states, mode-dependent held outputs, and named output-near state signals that support a final output.
 4. For every Outport/exported output, trace backward from the output, not only forward from the module inputs. Follow the direct source cone at least through final Switch/Multiport Switch blocks, feedback paths, Unit Delay/Memory/Delay, latches, edge detectors, and mode gates. Continue until the behavior can be summarized as current-value selection, held previous value, restored value, default/fallback, suppression, override, or pure routing.
-5. For outputs whose names contain `Rem`, `Rstr`, `Restore`, `Old`, `Pre`, `Last`, `Mem`, `Save`, `EEW`, or similar state-holding terms, trace their source cone even if they are not the primary output named in the module title.
+5. For signals whose names contain `Rem`, `Rstr`, `Restore`, `Old`, `Pre`, `Last`, `Mem`, `Save`, `EEW`, or similar state-holding terms, trace their source cone even if they are not Outports and even if they are not the primary output named in the module title.
 6. In each output cone, look for `Unit Delay`, `Memory`, `Delay`, `RSLatch`, `Detect Change`, `EdgeRising`, `EdgeFalling`, feedback lines into `Switch`/`Multiport Switch`, and model-named mode/control gates that can hold, restore, suppress, or override outputs.
 7. Treat right-side or output-near logic as behavior-bearing until proven otherwise. A final Switch with feedback, delay, latch, edge detection, or special-mode selection is output shaping/hold/restore logic, not pure Outport plumbing.
-8. Record the behavior-level rule for each non-routing output: when the value is remembered, when it is held, when it is restored or updated, which source value wins, and which final or auxiliary output it affects.
+8. Record the behavior-level rule for each non-routing output or named output-near state signal: when the value is remembered, when it is held, when it is restored or updated, which source value wins, and which final or auxiliary output it affects.
 9. Record branch conditions in a form that can be copied into `实现方式` without inventing business labels:
    - set conditions and reset conditions for latch/save outputs
    - true/false selector conditions for `Switch` and `Multiport Switch`
@@ -69,13 +69,21 @@ Before drafting each module, build a private output coverage ledger. The ledger 
    - fallback/default value when no branch condition applies
 10. For every control or branch signal, keep the exact signal, parameter, enum, constant, or table identifier. Do not reduce `control_signals` to inferred Chinese concepts.
 11. When branch logic is complex, mark which rows should become level-one sub-points in `实现方式`.
-12. If an output is pure plumbing or duplicate routing, mark it as such in the ledger with a reason so it can be safely collapsed. Do not silently drop an output only because it is not the main final state.
+12. If an output or named output-near state signal is pure plumbing or duplicate routing, mark it as such in the ledger with a reason so it can be safely collapsed. Do not silently drop a signal only because it is internal or not the main final state.
+
+The ledger is not final prose:
+
+- Do not copy block counts, block-type summaries, direct source block names, or `source=<block>` rows into `实现方式`.
+- If the ledger only says a signal is sourced from `RSLatch`, `Switch`, `Signal Copy`, `Unit Delay`, `Memory`, or a subsystem name, continue reading that output cone until the set/reset/selection/hold/restore/fallback conditions are known.
+- If model evidence contains a named output-near state signal but the draft does not mention that exact name, mark draft coverage as `missing` unless the ledger explicitly proves it is pure duplicate routing.
+- If condition groups cannot be resolved for a non-routing output, state the limitation only after attempting deeper module evidence. Do not replace missing conditions with "`<block>` 形成 `<signal>`".
+- Final prose should answer "when and why does this output take this value", not "which block is wired to this output".
 
 Use a compact ledger shape such as:
 
 ```text
 <module> output coverage:
-- <output>: role=<final/EEW/Rem/status/...>; source=<signal/block>; cone=<Switch, Unit Delay, mode gate>; control_signals=[...]; branch_signals=[...]; condition_groups=<set/reset/priority/hold/restore/fallback>; must mention=<yes/no>; subpoints=<yes/no>; draft coverage=<covered/missing>
+- <signal_or_output>: role=<final/EEW/Rem/status/output-near-state/...>; source=<signal/block>; cone=<Switch, Unit Delay, mode gate>; control_signals=[...]; branch_signals=[...]; condition_groups=<set/reset/priority/hold/restore/fallback>; affects=<final_output_or_aux_output>; must mention=<yes/no>; subpoints=<yes/no>; draft coverage=<covered/missing>
 ```
 
 Before drafting prose, every `must mention=yes` row must have a behavior-level note and, when relevant, explicit condition groups. After drafting prose, re-read the ledger and revise any module whose `draft coverage` is missing.
