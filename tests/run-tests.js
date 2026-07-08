@@ -10856,6 +10856,93 @@ const tests = [
     }
   },
   {
+    name: "Hermes task queue releases active slot after timeout",
+    run: async () => {
+      const events = [];
+      const queue = new HermesTaskQueueService({ concurrency: 1, activeTimeoutMs: 30 });
+      const keepAlive = setInterval(() => null, 5);
+
+      try {
+        const first = queue.enqueue({
+          id: "task-1",
+          type: "generation",
+          onError: async (error) => {
+            events.push(`error:${error.code}`);
+          },
+          run: async () => new Promise(() => {})
+        });
+        const second = queue.enqueue({
+          id: "task-2",
+          type: "generation",
+          run: async () => {
+            events.push("run-2");
+          }
+        });
+
+        await second;
+        await first;
+        assert.deepEqual(events, ["error:hermes_queue_item_timeout", "run-2"]);
+        assert.equal(queue.getQueuePosition("generation", "task-2"), 0);
+      } finally {
+        clearInterval(keepAlive);
+      }
+    }
+  },
+  {
+    name: "Hermes task queue restores persisted queued worker tasks",
+    run: async () => {
+      const events = [];
+      const queue = new HermesTaskQueueService({ concurrency: 1, activeTimeoutMs: 1000 });
+      const unitTestCaseGenerationService = {
+        async listTasks() {
+          return [
+            {
+              id: "unit-1",
+              status: "queued",
+              createdAt: "2026-04-24T01:00:00.000Z",
+              updatedAt: "2026-04-24T01:00:00.000Z"
+            }
+          ];
+        },
+        async runTask(taskId) {
+          events.push(`unit:${taskId}`);
+        },
+        async failTask(taskId, error) {
+          events.push(`unit-fail:${taskId}:${error.code}`);
+        }
+      };
+      const softwareModuleDescriptionGenerationService = {
+        async listTasks() {
+          return [
+            {
+              id: "module-doc-1",
+              status: "queued",
+              createdAt: "2026-04-24T01:01:00.000Z",
+              updatedAt: "2026-04-24T01:01:00.000Z"
+            }
+          ];
+        },
+        async runTask(taskId) {
+          events.push(`module:${taskId}`);
+        },
+        async failTask(taskId, error) {
+          events.push(`module-fail:${taskId}:${error.code}`);
+        }
+      };
+
+      queue.setUnitTestCaseGenerationService(unitTestCaseGenerationService);
+      queue.setSoftwareModuleDescriptionGenerationService(softwareModuleDescriptionGenerationService);
+      const restored = await queue.restorePersistedQueuedTasks();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      assert.deepEqual(restored, {
+        unitTestCaseGeneration: 1,
+        softwareModuleDescriptionGeneration: 1
+      });
+      assert.deepEqual(events, ["unit:unit-1", "module:module-doc-1"]);
+    }
+  },
+  {
     name: "Hermes task queue summarizes generation, extraction and replay tasks",
     run: async () => {
       const projectService = {

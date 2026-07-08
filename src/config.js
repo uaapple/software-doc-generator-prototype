@@ -312,6 +312,7 @@ export const config = {
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
     taskConcurrency: Number(process.env.HERMES_TASK_CONCURRENCY || 1),
+    taskQueueActiveTimeoutMs: Number(process.env.HERMES_TASK_QUEUE_ACTIVE_TIMEOUT_MS || 0),
     maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
     stepMaxTurns: {
       simulink_ut_tcsd_generate: process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE

@@ -255,6 +255,7 @@ export async function createApp() {
   await projectService.recoverStaleGenerationTasks();
   await unitTestCaseGenerationService.recoverStaleTasks();
   await softwareModuleDescriptionGenerationService.recoverStaleTasks();
+  await hermesTaskQueueService.restorePersistedQueuedTasks();
 
   function requestField(req, ...keys) {
     for (const key of keys) {

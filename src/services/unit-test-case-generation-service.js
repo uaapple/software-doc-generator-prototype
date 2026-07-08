@@ -1037,7 +1037,7 @@ export class UnitTestCaseGenerationService {
     const cutoff = Date.now() - maxAgeMs;
     for (const task of tasks) {
       const updatedAt = Date.parse(task.updatedAt || task.createdAt || "") || 0;
-      if (["queued", "running"].includes(task.status) && updatedAt < cutoff) {
+      if (task.status === "running" && updatedAt < cutoff) {
         await this.failTask(task.id, createHttpError("服务重启后任务未恢复，已标记为失败。", 500, "unit_test_case_task_recovered_failed"));
       }
     }

@@ -42,6 +42,32 @@ function buildQueueKey(type = "", id = "") {
   return `${type}:${id}`;
 }
 
+function resolveDefaultActiveTimeoutMs() {
+  const configured = Number(config.hermes?.taskQueueActiveTimeoutMs || 0) || 0;
+  if (configured > 0) {
+    return configured;
+  }
+  const stepTimeouts = Object.values(config.hermes?.stepTimeoutMs || {})
+    .map((value) => Number(value || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const baseTimeoutMs = stepTimeouts.length
+    ? Math.max(...stepTimeouts)
+    : Number(config.hermes?.timeoutMs || 120000) || 120000;
+  return baseTimeoutMs + 5 * 60 * 1000;
+}
+
+function createQueueTimeoutError(item = {}, timeoutMs = 0) {
+  const error = new Error(`Hermes queue item timed out after ${timeoutMs}ms`);
+  error.code = "hermes_queue_item_timeout";
+  error.statusCode = 504;
+  error.details = {
+    taskId: item.id || "",
+    type: item.type || "",
+    timeoutMs
+  };
+  return error;
+}
+
 export class HermesTaskQueueService {
   constructor(options = {}) {
     this.projectService = options.projectService || null;
@@ -49,6 +75,8 @@ export class HermesTaskQueueService {
     this.unitTestCaseGenerationService = options.unitTestCaseGenerationService || null;
     this.softwareModuleDescriptionGenerationService = options.softwareModuleDescriptionGenerationService || null;
     this.concurrency = Math.max(1, Number(options.concurrency || config.hermes?.taskConcurrency || 1) || 1);
+    const configuredActiveTimeoutMs = options.activeTimeoutMs ?? resolveDefaultActiveTimeoutMs();
+    this.activeTimeoutMs = Math.max(0, Number(configuredActiveTimeoutMs) || 0);
     this.items = [];
     this.activeCount = 0;
   }
@@ -115,29 +143,52 @@ export class HermesTaskQueueService {
   startItem(item) {
     item.status = "running";
     item.startedAt = now();
+    item.finished = false;
     this.activeCount += 1;
-
-    Promise.resolve()
-      .then(() => item.onStart({ startedAt: item.startedAt }))
-      .then(() => item.run())
-      .then((result) => {
-        item.status = "completed";
-        item.resolve(result);
-      })
-      .catch(async (error) => {
-        item.status = "failed";
+    if (this.activeTimeoutMs > 0) {
+      item.timeoutHandle = setTimeout(async () => {
+        const error = createQueueTimeoutError(item, this.activeTimeoutMs);
         try {
           await item.onError(error);
         } catch (_error) {
           // The task-specific runner already owns persisted failure state.
         }
-        item.resolve(null);
+        this.finishItem(item, "failed");
+      }, this.activeTimeoutMs);
+      item.timeoutHandle.unref?.();
+    }
+
+    Promise.resolve()
+      .then(() => item.onStart({ startedAt: item.startedAt }))
+      .then(() => item.run())
+      .then((result) => {
+        this.finishItem(item, "completed", result);
       })
-      .finally(() => {
-        this.activeCount = Math.max(0, this.activeCount - 1);
-        this.items = this.items.filter((candidate) => candidate !== item);
-        this.dispatch();
+      .catch(async (error) => {
+        try {
+          await item.onError(error);
+        } catch (_error) {
+          // The task-specific runner already owns persisted failure state.
+        }
+        this.finishItem(item, "failed");
       });
+  }
+
+  finishItem(item, status = "completed", result = null) {
+    if (!item || item.finished) {
+      return false;
+    }
+    item.finished = true;
+    if (item.timeoutHandle) {
+      clearTimeout(item.timeoutHandle);
+      item.timeoutHandle = null;
+    }
+    item.status = status;
+    item.resolve(status === "completed" ? result : null);
+    this.activeCount = Math.max(0, this.activeCount - 1);
+    this.items = this.items.filter((candidate) => candidate !== item);
+    this.dispatch();
+    return true;
   }
 
   getQueuePosition(type = "", id = "") {
@@ -232,6 +283,56 @@ export class HermesTaskQueueService {
     if (!this.softwareModuleDescriptionGenerationService) return [];
     const tasks = await this.softwareModuleDescriptionGenerationService.listTasks();
     return tasks.map((task) => this.buildSoftwareModuleDescriptionSummary(task));
+  }
+
+  async restorePersistedQueuedTasks() {
+    const unitTestCaseGeneration = await this.restoreUnitTestCaseGenerationTasks();
+    const softwareModuleDescriptionGeneration = await this.restoreSoftwareModuleDescriptionGenerationTasks();
+    return {
+      unitTestCaseGeneration,
+      softwareModuleDescriptionGeneration
+    };
+  }
+
+  async restoreUnitTestCaseGenerationTasks() {
+    return this.restoreQueuedServiceTasks({
+      service: this.unitTestCaseGenerationService,
+      type: "unit_test_case_generation",
+      title: "Unit test case generation",
+      runTask: (task) => this.unitTestCaseGenerationService.runTask(task.id),
+      failTask: (task, error) => this.unitTestCaseGenerationService.failTask(task.id, error)
+    });
+  }
+
+  async restoreSoftwareModuleDescriptionGenerationTasks() {
+    return this.restoreQueuedServiceTasks({
+      service: this.softwareModuleDescriptionGenerationService,
+      type: "software_module_description_generation",
+      title: "Software detail design generation",
+      runTask: (task) => this.softwareModuleDescriptionGenerationService.runTask(task.id),
+      failTask: (task, error) => this.softwareModuleDescriptionGenerationService.failTask(task.id, error)
+    });
+  }
+
+  async restoreQueuedServiceTasks(options = {}) {
+    const { service, type, title, runTask, failTask } = options;
+    if (!service || typeof service.listTasks !== "function" || typeof runTask !== "function") {
+      return 0;
+    }
+    const tasks = await service.listTasks();
+    const queuedTasks = tasks
+      .filter((task) => normalizeStatus(task.status) === "queued")
+      .sort((a, b) => taskTime(a) - taskTime(b));
+    for (const task of queuedTasks) {
+      this.enqueue({
+        id: task.id,
+        type,
+        title,
+        run: () => runTask(task),
+        onError: (error) => (typeof failTask === "function" ? failTask(task, error) : null)
+      });
+    }
+    return queuedTasks.length;
   }
 
   buildGenerationSummary(project = {}, module = {}, documentType = "", task = {}) {
