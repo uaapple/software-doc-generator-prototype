@@ -14,7 +14,7 @@ These rules generalize reviewer feedback from prior Simulink software module des
 
 ## Section Semantics
 
-- `功能描述`: describe what the model/module does. Prefer model annotation, DocBlock, subsystem description, or other author-provided text. If no author text exists, summarize observable input-output purpose from the model and say it is inferred from model structure.
+- `功能描述`: describe what the model/module does. Prefer model annotation, DocBlock, subsystem description, or other author-provided text. If no author text exists, summarize observable input-output purpose from the model directly. Do not include process disclaimers such as "模型未提供显式说明", "以下根据端口和结构归纳", or similar meta commentary in the final document.
 - `模型总体结构`: use for the top-level functional architecture. Describe execution entry or period when model-authored, major inputs/outputs, meaningful first-level modules, and data flow. Do not label this top-level section as `实现方式`. Do not include evidence-collection or model-configuration metadata such as MATLAB/SATK load/update status, solver, code generation target, or model version unless the user explicitly asks for an audit section.
 - `实现方式`: describe how the module computes outputs using signal-identifier-driven, ordered natural-language pseudo-code. Conditions, modes, branches, state flags, parameters, enum values, and output selections must prefer exact model identifiers over inferred business labels.
 - `设计依据`: keep this section heading because the template contains it, but leave the body blank by default. Requirement IDs, DocBlock headings, and design basis text may guide interpretation internally; output them only when the user explicitly asks to fill design bases.
@@ -32,6 +32,24 @@ Use concise ordered prose. Good patterns:
 - "以上候选等级/候选值最终取 MAX/MIN 后形成 `<raw_output>`。"
 - "`<trigger>` 与条件同时满足后进入 turn off delay，保持时间由 `<time_param>` 决定，最终输出 `<flag>`。"
 
+The target style for complex modules is not a block explanation. It is signal-name-driven natural-language pseudo-code derived from an output-first behavior ledger:
+
+```text
+`<saved_signal>` 由锁存逻辑维护：
+• 置位：<complete set condition group>。
+• 复位：<complete reset condition group>。
+
+`<final_output>` 按以下分支选择：
+• 当 <complete condition> 时，取 <source_or_value>。
+• 当 <complete condition> 时，取 <source_or_value>。
+• 以上分支均不成立时，取 <fallback_source_or_value>。
+
+`<remembered_signal>` 维护 `<source_signal>` 的保持/恢复值：
+• 当 <edge_or_update_trigger> 时，`<remembered_signal>` 取 <source_signal>。
+• 当 <hold_condition> 时，`<remembered_signal>` 保持上一周期值。
+• 当 <restore_condition> 时，`<final_output>` 取 `<remembered_signal>`。
+```
+
 Identifier discipline:
 
 - In `实现方式`, use complete model signal names, parameter names, enum names, constants, table names, and output names for conditions and branch descriptions.
@@ -47,12 +65,32 @@ Complex-output formatting:
 - Each sub-point must describe one complete condition/action pair, such as a set condition, reset condition, selection branch, hold branch, restore branch, or fallback branch.
 - Do not use nested sub-points. If a branch is still too complex, split it into another short paragraph with exact signal names.
 - Do not compress complex logic into one sentence that mixes several layers of intermediate signals and final outputs.
+- Do not name an unlabeled group only as "normal path", "special path", "mode branch", or "related branch" when exact controlling signals are available. Use the controlling signal names and branch conditions directly.
 
 Avoid full programming syntax unless the user asks for it. Do not write long nested `if/else` trees when grouped prose is clearer.
+
+## Structure-to-Behavior Translation
+
+The private ledger may contain Simulink block types and block instance names, but final `实现方式` must translate them into behavior:
+
+- `RSLatch` or latch helper -> "置位", "复位", and "保持".
+- `Switch` or `Multiport Switch` -> "当 `<condition>` 时取 `<source/value>`；否则/下一优先级取 `<source/value>`".
+- Cascaded selectors -> ordered level-one sub-points, ending with an explicit fallback.
+- `Unit Delay`, `Memory`, or feedback -> "上一周期值", "保持", or "按 `<trigger>` 更新".
+- `Delay` with a calibration or constant -> "按 `<param_or_constant>` 延时".
+- `EdgeRising`, `Detect Rise`, or rising-edge helper -> "`<signal>` 上升沿有效时".
+- `EdgeFalling`, `Detect Fall`, or falling-edge helper -> "`<signal>` 下降沿有效时".
+- `AND` -> "以下条件同时满足" or "`A` 与 `B` 同时有效".
+- `OR` -> "以下任一条件满足" or "`A`、`B` 任一有效".
+- `Goto/From`, Data Store, Bus, and Signal Copy -> resolve and name the carried signal; do not describe the routing mechanism.
+- Relational Operator or Compare To Constant -> preserve the exact operator and operand from model evidence, including `==`, `~=`, `>=`, `<=`, `>`, or `<`.
+
+If this translation cannot be performed because a condition is unknown, return to evidence collection for that module. Do not fill the gap with block names or broad phrases.
 
 Forbidden vague compression in `实现方式`:
 
 - Do not use "等", "等等", "相关条件", "相关逻辑", "若干条件", "影响", or similar wording to hide omitted conditions, inputs, outputs, or triggers.
+- Do not use "共同形成", "共同输出", "参与形成", "参与输出", "形成 ... 输出列表", "输出 ... 列表", or similar ports-only aggregation wording as `实现方式`. If several inputs feed an output, state the condition/action rule, priority, selection, latch, hold, restore, lookup, delay, or fallback behavior that makes the output take its value.
 - If only the main path is being summarized, say "主要路径为" and still state the complete conditions for the outputs being described.
 - For condition lists, input lists, output lists, and trigger lists, every item that affects the described output must be named explicitly or covered by an explicitly named grouped role from the evidence ledger.
 
@@ -60,7 +98,9 @@ Forbidden evidence-inventory output in `实现方式`:
 
 - Do not print block-type counts such as "模块内部包含 逻辑判定 35 处".
 - Do not print direct-source inventories such as "模块输出按直接来源分组形成".
+- Do not print ports-only summaries such as "`<input_a>`、`<input_b>` 共同形成 `<output_a>`、`<output_b>`" or "`<input_a>`、`<input_b>` 共同输出 `<output_a>`、`<output_b>`".
 - Do not use "`<block_instance_or_type>` 形成 `<signal>`" as a substitute for behavior.
+- Do not use block instance names or routing mechanisms as implementation subjects, including names like `RSLatch1`, `Switch5`, `Unit Delay2`, `AND8`, `OR3`, `EdgeFalling1`, `EdgeRising2`, `Goto/From`, `Signal Copy`, or similar numbered/internal block names. Replace them with the behavior and exact model signal names.
 - Do not use generic category sentences such as "保存类输出 ... 随对应子功能更新", "手动计算类输出 ... 表示...", or "自动计算类输出 ... 表示..." unless the same paragraph or sub-points also state the exact set/reset/selection/hold/restore conditions for those signals.
 - The private ledger may record block types and source blocks, but final prose must translate them into observable conditions and actions.
 
@@ -150,6 +190,7 @@ Before finalizing Markdown or DOCX, check and revise the draft:
 
 - `模型总体结构` contains only functional architecture, major inputs/outputs, meaningful modules, and data flow. Remove MATLAB/MCP/SATK load status, update success, solver, target file, model version, and warnings unless the user requested an audit.
 - Every `设计依据` section body is blank by default. Remove requirement IDs, DocBlock headings, and unit-design references unless the user explicitly requested design bases.
+- No final section contains process disclaimers such as "模型未提供显式说明", "以下根据端口和结构归纳", "以下根据结构归纳", or "根据端口和结构归纳".
 - Module sections cover selected functional modules, not model-info, documentation-only, pure routing, display, or configuration structures.
 - Each selected module's externally meaningful outputs are covered at least once. Check Outports/exported signals plus outputs named like `*Rem*`, `*Old*`, `*Pre*`, `*Save*`, `*EEW*`, raw/final pairs, and display/status outputs. If an output is intentionally collapsed as duplicate routing, ensure the behavior it carries is already described.
 - Compare the private output coverage ledger against the draft. If any `must mention` output is missing, revise before DOCX generation. This check must include output-near/right-side cones, not only the left-to-right main algorithm path.
@@ -158,17 +199,21 @@ Before finalizing Markdown or DOCX, check and revise the draft:
 - `实现方式` does not replace model identifiers with inferred Chinese business labels. If any branch can be described by a signal/parameter/enum name, use that identifier.
 - `实现方式` does not contain abstract condition labels such as "`...条件`", "`...路径`", "`...逻辑`", or "`...分支`" in place of available model identifiers. Rewrite them using the exact signal/parameter/enum names.
 - `实现方式` does not contain "等条件", "等信号", "等逻辑", "相关条件", "相关逻辑", "若干条件", or vague "影响" wording that suggests omitted logic.
+- `实现方式` does not contain ports-only aggregation wording such as "共同形成", "共同输出", "参与形成", "参与输出", "形成 ... 输出列表", or "输出 ... 列表". If such wording appears, return to evidence collection for that module and replace it with condition/action behavior.
 - `实现方式` does not contain evidence-inventory phrases such as "模块内部包含", "模块输出按直接来源分组形成", "`RSLatch` 形成", "`Signal Copy` 形成", "保存类输出", "手动计算类输出", or "自动计算类输出" unless immediately followed by exact branch conditions.
+- `实现方式` does not contain block instance or routing-mechanism prose such as `RSLatch1`, `Switch5`, `Unit Delay2`, `AND8`, `OR3`, `EdgeFalling1`, `EdgeRising2`, `Goto/From`, or "`<block>` 生成/恢复/决定 `<signal>`". If such wording appears, translate it to set/reset/select/hold/update/restore/fallback behavior.
 - Complex outputs with set/reset, selection, hold, restore, or fallback branches are split into level-one sub-points or short separated sentences. They are not compressed into a single mixed sentence.
 - Normal prose avoids heavy `&&`, `||`, and `!` usage. Use natural-language relationships unless the user explicitly asks for expression-style output.
 - Repeated `Switch`, `AND`, `OR`, `MinMax`, `Signal Copy`, `Data Type Conversion`, `Unit Delay`, `Memory`, `From/Goto`, and Bus routing names have been reduced to behavior-level wording where possible.
+- For each complex output, at least one of the behavior words "置位", "复位", "取", "保持", "更新", "恢复", "延时", or "fallback/default/默认" should appear as applicable. If a paragraph names outputs but has no behavior action, it is likely an evidence summary and must be rewritten.
 - Before reducing final output plumbing, inspect whether `EdgeRising`, `EdgeFalling`, `Detect Change`, `Unit Delay`, `Memory`, `RSLatch`, feedback into `Switch`/`Multiport Switch`, or signals named like `*Rem*`, `*Rstr*`, `*Restore*`, `*Old*`, `*Pre*`, `*Last*`, `*Mem*`, `*Save*`, or `*EEW*` select a remembered/restored output. If so, describe that behavior, including the mode/trigger, hold/update condition, remembered signal, and affected output.
 - Check whether model-named mode/control inputs appear only as names. If they materially hold, restore, suppress, or override an output, add behavior-level wording in the owning module using the exact controlling identifiers.
 - Key observable behavior remains present: conditions, thresholds, lookup tables, fallback/defaults, enable gating, delay/hold/latch behavior, and final output relationship.
+- After generating DOCX, extract the final DOCX text and run this self-check again. The final DOCX must not contain old draft text, block-instance wording, process disclaimers, or ports-only aggregation that was absent from the checked Markdown/source draft.
 
 ## Tone and Evidence Discipline
 
 - Use neutral engineering language.
-- State uncertainty plainly: "模型未提供显式说明，以下根据结构归纳。"
+- State uncertainty only when it is necessary to explain a genuine unresolved limitation, and keep that note outside polished module prose when possible. Do not use boilerplate disclaimers for missing DocBlocks.
 - Do not claim safety, diagnostic, or calibration intent unless model text or names explicitly support it.
 - Keep paragraphs compact; one module should usually fit in a few short paragraphs or bullets.

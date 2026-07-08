@@ -109,8 +109,9 @@ for i = 1:numel(scripts)
         candidate = fullfile(rootDir, scriptPath);
     end
     if exist(candidate, 'file')
-        fprintf('MODULE_DOC_PROJECT_INIT=%s\n', candidate);
-        evalin('base', sprintf('run(''%s'');', escape_matlab_string(candidate)));
+        runnable = sanitize_init_script_clear(candidate, rootDir);
+        fprintf('MODULE_DOC_PROJECT_INIT=%s\n', runnable);
+        evalin('base', sprintf('run(''%s'');', escape_matlab_string(runnable)));
     else
         warning('setup_module_doc_support:ProjectInitMissing', ...
             'Project init script was requested but does not exist: %s', scriptPath);
@@ -140,6 +141,8 @@ patterns = {
     '*_setup.m'
     'initialize_*.m'
     '*_initialize.m'
+    '*_dd.m'
+    '*_DD.m'
 };
 for i = 1:numel(patterns)
     scripts = add_discovered_init_scripts(scripts, rootDir, patterns{i});
@@ -196,6 +199,116 @@ end
 if ~any(strcmpi(scripts, scriptPath))
     scripts{end + 1} = scriptPath; %#ok<AGROW>
 end
+end
+
+function runnable = sanitize_init_script_clear(candidate, rootDir)
+runnable = candidate;
+[~, ~, ext] = fileparts(candidate);
+if ~strcmpi(ext, '.m')
+    return;
+end
+
+try
+    originalText = fileread(candidate);
+catch ME
+    warning('setup_module_doc_support:InitReadFailed', ...
+        'Could not read init script %s before sanitizing clear commands: %s', ...
+        candidate, ME.message);
+    return;
+end
+
+[cleanText, removedCount] = remove_clear_command_lines(originalText);
+if removedCount == 0
+    return;
+end
+
+try
+    if is_under_root(candidate, rootDir)
+        write_text_file(candidate, cleanText);
+        fprintf('MODULE_DOC_PROJECT_INIT_CLEAR_REMOVED=%s count=%d\n', candidate, removedCount);
+    else
+        runnable = write_sanitized_temp_copy(candidate, cleanText);
+        fprintf('MODULE_DOC_PROJECT_INIT_CLEAR_REMOVED=%s sanitized=%s count=%d\n', ...
+            candidate, runnable, removedCount);
+    end
+catch ME
+    warning('setup_module_doc_support:InitSanitizeFailed', ...
+        'Could not sanitize clear commands in init script %s: %s', ...
+        candidate, ME.message);
+    runnable = candidate;
+end
+end
+
+function [cleanText, removedCount] = remove_clear_command_lines(originalText)
+parts = regexp(originalText, '\r\n|\n|\r', 'split');
+tokens = regexp(originalText, '\r\n|\n|\r', 'match');
+cleanParts = {};
+removedCount = 0;
+for i = 1:numel(parts)
+    line = parts{i};
+    if is_clear_command_line(line)
+        removedCount = removedCount + 1;
+        continue;
+    end
+    cleanParts{end + 1} = line; %#ok<AGROW>
+end
+
+if isempty(cleanParts)
+    cleanText = '';
+    return;
+end
+
+newlineText = newline;
+cleanText = cleanParts{1};
+for i = 2:numel(cleanParts)
+    tokenIdx = min(i - 1, numel(tokens));
+    if tokenIdx >= 1
+        newlineText = tokens{tokenIdx};
+    end
+    cleanText = [cleanText newlineText cleanParts{i}]; %#ok<AGROW>
+end
+if ~isempty(tokens) && numel(tokens) >= numel(parts)
+    cleanText = [cleanText tokens{end}];
+end
+end
+
+function tf = is_clear_command_line(line)
+trimmed = strtrim(line);
+tf = false;
+if isempty(trimmed) || startsWith(trimmed, '%')
+    return;
+end
+tf = ~isempty(regexp(trimmed, '^clear(vars)?(\s|;|,|$|\().*$', 'once'));
+end
+
+function tf = is_under_root(filePath, rootDir)
+rootDir = char(rootDir);
+filePath = char(filePath);
+rootWithSep = [rootDir filesep];
+if ispc
+    tf = strcmpi(filePath, rootDir) || strncmpi(filePath, rootWithSep, length(rootWithSep));
+else
+    tf = strcmp(filePath, rootDir) || strncmp(filePath, rootWithSep, length(rootWithSep));
+end
+end
+
+function runnable = write_sanitized_temp_copy(candidate, cleanText)
+sanitizedDir = fullfile(tempdir, 'module_doc_sanitized_init');
+if exist(sanitizedDir, 'dir') ~= 7
+    mkdir(sanitizedDir);
+end
+[~, name, ext] = fileparts(candidate);
+runnable = fullfile(sanitizedDir, [name '_module_doc_sanitized' ext]);
+write_text_file(runnable, cleanText);
+end
+
+function write_text_file(filePath, text)
+fid = fopen(filePath, 'w', 'n', 'UTF-8');
+if fid < 0
+    error('setup_module_doc_support:WriteFailed', 'Could not write %s.', filePath);
+end
+cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
+fprintf(fid, '%s', text);
 end
 
 function scripts = normalize_init_scripts(initScripts)

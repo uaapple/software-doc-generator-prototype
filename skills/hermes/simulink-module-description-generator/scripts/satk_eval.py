@@ -57,14 +57,13 @@ DEFAULT_EXTENSION = (
     if os.environ.get("SATK_MCP_EXTENSION")
     else Path.home() / ".matlab" / "agentic-toolkits" / "simulink" / "tools" / "tools.json"
 )
-DEDICATED_WORKER = os.environ.get("MODULE_DOC_DEDICATED_WORKER", "").lower() in {"1", "true", "yes", "on"}
-CLEAN_STALE_MCP = DEDICATED_WORKER or os.environ.get("MODULE_DOC_CLEAN_STALE_MCP", "").lower() in {
+CLEAN_STALE_MCP = os.environ.get("MODULE_DOC_CLEAN_STALE_MCP", "").lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new" if DEDICATED_WORKER else "existing")
+SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "auto")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
 LOG_FOLDER = Path(os.environ.get("SATK_MCP_LOG_FOLDER", default_log_folder()))
 

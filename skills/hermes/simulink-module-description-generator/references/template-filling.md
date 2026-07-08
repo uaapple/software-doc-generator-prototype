@@ -31,7 +31,10 @@ The template contains these logical sections:
 - Before DOCX generation, search the draft for every `must mention` exact output or named output-near state signal from the ledger. If a model evidence name such as a `*Rem*` signal is missing from the draft, revise the module unless the ledger explicitly marks it as pure duplicate routing.
 - Before DOCX generation, reject abstract condition labels such as "`...条件`", "`...路径`", "`...逻辑`", or "`...分支`" when exact model signal, parameter, enum, or constant identifiers are available for that condition group.
 - Before DOCX generation, verify `实现方式` does not use "等", "相关条件", "相关逻辑", "若干条件", or vague "影响" to omit logic. Conditions, triggers, and branch lists that affect the described output must be explicit.
+- Before DOCX generation, verify no section contains boilerplate process disclaimers such as "模型未提供显式说明", "以下根据端口和结构归纳", or "以下根据结构归纳". If author-provided text is absent, write the module purpose directly without explaining the generation method.
+- Before DOCX generation, verify `实现方式` does not contain ports-only aggregation wording such as "共同形成", "共同输出", "参与形成", "参与输出", "形成 ... 输出列表", or "输出 ... 列表". These indicate insufficient evidence; return to module evidence collection instead of generating DOCX.
 - Before DOCX generation, verify `实现方式` is not an evidence inventory. Reject and revise drafts containing "模块内部包含", "模块输出按直接来源分组形成", "`RSLatch` 形成", "`Signal Copy` 形成", "保存类输出", "手动计算类输出", or "自动计算类输出" when those phrases replace exact branch conditions.
+- Before DOCX generation, verify `实现方式` has translated Simulink structure into behavior. Reject and revise block-instance or routing-mechanism prose such as `RSLatch1`, `Switch5`, `Unit Delay2`, `AND8`, `OR3`, `EdgeFalling1`, `EdgeRising2`, `Goto/From`, or "`<block>` 生成/恢复/决定 `<signal>`". These belong in private evidence only; final prose must state set/reset/select/hold/update/restore/fallback behavior.
 - For complex logic, use an introductory sentence followed by level-one sub-points. Typical sub-points include set condition, reset condition, selection branch, hold branch, restore branch, and fallback branch. Do not use nested lists.
 
 ## DOCX Generation Guidance
@@ -45,6 +48,8 @@ The template contains these logical sections:
 - If native bullet generation is not stable in the current generator, use normal body paragraphs prefixed with `• ` as a fallback. Do not rely on raw Markdown `- ` in the final DOCX body.
 - Do not create nested bullets, second-level numbering, or table-based pseudo-lists for implementation sub-points.
 - After DOCX generation, verify either native list markup (`w:numPr`) or the fallback `• ` prefix exists for implementation sub-points, and verify text extraction preserves every sub-point line.
+- After DOCX generation, extract the final DOCX body text, for example through the document library or by reading `word/document.xml`, and run the same wording checks used for the Markdown/source draft. The extracted DOCX text must not contain stale draft paragraphs, process disclaimers, ports-only aggregation, block-instance wording, or missing implementation sub-points.
+- If Markdown/source text and extracted DOCX text disagree materially for a module's `实现方式`, treat the DOCX as failed. Regenerate or patch the DOCX from the checked source, then extract and check again before handing it to the user.
 
 ## File Naming
 
