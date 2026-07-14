@@ -63,7 +63,7 @@ CLEAN_STALE_MCP = os.environ.get("MODULE_DOC_CLEAN_STALE_MCP", "").lower() in {
     "yes",
     "on",
 }
-SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "auto")
+SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
 LOG_FOLDER = Path(os.environ.get("SATK_MCP_LOG_FOLDER", default_log_folder()))
 

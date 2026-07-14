@@ -1,30 +1,45 @@
 # Model Evidence Collection
 
-Use a task-scoped MATLAB MCP/SATK session as the primary evidence path. The goal is to gather enough model-authored information to write module-level behavior without turning the document into a block listing or repeatedly paying MATLAB startup/model-load cost.
+Use one task-owned MATLAB process/session as the primary evidence path. Gather deep internal evidence, then project it onto the selected document unit's direct interface. Read `module-boundary.md` before selecting modules.
 
 ## Quality Priority
 
-- Complete module evidence is mandatory for every selected functional module. Performance optimization may reduce repeated MATLAB launches, repeated model loads, and duplicate reads; it must not reduce the set of modules, outputs, or output-near cones that are analyzed.
+- Complete evidence is mandatory for every `document_unit`. Deep-read required `analysis_unit` children without turning them into document sections or public identifiers.
 - Do not stop at top-level ports, subsystem inports/outports, module names, or a single manually reviewed module. A document where one module has detailed branch logic and other selected modules only have input/output summaries is a failed generation.
-- For models with multiple functional subsystems, use split processing: build a lightweight whole-model index first, then deep-read each selected subsystem in the same MATLAB session and draft/cache that subsystem's section after its evidence is complete. A broad all-model scan may identify boundaries, but it is not sufficient evidence for any module section.
+- For models with multiple functional subsystems, use split processing by default: build a lightweight whole-model index first, then deep-read each selected subsystem in the same MATLAB session and draft/cache that subsystem's section after its evidence is complete. A broad all-model scan may identify boundaries, but it is not sufficient evidence for any module section.
+- In multi-subsystem models, skip heavy all-model collectors that traverse every selected subsystem's internals or output cones. The global phase is for module discovery only. Output cones, state-holding signals, and behavior ledgers must be collected inside the per-subsystem queue.
+- Do not generate module prose from a static hand-authored module summary list. Each module section must be backed by a behavior ledger for that exact module. If there is no behavior ledger artifact or note for a module, that module is not ready to draft.
 - If evidence for a selected module is not sufficient to write condition/action implementation prose, continue reading that module in the same MATLAB session. If MCP/SATK cannot expose a specific item, use bounded `.slx` XML or other model-derived task files as supplement for that item.
 - If a selected module still cannot be resolved after the available model-derived evidence paths are attempted, report the unresolved module and limitation instead of writing vague final prose.
 
 ## Session Lifecycle and Performance Contract
 
-- Start or reuse one task-owned MATLAB MCP/SATK session for a generation task. Keep it alive until evidence collection, drafting, and DOCX validation are complete.
-- Run workspace setup, addon/project initialization, model load, and optional model update in that same session. Do not launch a fresh `matlab -batch` process for each collector pass, selected subsystem, or fallback probe.
+- Start one task-owned MATLAB process/session for a generation task. In front-end, unattended, or production document-generation tasks, assume no user-open MATLAB exists and prefer a new task-owned MATLAB process, such as one `matlab -batch` job or MCP/SATK `new` session. Keep it alive until evidence collection, drafting, and DOCX validation are complete.
+- Run workspace setup, addon/project initialization, model load, and optional model update in that same MATLAB process/session. Do not launch a fresh `matlab -batch` process for each collector pass, selected subsystem, or fallback probe.
 - Keep the target model loaded while reading overview, hierarchy, module internals, output cones, parameters, DocBlocks, and data dictionaries. Avoid open/close loops around individual modules.
-- Prefer direct MCP/SATK tools and MATLAB snippets executed through the open session. Helper functions in `scripts/` may be called from that session, but they are not the default reason to spawn a separate MATLAB process.
-- If `scripts/satk_eval.py` is needed as a bridge to MCP, use the default `SATK_MATLAB_SESSION_MODE=auto`. In `auto` mode, the MCP server should attach to an existing MATLAB session when one is available and start one when none is available. Do not force `new` for repeated evidence reads.
-- Use `model_scan` or fast scan as a navigation index when available, then perform targeted deep reads in the same session. Do not probe scanner signatures repeatedly; try the supported call shape once and continue with normal MCP/SATK reads if unavailable.
-- Batch related reads by model area or by selected module. Avoid one tool/process call per signal or block when the same evidence can be retrieved in one module read, but do not use batching as a reason to skip module internals or output cones.
-- If a whole-model collector becomes slow, times out, or produces an oversized JSON payload, split the task by selected subsystem. The acceptable fallback is smaller per-subsystem MCP/SATK reads, not a downgrade to top-level ports, static names, or generic module summaries.
+- Prefer direct MATLAB batch scripts or MCP/SATK tools executed through the task-owned process/session. Helper functions in `scripts/` may be called from that process/session, but they are not the default reason to spawn a separate MATLAB process.
+- If `scripts/satk_eval.py` is needed as a bridge to MCP, use the default `SATK_MATLAB_SESSION_MODE=new`. Use `existing` only when the user explicitly says MATLAB is already open or the platform provides an active session. Do not spend time diagnosing `failed to attach to MATLAB session` in a production/front-end task where no existing MATLAB session is expected.
+- Use `model_scan` or fast scan as a navigation index when available, then perform targeted deep reads in the same MATLAB process/session. Do not probe scanner signatures repeatedly; try the supported call shape once and continue with normal MCP/SATK reads if unavailable. For multi-subsystem models, the scan must remain index-only.
+- Batch related reads by bounded model area, analysis unit, or output group. Avoid one tool/process call per signal or block, but do not treat the entire complex `document_unit` as one deep-read batch. A-level/document-unit scope is the aggregation boundary; analysis-unit or output-group scope is the default execution boundary.
+- If a whole-model collector would collect output cones or deep internals for multiple selected subsystems, do not start it for multi-subsystem models. If one was started and becomes slow, times out, or produces an oversized JSON payload, stop relying on it and split the task by selected subsystem. The acceptable path is smaller per-subsystem MCP/SATK reads, not a downgrade to top-level ports, static names, or generic module summaries.
 - Compile or update the model at most once unless a specific later read proves compiled data is required and the model state has changed.
 - Use static `.slx` XML only as a bounded fallback for a concrete missing item after MCP/SATK evidence was attempted. Do not switch the whole task to XML probing as the normal path.
 - If a deep output cone still cannot be resolved within budget, record the unresolved signal and limitation, then continue; do not keep restarting MATLAB or cycling through full collectors.
 - At task end, close only task-owned models and remove task-specific paths when safe. Do not run `clear all` or `bdclose all` in a shared/user MATLAB session.
-- Treat MATLAB session reuse as task-scoped. Do not run two document-generation tasks concurrently in the same MATLAB session unless the platform explicitly serializes them.
+- Treat MATLAB process/session reuse as task-scoped. Do not run two document-generation tasks concurrently in the same MATLAB process/session unless the platform explicitly serializes them.
+
+## Bounded Output-Cone Batch Contract
+
+Apply this contract before any helper or MCP/SATK call that expands output dependencies.
+
+- Never run a whole-subsystem output-cone collector across every Outport of a non-trivial `document_unit`. In particular, do not set `IncludeOutputCones=true` or an equivalent full-cone option while selecting an entire complex A-level subsystem as one batch.
+- Build an output-first queue without expanding it globally. Process one `analysis_unit` at a time by default. If an analysis unit is still complex, process one direct Outport or one shared-source output family at a time.
+- Force subdivision when any of these conditions is known from the index: more than 2 functional child analysis units, more than 5 direct Outports, an estimated cone above 200 nodes, or concentrated Switch/Multiport Switch, Delay/Memory, Stateflow, lookup, or feedback logic. These thresholds trigger smaller reads; they never justify omitting evidence.
+- Give each deep-read batch a working budget of 3-5 minutes. The bridge timeout is only a final safety limit and may be longer, such as 20 minutes; do not treat that bridge timeout as the normal batch duration.
+- Persist the batch artifact and ledger fragment immediately after the batch completes. Resume from completed artifacts after failure instead of restarting the whole document unit.
+- When a batch exceeds its working budget, becomes unresponsive, times out, or produces an oversized payload, do not retry the same scope unchanged. Reduce scope in this order: `document_unit` to `analysis_unit`, `analysis_unit` to direct Outport/shared-source output group, then to a targeted block/parameter/state read.
+- After targeted MCP/SATK reads fail for a concrete missing item, use bounded `.slx` XML or other model-derived task files only for that item. If it remains unresolved, record the affected boundary output and limitation and continue other batches; do not generate vague prose for the unresolved behavior.
+- Completeness is checked after aggregation: every direct document-unit Outport and every required internal ledger row must be covered by the union of completed batch artifacts. Smaller batches change execution scope, not evidence scope or final document hierarchy.
 
 ## Workspace and Addon Handling
 
@@ -49,6 +64,8 @@ Use the scan to identify:
 
 Do not use scan output alone for final implementation claims. After candidate module selection, deep-read the selected modules with MATLAB/MCP/SATK APIs to resolve parameters, masks, data dictionaries, compiled properties, lookup tables, Stateflow logic, and DocBlock payloads.
 
+For multi-subsystem models, fast scan and whole-model overview must not collect or summarize all selected modules' output cones in one pass. The scan should answer "which modules exist and which ones need deep reading", not "what every output does". If a helper's default mode combines indexing with all-module output-cone traversal, do not use that mode; use a lighter hierarchy/ports scan or a custom bounded index instead.
+
 If `model_scan` is unavailable, continue with the MCP/SATK read pattern below. Do not fail the task only because the fast scan path is missing.
 
 ## MCP/SATK Read Pattern
@@ -65,16 +82,28 @@ Use whichever MCP/SATK tools are available in the current environment. Useful re
 
 Recommended sequence:
 
-1. Start or reuse the task MATLAB MCP/SATK session.
-2. Load project/addons and target model once in that session.
-3. Run a fast scan if available, or otherwise read the top-level overview and hierarchy.
+1. Start the task-owned MATLAB process/session. For front-end or production runs, use a new task-owned process/session by default.
+2. Load project/addons and target model once in that process/session.
+3. Run an index-only fast scan if available, or otherwise read the top-level overview and hierarchy. For multi-subsystem models, do not include output-cone traversal or deep block internals in this global step.
 4. Read the top-level annotations/DocBlocks and identify model-authored purpose text.
-5. Enumerate immediate child subsystems and select meaningful functional modules before doing expensive deep reads.
-6. For each selected module, read its local ports, annotations, DocBlocks, child blocks, parameters, state elements, lookup tables, downstream outputs, and output-near cone. Complete that module's output coverage ledger and draft/cache its section before proceeding when this keeps evidence bounded. This applies to every selected module, not only to the visually complex or user-mentioned modules.
+5. Create the hierarchy manifest from `module-boundary.md`: select `documentUnits`, attach descendant `analysisUnits`, and capture each document unit's direct Inports/Outports as its identifier allowlist.
+6. Create an analysis queue per document unit. Read one analysis unit at a time by default; split a large analysis unit by direct Outport or shared-source output group. Persist each batch artifact, then aggregate child blocks, parameters, state elements, lookup tables, downstream outputs, and output-near cone facts into the parent document-unit ledger. Do not draft child sections from this queue.
 7. Resolve parameter values through data dictionaries, base workspace, model workspace, masks, and referenced scripts.
 8. Compile or update the model only when needed for resolved types/dimensions/sample times; record any compile failure as a limitation.
 
-When reading a selected module, inspect the final output cone before drafting. Do not stop at the main algorithm DocBlock, the visually dominant left-to-right calculation path, or a signal that merely looks like the module's main result. If downstream logic contains edge detectors, Unit Delay/Memory, latches, restore/rem/remain signals, Switch/Multiport Switch selections, feedback lines, or special-mode gates that can change an externally visible output, capture those as behavior-level evidence. A named internal line in this output-near cone is evidence-bearing when it feeds a final selector, feedback path, delay, latch, or restore path; include it in the ledger even when it is not an Outport.
+## Analysis Queue and Document-Unit Draft Gating
+
+For multi-subsystem models, the parent document unit is the unit of narrative quality control; its child analysis queue is the unit of evidence processing.
+
+- Each analysis queue item should produce a private evidence artifact with its path, parent document unit, local ports, annotations/DocBlocks, output-near named signals, and ledger fragment.
+- Treat each queue item as a bounded execution batch. A queue item must identify its analysis-unit path and, when subdivided, its direct Outport or shared-source output group. It must not mean "all output cones under the parent document unit".
+- Do not mark a queue item complete until every non-routing output or output-near state signal has behavior fields as described below.
+- Draft/cache only the parent document-unit section after all required analysis children are complete and their rows map to direct boundary outputs.
+- Do not build the final document from a static `MODULES` array, table, or prose list that was manually summarized from memory. If code uses a `MODULES` data structure to assemble DOCX, each module entry must be generated from checked module-local evidence and behavior ledger rows.
+- If a module section is shorter because the module is genuinely simple, record the ledger reason such as `pure_routing`, `single_assignment`, or `documented_constant_output`. Do not make a complex module short only to fit the full-model document.
+- If a selected module lacks a completed ledger, either continue evidence collection for that module or explicitly report it as unresolved. Do not silently include a shallow summary in the final DOCX.
+
+When reading a document unit, inspect the final cone of each direct Outport. Capture internal edge detectors, delays, latches, restore/remain signals, selectors, feedback, and mode gates as private behavior evidence. Set internal rows to `visibility=internal_evidence`; their names must not appear in polished prose.
 
 ## Output Coverage Ledger
 
@@ -82,22 +111,22 @@ Before drafting each module, build a private output coverage ledger. The ledger 
 
 The ledger is output-first. Do not start from input lists and guess what they influence. Start from the output or output-near named state signal, then trace backward until the behavior can be written as conditions and actions.
 
-1. Enumerate the module's externally meaningful outputs and named output-near state signals: Outport blocks, top-level exported signals, Goto/Data Store outputs that leave the module, EEW/save outputs, display/status outputs, auxiliary restore/remain outputs, and named internal lines that feed final output selection, feedback, delay, latch, or restore paths.
-2. For each output or named output-near state signal, record at least: exact name, port number when available, output role, direct source signal/block for private traceability, upstream block types in the output cone, control signals, branch signals, behavior type, condition groups, and whether the final draft covers it.
+1. Enumerate the document unit's direct Outports first. Trace named output-near states, Goto/Data Store values, save/restore values, and child outputs only as private evidence supporting those direct Outports.
+2. For every row record exact private facts plus `visibility`, `affected_boundary_output`, and `behavior_group`.
 3. Group outputs by role: main state/value, final actuator/request output, automatic/manual calculation flags, EEW/save values, `Rem`/restore/remembered values, raw/final pairs, diagnostic/display states, mode-dependent held outputs, and named output-near state signals that support a final output.
 4. For every Outport/exported output, trace backward from the output, not only forward from the module inputs. Follow the direct source cone at least through final Switch/Multiport Switch blocks, feedback paths, Unit Delay/Memory/Delay, latches, edge detectors, and mode gates. Continue until the behavior can be summarized as current-value selection, held previous value, restored value, default/fallback, suppression, override, or pure routing.
 5. For signals whose names contain `Rem`, `Rstr`, `Restore`, `Old`, `Pre`, `Last`, `Mem`, `Save`, `EEW`, or similar state-holding terms, trace their source cone even if they are not Outports and even if they are not the primary output named in the module title.
 6. In each output cone, look for `Unit Delay`, `Memory`, `Delay`, `RSLatch`, `Detect Change`, `EdgeRising`, `EdgeFalling`, feedback lines into `Switch`/`Multiport Switch`, and model-named mode/control gates that can hold, restore, suppress, or override outputs.
 7. Treat right-side or output-near logic as behavior-bearing until proven otherwise. A final Switch with feedback, delay, latch, edge detection, or special-mode selection is output shaping/hold/restore logic, not pure Outport plumbing.
 8. Record the behavior-level rule for each non-routing output or named output-near state signal: when the value is remembered, when it is held, when it is restored or updated, which source value wins, and which final or auxiliary output it affects.
-9. Record branch conditions in a form that can be copied into `实现方式` without inventing business labels:
+9. Record exact branch conditions privately. Before prose, project them onto direct document-unit inputs and outputs:
    - set conditions and reset conditions for latch/save outputs
    - true/false selector conditions for `Switch` and `Multiport Switch`
    - ordered priority branches for cascaded selectors
    - hold/update/restore triggers for memory and feedback paths
    - fallback/default value when no branch condition applies
-10. For every control or branch signal, keep the exact signal, parameter, enum, constant, or table identifier. Do not reduce `control_signals` to inferred Chinese concepts.
-11. When branch logic is complex, mark which rows should become level-one sub-points in `实现方式`.
+10. Keep every control, parameter, enum, constant, and table identifier exact in private evidence. Do not copy a non-allowlisted identifier into prose.
+11. Classify each row as `primary_output`, `material_state`, `supporting_state`, `mechanical_postprocess`, `symmetric_family`, or `pure_routing`. Set `must_mention=yes` only when `visibility=document_boundary`; internal `material_state` rows always use `must_mention=no`.
 12. If an output or named output-near state signal is pure plumbing or duplicate routing, mark it as such in the ledger with a reason so it can be safely collapsed. Do not silently drop a signal only because it is internal or not the main final state.
 
 Required behavior fields:
@@ -111,7 +140,11 @@ Required behavior fields:
 - `restore`: trigger and remembered value used to restore a final output or mode-dependent output.
 - `fallback`: explicit default source/value when higher-priority branches do not apply.
 - `affected_output`: final output or auxiliary output whose behavior is changed by the ledger row.
-- `subpoints`: `yes` when the row should become level-one implementation sub-points.
+- `narrative_class`: one of `primary_output`, `material_state`, `supporting_state`, `mechanical_postprocess`, `symmetric_family`, or `pure_routing`.
+- `visibility`: `document_boundary` for direct document-unit ports; otherwise `internal_evidence`.
+- `affected_boundary_output`: direct document-unit Outport affected by the row.
+- `must_mention`: `yes` only for allowlisted boundary identifiers required in prose.
+- `behavior_group`: identifier of the narrative group that covers the row.
 
 A row is incomplete when it only says `source=RSLatch`, `source=Switch`, `source=Unit Delay`, `source=Memory`, `source=Goto/From`, or records only block types. Continue reverse tracing until the row has condition/action behavior fields or is explicitly marked `pure_routing` with a reason.
 
@@ -131,7 +164,7 @@ The ledger is not final prose:
 
 - Do not copy block counts, block-type summaries, direct source block names, or `source=<block>` rows into `实现方式`.
 - If the ledger only says a signal is sourced from `RSLatch`, `Switch`, `Signal Copy`, `Unit Delay`, `Memory`, or a subsystem name, continue reading that output cone until the set/reset/selection/hold/restore/fallback conditions are known.
-- If model evidence contains a named output-near state signal but the draft does not mention that exact name, mark draft coverage as `missing` unless the ledger explicitly proves it is pure duplicate routing.
+- If a boundary `must_mention=yes` identifier is absent, mark coverage as `missing`. Fail separately if any `internal_evidence` identifier appears in the draft.
 - If condition groups cannot be resolved for a non-routing output, state the limitation only after attempting deeper module evidence. Do not replace missing conditions with "`<block>` 形成 `<signal>`".
 - Final prose should answer "when and why does this output take this value", not "which block is wired to this output".
 
@@ -139,15 +172,29 @@ Use a compact ledger shape such as:
 
 ```text
 <module> output coverage:
-- <signal_or_output>: role=<final/EEW/Rem/status/output-near-state/...>; behavior=<latch/selection/hold/update/restore/fallback/...>; source=<private traceability only>; cone=<private traceability only>; control_signals=[...]; branch_signals=[...]; set=[...]; reset=[...]; select=[condition -> source/value, ...]; hold=[...]; update=[trigger -> source/value]; restore=[trigger -> remembered_signal]; fallback=<source/value>; affected_output=<final_output_or_aux_output>; must mention=<yes/no>; subpoints=<yes/no>; draft coverage=<covered/missing>
+- <signal_or_output>: visibility=<document_boundary/internal_evidence>; role=<final/EEW/Rem/status/output-near-state/...>; narrative_class=<...>; behavior=<...>; source=<private>; control_signals=[...]; set=[...]; reset=[...]; select=[...]; hold=[...]; update=[...]; restore=[...]; fallback=<...>; affected_boundary_output=<direct_outport>; must_mention=<yes/no>; behavior_group=<group_id>; draft_coverage=<covered/missing/leaked>
 ```
 
-Before drafting prose, every `must mention=yes` row must have a behavior-level note and, when relevant, explicit `set`, `reset`, `select`, `hold`, `update`, `restore`, or `fallback` fields. After drafting prose, re-read the ledger and revise any module whose `draft coverage` is missing.
+Before drafting, every row must have visibility, an affected boundary output, and a behavior group or justified routing exclusion. Every boundary `must_mention=yes` row must appear by exact name. Every internal row must remain absent by exact name.
+
+## Narrative Compression Plan
+
+After the ledger is complete, create a private behavior-group plan before prose:
+
+```text
+<group_id>: title=<boundary_output_or_behavior_role>; boundary_inputs=[...]; boundary_outputs=[...]; internal_evidence_rows=[...]; condition_actions=[...]; covered_ledger_items=[...]
+```
+
+- Group rows that affect the same direct document-unit output through the same set/reset/select/hold/update/restore contract.
+- Combine conditions that produce the same action into one condition group.
+- Map comparator outputs, anonymous Boolean intermediates, copies, conversions, and final routing to the owning group instead of creating prose bullets.
+- Detect shared cones and symmetric families before drafting. Describe a homologous branch tree once and keep only side/profile-specific differences separate.
+- Use `a07-granularity-pattern.md` for the density gate and final layout.
 
 Do not draft from a ports-only ledger. A ledger that contains only inport/outport names, direct source names, or broad input/output groups is an index, not sufficient evidence for `实现方式`.
 Do not draft from a block-source ledger. A ledger that contains only `RSLatch`, `Switch`, `Unit Delay`, `Memory`, `Goto/From`, or direct source block names is private traceability, not sufficient evidence for `实现方式`.
 
-For complex outputs, the ledger should be specific enough to produce wording like:
+For complex outputs, private facts should be specific enough to produce boundary-projected wording like the following. Every identifier shown in final prose must be allowlisted:
 
 ```text
 <output>:
@@ -156,11 +203,11 @@ For complex outputs, the ledger should be specific enough to produce wording lik
 - priority: first <condition_1> -> <value_1>; then <condition_2> -> <value_2>; fallback -> <fallback_value>
 ```
 
-Module selection guidance:
+Document-unit selection guidance:
 
-- Keep modules that own externally meaningful calculations, mode arbitration, demand levels, state management, fault/protection decisions, after-run/debounce/timer behavior, or final outputs.
+- Keep functional A-level modules that own externally meaningful calculations, mode arbitration, demand levels, state management, fault/protection decisions, after-run/debounce/timer behavior, or final outputs.
 - Skip or summarize only at top level: model information, version/configuration displays, function-definition-only containers, pure documentation, pure routing, signal reshaping, scope/display areas, and unused/test harness fragments.
-- When a container has both documentation and functional children, write about the functional children and use the documentation only as evidence for `功能描述`.
+- When an A-level document unit has functional children, deep-read the children as analysis units and aggregate their behavior into the A-level section. Promote children only under the exception rules in `module-boundary.md`.
 
 ## DocBlock and Annotation Text
 
@@ -196,10 +243,10 @@ Use static `.slx` XML only as a supplement after MCP/SATK has been attempted or 
 
 ## Performance Guardrails
 
-- Use one MATLAB session, one workspace setup pass, one model load, and at most one model update/compile pass per task unless the model state changes.
+- Use one MATLAB process/session, one workspace setup pass, one model load, and at most one model update/compile pass per task unless the model state changes.
 - Avoid speculative tool probing in production tasks. Unknown `model_scan` signatures should not trigger multiple MATLAB calls.
-- Prefer one compact top-level index plus complete module reads for every selected module in the same session over dozens of per-module process launches. The top-level index is navigation evidence only.
-- Do not enable every helper detail option globally for large models. Use targeted MCP/SATK reads, or call helper functions inside the open session only for selected troubleshooting, while still covering every selected module.
+- Prefer one compact top-level index plus complete module reads for every selected module in the same MATLAB process/session over dozens of per-module process launches. The top-level index is navigation evidence only.
+- Do not enable every helper detail option globally for large models. Use targeted MCP/SATK reads, or call helper functions inside the task-owned MATLAB process/session only for selected troubleshooting, while still covering every selected module.
 - Do not create screenshots or visual scans unless the user asks for visual verification or the model evidence is contradictory.
 - Do not export full DocBlock bodies for all modules when `设计依据` is intentionally blank.
-- If a model is large, process selected modules in batches. Prioritize modules with named state/restore signals, Stateflow, lookup tables, unresolved output-cone conditions, or output-near right-side logic first, but do not omit the remaining selected modules from module-level evidence collection.
+- If a model is large, process selected modules through the bounded analysis-unit/output-group queue. Prioritize batches with named state/restore signals, Stateflow, lookup tables, unresolved output-cone conditions, or output-near right-side logic first, but do not omit the remaining batches from module-level evidence collection.
