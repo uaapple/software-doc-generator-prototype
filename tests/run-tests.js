@@ -2908,6 +2908,83 @@ const tests = [
     }
   },
   {
+    name: "Hermes agent client materializes transferred module description DOCX from API multipart response",
+    run: async () => {
+      await withTempConfig(async () => {
+        const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-api-docx-transfer-"));
+        const outputDir = path.join(workspaceDir, "outputs");
+        const modelSlxPath = path.join(workspaceDir, "Demo.slx");
+        const modelMatPath = path.join(workspaceDir, "Demo.mat");
+        const outputRelativePath = "outputs/Demo_module_description.docx";
+        const outputBytes = Buffer.from("docx-bytes", "utf8");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.writeFile(modelSlxPath, "slx", "utf8");
+        await fs.writeFile(modelMatPath, "mat", "utf8");
+
+        const server = http.createServer((req, res) => {
+          req.resume();
+          req.on("end", () => {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              status: "succeeded",
+              artifact: {
+                status: "completed",
+                summary: "done",
+                outputFiles: [
+                  {
+                    relativePath: outputRelativePath,
+                    kind: "software_module_description_docx",
+                    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    contentBase64: outputBytes.toString("base64")
+                  }
+                ]
+              }
+            }));
+          });
+        });
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const address = server.address();
+        const client = new HermesAgentClient({
+          transport: "api",
+          apiMode: "multipart",
+          baseURL: `http://127.0.0.1:${address.port}`,
+          timeoutMs: 5000,
+          stepTimeoutMs: { simulink_module_description_generate: 5000 }
+        });
+
+        try {
+          const response = await client.executeStep({
+            taskId: "task-api-docx-transfer",
+            stepType: "simulink_module_description_generate",
+            allowedPaths: [workspaceDir],
+            inputArtifact: {
+              workspaceDir,
+              modelSlxPath,
+              modelMatPath,
+              outputDir
+            }
+          });
+
+          const materialized = await fs.readFile(path.join(workspaceDir, ...outputRelativePath.split("/")));
+          assert.equal(response.status, "succeeded");
+          assert.equal(response.artifact.outputFiles[0].relativePath, outputRelativePath);
+          assert.equal(materialized.toString("utf8"), "docx-bytes");
+        } finally {
+          await new Promise((resolve, reject) => {
+            server.close((error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve();
+            });
+          });
+          await fs.rm(workspaceDir, { recursive: true, force: true });
+        }
+      });
+    }
+  },
+  {
     name: "Hermes agent client parses quiet CLI output and session id",
     run: async () => {
       await withTempConfig(async () => {

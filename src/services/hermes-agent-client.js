@@ -2050,7 +2050,10 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
               mimeType: String(
                 item.mimeType || "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               ).trim(),
-              description: String(item.description || "").trim()
+              description: String(item.description || "").trim(),
+              contentBase64: String(item.contentBase64 || item.base64 || "").trim(),
+              encoding: String(item.encoding || "").trim(),
+              size: Number(item.size || 0) || 0
             };
           })
           .filter((item) => item && (item.relativePath || item.absolutePath))
@@ -2310,7 +2313,12 @@ function isConnectionError(error) {
   return ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EAI_AGAIN"].includes(String(error?.code || ""));
 }
 
-function normalizeTransferredOutputPath(value = "") {
+const TRANSFERRED_OUTPUT_EXTENSIONS = {
+  simulink_ut_tcsd_generate: ".xlsx",
+  simulink_module_description_generate: ".docx"
+};
+
+function normalizeTransferredOutputPath(value = "", expectedExtension = ".xlsx") {
   const normalized = String(value || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
   if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
     return "";
@@ -2319,14 +2327,15 @@ function normalizeTransferredOutputPath(value = "") {
   if (parts.some((part) => part === "." || part === "..")) {
     return "";
   }
-  if (parts.length !== 2 || parts[0] !== "outputs" || !parts[1].toLowerCase().endsWith(".xlsx")) {
+  if (parts.length !== 2 || parts[0] !== "outputs" || !parts[1].toLowerCase().endsWith(expectedExtension)) {
     return "";
   }
   return parts.join("/");
 }
 
 async function materializeTransferredOutputFiles(artifact = {}, payload = {}) {
-  if (payload.stepType !== "simulink_ut_tcsd_generate") {
+  const expectedExtension = TRANSFERRED_OUTPUT_EXTENSIONS[payload.stepType];
+  if (!expectedExtension) {
     return;
   }
   const workspaceDir = path.resolve(String(payload.inputArtifact?.workspaceDir || ""));
@@ -2338,7 +2347,7 @@ async function materializeTransferredOutputFiles(artifact = {}, payload = {}) {
     if (!item || typeof item !== "object" || !item.contentBase64) {
       continue;
     }
-    const relativePath = normalizeTransferredOutputPath(item.relativePath || item.path || item.filePath);
+    const relativePath = normalizeTransferredOutputPath(item.relativePath || item.path || item.filePath, expectedExtension);
     if (!relativePath) {
       continue;
     }
