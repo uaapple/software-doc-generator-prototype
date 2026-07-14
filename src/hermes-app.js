@@ -17,6 +17,7 @@ import { ModelRequirementViewService } from "./services/model-requirement-view-s
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
 
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
+const MAX_TRANSFERRED_DOCX_OUTPUT_BYTES = 50 * 1024 * 1024;
 
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
@@ -472,6 +473,21 @@ function normalizeTcsdOutputRelativePath(value = "") {
   return parts.join("/");
 }
 
+function normalizeModuleDescriptionOutputRelativePath(value = "") {
+  const normalized = String(value || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
+    return "";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) {
+    return "";
+  }
+  if (parts.length !== 2 || parts[0] !== "outputs" || !parts[1].toLowerCase().endsWith(".docx")) {
+    return "";
+  }
+  return parts.join("/");
+}
+
 async function attachUnitTestCaseOutputFiles(artifact = {}, inputArtifact = {}) {
   const workspaceDir = path.resolve(String(inputArtifact.workspaceDir || ""));
   const outputDir = path.resolve(String(inputArtifact.outputDir || path.join(workspaceDir, "outputs")));
@@ -529,6 +545,75 @@ async function attachUnitTestCaseOutputFiles(artifact = {}, inputArtifact = {}) 
       kind: candidate.kind || "tcsd_workbook",
       mimeType: candidate.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       description: candidate.description || "Generated TCSD Excel workbook",
+      size: stat.size,
+      encoding: "base64",
+      contentBase64: (await fs.readFile(absolutePath)).toString("base64")
+    });
+  }
+
+  return {
+    ...artifact,
+    outputFiles
+  };
+}
+
+async function attachModuleDescriptionOutputFiles(artifact = {}, inputArtifact = {}) {
+  const workspaceDir = path.resolve(String(inputArtifact.workspaceDir || ""));
+  const outputDir = path.resolve(String(inputArtifact.outputDir || path.join(workspaceDir, "outputs")));
+  if (!workspaceDir || !isPathAllowed(outputDir, [workspaceDir])) {
+    return artifact;
+  }
+
+  const candidates = new Map();
+  const addCandidate = (relativePath = "", meta = {}) => {
+    const normalized = normalizeModuleDescriptionOutputRelativePath(relativePath);
+    if (normalized) {
+      candidates.set(normalized, { ...meta, relativePath: normalized });
+    }
+  };
+
+  for (const item of Array.isArray(artifact.outputFiles) ? artifact.outputFiles : []) {
+    if (typeof item === "string") {
+      addCandidate(item);
+      continue;
+    }
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const itemPath = item.relativePath || item.path || item.filePath || item.absolutePath || "";
+    if (path.isAbsolute(String(itemPath))) {
+      const absolute = path.resolve(String(itemPath));
+      if (absolute.startsWith(`${workspaceDir}${path.sep}`)) {
+        addCandidate(path.relative(workspaceDir, absolute), item);
+      }
+    } else {
+      addCandidate(itemPath, item);
+    }
+  }
+
+  const entries = await fs.readdir(outputDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.toLowerCase().endsWith(".docx")) {
+      addCandidate(path.join("outputs", entry.name));
+    }
+  }
+
+  const outputFiles = [];
+  for (const candidate of candidates.values()) {
+    const absolutePath = path.resolve(workspaceDir, ...candidate.relativePath.split("/"));
+    if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`)) {
+      continue;
+    }
+    const stat = await fs.stat(absolutePath).catch(() => null);
+    if (!stat?.isFile() || stat.size > MAX_TRANSFERRED_DOCX_OUTPUT_BYTES) {
+      continue;
+    }
+    outputFiles.push({
+      relativePath: candidate.relativePath,
+      fileName: candidate.fileName || path.basename(absolutePath),
+      kind: candidate.kind || "software_module_description_docx",
+      mimeType: candidate.mimeType || "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      description: candidate.description || "Generated software module description DOCX",
       size: stat.size,
       encoding: "base64",
       contentBase64: (await fs.readFile(absolutePath)).toString("base64")
@@ -1477,8 +1562,9 @@ export async function createHermesApp() {
           },
           {}
         );
+        const artifact = await attachModuleDescriptionOutputFiles(result.artifact || {}, inputArtifact);
         return res.json(
-          buildStepResponse(stepType, result.artifact || {}, startedAt, {
+          buildStepResponse(stepType, artifact, startedAt, {
             metrics: result.metrics || {},
             logs: result.logs || []
           })
