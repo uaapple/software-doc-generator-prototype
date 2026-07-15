@@ -216,6 +216,7 @@ Avoid table/array overrides unless the parser and target unit-test toolchain sup
 For logic-heavy split models, prefer the script loop over hand-maintained scratch files:
 
 - `trace_logical_mcdc.m` records the structural source tree for every AND/OR Logical Operator input.
+- `derive_logical_mcdc_mappings.py` deterministically turns supported trace trees into executable root-input and parameter mappings; symbolic Constant values become `p Param=0/1` states instead of comments.
 - `augment_tcsd_for_mcdc.py` appends supplemental Tests only when a missing obligation already has executable root-input/parameter mappings.
-- `probe_logical_mcdc_vectors.m` observes actual operator-input vectors from extracted TCSD cases when static tracing is insufficient.
+- `probe_logical_mcdc_vectors.m` reloads the MAT baseline per Test, applies Initialization parameter overrides to parameter objects, observes actual operator-input vectors, and can collect actual Condition/Decision/MC/DC coverage in the same simulations.
 - `build_probe_mcdc_obligations.py` converts observed vectors into `simulink-ut-logical-mcdc-obligations/v1`; unobserved vectors remain `unresolved` unless an explicit unreachable override is supplied.

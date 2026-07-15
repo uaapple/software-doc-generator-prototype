@@ -20,6 +20,7 @@ if nargin >= 3 && ~isempty(matFileName)
 end
 load_workspace_libraries(rootDir, modelNames);
 allReports = struct();
+coverageReports = struct();
 for m = 1:numel(modelNames)
     modelName = modelNames{m};
     close_foreign_loaded_model(modelName, rootDir);
@@ -33,9 +34,17 @@ for m = 1:numel(modelNames)
     caseJson = resolve_case_json(rootDir, modelName, opts.CaseSuffix);
     spec = jsondecode(fileread(caseJson));
     observations = struct('row', {}, 'test_id', {}, 'step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {});
+    aggregateCoverage = [];
     tests = normalize_struct_array(spec.tests);
     for testIndex = 1:numel(tests)
-        obs = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex));
+        [obs, testCoverage] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex), rootDir, matFileName, ~isempty(opts.CoverageJson));
+        if ~isempty(testCoverage)
+            if isempty(aggregateCoverage)
+                aggregateCoverage = testCoverage;
+            else
+                aggregateCoverage = aggregateCoverage + testCoverage;
+            end
+        end
         for k = 1:numel(obs)
             obs(k).row = tests(testIndex).row;
             obs(k).test_id = tests(testIndex).test_id;
@@ -50,9 +59,21 @@ for m = 1:numel(modelNames)
     report.probes = probes;
     report.observations = observations;
     allReports.(matlab.lang.makeValidName(modelName)) = report;
+    if ~isempty(aggregateCoverage)
+        coverageReports.(matlab.lang.makeValidName(modelName)) = coverage_summary(aggregateCoverage, modelName, numel(tests), opts.CoverageThreshold);
+        if ~isempty(opts.CoverageDataFile)
+            save_coverage_data(opts.CoverageDataFile, aggregateCoverage);
+        end
+        if ~isempty(opts.CoverageHtml)
+            cvhtml(opts.CoverageHtml, aggregateCoverage);
+        end
+    end
     bdclose(modelName);
 end
 write_json(opts.OutputJson, allReports);
+if ~isempty(opts.CoverageJson)
+    write_json(opts.CoverageJson, coverageReports);
+end
 clear cleanupObj;
 local_cleanup(modelNames, oldDir, oldPath);
 end
@@ -62,6 +83,10 @@ opts = struct();
 opts.InitScripts = {};
 opts.CaseSuffix = '_cases_mcdc.json';
 opts.OutputJson = '';
+opts.CoverageJson = '';
+opts.CoverageDataFile = '';
+opts.CoverageHtml = '';
+opts.CoverageThreshold = 80;
 idx = 1;
 while idx <= numel(varargin)
     key = char(string(varargin{idx}));
@@ -76,6 +101,14 @@ while idx <= numel(varargin)
             opts.CaseSuffix = char(string(value));
         case 'outputjson'
             opts.OutputJson = char(string(value));
+        case 'coveragejson'
+            opts.CoverageJson = char(string(value));
+        case 'coveragedatafile'
+            opts.CoverageDataFile = char(string(value));
+        case 'coveragehtml'
+            opts.CoverageHtml = char(string(value));
+        case 'coveragethreshold'
+            opts.CoverageThreshold = double(value);
     end
     idx = idx + 2;
 end
@@ -224,8 +257,14 @@ catch
 end
 end
 
-function observations = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, test)
+function [observations, coverageData] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, test, rootDir, matFileName, collectCoverage)
 dt = 0.01;
+coverageData = [];
+if nargin >= 8 && ~isempty(matFileName)
+    load_mat_to_base(fullfile(rootDir, char(string(matFileName))));
+end
+initParams = ensure_struct(test, 'init_params');
+apply_parameter_overrides(initParams);
 currentValues = struct();
 for i = 1:numel(inputNames)
     currentValues.(inputNames{i}) = zeros(1, inputDims.(inputNames{i}));
@@ -239,6 +278,13 @@ for i = 1:numel(initFields)
     end
 end
 steps = normalize_struct_array(test.steps);
+for k = 1:numel(steps)
+    if ~isempty(fieldnames(ensure_struct(steps(k), 'param_updates')))
+        error('probe_logical_mcdc_vectors:ActionParameterUpdateUnsupported', ...
+            ['Logical MC/DC probe requires coverage-driving parameter states in Test Initialization. ' ...
+             'Move p Param=value assignments from Action to Initialization or split the Test.']);
+    end
+end
 totalTime = 0;
 for k = 1:numel(steps)
     totalTime = totalTime + double(steps(k).delay_s);
@@ -289,15 +335,99 @@ externalInputVar = 'tc_sd_external_input_ds';
 in = Simulink.SimulationInput(modelName);
 in = in.setVariable(externalInputVar, ds);
 in = in.setModelParameter('StopTime', num2str(stopTime), 'SolverType', 'Fixed-step', 'Solver', 'FixedStepDiscrete', 'FixedStep', num2str(dt), 'SaveOutput', 'on', 'ReturnWorkspaceOutputs', 'on', 'LoadExternalInput', 'on', 'ExternalInput', externalInputVar);
+if collectCoverage
+    in = in.setModelParameter('CovEnable', 'on', 'CovMetricSettings', 'dcme', ...
+        'CovSaveSingleToWorkspaceVar', 'on', 'CovSaveName', 'tc_sd_covdata');
+end
 out = sim(in);
+if collectCoverage
+    try
+        coverageData = out.get('tc_sd_covdata');
+    catch ME
+        error('probe_logical_mcdc_vectors:CoverageDataMissing', ...
+            'Coverage was enabled but tc_sd_covdata was not returned: %s', ME.message);
+    end
+end
 observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {});
-initParams = ensure_struct(test, 'init_params');
 for k = 1:numel(steps)
     observations(k).step_index = steps(k).index;
     observations(k).time_s = eventTimes(k);
     observations(k).inputs = snapshotInputs(k).values;
     observations(k).params = initParams;
     observations(k).vectors = sample_vectors(out, probes, eventTimes(k));
+end
+end
+
+function summary = coverage_summary(cvd, modelName, testCount, threshold)
+summary = struct();
+summary.model = modelName;
+summary.test_count = testCount;
+summary.threshold = threshold;
+summary.condition = metric_result(conditioninfo(cvd, modelName), threshold);
+summary.decision = metric_result(decisioninfo(cvd, modelName), threshold);
+summary.mcdc = metric_result(mcdcinfo(cvd, modelName), threshold);
+summary.passed = summary.condition.passed && summary.decision.passed && summary.mcdc.passed;
+end
+
+function result = metric_result(info, threshold)
+values = double(info(:)');
+if numel(values) >= 2
+    covered = values(1);
+    total = values(2);
+elseif isempty(values)
+    covered = 0;
+    total = 0;
+else
+    covered = values(1);
+    total = values(1);
+end
+if total > 0
+    percent = 100 * covered / total;
+else
+    percent = 100;
+end
+result = struct('covered', covered, 'total', total, 'percent', percent, 'passed', percent >= threshold);
+end
+
+function save_coverage_data(pathName, cvd)
+[folder, name] = fileparts(char(string(pathName)));
+if isempty(folder)
+    folder = pwd;
+end
+if ~exist(folder, 'dir')
+    mkdir(folder);
+end
+oldDir = pwd;
+cleanupObj = onCleanup(@() cd(oldDir));
+cd(folder);
+cvsave(name, cvd);
+clear cleanupObj;
+cd(oldDir);
+end
+
+function apply_parameter_overrides(overrides)
+names = fieldnames(overrides);
+for i = 1:numel(names)
+    name = names{i};
+    value = overrides.(name);
+    try
+        obj = evalin('base', name);
+        if isprop(obj, 'Value')
+            currentValue = obj.Value;
+            dataType = '';
+            if isprop(obj, 'DataType')
+                dataType = obj.DataType;
+            end
+            value = cast_parameter_override_for_simulink_ut(name, value, currentValue, dataType);
+            obj.Value = value;
+            assignin('base', name, obj);
+        else
+            value = cast_parameter_override_for_simulink_ut(name, value, obj, '');
+            assignin('base', name, value);
+        end
+    catch
+        assignin('base', name, value);
+    end
 end
 end
 
@@ -437,7 +567,8 @@ end
 loaded = load(matPath);
 names = fieldnames(loaded);
 for i = 1:numel(names)
-    assignin('base', names{i}, loaded.(names{i}));
+    value = restore_degraded_workspace_value_for_simulink_ut(names{i}, loaded.(names{i}));
+    assignin('base', names{i}, value);
 end
 end
 

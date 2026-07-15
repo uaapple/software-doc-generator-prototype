@@ -69,7 +69,7 @@ def validate_mapping(
     obligations: Path,
     report: Path,
 ) -> dict[str, Any]:
-    run(
+    completed = run(
         [
             python,
             str(scripts / "validate_logical_mcdc_mapping.py"),
@@ -81,8 +81,50 @@ def validate_mapping(
             str(report),
         ],
         cwd=root_dir,
+        check=False,
     )
+    if not report.exists():
+        raise RuntimeError(f"MC/DC validator did not write report: exit={completed.returncode}")
     return load_json(report)
+
+
+def build_obligations_from_traces(
+    *,
+    python: str,
+    scripts: Path,
+    root_dir: Path,
+    model: str,
+    traces: Path,
+    logical_operators: Path | None,
+) -> Path:
+    mapping = logical_operators or root_dir / "outputs" / f"{model}_logical_operators.json"
+    run(
+        [
+            python,
+            str(scripts / "derive_logical_mcdc_mappings.py"),
+            "--traces",
+            str(traces),
+            "--output",
+            str(mapping),
+        ],
+        cwd=root_dir,
+    )
+    obligations = root_dir / "outputs" / f"{model}_coverage_obligations.json"
+    completed = run(
+        [
+            python,
+            str(scripts / "build_logical_mcdc_obligations.py"),
+            "--logical-operators",
+            str(mapping),
+            "--output",
+            str(obligations),
+        ],
+        cwd=root_dir,
+        check=False,
+    )
+    if not obligations.exists():
+        raise RuntimeError(f"obligation builder did not write output: exit={completed.returncode}")
+    return obligations
 
 
 def augment_once(
@@ -170,8 +212,21 @@ def run_probe(
     mat_file: str,
     init_scripts: list[str],
     unreachable_overrides: str,
-) -> Path:
+    collect_coverage: bool,
+    coverage_threshold: float,
+) -> tuple[Path, Path | None]:
     probe_results = root_dir / "outputs" / "logic_probe_results.json"
+    coverage_json = root_dir / "outputs" / f"{model}_coverage_summary.json"
+    coverage_data = root_dir / "outputs" / f"{model}_coverage.cvd"
+    coverage_html = root_dir / "outputs" / f"{model}_coverage.html"
+    coverage_args = ""
+    if collect_coverage:
+        coverage_args = (
+            f", 'CoverageJson', {matlab_string(str(coverage_json))}"
+            f", 'CoverageDataFile', {matlab_string(str(coverage_data))}"
+            f", 'CoverageHtml', {matlab_string(str(coverage_html))}"
+            f", 'CoverageThreshold', {coverage_threshold:g}"
+        )
     entry = write_matlab_entry(
         root_dir / "outputs" / f"{model}_probe_mcdc_entry.m",
         "\n".join(
@@ -181,7 +236,7 @@ def run_probe(
                 (
                     f"probe_logical_mcdc_vectors(rootDir, {matlab_cell([model])}, "
                     f"{matlab_string(mat_file)}, 'InitScripts', {matlab_cell(init_scripts)}, "
-                    f"'OutputJson', {matlab_string(str(probe_results))});"
+                    f"'OutputJson', {matlab_string(str(probe_results))}{coverage_args});"
                 ),
             ]
         ),
@@ -201,7 +256,14 @@ def run_probe(
     if unreachable_overrides:
         cmd.extend(["--unreachable-overrides", unreachable_overrides])
     run(cmd, cwd=root_dir, check=False)
-    return obligations
+    return obligations, coverage_json if collect_coverage else None
+
+
+def coverage_failed(path: Path) -> bool:
+    report = load_json(path)
+    if not report:
+        return True
+    return any(not bool(item.get("passed")) for item in report.values() if isinstance(item, dict))
 
 
 def simulate_and_backfill(
@@ -266,11 +328,15 @@ def main() -> int:
     parser.add_argument("--spec", required=True)
     parser.add_argument("--workbook", required=True)
     parser.add_argument("--interface-json", required=True)
-    parser.add_argument("--obligations", required=True)
+    parser.add_argument("--obligations")
+    parser.add_argument("--logical-traces")
+    parser.add_argument("--logical-operators")
     parser.add_argument("--template")
     parser.add_argument("--max-iterations", type=int, default=2)
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--run-probe", action="store_true")
+    parser.add_argument("--require-coverage", action="store_true")
+    parser.add_argument("--coverage-threshold", type=float, default=80.0)
     parser.add_argument("--simulate-backfill", action="store_true")
     parser.add_argument("--mat-file", default="")
     parser.add_argument("--init-script", action="append", default=[])
@@ -286,7 +352,19 @@ def main() -> int:
     spec = Path(args.spec).resolve()
     workbook = Path(args.workbook).resolve()
     interface_json = Path(args.interface_json).resolve()
-    obligations = Path(args.obligations).resolve()
+    if args.obligations:
+        obligations = Path(args.obligations).resolve()
+    else:
+        if not args.logical_traces:
+            raise SystemExit("provide --obligations or --logical-traces")
+        obligations = build_obligations_from_traces(
+            python=args.python,
+            scripts=scripts,
+            root_dir=root_dir,
+            model=args.model,
+            traces=Path(args.logical_traces).resolve(),
+            logical_operators=Path(args.logical_operators).resolve() if args.logical_operators else None,
+        )
     report = root_dir / "outputs" / f"{args.model}_mcdc_validation_report.json"
 
     for iteration in range(args.max_iterations + 1):
@@ -320,11 +398,12 @@ def main() -> int:
         )
 
     data = load_json(report)
-    if report_failed(data) and args.run_probe:
+    coverage_json: Path | None = None
+    if (report_failed(data) or args.require_coverage) and args.run_probe:
         if not args.mat_file:
             raise SystemExit("--run-probe requires --mat-file")
         extract_cases(python=args.python, scripts=scripts, root_dir=root_dir, model=args.model, workbook=workbook, interface_json=interface_json)
-        obligations = run_probe(
+        obligations, coverage_json = run_probe(
             python=args.python,
             scripts=scripts,
             root_dir=root_dir,
@@ -332,6 +411,8 @@ def main() -> int:
             mat_file=args.mat_file,
             init_scripts=args.init_script,
             unreachable_overrides=args.unreachable_overrides,
+            collect_coverage=args.require_coverage,
+            coverage_threshold=args.coverage_threshold,
         )
         data = validate_mapping(
             python=args.python,
@@ -341,6 +422,15 @@ def main() -> int:
             obligations=obligations,
             report=report,
         )
+
+    if args.require_coverage:
+        if not args.run_probe:
+            raise SystemExit("--require-coverage requires --run-probe")
+        if coverage_json is None or not coverage_json.exists():
+            raise SystemExit("coverage report was not produced")
+        if coverage_failed(coverage_json):
+            print(json.dumps({"status": "coverage_failed", "coverage": str(coverage_json), "results": load_json(coverage_json)}, ensure_ascii=False, indent=2))
+            return 1
 
     if report_failed(data):
         print(json.dumps({"status": "failed", "report": str(report), "summary": data.get("summary", {})}, ensure_ascii=False, indent=2))
@@ -382,6 +472,7 @@ def main() -> int:
                 "obligations": str(obligations),
                 "report": str(report),
                 "summary": data.get("summary", {}),
+                "coverage": str(coverage_json) if coverage_json else None,
             },
             ensure_ascii=False,
             indent=2,

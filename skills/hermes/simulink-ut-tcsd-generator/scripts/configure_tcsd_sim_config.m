@@ -46,6 +46,14 @@ end
 
 attachConfigSet(modelName, cs, true);
 setActiveConfigSet(modelName, report.configName);
+% TCSD simulation uses root-port values and top-level outputs directly. Some
+% Cornex projects carry line labels whose base-workspace objects are custom
+% signal classes rather than Simulink.Signal. Keep those labels from becoming
+% a compile-time signal-object requirement in this unsaved simulation copy.
+try
+    set_param(modelName, 'SignalResolutionControl', 'None');
+catch
+end
 print_report(report);
 end
 
@@ -60,7 +68,6 @@ catch
     cs = Simulink.ConfigSet;
 end
 end
-
 function headers = custom_code_headers(configSet)
 headers = {};
 try

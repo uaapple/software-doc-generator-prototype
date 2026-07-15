@@ -22,6 +22,92 @@ def load_script_module(script_name: str):
 
 
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_trace_adapter_derives_symbolic_parameter_and_nested_logic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            trace = {
+                "model": "A02",
+                "operators": [
+                    {
+                        "id": "A02:16",
+                        "block_path": "A02/Sub/OR",
+                        "operator": "OR",
+                        "ports": [
+                            {
+                                "index": 1,
+                                "trace": {
+                                    "kind": "logic",
+                                    "operator": "AND",
+                                    "inputs": [
+                                        {"index": 1, "trace": {"kind": "logic", "operator": "NOT", "inputs": [{"index": 1, "trace": {"kind": "root_inport", "signal": "ErrA"}}]}},
+                                        {"index": 2, "trace": {"kind": "logic", "operator": "NOT", "inputs": [{"index": 1, "trace": {"kind": "root_inport", "signal": "ErrB"}}]}},
+                                    ],
+                                },
+                            },
+                            {"index": 2, "trace": {"kind": "constant", "value": "Bypass_C"}},
+                        ],
+                    }
+                ],
+            }
+            (work / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "derive_logical_mcdc_mappings.py"),
+                    "--traces",
+                    str(work / "trace.json"),
+                    "--output",
+                    str(work / "mapping.json"),
+                ],
+                check=True,
+            )
+            mapping = json.loads((work / "mapping.json").read_text(encoding="utf-8"))
+            first, second = mapping["operators"][0]["ports"]
+            self.assertEqual(first["true_inputs"], {"ErrA": 0, "ErrB": 0})
+            self.assertEqual(first["false_inputs"], {"ErrA": 1, "ErrB": 0})
+            self.assertEqual(second["true_params"], {"Bypass_C": 1})
+            self.assertEqual(second["false_params"], {"Bypass_C": 0})
+
+    def test_trace_adapter_accepts_single_input_object_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            trace = {
+                "model": "A02",
+                "operators": [{
+                    "id": "A02:7",
+                    "operator": "AND",
+                    "ports": [{
+                        "index": 1,
+                        "trace": {
+                            "kind": "logic",
+                            "operator": "NOT",
+                            "inputs": {
+                                "index": 1,
+                                "trace": {
+                                    "kind": "subsystem_inport",
+                                    "source": {"kind": "root_inport", "signal": "HvOnFail"},
+                                },
+                            },
+                        },
+                    }],
+                }],
+            }
+            (work / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "derive_logical_mcdc_mappings.py"),
+                    "--traces",
+                    str(work / "trace.json"),
+                    "--output",
+                    str(work / "mapping.json"),
+                ],
+                check=True,
+            )
+            port = json.loads((work / "mapping.json").read_text(encoding="utf-8"))["operators"][0]["ports"][0]
+            self.assertEqual(port["true_inputs"], {"HvOnFail": 0})
+            self.assertEqual(port["false_inputs"], {"HvOnFail": 1})
+
     def test_backfill_uses_point_window_for_unstable_step(self) -> None:
         backfill = load_script_module("backfill_expected_outputs.py")
         action = "\n".join(

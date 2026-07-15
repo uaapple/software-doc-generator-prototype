@@ -115,9 +115,16 @@ for k = 1:numel(paramFields)
     try
         obj = evalin('base', name);
         if isprop(obj, 'Value')
+            currentValue = obj.Value;
+            dataType = '';
+            if isprop(obj, 'DataType')
+                dataType = obj.DataType;
+            end
+            value = cast_parameter_override_for_simulink_ut(name, value, currentValue, dataType);
             obj.Value = value;
             assignin('base', name, obj);
         else
+            value = cast_parameter_override_for_simulink_ut(name, value, obj, '');
             assignin('base', name, value);
         end
     catch
@@ -214,7 +221,6 @@ for k = 1:numel(steps)
     stepResults(k).stable = stable;
 end
 end
-
 function [inputTypes, inputDims] = compiled_input_metadata(modelName, inputBlocks, inputNames)
 inputTypes = struct();
 inputDims = struct();
@@ -267,6 +273,8 @@ try
     obj = evalin('base', inputName);
     if isprop(obj, 'DataType') && ~isempty(obj.DataType)
         dtype = char(string(obj.DataType));
+    elseif isnumeric(obj) || islogical(obj)
+        dtype = class(obj);
     end
     if isprop(obj, 'Dimensions')
         dims = double(obj.Dimensions);
@@ -451,6 +459,7 @@ function load_mat_to_base(matPath)
 loaded = load(matPath);
 names = fieldnames(loaded);
 for i = 1:numel(names)
-    assignin('base', names{i}, loaded.(names{i}));
+    value = restore_degraded_workspace_value_for_simulink_ut(names{i}, loaded.(names{i}));
+    assignin('base', names{i}, value);
 end
 end

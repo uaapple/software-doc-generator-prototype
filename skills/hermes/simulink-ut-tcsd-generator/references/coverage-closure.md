@@ -96,7 +96,7 @@ The builder creates these default vectors:
 
 If the builder reports a missing or conflicting port mapping, repair the traceability. If the vector is genuinely unreachable, edit the resulting obligation to `status: "unreachable"` or `status: "not_traceable"` and include a concrete `reason`; do not leave it as `unresolved` and do not invent root-input values that cannot drive the operator port.
 
-The mapping validator checks workbook assignment states, not comments. A vector is counted only when a Test initialization or action step contains the root-input and scalar-parameter state declared in the obligation. Passing this gate proves that the workbook contains the intended stimuli; it is still better to confirm actual block-port truth vectors with Simulink Coverage or an internal probe when available.
+The mapping validator checks workbook assignment states, not comments. A vector is counted only when a Test initialization or action step contains the root-input and scalar-parameter state declared in the obligation. Passing this gate proves only that the workbook contains the intended stimuli. Final closure requires actual block-port truth vectors and Simulink Coverage; by default Condition, Decision, and MC/DC must each reach 80%.
 
 ## Generate Targeted Stimuli
 
@@ -181,9 +181,10 @@ The HvGrid run exposed issues common to larger integration-style modules:
 Use the bundled scripts to reduce repeated manual repair work:
 
 1. Run `trace_logical_mcdc.m` after model load/bootstrap to write structural Logical Operator input traces.
-2. Build normal obligations with `build_logical_mcdc_obligations.py` when true/false mappings are known.
-3. If workbook validation reports missing vectors whose obligations already contain `match.inputs`/`match.params`, run `augment_tcsd_for_mcdc.py` and rebuild the workbook.
-4. If mappings are incomplete or a vector may be structurally unreachable, run `probe_logical_mcdc_vectors.m`, then `build_probe_mcdc_obligations.py`.
-5. Treat unresolved probe vectors as failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason.
+2. Run `derive_logical_mcdc_mappings.py` to convert root inputs, NOT paths, nested AND/OR paths, and symbolic Constant parameters into explicit true/false input and parameter mappings.
+3. Build normal obligations with `build_logical_mcdc_obligations.py`.
+4. If workbook validation reports missing vectors whose obligations already contain `match.inputs`/`match.params`, run `augment_tcsd_for_mcdc.py` and rebuild the workbook.
+5. Run `probe_logical_mcdc_vectors.m` for actual vectors and Simulink Coverage, then `build_probe_mcdc_obligations.py`.
+6. Treat unresolved probe vectors or any actual Condition/Decision/MC/DC metric below the target (80% by default) as failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason.
 
-The default closure target is `missing_count = 0` and `unresolved_count = 0`; `unreachable_count > 0` is acceptable only when every item has a specific model/probe reason.
+The default closure target is `missing_count = 0`, `unresolved_count = 0`, and actual Condition/Decision/MC/DC each at least 80%; `unreachable_count > 0` is acceptable only when every item has a specific model/probe reason.

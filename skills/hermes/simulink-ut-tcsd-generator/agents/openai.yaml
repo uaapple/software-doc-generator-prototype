@@ -1,4 +1,4 @@
 interface:
   display_name: "Simulink UT TCSD Generator"
-  short_description: "Generate TCSD tests with one-pass MCDC feedback."
-  default_prompt: "Use $simulink-ut-tcsd-generator to generate coverage-first Simulink TCSD unit tests from a .slx/.mat pair, then run one bounded Simulink Coverage MCDC feedback repair pass when MCDC closure is requested."
+  short_description: "Generate TCSD tests with hard coverage closure."
+  default_prompt: "Use $simulink-ut-tcsd-generator to generate coverage-first Simulink TCSD unit tests from a .slx/.mat pair, derive executable logical mappings including parameter overrides, validate and simulate the workbook, require actual Condition, Decision, and MC/DC coverage to reach the requested target (80% by default), and retain the focused one-pass MCDC feedback repair workflow for stateful uncovered items."
