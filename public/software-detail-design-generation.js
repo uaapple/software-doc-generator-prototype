@@ -1,13 +1,16 @@
 const state = {
   tasks: [],
   projects: [],
+  workers: [],
   selectedTaskId: new URLSearchParams(window.location.search).get("taskId") || "",
   taskProjectFilterId: new URLSearchParams(window.location.search).get("projectId") || "",
   polling: null,
   submitting: false,
   loadingProjects: false,
+  loadingWorkers: false,
   projectMutating: false,
   projectLoadError: "",
+  workerLoadError: "",
   deletingTaskIds: new Set()
 };
 
@@ -17,11 +20,13 @@ const elements = {
   matInput: document.querySelector("#module-description-model-mat-input"),
   initScriptInput: document.querySelector("#module-description-model-init-script-input"),
   projectSelect: document.querySelector("#module-description-project-select"),
+  workerSelect: document.querySelector("#module-description-worker-select"),
   addProjectButton: document.querySelector("#module-description-add-project-button"),
   deleteProjectButton: document.querySelector("#module-description-delete-project-button"),
   startButton: document.querySelector("#module-description-start-button"),
   formStatus: document.querySelector("#module-description-form-status"),
   projectStatus: document.querySelector("#module-description-project-status"),
+  workerStatus: document.querySelector("#module-description-worker-status"),
   taskProjectFilter: document.querySelector("#module-description-task-project-filter"),
   taskList: document.querySelector("#module-description-task-list"),
   taskDetail: document.querySelector("#module-description-task-detail"),
@@ -74,6 +79,13 @@ function setProjectStatus(message = "", tone = "") {
   elements.projectStatus.hidden = !message;
   elements.projectStatus.textContent = message;
   elements.projectStatus.dataset.tone = tone;
+}
+
+function setWorkerStatus(message = "", tone = "") {
+  if (!elements.workerStatus) return;
+  elements.workerStatus.hidden = !message;
+  elements.workerStatus.textContent = message;
+  elements.workerStatus.dataset.tone = tone;
 }
 
 async function requestJson(url, options = {}) {
@@ -130,6 +142,21 @@ function normalizeProject(project = {}) {
   return { id, name, label };
 }
 
+function normalizeWorker(worker = {}) {
+  const id = String(worker.id || "").trim();
+  const label = String(worker.label || id).trim();
+  return { id, label, isDefault: Boolean(worker.isDefault) };
+}
+
+function defaultTaskWorker() {
+  return state.workers.find((worker) => worker.isDefault) || state.workers[0] || { id: "", label: "" };
+}
+
+function normalizeTaskWorker(worker = null) {
+  const normalized = normalizeWorker(worker || {});
+  return normalized.id ? normalized : defaultTaskWorker();
+}
+
 function defaultTaskProject() {
   return state.projects.find((project) => project.id === "01") || { id: "01", name: "楚能", label: "01_楚能" };
 }
@@ -149,6 +176,48 @@ function getSelectedProject() {
   return state.projects.find((project) => project.id === selectedId) || null;
 }
 
+function getSelectedWorker() {
+  const selectedId = elements.workerSelect?.value || "";
+  return state.workers.find((worker) => worker.id === selectedId) || null;
+}
+
+function renderWorkers(defaultWorkerId = "") {
+  if (!elements.workerSelect) return;
+  if (state.loadingWorkers) {
+    elements.workerSelect.innerHTML = '<option value="">正在加载 Worker...</option>';
+  } else if (state.workerLoadError) {
+    elements.workerSelect.innerHTML = '<option value="">Worker 加载失败</option>';
+  } else {
+    elements.workerSelect.innerHTML = state.workers
+      .map((worker) => `<option value="${escapeHtml(worker.id)}">${escapeHtml(worker.label)}</option>`)
+      .join("");
+    const selected = state.workers.find((worker) => worker.id === defaultWorkerId) || defaultTaskWorker();
+    elements.workerSelect.value = selected.id || "";
+  }
+  elements.workerSelect.disabled = state.loadingWorkers || !state.workers.length;
+}
+
+async function loadWorkers() {
+  state.loadingWorkers = true;
+  renderWorkers();
+  try {
+    const body = await requestJson("/api/software-module-description-generation/workers");
+    state.workers = Array.isArray(body.workers) ? body.workers.map(normalizeWorker).filter((worker) => worker.id) : [];
+    state.workerLoadError = state.workers.length ? "" : "没有可用的 Worker。";
+    setWorkerStatus(state.workerLoadError, state.workerLoadError ? "error" : "");
+    renderWorkers(body.defaultWorkerId || "");
+  } catch (error) {
+    state.workers = [];
+    state.workerLoadError = error.message || "Worker 列表加载失败。";
+    setWorkerStatus(state.workerLoadError, "error");
+    renderWorkers();
+  } finally {
+    state.loadingWorkers = false;
+    renderWorkers(elements.workerSelect?.value || "");
+    syncProjectControls();
+  }
+}
+
 function syncProjectControls() {
   const hasProjects = state.projects.length > 0;
   if (elements.projectSelect) {
@@ -160,8 +229,11 @@ function syncProjectControls() {
   if (elements.deleteProjectButton) {
     elements.deleteProjectButton.disabled = state.loadingProjects || state.projectMutating || !hasProjects;
   }
+  if (elements.workerSelect) {
+    elements.workerSelect.disabled = state.loadingWorkers || !state.workers.length;
+  }
   if (elements.startButton) {
-    elements.startButton.disabled = state.submitting || !hasProjects;
+    elements.startButton.disabled = state.submitting || !hasProjects || !state.workers.length;
   }
   if (elements.taskProjectFilter) {
     elements.taskProjectFilter.disabled = state.loadingProjects;
@@ -302,12 +374,17 @@ async function submitTask(event) {
     if (!selectedProject) {
       throw new Error("请选择项目。");
     }
+    const selectedWorker = getSelectedWorker();
+    if (!selectedWorker) {
+      throw new Error("请选择 Worker。");
+    }
     state.submitting = true;
     syncProjectControls();
     setStatus("正在创建任务并加入 Hermes 队列。", "busy");
 
     const formData = new FormData(elements.form);
     formData.set("projectId", selectedProject.id);
+    formData.set("workerId", selectedWorker.id);
     const body = await requestJson("/api/software-module-description-generation/tasks", {
       method: "POST",
       body: formData
@@ -493,10 +570,12 @@ function renderTaskDetail(task) {
     return;
   }
   const projectLabel = normalizeTaskProject(task.unitTestProject).label;
+  const workerLabel = normalizeTaskWorker(task.workerProfile).label;
   const initScriptLabel = task.inputs?.modelInitScript?.originalName || "使用项目 addon 初始化";
   elements.detailSubtitle.textContent = [
     task.inputs?.modelSlx?.originalName || "Simulink 模型",
     projectLabel,
+    workerLabel,
     STATUS_LABELS[task.status] || task.status
   ]
     .filter(Boolean)
@@ -588,6 +667,7 @@ function renderTaskDetail(task) {
           <div><dt>MAT</dt><dd>${escapeHtml(task.inputs?.modelMat?.originalName || "")}</dd></div>
           <div><dt>初始化脚本</dt><dd>${escapeHtml(initScriptLabel)}</dd></div>
           <div><dt>项目</dt><dd>${escapeHtml(projectLabel || "未记录")}</dd></div>
+          <div><dt>Worker</dt><dd>${escapeHtml(workerLabel || "未记录")}</dd></div>
           <div><dt>创建时间</dt><dd>${escapeHtml(formatTime(task.createdAt))}</dd></div>
           <div><dt>更新时间</dt><dd>${escapeHtml(formatTime(task.updatedAt))}</dd></div>
         </dl>
@@ -658,6 +738,8 @@ elements.taskList?.addEventListener("click", (event) => {
   updateUrlTaskId(state.selectedTaskId);
   void loadSelectedTask();
 });
+
+await loadWorkers();
 
 try {
   await loadProjects();

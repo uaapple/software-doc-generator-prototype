@@ -311,7 +311,7 @@ export const config = {
       replay_proposal_generate: Number(process.env.HERMES_TIMEOUT_REPLAY_PROPOSAL_GENERATE_MS || 600000)
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
-    taskConcurrency: Number(process.env.HERMES_TASK_CONCURRENCY || 1),
+    taskConcurrency: Number(process.env.HERMES_TASK_CONCURRENCY || 2),
     taskQueueActiveTimeoutMs: Number(process.env.HERMES_TASK_QUEUE_ACTIVE_TIMEOUT_MS || 0),
     maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
     stepMaxTurns: {

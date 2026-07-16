@@ -121,7 +121,7 @@ function normalizeTaskProjectSnapshot(project = null) {
   return publicProject(project) || defaultLegacyProject();
 }
 
-function publicUnitTestWorkerProfile(profile = {}) {
+export function publicUnitTestWorkerProfile(profile = {}) {
   const id = String(profile?.id || "").trim();
   if (!id) {
     return null;

@@ -536,6 +536,7 @@ export async function createApp() {
           id: task.id,
           type: "unit_test_case_generation",
           title: "单元测试用例生成",
+          resourceKey: `worker:${task.workerProfile?.id || config.unitTestCase?.defaultWorkerId || "default"}`,
           run: () => unitTestCaseGenerationService.runTask(task.id),
           onError: (error) => unitTestCaseGenerationService.failTask(task.id, error)
         });
@@ -546,6 +547,23 @@ export async function createApp() {
       }
     }
   );
+
+  app.get("/api/software-module-description-generation/workers", (_req, res) => {
+    res.json({
+      defaultWorkerId: config.unitTestCase?.defaultWorkerId || "",
+      workers: listUnitTestWorkerProfiles()
+    });
+  });
+
+  app.post("/api/software-module-description-generation/workers/:workerId/health", async (req, res, next) => {
+    try {
+      const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
+      const workerProfile = resolveUnitTestWorkerProfile(req.params.workerId);
+      res.json(await checkWorkerHealth(workerProfile, timeoutMs));
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get("/api/software-module-description-generation/tasks", async (req, res, next) => {
     try {
@@ -603,6 +621,7 @@ export async function createApp() {
           id: task.id,
           type: "software_module_description_generation",
           title: "软件详设生成",
+          resourceKey: `worker:${task.workerProfile?.id || config.unitTestCase?.defaultWorkerId || "default"}`,
           run: () => softwareModuleDescriptionGenerationService.runTask(task.id),
           onError: (error) => softwareModuleDescriptionGenerationService.failTask(task.id, error)
         });

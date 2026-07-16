@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
 import { readJson, writeJson, pathExists } from "./storage.js";
 import { normalizeUploadedFileName } from "./upload-filename.js";
+import { publicUnitTestWorkerProfile, resolveUnitTestWorkerProfile } from "./unit-test-case-generation-service.js";
 
 const TASK_FILE_NAME = "task.json";
 const PROJECTS_FILE_NAME = "projects.json";
@@ -262,7 +263,10 @@ async function cleanupTempFiles(files = {}) {
 
 export class SoftwareModuleDescriptionGenerationService {
   constructor(options = {}) {
-    this.hermesAgentClient = options.hermesAgentClient || new HermesAgentClient();
+    this.hermesAgentClient = options.hermesAgentClient || null;
+    this.hermesAgentClientFactory = typeof options.hermesAgentClientFactory === "function"
+      ? options.hermesAgentClientFactory
+      : null;
     this.deletedTaskIds = new Set();
   }
 
@@ -473,6 +477,7 @@ export class SoftwareModuleDescriptionGenerationService {
     try {
       const { modelSlx, modelMat, modelInitScript } = this.validateUploadFiles(normalized);
       const unitTestProject = await this.getUnitTestProject(metadata.unitTestProjectId || metadata.projectId || "");
+      const workerProfile = resolveUnitTestWorkerProfile(metadata.workerId || metadata.unitTestWorkerId || "");
       const taskId = randomUUID();
       const taskDir = this.getTaskDir(taskId);
       const inputDir = path.join(taskDir, "inputs");
@@ -559,6 +564,7 @@ export class SoftwareModuleDescriptionGenerationService {
         errorMessage: "",
         progress: buildProgress("queued"),
         unitTestProject,
+        workerProfile: publicUnitTestWorkerProfile(workerProfile),
         inputs: {
           modelSlx: {
             originalName: normalizeUploadedFileName(modelSlx.originalname),
@@ -678,6 +684,26 @@ export class SoftwareModuleDescriptionGenerationService {
     return normalizedEvent;
   }
 
+  getHermesAgentClientForWorker(workerProfile = {}) {
+    if (this.hermesAgentClient) {
+      return this.hermesAgentClient;
+    }
+    if (this.hermesAgentClientFactory) {
+      return this.hermesAgentClientFactory(workerProfile);
+    }
+    return new HermesAgentClient({
+      transport: workerProfile.hermesTransport || "api",
+      baseURL: workerProfile.hermesBaseURL,
+      apiMode: workerProfile.hermesApiMode || config.hermes.apiMode || "json",
+      authToken: workerProfile.hermesAuthToken || "",
+      timeoutMs: config.hermes.timeoutMs,
+      stepTimeoutMs: config.hermes.stepTimeoutMs,
+      maxTurns: config.hermes.maxTurns,
+      stepMaxTurns: config.hermes.stepMaxTurns,
+      heartbeatIntervalMs: config.hermes.heartbeatIntervalMs
+    });
+  }
+
   buildHermesPayload(task = {}) {
     const cfg = softwareModuleDescriptionConfig();
     const workspaceDir = task.workspace?.agentDirectory || task.workspace?.directory || "";
@@ -721,7 +747,11 @@ export class SoftwareModuleDescriptionGenerationService {
     task = await this.readTask(taskId);
 
     try {
-      const result = await this.hermesAgentClient.executeStep(this.buildHermesPayload(task), {
+      const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
+      task.workerProfile = publicUnitTestWorkerProfile(workerProfile);
+      await this.saveTask(task);
+      const hermesAgentClient = this.getHermesAgentClientForWorker(workerProfile);
+      const result = await hermesAgentClient.executeStep(this.buildHermesPayload(task), {
         onEvent: (event) => this.appendRuntimeEvent(taskId, event)
       });
       const artifact = result?.artifact || {};

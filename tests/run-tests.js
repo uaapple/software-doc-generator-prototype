@@ -10442,6 +10442,19 @@ const tests = [
           const wrongInitExtBody = await wrongInitExtResponse.json();
           assert.equal(wrongInitExtBody.code, "software_module_description_invalid_init_script_extension");
 
+          const invalidWorker = new FormData();
+          invalidWorker.append("modelSlx", new Blob(["slx"]), "InvalidWorker.slx");
+          invalidWorker.append("modelMat", new Blob(["mat"]), "InvalidWorker.mat");
+          invalidWorker.append("projectId", "01");
+          invalidWorker.append("workerId", "missing-worker");
+          const invalidWorkerResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: invalidWorker
+          });
+          assert.equal(invalidWorkerResponse.status, 400);
+          const invalidWorkerBody = await invalidWorkerResponse.json();
+          assert.equal(invalidWorkerBody.code, "unit_test_case_worker_not_found");
+
           const validWithInit = new FormData();
           validWithInit.append("modelSlx", new Blob(["slx"]), "ModuleDoc.slx");
           validWithInit.append("modelMat", new Blob(["mat"]), "ModuleDoc.mat");
@@ -10460,6 +10473,7 @@ const tests = [
           assert.equal(validBody.task.inputs.modelInitScript.originalName, "ModuleDoc_init.m");
           assert.equal(validBody.task.inputs.modelInitScript.workspaceRelativePath, "inputs/ModuleDoc_init.m");
           assert.equal(validBody.task.unitTestProject.id, "02");
+          assert.equal(validBody.task.workerProfile.id, config.unitTestCase.defaultWorkerId);
           assert.equal(validBody.task.hermes.stepType, "simulink_module_description_generate");
           assert.equal(validBody.task.hermes.skillName, "simulink-module-description-generator");
           assert.equal(validBody.task.hermes.expectedOutputPattern, "outputs/*.docx");
@@ -10898,6 +10912,47 @@ const tests = [
     }
   },
   {
+    name: "Hermes task queue runs different workers concurrently and serializes the same worker",
+    run: async () => {
+      const events = [];
+      let releaseVm = null;
+      const vmCanFinish = new Promise((resolve) => {
+        releaseVm = resolve;
+      });
+      const queue = new HermesTaskQueueService({ concurrency: 2 });
+
+      const vmFirst = queue.enqueue({
+        id: "vm-detail",
+        type: "software_module_description_generation",
+        resourceKey: "worker:vm",
+        run: async () => {
+          events.push("vm-detail:start");
+          await vmCanFinish;
+          events.push("vm-detail:done");
+        }
+      });
+      const vmSecond = queue.enqueue({
+        id: "vm-unit",
+        type: "unit_test_case_generation",
+        resourceKey: "worker:vm",
+        run: async () => events.push("vm-unit:start")
+      });
+      const physical = queue.enqueue({
+        id: "physical-unit",
+        type: "unit_test_case_generation",
+        resourceKey: "worker:physical",
+        run: async () => events.push("physical:start")
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.deepEqual(events, ["vm-detail:start", "physical:start"]);
+      assert.equal(queue.getQueuePosition("unit_test_case_generation", "vm-unit"), 1);
+      releaseVm();
+      await Promise.all([vmFirst, vmSecond, physical]);
+      assert.deepEqual(events, ["vm-detail:start", "physical:start", "vm-detail:done", "vm-unit:start"]);
+    }
+  },
+  {
     name: "Hermes task queue can cancel queued unit test case tasks",
     run: async () => {
       const events = [];
@@ -10969,7 +11024,7 @@ const tests = [
     name: "Hermes task queue restores persisted queued worker tasks",
     run: async () => {
       const events = [];
-      const queue = new HermesTaskQueueService({ concurrency: 1, activeTimeoutMs: 1000 });
+      const queue = new HermesTaskQueueService({ concurrency: 2, activeTimeoutMs: 1000 });
       const unitTestCaseGenerationService = {
         async listTasks() {
           return [
@@ -10977,7 +11032,8 @@ const tests = [
               id: "unit-1",
               status: "queued",
               createdAt: "2026-04-24T01:00:00.000Z",
-              updatedAt: "2026-04-24T01:00:00.000Z"
+              updatedAt: "2026-04-24T01:00:00.000Z",
+              workerProfile: { id: "physical" }
             }
           ];
         },
@@ -11153,6 +11209,7 @@ const tests = [
       };
       const queue = new HermesTaskQueueService({
         projectService,
+        concurrency: 1,
         replayTaskService,
         unitTestCaseGenerationService,
         softwareModuleDescriptionGenerationService
