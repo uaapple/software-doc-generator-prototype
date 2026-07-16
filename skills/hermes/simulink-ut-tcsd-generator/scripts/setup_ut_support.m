@@ -52,30 +52,28 @@ end
 end
 
 function run_project_init_scripts(rootDir, initScripts)
-scripts = normalize_init_scripts(initScripts);
-if isempty(scripts)
-    scripts = split_init_script_list(getenv('TCSD_PROJECT_INIT_SCRIPTS'));
-end
-if isempty(scripts)
-    scripts = discover_project_init_scripts(rootDir);
-end
+discoveredScripts = discover_project_init_scripts(rootDir);
+environmentScripts = split_init_script_list(getenv('TCSD_PROJECT_INIT_SCRIPTS'));
+explicitScripts = normalize_init_scripts(initScripts);
+scripts = merge_init_script_groups(rootDir, discoveredScripts, environmentScripts, explicitScripts);
 
+executedScripts = {};
 for i = 1:numel(scripts)
     scriptPath = strtrim(char(scripts{i}));
     if isempty(scriptPath)
         continue;
     end
-    if is_absolute_path(scriptPath)
-        candidate = scriptPath;
-    else
-        candidate = fullfile(rootDir, scriptPath);
-    end
+    candidate = resolve_init_script_path(rootDir, scriptPath);
     if exist(candidate, 'file')
         evalin('base', sprintf('run(''%s'');', escape_matlab_string(candidate)));
+        executedScripts{end + 1} = relative_to_root(candidate, rootDir); %#ok<AGROW>
     else
         warning('setup_ut_support:ProjectInitMissing', ...
             'Project init script was requested but does not exist: %s', scriptPath);
     end
+end
+if ~isempty(executedScripts)
+    fprintf('TCSD_PROJECT_INIT_SCRIPTS_EXECUTED=%s\n', strjoin(executedScripts, ';'));
 end
 end
 
@@ -94,6 +92,8 @@ for i = 1:numel(preferredNames)
 end
 
 patterns = {
+    'Global_*.m'
+    'global_*.m'
     'init_*.m'
     '*_init.m'
     '*_init_*.m'
@@ -108,6 +108,44 @@ end
 
 if ~isempty(scripts)
     fprintf('TCSD_PROJECT_INIT_SCRIPTS_AUTO=%s\n', strjoin(scripts, ';'));
+end
+end
+
+function scripts = merge_init_script_groups(rootDir, varargin)
+scripts = {};
+identities = {};
+for groupIndex = 1:numel(varargin)
+    group = varargin{groupIndex};
+    for scriptIndex = 1:numel(group)
+        scriptPath = strtrim(char(group{scriptIndex}));
+        if isempty(scriptPath)
+            continue;
+        end
+        identity = init_script_identity(rootDir, scriptPath);
+        if any(strcmp(identities, identity))
+            continue;
+        end
+        scripts{end + 1} = scriptPath; %#ok<AGROW>
+        identities{end + 1} = identity; %#ok<AGROW>
+    end
+end
+end
+
+function identity = init_script_identity(rootDir, scriptPath)
+candidate = resolve_init_script_path(rootDir, scriptPath);
+candidate = strrep(candidate, '/', filesep);
+candidate = strrep(candidate, '\', filesep);
+if ispc
+    candidate = lower(candidate);
+end
+identity = candidate;
+end
+
+function candidate = resolve_init_script_path(rootDir, scriptPath)
+if is_absolute_path(scriptPath)
+    candidate = scriptPath;
+else
+    candidate = fullfile(rootDir, scriptPath);
 end
 end
 

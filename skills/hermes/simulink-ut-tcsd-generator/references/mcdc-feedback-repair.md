@@ -10,11 +10,11 @@ Run at most one feedback repair pass unless the user explicitly asks for more. T
 2. Extract TCSD actions to case JSON.
 3. Run the extracted cases with Simulink Coverage metrics enabled for decision, condition, and MCDC.
 4. Write `outputs/<model>_mcdc_feedback.json` and, when possible, `outputs/<model>_mcdc_coverage_report.html`.
-5. If MCDC is below target, inspect uncovered blocks from the JSON/report and add focused supplemental Tests.
+5. If Condition, Decision, or MC/DC is below target, inspect uncovered blocks from the JSON/report and add focused supplemental Tests.
 6. Rebuild a versioned workbook such as `outputs/<model>_Test0002_tcsd.xlsx`.
 7. Re-run workbook validation and normal simulation/backfill for the repaired workbook.
 
-Do not start an unbounded coverage loop during normal generation. If the first repair still leaves MCDC below target, report the remaining uncovered items as `still_uncovered` or `unreachable_candidate` with the available evidence.
+Do not start an unbounded coverage loop during normal generation. The threshold triggers one repair pass; it is not a final delivery gate. If the repair still leaves a metric below target, deliver the final valid/backfilled workbook and report the remaining uncovered items as `still_uncovered` or `unreachable_candidate` with the available evidence.
 
 ## Coverage Feedback Script
 

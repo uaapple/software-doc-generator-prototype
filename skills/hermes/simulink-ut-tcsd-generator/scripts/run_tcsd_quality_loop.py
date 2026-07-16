@@ -259,7 +259,7 @@ def run_probe(
     return obligations, coverage_json if collect_coverage else None
 
 
-def coverage_failed(path: Path) -> bool:
+def coverage_below_target(path: Path) -> bool:
     report = load_json(path)
     if not report:
         return True
@@ -423,14 +423,13 @@ def main() -> int:
             report=report,
         )
 
+    is_coverage_below_target = False
     if args.require_coverage:
         if not args.run_probe:
             raise SystemExit("--require-coverage requires --run-probe")
         if coverage_json is None or not coverage_json.exists():
             raise SystemExit("coverage report was not produced")
-        if coverage_failed(coverage_json):
-            print(json.dumps({"status": "coverage_failed", "coverage": str(coverage_json), "results": load_json(coverage_json)}, ensure_ascii=False, indent=2))
-            return 1
+        is_coverage_below_target = coverage_below_target(coverage_json)
 
     if report_failed(data):
         print(json.dumps({"status": "failed", "report": str(report), "summary": data.get("summary", {})}, ensure_ascii=False, indent=2))
@@ -467,12 +466,13 @@ def main() -> int:
     print(
         json.dumps(
             {
-                "status": "passed",
+                "status": "coverage_below_target" if is_coverage_below_target else "passed",
                 "workbook": str(workbook),
                 "obligations": str(obligations),
                 "report": str(report),
                 "summary": data.get("summary", {}),
                 "coverage": str(coverage_json) if coverage_json else None,
+                "coverage_repair_required": is_coverage_below_target,
             },
             ensure_ascii=False,
             indent=2,

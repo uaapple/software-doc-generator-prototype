@@ -113,9 +113,9 @@ outSignal = expValue(var1, duration, offset);
 
 Example: `expValue(170.83727,0.1,0.1)` means expected value `170.83727`, checked for `0.1s`, starting at `0.1s` offset from the current interval. The second and third values are not numeric tolerances.
 
-For simulation-derived values, use `expValue(value)` by default. Use `expValue(value,duration,offset)` when the output is stable across the requested window and the delayed/windowed check is intentional.
+For simulation-derived values, use `expValue(value)` by default. Use `expValue(value,duration,offset)` only when the output is stable across the requested window and the delayed/windowed check is intentional.
 
-If the output is not stable across the whole interval until the next `[+...]` action step, do not write a hold-style `expValue(value)`. For intentional point checks, write a short three-argument window such as `expValue(value,0.01,0)` for the step-start sampled value, and use a later action step for the end-of-interval value. If the output ramps and a point check is not meaningful, omit that output expectation for the Test unless the user explicitly asks for a dense sampled staircase.
+Only write a simulation-derived expected output when that output is stable until the next `[+...]` action step. If the output ramps or keeps changing during the following hold interval, omit that output expectation for the whole Test unless the user explicitly asks for a dense sampled staircase.
 
 For stateful top-level outputs fed by Stateflow Charts, UnitDelay/Delay/Memory, latch/edge logic, or `*_Old` feedback, do not write expectations from initialization/default values. Expectations after `[+delay]` are checked after that delay has elapsed, so a state machine may already have transitioned before the check window starts. Backfill these outputs only from a trusted full simulation or MQTester-equivalent trace that confirms a stable post-delay value; otherwise omit them from the Test.
 
@@ -203,7 +203,7 @@ Before finishing, check:
 - Scalar calibration/parameter states required by decision or MC/DC obligations are represented by actual TCSD `p Param=value;` lines in the relevant Test initialization or action step. A comment such as `// CalName_C=1` does not count.
 - Every ordinary executable assignment in `Initialization` and `Action` uses a root Inport name. Unknown names invalidate the candidate workbook even when `extract_tcsd_cases.py` or `sim()` would silently ignore them; repair the generated cases rather than passing that workbook through to the user.
 - Every `expValue(...)` line uses a root Outport name.
-- No `expValue(value,duration,offset)` is used as a numeric tolerance. If the 3-argument form is present, the output must be stable over that offset/duration window; short point windows such as `0.01s` are allowed for simulation-sampled start/end checks of otherwise dynamic intervals.
+- No `expValue(value,duration,offset)` is used as a numeric tolerance. If the 3-argument form is present, the output must be stable over that offset/duration window.
 - No internal signals, local logging names, or `out_mil_ec` names are present.
 - No root-input assignment uses whole-vector bracket syntax unless importer support was explicitly confirmed.
 - Every `Type = Test` row has complete startup inputs in its own `Initialization` cell; no Test row is empty or contains only sparse overrides unless the model truly has no other root inputs.

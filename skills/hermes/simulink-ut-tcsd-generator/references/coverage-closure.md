@@ -96,7 +96,7 @@ The builder creates these default vectors:
 
 If the builder reports a missing or conflicting port mapping, repair the traceability. If the vector is genuinely unreachable, edit the resulting obligation to `status: "unreachable"` or `status: "not_traceable"` and include a concrete `reason`; do not leave it as `unresolved` and do not invent root-input values that cannot drive the operator port.
 
-The mapping validator checks workbook assignment states, not comments. A vector is counted only when a Test initialization or action step contains the root-input and scalar-parameter state declared in the obligation. Passing this gate proves only that the workbook contains the intended stimuli. Final closure requires actual block-port truth vectors and Simulink Coverage; by default Condition, Decision, and MC/DC must each reach 80%.
+The mapping validator checks workbook assignment states, not comments. A vector is counted only when a Test initialization or action step contains the root-input and scalar-parameter state declared in the obligation. Passing this gate proves only that the workbook contains the intended stimuli. Actual block-port truth vectors and Simulink Coverage must still be collected. By default, a Condition, Decision, or MC/DC result below 80% triggers one report-guided repair pass; the measured result after that pass is final even when a metric remains below 80%.
 
 ## Generate Targeted Stimuli
 
@@ -185,6 +185,6 @@ Use the bundled scripts to reduce repeated manual repair work:
 3. Build normal obligations with `build_logical_mcdc_obligations.py`.
 4. If workbook validation reports missing vectors whose obligations already contain `match.inputs`/`match.params`, run `augment_tcsd_for_mcdc.py` and rebuild the workbook.
 5. Run `probe_logical_mcdc_vectors.m` for actual vectors and Simulink Coverage, then `build_probe_mcdc_obligations.py`.
-6. Treat unresolved probe vectors or any actual Condition/Decision/MC/DC metric below the target (80% by default) as failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason.
+6. Treat unresolved probe vectors as mapping failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason. Treat any actual Condition/Decision/MC/DC metric below the target (80% by default) as the trigger for one report-guided repair pass, not as a hard final-delivery failure.
 
-The default closure target is `missing_count = 0`, `unresolved_count = 0`, and actual Condition/Decision/MC/DC each at least 80%; `unreachable_count > 0` is acceptable only when every item has a specific model/probe reason.
+The default mapping gate remains `missing_count = 0` and `unresolved_count = 0`; `unreachable_count > 0` is acceptable only when every item has a specific model/probe reason. The coverage target is Condition/Decision/MC/DC each at least 80%. If the first report misses that target, repair once and then deliver the final measured result while explicitly reporting any metric still below 80%.

@@ -14,7 +14,6 @@ from openpyxl import load_workbook
 
 STEP_RE = re.compile(r"^\s*\[\+")
 ANY_EXPECTED_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*expValue\(")
-DEFAULT_UNSTABLE_POINT_DURATION_S = 0.01
 
 
 def parse_steps(action: str) -> list[dict]:
@@ -43,13 +42,6 @@ def format_number(value: float) -> str:
     return f"{value:.8g}"
 
 
-def format_exp_value(value: float, duration: float | None = None, offset: float | None = None) -> str:
-    formatted_value = format_number(value)
-    if duration is None or offset is None:
-        return f"expValue({formatted_value})"
-    return f"expValue({formatted_value},{format_number(duration)},{format_number(offset)})"
-
-
 def output_is_stable_for_step(step_result: dict, output: str) -> bool:
     """Return whether a single output can be trusted at this step."""
     return step_result.get("stable", {}).get(output) is not False
@@ -59,8 +51,6 @@ def build_action(
     action: str,
     step_results: dict[int, dict],
     outputs: list[str],
-    unstable_point_duration_s: float = DEFAULT_UNSTABLE_POINT_DURATION_S,
-    unstable_point_offset_s: float = 0.0,
 ) -> str:
     rebuilt: list[str] = []
     steps = parse_steps(action)
@@ -78,15 +68,8 @@ def build_action(
         result = step_results.get(step["index"], {})
         values = result.get("outputs", {})
         for output in outputs:
-            if output not in values:
-                continue
-            value = float(values[output])
-            if output_is_stable_for_step(result, output):
-                rebuilt.append(f"{output} = {format_exp_value(value)};")
-            elif unstable_point_duration_s > 0:
-                rebuilt.append(
-                    f"{output} = {format_exp_value(value, unstable_point_duration_s, unstable_point_offset_s)};"
-                )
+            if output in values and output_is_stable_for_step(result, output):
+                rebuilt.append(f"{output} = expValue({format_number(float(values[output]))});")
     return "\n".join(rebuilt)
 
 
@@ -99,21 +82,6 @@ def main() -> int:
         "--exclude-outputs",
         default="",
         help="Comma-separated root outputs to remove from expValue backfill, for example unverified stateful outputs",
-    )
-    parser.add_argument(
-        "--unstable-point-duration",
-        type=float,
-        default=DEFAULT_UNSTABLE_POINT_DURATION_S,
-        help=(
-            "Duration in seconds for expValue(value,duration,offset) when the full following interval is unstable. "
-            "Use 0 to omit unstable-step point expectations."
-        ),
-    )
-    parser.add_argument(
-        "--unstable-point-offset",
-        type=float,
-        default=0.0,
-        help="Offset in seconds for unstable-step expValue(value,duration,offset) point expectations.",
     )
     args = parser.parse_args()
 
@@ -137,13 +105,7 @@ def main() -> int:
     ws = wb["TCSD"]
     for row, info in by_row.items():
         cell = ws.cell(row, 7)
-        cell.value = build_action(
-            cell.value or "",
-            info["steps"],
-            outputs,
-            unstable_point_duration_s=args.unstable_point_duration,
-            unstable_point_offset_s=args.unstable_point_offset,
-        )
+        cell.value = build_action(cell.value or "", info["steps"], outputs)
         alignment = copy(cell.alignment)
         alignment.wrap_text = True
         alignment.vertical = "top"

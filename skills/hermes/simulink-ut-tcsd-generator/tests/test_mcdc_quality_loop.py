@@ -22,6 +22,22 @@ def load_script_module(script_name: str):
 
 
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_coverage_threshold_triggers_repair_without_being_a_mapping_failure(self) -> None:
+        quality_loop = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "coverage.json"
+            report.write_text(
+                json.dumps({"A02": {"condition": {"passed": True}, "decision": {"passed": True}, "mcdc": {"passed": False}, "passed": False}}),
+                encoding="utf-8",
+            )
+            self.assertTrue(quality_loop.coverage_below_target(report))
+
+            report.write_text(
+                json.dumps({"A02": {"condition": {"passed": True}, "decision": {"passed": True}, "mcdc": {"passed": True}, "passed": True}}),
+                encoding="utf-8",
+            )
+            self.assertFalse(quality_loop.coverage_below_target(report))
+
     def test_trace_adapter_derives_symbolic_parameter_and_nested_logic(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
@@ -108,7 +124,7 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertEqual(port["true_inputs"], {"HvOnFail": 0})
             self.assertEqual(port["false_inputs"], {"HvOnFail": 1})
 
-    def test_backfill_uses_point_window_for_unstable_step(self) -> None:
+    def test_backfill_keeps_later_stable_steps_after_unstable_step(self) -> None:
         backfill = load_script_module("backfill_expected_outputs.py")
         action = "\n".join(
             [
@@ -126,7 +142,8 @@ class McdcQualityLoopTests(unittest.TestCase):
 
         rebuilt = backfill.build_action(action, step_results, ["OutA"])
 
-        self.assertIn("[+0.02s] // start timer branch\nInputA = 1;\nOutA = expValue(0,0.01,0);", rebuilt)
+        self.assertNotIn("OutA = expValue(0);", rebuilt)
+        self.assertNotIn("OutA = expValue(0,0.01,0);", rebuilt)
         self.assertIn("[+6.3s] // timer expired\nOutA = expValue(1);", rebuilt)
 
     def test_probe_obligations_distinguish_required_and_unreachable(self) -> None:

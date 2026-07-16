@@ -278,13 +278,6 @@ for i = 1:numel(initFields)
     end
 end
 steps = normalize_struct_array(test.steps);
-for k = 1:numel(steps)
-    if ~isempty(fieldnames(ensure_struct(steps(k), 'param_updates')))
-        error('probe_logical_mcdc_vectors:ActionParameterUpdateUnsupported', ...
-            ['Logical MC/DC probe requires coverage-driving parameter states in Test Initialization. ' ...
-             'Move p Param=value assignments from Action to Initialization or split the Test.']);
-    end
-end
 totalTime = 0;
 for k = 1:numel(steps)
     totalTime = totalTime + double(steps(k).delay_s);

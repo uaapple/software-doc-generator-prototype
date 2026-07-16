@@ -25,6 +25,7 @@ The agent must automatically:
 - derive Condition, Decision, and MCDC obligations from the model itself before writing TCSD rows;
 - write expected values only for top-level Outports;
 - simulate when possible and backfill stable top-level outputs from simulation;
+- run actual Condition, Decision, and MC/DC coverage after the first valid/backfilled workbook; deliver immediately when all metrics meet 80%, otherwise perform exactly one report-guided repair pass and deliver the final measured result even if a metric remains below 80%;
 - omit hold-style expectations for ramping or continuously changing outputs;
 - build the workbook from the bundled canonical template `assets/templates/tcsd_template.xlsx`;
 - save `outputs/<model>_Test0001_tcsd.xlsx`, or the next versioned filename if it exists;
@@ -72,7 +73,7 @@ The copied workspace contents are project-specific. File names, file types, fold
 - `ITKCToolsV015/ModelingTools/01_Csc` including `+CornexCsc`
 - `ITKCToolsV015/GenLib`
 
-The skill should inspect the current workspace and load the actual support files found there. Before attempting model load, SATK model reading, structural checks, simulation, or expected-output backfill, run `setup_ut_support(rootDir)` so the whole copied workspace/addon tree is added to the MATLAB path and recognized project initialization scripts run. Do not wait until a missing library, missing class, missing data dictionary, or missing init script error appears before bringing addon contents into the MATLAB context. The selected project addon source folder is handled by the platform/Hermes Agent before skill execution; the skill must not read from the external addon root. The skill still owns the canonical TCSD template and reusable scripts, but it should not copy the old `assets/support-package` as the production source of project dependencies.
+The skill should inspect the current workspace and load the actual support files found there. Before attempting model load, SATK model reading, structural checks, simulation, or expected-output backfill, run `setup_ut_support(rootDir)` so the whole copied workspace/addon tree is added to the MATLAB path and recognized project initialization scripts run. Discovery includes project bootstrap names such as `init_Global.m` and `Global_*.m`. Explicit/environment model init lists are merged after auto-discovered addon scripts and de-duplicated; they must not suppress addon discovery. Confirm the `TCSD_PROJECT_INIT_SCRIPTS_EXECUTED=...` log when diagnosing missing constants or MIL output. Do not wait until a missing library, missing class, missing data dictionary, or missing init script error appears before bringing addon contents into the MATLAB context. The selected project addon source folder is handled by the platform/Hermes Agent before skill execution; the skill must not read from the external addon root. The skill still owns the canonical TCSD template and reusable scripts, but it should not copy the old `assets/support-package` as the production source of project dependencies.
 
 ## Known Dependency Lessons
 
@@ -122,7 +123,7 @@ If the post-workbook simulation/backfill phase hits any MATLAB/MCP/SATK timeout 
 16. Backfill stable top-level output expectations when simulation succeeds within the time budget.
 17. Rerun workbook validation with `--require-exp-values`; validate workbook shape, ordinary input assignment left-hand names, `expValue` left-hand names, vector-output omissions, and Excel zip integrity. If this final validation fails, repair and rerun the necessary downstream steps before returning `status: "completed"`.
 18. Run the MATLAB cleanup contract before returning the final artifact JSON.
-19. If coverage feedback exists and the user explicitly asks for a repair iteration, add versioned supplemental Tests and repeat. Do not start unbounded repair loops during the first production generation task.
+19. Run actual Condition, Decision, and MC/DC coverage. If all metrics meet 80%, deliver the current workbook. If any metric is below 80%, use the coverage report to add focused versioned supplemental Tests, rerun validation/simulation/backfill, and collect coverage once more. Stop after this single repair pass and deliver the final workbook while reporting any residual gaps; do not start an unbounded repair loop.
 
 ## MATLAB Cleanup Contract for Hermes
 
