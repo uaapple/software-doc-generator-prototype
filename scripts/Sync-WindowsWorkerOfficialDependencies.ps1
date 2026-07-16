@@ -290,8 +290,8 @@ function Invoke-Python {
   $py = Resolve-CommandPath -Command "py.exe"
   if ($py) {
     foreach ($version in @("3.11", "3.10")) {
-      & $py ("-{0}" -f $version) --version 2>$null
-      if ($LASTEXITCODE -eq 0) {
+      $probe = & $py ("-{0}" -f $version) -c "import sys; print(sys.executable)" 2>$null
+      if ($LASTEXITCODE -eq 0 -and $probe) {
         & $py ("-{0}" -f $version) @Arguments
         return $LASTEXITCODE
       }
@@ -543,6 +543,10 @@ function Sync-HermesAgent {
       if ($exitCode -ne 0) {
         throw "pip download failed while refreshing Hermes wheelhouse."
       }
+      $toolingExitCode = Invoke-Python -Arguments @("-m", "pip", "download", "--dest", $tmpWheelhouse, "--only-binary=:all:", "pip", "setuptools>=77,<83", "wheel")
+      if ($toolingExitCode -ne 0) {
+        throw "pip tooling download failed while refreshing Hermes wheelhouse."
+      }
       if (Test-Path -LiteralPath $wheelhouse) {
         Remove-Item -LiteralPath $wheelhouse -Recurse -Force
       }
@@ -551,6 +555,53 @@ function Sync-HermesAgent {
       Remove-Item -LiteralPath $tmpWheelhouse -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
+
+  $offlineInstaller = Join-Path $Root "offline-installers\hermes\Install-HermesOffline.ps1"
+  $offlineInstallerContent = @'
+param(
+  [string]$InstallDir = "C:\SoftwareDocWorker\runtime\hermes-agent",
+  [string]$HermesHome = "C:\SoftwareDocWorker\runtime\hermes-home",
+  [string]$WorkerEnvPath = "C:\SoftwareDocWorker\software-doc-worker.env"
+)
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+$sourceArchive = Get-ChildItem -LiteralPath (Join-Path $root "source") -Filter "hermes-agent-v*.zip" -File | Sort-Object Name -Descending | Select-Object -First 1
+$wheelhouse = Join-Path $root "wheelhouse"
+if (-not $sourceArchive -or -not (Test-Path -LiteralPath $wheelhouse)) { throw "Hermes source archive or wheelhouse is missing." }
+$py = Get-Command py.exe -ErrorAction SilentlyContinue
+if (-not $py) { throw "Python launcher py.exe is required for the Hermes offline installation." }
+$python = & $py.Source -3.10 -c "import sys; print(sys.executable)" 2>$null
+if ($LASTEXITCODE -ne 0 -or -not $python) { throw "Python 3.10 or later is required for the Hermes offline installation." }
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("sdg-hermes-source-" + [guid]::NewGuid().ToString("N"))
+try {
+  New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+  Expand-Archive -LiteralPath $sourceArchive.FullName -DestinationPath $tmp -Force
+  $sourceRoot = Get-ChildItem -LiteralPath $tmp -Directory | Select-Object -First 1
+  if (-not $sourceRoot) { throw "Hermes source archive did not contain a source directory." }
+  if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $InstallDir) | Out-Null
+  Move-Item -LiteralPath $sourceRoot.FullName -Destination $InstallDir
+  $venv = Join-Path $InstallDir "venv"
+  & $python -m venv $venv
+  if ($LASTEXITCODE -ne 0) { throw "Failed to create Hermes virtual environment." }
+  $venvPython = Join-Path $venv "Scripts\python.exe"
+  & $venvPython -m pip install --no-index --find-links $wheelhouse pip setuptools wheel
+  if ($LASTEXITCODE -ne 0) { throw "Failed to install pip tooling from the Hermes wheelhouse." }
+  Push-Location $InstallDir
+  try {
+    & $venvPython -m pip install --no-index --find-links $wheelhouse -e ".[mcp,pty,cli]"
+    if ($LASTEXITCODE -ne 0) { throw "Failed to install Hermes Agent from the offline wheelhouse." }
+  } finally { Pop-Location }
+  $hermesExe = Join-Path $venv "Scripts\hermes.exe"
+  if (-not (Test-Path -LiteralPath $hermesExe)) { throw "Hermes executable was not installed." }
+  New-Item -ItemType Directory -Force -Path $HermesHome | Out-Null
+  $cmd = Join-Path $InstallDir "hermes.cmd"
+  [IO.File]::WriteAllLines($cmd, [string[]]@("@echo off", "set HERMES_HOME=$HermesHome", "`"$hermesExe`" %*"), [Text.ASCIIEncoding]::new())
+  & $cmd --help | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Hermes command smoke test failed." }
+} finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+'@
+  [IO.File]::WriteAllText($offlineInstaller, $offlineInstallerContent, [Text.UTF8Encoding]::new($false))
 
   Get-ChildItem -LiteralPath $sourceDir -Filter "hermes-agent-v*.zip" -File |
     Where-Object { $_.FullName -ne $archivePath } |
