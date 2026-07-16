@@ -2122,6 +2122,10 @@ async function defaultCommandRunner(command, args, options = {}) {
   });
 }
 
+function isWindowsPlatform(options = {}) {
+  return options.platform || process.platform;
+}
+
 function quoteWindowsCmdArg(value = "") {
   const text = String(value);
   if (!text) {
@@ -2137,21 +2141,27 @@ function quoteWindowsCmdArg(value = "") {
   return `"${escaped}"`;
 }
 
-function buildCommandRunnerInvocation(command, args = []) {
+export function buildCommandRunnerInvocation(command, args = [], options = {}) {
   const normalizedCommand = String(command || "").trim();
   const extension = path.extname(normalizedCommand).toLowerCase();
-  if (process.platform === "win32" && extension === ".cmd") {
-    const embeddedPython = path.join(path.dirname(normalizedCommand), "python", "python.exe");
-    if (path.basename(normalizedCommand).toLowerCase() === "hermes.cmd" && fsSync.existsSync(embeddedPython)) {
-      const hermesHome = path.resolve(path.dirname(normalizedCommand), "..", "hermes-home");
+  if (isWindowsPlatform(options) === "win32" && extension === ".cmd") {
+    const commandDir = path.dirname(normalizedCommand);
+    const pythonCandidates = [
+      path.join(commandDir, "venv", "Scripts", "python.exe"),
+      path.join(commandDir, "python", "python.exe")
+    ];
+    const pathExists = options.pathExists || fsSync.existsSync;
+    const hermesPython = pythonCandidates.find((candidate) => pathExists(candidate));
+    if (path.basename(normalizedCommand).toLowerCase() === "hermes.cmd" && hermesPython) {
+      const hermesHome = path.resolve(commandDir, "..", "hermes-home");
       return {
-        command: embeddedPython,
+        command: hermesPython,
         args: ["-m", "hermes_cli.main", ...args],
-        env: fsSync.existsSync(hermesHome) ? { HERMES_HOME: hermesHome } : {}
+        env: pathExists(hermesHome) ? { HERMES_HOME: hermesHome } : {}
       };
     }
   }
-  if (process.platform === "win32" && [".cmd", ".bat"].includes(extension)) {
+  if (isWindowsPlatform(options) === "win32" && [".cmd", ".bat"].includes(extension)) {
     return {
       command: "cmd.exe",
       args: ["/d", "/s", "/c", [quoteWindowsCmdArg(normalizedCommand), ...args.map(quoteWindowsCmdArg)].join(" ")]

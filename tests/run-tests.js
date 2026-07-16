@@ -28,7 +28,7 @@ import { SkillWorkOrderService } from "../src/services/skill-work-order-service.
 import { ReplayLabService } from "../src/services/replay-lab-service.js";
 import { FeedbackTicketService } from "../src/services/feedback-ticket-service.js";
 import { createHermesApp } from "../src/hermes-app.js";
-import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
+import { HermesAgentClient, buildCommandRunnerInvocation } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
 import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
 import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
@@ -3040,6 +3040,40 @@ const tests = [
           await fs.rm(workspaceDir, { recursive: true, force: true });
         }
       });
+    }
+  },
+  {
+    name: "Hermes command runner preserves prompts through venv and legacy Windows launchers",
+    run: async () => {
+      const prompt = 'You are executing\n中文 "quoted" %value% !bang! & tool (safe).';
+      const command = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\hermes.cmd";
+      const venvPython = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\venv\\Scripts\\python.exe";
+      const legacyPython = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\python\\python.exe";
+      const hermesHome = "C:\\SoftwareDocWorker\\runtime\\hermes-home";
+      const args = ["--yolo", "-z", prompt];
+
+      const venvInvocation = buildCommandRunnerInvocation(command, args, {
+        platform: "win32",
+        pathExists: (candidate) => [venvPython, legacyPython, hermesHome].includes(candidate)
+      });
+      assert.equal(venvInvocation.command, venvPython);
+      assert.deepEqual(venvInvocation.args, ["-m", "hermes_cli.main", ...args]);
+      assert.equal(venvInvocation.args.at(-1), prompt);
+      assert.equal(venvInvocation.env.HERMES_HOME, hermesHome);
+
+      const legacyInvocation = buildCommandRunnerInvocation(command, args, {
+        platform: "win32",
+        pathExists: (candidate) => [legacyPython, hermesHome].includes(candidate)
+      });
+      assert.equal(legacyInvocation.command, legacyPython);
+      assert.equal(legacyInvocation.args.at(-1), prompt);
+
+      const genericInvocation = buildCommandRunnerInvocation("C:\\tools\\worker.cmd", [prompt], {
+        platform: "win32",
+        pathExists: () => false
+      });
+      assert.equal(genericInvocation.command, "cmd.exe");
+      assert.deepEqual(genericInvocation.args.slice(0, 3), ["/d", "/s", "/c"]);
     }
   },
   {
