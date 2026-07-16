@@ -53,12 +53,24 @@ function Invoke-GitHubJson {
   $lastError = $null
   for ($attempt = 1; $attempt -le 3; $attempt++) {
     try {
-      return Invoke-RestMethod -Uri $Url -Headers (New-GitHubHeaders) -TimeoutSec 30
+      return Invoke-RestMethod -Uri $Url -Headers (New-GitHubHeaders) -TimeoutSec 60
     } catch {
       $lastError = $_
       if ($attempt -lt 3) {
         Start-Sleep -Seconds (2 * $attempt)
       }
+    }
+  }
+  $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
+  if ($curl) {
+    $curlArgs = @("-L", "--fail", "--silent", "--show-error", "--max-time", "120", "-H", "User-Agent: software-doc-generator-dependency-sync", "-H", "Accept: application/vnd.github+json")
+    if ($env:GITHUB_TOKEN) {
+      $curlArgs += @("-H", "Authorization: Bearer $env:GITHUB_TOKEN")
+    }
+    $curlArgs += $Url
+    $json = & $curl.Source @curlArgs
+    if ($LASTEXITCODE -eq 0 -and $json) {
+      return ($json | ConvertFrom-Json)
     }
   }
   throw $lastError
@@ -275,17 +287,22 @@ function Resolve-CommandPath {
 
 function Invoke-Python {
   param([string[]]$Arguments)
+  $py = Resolve-CommandPath -Command "py.exe"
+  if ($py) {
+    foreach ($version in @("3.11", "3.10")) {
+      & $py ("-{0}" -f $version) --version 2>$null
+      if ($LASTEXITCODE -eq 0) {
+        & $py ("-{0}" -f $version) @Arguments
+        return $LASTEXITCODE
+      }
+    }
+  }
   $python = Resolve-CommandPath -Command "python.exe"
   if ($python) {
     & $python @Arguments
     return $LASTEXITCODE
   }
-  $py = Resolve-CommandPath -Command "py.exe"
-  if ($py) {
-    & $py -3.11 @Arguments
-    return $LASTEXITCODE
-  }
-  throw "Python 3.11 is required to refresh the Hermes offline wheelhouse. Install Python or pass -SkipHermesWheelhouse."
+  throw "Python 3.10 or later is required to refresh the Hermes offline wheelhouse. Install Python or pass -SkipHermesWheelhouse."
 }
 
 function Invoke-Git {
