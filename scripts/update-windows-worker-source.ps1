@@ -194,8 +194,18 @@ function Get-WorkerRuntimeProcessIds {
         $command.Contains("matlab_mcp.initializemcp") -or
         $command.Contains("mw_mcp_session_dir")
       )
+    $isHermesResidual =
+      $name -in @(
+        "python.exe", "pythonw.exe", "hermes.exe",
+        "powershell.exe", "pwsh.exe", "cmd.exe", "bash.exe", "sh.exe"
+      ) -and (
+        $command.Contains("runtime/hermes-agent") -or
+        $command.Contains("runtime/hermes-home") -or
+        $command.Contains("hermes_cli.main") -or
+        $command.Contains("run_agent")
+      )
 
-    if ($isWorkerNode -or $isWorkerMatlab) {
+    if ($isWorkerNode -or $isWorkerMatlab -or $isHermesResidual) {
       [void]$matched.Add([int]$process.ProcessId)
     }
   }
@@ -227,7 +237,7 @@ function Stop-WorkerRuntimeProcesses {
 
   $processIds = @(Get-WorkerRuntimeProcessIds -WorkerInstallDir $WorkerInstallDir)
   if (-not $processIds.Count) {
-    Write-Host "No existing Software Doc worker node/MATLAB processes were found."
+    Write-Host "No existing Software Doc worker or Hermes runtime processes were found."
     return
   }
 
@@ -425,6 +435,37 @@ function Sync-HermesLlmProfiles {
   Copy-Item -LiteralPath $source -Destination (Join-Path $configDir "hermes-llm-profiles.json") -Force
 }
 
+function Normalize-HermesLlmProfile {
+  param([string]$TargetAppDir)
+
+  $activePath = Join-Path $InstallDir "config\hermes-llm.active.env"
+  if (-not (Test-Path -LiteralPath $activePath)) {
+    return
+  }
+  $activeValues = Get-EnvFileMap -Path $activePath
+  $profileId = [string]$activeValues["HERMES_LLM_PROFILE"]
+  if (-not $profileId) {
+    return
+  }
+
+  $switcher = Join-Path $TargetAppDir "scripts\Switch-HermesLlmProfile.ps1"
+  if (-not (Test-Path -LiteralPath $switcher)) {
+    throw "Hermes LLM profile switcher was not found: $switcher"
+  }
+  & powershell.exe `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File $switcher `
+    -Action set `
+    -ProfileId $profileId `
+    -InstallDir $InstallDir `
+    -NoRestart `
+    -NoTest
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to normalize Hermes LLM profile '$profileId'."
+  }
+}
+
 function Write-HermesLlmMenuLauncher {
   $launcherPath = Join-Path $InstallDir "Switch-HermesLlm.cmd"
   $lines = @(
@@ -555,22 +596,31 @@ function Install-PortableHermes {
   return $targetCommand
 }
 
-function Get-BundledHermesTag {
+function Get-BundledHermesVersion {
   param([string]$BundleRoot)
-  $sourceRoot = Join-Path $BundleRoot "offline-installers\hermes"
-  if (-not (Test-Path -LiteralPath $sourceRoot)) {
-    return ""
+  $manifestPath = Join-Path $BundleRoot "offline-installers\official-dependencies.json"
+  if (-not (Test-Path -LiteralPath $manifestPath)) {
+    throw "Official dependency manifest not found: $manifestPath"
   }
-  $archive = Get-ChildItem -LiteralPath $sourceRoot -Filter "hermes-agent-v*.zip" -File -ErrorAction SilentlyContinue |
-    Sort-Object Name -Descending |
-    Select-Object -First 1
-  if (-not $archive) {
-    return ""
+  $manifestText = [IO.File]::ReadAllText($manifestPath, [Text.UTF8Encoding]::new($false))
+  $manifest = $manifestText | ConvertFrom-Json
+  $version = [string]$manifest.dependencies.hermesAgent.version
+  if ($version -ne "v2026.7.7.2") {
+    throw "Bundled Hermes Agent version must be v2026.7.7.2; manifest selected '$version'."
   }
-  if ($archive.Name -match "hermes-agent-(v[0-9][0-9A-Za-z\.\-]*)-github-source\.zip") {
-    return $Matches[1]
+  $sourceArchive = [string]$manifest.dependencies.hermesAgent.sourceArchive
+  $expectedArchive = "offline-installers/hermes/source/hermes-agent-$version-github-source.zip"
+  if ($sourceArchive -ne $expectedArchive) {
+    throw "Hermes manifest must select exact source archive '$expectedArchive'; selected '$sourceArchive'."
   }
-  return ""
+  $archiveMatches = @(
+    Get-ChildItem -LiteralPath (Join-Path $BundleRoot "offline-installers\hermes\source") -Filter "hermes-agent-*-github-source.zip" -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -eq (Split-Path -Leaf $sourceArchive) }
+  )
+  if ($archiveMatches.Count -ne 1) {
+    throw "Expected exactly one manifest-selected Hermes source archive '$sourceArchive'; found $($archiveMatches.Count)."
+  }
+  return $version
 }
 
 function Resolve-HermesInstaller {
@@ -602,13 +652,14 @@ function Install-HermesFromInstaller {
     [string]$WorkerEnvPath
   )
 
+  $hermesVersion = Get-BundledHermesVersion -BundleRoot $BundleRoot
   $offlineInstaller = Join-Path $BundleRoot "offline-installers\hermes\Install-HermesOffline.ps1"
   if (Test-Path -LiteralPath $offlineInstaller) {
     $hermesHome = Join-Path $WorkerInstallDir "runtime\hermes-home"
     $hermesInstallDir = Join-Path $WorkerInstallDir "runtime\hermes-agent"
     Start-Installer `
       -Path $offlineInstaller `
-      -Arguments "-HermesHome `"$hermesHome`" -InstallDir `"$hermesInstallDir`" -WorkerEnvPath `"$WorkerEnvPath`"" `
+      -Arguments "-HermesHome `"$hermesHome`" -InstallDir `"$hermesInstallDir`" -WorkerEnvPath `"$WorkerEnvPath`" -HermesVersion `"$hermesVersion`"" `
       -Name "Hermes CLI offline installer"
     $installed = Find-InstalledHermesCommand -WorkerInstallDir $WorkerInstallDir
     if ($installed) {
@@ -742,7 +793,6 @@ if (-not (Test-Path -LiteralPath $envFile)) {
   Write-Warning "Environment file was not found and will not be created by this source update: $envFile"
 } else {
   Ensure-WorkerEnvDefaults -Path $envFile
-  Ensure-HermesCommand -Path $envFile -BundleRoot $bundleRoot -WorkerInstallDir $InstallDir
 }
 
 $oldLockHash = Get-FileHashValue -Path (Join-Path $targetAppDir "package-lock.json")
@@ -752,6 +802,9 @@ $backupDir = Join-Path $InstallDir ("backups\source-update-" + (Get-Date -Format
 Stop-WorkerServices -ServiceNames $taskNames
 Stop-WorkerTasks -TaskNames $taskNames
 Stop-WorkerRuntimeProcesses -WorkerInstallDir $InstallDir
+if (Test-Path -LiteralPath $envFile) {
+  Ensure-HermesCommand -Path $envFile -BundleRoot $bundleRoot -WorkerInstallDir $InstallDir
+}
 Backup-ManagedSource -TargetAppDir $targetAppDir -BackupDir $backupDir -ManagedPaths $managedPaths
 
 foreach ($relativePath in $managedPaths) {
@@ -762,6 +815,18 @@ Sync-HermesLlmProfiles -TargetAppDir $targetAppDir
 Write-HermesLlmMenuLauncher
 Write-SourceUpdateDeployerLauncher
 
+$physicalWorkerAlignment = Join-Path $targetAppDir "scripts\Align-PhysicalWorkerProduction.ps1"
+if (Test-Path -LiteralPath $physicalWorkerAlignment) {
+  & powershell.exe `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File $physicalWorkerAlignment `
+    -InstallDir $InstallDir
+  if ($LASTEXITCODE -ne 0) {
+    throw "Physical Worker production alignment failed with exit code $LASTEXITCODE"
+  }
+}
+
 $officialDependenciesInstaller = Join-Path $targetAppDir "scripts\Install-WindowsWorkerOfficialDependencies.ps1"
 if ((Test-Path -LiteralPath $officialDependenciesInstaller) -and (Test-Path -LiteralPath $envFile)) {
   & $officialDependenciesInstaller `
@@ -770,6 +835,7 @@ if ((Test-Path -LiteralPath $officialDependenciesInstaller) -and (Test-Path -Lit
     -TargetAppDir $targetAppDir `
     -WorkerEnvPath $envFile
 }
+Normalize-HermesLlmProfile -TargetAppDir $targetAppDir
 
 $nodeModulesPath = Join-Path $targetAppDir "node_modules"
 $shouldInstall = $ForceNpmInstall -or (-not (Test-Path -LiteralPath $nodeModulesPath)) -or ($oldLockHash -ne $newLockHash)
