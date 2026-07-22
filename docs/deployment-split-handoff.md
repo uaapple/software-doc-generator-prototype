@@ -153,6 +153,14 @@ Windows VM 负责运行 Hermes Agent、MATLAB Worker 和 MATLAB/MCP 相关能力
 
 TCSD workbook 现在增加 workbook-vs-rootPorts 校验门禁。平台端在 `simulink_ut_tcsd_generate` prompt 中要求 Hermes Agent 在 checkpoint workbook 生成后运行 `simulink-ut-tcsd-generator` skill 的 `scripts/validate_tcsd_workbook.py`，用模型编译得到的 root Inport/Outport 列表检查 `Initialization`、`Action` 和 `expValue(...)` 左侧信号名。如果校验报告未知输入、未知输出、向量语法问题或缺少最终延时，这属于 Hermes Agent 生成的候选 workbook/spec 缺陷，Agent 应在同一任务内根据报告的 row/cell/test_id/signal/line 修复用例、重建 workbook、重新校验后再进入仿真/回填；不要直接把第一版 workbook 校验失败作为平台任务失败返回给前端。只有 root-port 接口无法获取，或有限修复后仍无法得到合法 workbook，Hermes Agent 才应向平台返回 `status: "failed"`。
 
+## TCSD 第三轮：异步十二阶段协议
+
+Windows Hermes 提供 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`。启动请求立即返回稳定 `jobId`；作业 JSON 和事件持久化在 Windows 的 `APP_DATA_DIR/tcsd-pipeline-jobs`，同一平台 `taskId` 作为幂等键。平台端仅保存 jobId 并以退避轮询同步状态，短暂网络错误不会直接把 MATLAB 作业标为失败。
+
+共享契约为 `src/services/tcsd-pipeline-contract.js`（`tcsd-deterministic-pipeline/v1`），固定十二个中文阶段、状态、错误码、检查点、产物、coverage 和 repair 字段。Windows `tcsd-pipeline-job-service` 在每个阶段持久化开始/结束时间、事件和已验证检查点；不允许非法状态转换或跳过已验证的检查点。阶段 8 的 checkpoint 绑定实际仿真/回填结果；阶段 9 读取首轮 Condition/Decision/MC/DC 结果；阶段 10 最多一次覆盖率驱动修正；若首轮三项均≥80%，10、11 显式“已跳过”。不支持/未解决或最终低覆盖为“部分完成”，仍保留可下载工作簿；环境、输入、仿真、回填和检查点失败才是“失败”。
+
+Linux 发布包包含平台轮询、任务 JSON 和中文页面展示，但不运行 MATLAB。Windows 发布包包含 job 执行器、Hermes 路由及全部 TCSD 技能。shared contract、config、部署 ownership 与本交接文档需要同时进入两端。
+
 生产拆分端速读：
 
 - Linux 平台端只负责页面、项目登记、上传下载、任务 JSON、队列状态和向 Hermes Agent HTTP 服务发起请求，不直接运行 MATLAB，也不解析 Windows 附加包路径。

@@ -2509,4 +2509,25 @@ export class HermesAgentClient {
     }
     return this.executeCliStep(payload, runtime);
   }
+
+  async startTcsdPipelineJob(payload = {}) {
+    const response = await postJsonWithTimeout(`${this.baseURL}/internal/tcsd-pipeline/jobs`, payload, this.timeoutMs);
+    let body = null;
+    try { body = JSON.parse(response.text); } catch (_error) { body = null; }
+    if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 启动作业失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
+    return body;
+  }
+
+  async getTcsdPipelineJob(jobId = "") {
+    const target = new URL(`${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}`);
+    const transport = target.protocol === "https:" ? https : http;
+    const response = await new Promise((resolve, reject) => {
+      const request = transport.request(target, { method: "GET", timeout: this.timeoutMs }, (result) => {
+        let text = ""; result.setEncoding("utf8"); result.on("data", (chunk) => { text += chunk; }); result.on("end", () => resolve({ ok: result.statusCode >= 200 && result.statusCode < 300, status: result.statusCode, text }));
+      }); request.on("timeout", () => request.destroy(Object.assign(new Error("TCSD Worker 轮询超时。"), { code: "tcsd_poll_timeout" }))); request.on("error", reject); request.end();
+    });
+    let body = null; try { body = JSON.parse(response.text); } catch (_error) { body = null; }
+    if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 作业查询失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
+    return body;
+  }
 }

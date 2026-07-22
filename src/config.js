@@ -121,6 +121,9 @@ const appConfig = {
     expectedOutputPattern: process.env.UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN || "outputs/*_tcsd.xlsx",
     agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || ""
   },
+  tcsdPipeline: {
+    jobStoreDir: path.join(dataDir, "tcsd-pipeline-jobs")
+  },
   softwareModuleDescription: {
     taskStoreDir: path.join(dataDir, "software-module-description-generation", "tasks"),
     uploadTempDir: path.join(dataDir, "software-module-description-generation", "_incoming"),
