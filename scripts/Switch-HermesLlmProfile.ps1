@@ -97,7 +97,13 @@ function Protect-SecretsFile {
 
 function Load-Profiles {
   param([string]$Path)
-  return Get-Content -Raw -Encoding UTF8 -LiteralPath $Path | ConvertFrom-Json
+  $document = Get-Content -Raw -Encoding UTF8 -LiteralPath $Path | ConvertFrom-Json
+  foreach ($profile in @($document.profiles)) {
+    if (-not $profile.apiMode) {
+      $profile | Add-Member -NotePropertyName apiMode -NotePropertyValue "chat_completions"
+    }
+  }
+  return $document
 }
 
 function Find-Profile {
@@ -152,22 +158,130 @@ function Test-PlaceholderApiKey {
   return $trimmed -match "(?i)(deepseek key|glm key|api key|your key|placeholder)"
 }
 
+function Resolve-HermesPython {
+  param([string]$Root)
+  if ($env:HERMES_PYTHON_EXE -and (Test-Path -LiteralPath $env:HERMES_PYTHON_EXE)) {
+    return $env:HERMES_PYTHON_EXE
+  }
+  $candidates = @(
+    (Join-Path $Root "runtime\hermes-agent\python\python.exe"),
+    (Join-Path $Root "runtime\hermes-agent\venv\Scripts\python.exe"),
+    (Join-Path $Root "runtime\hermes\python\python.exe"),
+    (Join-Path $Root "runtime\hermes\venv\Scripts\python.exe")
+  )
+  foreach ($candidate in $candidates) {
+    if (Test-Path -LiteralPath $candidate) {
+      return $candidate
+    }
+  }
+  throw "Hermes Python runtime was not found under $Root\runtime."
+}
+
+function Update-HermesConfig {
+  param(
+    [object]$Profile,
+    [string]$Root
+  )
+  $pythonExe = Resolve-HermesPython -Root $Root
+  $hermesHome = Join-Path $Root "runtime\hermes-home"
+  New-Item -ItemType Directory -Force -Path $hermesHome | Out-Null
+  $configPath = Join-Path $hermesHome "config.yaml"
+  $mergeScript = @'
+import os
+import sys
+import tempfile
+from pathlib import Path
+import yaml
+
+config_path = Path(sys.argv[1])
+profile_id, provider, base_url, model_name, key_env, api_mode, reasoning_effort = sys.argv[2:]
+provider_name = f"custom:{profile_id}" if provider == "custom" else provider
+
+if config_path.exists():
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+else:
+    data = {}
+if not isinstance(data, dict):
+    raise SystemExit("Hermes config.yaml must contain a YAML mapping")
+
+if provider == "custom":
+    providers = data.setdefault("custom_providers", [])
+    if not isinstance(providers, list):
+        raise SystemExit("Hermes custom_providers must be a YAML list")
+    entry = {
+        "name": profile_id,
+        "base_url": base_url,
+        "key_env": key_env,
+        "api_mode": api_mode,
+    }
+    for index, candidate in enumerate(providers):
+        if isinstance(candidate, dict) and candidate.get("name") == profile_id:
+            providers[index] = {**candidate, **entry}
+            break
+    else:
+        providers.append(entry)
+
+model = data.setdefault("model", {})
+if not isinstance(model, dict):
+    raise SystemExit("Hermes model config must be a YAML mapping")
+model.update({"provider": provider_name, "default": model_name, "api_mode": api_mode})
+
+delegation = data.setdefault("delegation", {})
+if not isinstance(delegation, dict):
+    raise SystemExit("Hermes delegation config must be a YAML mapping")
+delegation.update({"provider": provider_name, "model": model_name, "api_mode": api_mode})
+
+agent = data.setdefault("agent", {})
+if not isinstance(agent, dict):
+    raise SystemExit("Hermes agent config must be a YAML mapping")
+if reasoning_effort:
+    agent["reasoning_effort"] = reasoning_effort
+
+config_path.parent.mkdir(parents=True, exist_ok=True)
+fd, temporary_name = tempfile.mkstemp(prefix="config-", suffix=".yaml.tmp", dir=config_path.parent)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as output:
+        yaml.safe_dump(data, output, sort_keys=False, allow_unicode=True)
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(temporary_name, config_path)
+except BaseException:
+    try:
+        os.unlink(temporary_name)
+    except FileNotFoundError:
+        pass
+    raise
+'@
+  $temporaryScript = Join-Path ([IO.Path]::GetTempPath()) ("merge-hermes-llm-config-" + [guid]::NewGuid().ToString("N") + ".py")
+  [IO.File]::WriteAllText($temporaryScript, $mergeScript, [Text.UTF8Encoding]::new($false))
+  try {
+    & $pythonExe $temporaryScript $configPath $Profile.id $Profile.provider $Profile.baseURL $Profile.model $Profile.apiKeyEnv $Profile.apiMode $Profile.reasoningEffort
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to update Hermes config: $configPath"
+    }
+  } finally {
+    Remove-Item -LiteralPath $temporaryScript -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Write-ActiveProfile {
   param(
     [object]$Profile,
-    [string]$ApiKey,
     [string]$ActivePath
   )
+  $inferenceProvider = if ($Profile.provider -eq "custom") { "custom:$($Profile.id)" } else { $Profile.provider }
   $values = [ordered]@{
     "HERMES_LLM_PROFILE" = $Profile.id
     "HERMES_LLM_PROVIDER" = $Profile.provider
+    "HERMES_INFERENCE_PROVIDER" = $inferenceProvider
     "HERMES_LLM_API_KEY_ENV" = $Profile.apiKeyEnv
+    "HERMES_LLM_API_MODE" = $Profile.apiMode
+    "HERMES_REASONING_EFFORT" = $Profile.reasoningEffort
     "OPENAI_BASE_URL" = $Profile.baseURL
     "OPENAI_MODEL" = $Profile.model
-    "OPENAI_API_KEY" = $ApiKey
   }
   Write-EnvFile -Path $ActivePath -Values $values -Header @(
-    "Active Hermes LLM profile. This file is loaded after software-doc-worker.env.",
+    "Active Hermes LLM profile. This file contains no secrets.",
     "Generated by Switch-HermesLlmProfile.ps1."
   )
 }
@@ -221,31 +335,47 @@ function Test-HermesHealth {
 }
 
 function Test-OpenAiCompatibleChat {
-  param([string]$ActivePath)
+  param(
+    [string]$ActivePath,
+    [string]$SecretsPath
+  )
   $active = Read-EnvFile -Path $ActivePath
+  $secrets = Read-EnvFile -Path $SecretsPath
   $baseUrl = [string]$active["OPENAI_BASE_URL"]
   $baseUrl = $baseUrl.TrimEnd("/")
   $model = $active["OPENAI_MODEL"]
-  $apiKey = $active["OPENAI_API_KEY"]
-  if (-not $baseUrl -or -not $model -or -not $apiKey) {
-    throw "Active LLM env is incomplete. Run set first."
+  $apiKeyEnv = [string]$active["HERMES_LLM_API_KEY_ENV"]
+  $apiKey = $secrets[$apiKeyEnv]
+  if (-not $baseUrl -or -not $model -or -not $apiKeyEnv -or -not $apiKey) {
+    throw "Active LLM configuration or referenced secret is incomplete. Run set first."
   }
-  $body = @{
-    model = $model
-    messages = @(@{
-      role = "user"
-      content = "Reply with OK."
-    })
-    temperature = 0
-    max_tokens = 8
-  } | ConvertTo-Json -Depth 8
+  $apiMode = [string]$active["HERMES_LLM_API_MODE"]
+  if ($apiMode -eq "codex_responses") {
+    $body = @{
+      model = $model
+      input = "Reply with OK."
+      max_output_tokens = 8
+    } | ConvertTo-Json -Depth 8
+    $uri = "$baseUrl/responses"
+  } else {
+    $body = @{
+      model = $model
+      messages = @(@{
+        role = "user"
+        content = "Reply with OK."
+      })
+      temperature = 0
+      max_tokens = 8
+    } | ConvertTo-Json -Depth 8
+    $uri = "$baseUrl/chat/completions"
+  }
   $headers = @{
     Authorization = "Bearer $apiKey"
     "Content-Type" = "application/json"
   }
-  $response = Invoke-RestMethod -Method Post -Uri "$baseUrl/chat/completions" -Headers $headers -Body $body -TimeoutSec 60
-  $text = $response.choices[0].message.content
-  Write-Host "LLM smoke test: model=$model, response=$text"
+  $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $body -TimeoutSec 60
+  $text = if ($apiMode -eq "codex_responses") { $response.output_text } else { $response.choices[0].message.content }
+  Write-Host "LLM smoke test: model=$model, apiMode=$apiMode, response=$text"
 }
 
 function Set-HermesLlmProfile {
@@ -271,14 +401,17 @@ function Set-HermesLlmProfile {
     }
     Save-ProvidedSecrets -SecretsPath $secretsPath -DeepSeek "" -Zhipu "" -GenericApiKey $apiKey -GenericApiKeyName $profile.apiKeyEnv
   }
-  Write-ActiveProfile -Profile $profile -ApiKey $apiKey -ActivePath $activePath
+  if ($profile.id -eq "gpt-5-6-terra") {
+    Update-HermesConfig -Profile $profile -Root $InstallDir
+  }
+  Write-ActiveProfile -Profile $profile -ActivePath $activePath
   Write-Host "Active Hermes LLM profile set to $($profile.id) ($($profile.model))."
   if (-not $SkipRestart) {
     Restart-HermesTask
     Test-HermesHealth -WorkerEnvPath $workerEnvPath
   }
   if (-not $SkipTest) {
-    Test-OpenAiCompatibleChat -ActivePath $activePath
+    Test-OpenAiCompatibleChat -ActivePath $activePath -SecretsPath $secretsPath
   }
 }
 
@@ -352,7 +485,7 @@ function Start-HermesLlmMenu {
     if ($key.Key -eq [ConsoleKey]::T) {
       Clear-Host
       Test-HermesHealth -WorkerEnvPath $workerEnvPath
-      Test-OpenAiCompatibleChat -ActivePath $activePath
+      Test-OpenAiCompatibleChat -ActivePath $activePath -SecretsPath $secretsPath
       Write-Host ""
       Write-Host "Press any key to return to the menu..."
       [Console]::ReadKey($true) | Out-Null
@@ -411,7 +544,9 @@ if ($Action -eq "show") {
   Write-Host "provider=$($active["HERMES_LLM_PROVIDER"])"
   Write-Host "model=$($active["OPENAI_MODEL"])"
   Write-Host "baseURL=$($active["OPENAI_BASE_URL"])"
-  Write-Host "hasApiKey=$([bool]$active["OPENAI_API_KEY"])"
+  Write-Host "apiMode=$($active["HERMES_LLM_API_MODE"])"
+  $secrets = Read-EnvFile -Path $secretsPath
+  Write-Host "hasApiKey=$([bool]$secrets[$active["HERMES_LLM_API_KEY_ENV"]])"
   exit 0
 }
 
@@ -422,6 +557,6 @@ if ($Action -eq "set") {
 
 if ($Action -eq "test") {
   Test-HermesHealth -WorkerEnvPath $workerEnvPath
-  Test-OpenAiCompatibleChat -ActivePath $activePath
+  Test-OpenAiCompatibleChat -ActivePath $activePath -SecretsPath $secretsPath
   exit 0
 }
