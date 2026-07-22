@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$RequiredHermesVersion = "v2026.7.7.2"
 
 function Resolve-ScriptRoot {
   if ($PSScriptRoot) {
@@ -271,7 +272,8 @@ function Start-Installer {
 function Install-HermesFromBundle {
   param(
     [string]$WorkerInstallDir,
-    [string]$EnvPath
+    [string]$EnvPath,
+    [string]$HermesVersion
   )
   $offlineInstaller = Join-Path $BundleRoot "offline-installers\hermes\Install-HermesOffline.ps1"
   if (Test-Path -LiteralPath $offlineInstaller) {
@@ -279,7 +281,7 @@ function Install-HermesFromBundle {
     $hermesInstallDir = Join-Path $WorkerInstallDir "runtime\hermes-agent"
     Start-Installer `
       -Path $offlineInstaller `
-      -Arguments "-HermesHome `"$hermesHome`" -InstallDir `"$hermesInstallDir`" -WorkerEnvPath `"$EnvPath`"" `
+      -Arguments "-HermesHome `"$hermesHome`" -InstallDir `"$hermesInstallDir`" -WorkerEnvPath `"$EnvPath`" -HermesVersion `"$HermesVersion`"" `
       -Name "Hermes CLI offline installer"
     return Join-Path $hermesInstallDir "hermes.cmd"
   }
@@ -352,6 +354,21 @@ function Ensure-HermesAgent {
   if (-not $bundleVersion) {
     return
   }
+  if ($bundleVersion -ne $RequiredHermesVersion) {
+    throw "Bundled Hermes Agent version must be $RequiredHermesVersion; manifest selected '$bundleVersion'."
+  }
+  $sourceArchive = [string](Get-ObjectProperty -Object $bundleRecord -Name "sourceArchive")
+  $expectedArchive = "offline-installers/hermes/source/hermes-agent-$bundleVersion-github-source.zip"
+  if ($sourceArchive -ne $expectedArchive) {
+    throw "Hermes manifest must select exact source archive '$expectedArchive'; selected '$sourceArchive'."
+  }
+  $archiveMatches = @(
+    Get-ChildItem -LiteralPath (Join-Path $BundleRoot "offline-installers\hermes\source") -Filter "hermes-agent-*-github-source.zip" -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -eq (Split-Path -Leaf $sourceArchive) }
+  )
+  if ($archiveMatches.Count -ne 1) {
+    throw "Expected exactly one manifest-selected Hermes source archive '$sourceArchive'; found $($archiveMatches.Count)."
+  }
   $runtimeVersion = Get-DependencyVersion -Manifest $RuntimeManifest -Name "hermesAgent"
   $envMap = Get-EnvFileMap -Path $WorkerEnvPath
   $currentCommand = [string]$envMap["HERMES_COMMAND"]
@@ -368,7 +385,7 @@ function Ensure-HermesAgent {
     return
   }
   Write-Host "Updating Hermes Agent from '$runtimeVersion' to '$bundleVersion'."
-  $installed = Install-HermesFromBundle -WorkerInstallDir $InstallDir -EnvPath $WorkerEnvPath
+  $installed = Install-HermesFromBundle -WorkerInstallDir $InstallDir -EnvPath $WorkerEnvPath -HermesVersion $bundleVersion
   if (-not $installed -or -not (Test-Path -LiteralPath $installed)) {
     throw "Bundled Hermes Agent installer did not produce a Hermes command."
   }

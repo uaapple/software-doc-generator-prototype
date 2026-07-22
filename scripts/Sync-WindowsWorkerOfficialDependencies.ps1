@@ -9,8 +9,11 @@ param(
   [switch]$SkipTcsdSkill,
   [switch]$SkipModuleDescriptionSkill,
   [string]$HermesRepo = "NousResearch/hermes-agent",
+  [string]$HermesVersion = "v2026.7.7.2",
   [string]$MatlabMcpRepo = "matlab/matlab-mcp-core-server",
+  [string]$MatlabMcpVersion = "v0.11.1",
   [string]$SimulinkToolkitRepo = "matlab/simulink-agentic-toolkit",
+  [string]$SimulinkToolkitVersion = "2026.07.08",
   [string]$TcsdSkillRepo = "uaapple/my-codex-skills",
   [string]$TcsdSkillRef = "main",
   [string]$TcsdSkillPath = "simulink-ut-tcsd-generator",
@@ -53,24 +56,12 @@ function Invoke-GitHubJson {
   $lastError = $null
   for ($attempt = 1; $attempt -le 3; $attempt++) {
     try {
-      return Invoke-RestMethod -Uri $Url -Headers (New-GitHubHeaders) -TimeoutSec 60
+      return Invoke-RestMethod -Uri $Url -Headers (New-GitHubHeaders) -TimeoutSec 30
     } catch {
       $lastError = $_
       if ($attempt -lt 3) {
         Start-Sleep -Seconds (2 * $attempt)
       }
-    }
-  }
-  $curl = Get-Command "curl.exe" -ErrorAction SilentlyContinue
-  if ($curl) {
-    $curlArgs = @("-L", "--fail", "--silent", "--show-error", "--max-time", "120", "-H", "User-Agent: software-doc-generator-dependency-sync", "-H", "Accept: application/vnd.github+json")
-    if ($env:GITHUB_TOKEN) {
-      $curlArgs += @("-H", "Authorization: Bearer $env:GITHUB_TOKEN")
-    }
-    $curlArgs += $Url
-    $json = & $curl.Source @curlArgs
-    if ($LASTEXITCODE -eq 0 -and $json) {
-      return ($json | ConvertFrom-Json)
     }
   }
   throw $lastError
@@ -289,20 +280,21 @@ function Invoke-Python {
   param([string[]]$Arguments)
   $py = Resolve-CommandPath -Command "py.exe"
   if ($py) {
-    foreach ($version in @("3.11", "3.10")) {
-      $probe = & $py ("-{0}" -f $version) -c "import sys; print(sys.executable)" 2>$null
-      if ($LASTEXITCODE -eq 0 -and $probe) {
-        & $py ("-{0}" -f $version) @Arguments
-        return $LASTEXITCODE
-      }
+    & $py -3.11 -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)"
+    if ($LASTEXITCODE -eq 0) {
+      & $py -3.11 @Arguments
+      return $LASTEXITCODE
     }
   }
   $python = Resolve-CommandPath -Command "python.exe"
   if ($python) {
-    & $python @Arguments
-    return $LASTEXITCODE
+    & $python -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3, 11) else 1)"
+    if ($LASTEXITCODE -eq 0) {
+      & $python @Arguments
+      return $LASTEXITCODE
+    }
   }
-  throw "Python 3.10 or later is required to refresh the Hermes offline wheelhouse. Install Python or pass -SkipHermesWheelhouse."
+  throw "Python exactly 3.11 is required to refresh the Hermes offline wheelhouse. Install Python 3.11 or pass -SkipHermesWheelhouse."
 }
 
 function Invoke-Git {
@@ -497,20 +489,33 @@ function Sync-HermesAgent {
   if ($SkipHermes) {
     return
   }
-  $release = Get-LatestRelease -Repo $HermesRepo
-  $latest = [string](Get-ObjectProperty -Object $release -Name "tag_name")
+  $latest = $HermesVersion
+  if ($latest -ne "v2026.7.7.2") {
+    throw "Hermes Agent packaging is pinned to v2026.7.7.2; received '$latest'."
+  }
   $sourceDir = Join-Path $Root "offline-installers\hermes\source"
   $current = Get-DependencyVersion -Manifest $Manifest -Name "hermesAgent"
   if (-not $current) {
     $current = Get-ArchiveTagFromFolder -Folder $sourceDir -Pattern "hermes-agent-v*.zip"
   }
 
+  $archiveName = "hermes-agent-$latest-github-source.zip"
+  $archivePath = Join-Path $sourceDir $archiveName
+  $currentRecord = Get-DependencyRecord -Manifest $Manifest -Name "hermesAgent"
+  $selectedArchive = [string](Get-ObjectProperty -Object $currentRecord -Name "sourceArchive")
+  $expectedSelectedArchive = "offline-installers/hermes/source/$archiveName"
+  $packageIsExact =
+    $current -eq $latest -and
+    $selectedArchive -eq $expectedSelectedArchive -and
+    (Test-Path -LiteralPath $archivePath)
+
   Write-Host "Hermes Agent: local='$current' latest='$latest'"
-  if (-not (Test-NeedsUpdate -Name "Hermes Agent" -Current $current -Latest $latest)) {
+  if ($packageIsExact -and -not $Force) {
     Set-DependencyRecord -Dependencies $Dependencies -Name "hermesAgent" -Record @{
       repo = $HermesRepo
       version = $latest
       source = "github-release"
+      sourceArchive = $expectedSelectedArchive
       status = "current"
     }
     return
@@ -526,7 +531,6 @@ function Sync-HermesAgent {
   }
 
   New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
-  $archivePath = Join-Path $sourceDir ("hermes-agent-{0}-github-source.zip" -f $latest)
   $archiveUrl = "https://github.com/$HermesRepo/archive/refs/tags/$latest.zip"
   Invoke-GitHubDownload -Url $archiveUrl -Destination $archivePath
 
@@ -547,6 +551,20 @@ function Sync-HermesAgent {
       if ($toolingExitCode -ne 0) {
         throw "pip tooling download failed while refreshing Hermes wheelhouse."
       }
+      foreach ($toolPattern in @("pip-*.whl", "wheel-*.whl")) {
+        if (-not (Get-ChildItem -LiteralPath $tmpWheelhouse -Filter $toolPattern -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+          throw "Hermes wheelhouse must include $($toolPattern.Split('-')[0])."
+        }
+      }
+      $setuptoolsWheels = @(Get-ChildItem -LiteralPath $tmpWheelhouse -Filter "setuptools-*.whl" -File -ErrorAction SilentlyContinue)
+      $validSetuptools = @($setuptoolsWheels | Where-Object { $_.Name -match '^setuptools-(?:7[7-9]|8[0-2])(?:\.|-)' })
+      if (-not $validSetuptools.Count) {
+        throw "Hermes wheelhouse must include setuptools>=77,<83."
+      }
+      $setuptools83 = @($setuptoolsWheels | Where-Object { $_.Name -match '^setuptools-83(?:\.|-)' })
+      if ($setuptools83.Count) {
+        throw "Hermes wheelhouse must not contain setuptools 83: $($setuptools83.Name -join ', ')"
+      }
       if (Test-Path -LiteralPath $wheelhouse) {
         Remove-Item -LiteralPath $wheelhouse -Recurse -Force
       }
@@ -555,53 +573,6 @@ function Sync-HermesAgent {
       Remove-Item -LiteralPath $tmpWheelhouse -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
-
-  $offlineInstaller = Join-Path $Root "offline-installers\hermes\Install-HermesOffline.ps1"
-  $offlineInstallerContent = @'
-param(
-  [string]$InstallDir = "C:\SoftwareDocWorker\runtime\hermes-agent",
-  [string]$HermesHome = "C:\SoftwareDocWorker\runtime\hermes-home",
-  [string]$WorkerEnvPath = "C:\SoftwareDocWorker\software-doc-worker.env"
-)
-$ErrorActionPreference = "Stop"
-$root = $PSScriptRoot
-$sourceArchive = Get-ChildItem -LiteralPath (Join-Path $root "source") -Filter "hermes-agent-v*.zip" -File | Sort-Object Name -Descending | Select-Object -First 1
-$wheelhouse = Join-Path $root "wheelhouse"
-if (-not $sourceArchive -or -not (Test-Path -LiteralPath $wheelhouse)) { throw "Hermes source archive or wheelhouse is missing." }
-$py = Get-Command py.exe -ErrorAction SilentlyContinue
-if (-not $py) { throw "Python launcher py.exe is required for the Hermes offline installation." }
-$python = & $py.Source -3.10 -c "import sys; print(sys.executable)" 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $python) { throw "Python 3.10 or later is required for the Hermes offline installation." }
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("sdg-hermes-source-" + [guid]::NewGuid().ToString("N"))
-try {
-  New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-  Expand-Archive -LiteralPath $sourceArchive.FullName -DestinationPath $tmp -Force
-  $sourceRoot = Get-ChildItem -LiteralPath $tmp -Directory | Select-Object -First 1
-  if (-not $sourceRoot) { throw "Hermes source archive did not contain a source directory." }
-  if (Test-Path -LiteralPath $InstallDir) { Remove-Item -LiteralPath $InstallDir -Recurse -Force }
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $InstallDir) | Out-Null
-  Move-Item -LiteralPath $sourceRoot.FullName -Destination $InstallDir
-  $venv = Join-Path $InstallDir "venv"
-  & $python -m venv $venv
-  if ($LASTEXITCODE -ne 0) { throw "Failed to create Hermes virtual environment." }
-  $venvPython = Join-Path $venv "Scripts\python.exe"
-  & $venvPython -m pip install --no-index --find-links $wheelhouse pip setuptools wheel
-  if ($LASTEXITCODE -ne 0) { throw "Failed to install pip tooling from the Hermes wheelhouse." }
-  Push-Location $InstallDir
-  try {
-    & $venvPython -m pip install --no-index --find-links $wheelhouse -e ".[mcp,pty,cli]"
-    if ($LASTEXITCODE -ne 0) { throw "Failed to install Hermes Agent from the offline wheelhouse." }
-  } finally { Pop-Location }
-  $hermesExe = Join-Path $venv "Scripts\hermes.exe"
-  if (-not (Test-Path -LiteralPath $hermesExe)) { throw "Hermes executable was not installed." }
-  New-Item -ItemType Directory -Force -Path $HermesHome | Out-Null
-  $cmd = Join-Path $InstallDir "hermes.cmd"
-  [IO.File]::WriteAllLines($cmd, [string[]]@("@echo off", "set HERMES_HOME=$HermesHome", "`"$hermesExe`" %*"), [Text.ASCIIEncoding]::new())
-  & $cmd --help | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "Hermes command smoke test failed." }
-} finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
-'@
-  [IO.File]::WriteAllText($offlineInstaller, $offlineInstallerContent, [Text.UTF8Encoding]::new($false))
 
   Get-ChildItem -LiteralPath $sourceDir -Filter "hermes-agent-v*.zip" -File |
     Where-Object { $_.FullName -ne $archivePath } |
@@ -625,7 +596,11 @@ function Sync-MatlabMcp {
   if ($SkipMatlabMcp) {
     return
   }
-  $release = Get-LatestRelease -Repo $MatlabMcpRepo
+  $release = if ($MatlabMcpVersion) {
+    Invoke-GitHubJson -Url "https://api.github.com/repos/$MatlabMcpRepo/releases/tags/$MatlabMcpVersion"
+  } else {
+    Get-LatestRelease -Repo $MatlabMcpRepo
+  }
   $latest = [string](Get-ObjectProperty -Object $release -Name "tag_name")
   $current = Get-DependencyVersion -Manifest $Manifest -Name "matlabMcp"
   Write-Host "MATLAB MCP Core Server: local='$current' latest='$latest'"
@@ -711,7 +686,11 @@ function Sync-SimulinkToolkit {
   if ($SkipSimulinkToolkit) {
     return
   }
-  $release = Get-LatestRelease -Repo $SimulinkToolkitRepo
+  $release = if ($SimulinkToolkitVersion) {
+    Invoke-GitHubJson -Url "https://api.github.com/repos/$SimulinkToolkitRepo/releases/tags/$SimulinkToolkitVersion"
+  } else {
+    Get-LatestRelease -Repo $SimulinkToolkitRepo
+  }
   $latest = [string](Get-ObjectProperty -Object $release -Name "tag_name")
   $current = Get-DependencyVersion -Manifest $Manifest -Name "simulinkAgenticToolkit"
   Write-Host "Simulink Agentic Toolkit: local='$current' latest='$latest'"
@@ -934,6 +913,11 @@ if ($CheckOnly) {
   Write-Host "Check-only mode did not download or replace package assets."
 } else {
   Save-Manifest -Path $manifestPath -Dependencies $dependencies
+  $hashScript = Join-Path $root "scripts\windows-worker-skill-consistency.mjs"
+  & node.exe $hashScript --write $root
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to record synchronized skill content hashes."
+  }
   Write-Host "Official dependency manifest updated: $manifestPath"
   Write-Host "Windows worker package assets are ready for the next bundle build."
 }
