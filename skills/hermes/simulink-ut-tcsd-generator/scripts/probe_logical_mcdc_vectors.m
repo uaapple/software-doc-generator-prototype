@@ -31,9 +31,9 @@ for m = 1:numel(modelNames)
     [inputNames, inputBlocks, outputNames] = root_ports(modelName);
     [inputTypes, inputDims] = compiled_input_metadata(modelName, inputBlocks, inputNames);
     probes = configure_logic_probes(modelName);
-    caseJson = resolve_case_json(rootDir, modelName, opts.CaseSuffix);
+    caseJson = resolve_case_json(rootDir, modelName, opts.CaseSuffix, opts.CaseJson);
     spec = jsondecode(fileread(caseJson));
-    observations = struct('row', {}, 'test_id', {}, 'step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {});
+    observations = struct('row', {}, 'test_id', {}, 'step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {});
     aggregateCoverage = [];
     tests = normalize_struct_array(spec.tests);
     for testIndex = 1:numel(tests)
@@ -52,7 +52,7 @@ for m = 1:numel(modelNames)
         end
     end
     report = struct();
-    report.schema = 'simulink-ut-logical-mcdc-probe/v1';
+    report.schema = 'simulink-ut-logical-mcdc-probe/v2';
     report.model = modelName;
     report.outputs = outputNames;
     report.case_json = caseJson;
@@ -82,6 +82,7 @@ function opts = parse_options(varargin)
 opts = struct();
 opts.InitScripts = {};
 opts.CaseSuffix = '_cases_mcdc.json';
+opts.CaseJson = '';
 opts.OutputJson = '';
 opts.CoverageJson = '';
 opts.CoverageDataFile = '';
@@ -99,6 +100,8 @@ while idx <= numel(varargin)
             opts.InitScripts = normalize_cellstr(value);
         case 'casesuffix'
             opts.CaseSuffix = char(string(value));
+        case 'casejson'
+            opts.CaseJson = char(string(value));
         case 'outputjson'
             opts.OutputJson = char(string(value));
         case 'coveragejson'
@@ -139,7 +142,14 @@ else
 end
 end
 
-function caseJson = resolve_case_json(rootDir, modelName, preferredSuffix)
+function caseJson = resolve_case_json(rootDir, modelName, preferredSuffix, explicitPath)
+if ~isempty(explicitPath)
+    caseJson = char(string(explicitPath));
+    if exist(caseJson, 'file')
+        return;
+    end
+    error('probe_logical_mcdc_vectors:MissingExplicitCases', 'Explicit CaseJson was not found: %s.', caseJson);
+end
 candidates = {
     fullfile(rootDir, 'outputs', [modelName preferredSuffix]), ...
     fullfile(rootDir, 'outputs', [modelName '_cases_mcdc.json']), ...
@@ -349,14 +359,62 @@ if collectCoverage
             'Coverage was enabled but tc_sd_covdata was not returned: %s', ME.message);
     end
 end
-observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {});
+observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {});
 for k = 1:numel(steps)
     observations(k).step_index = steps(k).index;
     observations(k).time_s = eventTimes(k);
     observations(k).inputs = snapshotInputs(k).values;
     observations(k).params = initParams;
     observations(k).vectors = sample_vectors(out, probes, eventTimes(k));
+    observations(k).stimulus = stimulus_prefix(test, k);
+    observations(k).target = ensure_struct(test, 'target');
+    observations(k).prediction_status = prediction_status(observations(k).target, observations(k).vectors);
 end
+end
+
+function stimulus = stimulus_prefix(test, stepIndex)
+stimulus = struct();
+stimulus.initial_inputs = ensure_struct(test, 'init_values');
+stimulus.initial_params = ensure_struct(test, 'init_params');
+allSteps = normalize_struct_array(test.steps);
+if isempty(allSteps)
+    stimulus.steps = struct([]);
+else
+    stimulus.steps = allSteps(1:min(stepIndex, numel(allSteps)));
+end
+stimulus.evidence_step = stepIndex;
+end
+
+function status = prediction_status(target, vectors)
+status = 'not_predicted';
+if isempty(fieldnames(target)) || ~isfield(target, 'operator_id') || ~isfield(target, 'port_index')
+    return;
+end
+fields = fieldnames(vectors);
+for i = 1:numel(fields)
+    vector = vectors.(fields{i});
+    if ~strcmp(char(string(vector.id)), char(string(target.operator_id))) || ~vector.ok
+        continue;
+    end
+    portIndex = double(target.port_index);
+    if portIndex < 1 || portIndex > numel(vector.values)
+        status = 'target_unavailable';
+        return;
+    end
+    if ~isfield(target, 'expected_port_value') || isempty(target.expected_port_value)
+        status = 'observed';
+        return;
+    end
+    actual = logical(vector.values(portIndex));
+    expected = logical(target.expected_port_value);
+    if actual == expected
+        status = 'matched_prediction';
+    else
+        status = 'simulation_mismatch';
+    end
+    return;
+end
+status = 'target_unavailable';
 end
 
 function summary = coverage_summary(cvd, modelName, testCount, threshold)

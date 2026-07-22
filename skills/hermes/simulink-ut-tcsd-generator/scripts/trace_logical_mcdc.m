@@ -44,8 +44,9 @@ for m = 1:numel(modelNames)
         items(idx).ports = trace_block_inputs(logicBlocks{i}, rootNames, 0, containers.Map('KeyType', 'char', 'ValueType', 'logical'));
     end
     report = struct();
-    report.schema = 'simulink-ut-logical-mcdc-trace/v1';
+    report.schema = 'simulink-ut-logical-mcdc-trace/v2';
     report.model = modelName;
+    report.sample_time = model_sample_time(modelName);
     report.operator_count = numel(items);
     report.operators = items;
     allReports.(matlab.lang.makeValidName(modelName)) = report;
@@ -143,6 +144,8 @@ switch node.blockType
         parentSystem = get_param(blockPath, 'Parent');
         rootModel = bdroot(blockPath);
         node.signal = get_param(blockPath, 'Name');
+        node.dataType = safe_param(blockPath, 'OutDataTypeStr');
+        node.dimensions = safe_param(blockPath, 'PortDimensions');
         node.isRootInput = any(strcmp(rootNames, node.signal)) && strcmp(parentSystem, rootModel);
         if node.isRootInput
             node.kind = 'root_inport';
@@ -175,6 +178,7 @@ switch node.blockType
     case 'Constant'
         node.kind = 'constant';
         node.value = safe_param(blockPath, 'Value');
+        node.resolvedValue = resolve_expression(node.value);
     case 'RelationalOperator'
         node.kind = 'relational';
         node.operator = safe_param(blockPath, 'Operator');
@@ -187,10 +191,14 @@ switch node.blockType
         node.kind = 'switch';
         node.criteria = safe_param(blockPath, 'Criteria');
         node.threshold = safe_param(blockPath, 'Threshold');
+        node.resolvedThreshold = resolve_expression(node.threshold);
         node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
     case {'UnitDelay', 'Delay', 'Memory'}
         node.kind = 'stateful';
         node.initialCondition = safe_param(blockPath, 'InitialCondition');
+        node.resolvedInitialCondition = resolve_expression(node.initialCondition);
+        node.delayLength = safe_param(blockPath, 'DelayLength');
+        node.sampleTime = safe_param(blockPath, 'SampleTime');
         node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
     case 'MinMax'
         node.kind = 'minmax';
@@ -201,6 +209,7 @@ switch node.blockType
         node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
     otherwise
         node.kind = 'block';
+        node.semantic = lower(node.blockType);
         node.params = common_params(blockPath, node.blockType);
         node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
 end
@@ -292,6 +301,46 @@ switch blockType
 end
 for i = 1:numel(names)
     params.(names{i}) = safe_param(blockPath, names{i});
+    params.([names{i} 'Resolved']) = resolve_expression(params.(names{i}));
+end
+end
+
+function value = model_sample_time(modelName)
+value = resolve_expression(safe_param(modelName, 'FixedStep'));
+if isempty(value) || ~(isnumeric(value) || islogical(value))
+    value = 0.01;
+end
+end
+
+function value = resolve_expression(expression)
+value = [];
+text = strtrim(char(string(expression)));
+if isempty(text)
+    return;
+end
+try
+    raw = evalin('base', text);
+    if isobject(raw) && isprop(raw, 'Value')
+        raw = raw.Value;
+    end
+    if isnumeric(raw) || islogical(raw)
+        if isscalar(raw)
+            value = double(raw);
+        elseif numel(raw) <= 32
+            value = double(raw);
+        end
+    elseif ischar(raw) || (isstring(raw) && isscalar(raw))
+        value = char(string(raw));
+    end
+catch
+    number = str2double(text);
+    if ~isnan(number)
+        value = number;
+    elseif strcmpi(text, 'true')
+        value = true;
+    elseif strcmpi(text, 'false')
+        value = false;
+    end
 end
 end
 
