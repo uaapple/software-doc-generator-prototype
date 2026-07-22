@@ -47,6 +47,32 @@ def norm_map(values: Any) -> dict[str, Any]:
     return {str(name): norm_value(value) for name, value in values.items()}
 
 
+def norm_stimulus(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    steps = value.get("steps") or []
+    if isinstance(steps, dict):
+        steps = [steps]
+    normalized_steps = []
+    for index, step in enumerate(steps, 1):
+        if not isinstance(step, dict):
+            continue
+        normalized_steps.append(
+            {
+                "index": int(step.get("index") or index),
+                "delay_s": float(step.get("delay_s") or 0),
+                "input_updates": norm_map(step.get("input_updates", {})),
+                "param_updates": norm_map(step.get("param_updates", {})),
+            }
+        )
+    return {
+        "initial_inputs": norm_map(value.get("initial_inputs", {})),
+        "initial_params": norm_map(value.get("initial_params", {})),
+        "steps": normalized_steps,
+        "evidence_step": int(value.get("evidence_step") or len(normalized_steps)),
+    }
+
+
 def observation_index(report: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
     found: dict[tuple[str, str], dict[str, Any]] = {}
     for obs in report.get("observations", []):
@@ -61,6 +87,80 @@ def observation_index(report: dict[str, Any]) -> dict[tuple[str, str], dict[str,
             key = (str(vector.get("id")), str(vector.get("label")))
             found.setdefault(key, obs)
     return found
+
+
+def mapping_index(payload: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        str(item.get("id") or item.get("sid")): item
+        for item in payload.get("operators", [])
+        if isinstance(item, dict) and (item.get("id") or item.get("sid"))
+    }
+
+
+def port_assignments(port: dict[str, Any], desired: bool) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    prefix = "true" if desired else "false"
+    inputs = norm_map(port.get(f"{prefix}_inputs", {}))
+    params = norm_map(port.get(f"{prefix}_params", {}))
+    if port.get("mapping_issues") or not (inputs or params):
+        return None
+    return inputs, params
+
+
+def synthesize_from_dynamic_anchor(
+    *, op_id: str, label: str, found: dict[tuple[str, str], dict[str, Any]], mapping: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    if not mapping:
+        return None
+    ports = sorted(
+        [item for item in mapping.get("ports", []) if isinstance(item, dict)],
+        key=lambda item: int(item.get("index") or 0),
+    )
+    if len(ports) != len(label):
+        return None
+    dynamic_indices = {
+        index
+        for index, port in enumerate(ports)
+        if port_assignments(port, True) is None or port_assignments(port, False) is None
+    }
+    anchors = [
+        (anchor_label, obs)
+        for (anchor_op, anchor_label), obs in found.items()
+        if anchor_op == op_id
+        and len(anchor_label) == len(label)
+        and all(anchor_label[index] == label[index] for index in dynamic_indices)
+        and isinstance(obs.get("stimulus"), dict)
+    ]
+    if not anchors:
+        return None
+    anchor_label, obs = anchors[0]
+    stimulus = norm_stimulus(obs.get("stimulus"))
+    if not stimulus:
+        return None
+    init_inputs = dict(stimulus["initial_inputs"])
+    init_params = dict(stimulus["initial_params"])
+    final_inputs = norm_map(obs.get("inputs", {}))
+    final_params = norm_map(obs.get("params", {}))
+    for index, port in enumerate(ports):
+        if index in dynamic_indices:
+            continue
+        assignments = port_assignments(port, label[index] == "T")
+        if assignments is None:
+            return None
+        inputs, params = assignments
+        init_inputs.update(inputs)
+        init_params.update(params)
+        final_inputs.update(inputs)
+        final_params.update(params)
+    stimulus["initial_inputs"] = init_inputs
+    stimulus["initial_params"] = init_params
+    return {
+        "anchor_label": anchor_label,
+        "observation": obs,
+        "stimulus": stimulus,
+        "match": {"inputs": final_inputs, "params": final_params},
+    }
 
 
 def load_overrides(path: str | None) -> dict[str, dict[str, Any]]:
@@ -108,6 +208,7 @@ def build_for_model(
     *,
     overrides: dict[str, dict[str, Any]],
     missing_status: str,
+    mappings: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     found = observation_index(report)
     obligations: list[dict[str, Any]] = []
@@ -132,6 +233,7 @@ def build_for_model(
                 "operator_inputs": {str(i + 1): label[i] == "T" for i in range(n)},
             }
             if obs:
+                stimulus = norm_stimulus(obs.get("stimulus"))
                 item.update(
                     {
                         "status": "required",
@@ -149,7 +251,38 @@ def build_for_model(
                         "evidence_state": "probe_observed_and_workbook_mapped",
                     }
                 )
+                if stimulus and stimulus["steps"]:
+                    item["stimulus"] = stimulus
+                    item["evidence_state"] = "probe_observed_with_executable_sequence"
+                if obs.get("prediction_status"):
+                    item["probe_evidence"]["prediction_status"] = obs.get("prediction_status")
             else:
+                synthesized = synthesize_from_dynamic_anchor(
+                    op_id=op_id,
+                    label=label,
+                    found=found,
+                    mapping=(mappings or {}).get(op_id),
+                )
+                if synthesized:
+                    anchor = synthesized["observation"]
+                    item.update(
+                        {
+                            "status": "required",
+                            "match": synthesized["match"],
+                            "stimulus": synthesized["stimulus"],
+                            "planned_test_id": anchor.get("test_id"),
+                            "probe_evidence": {
+                                "test_id": anchor.get("test_id"),
+                                "row": anchor.get("row"),
+                                "step_index": anchor.get("step_index"),
+                                "time_s": anchor.get("time_s"),
+                                "dynamic_anchor_label": synthesized["anchor_label"],
+                            },
+                            "evidence_state": "probe_observed_dynamic_anchor_with_static_sensitization",
+                        }
+                    )
+                    obligations.append(item)
+                    continue
                 override = find_override(overrides, model, op_id, label)
                 if override:
                     item.update(
@@ -212,6 +345,7 @@ def main() -> int:
     parser.add_argument("--model", action="append", help="Limit to one model; can be repeated")
     parser.add_argument("--output-pattern", default="{model}_coverage_obligations.json")
     parser.add_argument("--unreachable-overrides", help="JSON list with model/operator_id/label/status/reason")
+    parser.add_argument("--logical-mappings", help="Derived mapping JSON for static sibling sensitization")
     parser.add_argument(
         "--missing-status",
         default="unresolved",
@@ -226,10 +360,11 @@ def main() -> int:
     out_dir = Path(args.output_dir) if args.output_dir else probe_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     overrides = load_overrides(args.unreachable_overrides)
+    mappings = mapping_index(json.loads(Path(args.logical_mappings).read_text(encoding="utf-8"))) if args.logical_mappings else {}
     selected = set(args.model or []) or None
     exit_code = 0
     for model, report in model_items(data, selected):
-        built = build_for_model(model, report, overrides=overrides, missing_status=args.missing_status)
+        built = build_for_model(model, report, overrides=overrides, missing_status=args.missing_status, mappings=mappings)
         out = out_dir / args.output_pattern.format(model=model)
         out.write_text(json.dumps(built, ensure_ascii=False, indent=2), encoding="utf-8")
         print(out, built["summary"])

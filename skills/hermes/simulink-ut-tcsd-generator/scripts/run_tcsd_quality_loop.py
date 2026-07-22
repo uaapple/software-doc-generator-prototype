@@ -266,6 +266,28 @@ def build_atomic_repair_plan(
     return plan
 
 
+def build_state_probe_plan(
+    *, python: str, scripts: Path, root_dir: Path, model: str, logical_traces: Path
+) -> Path:
+    plan = root_dir / "outputs" / f"{model}_state_probe_plan.json"
+    run(
+        [
+            python,
+            str(scripts / "build_state_probe_plan.py"),
+            "--traces",
+            str(logical_traces),
+            "--output",
+            str(plan),
+            "--max-candidates-per-port",
+            "32",
+            "--max-steps-per-candidate",
+            "8",
+        ],
+        cwd=root_dir,
+    )
+    return plan
+
+
 def extract_cases(
     *,
     python: str,
@@ -304,8 +326,10 @@ def run_probe(
     unreachable_overrides: str,
     collect_coverage: bool,
     coverage_threshold: float,
+    case_json: Path | None = None,
+    output_name: str = "logic_probe_results.json",
 ) -> tuple[Path, Path | None]:
-    probe_results = root_dir / "outputs" / "logic_probe_results.json"
+    probe_results = root_dir / "outputs" / output_name
     coverage_json = root_dir / "outputs" / f"{model}_coverage_summary.json"
     coverage_data = root_dir / "outputs" / f"{model}_coverage.cvd"
     coverage_html = root_dir / "outputs" / f"{model}_coverage.html"
@@ -317,6 +341,7 @@ def run_probe(
             f", 'CoverageHtml', {matlab_string(str(coverage_html))}"
             f", 'CoverageThreshold', {coverage_threshold:g}"
         )
+    case_arg = f", 'CaseJson', {matlab_string(str(case_json))}" if case_json is not None else ""
     entry = write_matlab_entry(
         root_dir / "outputs" / f"{model}_probe_mcdc_entry.m",
         "\n".join(
@@ -326,7 +351,7 @@ def run_probe(
                 (
                     f"probe_logical_mcdc_vectors(rootDir, {matlab_cell([model])}, "
                     f"{matlab_string(mat_file)}, 'InitScripts', {matlab_cell(init_scripts)}, "
-                    f"'OutputJson', {matlab_string(str(probe_results))}{coverage_args});"
+                    f"'OutputJson', {matlab_string(str(probe_results))}{case_arg}{coverage_args});"
                 ),
             ]
         ),
@@ -345,6 +370,9 @@ def run_probe(
     ]
     if unreachable_overrides:
         cmd.extend(["--unreachable-overrides", unreachable_overrides])
+    logical_mappings = root_dir / "outputs" / f"{model}_logical_operators.json"
+    if logical_mappings.exists():
+        cmd.extend(["--logical-mappings", str(logical_mappings)])
     run(cmd, cwd=root_dir, check=False)
     return obligations, coverage_json if collect_coverage else None
 
@@ -492,6 +520,61 @@ def main() -> int:
 
     data = load_json(report)
     coverage_json: Path | None = None
+    if report_failed(data) and args.run_probe and args.logical_traces:
+        if not args.mat_file:
+            raise SystemExit("--run-probe requires --mat-file")
+        state_plan = build_state_probe_plan(
+            python=args.python,
+            scripts=scripts,
+            root_dir=root_dir,
+            model=args.model,
+            logical_traces=Path(args.logical_traces).resolve(),
+        )
+        state_plan_data = load_json(state_plan)
+        if int(state_plan_data.get("summary", {}).get("candidate_count") or 0) > 0:
+            obligations, _ = run_probe(
+                python=args.python,
+                scripts=scripts,
+                root_dir=root_dir,
+                model=args.model,
+                mat_file=args.mat_file,
+                init_scripts=args.init_script,
+                unreachable_overrides=args.unreachable_overrides,
+                collect_coverage=False,
+                coverage_threshold=args.coverage_threshold,
+                case_json=state_plan,
+                output_name=f"{args.model}_state_probe_results.json",
+            )
+            data = validate_mapping(
+                python=args.python,
+                scripts=scripts,
+                root_dir=root_dir,
+                workbook=workbook,
+                obligations=obligations,
+                report=report,
+            )
+            if data.get("summary", {}).get("missing_count"):
+                spec, workbook = augment_once(
+                    python=args.python,
+                    scripts=scripts,
+                    root_dir=root_dir,
+                    template=template,
+                    model=args.model,
+                    spec=spec,
+                    workbook=workbook,
+                    interface_json=interface_json,
+                    obligations=obligations,
+                    report=report,
+                    iteration=args.max_iterations + 1,
+                )
+                data = validate_mapping(
+                    python=args.python,
+                    scripts=scripts,
+                    root_dir=root_dir,
+                    workbook=workbook,
+                    obligations=obligations,
+                    report=report,
+                )
     if (report_failed(data) or args.require_coverage) and args.run_probe:
         if not args.mat_file:
             raise SystemExit("--run-probe requires --mat-file")

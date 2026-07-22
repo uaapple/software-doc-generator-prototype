@@ -147,6 +147,8 @@ def snapshot(
     step_index: int | None,
     inputs: dict[str, Any],
     params: dict[str, Any],
+    delay_s: float = 0.0,
+    elapsed_s: float = 0.0,
 ) -> dict[str, Any]:
     return {
         "test_id": test_id,
@@ -156,6 +158,8 @@ def snapshot(
         "step_index": step_index,
         "inputs": deepcopy(inputs),
         "params": deepcopy(params),
+        "delay_s": delay_s,
+        "elapsed_s": elapsed_s,
     }
 
 
@@ -172,10 +176,12 @@ def parse_action_snapshots(
     current_inputs = dict(init_inputs)
     current_params = dict(init_params)
     step_index = 0
+    step_delay_s = 0.0
+    elapsed_s = 0.0
     pending_lines: list[str] = []
 
     def flush_step() -> None:
-        nonlocal current_inputs, current_params, pending_lines
+        nonlocal current_inputs, current_params, pending_lines, elapsed_s
         if step_index == 0:
             pending_lines = []
             return
@@ -186,6 +192,7 @@ def parse_action_snapshots(
             step_inputs.update(inputs)
             step_params.update(params)
         current_inputs, current_params = merge_state(current_inputs, current_params, step_inputs, step_params)
+        elapsed_s += step_delay_s
         snapshots.append(
             snapshot(
                 test_id=test_id,
@@ -195,14 +202,19 @@ def parse_action_snapshots(
                 step_index=step_index,
                 inputs=current_inputs,
                 params=current_params,
+                delay_s=step_delay_s,
+                elapsed_s=elapsed_s,
             )
         )
         pending_lines = []
 
     for raw in (action or "").splitlines():
-        if STEP_RE.match(raw):
+        step_match = STEP_RE.match(raw)
+        if step_match:
             flush_step()
             step_index += 1
+            amount = float(step_match.group(1))
+            step_delay_s = amount / 1000.0 if step_match.group(2).lower() == "ms" else amount
             continue
         pending_lines.append(raw)
     flush_step()
@@ -339,6 +351,10 @@ def find_match(
     if require_planned_test and planned_test_id:
         candidates = [snap for snap in snapshots if snap.get("test_id") == planned_test_id]
 
+    stimulus = obligation.get("stimulus")
+    if isinstance(stimulus, dict) and stimulus.get("steps"):
+        return find_stimulus_match(stimulus, candidates, tolerance)
+
     closest_missing: list[dict[str, Any]] = []
     for match in obligation_matches(obligation):
         expected_inputs, expected_params = normalize_match(match)
@@ -349,6 +365,44 @@ def find_match(
             if not closest_missing or len(missing) < len(closest_missing):
                 closest_missing = missing
     return None, closest_missing
+
+
+def find_stimulus_match(
+    stimulus: dict[str, Any], snapshots: list[dict[str, Any]], tolerance: float
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    by_test: dict[str, list[dict[str, Any]]] = {}
+    for snap in snapshots:
+        by_test.setdefault(str(snap.get("test_id") or ""), []).append(snap)
+    expected_init_inputs = normalize_expected_map(stimulus.get("initial_inputs") or {})
+    expected_init_params = normalize_expected_map(stimulus.get("initial_params") or {})
+    expected_steps = stimulus.get("steps") or []
+    closest: list[dict[str, Any]] = []
+    for test_snaps in by_test.values():
+        initial = next((item for item in test_snaps if item.get("phase") == "initialization"), None)
+        actions = [item for item in test_snaps if item.get("phase") == "action_step"]
+        if initial is None or len(actions) < len(expected_steps):
+            missing = [{"kind": "sequence", "key": "steps", "expected": len(expected_steps), "actual": len(actions)}]
+            if not closest or len(missing) < len(closest):
+                closest = missing
+            continue
+        missing = missing_items(initial, expected_init_inputs, expected_init_params, tolerance)
+        current_inputs = dict(expected_init_inputs)
+        current_params = dict(expected_init_params)
+        for index, expected_step in enumerate(expected_steps):
+            actual = actions[index]
+            expected_delay = float(expected_step.get("delay_s") or 0)
+            if not math.isclose(float(actual.get("delay_s") or 0), expected_delay, rel_tol=0.0, abs_tol=tolerance):
+                missing.append({"kind": "delay", "key": f"steps[{index + 1}]", "expected": expected_delay, "actual": actual.get("delay_s")})
+            if expected_step.get("param_updates"):
+                missing.append({"kind": "parameter_position", "key": f"steps[{index + 1}]", "expected": "Initialization", "actual": "Action"})
+            current_inputs.update(normalize_expected_map(expected_step.get("input_updates") or {}))
+            current_params.update(normalize_expected_map(expected_step.get("param_updates") or {}))
+            missing.extend(missing_items(actual, current_inputs, current_params, tolerance))
+        if not missing:
+            return actions[len(expected_steps) - 1], []
+        if not closest or len(missing) < len(closest):
+            closest = missing
+    return None, closest
 
 
 def load_obligations(path: str | Path) -> list[dict[str, Any]]:

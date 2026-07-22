@@ -140,15 +140,33 @@ def build_test(test_index: int, obligation: dict[str, Any], init_text: str) -> d
     item_id = str(obligation.get("id") or f"MCDC_{test_index}")
     block_path = str(obligation.get("block_path") or "")
     outcome = str(obligation.get("required_outcome") or "")
-    hold_s = float(obligation.get("hold_s") or 1.0)
-    hold_text = f"{hold_s:.12g}s"
+    stimulus = obligation.get("stimulus") if isinstance(obligation.get("stimulus"), dict) else None
+    if stimulus:
+        action_lines: list[str] = []
+        for step in stimulus.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            delay_s = max(0.0, float(step.get("delay_s") or 0))
+            action_lines.append(f"[+{delay_s:.12g}s] // execute verified state/timing stimulus for {item_id}")
+            if step.get("param_updates"):
+                raise ValueError(f"{item_id}: parameter updates are only allowed in Test Initialization")
+            for key, value in (step.get("input_updates") or {}).items():
+                action_lines.append(line_for_key(normalize_key(str(key)), value))
+        if not action_lines:
+            raise ValueError(f"{item_id}: stimulus has no executable steps")
+        action_lines.append("[+0.1s] // final observation window")
+        action = "\n".join(action_lines)
+    else:
+        hold_s = float(obligation.get("hold_s") or 1.0)
+        hold_text = f"{hold_s:.12g}s"
+        action = f"[+{hold_text}] // hold and observe mapped MC/DC state for {item_id}\n[+0.1s]"
     return {
         "id": f"TC_{test_index:03d}",
         "name": f"MCDC supplemental {item_id}"[:120],
         "requirement_id": "UT_MCDC",
         "description": f"MC/DC supplemental case for {item_id}; {outcome}; block: {block_path}",
         "initialization": init_text,
-        "action": f"[+{hold_text}] // hold and observe mapped MC/DC state for {item_id}\n[+0.1s]",
+        "action": action,
         "work_status": "reviewed",
     }
 
@@ -188,12 +206,17 @@ def main() -> int:
         if str(obligation.get("status") or "required") != "required":
             skipped.append({"id": item_id, "reason": "obligation_not_required"})
             continue
+        stimulus = obligation.get("stimulus") if isinstance(obligation.get("stimulus"), dict) else None
         match = first_match(obligation)
-        if not match:
+        if not match and not stimulus:
             skipped.append({"id": item_id, "reason": "missing_match_inputs"})
             continue
-        inputs = match.get("inputs") or match.get("expected_inputs") or {}
-        params = match.get("params") or match.get("parameters") or {}
+        if stimulus:
+            inputs = stimulus.get("initial_inputs") or {}
+            params = stimulus.get("initial_params") or {}
+        else:
+            inputs = match.get("inputs") or match.get("expected_inputs") or {}
+            params = match.get("params") or match.get("parameters") or {}
         if not inputs and not params:
             skipped.append({"id": item_id, "reason": "empty_match"})
             continue
