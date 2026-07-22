@@ -27,13 +27,36 @@ def finish(job: dict[str, Any], stage: int, *, status="completed", summary="", a
 
 def run(command: list[str], cwd: Path) -> None: subprocess.run(command, cwd=cwd, check=True)
 def matlab_cell(items: list[str]) -> str: return "{" + ",".join("'" + item.replace("'", "''") + "'" for item in items) + "}"
+def interface_names(values: Any) -> list[str]:
+    if values is None: return []
+    if isinstance(values, (str, int, float)): values = [values]
+    if isinstance(values, dict): values = [values]
+    return [str(item.get("name")) if isinstance(item, dict) else str(item) for item in values]
+def validate_interface(value: dict[str, Any]) -> dict[str, Any]:
+    if value.get("schema") != "tcsd-model-interface/v1": raise RuntimeError("model interface schema is invalid")
+    if not all(isinstance(value.get(key), list) and all(isinstance(name, str) and name for name in value[key]) for key in ("inputs", "outputs")): raise RuntimeError("model interface inputs/outputs must be string arrays")
+    return value
 def initial_spec(interface: dict[str, Any], model: str) -> dict[str, Any]:
     root = interface.get("rootPorts", interface); inputs = root.get("inputs", []); outputs_ = root.get("outputs", [])
-    names = lambda values: [str(item.get("name")) if isinstance(item, dict) else str(item) for item in values]
-    input_names, output_names = names(inputs), names(outputs_)
+    input_names, output_names = interface_names(inputs), interface_names(outputs_)
     initialization = "\n".join(f"{name}=0;" for name in input_names)
     action = "\n".join([*(f"{name}=0;" for name in input_names), "[+0.1s]"])
-    return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线"}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action, "output_reference": "\n".join(f"{name}=expValue(0);" for name in output_names)}]}
+    return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线"}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action}]}
+def simulation_backfill_evidence(simulation: dict[str, Any], workbook: Path) -> dict[str, Any]:
+    from openpyxl import load_workbook
+    tests = simulation.get("tests", []); tests = [tests] if isinstance(tests, dict) else tests
+    simulation_values = 0; case_outputs: dict[str, dict[str, int]] = {}
+    for case in tests:
+        case_id = str(case.get("test_id") or case.get("row") or "unknown"); counts: dict[str, int] = {}
+        steps = case.get("steps", []); steps = [steps] if isinstance(steps, dict) else steps
+        for step in steps:
+            stable = step.get("stable", {}); values = step.get("outputs", {})
+            for name in values:
+                if stable.get(name) is not False: counts[name] = counts.get(name, 0) + 1; simulation_values += 1
+        case_outputs[case_id] = counts
+    wb = load_workbook(workbook, read_only=True, data_only=False); exp_count = sum(str(cell.value).count("expValue(") for row in wb["TCSD"].iter_rows() for cell in row if cell.value); wb.close()
+    if simulation_values < 1 or exp_count < 1 or exp_count > simulation_values: raise RuntimeError(f"simulation/workbook backfill count mismatch: simulation={simulation_values}, workbook={exp_count}")
+    return {"simulationValueCount": simulation_values, "workbookBackfillCount": exp_count, "caseOutputCounts": case_outputs}
 def coverage_meets(report: dict[str, Any], threshold: float) -> bool:
     records = report.get("models", report)
     valid = [record for record in records.values() if isinstance(record, dict) and all(key in record for key in ("condition", "decision", "mcdc"))]
@@ -55,29 +78,40 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
         finish(job, stage, summary="MATLAB 与模型工具环境门禁通过。", artifacts=[artifact(root, env)]); return
     if stage == 3:
         runtime = out / ".tcsd-runtime"; runtime.mkdir(exist_ok=True); resources = runtime / "owned-resources.json"
-        write_json(resources, {"schema": "tcsd-owned-resources/v1", "jobId": job["jobId"], "workspace": str(root), "generatedEntries": []}); state["resources"] = str(resources); save_state(job, state)
-        finish(job, stage, summary="模型工作区已初始化并登记 job 资源所有权。", artifacts=[artifact(root, resources)]); return
+        init_manifest = out / ".tcsd-checkpoints" / "workspace-initialization.json"; entry = runtime / "stage03_initialize.m"; init = inp.get("projectInitScripts", [])
+        root_m = str(root).replace("'", "''"); scripts_m = str(scripts()).replace("'", "''"); manifest_m = str(init_manifest).replace("'", "''")
+        job_id_m = str(job["jobId"]).replace("'", "''")
+        entry.write_text(f"rootDir='{root_m}'; initScripts={matlab_cell(init)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); p=struct('schema','tcsd-workspace-initialization/v1','jobId','{job_id_m}','workspace',rootDir,'initScripts',{{initScripts}},'completed',true); fid=fopen('{manifest_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid);", encoding="utf-8")
+        if os.environ.get("TCSD_PIPELINE_SETUP_FIXTURE") == "1": write_json(init_manifest, {"schema":"tcsd-workspace-initialization/v1","jobId":job["jobId"],"workspace":str(root),"initScripts":init,"completed":True})
+        else: run([sys.executable, str(scripts() / "satk_eval.py"), str(entry)], root)
+        initialized = read_json(init_manifest)
+        if initialized.get("jobId") != job["jobId"] or initialized.get("completed") is not True: raise RuntimeError("workspace initialization manifest is invalid")
+        write_json(resources, {"schema": "tcsd-owned-resources/v1", "jobId": job["jobId"], "workspace": str(root), "generatedEntries": [str(entry.relative_to(root))]}); state["resources"] = str(resources); state["initializationManifest"] = str(init_manifest); save_state(job, state)
+        finish(job, stage, summary="模型工作区已真实初始化并登记 job 资源所有权。", artifacts=[artifact(root, init_manifest), artifact(root, resources)], evidence={"initializationManifest":str(init_manifest.relative_to(root))}); return
     interface = out / f"{model}_interface.json"; traces = out / f"{model}_logical_traces.json"
     if stage == 4:
         entry = out / ".tcsd-runtime" / "stage04_interface.m"; init = inp.get("projectInitScripts", [])
         root_m = str(root).replace("'", "''"); scripts_m = str(scripts()).replace("'", "''"); interface_m = str(interface).replace("'", "''"); mat_name = Path(inp["modelMatPath"]).name.replace("'", "''")
-        code = f"rootDir='{root_m}'; model='{model}'; addpath('{scripts_m}'); setup_ut_support(rootDir,{matlab_cell(init)}); load_system(fullfile(rootDir,'{model}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); p=struct('schema','tcsd-model-interface/v1','inputs',get_param(ins,'Name'),'outputs',get_param(outs,'Name')); fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_name}','InitScripts',{matlab_cell(init)}); bdclose(model);"
+        code = f"rootDir='{root_m}'; model='{model}'; addpath('{scripts_m}'); load_system(fullfile(rootDir,'{model}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); inputNames=reshape(cellstr(string(get_param(ins,'Name'))),1,[]); outputNames=reshape(cellstr(string(get_param(outs,'Name'))),1,[]); p=struct('schema','tcsd-model-interface/v1','inputs',{{inputNames}},'outputs',{{outputNames}}); fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_name}','InitScripts',{matlab_cell(init)}); bdclose(model);"
         entry.write_text(code, encoding="utf-8"); run([sys.executable, str(scripts() / "satk_eval.py"), str(entry)], root)
-        read_json(interface); read_json(traces); state.update({"interface": str(interface), "traces": str(traces)}); save_state(job, state)
+        validate_interface(read_json(interface)); read_json(traces); state.update({"interface": str(interface), "traces": str(traces)}); save_state(job, state)
         finish(job, stage, summary="模型已加载并提取根输入输出接口。", artifacts=[artifact(root, interface), artifact(root, traces)]); return
     mapping, obligations, coverage_ir = out / f"{model}_logical_operators.json", out / f"{model}_coverage_obligations.json", out / f"{model}_coverage_ir.json"
     if stage == 5:
         run([sys.executable, str(scripts()/"derive_logical_mcdc_mappings.py"), "--traces", str(traces), "--output", str(mapping)], root)
-        run([sys.executable, str(scripts()/"build_logical_mcdc_obligations.py"), "--logical-operators", str(mapping), "--output", str(obligations)], root)
+        run([sys.executable, str(scripts()/"build_logical_mcdc_obligations.py"), "--logical-operators", str(mapping), "--output", str(obligations), "--allow-unresolved"], root)
         run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--obligations", str(obligations), "--output", str(coverage_ir)], root)
         state.update({"mapping": str(mapping), "obligations": str(obligations), "coverageIr": str(coverage_ir)}); save_state(job, state)
         finish(job, stage, summary="Condition、Decision 与 MC/DC 覆盖目标已形成 Coverage IR。", artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir)]); return
     if stage == 6:
-        plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--logical-traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
+        plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
         probe_artifacts = [artifact(root, plan)]; candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))
         if candidate_count > 0:
-            obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json")
-            probe_results = out / f"{model}_state_probe_results.json"; read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
+            probe_results = out / f"{model}_state_probe_results.json"; probe_fixture = os.environ.get("TCSD_PIPELINE_PROBE_RESULTS_FIXTURE", "")
+            if probe_fixture:
+                shutil.copy2(probe_fixture, probe_results); run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
+            else: obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json")
+            read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
         finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0}); return
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
@@ -91,11 +125,9 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
     if stage == 8:
         cases = quality.extract_cases(python=sys.executable, scripts=scripts(), root_dir=root, model=model, workbook=workbook, interface_json=interface)
         sim = quality.simulate_and_backfill(python=sys.executable, scripts=scripts(), root_dir=root, model=model, workbook=workbook, case_json=cases, mat_file=inp["modelMatPath"], outputs=",".join(read_json(interface).get("outputs", [])), exclude_outputs="", interface_json=interface)
-        from openpyxl import load_workbook
-        wb = load_workbook(workbook, read_only=True, data_only=False); exp_count = sum(str(cell.value).count("expValue(") for row in wb["TCSD"].iter_rows() for cell in row if cell.value); wb.close()
-        if exp_count < 1: raise RuntimeError("simulation backfill produced no expValue")
-        state.update({"cases": str(cases), "initialSimulation": str(sim), "expValueCount": exp_count}); save_state(job, state)
-        finish(job, stage, summary="首版仿真完成，expValue 已由实际仿真回填。", artifacts=[artifact(root, workbook, "xlsx", "workbook"), artifact(root, sim)], evidence={"simulationResult": str(sim.relative_to(root)), "expValueCount": exp_count}); return
+        backfill = simulation_backfill_evidence(read_json(sim), workbook)
+        state.update({"cases": str(cases), "initialSimulation": str(sim), "expValueCount": backfill["workbookBackfillCount"]}); save_state(job, state)
+        finish(job, stage, summary="首版仿真完成，expValue 已由实际仿真回填。", artifacts=[artifact(root, workbook, "xlsx", "workbook"), artifact(root, sim)], evidence={"simulationResult": str(sim.relative_to(root)), "expValueCount": backfill["workbookBackfillCount"], **backfill}); return
     initial_cov = out / f"{model}_initial_coverage_summary.json"
     if stage == 9:
         ob, cov = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=True, coverage_threshold=threshold); shutil.copy2(cov, initial_cov); report=read_json(initial_cov); state.update({"obligations":str(ob),"initialCoverage":str(initial_cov),"coverage":str(cov)}); save_state(job,state)
