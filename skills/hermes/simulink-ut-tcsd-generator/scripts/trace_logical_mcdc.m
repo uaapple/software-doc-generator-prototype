@@ -15,7 +15,9 @@ oldPath = path;
 cleanupObj = onCleanup(@() local_cleanup(modelNames, oldDir, oldPath));
 cd(rootDir);
 addpath(fileparts(mfilename('fullpath')));
-setup_ut_support(rootDir, opts.InitScripts);
+if ~opts.WorkspaceInitialized
+    setup_ut_support(rootDir, opts.InitScripts);
+end
 if nargin >= 3 && ~isempty(matFileName)
     load_mat_to_base(fullfile(rootDir, char(string(matFileName))));
 end
@@ -61,6 +63,7 @@ end
 function opts = parse_options(varargin)
 opts = struct();
 opts.InitScripts = {};
+opts.WorkspaceInitialized = false;
 idx = 1;
 while idx <= numel(varargin)
     key = char(string(varargin{idx}));
@@ -70,6 +73,8 @@ while idx <= numel(varargin)
     switch lower(key)
         case 'initscripts'
             opts.InitScripts = normalize_cellstr(varargin{idx + 1});
+        case 'workspaceinitialized'
+            opts.WorkspaceInitialized = logical(varargin{idx + 1});
     end
     idx = idx + 2;
 end

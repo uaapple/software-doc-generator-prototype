@@ -73,6 +73,12 @@ class PipelineStageRunnerTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             RUNNER.validate_interface({"schema": "tcsd-model-interface/v1", "inputs": "OnlyInput", "outputs": ["OnlyOutput"]})
 
+    def test_stage_four_reuses_stage_three_workspace_without_setup(self):
+        source = SCRIPT.read_text(encoding="utf-8")
+        stage_four = source.split("if stage == 4:", 1)[1].split("if stage == 5:", 1)[0]
+        self.assertIn("'WorkspaceInitialized',true", stage_four)
+        self.assertNotIn("setup_ut_support", stage_four)
+
     def test_simulation_backfill_requires_matching_real_result_counts(self):
         with tempfile.TemporaryDirectory() as temp:
             workbook = Path(temp) / "result.xlsx"
