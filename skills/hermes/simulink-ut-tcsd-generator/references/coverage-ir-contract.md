@@ -17,10 +17,22 @@ partial-completion evidence.
 
 `scripts/synthesize_tcsd_from_coverage_ir.py` retains the first functional
 cases, appends only deterministic executable Decision/MC/DC cases, and removes
-identical controller/stimulus candidates. It does not enumerate root inputs.
+identical controller/stimulus candidates. Deduplication uses direct inputs,
+parameter values, and the complete temporal stimulus, and also checks whether
+an existing functional Test already satisfies that obligation. It does not
+enumerate root inputs. During report-guided repair, atomic/probe evidence is
+first normalized back into the persisted IR; only this IR synthesizer may
+append repair Tests, so the legacy obligation augmenter cannot duplicate the
+same repair pass.
 
 The fixed loop is: strict workbook validation; simulation and expected-output
 backfill; initial coverage; at most one coverage-report-guided repair;
 simulation/backfill and final coverage for that repair. A first pass meeting
 the threshold terminates directly. A residual metric below threshold after the
 single repair is delivered with `completion: partial` rather than retried.
+The manifest records `repair_attempted`, `repair_applied`, `repair_passes`, a
+reason, and the synthesis evidence. A below-threshold run with no unique
+executable candidate is completed as partial after one recorded attempt, with
+`repair_applied=false` and `repair_passes=0`. Remaining `unresolved` or
+`unsupported` IR/mapping items also force partial completion even when all
+coverage percentages meet the threshold.

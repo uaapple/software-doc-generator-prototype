@@ -53,7 +53,12 @@ def write_execution_manifest(
     obligations: Path,
     mapping_report: Path,
     coverage_ir: Path | None = None,
+    repair_attempted: bool | None = None,
+    repair_reason: str | None = None,
+    repair_evidence: Path | None = None,
 ) -> dict[str, Any]:
+    attempted = repair_applied if repair_attempted is None else repair_attempted
+    evidence_partial = evidence_has_partial_items(coverage_ir=coverage_ir, mapping_report=mapping_report)
     complete = bool(
         workbook.exists()
         and simulation_result
@@ -66,13 +71,18 @@ def write_execution_manifest(
         and final_coverage_artifact.exists()
         and obligations.exists()
         and mapping_report.exists()
-        and (not repair_required or repair_applied)
+        and (not repair_required or attempted)
+    )
+    partial = bool(
+        (final_coverage and coverage_below_target_data(final_coverage))
+        or evidence_partial
+        or (repair_required and attempted and not repair_applied)
     )
     manifest = {
         "schema": "simulink-ut-tcsd-execution-manifest/v1",
         "model": model,
         "status": "completed" if complete else "incomplete",
-        "completion": "partial" if final_coverage and coverage_below_target_data(final_coverage) else "complete",
+        "completion": "partial" if partial else "complete",
         "threshold": threshold,
         "workbook": relative_artifact(workbook, root_dir),
         "simulation": {
@@ -83,7 +93,11 @@ def write_execution_manifest(
             "initial": initial_coverage,
             "initial_artifact": relative_artifact(initial_coverage_artifact, root_dir),
             "repair_required": repair_required,
+            "repair_attempted": attempted,
+            "repair_applied": repair_applied,
             "repair_passes": 1 if repair_applied else 0,
+            "repair_reason": repair_reason,
+            "repair_evidence": relative_artifact(repair_evidence, root_dir),
             "final": final_coverage,
             "final_artifact": relative_artifact(final_coverage_artifact, root_dir),
         },
@@ -108,6 +122,20 @@ def report_failed(report: dict[str, Any]) -> bool:
 
 def coverage_below_target_data(report: dict[str, Any]) -> bool:
     return any(not bool(item.get("passed")) for item in report.values() if isinstance(item, dict))
+
+
+def evidence_has_partial_items(*, coverage_ir: Path | None, mapping_report: Path | None) -> bool:
+    if coverage_ir and coverage_ir.exists():
+        payload = load_json(coverage_ir)
+        for item in payload.get("items", []):
+            reachability = item.get("reachability") if isinstance(item, dict) else None
+            if isinstance(reachability, dict) and reachability.get("status") in {"unresolved", "unsupported"}:
+                return True
+    if mapping_report and mapping_report.exists():
+        summary = load_json(mapping_report).get("summary", {})
+        if int(summary.get("unresolved_count") or 0) or int(summary.get("unsupported_count") or 0) or int(summary.get("missing_count") or 0):
+            return True
+    return False
 
 
 def load_interface_inputs(path: Path) -> list[str]:
@@ -251,6 +279,64 @@ def augment_once(
         cwd=root_dir,
     )
     return next_spec, next_workbook
+
+
+def synthesize_ir_once(
+    *,
+    python: str,
+    scripts: Path,
+    root_dir: Path,
+    template: Path,
+    model: str,
+    spec: Path,
+    workbook: Path,
+    interface_json: Path,
+    coverage_ir: Path,
+    iteration: int,
+) -> tuple[Path, Path, dict[str, Any]]:
+    """Run the sole bounded repair synthesizer from the persisted Coverage IR.
+
+    The synthesizer deduplicates by controller inputs, parameters and complete
+    temporal stimulus.  A workbook is rebuilt only when at least one unique,
+    executable Decision/MC/DC candidate was appended.
+    """
+    next_spec = root_dir / f"{model}_spec_coverage_ir_iter{iteration}.json"
+    synthesis_report = root_dir / "outputs" / f"{model}_coverage_ir_synthesis_iter{iteration}.json"
+    run(
+        [
+            python,
+            str(scripts / "synthesize_tcsd_from_coverage_ir.py"),
+            "--spec",
+            str(spec),
+            "--coverage-ir",
+            str(coverage_ir),
+            "--output",
+            str(next_spec),
+            "--report-json",
+            str(synthesis_report),
+        ],
+        cwd=root_dir,
+    )
+    report = load_json(synthesis_report)
+    if int(report.get("added") or 0) <= 0:
+        return spec, workbook, report
+    next_workbook = root_dir / "outputs" / f"{model}_Test_coverage_ir_iter{iteration}.xlsx"
+    run(
+        [
+            python,
+            str(scripts / "build_tcsd_from_json.py"),
+            "--template",
+            str(template),
+            "--spec",
+            str(next_spec),
+            "--output",
+            str(next_workbook),
+            "--interface-json",
+            str(interface_json),
+        ],
+        cwd=root_dir,
+    )
+    return next_spec, next_workbook, report
 
 
 def build_atomic_repair_plan(
@@ -642,7 +728,10 @@ def main() -> int:
     is_coverage_below_target = False
     initial_coverage: dict[str, Any] | None = None
     initial_coverage_artifact: Path | None = None
+    coverage_repair_attempted = False
     coverage_repair_applied = False
+    coverage_repair_reason: str | None = None
+    coverage_repair_evidence: Path | None = None
     if args.require_coverage:
         if not args.run_probe:
             raise SystemExit("--require-coverage requires --run-probe")
@@ -653,18 +742,34 @@ def main() -> int:
         initial_coverage_artifact = root_dir / "outputs" / f"{args.model}_initial_coverage_summary.json"
         shutil.copy2(coverage_json, initial_coverage_artifact)
 
-    if is_coverage_below_target and args.logical_traces:
-        atomic_plan = build_atomic_repair_plan(
-            python=args.python,
-            scripts=scripts,
-            root_dir=root_dir,
-            model=args.model,
-            logical_traces=Path(args.logical_traces).resolve(),
-        )
-        plan_data = load_json(atomic_plan)
-        required_plan_items = [item for item in plan_data.get("obligations", []) if item.get("status") == "required"]
-        if required_plan_items:
-            spec, workbook = augment_once(
+    if is_coverage_below_target:
+        coverage_repair_attempted = True
+        if args.logical_traces and coverage_ir:
+            atomic_plan = build_atomic_repair_plan(
+                python=args.python,
+                scripts=scripts,
+                root_dir=root_dir,
+                model=args.model,
+                logical_traces=Path(args.logical_traces).resolve(),
+            )
+            # The report-derived atomic planner feeds the persisted IR first;
+            # only the IR synthesizer may append repair cases. This prevents the
+            # old obligation augmenter and the IR path from both adding cases.
+            run(
+                [
+                    args.python,
+                    str(scripts / "build_coverage_ir.py"),
+                    "--logical-traces",
+                    str(Path(args.logical_traces).resolve()),
+                    "--obligations",
+                    str(atomic_plan),
+                    "--output",
+                    str(coverage_ir),
+                ],
+                cwd=root_dir,
+            )
+            repair_iteration = args.max_iterations + 1
+            spec, workbook, synthesis = synthesize_ir_once(
                 python=args.python,
                 scripts=scripts,
                 root_dir=root_dir,
@@ -673,10 +778,26 @@ def main() -> int:
                 spec=spec,
                 workbook=workbook,
                 interface_json=interface_json,
-                obligations=atomic_plan,
-                report=None,
-                iteration=args.max_iterations + 1,
+                coverage_ir=coverage_ir,
+                iteration=repair_iteration,
             )
+            coverage_repair_evidence = root_dir / "outputs" / f"{args.model}_coverage_ir_synthesis_iter{repair_iteration}.json"
+            if int(synthesis.get("added") or 0) > 0:
+                coverage_repair_applied = True
+                coverage_repair_reason = "coverage_ir_candidates_appended"
+                validate_workbook(
+                    python=args.python,
+                    scripts=scripts,
+                    root_dir=root_dir,
+                    workbook=workbook,
+                    interface_json=interface_json,
+                )
+            else:
+                coverage_repair_reason = "no_unique_executable_coverage_ir_candidates"
+        else:
+            coverage_repair_reason = "coverage_ir_unavailable"
+
+        if coverage_repair_applied:
             extract_cases(
                 python=args.python,
                 scripts=scripts,
@@ -704,10 +825,22 @@ def main() -> int:
                 obligations=obligations,
                 report=report,
             )
-            coverage_repair_applied = True
             is_coverage_below_target = coverage_below_target(coverage_json)
+            run(
+                [
+                    args.python,
+                    str(scripts / "build_coverage_ir.py"),
+                    "--logical-traces",
+                    str(Path(args.logical_traces).resolve()),
+                    "--obligations",
+                    str(obligations),
+                    "--output",
+                    str(coverage_ir),
+                ],
+                cwd=root_dir,
+            )
 
-    if report_failed(data):
+    if report_failed(data) and not coverage_repair_attempted:
         print(json.dumps({"status": "failed", "report": str(report), "summary": data.get("summary", {})}, ensure_ascii=False, indent=2))
         return 1
 
@@ -737,7 +870,7 @@ def main() -> int:
             obligations=obligations,
             report=report,
         )
-        if report_failed(data):
+        if report_failed(data) and not coverage_repair_attempted:
             print(json.dumps({"status": "failed_after_backfill", "report": str(report), "summary": data.get("summary", {})}, ensure_ascii=False, indent=2))
             return 1
 
@@ -758,6 +891,9 @@ def main() -> int:
         obligations=obligations,
         mapping_report=report,
         coverage_ir=coverage_ir,
+        repair_attempted=coverage_repair_attempted,
+        repair_reason=coverage_repair_reason,
+        repair_evidence=coverage_repair_evidence,
     )
     if manifest["status"] != "completed":
         print(json.dumps({"status": "incomplete_execution_contract", "manifest": str(manifest_path), "details": manifest}, ensure_ascii=False, indent=2))
@@ -773,7 +909,9 @@ def main() -> int:
                 "summary": data.get("summary", {}),
                 "coverage": str(coverage_json) if coverage_json else None,
                 "coverage_repair_required": is_coverage_below_target,
+                "coverage_repair_attempted": coverage_repair_attempted,
                 "coverage_repair_applied": coverage_repair_applied,
+                "coverage_repair_reason": coverage_repair_reason,
                 "initial_coverage": initial_coverage,
                 "execution_manifest": str(manifest_path),
             },
