@@ -2,7 +2,7 @@
 """Authoritative, restart-safe stage runner for the Windows TCSD pipeline."""
 from __future__ import annotations
 
-import argparse, importlib.util, json, os, shutil, subprocess, sys
+import argparse, importlib.util, json, math, os, re, shutil, subprocess, sys
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +27,9 @@ def finish(job: dict[str, Any], stage: int, *, status="completed", summary="", a
 
 def run(command: list[str], cwd: Path) -> None: subprocess.run(command, cwd=cwd, check=True)
 def matlab_cell(items: list[str]) -> str: return "{" + ",".join("'" + item.replace("'", "''") + "'" for item in items) + "}"
+def stage4_matlab_code(*, root: Path, scripts_dir: Path, interface: Path, model: str, mat_name: str, init_scripts: list[str]) -> str:
+    root_m = str(root).replace("'", "''"); scripts_m = str(scripts_dir).replace("'", "''"); interface_m = str(interface).replace("'", "''"); model_m = model.replace("'", "''"); mat_m = mat_name.replace("'", "''")
+    return f"rootDir='{root_m}'; model='{model_m}'; initScripts={matlab_cell(init_scripts)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); load_system(fullfile(rootDir,'{model_m}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); inputNames=reshape(cellstr(string(get_param(ins,'Name'))),1,[]); outputNames=reshape(cellstr(string(get_param(outs,'Name'))),1,[]); p=struct('schema','tcsd-model-interface/v1','inputs',{{inputNames}},'outputs',{{outputNames}}); fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_m}','WorkspaceInitialized',true); bdclose(model);"
 def interface_names(values: Any) -> list[str]:
     if values is None: return []
     if isinstance(values, (str, int, float)): values = [values]
@@ -42,21 +45,60 @@ def initial_spec(interface: dict[str, Any], model: str) -> dict[str, Any]:
     initialization = "\n".join(f"{name}=0;" for name in input_names)
     action = "\n".join([*(f"{name}=0;" for name in input_names), "[+0.1s]"])
     return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线"}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action}]}
+STEP_MARKER_RE = re.compile(r"^\s*\[\+")
+EXP_VALUE_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*expValue\(\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*\)\s*;?\s*$")
+def workbook_steps(action: str) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = []; current: dict[str, Any] | None = None
+    for raw in (action or "").splitlines():
+        if STEP_MARKER_RE.match(raw):
+            if current is not None: steps.append(current)
+            current = {"lines": []}
+        elif current is not None: current["lines"].append(raw)
+    if current is not None: steps.append(current)
+    for index, step in enumerate(steps, 1):
+        values: dict[str, float] = {}; non_expected = []
+        for raw in step["lines"]:
+            match = EXP_VALUE_RE.match(raw)
+            if match:
+                if match.group(1) in values: raise RuntimeError(f"duplicate workbook expValue at step {index}: {match.group(1)}")
+                values[match.group(1)] = float(match.group(2))
+            elif raw.strip(): non_expected.append(raw)
+        step.update({"index": index, "values": values, "finalEmptyDelay": index == len(steps) and not non_expected})
+    return steps
 def simulation_backfill_evidence(simulation: dict[str, Any], workbook: Path) -> dict[str, Any]:
     from openpyxl import load_workbook
     tests = simulation.get("tests", []); tests = [tests] if isinstance(tests, dict) else tests
-    simulation_values = 0; case_outputs: dict[str, dict[str, int]] = {}
+    simulated: dict[tuple[int, str], dict[int, dict[str, Any]]] = {}
     for case in tests:
-        case_id = str(case.get("test_id") or case.get("row") or "unknown"); counts: dict[str, int] = {}
-        steps = case.get("steps", []); steps = [steps] if isinstance(steps, dict) else steps
+        key = (int(case.get("row") or 0), str(case.get("test_id") or ""))
+        if not key[0] or not key[1] or key in simulated: raise RuntimeError(f"invalid or duplicate simulation case identity: {key}")
+        steps = case.get("steps", []); steps = [steps] if isinstance(steps, dict) else steps; indexed: dict[int, dict[str, Any]] = {}
         for step in steps:
-            stable = step.get("stable", {}); values = step.get("outputs", {})
-            for name in values:
-                if stable.get(name) is not False: counts[name] = counts.get(name, 0) + 1; simulation_values += 1
-        case_outputs[case_id] = counts
-    wb = load_workbook(workbook, read_only=True, data_only=False); exp_count = sum(str(cell.value).count("expValue(") for row in wb["TCSD"].iter_rows() for cell in row if cell.value); wb.close()
-    if simulation_values < 1 or exp_count < 1 or exp_count > simulation_values: raise RuntimeError(f"simulation/workbook backfill count mismatch: simulation={simulation_values}, workbook={exp_count}")
-    return {"simulationValueCount": simulation_values, "workbookBackfillCount": exp_count, "caseOutputCounts": case_outputs}
+            index = int(step.get("index") or 0)
+            if not index or index in indexed or not isinstance(step.get("outputs", {}), dict): raise RuntimeError(f"invalid or duplicate simulation step: {key} step {index}")
+            indexed[index] = step
+        simulated[key] = indexed
+    wb = load_workbook(workbook, read_only=True, data_only=False); ws = wb["TCSD"]; workbook_cases: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    for row in range(1, ws.max_row + 1):
+        if ws.cell(row, 3).value == "Test": workbook_cases[(row, str(ws.cell(row, 1).value or ""))] = workbook_steps(str(ws.cell(row, 7).value or ""))
+    wb.close()
+    if set(simulated) != set(workbook_cases): raise RuntimeError(f"simulation/workbook case identity mismatch: simulation={sorted(simulated)}, workbook={sorted(workbook_cases)}")
+    matched: list[dict[str, Any]] = []; case_outputs: dict[str, dict[str, int]] = {}
+    for key, steps in workbook_cases.items():
+        simulation_steps = simulated[key]
+        if set(simulation_steps) != {step["index"] for step in steps}: raise RuntimeError(f"simulation/workbook step mismatch: {key}")
+        counts: dict[str, int] = {}
+        for step in steps:
+            result = simulation_steps[step["index"]]; stable = result.get("stable", {}); outputs_ = result.get("outputs", {})
+            expected = {} if step["finalEmptyDelay"] else {str(name): value for name, value in outputs_.items() if stable.get(name) is not False}
+            actual = step["values"]
+            if set(expected) != set(actual): raise RuntimeError(f"simulation/workbook output mismatch: {key} step {step['index']} expected={sorted(expected)} actual={sorted(actual)}")
+            for name, value in expected.items():
+                if isinstance(value, (dict, list)) or not math.isclose(float(value), actual[name], rel_tol=1e-7, abs_tol=1e-7): raise RuntimeError(f"simulation/workbook value mismatch: {key} step {step['index']} output {name}")
+                counts[name] = counts.get(name, 0) + 1; matched.append({"row": key[0], "testId": key[1], "step": step["index"], "output": name, "value": actual[name]})
+        case_outputs[f"{key[0]}:{key[1]}"] = counts
+    if not matched: raise RuntimeError("simulation backfill produced no verified expValue items")
+    return {"simulationValueCount": len(matched), "workbookBackfillCount": len(matched), "caseOutputCounts": case_outputs, "backfillItems": matched}
 def coverage_meets(report: dict[str, Any], threshold: float) -> bool:
     records = report.get("models", report)
     valid = [record for record in records.values() if isinstance(record, dict) and all(key in record for key in ("condition", "decision", "mcdc"))]
@@ -91,8 +133,7 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
     interface = out / f"{model}_interface.json"; traces = out / f"{model}_logical_traces.json"
     if stage == 4:
         entry = out / ".tcsd-runtime" / "stage04_interface.m"
-        root_m = str(root).replace("'", "''"); scripts_m = str(scripts()).replace("'", "''"); interface_m = str(interface).replace("'", "''"); mat_name = Path(inp["modelMatPath"]).name.replace("'", "''")
-        code = f"rootDir='{root_m}'; model='{model}'; addpath('{scripts_m}'); load_system(fullfile(rootDir,'{model}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); inputNames=reshape(cellstr(string(get_param(ins,'Name'))),1,[]); outputNames=reshape(cellstr(string(get_param(outs,'Name'))),1,[]); p=struct('schema','tcsd-model-interface/v1','inputs',{{inputNames}},'outputs',{{outputNames}}); fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_name}','WorkspaceInitialized',true); bdclose(model);"
+        code = stage4_matlab_code(root=root, scripts_dir=scripts(), interface=interface, model=model, mat_name=Path(inp["modelMatPath"]).name, init_scripts=inp.get("projectInitScripts", []))
         entry.write_text(code, encoding="utf-8"); run([sys.executable, str(scripts() / "satk_eval.py"), str(entry)], root)
         validate_interface(read_json(interface)); read_json(traces); state.update({"interface": str(interface), "traces": str(traces)}); save_state(job, state)
         finish(job, stage, summary="模型已加载并提取根输入输出接口。", artifacts=[artifact(root, interface), artifact(root, traces)]); return
@@ -126,7 +167,7 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
         cases = quality.extract_cases(python=sys.executable, scripts=scripts(), root_dir=root, model=model, workbook=workbook, interface_json=interface)
         sim = quality.simulate_and_backfill(python=sys.executable, scripts=scripts(), root_dir=root, model=model, workbook=workbook, case_json=cases, mat_file=inp["modelMatPath"], outputs=",".join(read_json(interface).get("outputs", [])), exclude_outputs="", interface_json=interface)
         backfill = simulation_backfill_evidence(read_json(sim), workbook)
-        state.update({"cases": str(cases), "initialSimulation": str(sim), "expValueCount": backfill["workbookBackfillCount"]}); save_state(job, state)
+        state.update({"cases": str(cases), "initialSimulation": str(sim), "initialBackfillEvidence": backfill, "expValueCount": backfill["workbookBackfillCount"]}); save_state(job, state)
         finish(job, stage, summary="首版仿真完成，expValue 已由实际仿真回填。", artifacts=[artifact(root, workbook, "xlsx", "workbook"), artifact(root, sim)], evidence={"simulationResult": str(sim.relative_to(root)), "expValueCount": backfill["workbookBackfillCount"], **backfill}); return
     initial_cov = out / f"{model}_initial_coverage_summary.json"
     if stage == 9:
@@ -144,8 +185,8 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
     final_cov=out/f"{model}_final_coverage_summary.json"
     if stage == 11:
         if not state.get("repairApplied"): finish(job,stage,status="skipped",summary="修正未实际应用，引用首轮仿真与覆盖率。",skipReason="修正未实际应用，引用首轮结果。",artifacts=[]); return
-        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); shutil.copy2(cov,final_cov); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"obligations":str(ob)}); save_state(job,state)
-        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,sim),artifact(root,final_cov)],coverage=read_json(final_cov)); return
+        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); shutil.copy2(cov,final_cov); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
+        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=read_json(final_cov),evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],**backfill}); return
     if stage == 12:
         final_report=read_json(final_cov if final_cov.exists() else initial_cov); manifest=out/f"{model}_tcsd_execution_manifest.json"; mapping_report=out/f"{model}_mcdc_validation_report.json"; workbook=Path(state["workbook"])
         result=quality.write_execution_manifest(path=manifest,root_dir=root,model=model,threshold=threshold,workbook=workbook,simulation_result=Path(state.get("finalSimulation") or state["initialSimulation"]),initial_coverage=read_json(initial_cov),final_coverage=final_report,initial_coverage_artifact=initial_cov,final_coverage_artifact=final_cov if final_cov.exists() else initial_cov,repair_required=not coverage_meets(read_json(initial_cov),threshold),repair_applied=bool(state.get("repairApplied")),obligations=Path(state["obligations"]),mapping_report=mapping_report,coverage_ir=coverage_ir,repair_attempted=bool(state.get("repairAttempted")),repair_reason=state.get("repairReason"),repair_evidence=Path(state["repairEvidence"]) if state.get("repairEvidence") else None)

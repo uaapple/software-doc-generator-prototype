@@ -73,22 +73,33 @@ class PipelineStageRunnerTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             RUNNER.validate_interface({"schema": "tcsd-model-interface/v1", "inputs": "OnlyInput", "outputs": ["OnlyOutput"]})
 
-    def test_stage_four_reuses_stage_three_workspace_without_setup(self):
-        source = SCRIPT.read_text(encoding="utf-8")
-        stage_four = source.split("if stage == 4:", 1)[1].split("if stage == 5:", 1)[0]
-        self.assertIn("'WorkspaceInitialized',true", stage_four)
-        self.assertNotIn("setup_ut_support", stage_four)
+    def test_stage_four_initializes_its_new_session_before_tracing(self):
+        code = RUNNER.stage4_matlab_code(root=Path("C:/job"), scripts_dir=Path("C:/skill/scripts"), interface=Path("C:/job/outputs/interface.json"), model="GenericModel", mat_name="GenericModel.mat", init_scripts=["project_init.m"])
+        setup = code.index("setup_ut_support(rootDir,initScripts)")
+        trace = code.index("trace_logical_mcdc")
+        self.assertIn("initScripts={'project_init.m'}", code)
+        self.assertIn("'WorkspaceInitialized',true", code)
+        self.assertLess(setup, trace)
 
     def test_simulation_backfill_requires_matching_real_result_counts(self):
         with tempfile.TemporaryDirectory() as temp:
             workbook = Path(temp) / "result.xlsx"
-            wb = Workbook(); ws = wb.active; ws.title = "TCSD"; ws["G1"] = "OnlyOutput = expValue(1);"; wb.save(workbook)
-            simulation = {"tests": [{"test_id": "TC_001", "steps": [{"index": 1, "outputs": {"OnlyOutput": 1}, "stable": {"OnlyOutput": True}}]}]}
+            wb = Workbook(); ws = wb.active; ws.title = "TCSD"; ws["A3"] = "TC_001"; ws["C3"] = "Test"; ws["G3"] = "[+0.1s]\nOnlyOutput = expValue(1);\n[+0.1s]"; wb.save(workbook)
+            simulation = {"tests": [{"row": 3, "test_id": "TC_001", "steps": [{"index": 1, "outputs": {"OnlyOutput": 1}, "stable": {"OnlyOutput": True}}, {"index": 2, "outputs": {"OnlyOutput": 1}, "stable": {"OnlyOutput": True}}]}]}
             evidence = RUNNER.simulation_backfill_evidence(simulation, workbook)
             self.assertEqual(evidence["simulationValueCount"], 1)
             self.assertEqual(evidence["workbookBackfillCount"], 1)
+            self.assertEqual(evidence["backfillItems"], [{"row": 3, "testId": "TC_001", "step": 1, "output": "OnlyOutput", "value": 1.0}])
             with self.assertRaises(RuntimeError):
                 RUNNER.simulation_backfill_evidence({"tests": []}, workbook)
+
+    def test_simulation_backfill_rejects_missing_extra_and_wrong_values(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workbook = Path(temp) / "result.xlsx"; wb = Workbook(); ws = wb.active; ws.title = "TCSD"; ws["A4"] = "TC_002"; ws["C4"] = "Test"
+            simulation = {"tests": [{"row": 4, "test_id": "TC_002", "steps": [{"index": 1, "outputs": {"Result": 2.5}, "stable": {"Result": True}}]}]}
+            for action in ("[+0.1s]", "[+0.1s]\nResult = expValue(2.5);\nExtra = expValue(1);", "[+0.1s]\nResult = expValue(2.4);"):
+                ws["G4"] = action; wb.save(workbook)
+                with self.assertRaises(RuntimeError): RUNNER.simulation_backfill_evidence(simulation, workbook)
 
     def test_stage_five_to_six_cli_persists_unresolved_then_runs_probe(self):
         with tempfile.TemporaryDirectory() as temp:
