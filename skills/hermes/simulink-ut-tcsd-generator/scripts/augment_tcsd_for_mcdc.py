@@ -167,7 +167,7 @@ def build_test(test_index: int, obligation: dict[str, Any], init_text: str) -> d
         "description": f"MC/DC supplemental case for {item_id}; {outcome}; block: {block_path}",
         "initialization": init_text,
         "action": action,
-        "work_status": "reviewed",
+        "work_status": "reviewed" if str(obligation.get("status") or "required") == "required" else "partial",
     }
 
 

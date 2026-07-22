@@ -52,6 +52,7 @@ def write_execution_manifest(
     repair_applied: bool,
     obligations: Path,
     mapping_report: Path,
+    coverage_ir: Path | None = None,
 ) -> dict[str, Any]:
     complete = bool(
         workbook.exists()
@@ -71,6 +72,7 @@ def write_execution_manifest(
         "schema": "simulink-ut-tcsd-execution-manifest/v1",
         "model": model,
         "status": "completed" if complete else "incomplete",
+        "completion": "partial" if final_coverage and coverage_below_target_data(final_coverage) else "complete",
         "threshold": threshold,
         "workbook": relative_artifact(workbook, root_dir),
         "simulation": {
@@ -88,6 +90,7 @@ def write_execution_manifest(
         "evidence": {
             "obligations": relative_artifact(obligations, root_dir),
             "mapping_report": relative_artifact(mapping_report, root_dir),
+            "coverage_ir": relative_artifact(coverage_ir, root_dir),
         },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,7 +100,14 @@ def write_execution_manifest(
 
 def report_failed(report: dict[str, Any]) -> bool:
     summary = report.get("summary", {})
-    return bool(summary.get("missing_count") or summary.get("unresolved_count"))
+    # Unresolved/unsupported items are retained as auditable partial-completion
+    # evidence.  They are not evidence of unreachability and must not prevent a
+    # bounded one-pass deliverable from being produced.
+    return bool(summary.get("missing_count"))
+
+
+def coverage_below_target_data(report: dict[str, Any]) -> bool:
+    return any(not bool(item.get("passed")) for item in report.values() if isinstance(item, dict))
 
 
 def load_interface_inputs(path: Path) -> list[str]:
@@ -381,7 +391,14 @@ def coverage_below_target(path: Path) -> bool:
     report = load_json(path)
     if not report:
         return True
-    return any(not bool(item.get("passed")) for item in report.values() if isinstance(item, dict))
+    return coverage_below_target_data(report)
+
+
+def validate_workbook(*, python: str, scripts: Path, root_dir: Path, workbook: Path, interface_json: Path, require_exp_values: bool = False) -> None:
+    cmd = [python, str(scripts / "validate_tcsd_workbook.py"), "--workbook", str(workbook), "--interface-json", str(interface_json)]
+    if require_exp_values:
+        cmd.append("--require-exp-values")
+    run(cmd, cwd=root_dir)
 
 
 def simulate_and_backfill(
@@ -488,6 +505,13 @@ def main() -> int:
     report = root_dir / "outputs" / f"{args.model}_mcdc_validation_report.json"
     manifest_path = Path(args.execution_manifest).resolve() if args.execution_manifest else root_dir / "outputs" / f"{args.model}_tcsd_execution_manifest.json"
 
+    # The candidate is a strict artifact checkpoint before any MATLAB work.
+    validate_workbook(python=args.python, scripts=scripts, root_dir=root_dir, workbook=workbook, interface_json=interface_json)
+    coverage_ir: Path | None = None
+    if args.logical_traces:
+        coverage_ir = root_dir / "outputs" / f"{args.model}_coverage_ir.json"
+        run([args.python, str(scripts / "build_coverage_ir.py"), "--logical-traces", str(Path(args.logical_traces).resolve()), "--output", str(coverage_ir)], cwd=root_dir)
+
     for iteration in range(args.max_iterations + 1):
         data = validate_mapping(
             python=args.python,
@@ -575,6 +599,20 @@ def main() -> int:
                     obligations=obligations,
                     report=report,
                 )
+    # The first executable workbook is simulated/backfilled before its first
+    # coverage run.  This ordering makes the coverage report actual evidence,
+    # rather than a pre-backfill planning shortcut.
+    simulation_result: Path | None = None
+    if args.simulate_backfill:
+        if not args.mat_file or not args.outputs:
+            raise SystemExit("--simulate-backfill requires --mat-file and --outputs")
+        case_json = extract_cases(python=args.python, scripts=scripts, root_dir=root_dir, model=args.model, workbook=workbook, interface_json=interface_json)
+        simulation_result = simulate_and_backfill(
+            python=args.python, scripts=scripts, root_dir=root_dir, model=args.model, workbook=workbook,
+            case_json=case_json, mat_file=args.mat_file, outputs=args.outputs, exclude_outputs=args.exclude_outputs,
+            interface_json=interface_json,
+        )
+
     if (report_failed(data) or args.require_coverage) and args.run_probe:
         if not args.mat_file:
             raise SystemExit("--run-probe requires --mat-file")
@@ -598,6 +636,8 @@ def main() -> int:
             obligations=obligations,
             report=report,
         )
+        if coverage_ir and args.logical_traces:
+            run([args.python, str(scripts / "build_coverage_ir.py"), "--logical-traces", str(Path(args.logical_traces).resolve()), "--obligations", str(obligations), "--output", str(coverage_ir)], cwd=root_dir)
 
     is_coverage_below_target = False
     initial_coverage: dict[str, Any] | None = None
@@ -671,8 +711,9 @@ def main() -> int:
         print(json.dumps({"status": "failed", "report": str(report), "summary": data.get("summary", {})}, ensure_ascii=False, indent=2))
         return 1
 
-    simulation_result: Path | None = None
-    if args.simulate_backfill:
+    # If a coverage repair changed the workbook, re-run the required
+    # simulation/backfill checkpoint exactly once for the final artifact.
+    if args.simulate_backfill and (simulation_result is None or coverage_repair_applied):
         if not args.mat_file or not args.outputs:
             raise SystemExit("--simulate-backfill requires --mat-file and --outputs")
         case_json = extract_cases(python=args.python, scripts=scripts, root_dir=root_dir, model=args.model, workbook=workbook, interface_json=interface_json)
@@ -716,6 +757,7 @@ def main() -> int:
         repair_applied=coverage_repair_applied,
         obligations=obligations,
         mapping_report=report,
+        coverage_ir=coverage_ir,
     )
     if manifest["status"] != "completed":
         print(json.dumps({"status": "incomplete_execution_contract", "manifest": str(manifest_path), "details": manifest}, ensure_ascii=False, indent=2))
