@@ -432,3 +432,5 @@ For Windows/Hermes runs, keep the MC/DC loop inside the task workspace. `trace_l
 Probe runs add temporary `To Workspace` blocks and may set linked library parents to `LinkStatus=inactive` in memory. They must close models with `saveflag=0`; never save the probed model or library back to disk.
 
 When `build_probe_mcdc_obligations.py` leaves any vector `unresolved`, do not mark the TCSD task complete. Either add mapped supplemental Tests, rerun the probe after those Tests are extracted, or mark the vector `unreachable` with a concrete structural reason and probe evidence.
+
+For a relational, Switch, MinMax, UnitDelay, Delay, Memory, or feedback-driven unresolved port, do not ask the model to guess a final static input snapshot. Run `build_state_probe_plan.py` and pass the generated plan through the explicit `CaseJson` option. A successful mapping must retain the full probe-observed `stimulus` sequence. `candidate_exhausted`, `unsupported_semantics`, and `simulation_mismatch` remain explicit unresolved evidence states; none of them means unreachable.

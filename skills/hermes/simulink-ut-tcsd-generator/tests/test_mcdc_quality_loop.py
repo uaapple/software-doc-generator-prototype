@@ -23,6 +23,176 @@ def load_script_module(script_name: str):
 
 
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_state_probe_planner_builds_bounded_timing_sequences_without_model_names(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "model": "GenericTimer",
+            "operators": [
+                {
+                    "id": "GenericTimer:1",
+                    "operator": "AND",
+                    "ports": [
+                        {
+                            "index": 1,
+                            "trace": {
+                                "kind": "relational",
+                                "operator": ">",
+                                "inputs": [
+                                    {
+                                        "trace": {
+                                            "kind": "stateful",
+                                            "initialCondition": "0",
+                                            "inputs": [{"trace": {"kind": "root_inport", "signal": "TimerEnable"}}],
+                                        }
+                                    },
+                                    {"trace": {"kind": "constant", "value": "Wait_C", "resolvedValue": 0.25}},
+                                ],
+                            },
+                        },
+                        {"index": 2, "trace": {"kind": "root_inport", "signal": "Request"}},
+                    ],
+                }
+            ],
+        }
+
+        plan = planner.build_plan(trace, max_candidates=6, max_steps=8, sample_time=0.01)
+
+        self.assertEqual(plan["summary"]["target_count"], 1)
+        self.assertEqual(plan["summary"]["candidate_count"], 6)
+        self.assertTrue(plan["targets"][0]["bounded"])
+        for test in plan["tests"]:
+            self.assertEqual(test["init_values"]["Request"], 1)
+            self.assertLessEqual(len(test["steps"]), 8)
+            self.assertIn(test["target"]["transition"], {"0->1", "1->0"})
+        self.assertTrue(any(step["delay_s"] > 0.25 for test in plan["tests"] for step in test["steps"]))
+
+    def test_state_probe_planner_reports_unsupported_semantics_without_guessing(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "model": "GenericUnsupported",
+            "operators": [{
+                "id": "GenericUnsupported:1",
+                "operator": "AND",
+                "ports": [{"index": 1, "trace": {"kind": "lookup_table", "inputs": []}}],
+            }],
+        }
+
+        plan = planner.build_plan(trace, max_candidates=32, max_steps=8, sample_time=0.01)
+
+        self.assertEqual(plan["summary"]["candidate_count"], 0)
+        self.assertEqual(plan["targets"][0]["status"], "unsupported_semantics")
+        self.assertIn("lookup_table", plan["targets"][0]["unsupported_semantics"])
+
+    def test_probe_obligation_preserves_full_state_stimulus(self) -> None:
+        builder = load_script_module("build_probe_mcdc_obligations.py")
+        report = {
+            "probes": [{"id": "Generic:1", "operator": "AND", "port_names": ["u1"]}],
+            "observations": [{
+                "test_id": "STATE_PROBE_0001",
+                "row": 1,
+                "step_index": 2,
+                "time_s": 0.3,
+                "inputs": {"Enable": 1},
+                "params": {"Wait_C": 0.25},
+                "vectors": {"probe": {"id": "Generic:1", "label": "T", "ok": True}},
+                "stimulus": {
+                    "initial_inputs": {"Enable": 0},
+                    "initial_params": {"Wait_C": 0.25},
+                    "steps": [
+                        {"index": 1, "delay_s": 0.01, "input_updates": {"Enable": 1}, "param_updates": {}},
+                        {"index": 2, "delay_s": 0.29, "input_updates": {}, "param_updates": {}},
+                    ],
+                    "evidence_step": 2,
+                },
+                "prediction_status": "observed",
+            }],
+        }
+
+        payload = builder.build_for_model("Generic", report, overrides={}, missing_status="unresolved")
+
+        obligation = payload["obligations"][0]
+        self.assertEqual(obligation["status"], "required")
+        self.assertEqual(obligation["stimulus"]["initial_inputs"], {"Enable": 0})
+        self.assertEqual(len(obligation["stimulus"]["steps"]), 2)
+        self.assertEqual(obligation["evidence_state"], "probe_observed_with_executable_sequence")
+
+    def test_dynamic_anchor_sensitizes_resolved_sibling_ports(self) -> None:
+        builder = load_script_module("build_probe_mcdc_obligations.py")
+        stimulus = {
+            "initial_inputs": {"TimerEnable": 0, "Request": 1, "FaultFree": 1},
+            "initial_params": {},
+            "steps": [
+                {"index": 1, "delay_s": 0.01, "input_updates": {"TimerEnable": 1}, "param_updates": {}},
+                {"index": 2, "delay_s": 0.3, "input_updates": {}, "param_updates": {}},
+            ],
+            "evidence_step": 2,
+        }
+        report = {
+            "probes": [{"id": "Generic:1", "operator": "AND", "port_names": ["u1", "u2", "u3"]}],
+            "observations": [
+                {"test_id": "P1", "step_index": 1, "inputs": {"TimerEnable": 1, "Request": 1, "FaultFree": 1}, "params": {}, "stimulus": stimulus, "vectors": {"v": {"id": "Generic:1", "label": "FTT", "ok": True}}},
+                {"test_id": "P1", "step_index": 2, "inputs": {"TimerEnable": 1, "Request": 1, "FaultFree": 1}, "params": {}, "stimulus": stimulus, "vectors": {"v": {"id": "Generic:1", "label": "TTT", "ok": True}}},
+            ],
+        }
+        mappings = {
+            "Generic:1": {
+                "id": "Generic:1",
+                "ports": [
+                    {"index": 1, "mapping_issues": ["dynamic stateful path"]},
+                    {"index": 2, "true_inputs": {"Request": 1}, "false_inputs": {"Request": 0}},
+                    {"index": 3, "true_inputs": {"FaultFree": 1}, "false_inputs": {"FaultFree": 0}},
+                ],
+            }
+        }
+
+        payload = builder.build_for_model("Generic", report, overrides={}, missing_status="unresolved", mappings=mappings)
+
+        self.assertEqual(payload["summary"]["required_count"], 4)
+        self.assertEqual(payload["summary"]["unresolved_count"], 0)
+        by_id = {item["id"]: item for item in payload["obligations"]}
+        self.assertEqual(by_id["Generic:1_TFT"]["stimulus"]["initial_inputs"]["Request"], 0)
+        self.assertEqual(by_id["Generic:1_TTF"]["stimulus"]["initial_inputs"]["FaultFree"], 0)
+        self.assertEqual(by_id["Generic:1_TFT"]["evidence_state"], "probe_observed_dynamic_anchor_with_static_sensitization")
+
+    def test_augment_and_validator_preserve_ordered_state_stimulus(self) -> None:
+        augment = load_script_module("augment_tcsd_for_mcdc.py")
+        validator = load_script_module("validate_logical_mcdc_mapping.py")
+        obligation = {
+            "id": "Generic:1_T",
+            "status": "required",
+            "block_path": "Generic/Decision",
+            "required_outcome": "operator_input_vector=T; output=true",
+            "match": {"inputs": {"Enable": 1}, "params": {"Wait_C": 0.25}},
+            "stimulus": {
+                "initial_inputs": {"Enable": 0},
+                "initial_params": {"Wait_C": 0.25},
+                "steps": [
+                    {"delay_s": 0.01, "input_updates": {"Enable": 1}, "param_updates": {}},
+                    {"delay_s": 0.29, "input_updates": {}, "param_updates": {}},
+                ],
+                "evidence_step": 2,
+            },
+        }
+        initialization = augment.merge_initialization("Other=0;", {"Enable": 0}, {"Wait_C": 0.25})
+        test = augment.build_test(2, obligation, initialization)
+
+        self.assertIn("p Wait_C=0.25;", test["initialization"])
+        self.assertIn("[+0.01s]", test["action"])
+        self.assertLess(test["action"].index("Enable=1;"), test["action"].index("[+0.29s]"))
+        self.assertNotIn("p Wait_C", test["action"])
+        snapshots = [
+            {"test_id": "TC_002", "phase": "initialization", "inputs": {"Enable": 0}, "params": {"Wait_C": 0.25}, "delay_s": 0.0},
+            {"test_id": "TC_002", "phase": "action_step", "inputs": {"Enable": 1}, "params": {"Wait_C": 0.25}, "delay_s": 0.01},
+            {"test_id": "TC_002", "phase": "action_step", "inputs": {"Enable": 1}, "params": {"Wait_C": 0.25}, "delay_s": 0.29},
+        ]
+        matched, missing = validator.find_stimulus_match(obligation["stimulus"], snapshots, tolerance=1e-9)
+        self.assertIsNotNone(matched)
+        self.assertEqual(missing, [])
+        snapshots[2]["delay_s"] = 0.1
+        matched, missing = validator.find_stimulus_match(obligation["stimulus"], snapshots, tolerance=1e-9)
+        self.assertIsNone(matched)
+        self.assertTrue(any(item["kind"] == "delay" for item in missing))
+
     def test_execution_manifest_requires_coverage_repair_when_initial_is_below_target(self) -> None:
         quality_loop = load_script_module("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as td:

@@ -184,7 +184,9 @@ Use the bundled scripts to reduce repeated manual repair work:
 2. Run `derive_logical_mcdc_mappings.py` to convert root inputs, NOT paths, nested AND/OR paths, and symbolic Constant parameters into explicit true/false input and parameter mappings.
 3. Build normal obligations with `build_logical_mcdc_obligations.py`.
 4. If workbook validation reports missing vectors whose obligations already contain `match.inputs`/`match.params`, run `augment_tcsd_for_mcdc.py` and rebuild the workbook.
-5. Run `probe_logical_mcdc_vectors.m` for actual vectors and Simulink Coverage, then `build_probe_mcdc_obligations.py`.
-6. Treat unresolved probe vectors as mapping failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason. Treat any actual Condition/Decision/MC/DC metric below the target (80% by default) as the trigger for one report-guided repair pass, not as a hard final-delivery failure.
+5. For unresolved state/timing ports, run `build_state_probe_plan.py`; it searches only the target dependency slice and emits at most 32 candidates with at most 8 steps each.
+6. Run `probe_logical_mcdc_vectors.m` with the explicit state-probe CaseJson. Keep the complete verified `stimulus` sequence in the generated obligation and TCSD supplemental Test.
+7. Probe the augmented workbook for actual vectors and Simulink Coverage, then run `build_probe_mcdc_obligations.py` again.
+8. Treat unresolved probe vectors as mapping failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason. Treat any actual Condition/Decision/MC/DC metric below the target (80% by default) as the trigger for one report-guided repair pass, not as a hard final-delivery failure.
 
 The default mapping gate remains `missing_count = 0` and `unresolved_count = 0`; `unreachable_count > 0` is acceptable only when every item has a specific model/probe reason. The coverage target is Condition/Decision/MC/DC each at least 80%. If the first report misses that target, repair once and then deliver the final measured result while explicitly reporting any metric still below 80%.

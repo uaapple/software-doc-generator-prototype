@@ -143,6 +143,10 @@ Windows VM 负责运行 Hermes Agent、MATLAB Worker 和 MATLAB/MCP 相关能力
 
 ## 单元测试 TCSD 生成 V1
 
+`skills/hermes/simulink-ut-tcsd-generator` 从本轮起是 TCSD 生产技能的工程内唯一源码。独立技能仓库只保留历史或显式同步用途，不再作为生产部署输入。本技能仅进入 `release/windows-prod`；`release/linux-prod` 必须排除该目录，因为 Linux 平台不运行 MATLAB、SATK 或 TCSD Probe。
+
+第一轮状态及时序探测使用确定性脚本闭环：逻辑追踪 v2 输出上游状态依赖，`build_state_probe_plan.py` 对未解析端口生成有界候选，MATLAB Probe 通过显式 CaseJson 验证实际端口向量，随后将完整初始化、输入变化、等待时间和证据步骤写入 obligation 与 TCSD。不得把最终输入快照冒充可复现的有状态刺激，也不得把候选耗尽或未支持结构自动标为不可达。
+
 本功能新增顶层页面 `/unit-test-case-generation`，平台端接收 1 个 `.slx`、1 个 `.mat`、可选 1 个模型初始化 `.m` 脚本和 1 个项目编号，在 `data/unit-test-case-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并通过 Hermes step `simulink_ut_tcsd_generate` 发给 Windows VM。平台端只登记项目、任务和下载 `workspace/outputs/*.xlsx`，上传的模型、MAT 数据、初始化脚本、项目登记 JSON 和生成的 Excel 都属于运行态数据，不进入 release 分支。
 
 TCSD workbook 现在增加 workbook-vs-rootPorts 校验门禁。平台端在 `simulink_ut_tcsd_generate` prompt 中要求 Hermes Agent 在 checkpoint workbook 生成后运行 `simulink-ut-tcsd-generator` skill 的 `scripts/validate_tcsd_workbook.py`，用模型编译得到的 root Inport/Outport 列表检查 `Initialization`、`Action` 和 `expValue(...)` 左侧信号名。如果校验报告未知输入、未知输出、向量语法问题或缺少最终延时，这属于 Hermes Agent 生成的候选 workbook/spec 缺陷，Agent 应在同一任务内根据报告的 row/cell/test_id/signal/line 修复用例、重建 workbook、重新校验后再进入仿真/回填；不要直接把第一版 workbook 校验失败作为平台任务失败返回给前端。只有 root-port 接口无法获取，或有限修复后仍无法得到合法 workbook，Hermes Agent 才应向平台返回 `status: "failed"`。
