@@ -87,8 +87,14 @@ export async function validateStageCheckpoint(raw = {}, context = {}) {
   for (const artifact of Array.isArray(raw.artifacts) ? raw.artifacts : []) artifacts.push(await assertArtifact(context.workspaceDir, artifact));
   if (raw.status !== "skipped" && !artifacts.length) throw contractError("非跳过阶段必须提供已验证产物");
   if (raw.status === "skipped" && !raw.skipReason) throw contractError("跳过阶段必须提供原因");
+  if (context.stageIndex === 3) {
+    if (!raw.evidence?.initializationManifest) throw contractError("第 3 阶段缺少工作区初始化 manifest");
+    const initialized = await evidenceJson(context.workspaceDir, raw.evidence.initializationManifest, "tcsd-workspace-initialization/v1");
+    if (initialized.jobId !== context.jobId || initialized.completed !== true) throw contractError("第 3 阶段初始化 manifest 未完成或 jobId 不匹配");
+  }
   if (context.stageIndex === 8) {
-    if (!raw.evidence?.simulationResult || Number(raw.evidence?.expValueCount || 0) < 1) throw contractError("第 8 阶段缺少实际仿真或 expValue 证据");
+    const simulationCount = Number(raw.evidence?.simulationValueCount || 0), workbookCount = Number(raw.evidence?.workbookBackfillCount || 0), expCount = Number(raw.evidence?.expValueCount || 0);
+    if (!raw.evidence?.simulationResult || simulationCount < 1 || workbookCount < 1 || expCount !== workbookCount || workbookCount > simulationCount || !raw.evidence?.caseOutputCounts) throw contractError("第 8 阶段缺少仿真/回填数量交叉证据");
     const workbook = artifacts.find((item) => item.kind === "xlsx"); if (!workbook || !xlsxText(await fs.readFile(workbook.absolutePath)).includes("expValue(")) throw contractError("第 8 阶段 workbook 没有实际 expValue");
     const simulation = artifacts.find((item) => item.path === raw.evidence.simulationResult); if (!simulation) throw contractError("第 8 阶段仿真结果未列入产物");
   }
