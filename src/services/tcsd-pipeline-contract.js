@@ -81,6 +81,14 @@ function xlsxText(buffer) {
   return result.join("\n");
 }
 async function evidenceJson(rootDir, relativePath, expectedSchema) { const absolute = path.resolve(rootDir, relativePath); const data = JSON.parse(await fs.readFile(absolute, "utf8")); if (expectedSchema && data.schema !== expectedSchema) throw contractError(`证据 schema 非法: ${relativePath}`); return data; }
+async function validateBackfillEvidence(raw, context, artifacts) {
+  const simulationCount = Number(raw.evidence?.simulationValueCount || 0), workbookCount = Number(raw.evidence?.workbookBackfillCount || 0), expCount = Number(raw.evidence?.expValueCount || 0), items = raw.evidence?.backfillItems;
+  if (!raw.evidence?.simulationResult || simulationCount < 1 || workbookCount !== simulationCount || expCount !== workbookCount || !Array.isArray(items) || items.length !== workbookCount || !raw.evidence?.caseOutputCounts) throw contractError(`第 ${context.stageIndex} 阶段缺少逐项仿真/回填交叉证据`);
+  const identities = new Set();
+  for (const item of items) { const key = `${item?.row}|${item?.testId}|${item?.step}|${item?.output}`; if (!Number.isInteger(item?.row) || item.row < 1 || !item?.testId || !Number.isInteger(item?.step) || item.step < 1 || !item?.output || !Number.isFinite(Number(item?.value)) || identities.has(key)) throw contractError(`第 ${context.stageIndex} 阶段回填明细非法或重复`); identities.add(key); }
+  const workbook = artifacts.find((item) => item.kind === "xlsx"); if (!workbook || !xlsxText(await fs.readFile(workbook.absolutePath)).includes("expValue(")) throw contractError(`第 ${context.stageIndex} 阶段 workbook 没有实际 expValue`);
+  const simulation = artifacts.find((item) => item.path === raw.evidence.simulationResult); if (!simulation) throw contractError(`第 ${context.stageIndex} 阶段仿真结果未列入产物`);
+}
 export async function validateStageCheckpoint(raw = {}, context = {}) {
   if (raw.schema !== TCSD_CHECKPOINT_SCHEMA || raw.jobId !== context.jobId || raw.stageIndex !== context.stageIndex || !["completed", "partial", "skipped"].includes(raw.status)) throw contractError("checkpoint schema/jobId/stageIndex/status 不匹配");
   const artifacts = [];
@@ -93,16 +101,13 @@ export async function validateStageCheckpoint(raw = {}, context = {}) {
     if (initialized.jobId !== context.jobId || initialized.completed !== true) throw contractError("第 3 阶段初始化 manifest 未完成或 jobId 不匹配");
   }
   if (context.stageIndex === 8) {
-    const simulationCount = Number(raw.evidence?.simulationValueCount || 0), workbookCount = Number(raw.evidence?.workbookBackfillCount || 0), expCount = Number(raw.evidence?.expValueCount || 0);
-    if (!raw.evidence?.simulationResult || simulationCount < 1 || workbookCount < 1 || expCount !== workbookCount || workbookCount > simulationCount || !raw.evidence?.caseOutputCounts) throw contractError("第 8 阶段缺少仿真/回填数量交叉证据");
-    const workbook = artifacts.find((item) => item.kind === "xlsx"); if (!workbook || !xlsxText(await fs.readFile(workbook.absolutePath)).includes("expValue(")) throw contractError("第 8 阶段 workbook 没有实际 expValue");
-    const simulation = artifacts.find((item) => item.path === raw.evidence.simulationResult); if (!simulation) throw contractError("第 8 阶段仿真结果未列入产物");
+    await validateBackfillEvidence(raw, context, artifacts);
   }
   if (context.stageIndex === 9) raw.coverage = normalizeCoverageReport(raw.coverage);
   if (context.stageIndex === 10 && raw.status !== "skipped") {
     if (!raw.repair?.attempted || Number(raw.repair?.passes || 0) > 1 || !raw.evidence?.coverageIr) throw contractError("第 10 阶段缺少 Coverage IR 单轮修正证据");
   }
-  if (context.stageIndex === 11 && raw.status !== "skipped") raw.coverage = normalizeCoverageReport(raw.coverage);
+  if (context.stageIndex === 11 && raw.status !== "skipped") { await validateBackfillEvidence(raw, context, artifacts); raw.coverage = normalizeCoverageReport(raw.coverage); }
   if (context.stageIndex === 12) {
     if (!raw.evidence?.executionManifest || !raw.evidence?.timeline || !raw.evidence?.artifactManifest || !raw.evidence?.cleanup) throw contractError("第 12 阶段缺少最终 manifest/时间线/产物/清理证据");
     raw.executionManifest = parseExecutionManifest(await evidenceJson(context.workspaceDir, raw.evidence.executionManifest, TCSD_EXECUTION_MANIFEST_SCHEMA));
