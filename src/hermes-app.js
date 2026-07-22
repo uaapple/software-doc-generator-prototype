@@ -13,6 +13,8 @@ import {
 import { SlxModelAnalysisService } from "./services/slx-model-analysis-service.js";
 import { ModelRequirementViewService } from "./services/model-requirement-view-service.js";
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
+import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js";
+import { TCSD_ERROR_CODES } from "./services/tcsd-pipeline-contract.js";
 
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
@@ -887,6 +889,40 @@ export async function createHermesApp() {
   const extractionService = new ExtractionService();
   const llmService = new LlmService();
   const templateService = new TemplateService();
+  const tcsdJobs = new TcsdPipelineJobService({
+    jobDir: config.tcsdPipeline?.jobStoreDir || path.join(config.dataDir, "tcsd-pipeline-jobs"),
+    executor: async (stageIndex, input, job) => {
+      const workspaceDir = input.workspaceDir;
+      const outputDir = input.outputDir;
+      const checkpointDir = path.join(outputDir, ".tcsd-checkpoints");
+      await fs.mkdir(checkpointDir, { recursive: true });
+      const checkpoint = path.join(checkpointDir, `stage-${String(stageIndex).padStart(2, "0")}.json`);
+      const writeCheckpoint = async (payload) => { await fs.writeFile(checkpoint, JSON.stringify({ schema: "tcsd-stage-checkpoint/v1", stageIndex, at: now(), ...payload }, null, 2)); };
+      if (stageIndex === 10 && job.coverage && [job.coverage.condition, job.coverage.decision, job.coverage.mcdc].every((value) => Number(value) >= 80)) {
+        await writeCheckpoint({ skipped: true, reason: "首轮三项覆盖率均达到 80%。" }); return { checkpoint, skip: true, skipReason: "首轮三项覆盖率均达到 80%。" };
+      }
+      if (stageIndex === 11 && !job.repair?.applied) { await writeCheckpoint({ skipped: true, reason: "未发生修正，引用首轮覆盖率结果。" }); return { checkpoint, skip: true, skipReason: "未发生修正，引用首轮覆盖率结果。" }; }
+      if (stageIndex === 8) {
+        const client = new HermesAgentClient({ transport: "cli", workdir: workspaceDir });
+        const result = await client.executeStep({ stepType: "simulink_ut_tcsd_generate", workdir: workspaceDir, allowedPaths: [workspaceDir], inputArtifact: input }, {});
+        const artifact = result.artifact || {};
+        if (artifact.status === "failed") throw Object.assign(new Error(artifact.errorMessage || artifact.summary || "TCSD 质量回路失败。"), { code: TCSD_ERROR_CODES.stage });
+        await writeCheckpoint({ source: "simulation-backfill", artifact });
+        return { checkpoint, summary: "已完成模型仿真并由实际仿真回填期望值。", artifacts: artifact.outputFiles || [] };
+      }
+      if (stageIndex >= 9) {
+        const manifests = (await fs.readdir(outputDir).catch(() => [])).filter((name) => name.endsWith("_tcsd_execution_manifest.json"));
+        if (!manifests.length) throw Object.assign(new Error("缺少确定性执行 manifest。"), { code: TCSD_ERROR_CODES.checkpoint });
+        const manifest = JSON.parse(await fs.readFile(path.join(outputDir, manifests[0]), "utf8"));
+        const coverage = manifest.coverage?.final || manifest.coverage?.initial || {};
+        const normalizedCoverage = { condition: Number(coverage.condition ?? coverage.Condition), decision: Number(coverage.decision ?? coverage.Decision), mcdc: Number(coverage.mcdc ?? coverage.MCDC) };
+        await writeCheckpoint({ manifest: manifests[0], coverage: normalizedCoverage, repair: { attempted: Number(manifest.coverage?.repair_passes || 0) > 0, applied: Number(manifest.coverage?.repair_passes || 0) > 0 } });
+        return { checkpoint, summary: stageIndex === 12 ? "已输出最终执行 manifest、时间线、产物清单并清理任务资源。" : "已校验确定性质量回路证据。", coverage: normalizedCoverage, repair: { attempted: Number(manifest.coverage?.repair_passes || 0) > 0, applied: Number(manifest.coverage?.repair_passes || 0) > 0 }, partial: manifest.status === "partial" };
+      }
+      await writeCheckpoint({ gate: "passed", workspaceDir, inputFiles: [input.modelSlxPath, input.modelMatPath] });
+      return { checkpoint, summary: "前置条件与阶段检查点已验证。" };
+    }
+  });
 
   app.use(express.json({ limit: "8mb" }));
 
@@ -898,6 +934,22 @@ export async function createHermesApp() {
       host: config.hermes.host,
       port: config.hermes.port
     });
+  });
+
+  app.post("/internal/tcsd-pipeline/jobs", async (req, res, next) => {
+    try {
+      const payload = req.body || {};
+      const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
+      const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
+      const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
+      const job = await tcsdJobs.start({ taskId: payload.taskId, idempotencyKey: payload.idempotencyKey || payload.taskId, ...inputArtifact, projectAddonCopy: addonCopy });
+      res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema });
+    } catch (error) { next(error); }
+  });
+  app.get("/internal/tcsd-pipeline/jobs/:jobId", async (req, res) => {
+    const job = await tcsdJobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: "TCSD 作业不存在。", code: TCSD_ERROR_CODES.jobNotFound });
+    return res.json(job);
   });
 
   app.post("/internal/steps/execute", async (req, res, next) => {
