@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertOfficialSkillConsistency } from "./windows-worker-skill-consistency.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.resolve(process.argv[2] || path.join(projectRoot, "release-dist", "windows-worker-source"));
@@ -185,6 +186,10 @@ function writeText(filePath, lines) {
   fs.writeFileSync(filePath, `${lines.join("\r\n")}\r\n`, "utf8");
 }
 
+assertOfficialSkillConsistency({
+  projectRoot,
+  manifestPath: path.join(offlineSourceRoot, "official-dependencies.json")
+});
 fs.mkdirSync(outputDir, { recursive: true });
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "software-doc-windows-worker-source-"));
 const bundleRoot = path.join(tmpRoot, "software-doc-windows-worker-source");
