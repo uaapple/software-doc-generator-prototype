@@ -31,5 +31,5 @@
     "scripts/install-windows-services.ps1"
   ],
   "copyFiles": [],
-  "runtimeDataPolicy": "Linux production keeps APP_DATA_DIR and APP_SKILLS_DIR outside the code directory and reaches Hermes/MATLAB through remote HTTP endpoints."
+  "runtimeDataPolicy": "Linux production keeps APP_DATA_DIR and APP_SKILLS_DIR outside the code directory, persists Windows TCSD jobId state, and reconciles remote staged jobs through HTTP without packaging runtime data."
 }

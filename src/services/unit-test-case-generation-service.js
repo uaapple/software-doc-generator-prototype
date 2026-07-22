@@ -345,6 +345,8 @@ export class UnitTestCaseGenerationService {
   constructor(options = {}) {
     this.hermesAgentClient = options.hermesAgentClient || new HermesAgentClient();
     this.deletedTaskIds = new Set();
+    this.remotePollWindowMs = Number(options.remotePollWindowMs ?? config.unitTestCase?.remotePollWindowMs ?? 5 * 60 * 1000);
+    this.sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   get storeDir() {
@@ -808,7 +810,8 @@ export class UnitTestCaseGenerationService {
       error: job.error || null,
       updatedAt: job.updatedAt || now()
     };
-    task.status = job.status === "失败" ? "failed" : ["已完成", "部分完成"].includes(job.status) ? "completed" : "running";
+    task.status = job.status === "失败" ? "failed" : job.status === "部分完成" ? "partial" : job.status === "已完成" ? "completed" : "running";
+    task.workerPending = false;
     task.progress = buildProgress(task.status, job.stages?.find((stage) => stage.status === "正在执行")?.name || job.error?.message || "正在同步 TCSD 十二阶段进度。");
     task.updatedAt = now();
     await this.saveTask(task);
@@ -816,29 +819,32 @@ export class UnitTestCaseGenerationService {
   }
 
   async runRemotePipeline(taskId, task) {
-    const started = await this.hermesAgentClient.startTcsdPipelineJob({
-      ...this.buildHermesPayload(task), taskId, idempotencyKey: taskId
-    });
+    const existingJobId = task.pipeline?.jobId || "";
+    const started = existingJobId ? { jobId: existingJobId, status: task.pipeline?.status || "正在执行", schema: task.pipeline?.schema || "" } : await this.hermesAgentClient.startTcsdPipelineJob({ ...this.buildHermesPayload(task), taskId, idempotencyKey: taskId });
     let job = { ...started, stages: [] };
     await this.syncPipelineJob(taskId, job);
-    const deadline = Date.now() + 12 * 60 * 60 * 1000;
+    const deadline = Date.now() + this.remotePollWindowMs;
     let delayMs = 1000;
     let lastTransientAt = 0;
     while (Date.now() < deadline) {
       try {
         job = await this.hermesAgentClient.getTcsdPipelineJob(started.jobId);
+        lastTransientAt = 0;
         await this.syncPipelineJob(taskId, job);
         if (["已完成", "部分完成", "失败"].includes(job.status)) break;
         delayMs = 1000;
       } catch (error) {
         // A temporary network break is not a MATLAB failure; retain the last confirmed job state.
         lastTransientAt ||= Date.now();
-        if (Date.now() - lastTransientAt > 5 * 60 * 1000) throw error;
+        if (error.code === "tcsd_job_not_found") throw error;
         delayMs = Math.min(15000, Math.round(delayMs * 1.8));
       }
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await this.sleep(delayMs);
     }
-    if (!job || !["已完成", "部分完成", "失败"].includes(job.status)) throw createHttpError("TCSD Worker 轮询超时，作业仍可稍后继续查询。", 504, "tcsd_poll_timeout");
+    if (!job || !["已完成", "部分完成", "失败"].includes(job.status)) {
+      const pending = await this.readTask(taskId); pending.status = "running"; pending.workerPending = true; pending.progress = buildProgress("running", "Windows 作业仍在执行，平台将在后台继续同步。"); pending.updatedAt = now(); await this.saveTask(pending);
+      return { status: "pending", jobId: started.jobId };
+    }
     if (job.status === "失败") throw createHttpError(job.error?.message || "TCSD 阶段执行失败。", 502, job.error?.code || "tcsd_stage_failed");
     return { status: "succeeded", artifact: { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [], warnings: [] }, metrics: { pipelineJobId: job.jobId }, pipelineJob: job };
   }
@@ -855,6 +861,7 @@ export class UnitTestCaseGenerationService {
       const result = this.hermesAgentClient.transport === "api"
         ? await this.runRemotePipeline(taskId, task)
         : await this.hermesAgentClient.executeStep(this.buildHermesPayload(task), { onEvent: (event) => this.appendRuntimeEvent(taskId, event) });
+      if (result?.status === "pending") return this.getTask(taskId);
       const artifact = result?.artifact || {};
       if (result?.status && result.status !== "succeeded") {
         throw createHttpError(result?.error?.message || "Hermes Agent 执行失败。", 502, "unit_test_case_hermes_failed");
@@ -864,6 +871,9 @@ export class UnitTestCaseGenerationService {
       }
       return await this.completeTask(taskId, artifact, result);
     } catch (error) {
+      if (this.hermesAgentClient.transport === "api" && ["tcsd_worker_unavailable", "tcsd_poll_timeout"].includes(error.code)) {
+        const pending = await this.readTask(taskId); pending.status = pending.pipeline?.jobId ? "running" : "queued"; pending.workerPending = true; pending.updatedAt = now(); pending.progress = buildProgress(pending.status, "Windows Worker 暂不可用，平台将在后台继续尝试。"); await this.saveTask(pending); return this.getTask(taskId);
+      }
       await this.failTask(taskId, error);
       throw error;
     }
@@ -1012,10 +1022,26 @@ export class UnitTestCaseGenerationService {
     for (const task of tasks) {
       const updatedAt = Date.parse(task.updatedAt || task.createdAt || "") || 0;
       if (["queued", "running"].includes(task.status) && updatedAt < cutoff) {
-        await this.failTask(task.id, createHttpError("服务重启后任务未恢复，已标记为失败。", 500, "unit_test_case_task_recovered_failed"));
+        if (this.hermesAgentClient.transport === "api" && task.pipeline?.jobId) await this.reconcileTask(task.id);
+        else if (task.status === "running") await this.failTask(task.id, createHttpError("服务重启后任务缺少可恢复的 Windows jobId。", 500, "unit_test_case_task_recovered_failed"));
       }
     }
   }
+
+  async reconcileTask(taskId = "") {
+    const task = await this.readTask(taskId); if (!task?.pipeline?.jobId || !["queued", "running"].includes(task.status)) return task;
+    try {
+      const job = await this.hermesAgentClient.getTcsdPipelineJob(task.pipeline.jobId); await this.syncPipelineJob(taskId, job);
+      if (job.status === "失败") return this.failTask(taskId, createHttpError(job.error?.message || "Windows 阶段执行失败。", 502, job.error?.code || "tcsd_stage_failed"));
+      if (["已完成", "部分完成"].includes(job.status)) return this.completeTask(taskId, { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [] }, { metrics: { pipelineJobId: job.jobId } });
+      return this.getTask(taskId);
+    } catch (error) {
+      if (error.code === "tcsd_job_not_found") return this.failTask(taskId, createHttpError("Windows Worker 中不存在该 jobId。", 404, "tcsd_job_not_found"));
+      const pending = await this.readTask(taskId); pending.status = "running"; pending.workerPending = true; pending.updatedAt = now(); pending.progress = buildProgress("running", error.code === "tcsd_worker_unavailable" ? "Windows Worker 暂不可用，等待后台重连。" : "进度同步暂时中断，等待后台重试。"); await this.saveTask(pending); return pending;
+    }
+  }
+
+  async reconcileRemoteTasks() { const results = []; for (const task of await this.listTasks()) if (["queued", "running"].includes(task.status)) results.push(task.pipeline?.jobId ? await this.reconcileTask(task.id) : await this.runTask(task.id)); return results; }
 
   async getArtifact(taskId = "", artifactId = "") {
     const task = await this.readTask(taskId);
