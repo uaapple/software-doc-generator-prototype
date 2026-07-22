@@ -149,22 +149,24 @@ Windows VM 负责运行 Hermes Agent、MATLAB Worker 和 MATLAB/MCP 相关能力
 
 第二轮把上述片段统一为 `simulink-ut-tcsd-coverage-ir/v1`：Windows 技能使用 `build_coverage_ir.py` 保存 Condition、Decision、MC/DC 的控制量、嵌套逻辑、时序刺激、敏化上下文、可达性和仿真证据，并由 `synthesize_tcsd_from_coverage_ir.py` 确定性追加去重用例。`run_tcsd_quality_loop.py` 固定为“严格工作簿校验 → 仿真/回填 → 首轮覆盖率 → 至多一次报告驱动修正 → 最终仿真/回填与覆盖率”。`unsupported`、`unresolved` 和有证据的 `unreachable` 会以部分完成证据留在 manifest；不能因缺图或候选耗尽猜测不可达。该协议与执行代码仅进入 Windows TCSD 技能，不改变 Linux 前端或异步进度协议。
 
-本功能新增顶层页面 `/unit-test-case-generation`，平台端接收 1 个 `.slx`、1 个 `.mat`、可选 1 个模型初始化 `.m` 脚本和 1 个项目编号，在 `data/unit-test-case-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并通过 Hermes step `simulink_ut_tcsd_generate` 发给 Windows VM。平台端只登记项目、任务和下载 `workspace/outputs/*.xlsx`，上传的模型、MAT 数据、初始化脚本、项目登记 JSON 和生成的 Excel 都属于运行态数据，不进入 release 分支。
+本功能新增顶层页面 `/unit-test-case-generation`，平台端接收 1 个 `.slx`、1 个 `.mat`、可选 1 个模型初始化 `.m` 脚本和 1 个项目编号，在 `data/unit-test-case-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并通过 Windows 异步 job API 发给 Windows VM。平台端只登记项目、任务和下载 `workspace/outputs/*.xlsx`，上传的模型、MAT 数据、初始化脚本、项目登记 JSON 和生成的 Excel 都属于运行态数据，不进入 release 分支。
 
 TCSD workbook 现在增加 workbook-vs-rootPorts 校验门禁。平台端在 `simulink_ut_tcsd_generate` prompt 中要求 Hermes Agent 在 checkpoint workbook 生成后运行 `simulink-ut-tcsd-generator` skill 的 `scripts/validate_tcsd_workbook.py`，用模型编译得到的 root Inport/Outport 列表检查 `Initialization`、`Action` 和 `expValue(...)` 左侧信号名。如果校验报告未知输入、未知输出、向量语法问题或缺少最终延时，这属于 Hermes Agent 生成的候选 workbook/spec 缺陷，Agent 应在同一任务内根据报告的 row/cell/test_id/signal/line 修复用例、重建 workbook、重新校验后再进入仿真/回填；不要直接把第一版 workbook 校验失败作为平台任务失败返回给前端。只有 root-port 接口无法获取，或有限修复后仍无法得到合法 workbook，Hermes Agent 才应向平台返回 `status: "failed"`。
 
 ## TCSD 第三轮：异步十二阶段协议
 
-Windows Hermes 提供 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`。启动请求立即返回稳定 `jobId`；作业 JSON 和事件持久化在 Windows 的 `APP_DATA_DIR/tcsd-pipeline-jobs`，同一平台 `taskId` 作为幂等键。平台端仅保存 jobId 并以退避轮询同步状态，短暂网络错误不会直接把 MATLAB 作业标为失败。
+Windows Hermes 提供 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`。启动请求立即返回稳定 `jobId`；作业 JSON 和事件持久化在 Windows 的 `APP_DATA_DIR/tcsd-pipeline-jobs`，同一平台 `taskId` 作为幂等键。Hermes 不再调用旧的整块 `simulink_ut_tcsd_generate` CLI；`TcsdWindowsStageExecutor` 直接逐阶段启动技能内 `run_tcsd_pipeline_stage.py`，由该 runner 调用 MATLAB/SATK、Coverage IR、工作簿、仿真、覆盖率和清理子能力并写权威 checkpoint。平台端仅保存 jobId 并以退避轮询同步状态，短暂网络错误不会直接把 MATLAB 作业标为失败。
 
-共享契约为 `src/services/tcsd-pipeline-contract.js`（`tcsd-deterministic-pipeline/v1`），固定十二个中文阶段、状态、错误码、检查点、产物、coverage 和 repair 字段。Windows `tcsd-pipeline-job-service` 在每个阶段持久化开始/结束时间、事件和已验证检查点；不允许非法状态转换或跳过已验证的检查点。阶段 8 的 checkpoint 绑定实际仿真/回填结果；阶段 9 读取首轮 Condition/Decision/MC/DC 结果；阶段 10 最多一次覆盖率驱动修正；若首轮三项均≥80%，10、11 显式“已跳过”。不支持/未解决或最终低覆盖为“部分完成”，仍保留可下载工作簿；环境、输入、仿真、回填和检查点失败才是“失败”。
+共享契约为 `src/services/tcsd-pipeline-contract.js`（`tcsd-deterministic-pipeline/v1`），固定十二个中文阶段、状态、错误码、检查点、产物、coverage 和 repair 字段。Windows `tcsd-pipeline-job-service` 在每个阶段持久化开始/结束时间、事件和已验证检查点；服务启动时扫描非终态 job，已验证 checkpoint 不重复执行，处于“正在执行”但证据不完整的阶段恢复为等待重试。同一幂等键命中非终态 job 会重新调度。阶段 8 的 checkpoint 验证 XLSX 中真实存在 `expValue` 并关联仿真 JSON；阶段 9 校验按模型分组的首轮 Condition/Decision/MC/DC；阶段 10 只依据首轮覆盖率进行至多一次 Coverage IR 修正；阶段 11 只在修正实际应用时运行最终仿真/回填/覆盖率；第 12 阶段校验最终 execution manifest、时间线、产物清单与 job 所有权清理记录。`status=completed, completion=partial`、attempted=true/applied=false、unsupported/unresolved 和最终低覆盖均收敛为“部分完成”，工作簿仍可下载。
 
 Linux 发布包包含平台轮询、任务 JSON 和中文页面展示，但不运行 MATLAB。Windows 发布包包含 job 执行器、Hermes 路由及全部 TCSD 技能。shared contract、config、部署 ownership 与本交接文档需要同时进入两端。
+
+Linux 端 `UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS` 只控制单次前台同步窗口；超时后任务保持 `running/workerPending`，由 `UNIT_TEST_CASE_RECONCILE_INTERVAL_MS` 后台恢复。404 job-not-found 是永久失败，Worker 不可用与短暂网络中断保持待同步，Windows 阶段失败使用阶段错误码收敛。Windows 端设置 `TCSD_PIPELINE_PYTHON`、`TCSD_PIPELINE_STAGE_TIMEOUT_MS` 和 `MATLAB_ROOT`；job 状态目录属于运行态数据，不进入 release。
 
 生产拆分端速读：
 
 - Linux 平台端只负责页面、项目登记、上传下载、任务 JSON、队列状态和向 Hermes Agent HTTP 服务发起请求，不直接运行 MATLAB，也不解析 Windows 附加包路径。
-- Windows VM 端负责 Hermes Agent step、项目附加包复制、Hermes CLI、MATLAB/SATK 和 `simulink-ut-tcsd-generator` skill 的实际执行。
+- Windows VM 端负责异步 job、项目附加包复制、确定性阶段 runner、MATLAB/SATK 和 `simulink-ut-tcsd-generator` skill 的实际执行；Agent 只启动 job 入口，不决定跳步。
 - Shared 协议负责把 `workspaceDir/modelSlxPath/modelMatPath/outputDir/unitTestProject/skillName/expectedOutputPattern` 固定传给 Hermes；如果用户上传模型级初始化脚本，还会传 `modelInitScriptPath/modelInitScriptFileName/projectInitScripts`，并要求 Hermes/skill 优先执行这个显式脚本。协议同时把 workbook/rootPorts 校验与内部修复语义写入 Hermes prompt，再把返回或回收得到的 `outputs/*.xlsx` 归一化成平台 artifact。
 - 运行态数据只留在 `data/unit-test-case-generation/**`；外部项目附加包只放在 Agent 机器配置的 addon root 下，部署端不要把用户上传的 `.slx/.mat/.m`、项目登记 JSON、生成的 `.xlsx` 或 addon 包内容带进 release 分支。
 

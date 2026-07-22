@@ -119,7 +119,9 @@ const appConfig = {
     ),
     skillName: process.env.UNIT_TEST_CASE_SKILL_NAME || "simulink-ut-tcsd-generator",
     expectedOutputPattern: process.env.UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN || "outputs/*_tcsd.xlsx",
-    agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || ""
+    agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || "",
+    remotePollWindowMs: Number(process.env.UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS || 300000),
+    reconcileIntervalMs: Number(process.env.UNIT_TEST_CASE_RECONCILE_INTERVAL_MS || 30000)
   },
   tcsdPipeline: {
     jobStoreDir: path.join(dataDir, "tcsd-pipeline-jobs")

@@ -2511,7 +2511,9 @@ export class HermesAgentClient {
   }
 
   async startTcsdPipelineJob(payload = {}) {
-    const response = await postJsonWithTimeout(`${this.baseURL}/internal/tcsd-pipeline/jobs`, payload, this.timeoutMs);
+    let response;
+    try { response = await postJsonWithTimeout(`${this.baseURL}/internal/tcsd-pipeline/jobs`, payload, this.timeoutMs); }
+    catch (cause) { const error = new Error(`TCSD Worker 不可用：${cause.message}`); error.code = "tcsd_worker_unavailable"; error.cause = cause; throw error; }
     let body = null;
     try { body = JSON.parse(response.text); } catch (_error) { body = null; }
     if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 启动作业失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
@@ -2521,11 +2523,12 @@ export class HermesAgentClient {
   async getTcsdPipelineJob(jobId = "") {
     const target = new URL(`${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}`);
     const transport = target.protocol === "https:" ? https : http;
-    const response = await new Promise((resolve, reject) => {
+    let response;
+    try { response = await new Promise((resolve, reject) => {
       const request = transport.request(target, { method: "GET", timeout: this.timeoutMs }, (result) => {
         let text = ""; result.setEncoding("utf8"); result.on("data", (chunk) => { text += chunk; }); result.on("end", () => resolve({ ok: result.statusCode >= 200 && result.statusCode < 300, status: result.statusCode, text }));
       }); request.on("timeout", () => request.destroy(Object.assign(new Error("TCSD Worker 轮询超时。"), { code: "tcsd_poll_timeout" }))); request.on("error", reject); request.end();
-    });
+    }); } catch (cause) { if (cause.code === "tcsd_poll_timeout") throw cause; const error = new Error(`TCSD Worker 不可用：${cause.message}`); error.code = "tcsd_worker_unavailable"; error.cause = cause; throw error; }
     let body = null; try { body = JSON.parse(response.text); } catch (_error) { body = null; }
     if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 作业查询失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
     return body;
