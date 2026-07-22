@@ -2,6 +2,14 @@
 
 - 以后由 Codex 生成的 Git commit message 默认使用中文，除非用户明确要求使用其他语言。
 
+## macOS 本地 MATLAB MCP 调试
+
+仅当 Codex 在 macOS 本机调试 Simulink/MATLAB MCP 时适用：
+
+- 调用 `satk_eval.py` 或 `matlab-mcp-server` 必须使用沙箱外权限，以允许 MCP watchdog 创建 Unix socket。
+- 显式设置 MATLAB 根目录为 `/Applications/MATLAB_R2026a.app`。
+- 此规则只改变本机 Codex 的工具调用方式；不得修改技能实现、Windows Hermes Agent、生产部署、release 包或其脚本。
+
 # Codex 开发提交约束
 
 本项目生产部署分为 `release/linux-prod` 和 `release/windows-prod`。Mac 开发环境可以 all-in-one 运行后端、Hermes Agent、MATLAB/MCP，但 Codex 在开发分支提交时必须显式维护部署边界。
