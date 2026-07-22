@@ -147,6 +147,8 @@ Windows VM 负责运行 Hermes Agent、MATLAB Worker 和 MATLAB/MCP 相关能力
 
 第一轮状态及时序探测使用确定性脚本闭环：逻辑追踪 v2 输出上游状态依赖，`build_state_probe_plan.py` 对未解析端口生成有界候选，MATLAB Probe 通过显式 CaseJson 验证实际端口向量，随后将完整初始化、输入变化、等待时间和证据步骤写入 obligation 与 TCSD。不得把最终输入快照冒充可复现的有状态刺激，也不得把候选耗尽或未支持结构自动标为不可达。
 
+第二轮把上述片段统一为 `simulink-ut-tcsd-coverage-ir/v1`：Windows 技能使用 `build_coverage_ir.py` 保存 Condition、Decision、MC/DC 的控制量、嵌套逻辑、时序刺激、敏化上下文、可达性和仿真证据，并由 `synthesize_tcsd_from_coverage_ir.py` 确定性追加去重用例。`run_tcsd_quality_loop.py` 固定为“严格工作簿校验 → 仿真/回填 → 首轮覆盖率 → 至多一次报告驱动修正 → 最终仿真/回填与覆盖率”。`unsupported`、`unresolved` 和有证据的 `unreachable` 会以部分完成证据留在 manifest；不能因缺图或候选耗尽猜测不可达。该协议与执行代码仅进入 Windows TCSD 技能，不改变 Linux 前端或异步进度协议。
+
 本功能新增顶层页面 `/unit-test-case-generation`，平台端接收 1 个 `.slx`、1 个 `.mat`、可选 1 个模型初始化 `.m` 脚本和 1 个项目编号，在 `data/unit-test-case-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并通过 Hermes step `simulink_ut_tcsd_generate` 发给 Windows VM。平台端只登记项目、任务和下载 `workspace/outputs/*.xlsx`，上传的模型、MAT 数据、初始化脚本、项目登记 JSON 和生成的 Excel 都属于运行态数据，不进入 release 分支。
 
 TCSD workbook 现在增加 workbook-vs-rootPorts 校验门禁。平台端在 `simulink_ut_tcsd_generate` prompt 中要求 Hermes Agent 在 checkpoint workbook 生成后运行 `simulink-ut-tcsd-generator` skill 的 `scripts/validate_tcsd_workbook.py`，用模型编译得到的 root Inport/Outport 列表检查 `Initialization`、`Action` 和 `expValue(...)` 左侧信号名。如果校验报告未知输入、未知输出、向量语法问题或缺少最终延时，这属于 Hermes Agent 生成的候选 workbook/spec 缺陷，Agent 应在同一任务内根据报告的 row/cell/test_id/signal/line 修复用例、重建 workbook、重新校验后再进入仿真/回填；不要直接把第一版 workbook 校验失败作为平台任务失败返回给前端。只有 root-port 接口无法获取，或有限修复后仍无法得到合法 workbook，Hermes Agent 才应向平台返回 `status: "failed"`。
