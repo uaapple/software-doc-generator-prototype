@@ -16,6 +16,8 @@ Run at most one feedback repair pass unless the user explicitly asks for more. T
 
 Do not start an unbounded coverage loop during normal generation. The threshold triggers one repair pass; it is not a final delivery gate. If the repair still leaves a metric below target, deliver the final valid/backfilled workbook and report the remaining uncovered items as `still_uncovered` or `unreachable_candidate` with the available evidence.
 
+The completed workflow must write `outputs/<model>_tcsd_execution_manifest.json`. The initial coverage artifact is mandatory even when all metrics already pass. When any initial metric is below threshold, the manifest is incomplete until one repair pass and a final coverage artifact exist. Do not substitute workbook validation or `expValue(...)` counts for this coverage evidence.
+
 ## Coverage Feedback Script
 
 After `extract_tcsd_cases.py` writes the case JSON, call MATLAB through `satk_eval.py` with an entry file like:
@@ -46,14 +48,18 @@ If `status != "ok"`, do not claim MCDC feedback was applied. Continue only with 
 For each uncovered MCDC item:
 
 - Locate the exact block path in SATK/model inspection.
-- Identify each condition in the boolean equation and the root input or scalar parameter that controls it.
+- Run `build_atomic_mcdc_repair_plan.py` on the model logical trace to build the nested Boolean AST. Identify each atomic condition, its root input/scalar parameter/stateful controller, and every outer sensitization prerequisite. A root input that only resets or advances a timer is not automatically an independent condition.
 - Add the minimum baseline-plus-independent-toggle cases needed for MC/DC, not all `2^N` combinations.
+- For an OR input to have independent effect, force every other OR branch false. For an AND input to have independent effect, force every other AND branch true. Apply these rules through the full nested expression, not only at the nearest Logical Operator block.
 - Preserve all Test-row self-contained initialization rules.
 - Use `p Param=value;` for scalar calibration states needed to independently toggle a condition.
+- Put coverage-driving parameter states in Test `Initialization` and split parameter states into separate Tests. Do not use Action parameter changes as coverage evidence until the MATLAB runner supports true time-varying tunable parameters.
 - Hold filtered, debounced, delayed, or Stateflow-gated paths long enough for the target condition to be evaluated.
 - Backfill only top-level Outport expectations after the repaired workbook simulates.
 
 Prefer adding new supplemental Tests over mutating already useful functional Tests. Name the description method `coverage feedback` and include the target block path/outcome.
+
+Reject a repair plan that emits a full root-input truth table, exceeds the planner's `2N+2` bound, substitutes an unrelated root input for an unresolved condition, or cannot demonstrate an observed unique-cause pair where exactly one atomic condition and the decision output change.
 
 ## Stateful MC/DC Probe Protocol
 

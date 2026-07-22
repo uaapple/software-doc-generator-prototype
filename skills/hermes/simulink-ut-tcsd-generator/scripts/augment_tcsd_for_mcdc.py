@@ -96,8 +96,13 @@ def next_test_index(spec: dict[str, Any]) -> int:
     return max_seen + 1
 
 
-def load_obligation_map(path: str | Path) -> dict[str, dict[str, Any]]:
+def load_obligation_payload(path: str | Path) -> dict[str, Any]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {"obligations": data}
+
+
+def load_obligation_map(path: str | Path) -> dict[str, dict[str, Any]]:
+    data = load_obligation_payload(path)
     items = data.get("obligations", data) if isinstance(data, dict) else data
     return {str(item.get("id")): item for item in items if isinstance(item, dict) and item.get("id")}
 
@@ -135,13 +140,15 @@ def build_test(test_index: int, obligation: dict[str, Any], init_text: str) -> d
     item_id = str(obligation.get("id") or f"MCDC_{test_index}")
     block_path = str(obligation.get("block_path") or "")
     outcome = str(obligation.get("required_outcome") or "")
+    hold_s = float(obligation.get("hold_s") or 1.0)
+    hold_text = f"{hold_s:.12g}s"
     return {
         "id": f"TC_{test_index:03d}",
         "name": f"MCDC supplemental {item_id}"[:120],
         "requirement_id": "UT_MCDC",
         "description": f"MC/DC supplemental case for {item_id}; {outcome}; block: {block_path}",
         "initialization": init_text,
-        "action": f"[+1s] // hold mapped MC/DC state for {item_id}\n[+0.1s]",
+        "action": f"[+{hold_text}] // hold and observe mapped MC/DC state for {item_id}\n[+0.1s]",
         "work_status": "reviewed",
     }
 
@@ -156,7 +163,16 @@ def main() -> int:
     parser.add_argument("--max-new-tests", type=int, default=50)
     args = parser.parse_args()
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
+    payload = load_obligation_payload(args.obligations)
     obligations = load_obligation_map(args.obligations)
+    if payload.get("generation_mode") == "minimal_unique_cause":
+        decisions = payload.get("summary", {}).get("decisions", [])
+        plan_limit = sum(int(item.get("max_allowed_vectors") or 0) for item in decisions if isinstance(item, dict))
+        if plan_limit and len(obligations) > plan_limit:
+            raise SystemExit(f"atomic MC/DC plan exceeds bounded vector limit: {len(obligations)} > {plan_limit}")
+        condition_count = sum(int(item.get("condition_count") or 0) for item in decisions if isinstance(item, dict))
+        if condition_count >= 3 and len(obligations) >= 2 ** condition_count:
+            raise SystemExit("refusing full 2^N truth-table expansion for MC/DC repair")
     base = baseline_initialization(spec, args.baseline_test_id)
     existing_ids = {str(test.get("id")) for test in spec.get("tests", [])}
     index = next_test_index(spec)

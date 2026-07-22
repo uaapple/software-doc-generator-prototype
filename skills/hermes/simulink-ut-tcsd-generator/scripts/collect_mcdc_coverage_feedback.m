@@ -133,7 +133,11 @@ currentTime = 0;
 for k = 1:numel(test.steps)
     step = test.steps(k);
     currentTime = currentTime + step.delay_s;
-    apply_param_overrides(step.param_updates);
+    if ~isempty(fieldnames(step.param_updates))
+        error('collect_mcdc_coverage_feedback:ActionParameterUpdateUnsupported', ...
+            ['Coverage-driving parameter changes in Action would collapse to the final base-workspace value ' ...
+             'before simulation. Split parameter states into separate Tests and place p Param=value in Initialization.']);
+    end
     fields = fieldnames(step.input_updates);
     sampleMask = t >= (currentTime - (dt / 100));
     for j = 1:numel(fields)

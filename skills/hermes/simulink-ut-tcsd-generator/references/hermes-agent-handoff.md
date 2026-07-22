@@ -30,6 +30,7 @@ The agent must automatically:
 - build the workbook from the bundled canonical template `assets/templates/tcsd_template.xlsx`;
 - save `outputs/<model>_Test0001_tcsd.xlsx`, or the next versioned filename if it exists;
 - deliver the Excel workbook with `expValue(...)` expectations as the required output. JSON/spec/simulation files may be used as internal script artifacts, but a separate validation report is not required unless the user explicitly asks for one.
+- always generate `outputs/<model>_tcsd_execution_manifest.json` through the completed quality loop. Although internal reports are not user deliverables, this manifest is mandatory platform completion evidence and must reference the actual simulation and coverage artifacts.
 - build and validate the `.xlsx` before any simulation, coverage run, or expected-output backfill. In Hermes/production, this workbook is an artifact checkpoint; final success still requires simulation-backed top-level `expValue(...)` lines.
 - stop simulation/backfill after the first MATLAB/MCP/SATK timeout, including a 600s `mcp_matlab_satk_evaluate_matlab_code` timeout, and return `status: "failed"` with a clear warning rather than marking a workbook without expectations as completed.
 - clean the MATLAB/SATK session before returning, so later Hermes tasks do not inherit loaded models, project-addon support paths, or stale MCP state from this task.
@@ -121,7 +122,7 @@ If the post-workbook simulation/backfill phase hits any MATLAB/MCP/SATK timeout 
 15. Run one bounded simulation pass and export results.
     Use per-port compiled Dataset typing, set `LoadExternalInput=on`, and map outputs by root Outport names or port order if logged line names are blank. Prefer port-order fallback over renaming model lines, because line names that match non-`Simulink.Signal` base variables can cause signal-object resolution errors.
 16. Backfill stable top-level output expectations when simulation succeeds within the time budget.
-17. Rerun workbook validation with `--require-exp-values`; validate workbook shape, ordinary input assignment left-hand names, `expValue` left-hand names, vector-output omissions, and Excel zip integrity. If this final validation fails, repair and rerun the necessary downstream steps before returning `status: "completed"`.
+17. Rerun workbook validation with `--require-exp-values`; validate workbook shape, ordinary input assignment left-hand names, `expValue` left-hand names, vector-output omissions, and Excel zip integrity. Confirm the execution manifest exists with `status=completed`, initial/final coverage artifacts, and exactly one repair pass when the initial report was below threshold. If either validation fails, repair and rerun the necessary downstream steps before returning `status: "completed"`.
 18. Run the MATLAB cleanup contract before returning the final artifact JSON.
 19. Run actual Condition, Decision, and MC/DC coverage. If all metrics meet 80%, deliver the current workbook. If any metric is below 80%, use the coverage report to add focused versioned supplemental Tests, rerun validation/simulation/backfill, and collect coverage once more. Stop after this single repair pass and deliver the final workbook while reporting any residual gaps; do not start an unbounded repair loop.
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,74 @@ def run(cmd: list[str], *, cwd: Path, check: bool = True) -> subprocess.Complete
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def relative_artifact(path: Path | None, root_dir: Path) -> str | None:
+    if path is None:
+        return None
+    try:
+        return path.resolve().relative_to(root_dir.resolve()).as_posix()
+    except ValueError:
+        return str(path.resolve())
+
+
+def write_execution_manifest(
+    *,
+    path: Path,
+    root_dir: Path,
+    model: str,
+    threshold: float,
+    workbook: Path,
+    simulation_result: Path | None,
+    initial_coverage: dict[str, Any] | None,
+    final_coverage: dict[str, Any] | None,
+    initial_coverage_artifact: Path | None,
+    final_coverage_artifact: Path | None,
+    repair_required: bool,
+    repair_applied: bool,
+    obligations: Path,
+    mapping_report: Path,
+) -> dict[str, Any]:
+    complete = bool(
+        workbook.exists()
+        and simulation_result
+        and simulation_result.exists()
+        and initial_coverage
+        and final_coverage
+        and initial_coverage_artifact
+        and initial_coverage_artifact.exists()
+        and final_coverage_artifact
+        and final_coverage_artifact.exists()
+        and obligations.exists()
+        and mapping_report.exists()
+        and (not repair_required or repair_applied)
+    )
+    manifest = {
+        "schema": "simulink-ut-tcsd-execution-manifest/v1",
+        "model": model,
+        "status": "completed" if complete else "incomplete",
+        "threshold": threshold,
+        "workbook": relative_artifact(workbook, root_dir),
+        "simulation": {
+            "status": "completed" if simulation_result and simulation_result.exists() else "not_completed",
+            "result": relative_artifact(simulation_result, root_dir),
+        },
+        "coverage": {
+            "initial": initial_coverage,
+            "initial_artifact": relative_artifact(initial_coverage_artifact, root_dir),
+            "repair_required": repair_required,
+            "repair_passes": 1 if repair_applied else 0,
+            "final": final_coverage,
+            "final_artifact": relative_artifact(final_coverage_artifact, root_dir),
+        },
+        "evidence": {
+            "obligations": relative_artifact(obligations, root_dir),
+            "mapping_report": relative_artifact(mapping_report, root_dir),
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest
 
 
 def report_failed(report: dict[str, Any]) -> bool:
@@ -138,25 +207,23 @@ def augment_once(
     workbook: Path,
     interface_json: Path,
     obligations: Path,
-    report: Path,
+    report: Path | None,
     iteration: int,
 ) -> tuple[Path, Path]:
     next_spec = root_dir / f"{model}_spec_mcdc_iter{iteration}.json"
-    run(
-        [
-            python,
-            str(scripts / "augment_tcsd_for_mcdc.py"),
-            "--spec",
-            str(spec),
-            "--obligations",
-            str(obligations),
-            "--validation-report",
-            str(report),
-            "--output",
-            str(next_spec),
-        ],
-        cwd=root_dir,
-    )
+    cmd = [
+        python,
+        str(scripts / "augment_tcsd_for_mcdc.py"),
+        "--spec",
+        str(spec),
+        "--obligations",
+        str(obligations),
+        "--output",
+        str(next_spec),
+    ]
+    if report is not None:
+        cmd.extend(["--validation-report", str(report)])
+    run(cmd, cwd=root_dir)
     next_workbook = root_dir / "outputs" / f"{model}_Test_mcdc_iter{iteration}.xlsx"
     run(
         [
@@ -174,6 +241,29 @@ def augment_once(
         cwd=root_dir,
     )
     return next_spec, next_workbook
+
+
+def build_atomic_repair_plan(
+    *,
+    python: str,
+    scripts: Path,
+    root_dir: Path,
+    model: str,
+    logical_traces: Path,
+) -> Path:
+    plan = root_dir / "outputs" / f"{model}_atomic_mcdc_repair_plan.json"
+    run(
+        [
+            python,
+            str(scripts / "build_atomic_mcdc_repair_plan.py"),
+            "--logical-traces",
+            str(logical_traces),
+            "--output",
+            str(plan),
+        ],
+        cwd=root_dir,
+    )
+    return plan
 
 
 def extract_cases(
@@ -278,7 +368,7 @@ def simulate_and_backfill(
     outputs: str,
     exclude_outputs: str,
     interface_json: Path,
-) -> None:
+) -> Path:
     result_json = root_dir / "outputs" / f"{model}_sim_results_mcdc.json"
     entry = write_matlab_entry(
         root_dir / "outputs" / f"{model}_simulate_mcdc_entry.m",
@@ -319,6 +409,7 @@ def simulate_and_backfill(
         ],
         cwd=root_dir,
     )
+    return result_json
 
 
 def main() -> int:
@@ -343,6 +434,7 @@ def main() -> int:
     parser.add_argument("--unreachable-overrides", default="")
     parser.add_argument("--outputs", default="")
     parser.add_argument("--exclude-outputs", default="")
+    parser.add_argument("--execution-manifest", default="")
     args = parser.parse_args()
 
     root_dir = Path(args.root_dir).resolve()
@@ -366,6 +458,7 @@ def main() -> int:
             logical_operators=Path(args.logical_operators).resolve() if args.logical_operators else None,
         )
     report = root_dir / "outputs" / f"{args.model}_mcdc_validation_report.json"
+    manifest_path = Path(args.execution_manifest).resolve() if args.execution_manifest else root_dir / "outputs" / f"{args.model}_tcsd_execution_manifest.json"
 
     for iteration in range(args.max_iterations + 1):
         data = validate_mapping(
@@ -424,22 +517,83 @@ def main() -> int:
         )
 
     is_coverage_below_target = False
+    initial_coverage: dict[str, Any] | None = None
+    initial_coverage_artifact: Path | None = None
+    coverage_repair_applied = False
     if args.require_coverage:
         if not args.run_probe:
             raise SystemExit("--require-coverage requires --run-probe")
         if coverage_json is None or not coverage_json.exists():
             raise SystemExit("coverage report was not produced")
         is_coverage_below_target = coverage_below_target(coverage_json)
+        initial_coverage = load_json(coverage_json)
+        initial_coverage_artifact = root_dir / "outputs" / f"{args.model}_initial_coverage_summary.json"
+        shutil.copy2(coverage_json, initial_coverage_artifact)
+
+    if is_coverage_below_target and args.logical_traces:
+        atomic_plan = build_atomic_repair_plan(
+            python=args.python,
+            scripts=scripts,
+            root_dir=root_dir,
+            model=args.model,
+            logical_traces=Path(args.logical_traces).resolve(),
+        )
+        plan_data = load_json(atomic_plan)
+        required_plan_items = [item for item in plan_data.get("obligations", []) if item.get("status") == "required"]
+        if required_plan_items:
+            spec, workbook = augment_once(
+                python=args.python,
+                scripts=scripts,
+                root_dir=root_dir,
+                template=template,
+                model=args.model,
+                spec=spec,
+                workbook=workbook,
+                interface_json=interface_json,
+                obligations=atomic_plan,
+                report=None,
+                iteration=args.max_iterations + 1,
+            )
+            extract_cases(
+                python=args.python,
+                scripts=scripts,
+                root_dir=root_dir,
+                model=args.model,
+                workbook=workbook,
+                interface_json=interface_json,
+            )
+            obligations, coverage_json = run_probe(
+                python=args.python,
+                scripts=scripts,
+                root_dir=root_dir,
+                model=args.model,
+                mat_file=args.mat_file,
+                init_scripts=args.init_script,
+                unreachable_overrides=args.unreachable_overrides,
+                collect_coverage=True,
+                coverage_threshold=args.coverage_threshold,
+            )
+            data = validate_mapping(
+                python=args.python,
+                scripts=scripts,
+                root_dir=root_dir,
+                workbook=workbook,
+                obligations=obligations,
+                report=report,
+            )
+            coverage_repair_applied = True
+            is_coverage_below_target = coverage_below_target(coverage_json)
 
     if report_failed(data):
         print(json.dumps({"status": "failed", "report": str(report), "summary": data.get("summary", {})}, ensure_ascii=False, indent=2))
         return 1
 
+    simulation_result: Path | None = None
     if args.simulate_backfill:
         if not args.mat_file or not args.outputs:
             raise SystemExit("--simulate-backfill requires --mat-file and --outputs")
         case_json = extract_cases(python=args.python, scripts=scripts, root_dir=root_dir, model=args.model, workbook=workbook, interface_json=interface_json)
-        simulate_and_backfill(
+        simulation_result = simulate_and_backfill(
             python=args.python,
             scripts=scripts,
             root_dir=root_dir,
@@ -463,6 +617,27 @@ def main() -> int:
             print(json.dumps({"status": "failed_after_backfill", "report": str(report), "summary": data.get("summary", {})}, ensure_ascii=False, indent=2))
             return 1
 
+    final_coverage = load_json(coverage_json) if coverage_json and coverage_json.exists() else None
+    manifest = write_execution_manifest(
+        path=manifest_path,
+        root_dir=root_dir,
+        model=args.model,
+        threshold=args.coverage_threshold,
+        workbook=workbook,
+        simulation_result=simulation_result,
+        initial_coverage=initial_coverage,
+        final_coverage=final_coverage,
+        initial_coverage_artifact=initial_coverage_artifact,
+        final_coverage_artifact=coverage_json,
+        repair_required=bool(initial_coverage and coverage_below_target(initial_coverage_artifact)),
+        repair_applied=coverage_repair_applied,
+        obligations=obligations,
+        mapping_report=report,
+    )
+    if manifest["status"] != "completed":
+        print(json.dumps({"status": "incomplete_execution_contract", "manifest": str(manifest_path), "details": manifest}, ensure_ascii=False, indent=2))
+        return 1
+
     print(
         json.dumps(
             {
@@ -473,6 +648,9 @@ def main() -> int:
                 "summary": data.get("summary", {}),
                 "coverage": str(coverage_json) if coverage_json else None,
                 "coverage_repair_required": is_coverage_below_target,
+                "coverage_repair_applied": coverage_repair_applied,
+                "initial_coverage": initial_coverage,
+                "execution_manifest": str(manifest_path),
             },
             ensure_ascii=False,
             indent=2,

@@ -278,6 +278,14 @@ for i = 1:numel(initFields)
     end
 end
 steps = normalize_struct_array(test.steps);
+for k = 1:numel(steps)
+    if ~isempty(fieldnames(ensure_struct(steps(k), 'param_updates')))
+        error('probe_logical_mcdc_vectors:ActionParameterUpdateUnsupported', ...
+            ['Coverage-driving parameter changes in Action cannot be represented as time-varying ' ...
+             'base-workspace values by this probe. Split parameter states into separate Tests and ' ...
+             'put p Param=value in each Test Initialization.']);
+    end
+end
 totalTime = 0;
 for k = 1:numel(steps)
     totalTime = totalTime + double(steps(k).delay_s);

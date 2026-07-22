@@ -17,11 +17,203 @@ def load_script_module(script_name: str):
     spec = importlib.util.spec_from_file_location(script_name.removesuffix(".py"), SCRIPTS / script_name)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
 
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_execution_manifest_requires_coverage_repair_when_initial_is_below_target(self) -> None:
+        quality_loop = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outputs = root / "outputs"
+            outputs.mkdir()
+            workbook = outputs / "A02_Test0002_tcsd.xlsx"
+            simulation = outputs / "A02_sim_results_mcdc.json"
+            initial_artifact = outputs / "A02_initial_coverage_summary.json"
+            final_artifact = outputs / "A02_coverage_summary.json"
+            obligations = outputs / "A02_coverage_obligations.json"
+            mapping = outputs / "A02_mcdc_validation_report.json"
+            for item in (workbook, simulation, initial_artifact, final_artifact, obligations, mapping):
+                item.write_text("{}", encoding="utf-8")
+            initial = {
+                "A02": {
+                    "condition": {"percent": 100, "passed": True},
+                    "decision": {"percent": 75, "passed": False},
+                    "mcdc": {"percent": 33.3, "passed": False},
+                }
+            }
+            final = {
+                "A02": {
+                    "condition": {"percent": 100, "passed": True},
+                    "decision": {"percent": 100, "passed": True},
+                    "mcdc": {"percent": 83.3, "passed": True},
+                }
+            }
+            incomplete = quality_loop.write_execution_manifest(
+                path=outputs / "incomplete.json",
+                root_dir=root,
+                model="A02",
+                threshold=80,
+                workbook=workbook,
+                simulation_result=simulation,
+                initial_coverage=initial,
+                final_coverage=final,
+                initial_coverage_artifact=initial_artifact,
+                final_coverage_artifact=final_artifact,
+                repair_required=True,
+                repair_applied=False,
+                obligations=obligations,
+                mapping_report=mapping,
+            )
+            self.assertEqual(incomplete["status"], "incomplete")
+
+            completed = quality_loop.write_execution_manifest(
+                path=outputs / "completed.json",
+                root_dir=root,
+                model="A02",
+                threshold=80,
+                workbook=workbook,
+                simulation_result=simulation,
+                initial_coverage=initial,
+                final_coverage=final,
+                initial_coverage_artifact=initial_artifact,
+                final_coverage_artifact=final_artifact,
+                repair_required=True,
+                repair_applied=True,
+                obligations=obligations,
+                mapping_report=mapping,
+            )
+            self.assertEqual(completed["status"], "completed")
+            self.assertEqual(completed["coverage"]["repair_passes"], 1)
+            self.assertEqual(completed["workbook"], "outputs/A02_Test0002_tcsd.xlsx")
+
+    def test_atomic_planner_builds_seven_a02_vectors_and_sensitizes_bypass(self) -> None:
+        planner = load_script_module("build_atomic_mcdc_repair_plan.py")
+
+        def root(name: str) -> dict:
+            return {"kind": "root_inport", "signal": name}
+
+        def negated(name: str) -> dict:
+            return {"kind": "logic", "operator": "NOT", "inputs": [{"trace": root(name)}]}
+
+        faults = {
+            "kind": "logic",
+            "operator": "AND",
+            "sid": "A02:7",
+            "inputs": [
+                {"trace": negated("HvCoorn_bHvOnFail")},
+                {"trace": negated("HvCoorn_bDischargeErrOld")},
+                {"trace": negated("HvCoorn_bHvInitFail")},
+            ],
+        }
+        error_gate = {
+            "kind": "logic",
+            "operator": "OR",
+            "sid": "A02:16",
+            "inputs": [
+                {"trace": faults},
+                {"trace": {"kind": "constant", "value": "HvCoorn_bInitErrChkByp_C"}},
+            ],
+        }
+        timer = {
+            "kind": "relational",
+            "operator": ">",
+            "sid": "A02:17",
+            "path": "A02/TimerGreaterThanWait",
+            "inputs": [
+                {"trace": {"kind": "stateful", "sid": "A02:23"}},
+                {"trace": {"kind": "constant", "value": "HvCoorn_tiWaitIgnOn_C"}},
+            ],
+        }
+        operator = {
+            "id": "A02:11",
+            "sid": "A02:11",
+            "block_path": "A02/FinalDecision",
+            "operator": "AND",
+            "ports": [
+                {"trace": timer},
+                {"trace": root("HvCoorn_bStartUpReq")},
+                {"trace": error_gate},
+            ],
+        }
+
+        obligations, summary = planner.build_for_operator("A02", operator)
+
+        self.assertEqual(summary["condition_count"], 6)
+        self.assertEqual(summary["emitted_vector_count"], 7)
+        self.assertEqual(len(obligations), 7)
+        self.assertFalse(any("HvCoorn_stHVPOld" in item["match"]["inputs"] for item in obligations))
+        bypass_zero = [item for item in obligations if item["match"]["params"].get("HvCoorn_bInitErrChkByp_C") == 0]
+        bypass_one = [item for item in obligations if item["match"]["params"].get("HvCoorn_bInitErrChkByp_C") == 1]
+        self.assertTrue(bypass_zero)
+        self.assertEqual(len(bypass_one), 1)
+        bypass_case = bypass_one[0]
+        self.assertTrue(
+            bypass_case["match"]["inputs"]["HvCoorn_bHvOnFail"]
+            or bypass_case["match"]["inputs"]["HvCoorn_bDischargeErrOld"]
+            or bypass_case["match"]["inputs"]["HvCoorn_bHvInitFail"]
+        )
+        self.assertEqual(bypass_case["match"]["inputs"]["HvCoorn_bStartUpReq"], 1)
+        self.assertEqual(bypass_case["match"]["params"]["HvCoorn_tiWaitIgnOn_C"], 0)
+
+    def test_atomic_plan_augmentation_preserves_existing_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            spec = {
+                "model_name": "A02",
+                "test_group": {"id": "A02_TG_001", "name": "A02"},
+                "tests": [
+                    {
+                        "id": "TC_001",
+                        "name": "Original functional case",
+                        "requirement_id": "REQ",
+                        "description": "preserve me",
+                        "initialization": "HvCoorn_bStartUpReq=0;\nHvCoorn_bHvOnFail=0;",
+                        "action": "[+0.2s]\n[+0.1s]",
+                        "work_status": "reviewed",
+                    }
+                ],
+            }
+            plan = {
+                "generation_mode": "minimal_unique_cause",
+                "summary": {"decisions": [{"condition_count": 2, "max_allowed_vectors": 6}]},
+                "obligations": [
+                    {
+                        "id": "A02:11_atomic_TT",
+                        "status": "required",
+                        "block_path": "A02/FinalDecision",
+                        "required_outcome": "atomic_condition_vector=TT; output=true",
+                        "match": {
+                            "inputs": {"HvCoorn_bStartUpReq": 1},
+                            "params": {"HvCoorn_bInitErrChkByp_C": 1},
+                        },
+                        "hold_s": 0.25,
+                    }
+                ],
+            }
+            (work / "spec.json").write_text(json.dumps(spec), encoding="utf-8")
+            (work / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "augment_tcsd_for_mcdc.py"),
+                    "--spec",
+                    str(work / "spec.json"),
+                    "--obligations",
+                    str(work / "plan.json"),
+                    "--output",
+                    str(work / "augmented.json"),
+                ],
+                check=True,
+            )
+            augmented = json.loads((work / "augmented.json").read_text(encoding="utf-8"))
+            self.assertEqual(augmented["tests"][0]["name"], "Original functional case")
+            self.assertEqual(len(augmented["tests"]), 2)
+            self.assertIn("p HvCoorn_bInitErrChkByp_C=1;", augmented["tests"][1]["initialization"])
+            self.assertIn("[+0.25s]", augmented["tests"][1]["action"])
+
     def test_coverage_threshold_triggers_repair_without_being_a_mapping_failure(self) -> None:
         quality_loop = load_script_module("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as tmp:
