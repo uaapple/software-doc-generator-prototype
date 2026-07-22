@@ -793,6 +793,56 @@ export class UnitTestCaseGenerationService {
     };
   }
 
+  async syncPipelineJob(taskId, job) {
+    const task = await this.readTask(taskId);
+    if (!task) return null;
+    task.pipeline = {
+      jobId: job.jobId,
+      schema: job.schema,
+      status: job.status,
+      completion: job.completion || "",
+      stages: Array.isArray(job.stages) ? job.stages : [],
+      checkpoints: Array.isArray(job.checkpoints) ? job.checkpoints : [],
+      coverage: job.coverage || null,
+      repair: job.repair || { attempted: false, applied: false },
+      error: job.error || null,
+      updatedAt: job.updatedAt || now()
+    };
+    task.status = job.status === "失败" ? "failed" : ["已完成", "部分完成"].includes(job.status) ? "completed" : "running";
+    task.progress = buildProgress(task.status, job.stages?.find((stage) => stage.status === "正在执行")?.name || job.error?.message || "正在同步 TCSD 十二阶段进度。");
+    task.updatedAt = now();
+    await this.saveTask(task);
+    return task;
+  }
+
+  async runRemotePipeline(taskId, task) {
+    const started = await this.hermesAgentClient.startTcsdPipelineJob({
+      ...this.buildHermesPayload(task), taskId, idempotencyKey: taskId
+    });
+    let job = { ...started, stages: [] };
+    await this.syncPipelineJob(taskId, job);
+    const deadline = Date.now() + 12 * 60 * 60 * 1000;
+    let delayMs = 1000;
+    let lastTransientAt = 0;
+    while (Date.now() < deadline) {
+      try {
+        job = await this.hermesAgentClient.getTcsdPipelineJob(started.jobId);
+        await this.syncPipelineJob(taskId, job);
+        if (["已完成", "部分完成", "失败"].includes(job.status)) break;
+        delayMs = 1000;
+      } catch (error) {
+        // A temporary network break is not a MATLAB failure; retain the last confirmed job state.
+        lastTransientAt ||= Date.now();
+        if (Date.now() - lastTransientAt > 5 * 60 * 1000) throw error;
+        delayMs = Math.min(15000, Math.round(delayMs * 1.8));
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    if (!job || !["已完成", "部分完成", "失败"].includes(job.status)) throw createHttpError("TCSD Worker 轮询超时，作业仍可稍后继续查询。", 504, "tcsd_poll_timeout");
+    if (job.status === "失败") throw createHttpError(job.error?.message || "TCSD 阶段执行失败。", 502, job.error?.code || "tcsd_stage_failed");
+    return { status: "succeeded", artifact: { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [], warnings: [] }, metrics: { pipelineJobId: job.jobId }, pipelineJob: job };
+  }
+
   async runTask(taskId = "") {
     let task = await this.readTask(taskId);
     if (!task) {
@@ -802,9 +852,9 @@ export class UnitTestCaseGenerationService {
     task = await this.readTask(taskId);
 
     try {
-      const result = await this.hermesAgentClient.executeStep(this.buildHermesPayload(task), {
-        onEvent: (event) => this.appendRuntimeEvent(taskId, event)
-      });
+      const result = this.hermesAgentClient.transport === "api"
+        ? await this.runRemotePipeline(taskId, task)
+        : await this.hermesAgentClient.executeStep(this.buildHermesPayload(task), { onEvent: (event) => this.appendRuntimeEvent(taskId, event) });
       const artifact = result?.artifact || {};
       if (result?.status && result.status !== "succeeded") {
         throw createHttpError(result?.error?.message || "Hermes Agent 执行失败。", 502, "unit_test_case_hermes_failed");
@@ -911,7 +961,7 @@ export class UnitTestCaseGenerationService {
       );
     }
     const timestamp = now();
-    task.status = "completed";
+    task.status = hermesArtifact.status === "partial" ? "partial" : "completed";
     task.completedAt = timestamp;
     task.updatedAt = timestamp;
     task.summary = hermesArtifact.summary || `已生成 ${artifacts.length} 个 TCSD Excel 文件。`;

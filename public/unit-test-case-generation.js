@@ -32,6 +32,7 @@ const STATUS_LABELS = {
   queued: "排队中",
   running: "运行中",
   completed: "已完成",
+  partial: "部分完成",
   failed: "失败"
 };
 
@@ -570,6 +571,10 @@ function renderTaskDetail(task) {
       </div>
     `
     : "";
+  const pipelineStages = Array.isArray(task.pipeline?.stages) ? task.pipeline.stages : [];
+  const pipelineHtml = pipelineStages.length
+    ? `<div class="unit-detail-section"><h3>十二阶段运行态</h3><div class="unit-runtime-list">${pipelineStages.map((stage) => `<div class="unit-runtime-item"><strong>${escapeHtml(`${stage.index}. ${stage.name} · ${stage.status}`)}</strong><p>${escapeHtml(stage.summary || stage.skipReason || stage.error?.message || "等待执行")}</p><small>${escapeHtml([formatTime(stage.startedAt), formatTime(stage.endedAt)].filter(Boolean).join(" → "))}</small></div>`).join("")}</div></div>`
+    : "";
 
   elements.taskDetail.innerHTML = `
     <div class="unit-detail-summary">
@@ -603,6 +608,7 @@ function renderTaskDetail(task) {
     </div>
     ${errorHtml}
     ${warningHtml}
+    ${pipelineHtml}
     ${runtimeHtml}
   `;
 }
