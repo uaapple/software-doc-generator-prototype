@@ -25,7 +25,8 @@
     "release-dist",
     "test-fixtures",
     "videos",
-    "skills/hermes/simulink-ut-tcsd-generator",
+    "skills/hermes/tcsd-runtime",
+    "skills/hermes/tcsd-stage-*",
     "tools",
     "scripts/deploy-release.ps1",
     "scripts/install-windows-services.ps1"

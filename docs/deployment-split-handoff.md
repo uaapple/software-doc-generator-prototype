@@ -141,43 +141,30 @@ MATLAB_MCP_BASE_URL=http://WINDOWS_VM_HOST:5100
 
 Windows VM 负责运行 Hermes Agent、MATLAB Worker 和 MATLAB/MCP 相关能力。
 
-## 单元测试 TCSD 生成 V1
+## 单元测试 TCSD Agent 十二阶段流水线 V2
 
-`skills/hermes/simulink-ut-tcsd-generator` 从本轮起是 TCSD 生产技能的工程内唯一源码。独立技能仓库只保留历史或显式同步用途，不再作为生产部署输入。本技能仅进入 `release/windows-prod`；`release/linux-prod` 必须排除该目录，因为 Linux 平台不运行 MATLAB、SATK 或 TCSD Probe。
+TCSD 生产入口固定为 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`，共享作业协议为 `tcsd-agent-stage-pipeline/v2`。Linux 平台只创建、轮询和对账远端 job；Windows Hermes Agent 持久化 job 与阶段事件，并通过 `TcsdHermesStageExecutor` 为十二个阶段分别启动一个全新的 Hermes session。旧整体 Agent step 和平台直接运行 Python 的生产入口已经删除，不存在双轨或 fallback。
 
-第一轮状态及时序探测使用确定性脚本闭环：逻辑追踪 v2 输出上游状态依赖，`build_state_probe_plan.py` 对未解析端口生成有界候选，MATLAB Probe 通过显式 CaseJson 验证实际端口向量，随后将完整初始化、输入变化、等待时间和证据步骤写入 obligation 与 TCSD。不得把最终输入快照冒充可复现的有状态刺激，也不得把候选耗尽或未支持结构自动标为不可达。
+十二个 `skills/hermes/tcsd-stage-*` 目录各自只包含一个原子 `SKILL.md` 与发现元数据。每个阶段 prompt 都显式指定对应 `$tcsd-stage-xx-*` 技能和通用 `tcsd_stage_execute`，不得调用其他 TCSD 阶段技能。脚本、模板、MATLAB/SATK、Coverage IR、仿真、工作簿和覆盖率能力集中在非技能目录 `skills/hermes/tcsd-runtime`；技能只调用共享 runtime，不复制整套实现。技能和 runtime 均计算稳定内容 hash，并在 checkpoint 中记录 bundle version。
 
-第二轮把上述片段统一为 `simulink-ut-tcsd-coverage-ir/v1`：Windows 技能使用 `build_coverage_ir.py` 保存 Condition、Decision、MC/DC 的控制量、嵌套逻辑、时序刺激、敏化上下文、可达性和仿真证据，并由 `synthesize_tcsd_from_coverage_ir.py` 确定性追加去重用例。`run_tcsd_quality_loop.py` 固定为“严格工作簿校验 → 仿真/回填 → 首轮覆盖率 → 至多一次报告驱动修正 → 最终仿真/回填与覆盖率”。`unsupported`、`unresolved` 和有证据的 `unreachable` 会以部分完成证据留在 manifest；不能因缺图或候选耗尽猜测不可达。该协议与执行代码仅进入 Windows TCSD 技能，不改变 Linux 前端或异步进度协议。
+阶段边界协议为 `tcsd-agent-stage-input/v1` 与 `tcsd-agent-stage-result/v1`。Agent 只负责调用共享 runtime 生成候选 result；宿主不采信 Agent 文本，而是检查 schema、workspace 路径、JSON/XLSX 实体、仿真与 `expValue` 逐项对账、Condition/Decision/MC/DC、Coverage IR 修正证据、最终 execution manifest、产物清单和资源所有权。只有 validator 通过后，宿主才写 `tcsd-agent-stage-checkpoint/v2`。
 
-本功能新增顶层页面 `/unit-test-case-generation`，平台端接收 1 个 `.slx`、1 个 `.mat`、可选 1 个模型初始化 `.m` 脚本和 1 个项目编号，在 `data/unit-test-case-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并通过 Windows 异步 job API 发给 Windows VM。平台端只登记项目、任务和下载 `workspace/outputs/*.xlsx`，上传的模型、MAT 数据、初始化脚本、项目登记 JSON 和生成的 Excel 都属于运行态数据，不进入 release 分支。
+checkpoint 记录技能名/版本/bundle hash、runtime hash、Hermes session、profile、实际 model、token usage、prompt hash、attempt、输入/结果文件及 hash、验证报告、工具日志摘要和产物。只保存 stdout/stderr 字节数等摘要，不保存 Agent 隐藏推理、原始对话、凭据或敏感日志。默认每阶段 `200` turns、`3600000` ms；Windows 可设置 `TCSD_STAGE_HERMES_MAX_TURNS`、`TCSD_STAGE_HERMES_TIMEOUT_MS` 与 `TCSD_STAGE_HERMES_PROFILE`，其中 profile 回退到 `HERMES_PROFILE`。如 profile 使用独立状态库，可设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`，以便读取实际 model/token 遥测。
 
-TCSD workbook 现在增加 workbook-vs-rootPorts 校验门禁。平台端在 `simulink_ut_tcsd_generate` prompt 中要求 Hermes Agent 在 checkpoint workbook 生成后运行 `simulink-ut-tcsd-generator` skill 的 `scripts/validate_tcsd_workbook.py`，用模型编译得到的 root Inport/Outport 列表检查 `Initialization`、`Action` 和 `expValue(...)` 左侧信号名。如果校验报告未知输入、未知输出、向量语法问题或缺少最终延时，这属于 Hermes Agent 生成的候选 workbook/spec 缺陷，Agent 应在同一任务内根据报告的 row/cell/test_id/signal/line 修复用例、重建 workbook、重新校验后再进入仿真/回填；不要直接把第一版 workbook 校验失败作为平台任务失败返回给前端。只有 root-port 接口无法获取，或有限修复后仍无法得到合法 workbook，Hermes Agent 才应向平台返回 `status: "failed"`。
+只有候选 result、产物或 checkpoint 的确定性校验失败才允许自动修复一次。修复必须启动第十三个新 session，并携带上一尝试的宿主验证报告；第二次仍失败即终止。输入、环境、MATLAB/SATK、Hermes 不可用、遥测缺失、session 复用和超时等硬错误直接失败，不重试。阶段 10 内部仍只允许一次 Coverage IR 用例修正；宿主验证修复不会放宽此限制。
 
-## TCSD 第三轮：异步十二阶段协议
+服务启动时扫描非终态 V2 job：已验证 checkpoint 不重复执行，并恢复 coverage、repair 和产物汇总；无有效 checkpoint 的未完成阶段只能使用剩余的新 session 机会恢复。同一幂等键不会创建第二个 job。终态 `tcsd-deterministic-pipeline/v1` 仅只读保留，非终态 V1 标为 `tcsd_pipeline_version_obsolete`，不得混入 V2 恢复。
 
-Windows Hermes 提供 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`。启动请求立即返回稳定 `jobId`；作业 JSON 和事件持久化在 Windows 的 `APP_DATA_DIR/tcsd-pipeline-jobs`，同一平台 `taskId` 作为幂等键。Hermes 不再调用旧的整块 `simulink_ut_tcsd_generate` CLI；`TcsdWindowsStageExecutor` 直接逐阶段启动技能内 `run_tcsd_pipeline_stage.py`，由该 runner 调用 MATLAB/SATK、Coverage IR、工作簿、仿真、覆盖率和清理子能力并写权威 checkpoint。平台端仅保存 jobId 并以退避轮询同步状态，短暂网络错误不会直接把 MATLAB 作业标为失败。
+十二个中文阶段及其职责固定为输入校验、环境检查、工作区初始化、接口提取、覆盖目标分析、状态 Probe、首版用例、仿真回填、首轮覆盖率、Coverage IR 修正、最终验证和产物/清理。Windows 继续使用 `SATK_MATLAB_SESSION_MODE=new`，每次 MATLAB/SATK 调用自包含，不依赖上一 session 的 base workspace。`unsupported`、`unresolved`、有证据的 `unreachable` 或最终覆盖不足以“部分完成”保留，不得伪装成完全达标。
 
-共享契约为 `src/services/tcsd-pipeline-contract.js`（`tcsd-deterministic-pipeline/v1`），固定十二个中文阶段、状态、错误码、检查点、产物、coverage 和 repair 字段。Windows `tcsd-pipeline-job-service` 在每个阶段持久化开始/结束时间、事件和已验证检查点；服务启动时扫描非终态 job，已验证 checkpoint 不重复执行，处于“正在执行”但证据不完整的阶段恢复为等待重试。同一幂等键命中非终态 job 会重新调度。阶段 8 和修正后的阶段 11 都按 `(row, testId, step, output, value)` 将仿真 JSON 与 XLSX 的真实 `expValue` 逐项对账，缺失、多余或值不一致不得通过 checkpoint；阶段 9 校验按模型分组的首轮 Condition/Decision/MC/DC；阶段 10 只依据首轮覆盖率进行至多一次 Coverage IR 修正；阶段 11 只在修正实际应用时运行最终仿真/回填/覆盖率；第 12 阶段校验最终 execution manifest、时间线、产物清单与 job 所有权清理记录。`status=completed, completion=partial`、attempted=true/applied=false、unsupported/unresolved 和最终低覆盖均收敛为“部分完成”，工作簿仍可下载。
+部署边界如下：
 
-Windows 生产使用 `SATK_MATLAB_SESSION_MODE=new`，每次 `satk_eval.py` 都是独立 MATLAB/MCP 会话，任何阶段都不得依赖上一阶段的 base workspace 或 path。阶段 3 仍独立执行 `setup_ut_support` 作为环境/项目初始化门禁并持久化 manifest；阶段 4 的新会话必须在同一 MATLAB 调用内携带 job 的显式 `projectInitScripts`，先再次执行 `setup_ut_support(rootDir, initScripts)`，然后以 `WorkspaceInitialized=true` 执行接口提取与逻辑追踪。重启恢复时可复用已验证的阶段 3 checkpoint，但阶段 4 仍必须自包含地重建当前会话的 MATLAB 初始化状态。
+- `release/linux-prod` 包含页面、任务创建/轮询、V2 状态同步和十二阶段追溯展示；明确排除 `tcsd-stage-*` 与 `tcsd-runtime`。
+- `release/windows-prod` 包含 Hermes job 路由、`TcsdHermesStageExecutor`、十二技能、共享 runtime、MATLAB/SATK 和宿主 checkpoint。
+- shared 包含协议/schema、阶段目录、错误分类、bundle hash、配置和部署说明。
+- `data/unit-test-case-generation/**`、`APP_DATA_DIR/tcsd-pipeline-jobs`、`.tcsd-agent/**`、`.tcsd-checkpoints/**`、Hermes session/state DB、模型、MAT、addon、XLSX、coverage、日志和临时文件均是 runtime/local，不进入 release 或功能提交。
 
-Linux 发布包包含平台轮询、任务 JSON 和中文页面展示，但不运行 MATLAB。Windows 发布包包含 job 执行器、Hermes 路由及全部 TCSD 技能。shared contract、config、部署 ownership 与本交接文档需要同时进入两端。
-
-Linux 端 `UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS` 只控制单次前台同步窗口；超时后任务保持 `running/workerPending`，由 `UNIT_TEST_CASE_RECONCILE_INTERVAL_MS` 后台恢复。404 job-not-found 是永久失败，Worker 不可用与短暂网络中断保持待同步，Windows 阶段失败使用阶段错误码收敛。Windows 端设置 `TCSD_PIPELINE_PYTHON`、`TCSD_PIPELINE_STAGE_TIMEOUT_MS` 和 `MATLAB_ROOT`；job 状态目录属于运行态数据，不进入 release。
-
-生产拆分端速读：
-
-- Linux 平台端只负责页面、项目登记、上传下载、任务 JSON、队列状态和向 Hermes Agent HTTP 服务发起请求，不直接运行 MATLAB，也不解析 Windows 附加包路径。
-- Windows VM 端负责异步 job、项目附加包复制、确定性阶段 runner、MATLAB/SATK 和 `simulink-ut-tcsd-generator` skill 的实际执行；Agent 只启动 job 入口，不决定跳步。
-- Shared 协议负责把 `workspaceDir/modelSlxPath/modelMatPath/outputDir/unitTestProject/skillName/expectedOutputPattern` 固定传给 Hermes；如果用户上传模型级初始化脚本，还会传 `modelInitScriptPath/modelInitScriptFileName/projectInitScripts`，并要求 Hermes/skill 优先执行这个显式脚本。协议同时把 workbook/rootPorts 校验与内部修复语义写入 Hermes prompt，再把返回或回收得到的 `outputs/*.xlsx` 归一化成平台 artifact。
-- 运行态数据只留在 `data/unit-test-case-generation/**`；外部项目附加包只放在 Agent 机器配置的 addon root 下，部署端不要把用户上传的 `.slx/.mat/.m`、项目登记 JSON、生成的 `.xlsx` 或 addon 包内容带进 release 分支。
-
-拆分建议：
-
-- `release/linux-prod` 包含前端页面、`src/app.js` API、`src/services/unit-test-case-generation-service.js`、`src/services/hermes-task-queue-service.js`。
-- `release/windows-prod` 包含 `src/hermes-app.js`，用于校验 `allowedPaths`，按项目编号复制 addon 包到 workspace 后调用本机 Hermes CLI 执行 `simulink-ut-tcsd-generator` skill。
-- `shared` 包含 `src/services/hermes-agent-client.js`、`src/config.js`、`.env.dev-distributed.example`、测试和本文档。
-- `data/unit-test-case-generation/**`、`.local/project-addons/**` 和 Windows 生产 `C:\ProgramData\SoftwareDocGenerator\project-addons\**` 始终按 runtime/local 排除。
+Linux 的 `UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS` 只控制单次同步窗口；超时或短暂网络失败保持 `running/workerPending`，由 `UNIT_TEST_CASE_RECONCILE_INTERVAL_MS` 继续对账。404 job-not-found 才作为永久失败。Windows 需要配置 `TCSD_PIPELINE_PYTHON`、`MATLAB_ROOT` 和上述阶段 Hermes 变量。
 
 ## 独立软件详设 / 模块功能描述生成 V1
 
@@ -204,7 +191,7 @@ HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE=10000
 
 如果 Linux 平台和 Windows VM 不是同一套绝对路径，`SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT` 可显式设置；未设置时会回退到 `UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT`。Windows VM 需要安装或随包携带 `simulink-module-description-generator` skill，并准备 MATLAB/SATK 环境。
 
-Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent sidecar：平台端监听 `3000`，Hermes Agent 监听 `3101`，平台端通过 `HERMES_TRANSPORT=api` 调用 sidecar，并将 sidecar 的 `HERMES_SERVER_REQUEST_TIMEOUT_MS` 设为 `0` 以支持 TCSD/MATLAB 长任务。`simulink_ut_tcsd_generate` 默认使用 60 分钟超时；由于 Hermes CLI 本身没有 unlimited turn 开关且省略 `--max-turns` 会回落到默认 `90`，平台将 `HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE` 设为 `10000`，让复杂 Simulink 模型的实际约束落在超时而不是工具调用轮次。可以通过 `HERMES_PROFILE=deepseek` 让 Hermes Agent 内部调用 CLI 时显式走 `~/.hermes/profiles/deepseek`。该变量只影响 CLI transport；Linux 平台端走 `HERMES_TRANSPORT=api` 时不直接读取本机 profile。若 Windows VM 也要用命名 profile，需要在 Windows Hermes Agent 进程上设置 `HERMES_PROFILE`，并确保 `HERMES_STATE_DB_PATH` 没有覆盖到默认 profile 的 `state.db`。
+Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent sidecar：平台端监听 `3000`，Hermes Agent 监听 `3101`，平台端通过 `HERMES_TRANSPORT=api` 调用 sidecar，并将 `HERMES_SERVER_REQUEST_TIMEOUT_MS` 设为 `0` 以支持长任务。TCSD 每阶段默认 `TCSD_STAGE_HERMES_TIMEOUT_MS=3600000`、`TCSD_STAGE_HERMES_MAX_TURNS=200`。可以通过 `TCSD_STAGE_HERMES_PROFILE=deepseek` 只覆盖 TCSD 阶段 profile；未设置时回退 `HERMES_PROFILE`。若使用命名 profile，必须确保对应的 Hermes `state.db` 可由 Agent 读取，必要时设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`。
 
 项目选择只在平台端保存编号和展示名，例如 `01_楚能`、`02_TMS`；任务 payload 内部只依赖 `unitTestProject.id`，例如 `01`。Hermes Agent 启动 CLI 前会从当前 Agent 进程的 `UNIT_TEST_CASE_PROJECT_ADDON_ROOT/<编号>` 复制全部 addon 内容到 workspace 根目录。Mac 本地默认 addon root 是 `.local/project-addons`，目录示例为 `.local/project-addons/01`；Windows 生产默认 addon root 是 `C:\ProgramData\SoftwareDocGenerator\project-addons`，目录示例为 `C:\ProgramData\SoftwareDocGenerator\project-addons\01`。
 
@@ -216,7 +203,7 @@ Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent si
 UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT=C:\\software-doc-generator\\data\\unit-test-case-generation\\tasks
 ```
 
-该变量会把 Linux 平台本地 task workspace 映射成 Windows Hermes Agent 可见路径。Windows VM 需要安装或随包携带 `simulink-ut-tcsd-generator` skill，并准备 MATLAB/SATK 环境变量，例如：
+该变量会把 Linux 平台本地 task workspace 映射成 Windows Hermes Agent 可见路径。Windows VM 需要随包携带十二个 `tcsd-stage-*` 技能与 `tcsd-runtime`，并准备 Hermes CLI、MATLAB/SATK 环境变量，例如：
 
 ```bash
 UNIT_TEST_CASE_PROJECT_ADDON_ROOT=C:\\ProgramData\\SoftwareDocGenerator\\project-addons

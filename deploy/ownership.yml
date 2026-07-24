@@ -64,6 +64,7 @@ windows:
   - src/services/matlab-mcp-client.js
   - src/services/tcsd-pipeline-job-service.js
   - src/services/tcsd-windows-stage-executor.js
+  - src/services/tcsd-hermes-stage-executor.js
   - src/services/slx-model-analysis-service.js
   - src/services/satk-model-fact-builder.js
   - src/services/slx-model-fact-adapter.js
@@ -97,6 +98,7 @@ shared:
   - src/services/model-fact-bundle.js
   - src/services/hermes-agent-client.js
   - src/services/tcsd-pipeline-contract.js
+  - src/services/tcsd-stage-catalog.js
   - src/services/software-requirement-agent-shared.js
   - src/services/software-requirement-markdown-agent-service.js
   - templates/**

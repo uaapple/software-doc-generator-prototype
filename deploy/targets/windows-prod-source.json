@@ -34,5 +34,5 @@
     "scripts/deploy-release.ps1",
     "scripts/install-windows-services.ps1"
   ],
-  "runtimeDataPolicy": "Runtime data, mutable skills, and heavyweight local tool binaries are external to this source update package; the TCSD staged runner source is included under skills/hermes."
+  "runtimeDataPolicy": "Runtime data, mutable external skills, Hermes sessions and heavyweight local tool binaries are external to this source update package; the twelve immutable TCSD stage skills and shared tcsd-runtime source are bundled under skills/hermes."
 }
