@@ -81,9 +81,18 @@ function parseOwnershipFile(filePath) {
 }
 
 function listChangedFiles(range = "") {
-  const gitArgs = range
-    ? ["diff", "--name-only", "--diff-filter=ACMRTDU", range]
-    : ["diff", "--name-only", "--diff-filter=ACMRTDU", "HEAD"];
+  const tracked = runGit(
+    range
+      ? ["diff", "--name-only", "--diff-filter=ACMRTDU", range]
+      : ["diff", "--name-only", "--diff-filter=ACMRTDU", "HEAD"]
+  );
+  const untracked = range
+    ? []
+    : runGit(["ls-files", "--others", "--exclude-standard"]);
+  return [...new Set([...tracked, ...untracked])].sort();
+}
+
+function runGit(gitArgs) {
   const result = spawnSync("git", gitArgs, {
     cwd: projectRoot,
     encoding: "utf8",
@@ -103,6 +112,7 @@ function buildReport(files = [], ownershipRules = {}) {
     linux: [],
     windows: [],
     shared: [],
+    "dev-only": [],
     "runtime-data": [],
     "local-only": [],
     ambiguous: []
@@ -137,6 +147,7 @@ function buildReport(files = [], ownershipRules = {}) {
 function chooseCategory(_filePath, matches = {}) {
   if (matches["runtime-data"]?.length) return "runtime-data";
   if (matches["local-only"]?.length) return "local-only";
+  if (matches["dev-only"]?.length) return "dev-only";
   if (matches.ambiguous?.length) return "ambiguous";
 
   const targetMatches = ["linux", "windows"].filter((category) => matches[category]?.length);

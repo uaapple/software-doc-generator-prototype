@@ -41,6 +41,7 @@ npm run classify:changes -- release/linux-prod..feat/slx-parser-integration --al
 - `linux`: 优先进入 `release/linux-prod`
 - `windows`: 优先进入 `release/windows-prod`
 - `shared`: 两边都要评估，通常两边都需要
+- `dev-only`: 只用于测试、合成模型和实机验收脚本，不进入生产 release
 - `runtime-data`: 不进入部署分支
 - `local-only`: 不进入部署分支
 - `ambiguous`: 需要人工判断，不能机械 cherry-pick
@@ -145,11 +146,21 @@ Windows VM 负责运行 Hermes Agent、MATLAB Worker 和 MATLAB/MCP 相关能力
 
 TCSD 生产入口固定为 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`，共享作业协议为 `tcsd-agent-stage-pipeline/v2`。Linux 平台只创建、轮询和对账远端 job；Windows Hermes Agent 持久化 job 与阶段事件，并通过 `TcsdHermesStageExecutor` 为十二个阶段分别启动一个全新的 Hermes session。旧整体 Agent step 和平台直接运行 Python 的生产入口已经删除，不存在双轨或 fallback。
 
-十二个 `skills/hermes/tcsd-stage-*` 目录各自只包含一个原子 `SKILL.md` 与发现元数据。每个阶段 prompt 都显式指定对应 `$tcsd-stage-xx-*` 技能和通用 `tcsd_stage_execute`，不得调用其他 TCSD 阶段技能。脚本、模板、MATLAB/SATK、Coverage IR、仿真、工作簿和覆盖率能力集中在非技能目录 `skills/hermes/tcsd-runtime`；技能只调用共享 runtime，不复制整套实现。技能和 runtime 均计算稳定内容 hash，并在 checkpoint 中记录 bundle version。
+十二个 `skills/hermes/tcsd-stage-*` 目录各自只包含一个原子 `SKILL.md` 与发现元数据。Windows 任务启动前由 `TcsdHermesSkillRegistry` 把它们安装到所选 Hermes profile 的 `skills/tcsd/<skill-name>`，把共享 runtime 安装到相邻的 `skills/tcsd/tcsd-runtime`，然后真实执行 `hermes [-p <profile>] skills list`；缺少任一名称、目录、版本、SKILL.md hash 或 bundle hash时，任务 fail-closed。可以在发布后运行：
 
-阶段边界协议为 `tcsd-agent-stage-input/v1` 与 `tcsd-agent-stage-result/v1`。Agent 只负责调用共享 runtime 生成候选 result；宿主不采信 Agent 文本，而是检查 schema、workspace 路径、JSON/XLSX 实体、仿真与 `expValue` 逐项对账、Condition/Decision/MC/DC、Coverage IR 修正证据、最终 execution manifest、产物清单和资源所有权。只有 validator 通过后，宿主才写 `tcsd-agent-stage-checkpoint/v2`。
+```powershell
+.\scripts\install-tcsd-hermes-skills.ps1 -SnapshotPath C:\ProgramData\SoftwareDocGenerator\tcsd-skill-snapshot.json
+```
 
-checkpoint 记录技能名/版本/bundle hash、runtime hash、Hermes session、profile、实际 model、token usage、prompt hash、attempt、输入/结果文件及 hash、验证报告、工具日志摘要和产物。只保存 stdout/stderr 字节数等摘要，不保存 Agent 隐藏推理、原始对话、凭据或敏感日志。默认每阶段 `200` turns、`3600000` ms；Windows 可设置 `TCSD_STAGE_HERMES_MAX_TURNS`、`TCSD_STAGE_HERMES_TIMEOUT_MS` 与 `TCSD_STAGE_HERMES_PROFILE`，其中 profile 回退到 `HERMES_PROFILE`。如 profile 使用独立状态库，可设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`，以便读取实际 model/token 遥测。
+安装器只覆盖其自身 marker 证明未被人工修改的 TCSD 目录；同名的未知/已修改目录会中止安装。任务保存 `tcsd-hermes-skill-snapshot/v1`，随后每个阶段 prompt 以对应 `/tcsd-stage-xx-*` 斜杠命令开头并执行通用 `tcsd_stage_execute`。脚本、模板、MATLAB/SATK、Coverage IR、仿真、工作簿和覆盖率能力集中在非技能目录 `skills/hermes/tcsd-runtime`；技能只调用共享 runtime，不复制整套实现。技能和 runtime 均计算稳定内容 hash，并在 checkpoint 中记录 bundle version。
+
+阶段边界协议为 `tcsd-agent-stage-input/v1` 与 `tcsd-agent-stage-result/v1`。Agent 只负责调用共享 runtime 生成候选 result；宿主不采信 Agent 文本。宿主用 openpyxl/JSON 重新解析 Probe 计划与实际观察、TCSD workbook 的根端口/参数/动作/等待顺序、每个 simulation 用例/步骤/输出/`expValue`，并从覆盖率报告的 covered/total 推导百分比。空模板、空 simulation、空 coverage、伪造计数/覆盖率、覆盖不足却跳过修正、修正后跳过最终验证均被拒绝。阶段 12 Agent 只能给出清理证据；`completed` execution manifest、timeline 和 artifact manifest 必须由宿主从已验证 checkpoint 自动生成。只有这些 validator 通过后，宿主才写 `tcsd-agent-stage-checkpoint/v2`。
+
+checkpoint 记录技能名/版本/SKILL.md hash/bundle hash、runtime hash、Hermes session、profile、实际 model、token usage、prompt hash、attempt、输入/结果文件及 hash、验证报告、工具日志摘要和产物。`read_hermes_session.py` 只读查询所选 profile 的 `state.db`，要求该 session 的首轮 user message 以精确 `/技能名` 调用开头；同时校验 Hermes 官方 `skills/.usage.json` 中该技能的 `use_count` 在 CLI 调用窗口内递增且 `last_used_at` 位于该窗口，并校验已安装 SKILL.md 的字节 hash。checkpoint 只保存 invocation message id/hash、计数、时间与 skill hash，不保存消息正文。这是由 state.db 与 Hermes 技能 usage sidecar 组合形成的运行态加载证据，不是 Agent 自报。只保存 stdout/stderr 字节数等摘要，不保存 Agent 隐藏推理、原始对话、凭据或敏感日志。默认每阶段 `200` turns、`3600000` ms；Windows 可设置 `TCSD_STAGE_HERMES_MAX_TURNS`、`TCSD_STAGE_HERMES_TIMEOUT_MS` 与 `TCSD_STAGE_HERMES_PROFILE`，其中 profile 回退到 `HERMES_PROFILE`。如 profile 使用独立状态库，可设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`；如 Hermes skills 不在 state.db 同目录的 `skills`，可设置 `TCSD_STAGE_HERMES_SKILLS_DIR`。
+
+阶段 2 使用真实执行 Canary，而非可执行文件存在性检查：导入 PyYAML/openpyxl、在 workspace 创建/读取/删除随机 sentinel、通过 SATK/MCP 让 MATLAB 返回随机 nonce、检查 Simulink license/load/version，并要求 MATLAB 写出同 nonce sentinel。MCP server 按固定跨平台顺序发现：显式 `SATK_MCP_SERVER`、官方 `~/.matlab/agentic-toolkits/bin/matlab-mcp-server(.exe)`、旧 `matlab-mcp-core-server(.exe)`、发布仓库 `tools` fallback；环境证据保存实际路径、发现来源、文件大小和 SHA-256，宿主重新校验 hash。MCP 返回空而 sentinel 不存在属于执行通道故障。`TCSD_PIPELINE_ENV_CANARY_FIXTURE` 只供 `tests/tcsd-runtime` 的 dev-only 单元测试使用，Windows 生产不得设置。
+
+第 7 阶段的静态 workbook/obligation 匹配仅是规划诊断，使用不可变的 `*_planning_obligations_snapshot.json` 生成 `tcsd-planning-mapping-assessment/v1`。该 assessment 只允许 `satisfied` 或非阻断的 `advisory`，不能声明实测覆盖率；阶段 checkpoint 与宿主 execution manifest 均把它标记为 `authority=planning`，并明确由第 9 阶段的 `measured-simulink-coverage` 取代。最终 Condition/Decision/MC/DC、80% 判断和未解决项只采信宿主解析的真实覆盖率报告，不保留未解释的 `failed` 静态质量报告。
 
 只有候选 result、产物或 checkpoint 的确定性校验失败才允许自动修复一次。修复必须启动第十三个新 session，并携带上一尝试的宿主验证报告；第二次仍失败即终止。输入、环境、MATLAB/SATK、Hermes 不可用、遥测缺失、session 复用和超时等硬错误直接失败，不重试。阶段 10 内部仍只允许一次 Coverage IR 用例修正；宿主验证修复不会放宽此限制。
 
@@ -162,6 +173,7 @@ checkpoint 记录技能名/版本/bundle hash、runtime hash、Hermes session、
 - `release/linux-prod` 包含页面、任务创建/轮询、V2 状态同步和十二阶段追溯展示；明确排除 `tcsd-stage-*` 与 `tcsd-runtime`。
 - `release/windows-prod` 包含 Hermes job 路由、`TcsdHermesStageExecutor`、十二技能、共享 runtime、MATLAB/SATK 和宿主 checkpoint。
 - shared 包含协议/schema、阶段目录、错误分类、bundle hash、配置和部署说明。
+- dev-only 包含 `tests/tcsd-runtime` 的合成模型、fake Hermes、负向合同测试和真实黑盒验收驱动；Windows release 不含 `tests/**`，runtime hash 也不包含测试夹具。
 - `data/unit-test-case-generation/**`、`APP_DATA_DIR/tcsd-pipeline-jobs`、`.tcsd-agent/**`、`.tcsd-checkpoints/**`、Hermes session/state DB、模型、MAT、addon、XLSX、coverage、日志和临时文件均是 runtime/local，不进入 release 或功能提交。
 
 Linux 的 `UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS` 只控制单次同步窗口；超时或短暂网络失败保持 `running/workerPending`，由 `UNIT_TEST_CASE_RECONCILE_INTERVAL_MS` 继续对账。404 job-not-found 才作为永久失败。Windows 需要配置 `TCSD_PIPELINE_PYTHON`、`MATLAB_ROOT` 和上述阶段 Hermes 变量。
@@ -191,7 +203,7 @@ HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE=10000
 
 如果 Linux 平台和 Windows VM 不是同一套绝对路径，`SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT` 可显式设置；未设置时会回退到 `UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT`。Windows VM 需要安装或随包携带 `simulink-module-description-generator` skill，并准备 MATLAB/SATK 环境。
 
-Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent sidecar：平台端监听 `3000`，Hermes Agent 监听 `3101`，平台端通过 `HERMES_TRANSPORT=api` 调用 sidecar，并将 `HERMES_SERVER_REQUEST_TIMEOUT_MS` 设为 `0` 以支持长任务。TCSD 每阶段默认 `TCSD_STAGE_HERMES_TIMEOUT_MS=3600000`、`TCSD_STAGE_HERMES_MAX_TURNS=200`。可以通过 `TCSD_STAGE_HERMES_PROFILE=deepseek` 只覆盖 TCSD 阶段 profile；未设置时回退 `HERMES_PROFILE`。若使用命名 profile，必须确保对应的 Hermes `state.db` 可由 Agent 读取，必要时设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`。
+Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent sidecar：平台端监听 `3000`，Hermes Agent 监听 `3101`，平台端通过 `HERMES_TRANSPORT=api` 调用 sidecar，并将 `HERMES_SERVER_REQUEST_TIMEOUT_MS` 设为 `0` 以支持长任务。sidecar health 只证明 Node API 壳可访问；只有 checkpoint 中的真实外部 model、12 个不同 session、token usage，以及 `state.db` 精确 slash invocation 与 Hermes skill-usage 计数/时间组合证据才能证明 LLM-backed 阶段执行，fake Hermes E2E 不能替代。TCSD 每阶段默认 `TCSD_STAGE_HERMES_TIMEOUT_MS=3600000`、`TCSD_STAGE_HERMES_MAX_TURNS=200`。可以通过 `TCSD_STAGE_HERMES_PROFILE=deepseek` 只覆盖 TCSD 阶段 profile；未设置时回退 `HERMES_PROFILE`。若使用命名 profile，必须确保对应的 Hermes `state.db` 可由 Agent 读取，必要时设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`。
 
 项目选择只在平台端保存编号和展示名，例如 `01_楚能`、`02_TMS`；任务 payload 内部只依赖 `unitTestProject.id`，例如 `01`。Hermes Agent 启动 CLI 前会从当前 Agent 进程的 `UNIT_TEST_CASE_PROJECT_ADDON_ROOT/<编号>` 复制全部 addon 内容到 workspace 根目录。Mac 本地默认 addon root 是 `.local/project-addons`，目录示例为 `.local/project-addons/01`；Windows 生产默认 addon root 是 `C:\ProgramData\SoftwareDocGenerator\project-addons`，目录示例为 `C:\ProgramData\SoftwareDocGenerator\project-addons\01`。
 
@@ -249,7 +261,7 @@ npm run release:zip:windows-source
    - `linux` 进入 `release/linux-prod`
    - `windows` 进入 `release/windows-prod`
    - `shared` 两边都评估，通常两边都需要
-   - `runtime-data` 和 `local-only` 排除
+   - `dev-only`、`runtime-data` 和 `local-only` 排除
    - `ambiguous` 结合提交说明和文件内容人工判断
 5. 每个 release 分支提交前检查：
 
