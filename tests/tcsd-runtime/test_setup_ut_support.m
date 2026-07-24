@@ -10,7 +10,8 @@ write_script(fullfile(testRoot, 'Global_HMATC.m'), 'global');
 write_script(fullfile(testRoot, 'TMS_dd.m'), 'model');
 setenv('TCSD_PROJECT_INIT_SCRIPTS', 'Global_HMATC.m;TMS_dd.m');
 
-scriptsDir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts');
+repoRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+scriptsDir = fullfile(repoRoot, 'skills', 'hermes', 'tcsd-runtime', 'scripts');
 addpath(scriptsDir);
 evalin('base', 'clear TCSD_INIT_ORDER');
 setup_ut_support(testRoot, {'TMS_dd.m'});

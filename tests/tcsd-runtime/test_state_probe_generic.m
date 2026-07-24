@@ -7,11 +7,18 @@ mkdir(testRoot);
 mkdir(fullfile(testRoot, 'outputs'));
 modelName = 'GenericStateProbeModel';
 cleanupObj = onCleanup(@() cleanup_test(modelName, testRoot, oldDir, oldPath));
-scriptsDir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'scripts');
+repoRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+scriptsDir = fullfile(repoRoot, 'skills', 'hermes', 'tcsd-runtime', 'scripts');
 addpath(scriptsDir);
 
 create_model(testRoot, modelName);
-trace_logical_mcdc(testRoot, {modelName}, '');
+matPath = fullfile(testRoot, 'GenericProbeFixture.mat');
+GenericProbeFixture = 123; %#ok<NASGU>
+save(matPath, 'GenericProbeFixture');
+evalin('base', 'clear GenericProbeFixture');
+trace_logical_mcdc(testRoot, {modelName}, matPath);
+assert(evalin('base', 'exist(''GenericProbeFixture'', ''var'') == 1'));
+assert(evalin('base', 'GenericProbeFixture == 123'));
 tracePath = fullfile(testRoot, 'outputs', [modelName '_logical_traces.json']);
 assert(exist(tracePath, 'file') == 2, 'Logical trace was not written.');
 trace = jsondecode(fileread(tracePath));
@@ -23,8 +30,11 @@ assert(strcmp(trace.operators(1).ports(1).trace.inputs(1).trace.kind, 'stateful'
 casePath = fullfile(testRoot, 'outputs', [modelName '_state_probe_plan.json']);
 write_cases(casePath);
 probePath = fullfile(testRoot, 'outputs', [modelName '_state_probe_results.json']);
-probe_logical_mcdc_vectors(testRoot, {modelName}, '', ...
+evalin('base', 'clear GenericProbeFixture');
+probe_logical_mcdc_vectors(testRoot, {modelName}, matPath, ...
     'CaseJson', casePath, 'OutputJson', probePath);
+assert(evalin('base', 'exist(''GenericProbeFixture'', ''var'') == 1'));
+assert(evalin('base', 'GenericProbeFixture == 123'));
 assert(exist(probePath, 'file') == 2, 'Probe result was not written.');
 payload = jsondecode(fileread(probePath));
 report = payload.(matlab.lang.makeValidName(modelName));
@@ -75,6 +85,7 @@ fclose(fid);
 end
 
 function cleanup_test(modelName, testRoot, oldDir, oldPath)
+evalin('base', 'clear GenericProbeFixture');
 try
     if bdIsLoaded(modelName)
         close_system(modelName, 0);

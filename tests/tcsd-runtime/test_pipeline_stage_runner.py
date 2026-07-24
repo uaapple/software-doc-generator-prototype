@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import os
 import sqlite3
@@ -10,9 +11,10 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run_tcsd_pipeline_stage.py"
-SESSION_READER = Path(__file__).resolve().parents[1] / "scripts" / "read_hermes_session.py"
-SATK_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "satk_eval.py"
+RUNTIME = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runtime"
+SCRIPT = RUNTIME / "scripts" / "run_tcsd_pipeline_stage.py"
+SESSION_READER = RUNTIME / "scripts" / "read_hermes_session.py"
+SATK_SCRIPT = RUNTIME / "scripts" / "satk_eval.py"
 SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
 RUNNER = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
@@ -24,14 +26,110 @@ SATK_SPEC.loader.exec_module(SATK)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_satk_server_discovery_priority_is_cross_platform_and_deterministic(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / "home"
+            toolkit_bin = home / ".matlab" / "agentic-toolkits" / "bin"
+            repository = root / "repository"
+            script_file = repository / "skills" / "hermes" / "tcsd-runtime" / "scripts" / "satk_eval.py"
+            toolkit_bin.mkdir(parents=True)
+            (repository / "tools").mkdir(parents=True)
+            official = toolkit_bin / "matlab-mcp-server"
+            legacy = toolkit_bin / "matlab-mcp-core-server"
+            tools_legacy = repository / "tools" / "matlab-mcp-core-server"
+            explicit = root / "explicit-mcp"
+            for candidate in (official, legacy, tools_legacy, explicit):
+                candidate.write_bytes(candidate.name.encode("utf-8"))
+
+            selected, source = SATK.resolve_server(
+                environ={"SATK_MCP_SERVER": str(explicit)},
+                home=home,
+                cwd=root,
+                script_file=script_file,
+                platform_name="Darwin",
+            )
+            self.assertEqual((selected, source), (explicit.resolve(), "environment"))
+
+            selected, source = SATK.resolve_server(
+                environ={},
+                home=home,
+                cwd=root,
+                script_file=script_file,
+                platform_name="Darwin",
+            )
+            self.assertEqual((selected, source), (official.resolve(), "official-toolkit"))
+            official.unlink()
+            selected, source = SATK.resolve_server(
+                environ={},
+                home=home,
+                cwd=root,
+                script_file=script_file,
+                platform_name="Darwin",
+            )
+            self.assertEqual((selected, source), (legacy.resolve(), "legacy-toolkit"))
+            legacy.unlink()
+            selected, source = SATK.resolve_server(
+                environ={},
+                home=home,
+                cwd=root,
+                script_file=script_file,
+                platform_name="Darwin",
+            )
+            self.assertEqual((selected, source), (tools_legacy.resolve(), "repository-tools-legacy"))
+            self.assertEqual(
+                SATK.server_binary_names("Windows"),
+                ("matlab-mcp-server.exe", "matlab-mcp-core-server.exe"),
+            )
+
     def test_satk_runner_treats_tool_result_is_error_as_failure(self):
         self.assertTrue(SATK.mcp_response_failed({"error": {"code": -1}}))
         self.assertTrue(SATK.mcp_response_failed({"result": {"isError": True, "content": []}}))
         self.assertFalse(SATK.mcp_response_failed({"result": {"isError": False, "content": []}}))
 
+    def test_planning_mapping_gaps_are_advisory_and_superseded_by_measured_coverage(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            obligations = root / "outputs" / "GenericModel_planning_obligations_snapshot.json"
+            obligations.parent.mkdir()
+            obligations.write_text('{"obligations":[]}', encoding="utf-8")
+            assessment = RUNNER.planning_mapping_assessment(
+                {
+                    "status": "failed",
+                    "summary": {"missing_count": 3, "unresolved_count": 1},
+                    "missing": [{"id": "generic-obligation"}],
+                },
+                obligations,
+                root,
+            )
+            self.assertEqual(assessment["schema"], "tcsd-planning-mapping-assessment/v1")
+            self.assertEqual(assessment["status"], "advisory")
+            self.assertEqual(assessment["assessment"], "gaps-observed")
+            self.assertFalse(assessment["blocking"])
+            self.assertNotEqual(assessment["status"], "failed")
+            self.assertEqual(assessment["supersededBy"]["stageIndex"], 9)
+            self.assertEqual(assessment["supersededBy"]["authority"], "measured-simulink-coverage")
+            self.assertEqual(assessment["sourceObligations"]["sha256"], hashlib.sha256(obligations.read_bytes()).hexdigest())
+
     def test_hermes_session_reader_reports_actual_model_and_token_usage(self):
         with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
             database = Path(temp) / "state.db"
+            skill_file = temp_path / "SKILL.md"
+            usage_file = temp_path / ".usage.json"
+            skill_source = b"---\r\nname: tcsd-stage-01-validate-inputs\r\n---\r\n\r\n# Stage 1\r\n"
+            skill_file.write_bytes(skill_source)
+            usage_file.write_text(
+                json.dumps(
+                    {
+                        "tcsd-stage-01-validate-inputs": {
+                            "use_count": 3,
+                            "last_used_at": "2026-07-24T11:34:05+00:00",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
             connection = sqlite3.connect(database)
             try:
                 connection.execute(
@@ -51,6 +149,26 @@ class PipelineStageRunnerTests(unittest.TestCase):
                     "insert into sessions values (?, ?, ?, ?, ?, ?, ?)",
                     ("session-actual", "provider/model-v2", 100, 20, 5, 2, 7),
                 )
+                connection.execute(
+                    """
+                    create table messages (
+                      id integer primary key autoincrement,
+                      session_id text,
+                      role text,
+                      content text,
+                      timestamp real
+                    )
+                    """
+                )
+                connection.execute(
+                    "insert into messages(session_id, role, content, timestamp) values (?, ?, ?, ?)",
+                    (
+                        "session-actual",
+                        "user",
+                        "/tcsd-stage-01-validate-inputs execute stage one",
+                        1.0,
+                    ),
+                )
                 connection.commit()
             finally:
                 connection.close()
@@ -62,6 +180,20 @@ class PipelineStageRunnerTests(unittest.TestCase):
                     str(database),
                     "--session-id",
                     "session-actual",
+                    "--expected-skill-name",
+                    "tcsd-stage-01-validate-inputs",
+                    "--expected-skill-file",
+                    str(skill_file),
+                    "--expected-skill-sha256",
+                    hashlib.sha256(skill_source).hexdigest(),
+                    "--skill-usage-file",
+                    str(usage_file),
+                    "--expected-use-count-before",
+                    "2",
+                    "--invocation-started-at",
+                    "2026-07-24T11:34:00Z",
+                    "--invocation-ended-at",
+                    "2026-07-24T11:34:10Z",
                 ],
                 check=True,
                 capture_output=True,
@@ -71,6 +203,10 @@ class PipelineStageRunnerTests(unittest.TestCase):
             self.assertEqual(usage["model"], "provider/model-v2")
             self.assertEqual(usage["totalTokens"], 127)
             self.assertEqual(usage["reasoningTokens"], 7)
+            self.assertTrue(usage["skillLoad"]["loaded"])
+            self.assertEqual(usage["skillLoad"]["source"], "hermes-state-db+skill-usage")
+            self.assertEqual(usage["skillLoad"]["usageCountBefore"], 2)
+            self.assertEqual(usage["skillLoad"]["usageCountAfter"], 3)
 
     def test_first_three_stages_write_candidate_results_but_not_host_checkpoints(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -92,9 +228,53 @@ class PipelineStageRunnerTests(unittest.TestCase):
                     "projectAddonCopy": {"copiedFileCount": 0},
                 },
             }
-            old = os.environ.get("TCSD_PIPELINE_SKIP_MATLAB_GATE")
+            fake_matlab_root = root / "fake-matlab"
+            (fake_matlab_root / "bin").mkdir(parents=True)
+            (fake_matlab_root / "bin" / "matlab").write_text("fixture", encoding="utf-8")
+            fake_mcp_server = root / "fake-matlab-mcp-server"
+            fake_mcp_server.write_bytes(b"offline MCP fixture")
+            job["input"]["matlabRoot"] = str(fake_matlab_root)
+            environment_fixture = root / "environment-fixture.json"
+            nonce = "offline-fixture-nonce"
+            environment_fixture.write_text(json.dumps({
+                "schema": "tcsd-environment-gate/v2",
+                "jobId": "job-generic",
+                "nonce": nonce,
+                "matlabRoot": str(fake_matlab_root),
+                "python": sys.executable,
+                "runner": str(SATK_SCRIPT),
+                "pythonDependencies": {
+                    "passed": True,
+                    "modules": {
+                        "yaml": {"version": "6.0.3"},
+                        "openpyxl": {"version": "3.1.5"},
+                    },
+                },
+                "workspaceIo": {"passed": True, "created": True, "readMatched": True, "deleted": True},
+                "matlab": {"passed": True, "nonce": nonce, "version": "R2026a"},
+                "simulink": {
+                    "passed": True,
+                    "licenseAvailable": True,
+                    "loaded": True,
+                    "version": "R2026a",
+                },
+                "satkMcp": {
+                    "passed": True,
+                    "runner": str(SATK_SCRIPT),
+                    "server": {
+                        "path": str(fake_mcp_server),
+                        "discovery": "offline-test-fixture",
+                        "sha256": hashlib.sha256(fake_mcp_server.read_bytes()).hexdigest(),
+                        "sizeBytes": fake_mcp_server.stat().st_size,
+                    },
+                    "sentinelWritten": True,
+                    "nonceMatched": True,
+                },
+                "passed": True,
+            }), encoding="utf-8")
+            old = os.environ.get("TCSD_PIPELINE_ENV_CANARY_FIXTURE")
             old_setup = os.environ.get("TCSD_PIPELINE_SETUP_FIXTURE")
-            os.environ["TCSD_PIPELINE_SKIP_MATLAB_GATE"] = "1"
+            os.environ["TCSD_PIPELINE_ENV_CANARY_FIXTURE"] = str(environment_fixture)
             os.environ["TCSD_PIPELINE_SETUP_FIXTURE"] = "1"
             try:
                 for stage in (1, 2, 3):
@@ -114,9 +294,9 @@ class PipelineStageRunnerTests(unittest.TestCase):
                 self.assertTrue(initialized["completed"])
             finally:
                 if old is None:
-                    os.environ.pop("TCSD_PIPELINE_SKIP_MATLAB_GATE", None)
+                    os.environ.pop("TCSD_PIPELINE_ENV_CANARY_FIXTURE", None)
                 else:
-                    os.environ["TCSD_PIPELINE_SKIP_MATLAB_GATE"] = old
+                    os.environ["TCSD_PIPELINE_ENV_CANARY_FIXTURE"] = old
                 if old_setup is None:
                     os.environ.pop("TCSD_PIPELINE_SETUP_FIXTURE", None)
                 else:

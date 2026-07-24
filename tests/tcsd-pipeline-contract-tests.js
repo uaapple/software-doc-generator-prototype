@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  cp,
   copyFile,
   mkdir,
   mkdtemp,
@@ -11,8 +13,10 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { TcsdHermesStageExecutor } from "../src/services/tcsd-hermes-stage-executor.js";
+import { TcsdHermesSkillRegistry } from "../src/services/tcsd-hermes-skill-registry.js";
 import { TcsdPipelineJobService } from "../src/services/tcsd-pipeline-job-service.js";
 import {
   TCSD_CHECKPOINT_SCHEMA,
@@ -37,12 +41,14 @@ const template = path.join(skillsRoot, "tcsd-runtime", "assets", "templates", "t
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const coverage = (percent) => ({
   GenericModel: {
-    condition: { percent, passed: percent >= 80 },
-    decision: { percent, passed: percent >= 80 },
-    mcdc: { percent, passed: percent >= 80 }
+    condition: { covered: percent, total: 100, percent, passed: percent >= 80 },
+    decision: { covered: percent, total: 100, percent, passed: percent >= 80 },
+    mcdc: { covered: percent, total: 100, percent, passed: percent >= 80 }
   }
 });
 const rel = (root, target) => path.relative(root, target).replaceAll(path.sep, "/");
+const execFileAsync = promisify(execFile);
+const fixtureBuilder = path.join(repo, "tests", "tcsd-runtime", "build_contract_workbook.py");
 
 assert.equal(TCSD_STAGE_DEFINITIONS.length, 12);
 assert.equal(TCSD_PIPELINE_SCHEMA, "tcsd-agent-stage-pipeline/v2");
@@ -100,6 +106,40 @@ assert.equal(parseExecutionManifest({
   assert.match((await catalog.runtime()).bundleHash, /^[a-f0-9]{64}$/);
 }
 
+{
+  const root = await mkdtemp(path.join(os.tmpdir(), "tcsd-skill-gates-"));
+  const invalidSkillsRoot = path.join(root, "invalid-source");
+  const firstSkill = TCSD_STAGE_DEFINITIONS[0];
+  await mkdir(invalidSkillsRoot, { recursive: true });
+  await cp(
+    path.join(skillsRoot, firstSkill.skillName),
+    path.join(invalidSkillsRoot, firstSkill.skillName),
+    { recursive: true }
+  );
+  const invalidSkillFile = path.join(invalidSkillsRoot, firstSkill.skillName, "SKILL.md");
+  await writeFile(
+    invalidSkillFile,
+    (await readFile(invalidSkillFile, "utf8")).replace('version: "1.1.0"', 'version: "0.0.0"')
+  );
+  await assert.rejects(
+    () => new TcsdStageCatalog({ skillsDir: invalidSkillsRoot }).describe(1),
+    /skill metadata mismatch/
+  );
+
+  const catalog = new TcsdStageCatalog({ skillsDir: skillsRoot });
+  const registry = new TcsdHermesSkillRegistry({
+    command: "fake-hermes",
+    stateDbPath: path.join(root, "profile", "state.db"),
+    skillsDir: path.join(root, "profile", "skills"),
+    catalog,
+    commandRunner: async () => ({
+      stdout: TCSD_STAGE_DEFINITIONS.slice(0, -1).map((stage) => stage.skillName).join("\n"),
+      stderr: ""
+    })
+  });
+  await assert.rejects(() => registry.prepare(), /did not discover all TCSD stage skills/);
+}
+
 async function createWorkspace() {
   const root = await mkdtemp(path.join(os.tmpdir(), "tcsd-agent-pipeline-"));
   const outputDir = path.join(root, "outputs");
@@ -108,7 +148,11 @@ async function createWorkspace() {
   const modelMatPath = path.join(root, "GenericModel.mat");
   await writeFile(modelSlxPath, "slx");
   await writeFile(modelMatPath, "mat");
-  await copyFile(template, path.join(outputDir, "GenericModel_Test0001_tcsd.xlsx"));
+  await execFileAsync("python3", [
+    fixtureBuilder,
+    "--output",
+    path.join(outputDir, "GenericModel_Test0001_tcsd.xlsx")
+  ]);
   return { root, outputDir, modelSlxPath, modelMatPath };
 }
 
@@ -120,6 +164,8 @@ async function jsonArtifact(workspace, stageIndex, schema, suffix = "") {
 
 async function writeStageResult(workspace, manifest, resultPath, options = {}) {
   const stage = manifest.stageIndex;
+  const initialPercent = Number(options.initialCoverage ?? 90);
+  const finalPercent = Number(options.finalCoverage ?? 60);
   const result = {
     schema: TCSD_STAGE_RESULT_SCHEMA,
     jobId: manifest.jobId,
@@ -140,13 +186,41 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
   }
   if (stage === 1) result.artifacts.push(await jsonArtifact(workspace, stage, "tcsd-input-manifest/v1"));
   if (stage === 2) {
-    const artifact = await jsonArtifact(workspace, stage, "tcsd-environment-gate/v1");
+    const artifact = await jsonArtifact(workspace, stage, "tcsd-environment-gate/v2");
     const absolute = path.join(workspace.root, artifact.path);
+    const fakeServer = path.join(workspace.outputDir, "fake-matlab-mcp-server");
+    await writeFile(fakeServer, "generic MCP server fixture");
+    const fakeServerSource = await readFile(fakeServer);
+    const nonce = `nonce-${manifest.jobId}`;
     await writeFile(absolute, JSON.stringify({
-      schema: "tcsd-environment-gate/v1",
+      schema: "tcsd-environment-gate/v2",
+      jobId: manifest.jobId,
+      nonce,
       passed: true,
       matlabRoot: "/opt/matlab",
-      runner: "satk_eval.py"
+      runner: "satk_eval.py",
+      pythonDependencies: {
+        passed: true,
+        modules: {
+          yaml: { version: "6.0.3" },
+          openpyxl: { version: "3.1.5" }
+        }
+      },
+      workspaceIo: { passed: true, created: true, readMatched: true, deleted: true },
+      matlab: { passed: true, nonce, version: "R2026a" },
+      simulink: { passed: true, licenseAvailable: true, loaded: true, version: "R2026a" },
+      satkMcp: {
+        passed: true,
+        runner: "satk_eval.py",
+        server: {
+          path: fakeServer,
+          discovery: "contract-test-fixture",
+          sha256: hash(fakeServerSource),
+          sizeBytes: fakeServerSource.length
+        },
+        sentinelWritten: true,
+        nonceMatched: true
+      }
     }));
     result.artifacts.push(artifact);
   }
@@ -184,16 +258,82 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
     }
   }
   if (stage === 6) {
-    result.artifacts.push(await jsonArtifact(workspace, stage, "simulink-ut-state-probe-plan/v1"));
-    result.evidence = { candidateCount: 0, probeExecuted: false };
+    const planPath = path.join(workspace.outputDir, "state-probe-plan.json");
+    const reportPath = path.join(workspace.outputDir, "state-probe-results.json");
+    await writeFile(planPath, JSON.stringify({
+      schema: "simulink-ut-state-probe-plan/v1",
+      summary: { candidate_count: 1 },
+      tests: [{ test_id: "STATE_PROBE_0001", steps: [{ index: 1 }] }]
+    }));
+    result.artifacts.push({ path: rel(workspace.root, planPath), kind: "json", role: "probe-plan" });
+    if (!options.unexecutedProbe) {
+      await writeFile(reportPath, JSON.stringify({
+        schema: "simulink-ut-logical-mcdc-probe/v2",
+        observations: [{
+          test_id: "STATE_PROBE_0001",
+          step_index: 1,
+          inputs: { Input: 1 },
+          vectors: { decision: { ok: true, values: [true] } },
+          prediction_status: "observed"
+        }]
+      }));
+      result.artifacts.push({ path: rel(workspace.root, reportPath), kind: "json", role: "probe-result" });
+    }
+    result.evidence = { candidateCount: 1, probeExecuted: !options.unexecutedProbe };
   }
   const workbook = path.join(workspace.outputDir, "GenericModel_Test0001_tcsd.xlsx");
   if (stage === 7) {
-    result.artifacts.push({ path: rel(workspace.root, workbook), kind: "xlsx", role: "workbook" });
+    if (options.blankWorkbook) await copyFile(template, workbook);
+    const planningObligations = path.join(workspace.outputDir, "planning-obligations.json");
+    const planningAssessment = path.join(workspace.outputDir, "planning-mapping-assessment.json");
+    await writeFile(planningObligations, JSON.stringify({
+      schema: "simulink-ut-logical-mcdc-obligations/v1",
+      obligations: []
+    }));
+    const obligationsSha256 = hash(await readFile(planningObligations));
+    await writeFile(planningAssessment, JSON.stringify({
+      schema: "tcsd-planning-mapping-assessment/v1",
+      authority: "planning",
+      status: "satisfied",
+      blocking: false,
+      assessment: "complete",
+      sourceObligations: {
+        path: rel(workspace.root, planningObligations),
+        sha256: obligationsSha256
+      },
+      supersededBy: {
+        stageIndex: 9,
+        authority: "measured-simulink-coverage",
+        reason: "contract fixture"
+      }
+    }));
+    result.artifacts.push(
+      { path: rel(workspace.root, workbook), kind: "xlsx", role: "workbook" },
+      { path: rel(workspace.root, planningObligations), kind: "json", role: "planning-obligations" },
+      { path: rel(workspace.root, planningAssessment), kind: "json", role: "planning-mapping-assessment" }
+    );
+    result.evidence = {
+      planningMappingAssessment: rel(workspace.root, planningAssessment),
+      mappingAuthority: "planning",
+      supersededByStage: 9
+    };
   }
   if (stage === 8) {
+    if (options.wrongExpValue) {
+      await execFileAsync("python3", [fixtureBuilder, "--output", workbook, "--expected", "2"]);
+    }
     const simulation = path.join(workspace.outputDir, "simulation.json");
-    await writeFile(simulation, "{}");
+    await writeFile(simulation, JSON.stringify(options.emptySimulation ? {} : {
+      schema: "tcsd-simulation-result/v1",
+      tests: [{
+        row: 3,
+        test_id: "TC_001",
+        steps: [
+          { index: 1, outputs: { Output: 1 }, stable: { Output: true } },
+          { index: 2, outputs: { Output: 1 }, stable: { Output: true } }
+        ]
+      }]
+    }));
     result.artifacts.push(
       { path: rel(workspace.root, workbook), kind: "xlsx", role: "workbook" },
       { path: rel(workspace.root, simulation), kind: "json", role: "simulation" }
@@ -208,69 +348,103 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
     };
   }
   if (stage === 9) {
-    result.artifacts.push(await jsonArtifact(workspace, stage, "tcsd-coverage-report/v1"));
-    result.coverage = coverage(90);
+    const coveragePath = path.join(workspace.outputDir, "initial-coverage.json");
+    await writeFile(coveragePath, JSON.stringify({
+      schema: "tcsd-coverage-report/v1",
+      models: options.emptyCoverage ? {} : coverage(initialPercent)
+    }));
+    result.artifacts.push({ path: rel(workspace.root, coveragePath), kind: "json", role: "coverage" });
+    result.coverage = {
+      schema: "tcsd-coverage-report/v1",
+      models: coverage(options.emptyCoverage ? 99 : initialPercent)
+    };
   }
-  if (stage === 10 || stage === 11) {
+  if (stage === 10 && (initialPercent >= 80 || options.skipRepairDespiteLow)) {
     result.status = "skipped";
     result.summary = "首轮覆盖率已达标。";
     result.skipReason = "首轮覆盖率已达标。";
   }
+  if (stage === 10 && initialPercent < 80 && !options.skipRepairDespiteLow) {
+    const repairPath = path.join(workspace.outputDir, "coverage-repair.json");
+    await writeFile(repairPath, JSON.stringify({
+      schema: "simulink-ut-tcsd-coverage-ir/v1",
+      items: [{ id: "generic-repair", reachability: { status: "required" } }]
+    }));
+    result.artifacts.push({ path: rel(workspace.root, repairPath), kind: "json", role: "coverage-repair" });
+    result.repair = {
+      attempted: true,
+      applied: !options.noApplicableRepair,
+      passes: options.noApplicableRepair ? 0 : 1,
+      reason: options.noApplicableRepair
+        ? "no_unique_executable_coverage_ir_candidates"
+        : "coverage_below_threshold",
+      evidence: rel(workspace.root, repairPath)
+    };
+    result.evidence = { coverageIr: rel(workspace.root, repairPath) };
+  }
+  if (stage === 11 && (
+    initialPercent >= 80 ||
+    options.skipFinalAfterRepair ||
+    options.noApplicableRepair
+  )) {
+    result.status = "skipped";
+    result.summary = "未应用修正，无需重复最终验证。";
+    result.skipReason = "未应用修正，无需重复最终验证。";
+  }
+  if (stage === 11 && initialPercent < 80 && !options.skipFinalAfterRepair) {
+    const simulation = path.join(workspace.outputDir, "final-simulation.json");
+    const coveragePath = path.join(workspace.outputDir, "final-coverage.json");
+    await writeFile(simulation, JSON.stringify({
+      schema: "tcsd-simulation-result/v1",
+      tests: [{
+        row: 3,
+        test_id: "TC_001",
+        steps: [
+          { index: 1, outputs: { Output: 1 }, stable: { Output: true } },
+          { index: 2, outputs: { Output: 1 }, stable: { Output: true } }
+        ]
+      }]
+    }));
+    await writeFile(coveragePath, JSON.stringify({
+      schema: "tcsd-coverage-report/v1",
+      models: coverage(finalPercent)
+    }));
+    result.artifacts.push(
+      { path: rel(workspace.root, workbook), kind: "xlsx", role: "workbook" },
+      { path: rel(workspace.root, simulation), kind: "json", role: "simulation" },
+      { path: rel(workspace.root, coveragePath), kind: "json", role: "coverage" }
+    );
+    result.coverage = { schema: "tcsd-coverage-report/v1", models: coverage(finalPercent) };
+    result.evidence = {
+      simulationResult: rel(workspace.root, simulation),
+      expValueCount: 1,
+      simulationValueCount: 1,
+      workbookBackfillCount: 1,
+      caseOutputCounts: { "3:TC_001": { Output: 1 } },
+      backfillItems: [{ row: 3, testId: "TC_001", step: 1, output: "Output", value: 1 }]
+    };
+  }
   if (stage === 12) {
-    const simulation = path.join(workspace.outputDir, "simulation.json");
-    const initialCoverage = path.join(workspace.outputDir, "initial-coverage.json");
-    const execution = path.join(workspace.outputDir, "execution.json");
-    const timeline = path.join(workspace.outputDir, "timeline.json");
-    const artifacts = path.join(workspace.outputDir, "artifacts.json");
     const cleanup = path.join(workspace.outputDir, "cleanup.json");
-    await writeFile(initialCoverage, JSON.stringify(coverage(90)));
-    await writeFile(execution, JSON.stringify({
-      schema: "simulink-ut-tcsd-execution-manifest/v1",
-      status: "completed",
-      completion: "complete",
-      workbook: rel(workspace.root, workbook),
-      simulation: { status: "completed", result: rel(workspace.root, simulation) },
-      evidence: {},
-      coverage: {
-        initial: coverage(90),
-        final: coverage(90),
-        initial_artifact: rel(workspace.root, initialCoverage),
-        final_artifact: rel(workspace.root, initialCoverage),
-        repair_required: false,
-        repair_attempted: false,
-        repair_applied: false,
-        repair_passes: 0,
-        repair_reason: "",
-        repair_evidence: ""
-      }
-    }));
-    await writeFile(timeline, JSON.stringify({
-      schema: "tcsd-stage-timeline/v1",
-      jobId: manifest.jobId,
-      events: []
-    }));
-    await writeFile(artifacts, JSON.stringify({
-      schema: "tcsd-artifact-manifest/v1",
-      jobId: manifest.jobId,
-      artifacts: [{ path: rel(workspace.root, workbook), kind: "xlsx", role: "workbook" }]
-    }));
     await writeFile(cleanup, JSON.stringify({
       schema: "tcsd-cleanup-result/v1",
       jobId: manifest.jobId,
       ownerJobId: manifest.jobId,
       removedEntries: []
     }));
-    result.artifacts = [execution, timeline, artifacts, cleanup, workbook].map((item) => ({
-      path: rel(workspace.root, item),
-      kind: item.endsWith(".xlsx") ? "xlsx" : "json",
-      role: "evidence"
-    }));
-    result.evidence = {
-      executionManifest: rel(workspace.root, execution),
-      timeline: rel(workspace.root, timeline),
-      artifactManifest: rel(workspace.root, artifacts),
-      cleanup: rel(workspace.root, cleanup)
-    };
+    result.artifacts = [{ path: rel(workspace.root, cleanup), kind: "json", role: "cleanup" }];
+    result.evidence = { cleanup: rel(workspace.root, cleanup) };
+    if (options.agentClaimsCompleted) {
+      const fakeExecution = path.join(workspace.outputDir, "agent-execution.json");
+      await writeFile(fakeExecution, JSON.stringify({
+        schema: "simulink-ut-tcsd-execution-manifest/v1",
+        status: "completed",
+        completion: "complete"
+      }));
+      result.artifacts.push({ path: rel(workspace.root, fakeExecution), kind: "json", role: "execution-manifest" });
+      result.evidence.executionManifest = rel(workspace.root, fakeExecution);
+      result.executionManifest = { status: "completed" };
+    }
   }
   await writeFile(resultPath, JSON.stringify(result));
 }
@@ -313,27 +487,57 @@ function createFakeHermes(workspace, options = {}) {
 async function runAgentPipeline(options = {}) {
   const workspace = await createWorkspace();
   const fake = createFakeHermes(workspace, options);
+  const catalog = new TcsdStageCatalog({ skillsDir: skillsRoot });
+  const registry = new TcsdHermesSkillRegistry({
+    command: "fake-hermes",
+    profile: "worker-profile",
+    stateDbPath: path.join(workspace.root, "hermes-profile", "state.db"),
+    skillsDir: path.join(workspace.root, "hermes-profile", "skills"),
+    catalog,
+    commandRunner: async () => ({
+      stdout: TCSD_STAGE_DEFINITIONS.map((stage) => `${stage.skillName} stage skill`).join("\n"),
+      stderr: ""
+    })
+  });
   const executor = new TcsdHermesStageExecutor({
     command: "fake-hermes",
     profile: "worker-profile",
     commandRunner: fake.commandRunner,
-    usageReader: async (sessionId) => ({
-      model: "fake-model-v1",
-      inputTokens: 100,
-      outputTokens: 20,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      reasoningTokens: 0,
-      totalTokens: 120,
-      sessionId
-    }),
-    catalog: new TcsdStageCatalog({ skillsDir: skillsRoot }),
+    usageReader: async (sessionId, _runtime, skill) => {
+      const stageIndex = TCSD_STAGE_DEFINITIONS.find((stage) => stage.skillName === skill.name)?.index;
+      const omitSkillLoad = Number(options.missingSkillLoadStage) === stageIndex;
+      const mismatchSkillLoad = Number(options.mismatchedSkillLoadStage) === stageIndex;
+      return {
+        model: "fake-model-v1",
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 120,
+        skillLoad: omitSkillLoad ? null : {
+          source: "hermes-state-db+skill-usage",
+          loaded: true,
+          skillName: skill.name,
+          skillFileSha256: mismatchSkillLoad ? "0".repeat(64) : skill.skillFileHash,
+          messageId: Number(sessionId.match(/\d+/)?.[0] || 1),
+          messageSha256: hash(`slash-skill-message:${sessionId}:${skill.skillFileHash}`),
+          usageCountBefore: 0,
+          usageCountAfter: 1,
+          lastUsedAt: new Date().toISOString()
+        },
+        sessionId
+      };
+    },
+    catalog,
     maxTurns: 200,
     timeoutMs: 3600000
   });
   const service = new TcsdPipelineJobService({
     jobDir: path.join(workspace.root, "jobs"),
-    executor: (stageIndex, input, job, execution) => executor.execute(stageIndex, input, job, execution)
+    prepareJob: () => registry.prepare(),
+    executor: (stageIndex, input, job, execution) => executor.execute(stageIndex, input, job, execution),
+    checkpointValidator: (checkpoint, context, job) => executor.validateCheckpoint(checkpoint, context, job)
   });
   const input = {
     taskId: `task-${hash(JSON.stringify(options)).slice(0, 8)}`,
@@ -361,16 +565,19 @@ async function runAgentPipeline(options = {}) {
   assert.equal(new Set(sessions).size, 13);
   for (const invocation of fake.invocations) {
     const definition = TCSD_STAGE_DEFINITIONS[invocation.manifest.stageIndex - 1];
-    assert.match(invocation.prompt, new RegExp(`\\$${definition.skillName}`));
+    assert.equal(invocation.prompt.startsWith(`/${definition.skillName} `), true);
     assert.match(invocation.prompt, /tcsd_stage_execute/);
     assert.equal(invocation.manifest.skill.name, definition.skillName);
     assert.match(invocation.manifest.skill.bundleHash, /^[a-f0-9]{64}$/);
+    assert.match(invocation.manifest.skill.skillFileHash, /^[a-f0-9]{64}$/);
   }
   for (const stage of job.stages) {
     assert.equal(stage.checkpoint.schema, TCSD_CHECKPOINT_SCHEMA);
     assert.equal(stage.checkpoint.agent.profile, "worker-profile");
     assert.equal(stage.checkpoint.agent.model, "fake-model-v1");
     assert.equal(stage.checkpoint.agent.tokenUsage.totalTokens, 120);
+    assert.equal(stage.checkpoint.agent.skillLoad.source, "hermes-state-db+skill-usage");
+    assert.equal(stage.checkpoint.agent.skillLoad.skillName, stage.skillName);
     assert.equal(stage.checkpoint.validation.passed, true);
     assert.match(stage.checkpoint.prompt.sha256, /^[a-f0-9]{64}$/);
   }
@@ -399,6 +606,76 @@ async function runAgentPipeline(options = {}) {
   assert.equal(fake.invocations.length, 6);
 }
 
+for (const [options, stageIndex, label] of [
+  [{ unexecutedProbe: true }, 6, "候选存在但 Probe 未执行"],
+  [{ blankWorkbook: true }, 7, "未填充原始模板"],
+  [{ emptySimulation: true }, 8, "空 simulation 与伪造计数"],
+  [{ wrongExpValue: true }, 8, "错误 expValue"],
+  [{ emptyCoverage: true }, 9, "空 coverage 与伪造覆盖率"],
+  [{ initialCoverage: 50, skipRepairDespiteLow: true }, 10, "覆盖不足却跳过修正"],
+  [{ initialCoverage: 50, skipFinalAfterRepair: true }, 11, "已修正却跳过最终覆盖率"],
+  [{ agentClaimsCompleted: true }, 12, "Agent 自报 completed"]
+]) {
+  const { fake, job } = await runAgentPipeline(options);
+  assert.equal(job.status, "失败", label);
+  assert.equal(job.error.code, TCSD_ERROR_CODES.validation, label);
+  assert.equal(job.stages[stageIndex - 1].attempt, 2, label);
+  assert.equal(fake.attemptByStage.get(stageIndex), 2, label);
+}
+
+{
+  const { fake, job } = await runAgentPipeline({ initialCoverage: 50, finalCoverage: 60 });
+  assert.equal(job.status, "部分完成");
+  assert.equal(job.completion, "partial");
+  assert.equal(job.repair.required, true);
+  assert.equal(job.repair.attempted, true);
+  assert.equal(job.repair.applied, true);
+  assert.equal(job.repair.passes, 1);
+  assert.equal(job.coverage.final.aggregate.mcdc.percent, 60);
+  assert.equal(fake.invocations.length, 12);
+  assert.equal(job.stages[9].status, "已完成");
+  assert.equal(job.stages[10].status, "已完成");
+  assert.equal(job.stages[11].checkpoint.executionManifest.authority, "host");
+  assert.equal(job.stages[11].checkpoint.executionManifest.completion, "partial");
+  assert.equal(job.stages[11].checkpoint.executionManifest.evidence.checkpointCount, 12);
+  assert.equal(
+    job.stages[11].checkpoint.executionManifest.evidence.planningMappingAssessment.authority,
+    "planning"
+  );
+  assert.equal(
+    job.stages[11].checkpoint.executionManifest.evidence.planningMappingAssessment.blocking,
+    false
+  );
+  assert.equal(
+    job.stages[11].checkpoint.executionManifest.evidence.planningMappingAssessment.supersededBy.stageIndex,
+    9
+  );
+  assert.equal(
+    job.stages[11].checkpoint.executionManifest.evidence.planningMappingAssessment.supersededBy.coverageArtifact,
+    job.stages[8].checkpoint.evidence.coverageReport
+  );
+}
+
+{
+  const { fake, job } = await runAgentPipeline({
+    initialCoverage: 50,
+    noApplicableRepair: true
+  });
+  assert.equal(job.status, "部分完成");
+  assert.equal(job.completion, "partial");
+  assert.equal(job.repair.required, true);
+  assert.equal(job.repair.attempted, true);
+  assert.equal(job.repair.applied, false);
+  assert.equal(job.repair.passes, 0);
+  assert.equal(job.stages[10].status, "已跳过");
+  assert.equal(job.coverage.final.aggregate.mcdc.percent, 50);
+  assert.deepEqual(
+    job.coverage.final,
+    job.stages[11].checkpoint.executionManifest.coverage.final
+  );
+  assert.equal(fake.invocations.length, 12);
+}
+
 {
   const { fake, job } = await runAgentPipeline({ hardFailureStage: 2 });
   assert.equal(job.status, "失败");
@@ -410,16 +687,30 @@ async function runAgentPipeline(options = {}) {
 {
   const workspace = await createWorkspace();
   let calls = 0;
+  const catalog = new TcsdStageCatalog({ skillsDir: skillsRoot });
+  const registry = new TcsdHermesSkillRegistry({
+    command: "fake-hermes",
+    profile: "default",
+    stateDbPath: path.join(workspace.root, "hermes-profile", "state.db"),
+    skillsDir: path.join(workspace.root, "hermes-profile", "skills"),
+    catalog,
+    commandRunner: async () => ({
+      stdout: TCSD_STAGE_DEFINITIONS.map((stage) => stage.skillName).join("\n"),
+      stderr: ""
+    })
+  });
   const executor = new TcsdHermesStageExecutor({
     commandRunner: async () => {
       calls += 1;
       throw Object.assign(new Error("timeout"), { killed: true, signal: "SIGTERM" });
     },
-    catalog: new TcsdStageCatalog({ skillsDir: skillsRoot })
+    catalog
   });
   const service = new TcsdPipelineJobService({
     jobDir: path.join(workspace.root, "jobs"),
-    executor: (stageIndex, input, job, execution) => executor.execute(stageIndex, input, job, execution)
+    prepareJob: () => registry.prepare(),
+    executor: (stageIndex, input, job, execution) => executor.execute(stageIndex, input, job, execution),
+    checkpointValidator: (checkpoint, context, job) => executor.validateCheckpoint(checkpoint, context, job)
   });
   const started = await service.start({
     taskId: "timeout",
@@ -442,6 +733,17 @@ async function runAgentPipeline(options = {}) {
   assert.equal(job.stages[1].attempt, 1);
 }
 
+for (const options of [
+  { missingSkillLoadStage: 3 },
+  { mismatchedSkillLoadStage: 3 }
+]) {
+  const { fake, job } = await runAgentPipeline(options);
+  assert.equal(job.status, "失败");
+  assert.equal(job.error.code, TCSD_ERROR_CODES.checkpoint);
+  assert.equal(job.stages[2].attempt, 1);
+  assert.equal(fake.attemptByStage.get(3), 1);
+}
+
 {
   const { workspace, service, job } = await runAgentPipeline();
   job.status = "正在执行";
@@ -456,7 +758,8 @@ async function runAgentPipeline(options = {}) {
     executor: async () => {
       unexpectedExecutions += 1;
       throw new Error("valid checkpoints must be resumed without rerunning");
-    }
+    },
+    checkpointValidator: service.checkpointValidator
   });
   await recoveredService.recoverAll();
   await recoveredService.running.get(job.jobId);

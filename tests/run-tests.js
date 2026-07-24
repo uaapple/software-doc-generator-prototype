@@ -34,6 +34,7 @@ import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-ge
 import { SoftwareModuleDescriptionGenerationService } from "../src/services/software-module-description-generation-service.js";
 import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
 import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
+import { TCSD_STAGE_DEFINITIONS } from "../src/services/tcsd-pipeline-contract.js";
 import {
   buildOutlineItems,
   parseRequirementMarkdownBlocks
@@ -117,8 +118,10 @@ async function withTempConfig(run) {
         host: "127.0.0.1",
         port: 0,
         baseURL: "http://127.0.0.1:0",
-      command: "hermes",
-      workdir: tempDir,
+        command: "hermes",
+        profile: "default",
+        homeDir: path.join(tempDir, "hermes"),
+        workdir: tempDir,
         timeoutMs: 2000,
         stepTimeoutMs: {
           replay_proposal_generate: 4000,
@@ -135,6 +138,11 @@ async function withTempConfig(run) {
       maxOutlineSections: 6,
       maxEvidenceForGeneration: 40,
       maxAnchorsForGeneration: 80
+    },
+    tcsdPipeline: {
+      ...config.tcsdPipeline,
+      jobStoreDir: path.join(tempDir, "data", "tcsd-pipeline-jobs"),
+      hermesProfile: "default"
     }
   });
   config.openai.apiKey = "";
@@ -566,6 +574,30 @@ async function seedWikiFixture(rootDir, overrides = {}) {
 }
 
 const tests = [
+  {
+    name: "Change classifier includes untracked files in working-tree mode",
+    run: async () => {
+      const root = path.resolve(process.cwd());
+      const probe = path.join(root, "tests", `.classifier-untracked-probe-${process.pid}.txt`);
+      const reportPath = path.join(os.tmpdir(), `classifier-report-${process.pid}.json`);
+      try {
+        await fs.writeFile(probe, "untracked classifier probe\n", "utf8");
+        await execFileAsync(process.execPath, [
+          path.join(root, "scripts", "classify-changes.mjs"),
+          "--allow-ambiguous",
+          "--json-out",
+          reportPath
+        ], { cwd: root });
+        const report = JSON.parse(await fs.readFile(reportPath, "utf8"));
+        const relativeProbe = path.relative(root, probe).replaceAll(path.sep, "/");
+        const entry = report.entries.find((item) => item.path === relativeProbe);
+        assert.equal(entry?.category, "dev-only");
+      } finally {
+        await fs.rm(probe, { force: true });
+        await fs.rm(reportPath, { force: true });
+      }
+    }
+  },
   {
     name: "C extractor finds macros, functions, conditions, and assignments",
     run: async () => {
@@ -3091,11 +3123,15 @@ const tests = [
           [
             "#!/usr/bin/env node",
             "const fs = require('fs');",
-            "if (!fs.existsSync('init_Global.m')) {",
+            `const stageSkills = ${JSON.stringify(TCSD_STAGE_DEFINITIONS.map((stage) => stage.skillName))};`,
+            "if (process.argv.includes('skills') && process.argv.includes('list')) {",
+            "  console.log(stageSkills.join('\\n'));",
+            "} else if (!fs.existsSync('init_Global.m')) {",
             "  console.error('addon marker missing');",
             "  process.exit(3);",
+            "} else {",
+            "  console.log(JSON.stringify({ status: 'completed', summary: 'addon copied', outputFiles: [], warnings: [] }));",
             "}",
-            "console.log(JSON.stringify({ status: 'completed', summary: 'addon copied', outputFiles: [], warnings: [] }));"
           ].join("\n"),
           "utf8"
         );
@@ -3120,11 +3156,20 @@ const tests = [
               }
             })
           });
-          assert.equal(response.status, 202);
           const body = await response.json();
+          assert.equal(response.status, 202, JSON.stringify(body));
           assert.equal(body.schema, "tcsd-agent-stage-pipeline/v2");
           assert.ok(body.jobId);
           assert.equal(await fs.readFile(path.join(workspaceDir, "init_Global.m"), "utf8"), "% addon marker");
+          let terminal = false;
+          for (let attempt = 0; attempt < 100; attempt += 1) {
+            const jobResponse = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs/${body.jobId}`);
+            const job = await jobResponse.json();
+            terminal = ["已完成", "部分完成", "失败"].includes(job.status);
+            if (terminal) break;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          assert.equal(terminal, true, "TCSD test job should stop before its temporary workspace is removed");
         });
       });
     }
