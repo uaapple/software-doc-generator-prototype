@@ -425,6 +425,7 @@ summary.threshold = threshold;
 summary.condition = metric_result(conditioninfo(cvd, modelName), threshold);
 summary.decision = metric_result(decisioninfo(cvd, modelName), threshold);
 summary.mcdc = metric_result(mcdcinfo(cvd, modelName), threshold);
+summary.items = collect_uncovered_coverage_items(cvd, modelName);
 summary.passed = summary.condition.passed && summary.decision.passed && summary.mcdc.passed;
 end
 
@@ -446,6 +447,131 @@ else
     percent = 100;
 end
 result = struct('covered', covered, 'total', total, 'percent', percent, 'passed', percent >= threshold);
+end
+
+function items = collect_uncovered_coverage_items(cvd, modelName)
+items = {};
+blocks = find_system(modelName, 'LookUnderMasks', 'all', 'FollowLinks', 'on', 'Type', 'Block');
+metricNames = {'Condition', 'Decision', 'MCDC'};
+metricFunctions = {@conditioninfo, @decisioninfo, @mcdcinfo};
+for blockIndex = 1:numel(blocks)
+    blockPath = blocks{blockIndex};
+    for metricIndex = 1:numel(metricNames)
+        try
+            [info, description] = metricFunctions{metricIndex}(cvd, blockPath, true);
+        catch
+            continue;
+        end
+        metric = metric_result(info, 0);
+        if metric.total <= 0 || metric.covered >= metric.total
+            continue;
+        end
+        item = struct();
+        item.id = string(sprintf('%s:%s:%d', modelName, lower(metricNames{metricIndex}), numel(items) + 1));
+        item.coverage_class = string(metricNames{metricIndex});
+        item.block_path = string(blockPath);
+        try
+            item.sid = string(get_param(blockPath, 'SID'));
+        catch
+            item.sid = "";
+        end
+        try
+            item.block_type = string(get_param(blockPath, 'BlockType'));
+        catch
+            item.block_type = "";
+        end
+        item.covered = metric.covered;
+        item.total = metric.total;
+        item.percent = metric.percent;
+        item.missing_outcomes = coverage_missing_outcomes(description, metricNames{metricIndex});
+        try
+            item.description = string(jsonencode(description));
+        catch
+            item.description = string(evalc('disp(description)'));
+        end
+        items{end + 1} = item; %#ok<AGROW>
+    end
+end
+end
+
+function outcomes = coverage_missing_outcomes(description, metricName)
+outcomes = {};
+if isempty(description) || ~isstruct(description)
+    return;
+end
+switch metricName
+    case 'Decision'
+        decisions = nested_struct_values(description, 'decision');
+        for decisionIndex = 1:numel(decisions)
+            decision = decisions{decisionIndex};
+            decisionText = struct_text(decision, 'decision');
+            rawOutcomes = nested_struct_values(decision, 'outcome');
+            for outcomeIndex = 1:numel(rawOutcomes)
+                outcome = rawOutcomes{outcomeIndex};
+                if isfield(outcome, 'executionCount') && double(outcome.executionCount) <= 0
+                    outcomes{end + 1} = sprintf('%s: %s', decisionText, struct_text(outcome, 'outcome')); %#ok<AGROW>
+                end
+            end
+        end
+    case 'Condition'
+        conditions = nested_struct_values(description, 'condition');
+        for conditionIndex = 1:numel(conditions)
+            condition = conditions{conditionIndex};
+            conditionText = struct_text(condition, 'condition');
+            if isfield(condition, 'trueCnts') && double(condition.trueCnts) <= 0
+                outcomes{end + 1} = sprintf('%s: true', conditionText); %#ok<AGROW>
+            end
+            if isfield(condition, 'falseCnts') && double(condition.falseCnts) <= 0
+                outcomes{end + 1} = sprintf('%s: false', conditionText); %#ok<AGROW>
+            end
+        end
+    case 'MCDC'
+        conditions = nested_struct_values(description, 'condition');
+        for conditionIndex = 1:numel(conditions)
+            condition = conditions{conditionIndex};
+            if isfield(condition, 'achieved') && ~logical(condition.achieved)
+                conditionText = struct_text(condition, 'condition');
+                trueResult = optional_struct_text(condition, 'trueRslt');
+                falseResult = optional_struct_text(condition, 'falseRslt');
+                outcomes{end + 1} = sprintf( ...
+                    '%s: independent effect not demonstrated (true=%s, false=%s)', ...
+                    conditionText, trueResult, falseResult); %#ok<AGROW>
+            end
+        end
+end
+end
+
+function values = nested_struct_values(parent, fieldName)
+values = {};
+if ~isstruct(parent)
+    return;
+end
+for parentIndex = 1:numel(parent)
+    current = parent(parentIndex);
+    if ~isfield(current, fieldName)
+        continue;
+    end
+    raw = current.(fieldName);
+    if isstruct(raw)
+        for valueIndex = 1:numel(raw)
+            values{end + 1} = raw(valueIndex); %#ok<AGROW>
+        end
+    end
+end
+end
+
+function value = struct_text(item, fallback)
+value = optional_struct_text(item, 'text');
+if isempty(value)
+    value = fallback;
+end
+end
+
+function value = optional_struct_text(item, fieldName)
+value = '';
+if isstruct(item) && isfield(item, fieldName)
+    value = char(string(item.(fieldName)));
+end
 end
 
 function save_coverage_data(pathName, cvd)

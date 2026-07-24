@@ -138,7 +138,14 @@ def coverage_meets(report: dict[str, Any], threshold: float) -> bool:
     valid = [record for record in records.values() if isinstance(record, dict) and all(key in record for key in ("condition", "decision", "mcdc"))]
     return bool(valid) and all(float(record[key]["percent"]) >= threshold for record in valid for key in ("condition", "decision", "mcdc"))
 
-def stage_run(stage: int, job: dict[str, Any]) -> None:
+def stage_run(
+    stage: int,
+    job: dict[str, Any],
+    *,
+    stage10_mode: str = "auto",
+    repair_brief: str = "",
+    repair_proposal: str = "",
+) -> None:
     root, out, model, state = workspace(job), outputs(job), model_name(job), load_state(job); inp = job["input"]; out.mkdir(parents=True, exist_ok=True)
     quality = load_module("tcsd_quality", scripts() / "run_tcsd_quality_loop.py")
     if stage == 1:
@@ -317,18 +324,296 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
         ob, cov = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=True, coverage_threshold=threshold); report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(initial_cov,report); state.update({"obligations":str(ob),"initialCoverage":str(initial_cov),"coverage":str(cov)}); save_state(job,state)
         finish(job,stage,summary="首轮 Condition、Decision 与 MC/DC 覆盖率已采集。",artifacts=[artifact(root,initial_cov)],coverage=report); return
     if stage == 10:
-        report=read_json(initial_cov)
-        if coverage_meets(report,threshold): finish(job,stage,status="skipped",summary="首轮三项覆盖率均达到 80%。",skipReason="首轮三项覆盖率均达到 80%。",artifacts=[]); return
-        atomic=quality.build_atomic_repair_plan(python=sys.executable,scripts=scripts(),root_dir=root,model=model,logical_traces=traces)
-        run([sys.executable,str(scripts()/"build_coverage_ir.py"),"--logical-traces",str(traces),"--obligations",str(atomic),"--output",str(coverage_ir)],root)
-        next_spec,next_book,synthesis=quality.synthesize_ir_once(python=sys.executable,scripts=scripts(),root_dir=root,template=scripts().parent/"assets"/"templates"/"tcsd_template.xlsx",model=model,spec=spec,workbook=workbook,interface_json=interface,coverage_ir=coverage_ir,iteration=1)
-        applied=int(synthesis.get("added") or 0)>0; reason="coverage_ir_candidates_appended" if applied else "no_unique_executable_coverage_ir_candidates"; evidence=out/f"{model}_coverage_ir_synthesis_iter1.json"
-        state.update({"repairAttempted":True,"repairApplied":applied,"repairReason":reason,"repairEvidence":str(evidence),"workbook":str(next_book if applied else workbook),"spec":str(next_spec if applied else spec)}); save_state(job,state)
-        finish(job,stage,status="completed" if applied else "partial",summary="Coverage IR 单轮修正已应用。" if applied else "已尝试一次修正，但没有可应用的唯一候选。",artifacts=[artifact(root,coverage_ir),artifact(root,evidence)],repair={"required":True,"attempted":True,"applied":applied,"passes":1 if applied else 0,"reason":reason,"evidence":str(evidence.relative_to(root))},evidence={"coverageIr":str(coverage_ir.relative_to(root))}); return
+        report = read_json(initial_cov)
+        brief = Path(repair_brief).resolve() if repair_brief else out / f"{model}_coverage_repair_brief.json"
+        proposal = Path(repair_proposal).resolve() if repair_proposal else out / f"{model}_agent_coverage_repair_proposal.json"
+        if stage10_mode in {"prepare", "auto"}:
+            run(
+                [
+                    sys.executable,
+                    str(scripts() / "validate_agent_coverage_repair.py"),
+                    "prepare",
+                    "--job-id",
+                    str(job["jobId"]),
+                    "--model",
+                    model,
+                    "--coverage-report",
+                    str(initial_cov),
+                    "--logical-traces",
+                    str(traces),
+                    "--coverage-ir",
+                    str(coverage_ir),
+                    "--interface",
+                    str(interface),
+                    "--threshold",
+                    str(threshold),
+                    "--output",
+                    str(brief),
+                ],
+                root,
+            )
+            if stage10_mode == "prepare":
+                return
+        if coverage_meets(report, threshold):
+            finish(
+                job,
+                stage,
+                status="skipped",
+                summary=f"首轮三项覆盖率均达到 {threshold:g}%。",
+                skipReason=f"首轮三项覆盖率均达到 {threshold:g}%。",
+                artifacts=[artifact(root, brief)],
+                evidence={"repairBrief": str(brief.relative_to(root))},
+            )
+            return
+        if not proposal.is_file():
+            raise RuntimeError("stage 10 requires an Agent-authored coverage repair proposal")
+
+        proposal_ir = out / f"{model}_agent_repair_coverage_ir.json"
+        proposal_validation = out / f"{model}_agent_repair_validation.json"
+        run(
+            [
+                sys.executable,
+                str(scripts() / "validate_agent_coverage_repair.py"),
+                "validate",
+                "--brief",
+                str(brief),
+                "--proposal",
+                str(proposal),
+                "--interface",
+                str(interface),
+                "--output-ir",
+                str(proposal_ir),
+                "--report-json",
+                str(proposal_validation),
+            ],
+            root,
+        )
+        validation = read_json(proposal_validation)
+        base_artifacts = [
+            artifact(root, brief, "json", "coverage-repair-brief"),
+            artifact(root, proposal, "json", "agent-repair-proposal"),
+            artifact(root, proposal_validation, "json", "agent-repair-validation"),
+            artifact(root, proposal_ir, "json", "coverage-repair"),
+        ]
+        accepted = int(validation.get("acceptedCandidateCount") or 0)
+        unresolved = int(validation.get("unresolvedCount") or 0)
+        evidence = {
+            "repairBrief": str(brief.relative_to(root)),
+            "repairProposal": str(proposal.relative_to(root)),
+            "proposalValidation": str(proposal_validation.relative_to(root)),
+            "coverageIr": str(proposal_ir.relative_to(root)),
+            "proposalItemCount": int(validation.get("proposalItemCount") or 0),
+            "acceptedCandidateCount": accepted,
+            "unresolvedCount": unresolved,
+        }
+        if accepted == 0:
+            reason = "agent_reported_specific_unresolved_deficits"
+            state.update(
+                {
+                    "repairAttempted": True,
+                    "repairApplied": False,
+                    "repairReason": reason,
+                    "repairEvidence": str(proposal_validation),
+                }
+            )
+            save_state(job, state)
+            finish(
+                job,
+                stage,
+                status="partial",
+                summary="Agent 已完成局部模型分析，但所有缺口均有具体的未解析原因，未追加无效用例。",
+                artifacts=base_artifacts,
+                repair={
+                    "required": True,
+                    "attempted": True,
+                    "applied": False,
+                    "passes": 0,
+                    "reason": reason,
+                    "evidence": str(proposal_validation.relative_to(root)),
+                },
+                evidence=evidence,
+            )
+            return
+
+        next_spec, next_book, synthesis = quality.synthesize_ir_once(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            template=scripts().parent / "assets" / "templates" / "tcsd_template.xlsx",
+            model=model,
+            spec=spec,
+            workbook=workbook,
+            interface_json=interface,
+            coverage_ir=proposal_ir,
+            iteration=1,
+        )
+        synthesis_evidence = out / f"{model}_coverage_ir_synthesis_iter1.json"
+        added = int(synthesis.get("added") or 0)
+        evidence.update(
+            {
+                "synthesisReport": str(synthesis_evidence.relative_to(root)),
+                "synthesisAddedCount": added,
+            }
+        )
+        repair_artifacts = [*base_artifacts, artifact(root, synthesis_evidence)]
+        if added <= 0:
+            reason = "agent_candidates_duplicate_existing_tests"
+            state.update(
+                {
+                    "repairAttempted": True,
+                    "repairApplied": False,
+                    "repairReason": reason,
+                    "repairEvidence": str(synthesis_evidence),
+                }
+            )
+            save_state(job, state)
+            finish(
+                job,
+                stage,
+                status="partial",
+                summary="Agent 设计的候选与已有用例重复，宿主未追加重复测试。",
+                artifacts=repair_artifacts,
+                repair={
+                    "required": True,
+                    "attempted": True,
+                    "applied": False,
+                    "passes": 0,
+                    "reason": reason,
+                    "evidence": str(synthesis_evidence.relative_to(root)),
+                },
+                evidence=evidence,
+            )
+            return
+
+        quality.validate_workbook(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            workbook=next_book,
+            interface_json=interface,
+        )
+        candidate_diagnostic = out / f"{model}_repair_candidate_validation.json"
+        try:
+            candidate_cases = quality.extract_cases(
+                python=sys.executable,
+                scripts=scripts(),
+                root_dir=root,
+                model=model,
+                workbook=next_book,
+                interface_json=interface,
+            )
+            candidate_simulation = quality.simulate_and_backfill(
+                python=sys.executable,
+                scripts=scripts(),
+                root_dir=root,
+                model=model,
+                workbook=next_book,
+                case_json=candidate_cases,
+                mat_file=inp["modelMatPath"],
+                outputs=",".join(read_json(interface).get("outputs", [])),
+                exclude_outputs="",
+                interface_json=interface,
+                result_name=f"{model}_repair_candidate_simulation.json",
+            )
+            backfill = simulation_backfill_evidence(read_json(candidate_simulation), next_book)
+            write_json(
+                candidate_diagnostic,
+                {
+                    "schema": "tcsd-repair-candidate-validation/v1",
+                    "jobId": job["jobId"],
+                    "passed": True,
+                    "candidateCount": added,
+                    "simulationResult": str(candidate_simulation.relative_to(root)),
+                    "backfill": backfill,
+                },
+            )
+        except Exception as error:
+            reason = "agent_candidate_simulation_failed"
+            write_json(
+                candidate_diagnostic,
+                {
+                    "schema": "tcsd-repair-candidate-validation/v1",
+                    "jobId": job["jobId"],
+                    "passed": False,
+                    "candidateCount": added,
+                    "errorType": type(error).__name__,
+                    "errorMessage": str(error),
+                },
+            )
+            state.update(
+                {
+                    "repairAttempted": True,
+                    "repairApplied": False,
+                    "repairReason": reason,
+                    "repairEvidence": str(candidate_diagnostic),
+                }
+            )
+            save_state(job, state)
+            finish(
+                job,
+                stage,
+                status="partial",
+                summary="Agent 候选未通过宿主仿真验证，已保留首轮工作簿。",
+                artifacts=[*repair_artifacts, artifact(root, candidate_diagnostic)],
+                repair={
+                    "required": True,
+                    "attempted": True,
+                    "applied": False,
+                    "passes": 0,
+                    "reason": reason,
+                    "evidence": str(candidate_diagnostic.relative_to(root)),
+                },
+                evidence={**evidence, "candidateValidation": str(candidate_diagnostic.relative_to(root))},
+            )
+            return
+
+        evidence.update(
+            {
+                "candidateValidation": str(candidate_diagnostic.relative_to(root)),
+                "candidateSimulation": str(candidate_simulation.relative_to(root)),
+                "simulationResult": str(candidate_simulation.relative_to(root)),
+                "candidateValidationPassed": True,
+                "expValueCount": backfill["workbookBackfillCount"],
+                **backfill,
+            }
+        )
+        state.update(
+            {
+                "repairAttempted": True,
+                "repairApplied": True,
+                "repairReason": "agent_targeted_candidates_validated_and_appended",
+                "repairEvidence": str(candidate_diagnostic),
+                "workbook": str(next_book),
+                "spec": str(next_spec),
+                "repairCandidateSimulation": str(candidate_simulation),
+            }
+        )
+        save_state(job, state)
+        finish(
+            job,
+            stage,
+            summary="Agent 已针对覆盖缺口完成局部模型分析，候选用例通过宿主校验与仿真并已追加。",
+            artifacts=[
+                *repair_artifacts,
+                artifact(root, candidate_diagnostic),
+                artifact(root, next_book, "xlsx", "workbook"),
+                artifact(root, candidate_simulation),
+            ],
+            repair={
+                "required": True,
+                "attempted": True,
+                "applied": True,
+                "passes": 1,
+                "reason": "agent_targeted_candidates_validated_and_appended",
+                "evidence": str(candidate_diagnostic.relative_to(root)),
+            },
+            evidence=evidence,
+        )
+        return
     final_cov=out/f"{model}_final_coverage_summary.json"
     if stage == 11:
         if not state.get("repairApplied"): finish(job,stage,status="skipped",summary="修正未实际应用，引用首轮仿真与覆盖率。",skipReason="修正未实际应用，引用首轮结果。",artifacts=[]); return
-        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
+        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface,result_name=f"{model}_final_simulation_results.json"); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
         finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=final_report,evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],**backfill}); return
     if stage == 12:
         cleanup=out/f"{model}_tcsd_cleanup.json"
@@ -344,6 +629,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--result", required=True)
+    parser.add_argument("--stage10-mode", choices=("auto", "prepare", "apply"), default="auto")
+    parser.add_argument("--repair-brief", default="")
+    parser.add_argument("--repair-proposal", default="")
     args = parser.parse_args()
     manifest = read_json(Path(args.manifest))
     if manifest.get("schema") != INPUT_SCHEMA: raise RuntimeError("stage input manifest schema is invalid")
@@ -353,8 +641,22 @@ def main() -> int:
     if not isinstance(job, dict) or job.get("jobId") != manifest.get("jobId"): raise RuntimeError("stage input manifest job snapshot is invalid")
     result_path = ensure_within(workspace(job), Path(args.result), "resultPath")
     job["_stageResultPath"] = str(result_path)
+    if args.repair_brief:
+        ensure_within(workspace(job), Path(args.repair_brief), "repairBriefPath")
+    if args.repair_proposal:
+        ensure_within(workspace(job), Path(args.repair_proposal), "repairProposalPath")
     try:
-        stage_run(stage, job)
+        stage_run(
+            stage,
+            job,
+            stage10_mode=args.stage10_mode,
+            repair_brief=args.repair_brief,
+            repair_proposal=args.repair_proposal,
+        )
+        if stage == 10 and args.stage10_mode == "prepare":
+            if not args.repair_brief or not Path(args.repair_brief).is_file():
+                raise RuntimeError("stage 10 repair brief was not created")
+            return 0
         result = read_json(result_path)
         if result.get("schema") != RESULT_SCHEMA or result.get("jobId") != job["jobId"] or result.get("stageIndex") != stage:
             raise RuntimeError("stage runtime produced an invalid result envelope")

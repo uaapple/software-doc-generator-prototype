@@ -15,6 +15,7 @@ RUNTIME = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runt
 SCRIPT = RUNTIME / "scripts" / "run_tcsd_pipeline_stage.py"
 SESSION_READER = RUNTIME / "scripts" / "read_hermes_session.py"
 SATK_SCRIPT = RUNTIME / "scripts" / "satk_eval.py"
+REPAIR_SCRIPT = RUNTIME / "scripts" / "validate_agent_coverage_repair.py"
 SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
 RUNNER = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
@@ -23,9 +24,127 @@ SATK_SPEC = importlib.util.spec_from_file_location("satk_eval", SATK_SCRIPT)
 SATK = importlib.util.module_from_spec(SATK_SPEC)
 assert SATK_SPEC.loader
 SATK_SPEC.loader.exec_module(SATK)
+REPAIR_SPEC = importlib.util.spec_from_file_location("validate_agent_coverage_repair", REPAIR_SCRIPT)
+REPAIR = importlib.util.module_from_spec(REPAIR_SPEC)
+assert REPAIR_SPEC.loader
+REPAIR_SPEC.loader.exec_module(REPAIR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_stage10_agent_repair_preserves_focused_temporal_stimulus(self):
+        brief = {
+            "schema": REPAIR.BRIEF_SCHEMA,
+            "jobId": "job-generic",
+            "model": "GenericModel",
+            "repairRequired": True,
+            "metricDeficits": [{"coverage_class": "Decision"}],
+            "coverageTargets": [{
+                "coverage_class": "Decision",
+                "block": {"path": "GenericModel/Decision", "sid": "GenericModel:7"},
+                "missing_outcomes": ["false branch after timeout"],
+                "requires_model_inspection": False,
+            }],
+            "guardrails": {
+                "maxCandidateTests": 16,
+                "maxStepsPerTest": 8,
+                "parametersOnlyInInitialization": True,
+                "analyzeOnlyTargetUpstreamSlice": True,
+                "fullRootInputEnumerationForbidden": True,
+                "repairPassLimit": 1,
+            },
+        }
+        proposal = {
+            "schema": REPAIR.PROPOSAL_SCHEMA,
+            "jobId": "job-generic",
+            "model": "GenericModel",
+            "tests": [{
+                "id": "decision-timeout-false",
+                "coverage_class": "Decision",
+                "block": {"path": "GenericModel/Decision", "sid": "GenericModel:7"},
+                "required_outcome": "false branch after timeout",
+                "controller": {
+                    "direct_inputs": {"Enable": 1},
+                    "parameters": {"WaitThreshold": 3},
+                },
+                "stimulus": {
+                    "initial_inputs": {"Enable": 0},
+                    "initial_params": {"Bypass": 0},
+                    "steps": [
+                        {"delay_s": 0.1, "input_updates": {"Enable": 1}, "param_updates": {}},
+                        {"delay_s": 0.3, "input_updates": {}, "param_updates": {}},
+                    ],
+                    "evidence_step": 2,
+                },
+                "analysis": {
+                    "upstream_slice": ["GenericModel/Delay", "GenericModel/Decision"],
+                    "rationale": "Enable is asserted, held across the threshold, and unrelated gates stay sensitized.",
+                },
+            }],
+            "unresolved": [],
+        }
+        ir, report = REPAIR.validate_proposal(
+            proposal,
+            brief,
+            {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+        )
+        self.assertEqual(report["acceptedCandidateCount"], 1)
+        self.assertEqual(ir["items"][0]["stimulus"]["evidence_step"], 2)
+        self.assertEqual(ir["items"][0]["analysis"]["cumulative_wait_s"], 0.4)
+        self.assertEqual(ir["items"][0]["controller"]["parameters"], {"Bypass": 0, "WaitThreshold": 3})
+
+        proposal["tests"][0]["required_outcome"] = "unmeasured true branch"
+        with self.assertRaisesRegex(ValueError, "measured missing outcome"):
+            REPAIR.validate_proposal(
+                proposal,
+                brief,
+                {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+            )
+        proposal["tests"][0]["required_outcome"] = "false branch after timeout"
+        proposal["tests"][0]["stimulus"]["steps"][1]["param_updates"] = {"Bypass": 1}
+        with self.assertRaisesRegex(ValueError, "only be set in initialization"):
+            REPAIR.validate_proposal(
+                proposal,
+                brief,
+                {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+            )
+
+    def test_stage10_unresolved_requires_specific_reason_and_evidence(self):
+        brief = {
+            "schema": REPAIR.BRIEF_SCHEMA,
+            "jobId": "job-generic",
+            "model": "GenericModel",
+            "repairRequired": True,
+            "metricDeficits": [{"coverage_class": "Decision"}],
+            "coverageTargets": [],
+            "guardrails": {"maxCandidateTests": 16, "maxStepsPerTest": 8},
+        }
+        proposal = {
+            "schema": REPAIR.PROPOSAL_SCHEMA,
+            "jobId": "job-generic",
+            "model": "GenericModel",
+            "tests": [],
+            "unresolved": [{
+                "coverage_class": "Decision",
+                "block": {"path": "GenericModel/Decision", "sid": "GenericModel:7"},
+                "reason_code": "state_sequence_not_constructible",
+                "evidence": "The reset prerequisite is controlled by an unmodifiable literal.",
+            }],
+        }
+        ir, report = REPAIR.validate_proposal(
+            proposal,
+            brief,
+            {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+        )
+        self.assertEqual(ir["summary"]["unresolved"], 1)
+        self.assertEqual(report["unresolved"][0]["reason_code"], "state_sequence_not_constructible")
+        proposal["unresolved"][0]["reason_code"] = "no_candidate"
+        with self.assertRaisesRegex(ValueError, "specific allowed reason"):
+            REPAIR.validate_proposal(
+                proposal,
+                brief,
+                {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+            )
+
     def test_satk_server_discovery_priority_is_cross_platform_and_deterministic(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

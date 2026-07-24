@@ -22,14 +22,14 @@ export const TCSD_STAGE_DEFINITIONS = Object.freeze([
   ["生成并校验首版测试用例", "tcsd-stage-07-build-initial-cases"],
   ["运行模型仿真并回填期望值", "tcsd-stage-08-simulate-backfill"],
   ["采集首轮覆盖率", "tcsd-stage-09-collect-coverage"],
-  ["根据覆盖率修正测试用例", "tcsd-stage-10-repair-coverage"],
+  ["根据覆盖率修正测试用例", "tcsd-stage-10-repair-coverage", "1.2.0"],
   ["运行最终仿真与覆盖率检查", "tcsd-stage-11-final-validation"],
   ["整理任务产物并清理运行环境", "tcsd-stage-12-package-cleanup"]
-].map(([name, skillName], offset) => Object.freeze({
+].map(([name, skillName, skillVersion = "1.1.0"], offset) => Object.freeze({
   index: offset + 1,
   name,
   skillName,
-  skillVersion: "1.1.0",
+  skillVersion,
   bundleVersion: TCSD_STAGE_BUNDLE_VERSION
 })));
 
@@ -472,13 +472,22 @@ export async function validateStageResult(raw = {}, context = {}) {
     };
   }
   if (context.stageIndex === 10 && raw.status !== "skipped") {
+    const semantic = requireSemanticEvidence(context, 10);
     if (
       !raw.repair?.attempted ||
       Number(raw.repair?.passes || 0) > 1 ||
       raw.repair?.applied !== (Number(raw.repair?.passes || 0) === 1) ||
-      !raw.evidence?.coverageIr
+      !raw.evidence?.repairBrief ||
+      !raw.evidence?.repairProposal ||
+      !raw.evidence?.proposalValidation ||
+      !raw.evidence?.coverageIr ||
+      Number(raw.evidence?.proposalItemCount || 0) !== Number(semantic.proposalItemCount || 0) ||
+      Number(raw.evidence?.acceptedCandidateCount || 0) !== Number(semantic.acceptedCandidateCount || 0) ||
+      Number(raw.evidence?.unresolvedCount || 0) !== Number(semantic.unresolvedCount || 0) ||
+      Number(raw.evidence?.synthesisAddedCount || 0) !== Number(semantic.synthesisAddedCount || 0) ||
+      (raw.repair.applied && semantic.candidateValidationPassed !== true)
     ) {
-      throw contractError("第 10 阶段缺少 Coverage IR 单轮修正证据");
+      throw contractError("第 10 阶段缺少 Agent 局部分析、Coverage IR 或宿主候选验证证据");
     }
   }
   if (context.stageIndex === 10) {

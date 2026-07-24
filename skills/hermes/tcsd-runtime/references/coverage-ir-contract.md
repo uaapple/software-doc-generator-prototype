@@ -20,10 +20,12 @@ cases, appends only deterministic executable Decision/MC/DC cases, and removes
 identical controller/stimulus candidates. Deduplication uses direct inputs,
 parameter values, and the complete temporal stimulus, and also checks whether
 an existing functional Test already satisfies that obligation. It does not
-enumerate root inputs. During report-guided repair, atomic/probe evidence is
-first normalized back into the persisted IR; only this IR synthesizer may
-append repair Tests, so the legacy obligation augmenter cannot duplicate the
-same repair pass.
+enumerate root inputs. During Stage 10 report-guided repair, the measured
+coverage brief is handed to the Stage Agent for target-local model analysis.
+`validate_agent_coverage_repair.py` accepts only bounded proposals with exact
+block/SID targets, known root inputs, initialization-only parameters, complete
+ordered temporal stimuli, and explicit evidence. It normalizes those candidates
+back into this IR before the sole synthesizer may append repair Tests.
 
 The fixed loop is: strict workbook validation; simulation and expected-output
 backfill; initial coverage; at most one coverage-report-guided repair;
@@ -31,8 +33,11 @@ simulation/backfill and final coverage for that repair. A first pass meeting
 the threshold terminates directly. A residual metric below threshold after the
 single repair is delivered with `completion: partial` rather than retried.
 The manifest records `repair_attempted`, `repair_applied`, `repair_passes`, a
-reason, and the synthesis evidence. A below-threshold run with no unique
-executable candidate is completed as partial after one recorded attempt, with
-`repair_applied=false` and `repair_passes=0`. Remaining `unresolved` or
-`unsupported` IR/mapping items also force partial completion even when all
-coverage percentages meet the threshold.
+reason, and the synthesis evidence. A below-threshold run with no applied
+candidate is completed as partial after one recorded attempt only when the
+Agent proposal records a specific structural/probe reason, every proposal is a
+deterministic duplicate, or candidate simulation fails. The generic
+`no_unique_executable_coverage_ir_candidates` outcome is not an acceptable
+Stage 10 conclusion. Remaining `unresolved` or `unsupported` IR/mapping items
+also force partial completion even when all coverage percentages meet the
+threshold.

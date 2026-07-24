@@ -49,6 +49,14 @@ const coverage = (percent) => ({
 const rel = (root, target) => path.relative(root, target).replaceAll(path.sep, "/");
 const execFileAsync = promisify(execFile);
 const fixtureBuilder = path.join(repo, "tests", "tcsd-runtime", "build_contract_workbook.py");
+const repairValidator = path.join(
+  repo,
+  "skills",
+  "hermes",
+  "tcsd-runtime",
+  "scripts",
+  "validate_agent_coverage_repair.py"
+);
 
 assert.equal(TCSD_STAGE_DEFINITIONS.length, 12);
 assert.equal(TCSD_PIPELINE_SCHEMA, "tcsd-agent-stage-pipeline/v2");
@@ -365,22 +373,160 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
     result.skipReason = "首轮覆盖率已达标。";
   }
   if (stage === 10 && initialPercent < 80 && !options.skipRepairDespiteLow) {
+    const briefPath = path.join(workspace.outputDir, "coverage-repair-brief.json");
+    const proposalPath = path.join(workspace.outputDir, "coverage-repair-proposal.json");
     const repairPath = path.join(workspace.outputDir, "coverage-repair.json");
-    await writeFile(repairPath, JSON.stringify({
-      schema: "simulink-ut-tcsd-coverage-ir/v1",
-      items: [{ id: "generic-repair", reachability: { status: "required" } }]
+    const validationPath = path.join(workspace.outputDir, "coverage-repair-validation.json");
+    const synthesisPath = path.join(workspace.outputDir, "coverage-repair-synthesis.json");
+    const interfacePath = path.join(workspace.outputDir, "interface.json");
+    const coveragePath = path.join(workspace.outputDir, "initial-coverage.json");
+    const tracesPath = path.join(workspace.outputDir, "traces.json");
+    const originalCoverageIrPath = path.join(workspace.outputDir, "stage-5-ir.json");
+    const noApplicableRepair = Boolean(options.noApplicableRepair);
+    await execFileAsync("python3", [
+      repairValidator,
+      "prepare",
+      "--job-id",
+      manifest.jobId,
+      "--model",
+      "GenericModel",
+      "--coverage-report",
+      coveragePath,
+      "--logical-traces",
+      tracesPath,
+      "--coverage-ir",
+      originalCoverageIrPath,
+      "--interface",
+      interfacePath,
+      "--threshold",
+      "80",
+      "--output",
+      briefPath
+    ]);
+    if (options.tamperedRepairBrief) {
+      const tamperedBrief = JSON.parse(await readFile(briefPath, "utf8"));
+      tamperedBrief.guardrails.maxCandidateTests = 15;
+      await writeFile(briefPath, JSON.stringify(tamperedBrief));
+    }
+    await writeFile(proposalPath, JSON.stringify({
+      schema: "tcsd-agent-coverage-repair-proposal/v1",
+      jobId: manifest.jobId,
+      model: "GenericModel",
+      tests: noApplicableRepair ? [] : [{
+        id: "repair-decision-false",
+        coverage_class: "Decision",
+        block: { path: "GenericModel/Decision", sid: "GenericModel:1" },
+        required_outcome: "Decision false branch",
+        controller: { direct_inputs: { Input: 1 }, parameters: {} },
+        stimulus: {
+          initial_inputs: { Input: 0 },
+          initial_params: {},
+          steps: [{ delay_s: 0.1, input_updates: { Input: 1 }, param_updates: {} }],
+          evidence_step: 1
+        },
+        analysis: {
+          upstream_slice: ["GenericModel/Input", "GenericModel/Decision"],
+          rationale: "The focused transition toggles the uncovered decision while preserving unrelated gates."
+        }
+      }],
+      unresolved: noApplicableRepair ? [{
+        coverage_class: "Decision",
+        block: { path: "GenericModel/Decision", sid: "GenericModel:1" },
+        reason_code: "probe_target_unobservable",
+        evidence: "Focused probe cannot observe the target decision port."
+      }] : []
     }));
-    result.artifacts.push({ path: rel(workspace.root, repairPath), kind: "json", role: "coverage-repair" });
+    await execFileAsync("python3", [
+      repairValidator,
+      "validate",
+      "--brief",
+      briefPath,
+      "--proposal",
+      proposalPath,
+      "--interface",
+      interfacePath,
+      "--output-ir",
+      repairPath,
+      "--report-json",
+      validationPath
+    ]);
+    const proposalValidation = JSON.parse(await readFile(validationPath, "utf8"));
+    result.artifacts.push(
+      { path: rel(workspace.root, briefPath), kind: "json", role: "coverage-repair-brief" },
+      { path: rel(workspace.root, proposalPath), kind: "json", role: "agent-repair-proposal" },
+      { path: rel(workspace.root, validationPath), kind: "json", role: "agent-repair-validation" },
+      { path: rel(workspace.root, repairPath), kind: "json", role: "coverage-repair" }
+    );
+    if (!noApplicableRepair) {
+      await writeFile(synthesisPath, JSON.stringify({
+        schema: "simulink-ut-tcsd-coverage-ir-synthesis/v1",
+        input_test_count: 1,
+        output_test_count: 2,
+        added: 1,
+        skipped: [],
+        deduplication_basis: "contract fixture"
+      }));
+      const candidatePath = path.join(workspace.outputDir, "repair-candidate-validation.json");
+      const simulationPath = path.join(workspace.outputDir, "repair-candidate-simulation.json");
+      await writeFile(candidatePath, JSON.stringify({
+        schema: "tcsd-repair-candidate-validation/v1",
+        jobId: manifest.jobId,
+        passed: true,
+        candidateCount: 1
+      }));
+      await writeFile(simulationPath, JSON.stringify({
+        schema: "tcsd-simulation-result/v1",
+        tests: [{
+          row: 3,
+          test_id: "TC_001",
+          steps: [
+            { index: 1, outputs: { Output: 1 }, stable: { Output: true } },
+            { index: 2, outputs: { Output: 1 }, stable: { Output: true } }
+          ]
+        }]
+      }));
+      result.artifacts.push(
+        { path: rel(workspace.root, synthesisPath), kind: "json", role: "evidence" },
+        { path: rel(workspace.root, candidatePath), kind: "json", role: "candidate-validation" },
+        { path: rel(workspace.root, workbook), kind: "xlsx", role: "workbook" },
+        { path: rel(workspace.root, simulationPath), kind: "json", role: "simulation" }
+      );
+      result.evidence = {
+        candidateValidation: rel(workspace.root, candidatePath),
+        candidateSimulation: rel(workspace.root, simulationPath),
+        simulationResult: rel(workspace.root, simulationPath),
+        candidateValidationPassed: true,
+        expValueCount: 1,
+        simulationValueCount: 1,
+        workbookBackfillCount: 1,
+        caseOutputCounts: { "3:TC_001": { Output: 1 } },
+        backfillItems: [{ row: 3, testId: "TC_001", step: 1, output: "Output", value: 1 }]
+      };
+    } else {
+      result.status = "partial";
+      result.evidence = {};
+    }
     result.repair = {
       attempted: true,
-      applied: !options.noApplicableRepair,
-      passes: options.noApplicableRepair ? 0 : 1,
-      reason: options.noApplicableRepair
-        ? "no_unique_executable_coverage_ir_candidates"
-        : "coverage_below_threshold",
-      evidence: rel(workspace.root, repairPath)
+      applied: !noApplicableRepair,
+      passes: noApplicableRepair ? 0 : 1,
+      reason: noApplicableRepair
+        ? "agent_reported_specific_unresolved_deficits"
+        : "agent_targeted_candidates_validated_and_appended",
+      evidence: noApplicableRepair ? rel(workspace.root, validationPath) : result.evidence.candidateValidation
     };
-    result.evidence = { coverageIr: rel(workspace.root, repairPath) };
+    result.evidence = {
+      ...result.evidence,
+      repairBrief: rel(workspace.root, briefPath),
+      repairProposal: rel(workspace.root, proposalPath),
+      proposalValidation: rel(workspace.root, validationPath),
+      coverageIr: rel(workspace.root, repairPath),
+      proposalItemCount: proposalValidation.proposalItemCount,
+      acceptedCandidateCount: proposalValidation.acceptedCandidateCount,
+      unresolvedCount: proposalValidation.unresolvedCount,
+      synthesisReport: noApplicableRepair ? "" : rel(workspace.root, synthesisPath),
+      synthesisAddedCount: noApplicableRepair ? 0 : 1
+    };
   }
   if (stage === 11 && (
     initialPercent >= 80 ||
@@ -571,6 +717,12 @@ async function runAgentPipeline(options = {}) {
     assert.match(invocation.manifest.skill.bundleHash, /^[a-f0-9]{64}$/);
     assert.match(invocation.manifest.skill.skillFileHash, /^[a-f0-9]{64}$/);
   }
+  const stage10Invocation = fake.invocations.find((item) => item.manifest.stageIndex === 10);
+  assert.match(stage10Invocation.prompt, /Run this exact prepare command first:/);
+  assert.match(stage10Invocation.prompt, /--stage10-mode prepare/);
+  assert.match(stage10Invocation.prompt, /repair-proposal\.json/);
+  assert.match(stage10Invocation.prompt, /--stage10-mode apply/);
+  assert.match(stage10Invocation.prompt, /Inspect only the uncovered target block and its local upstream model slice/);
   for (const stage of job.stages) {
     assert.equal(stage.checkpoint.schema, TCSD_CHECKPOINT_SCHEMA);
     assert.equal(stage.checkpoint.agent.profile, "worker-profile");
@@ -613,6 +765,7 @@ for (const [options, stageIndex, label] of [
   [{ wrongExpValue: true }, 8, "错误 expValue"],
   [{ emptyCoverage: true }, 9, "空 coverage 与伪造覆盖率"],
   [{ initialCoverage: 50, skipRepairDespiteLow: true }, 10, "覆盖不足却跳过修正"],
+  [{ initialCoverage: 50, tamperedRepairBrief: true }, 10, "Agent 篡改宿主覆盖缺口简报"],
   [{ initialCoverage: 50, skipFinalAfterRepair: true }, 11, "已修正却跳过最终覆盖率"],
   [{ agentClaimsCompleted: true }, 12, "Agent 自报 completed"]
 ]) {

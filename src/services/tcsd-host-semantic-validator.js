@@ -6,7 +6,7 @@ import { TCSD_ERROR_CODES } from "./tcsd-pipeline-contract.js";
 import { writeJson } from "./storage.js";
 
 const execFileAsync = promisify(execFile);
-const SEMANTIC_STAGES = new Set([2, 6, 7, 8, 9, 11]);
+const SEMANTIC_STAGES = new Set([2, 6, 7, 8, 9, 10, 11]);
 
 function withinWorkspace(workspaceDir, candidate) {
   const root = path.resolve(workspaceDir);
@@ -63,7 +63,7 @@ export class TcsdHostSemanticValidator {
 
   async validate({ raw, job, runtime, requestPath }) {
     const stageIndex = Number(raw?.stageIndex || 0);
-    if (!SEMANTIC_STAGES.has(stageIndex) || (stageIndex === 11 && raw?.status === "skipped")) {
+    if (!SEMANTIC_STAGES.has(stageIndex) || ([10, 11].includes(stageIndex) && raw?.status === "skipped")) {
       return {
         schema: "tcsd-host-semantic-validation/v1",
         stageIndex,
@@ -83,10 +83,12 @@ export class TcsdHostSemanticValidator {
       : "";
     const request = {
       schema: "tcsd-host-semantic-validation-request/v1",
+      jobId: job.jobId,
       stageIndex,
       workspaceDir: job.input.workspaceDir,
       artifacts: Array.isArray(raw.artifacts) ? raw.artifacts : [],
       evidence: raw.evidence || {},
+      repair: raw.repair || null,
       coverageThreshold: Number(job.input.coverageThreshold || 80),
       interfacePath,
       templatePath: path.join(runtimeDirectory, "assets", "templates", "tcsd_template.xlsx")

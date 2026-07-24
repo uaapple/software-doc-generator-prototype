@@ -15,6 +15,14 @@ from typing import Any
 from openpyxl import load_workbook
 
 from run_tcsd_pipeline_stage import simulation_backfill_evidence
+from validate_agent_coverage_repair import (
+    BRIEF_SCHEMA,
+    IR_SCHEMA,
+    PROPOSAL_SCHEMA,
+    VALIDATION_SCHEMA,
+    build_brief,
+    validate_proposal,
+)
 from validate_tcsd_workbook import load_interface_names, validate_workbook
 
 
@@ -24,6 +32,8 @@ SIMULATION_SCHEMA = "tcsd-simulation-result/v1"
 ENVIRONMENT_SCHEMA = "tcsd-environment-gate/v2"
 PROBE_PLAN_SCHEMA = "simulink-ut-state-probe-plan/v1"
 PROBE_RESULT_SCHEMA = "simulink-ut-logical-mcdc-probe/v2"
+REPAIR_CANDIDATE_SCHEMA = "tcsd-repair-candidate-validation/v1"
+SYNTHESIS_SCHEMA = "simulink-ut-tcsd-coverage-ir-synthesis/v1"
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -366,6 +376,95 @@ def validate_coverage(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
+    _, brief = find_json_schema(request, BRIEF_SCHEMA)
+    _, proposal = find_json_schema(request, PROPOSAL_SCHEMA)
+    _, validation = find_json_schema(request, VALIDATION_SCHEMA)
+    _, repair_ir = find_json_schema(request, IR_SCHEMA)
+    root = Path(request["workspaceDir"])
+    evidence = brief.get("evidence") if isinstance(brief.get("evidence"), dict) else {}
+    coverage_ref = str(evidence.get("coverageReport") or "")
+    traces_ref = str(evidence.get("logicalTraces") or "")
+    coverage_ir_ref = str(evidence.get("coverageIr") or "")
+    interface_ref = str(evidence.get("modelInterface") or "")
+    coverage_path = resolve_workspace_path(root, coverage_ref, "stage 10 source coverage report")
+    traces_path = resolve_workspace_path(root, traces_ref, "stage 10 source logical traces")
+    resolve_workspace_path(root, coverage_ir_ref, "stage 10 source Coverage IR")
+    interface_path = resolve_workspace_path(root, interface_ref, "stage 10 source model interface")
+    expected_brief = build_brief(
+        job_id=str(request.get("jobId") or ""),
+        model=str(brief.get("model") or ""),
+        coverage=read_json(coverage_path),
+        traces=read_json(traces_path),
+        coverage_ir_path=coverage_ir_ref,
+        coverage_report_path=coverage_ref,
+        trace_path=traces_ref,
+        interface_path=interface_ref,
+        threshold=float(request.get("coverageThreshold") or 80),
+    )
+    if canonical(brief) != canonical(expected_brief):
+        raise ValueError("Agent repair brief does not match host-rebuilt measured coverage deficits")
+    interface_path = resolve_workspace_path(
+        root,
+        str(request.get("interfacePath") or ""),
+        "model interface",
+    )
+    if interface_path != resolve_workspace_path(root, interface_ref, "stage 10 brief model interface"):
+        raise ValueError("stage 10 repair brief references a different model interface")
+    expected_ir, expected_validation = validate_proposal(proposal, brief, read_json(interface_path))
+    if canonical(repair_ir) != canonical(expected_ir):
+        raise ValueError("Agent repair Coverage IR does not match independent proposal validation")
+    if canonical(validation) != canonical(expected_validation):
+        raise ValueError("Agent repair validation report does not match independent host validation")
+
+    synthesis: dict[str, Any] | None = None
+    candidate: dict[str, Any] | None = None
+    for _, _, value in json_artifacts(request):
+        if value.get("schema") == SYNTHESIS_SCHEMA:
+            synthesis = value
+        elif value.get("schema") == REPAIR_CANDIDATE_SCHEMA:
+            candidate = value
+    repair = request.get("repair") if isinstance(request.get("repair"), dict) else {}
+    applied = repair.get("applied") is True
+    accepted = int(validation.get("acceptedCandidateCount") or 0)
+    unresolved = int(validation.get("unresolvedCount") or 0)
+    added = int(synthesis.get("added") or 0) if synthesis else 0
+    reason = str(repair.get("reason") or "")
+    allowed_reasons = {
+        "agent_targeted_candidates_validated_and_appended",
+        "agent_reported_specific_unresolved_deficits",
+        "agent_candidates_duplicate_existing_tests",
+        "agent_candidate_simulation_failed",
+    }
+    if reason not in allowed_reasons:
+        raise ValueError("stage 10 repair reason is not a specific validated outcome")
+    if applied:
+        if accepted < 1 or added < 1 or not isinstance(candidate, dict) or candidate.get("passed") is not True:
+            raise ValueError("applied stage 10 repair lacks accepted, synthesized, and simulated candidates")
+        workbook_details = validate_workbook_stage(request, require_exp_values=True)
+        simulation_details = validate_simulation(request)
+    else:
+        workbook_details = {}
+        simulation_details = {}
+        if reason == "agent_reported_specific_unresolved_deficits" and (accepted != 0 or unresolved < 1):
+            raise ValueError("unresolved stage 10 result lacks specific unresolved deficit evidence")
+        if reason == "agent_candidates_duplicate_existing_tests" and (accepted < 1 or not synthesis or added != 0):
+            raise ValueError("duplicate stage 10 result lacks deterministic deduplication evidence")
+        if reason == "agent_candidate_simulation_failed" and (
+            accepted < 1 or not isinstance(candidate, dict) or candidate.get("passed") is not False
+        ):
+            raise ValueError("failed stage 10 candidate lacks deterministic simulation failure evidence")
+    return {
+        "proposalItemCount": int(validation.get("proposalItemCount") or 0),
+        "acceptedCandidateCount": accepted,
+        "unresolvedCount": unresolved,
+        "synthesisAddedCount": added,
+        "candidateValidationPassed": bool(candidate and candidate.get("passed") is True),
+        **workbook_details,
+        **simulation_details,
+    }
+
+
 def validate(request: dict[str, Any]) -> dict[str, Any]:
     stage = int(request.get("stageIndex") or 0)
     details: dict[str, Any] = {}
@@ -380,6 +479,8 @@ def validate(request: dict[str, Any]) -> dict[str, Any]:
         details.update(validate_simulation(request))
     elif stage == 9:
         details.update(validate_coverage(request))
+    elif stage == 10:
+        details.update(validate_repair(request))
     elif stage == 11:
         details.update(validate_workbook_stage(request, require_exp_values=True))
         details.update(validate_simulation(request))

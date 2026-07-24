@@ -235,6 +235,44 @@ export class TcsdHermesStageExecutor {
       "--result",
       `"${resultPath}"`
     ].join(" ");
+    if (definition.index === 10) {
+      const repairBriefPath = path.join(path.dirname(resultPath), "repair-brief.json");
+      const repairProposalPath = path.join(path.dirname(resultPath), "repair-proposal.json");
+      const prepareCommand = [
+        runtimeCommand,
+        "--stage10-mode",
+        "prepare",
+        "--repair-brief",
+        `"${repairBriefPath}"`
+      ].join(" ");
+      const applyCommand = [
+        runtimeCommand,
+        "--stage10-mode",
+        "apply",
+        "--repair-brief",
+        `"${repairBriefPath}"`,
+        "--repair-proposal",
+        `"${repairProposalPath}"`
+      ].join(" ");
+      return [
+        `/${definition.skillName} You are executing the generic Hermes step tcsd_stage_execute.`,
+        `Load and execute only the slash-invoked ${definition.skillName} skill.`,
+        `Execute only stage ${definition.index}: ${definition.name}.`,
+        `Read the authoritative input manifest: ${manifestPath}`,
+        ...repairLines,
+        "Run this exact prepare command first:",
+        prepareCommand,
+        `Read the resulting authoritative coverage repair brief at: ${repairBriefPath}`,
+        "Inspect only the uncovered target block and its local upstream model slice.",
+        `Write the required Agent repair proposal to: ${repairProposalPath}`,
+        "Then run this exact deterministic apply command:",
+        applyCommand,
+        `The required candidate result path is: ${resultPath}`,
+        `The required result schema is ${TCSD_STAGE_RESULT_SCHEMA}.`,
+        "Do not edit the existing workbook or write a host checkpoint. Do not expose hidden reasoning or secrets.",
+        "Your text response is non-authoritative; the host accepts only independently validated proposal, simulation, workbook, and result artifacts."
+      ].join("\n");
+    }
     return [
       `/${definition.skillName} You are executing the generic Hermes step tcsd_stage_execute.`,
       `Load and execute only the slash-invoked ${definition.skillName} skill.`,

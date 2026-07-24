@@ -30,9 +30,10 @@ assert(strcmp(trace.operators(1).ports(1).trace.inputs(1).trace.kind, 'stateful'
 casePath = fullfile(testRoot, 'outputs', [modelName '_state_probe_plan.json']);
 write_cases(casePath);
 probePath = fullfile(testRoot, 'outputs', [modelName '_state_probe_results.json']);
+coveragePath = fullfile(testRoot, 'outputs', [modelName '_coverage.json']);
 evalin('base', 'clear GenericProbeFixture');
 probe_logical_mcdc_vectors(testRoot, {modelName}, matPath, ...
-    'CaseJson', casePath, 'OutputJson', probePath);
+    'CaseJson', casePath, 'OutputJson', probePath, 'CoverageJson', coveragePath);
 assert(evalin('base', 'exist(''GenericProbeFixture'', ''var'') == 1'));
 assert(evalin('base', 'GenericProbeFixture == 123'));
 assert(exist(probePath, 'file') == 2, 'Probe result was not written.');
@@ -42,6 +43,14 @@ assert(strcmp(report.schema, 'simulink-ut-logical-mcdc-probe/v2'));
 assert(~isempty(report.observations));
 assert(isfield(report.observations, 'stimulus'));
 assert(~bdIsLoaded(modelName), 'Probe must close the model without saving it.');
+coverage = jsondecode(fileread(coveragePath));
+summary = coverage.(matlab.lang.makeValidName(modelName));
+assert(isfield(summary, 'items') && ~isempty(summary.items), ...
+    'Coverage summary must expose block-level deficits for stage 10.');
+assert(any(arrayfun(@(item) ~isempty(item.block_path) && ~isempty(item.sid), summary.items)), ...
+    'Coverage deficits must identify a concrete block path and SID.');
+assert(any(arrayfun(@(item) ~isempty(item.missing_outcomes), summary.items)), ...
+    'Coverage deficits must identify missing outcomes or MC/DC effects.');
 
 clear cleanupObj;
 cleanup_test(modelName, testRoot, oldDir, oldPath);

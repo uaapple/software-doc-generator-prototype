@@ -18,6 +18,18 @@ Do not start an unbounded coverage loop during normal generation. The threshold 
 
 The completed workflow must write `outputs/<model>_tcsd_execution_manifest.json`. The initial coverage artifact is mandatory even when all metrics already pass. When any initial metric is below threshold, the manifest is incomplete until one repair pass and a final coverage artifact exist. Do not substitute workbook validation or `expValue(...)` counts for this coverage evidence.
 
+## Stage 10 Agent/HOST Boundary
+
+Stage 10 is intentionally split into a reasoning boundary and a deterministic boundary:
+
+1. The runtime writes `tcsd-coverage-repair-brief/v1` from the measured report, including below-threshold metrics, block-level paths/SIDs when available, the current logical trace, Coverage IR, and root interface.
+2. The stage Agent inspects only each uncovered block's local upstream slice and writes `tcsd-agent-coverage-repair-proposal/v1`. It must identify the exact block/SID, missing outcome, controlling root inputs/parameters, state prerequisites, waits, and sensitization context.
+3. `validate_agent_coverage_repair.py` independently checks target scope, root-input names, initialization-only parameters, ordered positive-delay steps, bounded size, and specific unresolved reasons. It converts only accepted candidates into Coverage IR.
+4. The existing IR synthesizer performs full-stimulus deduplication and appends accepted candidates without replacing functional Tests.
+5. The deterministic runtime builds the candidate workbook and runs simulation/backfill before accepting the repair. Stage 11 then runs the authoritative final simulation and coverage collection.
+
+An empty deterministic candidate set is not enough to end Stage 10. The Agent must either produce a host-valid candidate or record one of the specific structural/probe reasons allowed by the Stage 10 proposal schema.
+
 ## Coverage Feedback Script
 
 After `extract_tcsd_cases.py` writes the case JSON, call MATLAB through `satk_eval.py` with an entry file like:
@@ -38,7 +50,7 @@ The script uses the same workspace/bootstrap conventions as simulation backfill 
 
 - `status`: `ok` or `failed`
 - `mcdc`, `decision`, `condition`: aggregate metric summaries
-- `items`: block-level MCDC gaps where available
+- `items`: block-level Condition, Decision, and MC/DC gaps where available, including path, SID, block type, metric totals, and the raw coverage description
 - `error_id` / `error_message`: when coverage could not be trusted
 
 If `status != "ok"`, do not claim MCDC feedback was applied. Continue only with the existing static/probe MC/DC gates and report the coverage feedback failure.

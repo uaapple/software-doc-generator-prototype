@@ -499,8 +499,9 @@ def simulate_and_backfill(
     outputs: str,
     exclude_outputs: str,
     interface_json: Path,
+    result_name: str = "",
 ) -> Path:
-    result_json = root_dir / "outputs" / f"{model}_sim_results_mcdc.json"
+    result_json = root_dir / "outputs" / (result_name or f"{model}_sim_results_mcdc.json")
     entry = write_matlab_entry(
         root_dir / "outputs" / f"{model}_simulate_mcdc_entry.m",
         "\n".join(
