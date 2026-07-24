@@ -1161,97 +1161,6 @@ function buildSoftwareRequirementMarkdownPrompt(payload = {}) {
   ].join("\n");
 }
 
-function sanitizeSimulinkUtTcsdArtifact(inputArtifact = {}) {
-  const project = inputArtifact.unitTestProject && typeof inputArtifact.unitTestProject === "object"
-    ? inputArtifact.unitTestProject
-    : null;
-  return {
-    workspaceDir: clipText(inputArtifact.workspaceDir || "", CLI_PATH_MAX_LENGTH),
-    modelSlxPath: clipText(inputArtifact.modelSlxPath || "", CLI_PATH_MAX_LENGTH),
-    modelMatPath: clipText(inputArtifact.modelMatPath || "", CLI_PATH_MAX_LENGTH),
-    modelInitScriptPath: clipText(inputArtifact.modelInitScriptPath || "", CLI_PATH_MAX_LENGTH),
-    outputDir: clipText(inputArtifact.outputDir || "", CLI_PATH_MAX_LENGTH),
-    unitTestProject: project
-      ? {
-          id: clipText(project.id || "", 40),
-          name: clipText(project.name || "", 120),
-          label: clipText(project.label || "", 180)
-        }
-      : null,
-    skillName: clipText(inputArtifact.skillName || "simulink-ut-tcsd-generator", 160),
-    expectedOutputPattern: clipText(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx", 200),
-    modelSlxFileName: clipText(inputArtifact.modelSlxFileName || path.basename(inputArtifact.modelSlxPath || "model.slx"), 200),
-    modelMatFileName: clipText(inputArtifact.modelMatFileName || path.basename(inputArtifact.modelMatPath || "model.mat"), 200),
-    modelInitScriptFileName: clipText(inputArtifact.modelInitScriptFileName || path.basename(inputArtifact.modelInitScriptPath || ""), 200),
-    projectInitScripts: Array.isArray(inputArtifact.projectInitScripts)
-      ? inputArtifact.projectInitScripts.map((item) => clipText(item || "", 240)).filter(Boolean)
-      : []
-  };
-}
-
-function buildSimulinkUtTcsdPrompt(payload = {}) {
-  const inputArtifact = sanitizeSimulinkUtTcsdArtifact(payload.inputArtifact || {});
-  return [
-    "You are executing the Hermes step `simulink_ut_tcsd_generate`.",
-    "Use the Codex skill `simulink-ut-tcsd-generator` for the full workflow.",
-    "The task is to generate coverage-oriented Simulink unit-test TCSD Excel cases from one `.slx` model and its matching `.mat` data file.",
-    "",
-    "Workspace artifact:",
-    JSON.stringify(inputArtifact, null, 2),
-    "",
-    "Execution contract:",
-    "- Treat `workspaceDir` as the sandbox root. Do not read or write outside it.",
-    "- The model input is `modelSlxPath`; the matching data file is `modelMatPath`.",
-    "- `unitTestProject.id` is the internal project number, such as `01`; display labels such as `01_楚能` must never be used as paths.",
-    "- The Hermes Agent service has already copied the selected project's addon package into `workspaceDir` before this CLI run. Load support files such as `init_Global.m`, `ITKLib.slx`, `.sldd`, and project tool folders from the workspace, not from the external addon root.",
-    "- If `projectInitScripts` is non-empty, it contains the uploaded model-specific initialization `.m` script relative to `workspaceDir`; treat it as the explicit initialization entrypoint and pass it to the skill bootstrap, for example `setup_ut_support(rootDir, projectInitScripts)`, or set `TCSD_PROJECT_INIT_SCRIPTS` to that semicolon-separated list before calling `setup_ut_support(rootDir)`. In that case, do not rely on addon auto-discovery for initialization script selection.",
-    "- If `projectInitScripts` is empty, no model-specific init script was uploaded; rely on `setup_ut_support(rootDir)` to auto-discover common initialization scripts from the copied project addon/workspace.",
-    "- Before loading Simulink files, change MATLAB current folder to `workspaceDir`.",
-    "- If `ITKLib` or the target model is already loaded from another path, close that loaded model first with `bdclose` before calling `load_system`.",
-    "- Prefer the canonical workspace filenames `modelSlxFileName`, `modelMatFileName`, and when present `modelInitScriptFileName` for MATLAB `load`, `load_system`, init bootstrap, and simulation steps; avoid loading timestamped upload archive names.",
-    "- Use the skill named by `skillName` and follow its SATK/MATLAB/TCSD rules.",
-    "- In this environment, `model_overview` and `model_read` can be registered but fail because the backing MATLAB functions are unavailable; do not spend repeated retries on them. Prefer `evaluate_matlab_code` for MATLAB inspection, and use static SLX XML inspection only as a fallback.",
-    "- Artifact-first checkpointing is mandatory: after model inspection and case design, immediately build and verify the TCSD workbook under `outputDir` before extracting cases, running `simulate_tcsd_cases`, running coverage, or doing expected-output backfill. This checkpoint is not sufficient for final completion by itself.",
-    "- Use the skill's `scripts/build_tcsd_from_json.py` from a terminal command with `python3` so it can access the installed `openpyxl`; do not rely on the isolated `execute_code` Python environment for openpyxl.",
-    "- After building the checkpoint workbook, run the skill's `scripts/validate_tcsd_workbook.py` against the compiled root Inport/Outport interface. If it reports unknown inputs, unknown `expValue` outputs, vector assignment issues, or missing final delays, treat only that workbook/spec draft as invalid: inspect the reported rows/signals, repair the generated cases, rebuild the workbook, and rerun validation before simulation. Do not return `status: \"failed\"` to the platform for these self-generated workbook issues until a bounded repair attempt has been exhausted or the model interface itself cannot be derived.",
-    "- Do not start any long MATLAB simulation/backfill step until an `outputs/*_tcsd.xlsx` workbook already exists and `unzip -t` or equivalent workbook validation has passed.",
-    "- Simulation-backed expected-output backfill is required for final `status: \"completed\"`. The final workbook must contain top-level Outport `expValue(...)` lines suitable for automated test execution.",
-    "- Keep simulation bounded and checkpointed: run a focused backfill pass from the already-built workbook, avoid unbounded coverage repair loops, and write the workbook after successful backfill.",
-    "- If any simulation/backfill MATLAB, MCP, or SATK call times out once, including `mcp_matlab_satk_evaluate_matlab_code timed out after 600.0s`, stop simulation/backfill immediately. Do not retry `sim()`, output extraction, or coverage exploration in the same Hermes request.",
-    "- If expected-output backfill cannot complete, return strict JSON with `status: \"failed\"`, an `errorMessage`, and warnings. You may include the checkpoint workbook in `outputFiles` for diagnosis, but do not mark the task completed.",
-    "- Before returning `status: \"completed\"`, verify the workbook file exists under `outputDir`, contains at least one `expValue(...)` expectation, and include it in `outputFiles` using a relative path that matches `outputs/*_tcsd.xlsx`.",
-    "- Before returning, clean up MATLAB state per the skill's MATLAB Cleanup Contract: close task-loaded workspace models/libraries, clear task-local variables, restore current folder/path when possible, and report cleanup warnings.",
-    "- Write generated workbooks only under `outputDir`.",
-    "- The expected final workbook pattern is `outputs/*_tcsd.xlsx`.",
-    "- If MATLAB, SATK, Simulink, or required skill assets are unavailable, fail clearly and include the missing dependency in `warnings` or `errorMessage`.",
-    "",
-    "Return strict JSON only. No markdown fences. No prose outside JSON.",
-    "Required JSON shape:",
-    JSON.stringify(
-      {
-        status: "completed",
-        summary: "One-sentence Chinese summary of the generated TCSD workbook.",
-        outputFiles: [
-          {
-            relativePath: "outputs/model_Test0001_tcsd.xlsx",
-            kind: "tcsd_workbook",
-            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            description: "Generated TCSD Excel workbook"
-          }
-        ],
-        expectedValueSummary: {
-          backfillStatus: "completed",
-          expValueCount: 1,
-          testsWithoutExpectedValue: 0
-        },
-        warnings: []
-      },
-      null,
-      2
-    )
-  ].join("\n");
-}
-
 function sanitizeSimulinkModuleDescriptionArtifact(inputArtifact = {}) {
   const project = inputArtifact.unitTestProject && typeof inputArtifact.unitTestProject === "object"
     ? inputArtifact.unitTestProject
@@ -1794,8 +1703,6 @@ function buildCliPrompt(payload = {}) {
       return buildSlxParsePrompt(payload);
     case "software_requirement_markdown_generate":
       return buildSoftwareRequirementMarkdownPrompt(payload);
-    case "simulink_ut_tcsd_generate":
-      return buildSimulinkUtTcsdPrompt(payload);
     case "simulink_module_description_generate":
       return buildSimulinkModuleDescriptionPrompt(payload);
     case "anchor_index_build":
@@ -1895,45 +1802,6 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
       summary: String(artifact.summary || "").trim()
     };
   }
-  if (stepType === "simulink_ut_tcsd_generate") {
-    const artifact = parsed && typeof parsed === "object" ? parsed : {};
-    const outputFiles = Array.isArray(artifact.outputFiles)
-      ? artifact.outputFiles
-          .map((item) => {
-            if (typeof item === "string") {
-              return {
-                relativePath: item.trim(),
-                kind: "tcsd_workbook",
-                mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                description: ""
-              };
-            }
-            if (!item || typeof item !== "object") {
-              return null;
-            }
-            return {
-              relativePath: String(item.relativePath || item.path || item.filePath || "").trim(),
-              absolutePath: String(item.absolutePath || "").trim(),
-              fileName: String(item.fileName || "").trim(),
-              kind: String(item.kind || "tcsd_workbook").trim(),
-              mimeType: String(
-                item.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              ).trim(),
-              description: String(item.description || "").trim()
-            };
-          })
-          .filter((item) => item && (item.relativePath || item.absolutePath))
-      : [];
-    return {
-      status: String(artifact.status || "completed").trim(),
-      summary: String(artifact.summary || "").trim(),
-      outputFiles,
-      warnings: Array.isArray(artifact.warnings)
-        ? artifact.warnings.map((item) => clipText(item || "", 300)).filter(Boolean).slice(0, 20)
-        : [],
-      errorMessage: String(artifact.errorMessage || artifact.error || "").trim()
-    };
-  }
   if (stepType === "simulink_module_description_generate") {
     const artifact = parsed && typeof parsed === "object" ? parsed : {};
     const outputFiles = Array.isArray(artifact.outputFiles)
@@ -2026,37 +1894,6 @@ async function buildMarkdownArtifactFromWorkspace(payload = {}, workdir = "") {
       summary: "Hermes wrote software module description DOCX artifacts but did not return strict JSON.",
       outputFiles,
       warnings: ["Hermes CLI 未返回严格 JSON，后端从 outputs 目录回收了 DOCX 产物。"]
-    };
-  }
-  if (payload.stepType === "simulink_ut_tcsd_generate") {
-    const inputArtifact = payload.inputArtifact || {};
-    const outputDir = inputArtifact.outputDir || path.join(workdir || inputArtifact.workspaceDir || process.cwd(), "outputs");
-    const absoluteOutputDir = path.isAbsolute(outputDir)
-      ? outputDir
-      : path.join(workdir || inputArtifact.workspaceDir || process.cwd(), ...String(outputDir).split("/").filter(Boolean));
-    const entries = await fs.readdir(absoluteOutputDir, { withFileTypes: true }).catch(() => []);
-    const outputFiles = entries
-      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".xlsx"))
-      .map((entry) => {
-        const absolutePath = path.join(absoluteOutputDir, entry.name);
-        const relativePath = path
-          .relative(workdir || inputArtifact.workspaceDir || process.cwd(), absolutePath)
-          .replace(/\\/g, "/");
-        return {
-          relativePath,
-          kind: "tcsd_workbook",
-          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          description: "Generated TCSD Excel workbook"
-        };
-      });
-    if (!outputFiles.length) {
-      return null;
-    }
-    return {
-      status: "completed",
-      summary: "Hermes wrote TCSD workbook artifacts but did not return strict JSON.",
-      outputFiles,
-      warnings: ["Hermes CLI 未返回严格 JSON，后端从 outputs 目录回收了 Excel 产物。"]
     };
   }
   if (payload.stepType !== "software_requirement_markdown_generate") {
@@ -2356,18 +2193,12 @@ export class HermesAgentClient {
       } catch (_error) {
         const fallbackArtifact = await buildMarkdownArtifactFromWorkspace(payload, workdir);
         if (fallbackArtifact) {
-          const fallbackLabel =
-            payload.stepType === "simulink_ut_tcsd_generate"
-              ? "Hermes CLI 已写入 TCSD 产物"
-              : payload.stepType === "simulink_module_description_generate"
-                ? "Hermes CLI 已写入软件详设 DOCX 产物"
-                : "Hermes CLI 已写入 Markdown 产物";
-          const fallbackMessage =
-            payload.stepType === "simulink_ut_tcsd_generate"
-              ? "Hermes CLI 未返回严格 JSON，但已写入 TCSD Excel 产物，后端将继续登记结果文件。"
-              : payload.stepType === "simulink_module_description_generate"
-                ? "Hermes CLI 未返回严格 JSON，但已写入软件详设 DOCX 产物，后端将继续登记结果文件。"
-                : "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。";
+          const fallbackLabel = payload.stepType === "simulink_module_description_generate"
+            ? "Hermes CLI 已写入软件详设 DOCX 产物"
+            : "Hermes CLI 已写入 Markdown 产物";
+          const fallbackMessage = payload.stepType === "simulink_module_description_generate"
+            ? "Hermes CLI 未返回严格 JSON，但已写入软件详设 DOCX 产物，后端将继续登记结果文件。"
+            : "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。";
           await emitHermesEvent(runtime.onEvent, {
             type: "agent_runtime",
             transport: "cli",

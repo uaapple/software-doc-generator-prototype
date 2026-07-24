@@ -5,12 +5,13 @@ import { inflateRawSync } from "node:zlib";
 import { config } from "../config.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
 import { readJson, writeJson, pathExists } from "./storage.js";
+import { TCSD_PIPELINE_SCHEMA } from "./tcsd-pipeline-contract.js";
 import { normalizeUploadedFileName } from "./upload-filename.js";
 
 const TASK_FILE_NAME = "task.json";
 const PROJECTS_FILE_NAME = "projects.json";
 const QUEUE_TYPE = "unit_test_case_generation";
-const STEP_TYPE = "simulink_ut_tcsd_generate";
+const STEP_TYPE = "tcsd_stage_execute";
 const PROJECT_ID_PATTERN = /^\d{2,}$/;
 
 function now() {
@@ -32,7 +33,7 @@ function unitTestCaseConfig() {
     projectRegistryPath: config.unitTestCase?.projectRegistryPath || path.join(config.dataDir, "unit-test-case-generation", PROJECTS_FILE_NAME),
     projectAdminCode: String(config.unitTestCase?.projectAdminCode || "114301"),
     defaultProjects: config.unitTestCase?.defaultProjects || "01_楚能,02_TMS",
-    skillName: config.unitTestCase?.skillName || "simulink-ut-tcsd-generator",
+    pipelineName: config.unitTestCase?.pipelineName || "tcsd-stage-skills",
     expectedOutputPattern: config.unitTestCase?.expectedOutputPattern || "outputs/*_tcsd.xlsx",
     agentWorkspaceRoot: String(config.unitTestCase?.agentWorkspaceRoot || "").trim()
   };
@@ -678,7 +679,7 @@ export class UnitTestCaseGenerationService {
         hermes: {
           stepType: STEP_TYPE,
           queueType: QUEUE_TYPE,
-          skillName: cfg.skillName,
+          pipelineName: cfg.pipelineName,
           expectedOutputPattern: cfg.expectedOutputPattern,
           summary: "",
           metrics: null,
@@ -775,7 +776,7 @@ export class UnitTestCaseGenerationService {
       modelMatPath,
       outputDir,
       unitTestProject: normalizeTaskProjectSnapshot(task.unitTestProject),
-      skillName: cfg.skillName,
+      pipelineSchema: TCSD_PIPELINE_SCHEMA,
       expectedOutputPattern: cfg.expectedOutputPattern,
       localPlatformWorkspaceDir: task.workspace?.directory || "",
       modelSlxFileName: task.inputs?.modelSlx?.originalName || path.basename(modelSlxPath),
@@ -825,17 +826,14 @@ export class UnitTestCaseGenerationService {
     await this.syncPipelineJob(taskId, job);
     const deadline = Date.now() + this.remotePollWindowMs;
     let delayMs = 1000;
-    let lastTransientAt = 0;
     while (Date.now() < deadline) {
       try {
         job = await this.hermesAgentClient.getTcsdPipelineJob(started.jobId);
-        lastTransientAt = 0;
         await this.syncPipelineJob(taskId, job);
         if (["已完成", "部分完成", "失败"].includes(job.status)) break;
         delayMs = 1000;
       } catch (error) {
         // A temporary network break is not a MATLAB failure; retain the last confirmed job state.
-        lastTransientAt ||= Date.now();
         if (error.code === "tcsd_job_not_found") throw error;
         delayMs = Math.min(15000, Math.round(delayMs * 1.8));
       }
@@ -858,9 +856,7 @@ export class UnitTestCaseGenerationService {
     task = await this.readTask(taskId);
 
     try {
-      const result = this.hermesAgentClient.transport === "api"
-        ? await this.runRemotePipeline(taskId, task)
-        : await this.hermesAgentClient.executeStep(this.buildHermesPayload(task), { onEvent: (event) => this.appendRuntimeEvent(taskId, event) });
+      const result = await this.runRemotePipeline(taskId, task);
       if (result?.status === "pending") return this.getTask(taskId);
       const artifact = result?.artifact || {};
       if (result?.status && result.status !== "succeeded") {
@@ -871,7 +867,7 @@ export class UnitTestCaseGenerationService {
       }
       return await this.completeTask(taskId, artifact, result);
     } catch (error) {
-      if (this.hermesAgentClient.transport === "api" && ["tcsd_worker_unavailable", "tcsd_poll_timeout"].includes(error.code)) {
+      if (["tcsd_worker_unavailable", "tcsd_poll_timeout"].includes(error.code)) {
         const pending = await this.readTask(taskId); pending.status = pending.pipeline?.jobId ? "running" : "queued"; pending.workerPending = true; pending.updatedAt = now(); pending.progress = buildProgress(pending.status, "Windows Worker 暂不可用，平台将在后台继续尝试。"); await this.saveTask(pending); return this.getTask(taskId);
       }
       await this.failTask(taskId, error);
@@ -1022,7 +1018,7 @@ export class UnitTestCaseGenerationService {
     for (const task of tasks) {
       const updatedAt = Date.parse(task.updatedAt || task.createdAt || "") || 0;
       if (["queued", "running"].includes(task.status) && updatedAt < cutoff) {
-        if (this.hermesAgentClient.transport === "api" && task.pipeline?.jobId) await this.reconcileTask(task.id);
+        if (task.pipeline?.jobId) await this.reconcileTask(task.id);
         else if (task.status === "running") await this.failTask(task.id, createHttpError("服务重启后任务缺少可恢复的 Windows jobId。", 500, "unit_test_case_task_recovered_failed"));
       }
     }

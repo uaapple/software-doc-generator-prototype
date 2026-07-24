@@ -3395,6 +3395,40 @@ body[data-page-kind="unit-test-case-generation"] .unit-runtime-item small {
   color: var(--ink-soft);
 }
 
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace summary {
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  list-style-position: outside;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace summary span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace-body {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace-body h4 {
+  margin: 14px 0 6px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace-body pre {
+  background: var(--surface);
+  border-radius: 8px;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 body[data-page-kind="unit-test-case-generation"] .unit-error-box {
   border-color: rgba(181, 72, 67, 0.35);
   background: var(--danger-soft);
