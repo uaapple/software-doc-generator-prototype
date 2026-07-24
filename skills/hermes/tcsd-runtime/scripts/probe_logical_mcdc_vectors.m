@@ -16,7 +16,7 @@ cd(rootDir);
 addpath(fileparts(mfilename('fullpath')));
 setup_ut_support(rootDir, opts.InitScripts);
 if nargin >= 3 && ~isempty(matFileName)
-    load_mat_to_base(fullfile(rootDir, char(string(matFileName))));
+    load_mat_to_base(resolve_workspace_file(rootDir, matFileName));
 end
 load_workspace_libraries(rootDir, modelNames);
 allReports = struct();
@@ -271,7 +271,7 @@ function [observations, coverageData] = run_test_probe(modelName, inputNames, in
 dt = 0.01;
 coverageData = [];
 if nargin >= 8 && ~isempty(matFileName)
-    load_mat_to_base(fullfile(rootDir, char(string(matFileName))));
+    load_mat_to_base(resolve_workspace_file(rootDir, matFileName));
 end
 initParams = ensure_struct(test, 'init_params');
 apply_parameter_overrides(initParams);
@@ -628,6 +628,13 @@ names = fieldnames(loaded);
 for i = 1:numel(names)
     value = restore_degraded_workspace_value_for_simulink_ut(names{i}, loaded.(names{i}));
     assignin('base', names{i}, value);
+end
+end
+
+function filePath = resolve_workspace_file(rootDir, fileName)
+filePath = char(string(fileName));
+if ~isfile(filePath)
+    filePath = fullfile(rootDir, filePath);
 end
 end
 

@@ -11,10 +11,12 @@ import {
   TCSD_STAGE_DEFINITIONS,
   TCSD_STAGE_INPUT_SCHEMA,
   TCSD_STAGE_RESULT_SCHEMA,
+  coverageCompletion,
   validateStageCheckpoint,
   validateStageResult
 } from "./tcsd-pipeline-contract.js";
-import { TcsdStageCatalog } from "./tcsd-stage-catalog.js";
+import { TcsdHostSemanticValidator } from "./tcsd-host-semantic-validator.js";
+import { hashTcsdBundle, TcsdStageCatalog } from "./tcsd-stage-catalog.js";
 import { readJson, writeJson } from "./storage.js";
 
 const execFileAsync = promisify(execFile);
@@ -41,6 +43,26 @@ function profileArgs(profile, rawArgs) {
   return !profile || profile === "default" ? rawArgs : ["-p", profile, ...rawArgs];
 }
 
+async function readSkillUsageRecord(usageFile, skillName) {
+  let source;
+  try {
+    source = await fs.readFile(usageFile, "utf8");
+  } catch (cause) {
+    if (cause?.code === "ENOENT") return { useCount: 0, lastUsedAt: "" };
+    throw cause;
+  }
+  const payload = JSON.parse(source);
+  const record = payload?.[skillName];
+  const useCount = Number(record?.use_count || 0);
+  if (!Number.isInteger(useCount) || useCount < 0) {
+    throw new Error(`Hermes skill usage count is invalid for ${skillName}`);
+  }
+  return {
+    useCount,
+    lastUsedAt: String(record?.last_used_at || "").trim()
+  };
+}
+
 function publicRuntimeError(cause, stageIndex, timeoutMs) {
   if (cause?.killed || cause?.signal === "SIGTERM" || cause?.code === "ETIMEDOUT") {
     return Object.assign(new Error(`TCSD stage ${stageIndex} Hermes session timed out after ${timeoutMs}ms`), {
@@ -62,8 +84,13 @@ function publicRuntimeError(cause, stageIndex, timeoutMs) {
 
 function defaultStateDbPath(profile) {
   if (process.env.TCSD_STAGE_HERMES_STATE_DB_PATH) return process.env.TCSD_STAGE_HERMES_STATE_DB_PATH;
-  if (!profile || profile === "default" || profile === config.hermes.profile) return config.hermes.stateDbPath;
-  return path.join(config.hermes.homeDir, "profiles", profile, "state.db");
+  const hermesHomeDir = config.hermes?.homeDir ||
+    process.env.HERMES_HOME ||
+    path.join(process.env.HOME || process.env.USERPROFILE || config.rootDir, ".hermes");
+  if (!profile || profile === "default" || profile === config.hermes?.profile) {
+    return config.hermes?.stateDbPath || path.join(hermesHomeDir, "state.db");
+  }
+  return path.join(hermesHomeDir, "profiles", profile, "state.db");
 }
 
 export class TcsdHermesStageExecutor {
@@ -79,15 +106,37 @@ export class TcsdHermesStageExecutor {
     this.stateDbPath = options.stateDbPath || defaultStateDbPath(this.profile);
     this.commandRunner = options.commandRunner || execFileAsync;
     this.catalog = options.catalog || new TcsdStageCatalog();
-    this.usageReader = options.usageReader || ((sessionId, runtime) => this.readSessionUsage(sessionId, runtime));
+    this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({ python: this.python });
+    this.usageReader = options.usageReader ||
+      ((sessionId, runtime, skill, invocation) => this.readSessionUsage(sessionId, runtime, skill, invocation));
     this.now = options.now || (() => new Date().toISOString());
   }
 
-  async readSessionUsage(sessionId, runtime) {
+  async readSessionUsage(sessionId, runtime, skill, invocation) {
     const script = path.join(runtime.directory, "scripts", "read_hermes_session.py");
     const { stdout = "" } = await this.commandRunner(
       this.python,
-      [script, "--state-db", this.stateDbPath, "--session-id", sessionId],
+      [
+        script,
+        "--state-db",
+        this.stateDbPath,
+        "--session-id",
+        sessionId,
+        "--expected-skill-name",
+        skill.name,
+        "--expected-skill-file",
+        path.join(skill.directory, "SKILL.md"),
+        "--expected-skill-sha256",
+        skill.skillFileHash,
+        "--skill-usage-file",
+        invocation.usageFile,
+        "--expected-use-count-before",
+        String(invocation.useCountBefore),
+        "--invocation-started-at",
+        invocation.startedAt,
+        "--invocation-ended-at",
+        invocation.endedAt
+      ],
       {
         cwd: runtime.directory,
         timeout: 10000,
@@ -97,7 +146,14 @@ export class TcsdHermesStageExecutor {
       }
     );
     const usage = JSON.parse(String(stdout || "").trim());
-    if (!usage.model || !Number.isFinite(Number(usage.totalTokens))) throw new Error("Hermes session telemetry is incomplete");
+    if (
+      !usage.model ||
+      !Number.isFinite(Number(usage.totalTokens)) ||
+      usage.skillLoad?.source !== "hermes-state-db+skill-usage" ||
+      usage.skillLoad?.loaded !== true ||
+      usage.skillLoad?.skillName !== skill.name ||
+      usage.skillLoad?.skillFileSha256 !== skill.skillFileHash
+    ) throw new Error("Hermes session telemetry or slash-skill loading evidence is incomplete");
     return usage;
   }
 
@@ -110,6 +166,57 @@ export class TcsdHermesStageExecutor {
       }
     }
     return sessionIds;
+  }
+
+  async resolveInstalledBundles(job, stageIndex) {
+    const snapshot = job.skillSnapshot;
+    const installedSkill = snapshot?.stages?.find((item) => item.index === stageIndex);
+    const sourceSkill = await this.catalog.describe(stageIndex);
+    const sourceRuntime = await this.catalog.runtime();
+    if (
+      snapshot?.schema !== "tcsd-hermes-skill-snapshot/v1" ||
+      snapshot.profile !== this.profile ||
+      snapshot.discovery?.allDiscovered !== true ||
+      !installedSkill ||
+      installedSkill.name !== sourceSkill.name ||
+      installedSkill.version !== sourceSkill.version ||
+      installedSkill.bundleVersion !== sourceSkill.bundleVersion ||
+      installedSkill.bundleHash !== sourceSkill.bundleHash ||
+      installedSkill.skillFileHash !== sourceSkill.skillFileHash ||
+      snapshot.runtime?.bundleVersion !== sourceRuntime.bundleVersion ||
+      snapshot.runtime?.bundleHash !== sourceRuntime.bundleHash
+    ) {
+      throw Object.assign(new Error("TCSD job skill snapshot is missing, stale, or inconsistent."), {
+        code: TCSD_ERROR_CODES.workerUnavailable,
+        details: { stageIndex }
+      });
+    }
+    const skillDirectory = path.resolve(installedSkill.installedPath);
+    const runtimeDirectory = path.resolve(snapshot.runtime.installedPath);
+    const installedSkillHash = (await hashTcsdBundle(skillDirectory)).sha256;
+    const installedRuntimeHash = (await hashTcsdBundle(runtimeDirectory)).sha256;
+    const installedSkillFileHash = sha256(await fs.readFile(path.join(skillDirectory, "SKILL.md")));
+    if (
+      installedSkillHash !== sourceSkill.bundleHash ||
+      installedRuntimeHash !== sourceRuntime.bundleHash ||
+      installedSkillFileHash !== sourceSkill.skillFileHash
+    ) {
+      throw Object.assign(new Error("Installed TCSD skill or runtime changed after the job snapshot."), {
+        code: TCSD_ERROR_CODES.workerUnavailable,
+        details: { stageIndex, skillName: sourceSkill.name }
+      });
+    }
+    return {
+      skill: {
+        ...sourceSkill,
+        directory: skillDirectory
+      },
+      runtime: {
+        ...sourceRuntime,
+        directory: runtimeDirectory,
+        installedPath: runtimeDirectory
+      }
+    };
   }
 
   buildPrompt({ definition, skill, runtime, manifestPath, resultPath, validationReportPath, attempt }) {
@@ -129,8 +236,8 @@ export class TcsdHermesStageExecutor {
       `"${resultPath}"`
     ].join(" ");
     return [
-      "You are executing the generic Hermes step `tcsd_stage_execute`.",
-      `Use $${definition.skillName} and no other TCSD stage skill.`,
+      `/${definition.skillName} You are executing the generic Hermes step tcsd_stage_execute.`,
+      `Load and execute only the slash-invoked ${definition.skillName} skill.`,
       `Execute only stage ${definition.index}: ${definition.name}.`,
       `Read the authoritative input manifest: ${manifestPath}`,
       ...repairLines,
@@ -143,18 +250,162 @@ export class TcsdHermesStageExecutor {
     ].join("\n");
   }
 
+  async packageStage12(job, agentArtifacts) {
+    const workspaceDir = path.resolve(job.input.workspaceDir);
+    const outputDir = path.resolve(job.input.outputDir);
+    const hostDir = path.join(outputDir, ".tcsd-host");
+    await fs.mkdir(hostDir, { recursive: true });
+    const checkpointArtifacts = (job.stages || []).flatMap((stage) => (
+      Array.isArray(stage.checkpoint?.artifacts) ? stage.checkpoint.artifacts : []
+    ));
+    const artifacts = [...checkpointArtifacts, ...(agentArtifacts || [])]
+      .filter((artifact) => artifact?.path && artifact?.kind)
+      .filter((artifact, index, values) => values.findIndex((item) => item.path === artifact.path) === index);
+    const latestWorkbook = [...(job.stages || [])]
+      .reverse()
+      .flatMap((stage) => stage.checkpoint?.artifacts || [])
+      .find((artifact) => artifact.kind === "xlsx")?.path || "";
+    const latestSimulation = job.stages?.[10]?.checkpoint?.evidence?.simulationResult ||
+      job.stages?.[7]?.checkpoint?.evidence?.simulationResult ||
+      "";
+    const initialCoverageArtifact = job.stages?.[8]?.checkpoint?.evidence?.coverageReport || "";
+    const finalCoverageArtifact = job.stages?.[10]?.checkpoint?.evidence?.coverageReport || initialCoverageArtifact;
+    const planningMappingArtifact = artifacts.find((artifact) => artifact.role === "planning-mapping-assessment");
+    const initialCoverage = job.coverage.initial;
+    const finalCoverage = job.coverage.final || initialCoverage;
+    if (!initialCoverage || !finalCoverage || !planningMappingArtifact) {
+      throw Object.assign(new Error("Host cannot package TCSD completion without verified coverage and planning diagnostics."), {
+        code: TCSD_ERROR_CODES.validation
+      });
+    }
+    const planningMappingPath = path.resolve(workspaceDir, planningMappingArtifact.path);
+    const planningMapping = JSON.parse(await fs.readFile(planningMappingPath, "utf8"));
+    if (
+      planningMapping.schema !== "tcsd-planning-mapping-assessment/v1" ||
+      planningMapping.authority !== "planning" ||
+      planningMapping.blocking !== false ||
+      !["satisfied", "advisory"].includes(planningMapping.status)
+    ) {
+      throw Object.assign(new Error("Host cannot package an invalid planning mapping assessment."), {
+        code: TCSD_ERROR_CODES.validation
+      });
+    }
+    const threshold = Number(job.input.coverageThreshold || 80);
+    const unresolved = [];
+    for (const [model, record] of Object.entries(finalCoverage.models || {})) {
+      for (const metric of ["condition", "decision", "mcdc"]) {
+        if (Number(record?.[metric]?.percent) < threshold) {
+          unresolved.push({
+            model,
+            metric,
+            percent: Number(record[metric].percent),
+            threshold
+          });
+        }
+      }
+    }
+    const completion = coverageCompletion(finalCoverage, unresolved.length > 0, threshold);
+    const executionManifest = {
+      schema: "simulink-ut-tcsd-execution-manifest/v1",
+      authority: "host",
+      jobId: job.jobId,
+      status: "completed",
+      completion,
+      generatedAt: this.now(),
+      workbook: latestWorkbook,
+      simulation: {
+        status: latestSimulation ? "completed" : "not_required",
+        result: latestSimulation
+      },
+      evidence: {
+        checkpointCount: (job.checkpoints || []).length + 1,
+        unresolved,
+        planningMappingAssessment: {
+          path: planningMappingArtifact.path,
+          sha256: sha256(await fs.readFile(planningMappingPath)),
+          authority: "planning",
+          status: planningMapping.status,
+          blocking: false,
+          supersededBy: {
+            stageIndex: 9,
+            authority: "measured-simulink-coverage",
+            coverageArtifact: initialCoverageArtifact
+          }
+        }
+      },
+      coverage: {
+        initial: initialCoverage,
+        final: finalCoverage,
+        initial_artifact: initialCoverageArtifact,
+        final_artifact: finalCoverageArtifact,
+        repair_required: Boolean(job.repair?.required),
+        repair_attempted: Boolean(job.repair?.attempted),
+        repair_applied: Boolean(job.repair?.applied),
+        repair_passes: Number(job.repair?.passes || 0),
+        repair_reason: String(job.repair?.reason || ""),
+        repair_evidence: String(job.repair?.evidence || "")
+      }
+    };
+    const timeline = {
+      schema: "tcsd-stage-timeline/v1",
+      authority: "host",
+      jobId: job.jobId,
+      events: Array.isArray(job.events) ? job.events : []
+    };
+    const executionPath = path.join(hostDir, "execution-manifest.json");
+    const timelinePath = path.join(hostDir, "timeline.json");
+    await writeJson(executionPath, executionManifest);
+    await writeJson(timelinePath, timeline);
+    const hostArtifacts = [
+      ...artifacts,
+      { path: relativeToWorkspace(workspaceDir, executionPath), kind: "json", role: "execution-manifest" },
+      { path: relativeToWorkspace(workspaceDir, timelinePath), kind: "json", role: "timeline" }
+    ];
+    const artifactManifestPath = path.join(hostDir, "artifact-manifest.json");
+    hostArtifacts.push({
+      path: relativeToWorkspace(workspaceDir, artifactManifestPath),
+      kind: "json",
+      role: "artifact-manifest"
+    });
+    const artifactManifest = {
+      schema: "tcsd-artifact-manifest/v1",
+      authority: "host",
+      jobId: job.jobId,
+      artifacts: hostArtifacts
+    };
+    await writeJson(artifactManifestPath, artifactManifest);
+    return {
+      artifacts: hostArtifacts,
+      executionManifest: {
+        ...executionManifest,
+        path: relativeToWorkspace(workspaceDir, executionPath),
+        sha256: sha256(await fs.readFile(executionPath))
+      },
+      artifactManifest: hostArtifacts,
+      artifactManifestReference: {
+        path: relativeToWorkspace(workspaceDir, artifactManifestPath),
+        sha256: sha256(await fs.readFile(artifactManifestPath))
+      },
+      timelineReference: {
+        path: relativeToWorkspace(workspaceDir, timelinePath),
+        sha256: sha256(await fs.readFile(timelinePath))
+      }
+    };
+  }
+
   async execute(stageIndex, _input, job, options = {}) {
     const definition = TCSD_STAGE_DEFINITIONS[stageIndex - 1];
     if (!definition) throw Object.assign(new Error(`Unknown TCSD stage ${stageIndex}`), { code: TCSD_ERROR_CODES.input });
     const attempt = Number(options.attempt || job.stages?.[stageIndex - 1]?.attempt || 1);
     const workspaceDir = path.resolve(job.input.workspaceDir);
     const outputDir = path.resolve(job.input.outputDir);
-    const skill = await this.catalog.describe(stageIndex);
-    const runtime = await this.catalog.runtime();
+    const { skill, runtime } = await this.resolveInstalledBundles(job, stageIndex);
     const attemptDir = path.join(outputDir, ".tcsd-agent", `stage-${String(stageIndex).padStart(2, "0")}`, `attempt-${attempt}`);
     const manifestPath = path.join(attemptDir, "input.json");
     const resultPath = path.join(attemptDir, "result.json");
     const validationPath = path.join(attemptDir, "validation.json");
+    const semanticRequestPath = path.join(attemptDir, "semantic-request.json");
+    const semanticReportPath = path.join(attemptDir, "semantic-validation.json");
     await fs.mkdir(attemptDir, { recursive: true });
     await fs.unlink(resultPath).catch((error) => {
       if (error?.code !== "ENOENT") throw error;
@@ -174,7 +425,8 @@ export class TcsdHermesStageExecutor {
         name: skill.name,
         version: skill.version,
         bundleVersion: skill.bundleVersion,
-        bundleHash: skill.bundleHash
+        bundleHash: skill.bundleHash,
+        skillFileHash: skill.skillFileHash
       },
       runtime: {
         bundleVersion: runtime.bundleVersion,
@@ -203,6 +455,8 @@ export class TcsdHermesStageExecutor {
     });
     const rawArgs = ["chat", "-q", prompt, "-Q", "--source", "tool", "--max-turns", String(this.maxTurns), "--yolo"];
     const args = profileArgs(this.profile, rawArgs);
+    const skillUsageFile = path.join(path.dirname(path.dirname(skill.directory)), ".usage.json");
+    const usageBefore = await readSkillUsageRecord(skillUsageFile, skill.name);
     const startedAt = Date.now();
     let commandResult;
     try {
@@ -240,7 +494,12 @@ export class TcsdHermesStageExecutor {
     }
     let tokenUsage;
     try {
-      tokenUsage = await this.usageReader(sessionId, runtime);
+      tokenUsage = await this.usageReader(sessionId, runtime, skill, {
+        usageFile: skillUsageFile,
+        useCountBefore: usageBefore.useCount,
+        startedAt: new Date(startedAt).toISOString(),
+        endedAt: new Date().toISOString()
+      });
     } catch (cause) {
       throw Object.assign(new Error(`Hermes stage telemetry is unavailable: ${cause.message}`), {
         code: TCSD_ERROR_CODES.telemetry,
@@ -261,11 +520,25 @@ export class TcsdHermesStageExecutor {
       });
     }
     let validatedResult;
+    let semanticEvidence;
     try {
       if (resultReadError) {
         throw new Error(`stage result is not valid JSON: ${resultReadError.message}`);
       }
-      validatedResult = await validateStageResult(result || {}, { jobId: job.jobId, stageIndex, workspaceDir });
+      semanticEvidence = await this.semanticValidator.validate({
+        raw: result || {},
+        job,
+        runtime,
+        requestPath: semanticRequestPath
+      });
+      await writeJson(semanticReportPath, semanticEvidence);
+      validatedResult = await validateStageResult(result || {}, {
+        jobId: job.jobId,
+        stageIndex,
+        workspaceDir,
+        semanticEvidence,
+        pipelineState: job
+      });
     } catch (cause) {
       const report = {
         schema: "tcsd-host-validation-report/v1",
@@ -301,11 +574,18 @@ export class TcsdHermesStageExecutor {
       passed: true,
       resultPath: relativeToWorkspace(workspaceDir, resultPath),
       artifactCount: validatedResult.artifacts.length,
+      semanticValidation: {
+        path: relativeToWorkspace(workspaceDir, semanticReportPath),
+        sha256: sha256(await fs.readFile(semanticReportPath))
+      },
       validatedAt: this.now()
     };
     await writeJson(validationPath, validationReport);
     const inputSha256 = sha256(await fs.readFile(manifestPath));
     const resultSha256 = sha256(await fs.readFile(resultPath));
+    const hostPackage = stageIndex === 12
+      ? await this.packageStage12(job, result.artifacts || [])
+      : null;
     const checkpoint = {
       schema: TCSD_CHECKPOINT_SCHEMA,
       pipelineSchema: TCSD_PIPELINE_SCHEMA,
@@ -322,6 +602,7 @@ export class TcsdHermesStageExecutor {
         profile: this.profile,
         model: tokenUsage.model,
         tokenUsage,
+        skillLoad: tokenUsage.skillLoad,
         maxTurns: this.maxTurns,
         timeoutMs: this.timeoutMs
       },
@@ -339,7 +620,8 @@ export class TcsdHermesStageExecutor {
       },
       validation: {
         passed: true,
-        reportPath: relativeToWorkspace(workspaceDir, validationPath)
+        reportPath: relativeToWorkspace(workspaceDir, validationPath),
+        semantic: validationReport.semanticValidation
       },
       toolLogs: [{
         tool: "hermes-cli",
@@ -348,19 +630,58 @@ export class TcsdHermesStageExecutor {
         stdoutBytes: Buffer.byteLength(stdout),
         stderrBytes: Buffer.byteLength(stderr)
       }],
-      artifacts: result.artifacts || [],
+      artifacts: hostPackage?.artifacts || result.artifacts || [],
       evidence: result.evidence || null,
       coverage: result.coverage || null,
       repair: result.repair || null,
-      executionManifest: result.executionManifest || null,
-      artifactManifest: result.artifactManifest || null,
+      executionManifest: hostPackage?.executionManifest || null,
+      artifactManifest: hostPackage?.artifactManifest || null,
+      artifactManifestReference: hostPackage?.artifactManifestReference || null,
+      timelineReference: hostPackage?.timelineReference || null,
       startedAt: new Date(startedAt).toISOString(),
       endedAt: this.now()
     };
     const checkpointPath = path.join(outputDir, ".tcsd-checkpoints", `stage-${String(stageIndex).padStart(2, "0")}.json`);
     await fs.mkdir(path.dirname(checkpointPath), { recursive: true });
     await writeJson(checkpointPath, checkpoint);
-    await validateStageCheckpoint(checkpoint, { jobId: job.jobId, stageIndex, workspaceDir, priorSessionIds });
+    await validateStageCheckpoint(checkpoint, {
+      jobId: job.jobId,
+      stageIndex,
+      workspaceDir,
+      priorSessionIds,
+      semanticEvidence,
+      pipelineState: job
+    });
     return checkpoint;
+  }
+
+  async validateCheckpoint(raw, context, job) {
+    const { runtime } = await this.resolveInstalledBundles(job, context.stageIndex);
+    const workspaceDir = path.resolve(context.workspaceDir);
+    const resultPath = path.resolve(workspaceDir, raw?.result?.path || "");
+    if (resultPath !== workspaceDir && !resultPath.startsWith(`${workspaceDir}${path.sep}`)) {
+      throw Object.assign(new Error("TCSD checkpoint result escaped the task workspace."), {
+        code: TCSD_ERROR_CODES.validation
+      });
+    }
+    const result = await readJson(resultPath, null);
+    const recoveryDir = path.join(
+      path.resolve(job.input.outputDir),
+      ".tcsd-agent",
+      `stage-${String(context.stageIndex).padStart(2, "0")}`,
+      "recovery-validation"
+    );
+    await fs.mkdir(recoveryDir, { recursive: true });
+    const semanticEvidence = await this.semanticValidator.validate({
+      raw: result || {},
+      job,
+      runtime,
+      requestPath: path.join(recoveryDir, "semantic-request.json")
+    });
+    return validateStageCheckpoint(raw, {
+      ...context,
+      semanticEvidence,
+      pipelineState: job
+    });
   }
 }

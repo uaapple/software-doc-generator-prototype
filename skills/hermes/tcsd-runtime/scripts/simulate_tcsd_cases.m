@@ -4,7 +4,7 @@ matFile = char(string(matFile));
 cleanupObj = onCleanup(@() cleanup_task_models({modelName, 'ITKLib'}));
 setup_ut_support(rootDir);
 cleanup_task_models({modelName, 'ITKLib'});
-load_mat_to_base(fullfile(rootDir, matFile));
+load_mat_to_base(resolve_workspace_file(rootDir, matFile));
 load_support_library(rootDir, 'ITKLib.slx');
 load_system(fullfile(rootDir, [modelName '.slx']));
 maybe_apply_mps_default_override(modelName);
@@ -91,6 +91,7 @@ for testIndex = 1:numel(spec.tests)
 end
 
 payload = struct();
+payload.schema = 'tcsd-simulation-result/v1';
 payload.tests = results;
 fid = fopen(resultJson, 'w');
 fprintf(fid, '%s', jsonencode(payload, PrettyPrint=true));
@@ -107,7 +108,7 @@ end
 stopTime = max(dt, ceil(totalTime / dt) * dt);
 t = (0:dt:stopTime)';
 
-load_mat_to_base(fullfile(rootDir, matFile));
+load_mat_to_base(resolve_workspace_file(rootDir, matFile));
 paramFields = fieldnames(paramOverrides);
 for k = 1:numel(paramFields)
     name = paramFields{k};
@@ -461,5 +462,12 @@ names = fieldnames(loaded);
 for i = 1:numel(names)
     value = restore_degraded_workspace_value_for_simulink_ut(names{i}, loaded.(names{i}));
     assignin('base', names{i}, value);
+end
+end
+
+function filePath = resolve_workspace_file(rootDir, fileName)
+filePath = char(string(fileName));
+if ~isfile(filePath)
+    filePath = fullfile(rootDir, filePath);
 end
 end

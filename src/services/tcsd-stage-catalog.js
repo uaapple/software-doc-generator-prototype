@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { config } from "../config.js";
+import { fileURLToPath } from "node:url";
 import {
   TCSD_RUNTIME_BUNDLE_VERSION,
   TCSD_STAGE_DEFINITIONS
 } from "./tcsd-pipeline-contract.js";
+
+const DEFAULT_TCSD_SKILLS_DIR = fileURLToPath(new URL("../../skills/hermes/", import.meta.url));
 
 async function listBundleFiles(rootDir, currentDir = rootDir) {
   const entries = await fs.readdir(currentDir, { withFileTypes: true });
@@ -36,9 +38,13 @@ export async function hashTcsdBundle(bundleDir) {
   return { sha256: hash.digest("hex"), fileCount: files.length };
 }
 
+export async function hashTcsdFile(filePath) {
+  return createHash("sha256").update(await fs.readFile(filePath)).digest("hex");
+}
+
 export class TcsdStageCatalog {
   constructor(options = {}) {
-    this.skillsDir = options.skillsDir || path.join(config.rootDir, "skills", "hermes");
+    this.skillsDir = path.resolve(options.skillsDir || DEFAULT_TCSD_SKILLS_DIR);
     this.cache = new Map();
   }
 
@@ -49,8 +55,13 @@ export class TcsdStageCatalog {
     if (!this.cache.has(cacheKey)) {
       const skillDir = path.join(this.skillsDir, definition.skillName);
       const skillBundle = await hashTcsdBundle(skillDir);
-      const skillSource = await fs.readFile(path.join(skillDir, "SKILL.md"), "utf8");
-      if (!skillSource.startsWith("---") || !skillSource.includes(`name: ${definition.skillName}`)) {
+      const skillFile = path.join(skillDir, "SKILL.md");
+      const skillSource = await fs.readFile(skillFile, "utf8");
+      if (
+        !skillSource.startsWith("---") ||
+        !skillSource.includes(`name: ${definition.skillName}`) ||
+        !skillSource.includes(`version: "${definition.skillVersion}"`)
+      ) {
         throw new Error(`TCSD stage skill metadata mismatch: ${definition.skillName}`);
       }
       this.cache.set(cacheKey, {
@@ -59,7 +70,9 @@ export class TcsdStageCatalog {
         bundleVersion: definition.bundleVersion,
         bundleHash: skillBundle.sha256,
         fileCount: skillBundle.fileCount,
-        directory: skillDir
+        skillFileHash: await hashTcsdFile(skillFile),
+        directory: skillDir,
+        source: skillSource
       });
     }
     return this.cache.get(cacheKey);

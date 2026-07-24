@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-01-validate-inputs
+metadata:
+  version: "1.1.0"
 description: Validate the model, MAT data, initialization scripts, project attachments, and workspace boundaries for TCSD stage 1. Use only when a tcsd_stage_execute prompt explicitly requests stage 1 input validation with a tcsd-agent-stage-input/v1 manifest.
 ---
 

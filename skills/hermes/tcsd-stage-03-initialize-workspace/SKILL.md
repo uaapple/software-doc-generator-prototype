@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-03-initialize-workspace
+metadata:
+  version: "1.1.0"
 description: Initialize project and model workspace dependencies and register task-owned resources for TCSD stage 3. Use only when a tcsd_stage_execute prompt explicitly requests workspace initialization with a tcsd-agent-stage-input/v1 manifest.
 ---
 

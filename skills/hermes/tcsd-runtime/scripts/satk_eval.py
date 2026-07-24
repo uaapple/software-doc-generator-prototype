@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import platform
 import signal
@@ -18,6 +19,75 @@ def executable_name(name: str) -> str:
     return f"{name}.exe" if platform.system() == "Windows" else name
 
 
+def server_binary_names(platform_name=None) -> tuple[str, str]:
+    suffix = ".exe" if (platform_name or platform.system()) == "Windows" else ""
+    return f"matlab-mcp-server{suffix}", f"matlab-mcp-core-server{suffix}"
+
+
+def server_candidates(
+    *,
+    environ=None,
+    home=None,
+    cwd=None,
+    script_file=None,
+    platform_name=None,
+) -> list[tuple[str, Path]]:
+    values = os.environ if environ is None else environ
+    home_dir = Path.home() if home is None else Path(home)
+    working_dir = Path.cwd() if cwd is None else Path(cwd)
+    source_file = Path(__file__).resolve() if script_file is None else Path(script_file).resolve()
+    official_name, legacy_name = server_binary_names(platform_name)
+    candidates: list[tuple[str, Path]] = []
+    explicit = str(values.get("SATK_MCP_SERVER") or "").strip()
+    if explicit:
+        candidates.append(("environment", Path(explicit).expanduser()))
+    toolkit_bin = home_dir / ".matlab" / "agentic-toolkits" / "bin"
+    candidates.extend([
+        ("official-toolkit", toolkit_bin / official_name),
+        ("legacy-toolkit", toolkit_bin / legacy_name),
+    ])
+    repository_roots = [working_dir]
+    if len(source_file.parents) > 4:
+        repository_roots.append(source_file.parents[4])
+    for repository_root in repository_roots:
+        candidates.extend([
+            ("repository-tools-official", repository_root / "tools" / official_name),
+            ("repository-tools-legacy", repository_root / "tools" / legacy_name),
+        ])
+    unique: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
+    for source, candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append((source, resolved))
+    return unique
+
+
+def resolve_server(**kwargs) -> tuple[Path, str]:
+    candidates = server_candidates(**kwargs)
+    for source, candidate in candidates:
+        if candidate.is_file():
+            return candidate, source
+    searched = ", ".join(str(candidate) for _, candidate in candidates)
+    raise FileNotFoundError(f"SATK MCP server not found; searched: {searched}")
+
+
+def server_info(**kwargs) -> dict[str, object]:
+    server, source = resolve_server(**kwargs)
+    digest = hashlib.sha256()
+    with server.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "path": str(server),
+        "discovery": source,
+        "sha256": digest.hexdigest(),
+        "sizeBytes": server.stat().st_size,
+    }
+
+
 def default_log_folder() -> str:
     if platform.system() == "Windows":
         return r"C:\Temp\matlab-mcp-core-server-codex"
@@ -26,11 +96,6 @@ def default_log_folder() -> str:
     return str(Path(tempfile.gettempdir()) / "matlab-mcp-core-server-codex")
 
 
-DEFAULT_SERVER = (
-    Path(os.environ["SATK_MCP_SERVER"])
-    if os.environ.get("SATK_MCP_SERVER")
-    else Path.home() / ".matlab" / "agentic-toolkits" / "bin" / executable_name("matlab-mcp-core-server")
-)
 DEFAULT_EXTENSION = (
     Path(os.environ["SATK_MCP_EXTENSION"])
     if os.environ.get("SATK_MCP_EXTENSION")
@@ -123,7 +188,7 @@ def windows_process_rows() -> list[tuple[int, str]]:
             "wmic",
             "process",
             "where",
-            "name='matlab-mcp-core-server.exe'",
+            "name='matlab-mcp-server.exe' or name='matlab-mcp-core-server.exe'",
             "get",
             "ProcessId,CommandLine",
             "/FORMAT:CSV",
@@ -133,7 +198,8 @@ def windows_process_rows() -> list[tuple[int, str]]:
             "-NoProfile",
             "-Command",
             (
-                "Get-CimInstance Win32_Process -Filter \"name='matlab-mcp-core-server.exe'\" | "
+                "Get-CimInstance Win32_Process -Filter "
+                "\"name='matlab-mcp-server.exe' OR name='matlab-mcp-core-server.exe'\" | "
                 "ForEach-Object { \"$($_.ProcessId)|$($_.CommandLine)\" }"
             ),
         ],
@@ -178,10 +244,10 @@ def parse_windows_process_output(output: str) -> list[tuple[int, str]]:
 
 def command_matches_task_mcp(command: str) -> bool:
     lower = command.lower()
-    server_name = executable_name("matlab-mcp-core-server").lower()
+    server_names = {name.lower() for name in server_binary_names()}
     log_folder = str(LOG_FOLDER).lower()
     alt_log_folder = log_folder.replace("\\", "/")
-    return server_name in lower and (log_folder in lower or alt_log_folder in lower)
+    return any(name in lower for name in server_names) and (log_folder in lower or alt_log_folder in lower)
 
 
 def terminate_process(pid: int) -> bool:
@@ -206,18 +272,27 @@ def clean_stale_mcp_processes() -> None:
             terminated.append(pid)
     if terminated:
         print(
-            f"terminated stale task-owned matlab-mcp-core-server processes: {terminated}",
+            f"terminated stale task-owned MATLAB MCP server processes: {terminated}",
             file=sys.stderr,
         )
 
 
 def main() -> int:
+    if len(sys.argv) == 2 and sys.argv[1] == "--server-info":
+        try:
+            print(json.dumps(server_info(), ensure_ascii=False))
+            return 0
+        except FileNotFoundError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
     if len(sys.argv) != 2:
-        print("usage: satk_eval.py MATLAB_CODE_FILE", file=sys.stderr)
+        print("usage: satk_eval.py MATLAB_CODE_FILE | --server-info", file=sys.stderr)
         return 2
 
-    if not DEFAULT_SERVER.exists():
-        print(f"SATK MCP server not found: {DEFAULT_SERVER}", file=sys.stderr)
+    try:
+        selected_server, _ = resolve_server()
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
     if not DEFAULT_EXTENSION.exists():
         print(f"SATK MCP extension file not found: {DEFAULT_EXTENSION}", file=sys.stderr)
@@ -227,7 +302,7 @@ def main() -> int:
     LOG_FOLDER.mkdir(parents=True, exist_ok=True)
     clean_stale_mcp_processes()
     command = [
-        str(DEFAULT_SERVER),
+        str(selected_server),
         f"--matlab-session-mode={SESSION_MODE}",
         f"--log-folder={LOG_FOLDER}",
         f"--extension-file={DEFAULT_EXTENSION}",

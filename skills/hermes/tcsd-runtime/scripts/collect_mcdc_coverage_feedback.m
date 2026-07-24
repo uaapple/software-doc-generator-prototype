@@ -33,7 +33,7 @@ try
     prioritize_addon_dir(addonDir);
     cleanup_task_models({modelName, 'ITKLib'});
     cleanupObj = onCleanup(@() cleanup_task_models({modelName, 'ITKLib'}));
-    load_mat_to_base(fullfile(rootDir, matFile));
+    load_mat_to_base(resolve_workspace_file(rootDir, matFile));
     load_support_library(rootDir, 'ITKLib.slx');
     load_system(fullfile(rootDir, [modelName '.slx']));
     configure_tcsd_sim_config(modelName, rootDir);
@@ -93,7 +93,7 @@ end
 
 function simIn = simulation_input_from_tcsd_case(rootDir, modelName, matFile, test)
 % Mirror simulate_tcsd_cases.m closely enough for coverage feedback.
-load_mat_to_base(fullfile(rootDir, matFile));
+load_mat_to_base(resolve_workspace_file(rootDir, matFile));
 
 inputBlocks = find_system(modelName, 'SearchDepth', 1, 'BlockType', 'Inport');
 [~, inputOrder] = sort(str2double(get_param(inputBlocks, 'Port')));
@@ -401,5 +401,12 @@ loaded = load(matPath);
 names = fieldnames(loaded);
 for i = 1:numel(names)
     assignin('base', names{i}, loaded.(names{i}));
+end
+end
+
+function filePath = resolve_workspace_file(rootDir, fileName)
+filePath = char(string(fileName));
+if ~isfile(filePath)
+    filePath = fullfile(rootDir, filePath);
 end
 end

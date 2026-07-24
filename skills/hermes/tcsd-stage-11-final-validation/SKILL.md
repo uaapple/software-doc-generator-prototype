@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-11-final-validation
+metadata:
+  version: "1.1.0"
 description: Run final simulation, expected-output backfill, and coverage validation after an applied repair for TCSD stage 11. Use only when a tcsd_stage_execute prompt explicitly requests final validation with a tcsd-agent-stage-input/v1 manifest.
 ---
 

@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-10-repair-coverage
+metadata:
+  version: "1.1.0"
 description: Apply at most one deterministic Coverage IR guided case repair from the initial report for TCSD stage 10. Use only when a tcsd_stage_execute prompt explicitly requests coverage repair with a tcsd-agent-stage-input/v1 manifest.
 ---
 

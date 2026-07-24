@@ -9,8 +9,8 @@ export const TCSD_STAGE_INPUT_SCHEMA = "tcsd-agent-stage-input/v1";
 export const TCSD_STAGE_RESULT_SCHEMA = "tcsd-agent-stage-result/v1";
 export const TCSD_CHECKPOINT_SCHEMA = "tcsd-agent-stage-checkpoint/v2";
 export const TCSD_EXECUTION_MANIFEST_SCHEMA = "simulink-ut-tcsd-execution-manifest/v1";
-export const TCSD_STAGE_BUNDLE_VERSION = "tcsd-stage-skills/v1";
-export const TCSD_RUNTIME_BUNDLE_VERSION = "tcsd-runtime/v1";
+export const TCSD_STAGE_BUNDLE_VERSION = "tcsd-stage-skills/v2";
+export const TCSD_RUNTIME_BUNDLE_VERSION = "tcsd-runtime/v2";
 
 export const TCSD_STAGE_DEFINITIONS = Object.freeze([
   ["校验输入文件与项目附件", "tcsd-stage-01-validate-inputs"],
@@ -29,7 +29,7 @@ export const TCSD_STAGE_DEFINITIONS = Object.freeze([
   index: offset + 1,
   name,
   skillName,
-  skillVersion: "1.0.0",
+  skillVersion: "1.1.0",
   bundleVersion: TCSD_STAGE_BUNDLE_VERSION
 })));
 
@@ -88,7 +88,10 @@ function metricObject(value, model, metric) {
   if (!Number.isFinite(percent) || percent < 0 || percent > 100 || typeof value.passed !== "boolean") {
     throw contractError(`覆盖率字段非法 ${model}.${metric}`);
   }
-  return { percent, passed: value.passed };
+  const normalized = { percent, passed: value.passed };
+  if (Number.isFinite(Number(value.covered))) normalized.covered = Number(value.covered);
+  if (Number.isFinite(Number(value.total))) normalized.total = Number(value.total);
+  return normalized;
 }
 
 export function normalizeCoverageReport(report = {}) {
@@ -298,6 +301,45 @@ async function validateBackfillEvidence(raw, context, artifacts) {
   if (!simulation) throw contractError(`第 ${context.stageIndex} 阶段仿真结果未列入产物`);
 }
 
+function requireSemanticEvidence(context, stageIndex) {
+  const semantic = context.semanticEvidence;
+  if (
+    semantic?.schema !== "tcsd-host-semantic-validation/v1" ||
+    semantic?.stageIndex !== stageIndex ||
+    semantic?.passed !== true ||
+    !semantic.details ||
+    typeof semantic.details !== "object"
+  ) {
+    throw contractError(`第 ${stageIndex} 阶段缺少宿主语义校验证据`);
+  }
+  return semantic.details;
+}
+
+function coverageMatches(left, right) {
+  const leftNormalized = normalizeCoverageReport(left);
+  const rightNormalized = normalizeCoverageReport(right);
+  for (const model of Object.keys(rightNormalized.models)) {
+    if (!leftNormalized.models[model]) return false;
+    for (const metric of ["condition", "decision", "mcdc"]) {
+      const leftMetric = leftNormalized.models[model][metric];
+      const rightMetric = rightNormalized.models[model][metric];
+      if (
+        Math.abs(leftMetric.percent - rightMetric.percent) > 1e-7 ||
+        leftMetric.passed !== rightMetric.passed ||
+        (
+          Number.isFinite(rightMetric.covered) &&
+          Math.abs(Number(leftMetric.covered) - rightMetric.covered) > 1e-7
+        ) ||
+        (
+          Number.isFinite(rightMetric.total) &&
+          Math.abs(Number(leftMetric.total) - rightMetric.total) > 1e-7
+        )
+      ) return false;
+    }
+  }
+  return Object.keys(leftNormalized.models).length === Object.keys(rightNormalized.models).length;
+}
+
 async function requireArtifactSchema(artifacts, schemas) {
   const observed = new Set();
   for (const artifact of artifacts.filter((item) => item.kind === "json")) {
@@ -329,12 +371,18 @@ export async function validateStageResult(raw = {}, context = {}) {
     await requireArtifactSchema(artifacts, ["tcsd-input-manifest/v1"]);
   }
   if (context.stageIndex === 2) {
-    await requireArtifactSchema(artifacts, ["tcsd-environment-gate/v1"]);
+    await requireArtifactSchema(artifacts, ["tcsd-environment-gate/v2"]);
     const gates = await Promise.all(
       artifacts.filter((item) => item.kind === "json").map((item) => fs.readFile(item.absolutePath, "utf8").then(JSON.parse))
     );
-    const gate = gates.find((item) => item.schema === "tcsd-environment-gate/v1");
-    if (gate?.passed !== true || !gate?.matlabRoot || !gate?.runner) throw contractError("第 2 阶段环境门禁证据不完整");
+    const gate = gates.find((item) => item.schema === "tcsd-environment-gate/v2");
+    if (
+      gate?.schema !== "tcsd-environment-gate/v2" ||
+      gate?.passed !== true ||
+      !gate?.matlabRoot ||
+      !gate?.runner
+    ) throw contractError("第 2 阶段环境门禁证据不完整");
+    requireSemanticEvidence(context, 2);
   }
   if (context.stageIndex === 3) {
     if (!raw.evidence?.initializationManifest) throw contractError("第 3 阶段缺少工作区初始化 manifest");
@@ -366,18 +414,63 @@ export async function validateStageResult(raw = {}, context = {}) {
   }
   if (context.stageIndex === 6) {
     await requireArtifactSchema(artifacts, ["simulink-ut-state-probe-plan/v1"]);
-    if (raw.evidence?.probeExecuted === true && Number(raw.evidence?.candidateCount || 0) < 1) {
-      throw contractError("第 6 阶段 Probe 执行证据与候选数量矛盾");
+    const semantic = requireSemanticEvidence(context, 6);
+    if (
+      Number(raw.evidence?.candidateCount || 0) !== semantic.candidateCount ||
+      raw.evidence?.probeExecuted !== semantic.probeExecuted ||
+      (semantic.candidateCount > 0 && Number(semantic.observationCount || 0) < semantic.candidateCount)
+    ) {
+      throw contractError("第 6 阶段 Probe 计划、执行状态与实际观察证据不一致");
     }
   }
   if (context.stageIndex === 7) {
     const workbook = artifacts.find((item) => item.kind === "xlsx");
-    if (!workbook || !xlsxText(await fs.readFile(workbook.absolutePath)).includes("TCSD")) {
-      throw contractError("第 7 阶段缺少有效 TCSD workbook");
+    const semantic = requireSemanticEvidence(context, 7);
+    const assessmentArtifact = artifacts.find((item) => item.role === "planning-mapping-assessment");
+    const assessment = assessmentArtifact
+      ? JSON.parse(await fs.readFile(assessmentArtifact.absolutePath, "utf8"))
+      : null;
+    if (
+      !workbook ||
+      !xlsxText(await fs.readFile(workbook.absolutePath)).includes("TCSD") ||
+      Number(semantic.testCount || 0) < 1 ||
+      Number(semantic.actionStepCount || 0) < Number(semantic.testCount || 0) ||
+      assessment?.schema !== "tcsd-planning-mapping-assessment/v1" ||
+      assessment?.authority !== "planning" ||
+      !["satisfied", "advisory"].includes(assessment?.status) ||
+      assessment?.blocking !== false ||
+      assessment?.supersededBy?.stageIndex !== 9 ||
+      assessment?.supersededBy?.authority !== "measured-simulink-coverage" ||
+      raw.evidence?.planningMappingAssessment !== assessmentArtifact?.path ||
+      raw.evidence?.mappingAuthority !== "planning" ||
+      raw.evidence?.supersededByStage !== 9
+    ) {
+      throw contractError("第 7 阶段缺少有效 TCSD workbook 或规划期映射诊断");
     }
   }
-  if (context.stageIndex === 8) await validateBackfillEvidence(raw, context, artifacts);
-  if (context.stageIndex === 9) raw.coverage = normalizeCoverageReport(raw.coverage);
+  if (context.stageIndex === 8) {
+    const semantic = requireSemanticEvidence(context, 8);
+    await validateBackfillEvidence(raw, context, artifacts);
+    if (
+      Number(raw.evidence?.expValueCount || 0) !== Number(semantic.expValueCount || 0) ||
+      Number(raw.evidence?.simulationValueCount || 0) !== Number(semantic.simulationValueCount || 0) ||
+      Number(raw.evidence?.workbookBackfillCount || 0) !== Number(semantic.workbookBackfillCount || 0)
+    ) {
+      throw contractError("第 8 阶段 Agent 计数与宿主逐项仿真/工作簿结果不一致");
+    }
+  }
+  if (context.stageIndex === 9) {
+    const semantic = requireSemanticEvidence(context, 9);
+    if (!raw.coverage || !coverageMatches(raw.coverage, semantic.coverage)) {
+      throw contractError("第 9 阶段 Agent coverage 与宿主解析的覆盖率报告不一致");
+    }
+    raw.coverage = normalizeCoverageReport(semantic.coverage);
+    raw.evidence = {
+      ...(raw.evidence || {}),
+      coverageReport: semantic.coverageReportPath,
+      coverageReportSha256: semantic.coverageReportSha256
+    };
+  }
   if (context.stageIndex === 10 && raw.status !== "skipped") {
     if (
       !raw.repair?.attempted ||
@@ -388,53 +481,51 @@ export async function validateStageResult(raw = {}, context = {}) {
       throw contractError("第 10 阶段缺少 Coverage IR 单轮修正证据");
     }
   }
+  if (context.stageIndex === 10) {
+    const initialCoverage = context.pipelineState?.coverage?.initial;
+    const threshold = Number(context.pipelineState?.input?.coverageThreshold || 80);
+    if (!initialCoverage) throw contractError("第 10 阶段缺少已验证的首轮覆盖率");
+    const repairRequired = !coverageMeetsThreshold(initialCoverage, threshold);
+    if (repairRequired && raw.status === "skipped") {
+      throw contractError("首轮覆盖率不足 80%，第 10 阶段不得跳过修正");
+    }
+    if (!repairRequired && raw.status !== "skipped") {
+      throw contractError("首轮覆盖率已达到 80%，第 10 阶段必须直接跳过");
+    }
+  }
+  if (context.stageIndex === 11) {
+    const repairApplied = context.pipelineState?.repair?.applied === true;
+    if (repairApplied && raw.status === "skipped") {
+      throw contractError("第 10 阶段已应用修正，第 11 阶段不得跳过最终仿真与覆盖率");
+    }
+    if (!repairApplied && raw.status !== "skipped") {
+      throw contractError("第 10 阶段未应用修正，第 11 阶段应明确跳过");
+    }
+  }
   if (context.stageIndex === 11 && raw.status !== "skipped") {
+    const semantic = requireSemanticEvidence(context, 11);
     await validateBackfillEvidence(raw, context, artifacts);
-    raw.coverage = normalizeCoverageReport(raw.coverage);
+    if (!raw.coverage || !coverageMatches(raw.coverage, semantic.coverage)) {
+      throw contractError("第 11 阶段最终覆盖率与宿主解析报告不一致");
+    }
+    raw.coverage = normalizeCoverageReport(semantic.coverage);
+    raw.evidence = {
+      ...(raw.evidence || {}),
+      coverageReport: semantic.coverageReportPath,
+      coverageReportSha256: semantic.coverageReportSha256
+    };
   }
   if (context.stageIndex === 12) {
     if (
-      !raw.evidence?.executionManifest ||
-      !raw.evidence?.timeline ||
-      !raw.evidence?.artifactManifest ||
-      !raw.evidence?.cleanup
+      !raw.evidence?.cleanup ||
+      raw.evidence?.executionManifest ||
+      raw.executionManifest
     ) {
-      throw contractError("第 12 阶段缺少最终 manifest/时间线/产物/清理证据");
+      throw contractError("第 12 阶段只能提交清理证据，最终 manifest 必须由宿主生成");
     }
-    raw.executionManifest = parseExecutionManifest(
-      await evidenceJson(context.workspaceDir, raw.evidence.executionManifest, TCSD_EXECUTION_MANIFEST_SCHEMA)
-    );
-    await evidenceJson(context.workspaceDir, raw.evidence.timeline, "tcsd-stage-timeline/v1");
-    const artifactManifest = await evidenceJson(
-      context.workspaceDir,
-      raw.evidence.artifactManifest,
-      "tcsd-artifact-manifest/v1"
-    );
     const cleanup = await evidenceJson(context.workspaceDir, raw.evidence.cleanup, "tcsd-cleanup-result/v1");
-    if (
-      cleanup.ownerJobId !== context.jobId ||
-      cleanup.jobId !== context.jobId ||
-      artifactManifest.jobId !== context.jobId
-    ) {
-      throw contractError("第 12 阶段资源/产物所有权与 jobId 不一致");
-    }
-    raw.artifactManifest = [];
-    for (const item of Array.isArray(artifactManifest.artifacts) ? artifactManifest.artifacts : []) {
-      raw.artifactManifest.push(await assertArtifact(context.workspaceDir, item));
-    }
-    const references = [
-      raw.executionManifest.workbook,
-      raw.executionManifest.simulation?.result,
-      raw.executionManifest.initialArtifact,
-      raw.executionManifest.finalArtifact,
-      raw.executionManifest.evidence?.obligations,
-      raw.executionManifest.evidence?.mapping_report
-    ].filter(Boolean);
-    for (const reference of references) {
-      await assertArtifact(context.workspaceDir, {
-        path: reference,
-        kind: reference.endsWith(".xlsx") ? "xlsx" : "json"
-      });
+    if (cleanup.ownerJobId !== context.jobId || cleanup.jobId !== context.jobId) {
+      throw contractError("第 12 阶段资源清理所有权与 jobId 不一致");
     }
   }
   return { ...raw, artifacts };
@@ -448,6 +539,7 @@ function validateTraceEnvelope(raw, context) {
     raw.skill?.version !== definition.skillVersion ||
     raw.skill?.bundleVersion !== definition.bundleVersion ||
     !/^[a-f0-9]{64}$/.test(String(raw.skill?.bundleHash || "")) ||
+    !/^[a-f0-9]{64}$/.test(String(raw.skill?.skillFileHash || "")) ||
     raw.runtime?.bundleVersion !== TCSD_RUNTIME_BUNDLE_VERSION ||
     !/^[a-f0-9]{64}$/.test(String(raw.runtime?.bundleHash || ""))
   ) {
@@ -459,9 +551,20 @@ function validateTraceEnvelope(raw, context) {
     !raw.agent?.model ||
     !raw.agent?.tokenUsage ||
     !Number.isFinite(Number(raw.agent.tokenUsage.totalTokens)) ||
-    Number(raw.agent.tokenUsage.totalTokens) < 0
+    Number(raw.agent.tokenUsage.totalTokens) < 0 ||
+    raw.agent?.skillLoad?.source !== "hermes-state-db+skill-usage" ||
+    raw.agent?.skillLoad?.loaded !== true ||
+    raw.agent?.skillLoad?.skillName !== raw.skill?.name ||
+    raw.agent?.skillLoad?.skillFileSha256 !== raw.skill?.skillFileHash ||
+    !Number.isInteger(raw.agent?.skillLoad?.messageId) ||
+    !/^[a-f0-9]{64}$/.test(String(raw.agent?.skillLoad?.messageSha256 || "")) ||
+    !Number.isInteger(raw.agent?.skillLoad?.usageCountBefore) ||
+    !Number.isInteger(raw.agent?.skillLoad?.usageCountAfter) ||
+    raw.agent.skillLoad.usageCountBefore < 0 ||
+    raw.agent.skillLoad.usageCountAfter <= raw.agent.skillLoad.usageCountBefore ||
+    !Number.isFinite(Date.parse(String(raw.agent?.skillLoad?.lastUsedAt || "")))
   ) {
-    throw contractError("checkpoint 缺少 session/profile/model/token usage");
+    throw contractError("checkpoint 缺少 session/profile/model/token usage 或运行态技能加载证据");
   }
   if (context.priorSessionIds?.has(raw.agent.sessionId)) {
     throw contractError("checkpoint 复用了既有 Hermes session", {}, TCSD_ERROR_CODES.sessionReuse);
@@ -538,10 +641,98 @@ export async function validateStageCheckpoint(raw = {}, context = {}) {
   ) {
     throw contractError("checkpoint 宿主验证报告与阶段/尝试不匹配");
   }
+  const semanticReference = await assertHashedJsonReference(
+    context.workspaceDir,
+    raw.validation.semantic,
+    "tcsd-host-semantic-validation/v1"
+  );
+  if (
+    semanticReference.value.stageIndex !== context.stageIndex ||
+    semanticReference.value.passed !== true ||
+    context.semanticEvidence?.stageIndex !== semanticReference.value.stageIndex ||
+    JSON.stringify(context.semanticEvidence?.details || {}) !== JSON.stringify(semanticReference.value.details || {})
+  ) {
+    throw contractError("checkpoint 宿主语义验证证据与恢复期复验不一致");
+  }
+  if (context.stageIndex === 12) {
+    if (
+      raw.executionManifest?.authority !== "host" ||
+      raw.executionManifest?.status !== "completed" ||
+      raw.executionManifest?.jobId !== context.jobId ||
+      !Array.isArray(raw.artifactManifest)
+    ) {
+      throw contractError("第 12 阶段缺少宿主生成的最终 manifest");
+    }
+    const executionReference = await assertHashedJsonReference(
+      context.workspaceDir,
+      raw.executionManifest,
+      TCSD_EXECUTION_MANIFEST_SCHEMA
+    );
+    const artifactManifestReference = await assertHashedJsonReference(
+      context.workspaceDir,
+      raw.artifactManifestReference,
+      "tcsd-artifact-manifest/v1"
+    );
+    const timelineReference = await assertHashedJsonReference(
+      context.workspaceDir,
+      raw.timelineReference,
+      "tcsd-stage-timeline/v1"
+    );
+    const planningMapping = raw.executionManifest?.evidence?.planningMappingAssessment;
+    const planningMappingReference = await assertHashedJsonReference(
+      context.workspaceDir,
+      planningMapping,
+      "tcsd-planning-mapping-assessment/v1"
+    );
+    if (
+      executionReference.value.authority !== "host" ||
+      executionReference.value.jobId !== context.jobId ||
+      artifactManifestReference.value.authority !== "host" ||
+      artifactManifestReference.value.jobId !== context.jobId ||
+      timelineReference.value.authority !== "host" ||
+      timelineReference.value.jobId !== context.jobId ||
+      planningMapping?.authority !== "planning" ||
+      planningMapping?.blocking !== false ||
+      planningMapping?.supersededBy?.stageIndex !== 9 ||
+      planningMapping?.supersededBy?.authority !== "measured-simulink-coverage" ||
+      planningMapping?.supersededBy?.coverageArtifact !== executionReference.value.coverage?.initial_artifact ||
+      planningMappingReference.value.authority !== "planning" ||
+      planningMappingReference.value.blocking !== false ||
+      planningMappingReference.value.status !== planningMapping.status
+    ) {
+      throw contractError("第 12 阶段宿主 manifest 权限或 jobId 不匹配");
+    }
+    const parsedManifest = parseExecutionManifest(executionReference.value);
+    const threshold = Number(context.pipelineState?.input?.coverageThreshold || 80);
+    const expectedCompletion = coverageCompletion(
+      parsedManifest.final,
+      !coverageMeetsThreshold(parsedManifest.final, threshold),
+      threshold
+    );
+    if (
+      parsedManifest.completion !== expectedCompletion ||
+      !coverageMatches(parsedManifest.initial, context.pipelineState?.coverage?.initial) ||
+      !coverageMatches(
+        parsedManifest.final,
+        context.pipelineState?.coverage?.final || context.pipelineState?.coverage?.initial
+      ) ||
+      parsedManifest.repair.required !== Boolean(context.pipelineState?.repair?.required) ||
+      parsedManifest.repair.attempted !== Boolean(context.pipelineState?.repair?.attempted) ||
+      parsedManifest.repair.applied !== Boolean(context.pipelineState?.repair?.applied) ||
+      parsedManifest.repair.passes !== Number(context.pipelineState?.repair?.passes || 0)
+    ) {
+      throw contractError("第 12 阶段宿主 manifest 与已验证覆盖率/修正状态不一致");
+    }
+  }
   return {
     ...raw,
     ...result,
     schema: TCSD_CHECKPOINT_SCHEMA,
+    artifacts: raw.artifacts,
+    executionManifest: raw.executionManifest,
+    artifactManifest: raw.artifactManifest,
+    artifactManifestReference: raw.artifactManifestReference,
+    timelineReference: raw.timelineReference,
     input: { ...raw.input, absolutePath: inputReference.absolutePath },
     result: { ...raw.result, absolutePath: resultReference.absolutePath }
   };

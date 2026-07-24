@@ -113,9 +113,10 @@ def scan_cell(
     test_id: str,
     root_inputs: set[str],
     root_outputs: set[str],
-) -> tuple[list[dict[str, Any]], int, int]:
+) -> tuple[list[dict[str, Any]], int, int, int]:
     errors: list[dict[str, Any]] = []
     input_assignment_count = 0
+    parameter_assignment_count = 0
     exp_count = 0
 
     for raw in (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
@@ -123,6 +124,7 @@ def scan_cell(
         if not line or line.startswith("//") or STEP_RE.match(line):
             continue
         if PARAM_ASSIGN_RE.match(line):
+            parameter_assignment_count += 1
             continue
 
         macro_exp_match = MACRO_EXP_ASSIGN_RE.match(line)
@@ -176,7 +178,7 @@ def scan_cell(
                     error_record("unknown_input_assignment", ws_title, cell, row, test_id, signal, line)
                 )
 
-    return errors, input_assignment_count, exp_count
+    return errors, input_assignment_count, parameter_assignment_count, exp_count
 
 
 def validate_workbook(
@@ -207,8 +209,10 @@ def validate_workbook(
     init_col = header_index(ws, "Initialization", 6)
     action_col = header_index(ws, "Action", 7)
     input_assignment_count = 0
+    parameter_assignment_count = 0
     exp_count = 0
     test_count = 0
+    test_ids: set[str] = set()
 
     for row in range(1, ws.max_row + 1):
         row_type = str(ws.cell(row, type_col).value or "").strip()
@@ -217,9 +221,31 @@ def validate_workbook(
         if row_type == "Test":
             test_count += 1
         test_id = str(ws.cell(row, test_id_col).value or "").strip()
+        if row_type == "Test":
+            if not test_id:
+                errors.append(
+                    {
+                        "code": "missing_test_id",
+                        "sheet": ws.title,
+                        "cell": ws.cell(row, test_id_col).coordinate,
+                        "row": row,
+                        "test_id": "",
+                    }
+                )
+            elif test_id in test_ids:
+                errors.append(
+                    {
+                        "code": "duplicate_test_id",
+                        "sheet": ws.title,
+                        "cell": ws.cell(row, test_id_col).coordinate,
+                        "row": row,
+                        "test_id": test_id,
+                    }
+                )
+            test_ids.add(test_id)
         for col in (init_col, action_col):
             cell_ref = ws.cell(row, col).coordinate
-            cell_errors, input_seen, exp_seen = scan_cell(
+            cell_errors, input_seen, parameter_seen, exp_seen = scan_cell(
                 str(ws.cell(row, col).value or ""),
                 ws_title=ws.title,
                 cell=cell_ref,
@@ -230,6 +256,7 @@ def validate_workbook(
             )
             errors.extend(cell_errors)
             input_assignment_count += input_seen
+            parameter_assignment_count += parameter_seen
             exp_count += exp_seen
 
         if row_type == "Test":
@@ -249,7 +276,19 @@ def validate_workbook(
                         "line": action_lines[-1] if action_lines else "",
                     }
                 )
+            if not any(STEP_RE.match(line) for line in action_lines):
+                errors.append(
+                    {
+                        "code": "missing_action_delay",
+                        "sheet": ws.title,
+                        "cell": ws.cell(row, action_col).coordinate,
+                        "row": row,
+                        "test_id": test_id,
+                    }
+                )
 
+    if test_count == 0:
+        errors.append({"code": "missing_test_cases", "workbook": str(workbook)})
     if require_exp_values and exp_count == 0:
         errors.append({"code": "missing_exp_values", "workbook": str(workbook)})
     if not root_inputs:
@@ -262,6 +301,7 @@ def validate_workbook(
         "workbook": str(workbook),
         "test_count": test_count,
         "input_assignment_count": input_assignment_count,
+        "parameter_assignment_count": parameter_assignment_count,
         "exp_value_count": exp_count,
         "errors": errors,
         "warnings": warnings,
@@ -274,6 +314,7 @@ def print_text_report(report: dict[str, Any]) -> None:
             "TCSD workbook validation passed: "
             f"{report.get('test_count', 0)} tests, "
             f"{report.get('input_assignment_count', 0)} input assignments, "
+            f"{report.get('parameter_assignment_count', 0)} parameter assignments, "
             f"{report.get('exp_value_count', 0)} expValue expectations."
         )
         return

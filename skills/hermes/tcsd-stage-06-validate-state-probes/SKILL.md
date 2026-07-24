@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-06-validate-state-probes
+metadata:
+  version: "1.1.0"
 description: Build and validate state, history, edge, counter, and timing probes against the model for TCSD stage 6. Use only when a tcsd_stage_execute prompt explicitly requests state-probe validation with a tcsd-agent-stage-input/v1 manifest.
 ---
 

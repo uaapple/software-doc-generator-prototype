@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-05-analyze-coverage
+metadata:
+  version: "1.1.0"
 description: Derive deterministic Condition, Decision, and MC/DC mappings, obligations, and Coverage IR for TCSD stage 5. Use only when a tcsd_stage_execute prompt explicitly requests coverage analysis with a tcsd-agent-stage-input/v1 manifest.
 ---
 

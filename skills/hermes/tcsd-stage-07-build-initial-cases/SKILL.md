@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-07-build-initial-cases
+metadata:
+  version: "1.1.0"
 description: Build the first coverage-oriented TCSD workbook and validate it against model interfaces and obligations for stage 7. Use only when a tcsd_stage_execute prompt explicitly requests initial case generation with a tcsd-agent-stage-input/v1 manifest.
 ---
 

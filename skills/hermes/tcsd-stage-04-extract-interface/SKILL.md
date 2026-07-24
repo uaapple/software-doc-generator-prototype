@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-04-extract-interface
+metadata:
+  version: "1.1.0"
 description: Load the initialized Simulink model and extract its root Inport, Outport, and logical trace evidence for TCSD stage 4. Use only when a tcsd_stage_execute prompt explicitly requests interface extraction with a tcsd-agent-stage-input/v1 manifest.
 ---
 

@@ -2,7 +2,7 @@
 """Shared deterministic runtime invoked by one atomic TCSD stage skill."""
 from __future__ import annotations
 
-import argparse, importlib.util, json, math, os, re, shutil, subprocess, sys
+import argparse, hashlib, importlib.util, json, math, os, re, secrets, shutil, subprocess, sys
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,27 @@ def load_module(name: str, path: Path):
 
 def read_json(path: Path) -> dict[str, Any]: return json.loads(path.read_text(encoding="utf-8"))
 def write_json(path: Path, value: Any) -> None: path.parent.mkdir(parents=True, exist_ok=True); path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+def file_sha256(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()
+def planning_mapping_assessment(raw: dict[str, Any], obligations: Path, root: Path) -> dict[str, Any]:
+    assessment = dict(raw)
+    raw_status = str(assessment.pop("status", "failed"))
+    assessment.update({
+        "schema": "tcsd-planning-mapping-assessment/v1",
+        "authority": "planning",
+        "status": "satisfied" if raw_status == "passed" else "advisory",
+        "blocking": False,
+        "assessment": "complete" if raw_status == "passed" else "gaps-observed",
+        "sourceObligations": {
+            "path": str(obligations.relative_to(root)),
+            "sha256": file_sha256(obligations),
+        },
+        "supersededBy": {
+            "stageIndex": 9,
+            "authority": "measured-simulink-coverage",
+            "reason": "Static assignment matching is planning evidence; actual Condition/Decision/MC/DC is authoritative.",
+        },
+    })
+    return assessment
 def artifact(root: Path, path: Path, kind: str = "json", role: str = "evidence") -> dict[str, Any]: return {"path": path.resolve().relative_to(root.resolve()).as_posix(), "kind": kind, "role": role}
 def model_name(job: dict[str, Any]) -> str: return Path(job["input"]["modelSlxPath"]).stem
 def outputs(job: dict[str, Any]) -> Path: return Path(job["input"]["outputDir"]).resolve()
@@ -39,6 +60,7 @@ def hard_error_code(stage: int, error: BaseException) -> str:
 
 def run(command: list[str], cwd: Path) -> None: subprocess.run(command, cwd=cwd, check=True)
 def matlab_cell(items: list[str]) -> str: return "{" + ",".join("'" + item.replace("'", "''") + "'" for item in items) + "}"
+def matlab_string(value: str) -> str: return "'" + value.replace("'", "''") + "'"
 def stage4_matlab_code(*, root: Path, scripts_dir: Path, interface: Path, model: str, mat_name: str, init_scripts: list[str]) -> str:
     root_m = str(root).replace("'", "''"); scripts_m = str(scripts_dir).replace("'", "''"); interface_m = str(interface).replace("'", "''"); model_m = model.replace("'", "''"); mat_m = mat_name.replace("'", "''")
     return f"rootDir='{root_m}'; model='{model_m}'; initScripts={matlab_cell(init_scripts)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); load_system(fullfile(rootDir,'{model_m}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); inputNames=reshape(cellstr(string(get_param(ins,'Name'))),1,[]); outputNames=reshape(cellstr(string(get_param(outs,'Name'))),1,[]); p=struct('schema','tcsd-model-interface/v1','inputs',{{inputNames}},'outputs',{{outputNames}}); fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_m}','WorkspaceInitialized',true); bdclose(model);"
@@ -130,10 +152,88 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
     if stage == 2:
         matlab_root = Path(os.environ.get("MATLAB_ROOT", inp.get("matlabRoot", "C:/Program Files/MATLAB/R2026a")))
         matlab = matlab_root / "bin" / ("matlab.exe" if os.name == "nt" else "matlab")
-        if os.environ.get("TCSD_PIPELINE_SKIP_MATLAB_GATE") != "1" and not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
+        if not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
         if not (scripts() / "satk_eval.py").is_file(): raise RuntimeError("SATK runtime runner is missing")
-        env = out / ".tcsd-evidence" / "environment.json"; write_json(env, {"schema": "tcsd-environment-gate/v1", "jobId": job["jobId"], "matlabRoot": str(matlab_root), "python": sys.executable, "runner": str(scripts() / "satk_eval.py"), "passed": True})
-        finish(job, stage, summary="MATLAB 与模型工具环境门禁通过。", artifacts=[artifact(root, env)]); return
+        env = out / ".tcsd-evidence" / "environment.json"; env.parent.mkdir(parents=True, exist_ok=True)
+        fixture = os.environ.get("TCSD_PIPELINE_ENV_CANARY_FIXTURE", "")
+        if fixture:
+            shutil.copy2(fixture, env)
+        else:
+            satk_runtime = load_module("tcsd_satk_eval", scripts() / "satk_eval.py")
+            selected_server = satk_runtime.server_info()
+            modules: dict[str, dict[str, str]] = {}
+            for module_name in ("yaml", "openpyxl"):
+                module = __import__(module_name)
+                version = str(getattr(module, "__version__", "") or "")
+                if not version: raise RuntimeError(f"Python dependency has no version: {module_name}")
+                modules[module_name] = {"version": version}
+            io_dir = out / ".tcsd-runtime"; io_dir.mkdir(parents=True, exist_ok=True)
+            io_sentinel = io_dir / f"environment-io-{secrets.token_hex(8)}.txt"
+            io_value = secrets.token_hex(16)
+            io_sentinel.write_text(io_value, encoding="utf-8")
+            io_matched = io_sentinel.read_text(encoding="utf-8") == io_value
+            io_sentinel.unlink()
+            if not io_matched or io_sentinel.exists(): raise RuntimeError("workspace create/read/delete sentinel failed")
+            nonce = secrets.token_hex(20)
+            canary_script = io_dir / "stage02_environment_canary.m"
+            matlab_sentinel = out / ".tcsd-evidence" / "matlab-satk-canary.json"
+            canary_script.write_text(
+                "\n".join([
+                    f"nonce={matlab_string(nonce)};",
+                    "assert(license('test','Simulink') == 1, 'Simulink license is unavailable');",
+                    "matlabInfo=ver('MATLAB'); simulinkInfo=ver('Simulink');",
+                    "assert(~isempty(matlabInfo) && ~isempty(simulinkInfo), 'MATLAB or Simulink version is unavailable');",
+                    "load_system('simulink'); simulinkLoaded=bdIsLoaded('simulink'); bdclose('simulink');",
+                    "assert(simulinkLoaded, 'Simulink library did not load');",
+                    (
+                        "p=struct('schema','tcsd-matlab-satk-canary/v1','nonce',nonce,"
+                        "'matlabVersion',matlabInfo(1).Version,'simulinkVersion',simulinkInfo(1).Version,"
+                        "'licenseAvailable',true,'simulinkLoaded',true);"
+                    ),
+                    f"fid=fopen({matlab_string(str(matlab_sentinel))},'w');",
+                    "assert(fid >= 0, 'Unable to open the TCSD canary sentinel');",
+                    "fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid);",
+                ]),
+                encoding="utf-8",
+            )
+            run([sys.executable, str(scripts() / "satk_eval.py"), str(canary_script)], root)
+            if not matlab_sentinel.is_file(): raise RuntimeError("SATK/MCP returned without writing the MATLAB sentinel")
+            matlab_result = read_json(matlab_sentinel)
+            if (
+                matlab_result.get("schema") != "tcsd-matlab-satk-canary/v1"
+                or matlab_result.get("nonce") != nonce
+                or matlab_result.get("licenseAvailable") is not True
+                or matlab_result.get("simulinkLoaded") is not True
+            ): raise RuntimeError("MATLAB/SATK canary sentinel is invalid or has the wrong nonce")
+            write_json(env, {
+                "schema": "tcsd-environment-gate/v2",
+                "jobId": job["jobId"],
+                "nonce": nonce,
+                "matlabRoot": str(matlab_root),
+                "python": sys.executable,
+                "runner": str(scripts() / "satk_eval.py"),
+                "pythonDependencies": {"passed": True, "modules": modules},
+                "workspaceIo": {"passed": True, "created": True, "readMatched": True, "deleted": True},
+                "matlab": {"passed": True, "nonce": nonce, "version": str(matlab_result["matlabVersion"])},
+                "simulink": {
+                    "passed": True,
+                    "licenseAvailable": True,
+                    "loaded": True,
+                    "version": str(matlab_result["simulinkVersion"]),
+                },
+                "satkMcp": {
+                    "passed": True,
+                    "runner": str(scripts() / "satk_eval.py"),
+                    "server": selected_server,
+                    "sentinelWritten": True,
+                    "nonceMatched": True,
+                },
+                "passed": True,
+            })
+        gate = read_json(env)
+        if gate.get("schema") != "tcsd-environment-gate/v2" or gate.get("jobId") != job["jobId"] or gate.get("passed") is not True:
+            raise RuntimeError("environment canary fixture/result is invalid")
+        finish(job, stage, summary="Python、工作目录、MATLAB、Simulink 与 SATK/MCP 执行门禁通过。", artifacts=[artifact(root, env)]); return
     if stage == 3:
         runtime = out / ".tcsd-runtime"; runtime.mkdir(exist_ok=True); resources = runtime / "owned-resources.json"
         init_manifest = out / ".tcsd-evidence" / "workspace-initialization.json"; entry = runtime / "stage03_initialize.m"; init = inp.get("projectInitScripts", [])
@@ -176,8 +276,35 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)
         spec, workbook, _ = quality.synthesize_ir_once(python=sys.executable, scripts=scripts(), root_dir=root, template=scripts().parent/"assets"/"templates"/"tcsd_template.xlsx", model=model, spec=spec, workbook=workbook, interface_json=interface, coverage_ir=coverage_ir, iteration=0)
         quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface); state.update({"spec": str(spec), "workbook": str(workbook)}); save_state(job, state)
-        quality.validate_mapping(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, obligations=obligations, report=out/f"{model}_mcdc_validation_report.json")
-        finish(job, stage, summary="首版 TCSD 已生成并通过接口与工作簿校验。", artifacts=[artifact(root, spec), artifact(root, workbook, "xlsx", "workbook")]); return
+        planning_obligations = out / f"{model}_planning_obligations_snapshot.json"
+        planning_assessment = out / f"{model}_planning_mapping_assessment.json"
+        shutil.copy2(obligations, planning_obligations)
+        assessment = quality.validate_mapping(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            workbook=workbook,
+            obligations=planning_obligations,
+            report=planning_assessment,
+        )
+        assessment = planning_mapping_assessment(assessment, planning_obligations, root)
+        write_json(planning_assessment, assessment)
+        finish(
+            job,
+            stage,
+            summary="首版 TCSD 已生成并通过接口与工作簿校验；静态映射仅作为规划诊断。",
+            artifacts=[
+                artifact(root, spec),
+                artifact(root, workbook, "xlsx", "workbook"),
+                artifact(root, planning_obligations, "json", "planning-obligations"),
+                artifact(root, planning_assessment, "json", "planning-mapping-assessment"),
+            ],
+            evidence={
+                "planningMappingAssessment": str(planning_assessment.relative_to(root)),
+                "mappingAuthority": "planning",
+                "supersededByStage": 9,
+            },
+        ); return
     workbook = Path(state["workbook"]); spec = Path(state["spec"]); threshold = float(inp.get("coverageThreshold", 80))
     if stage == 8:
         cases = quality.extract_cases(python=sys.executable, scripts=scripts(), root_dir=root, model=model, workbook=workbook, interface_json=interface)
@@ -187,7 +314,7 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
         finish(job, stage, summary="首版仿真完成，expValue 已由实际仿真回填。", artifacts=[artifact(root, workbook, "xlsx", "workbook"), artifact(root, sim)], evidence={"simulationResult": str(sim.relative_to(root)), "expValueCount": backfill["workbookBackfillCount"], **backfill}); return
     initial_cov = out / f"{model}_initial_coverage_summary.json"
     if stage == 9:
-        ob, cov = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=True, coverage_threshold=threshold); shutil.copy2(cov, initial_cov); report=read_json(initial_cov); state.update({"obligations":str(ob),"initialCoverage":str(initial_cov),"coverage":str(cov)}); save_state(job,state)
+        ob, cov = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=True, coverage_threshold=threshold); report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(initial_cov,report); state.update({"obligations":str(ob),"initialCoverage":str(initial_cov),"coverage":str(cov)}); save_state(job,state)
         finish(job,stage,summary="首轮 Condition、Decision 与 MC/DC 覆盖率已采集。",artifacts=[artifact(root,initial_cov)],coverage=report); return
     if stage == 10:
         report=read_json(initial_cov)
@@ -201,19 +328,16 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
     final_cov=out/f"{model}_final_coverage_summary.json"
     if stage == 11:
         if not state.get("repairApplied"): finish(job,stage,status="skipped",summary="修正未实际应用，引用首轮仿真与覆盖率。",skipReason="修正未实际应用，引用首轮结果。",artifacts=[]); return
-        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); shutil.copy2(cov,final_cov); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
-        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=read_json(final_cov),evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],**backfill}); return
+        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
+        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=final_report,evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],**backfill}); return
     if stage == 12:
-        final_report=read_json(final_cov if final_cov.exists() else initial_cov); manifest=out/f"{model}_tcsd_execution_manifest.json"; mapping_report=out/f"{model}_mcdc_validation_report.json"; workbook=Path(state["workbook"])
-        result=quality.write_execution_manifest(path=manifest,root_dir=root,model=model,threshold=threshold,workbook=workbook,simulation_result=Path(state.get("finalSimulation") or state["initialSimulation"]),initial_coverage=read_json(initial_cov),final_coverage=final_report,initial_coverage_artifact=initial_cov,final_coverage_artifact=final_cov if final_cov.exists() else initial_cov,repair_required=not coverage_meets(read_json(initial_cov),threshold),repair_applied=bool(state.get("repairApplied")),obligations=Path(state["obligations"]),mapping_report=mapping_report,coverage_ir=coverage_ir,repair_attempted=bool(state.get("repairAttempted")),repair_reason=state.get("repairReason"),repair_evidence=Path(state["repairEvidence"]) if state.get("repairEvidence") else None)
-        timeline=out/f"{model}_tcsd_timeline.json"; artifact_manifest=out/f"{model}_tcsd_artifacts.json"; cleanup=out/f"{model}_tcsd_cleanup.json"
-        write_json(timeline,{"schema":"tcsd-stage-timeline/v1","jobId":job["jobId"],"events":job.get("events",[])}); deliver=[manifest,workbook,initial_cov,final_cov if final_cov.exists() else initial_cov]; write_json(artifact_manifest,{"schema":"tcsd-artifact-manifest/v1","jobId":job["jobId"],"artifacts":[artifact(root,item,"xlsx" if item.suffix==".xlsx" else "json") for item in deliver]})
+        cleanup=out/f"{model}_tcsd_cleanup.json"
         owned_candidates=[out/".tcsd-runtime"/"stage04_interface.m",out/".tcsd-runtime"/"job.json",out/f"{model}_probe_mcdc_entry.m",out/f"{model}_simulate_mcdc_entry.m"]; removed=[]
         for candidate in owned_candidates:
             resolved=candidate.resolve()
             if resolved.is_relative_to(root) and resolved.exists(): resolved.unlink(); removed.append(resolved.relative_to(root).as_posix())
         write_json(cleanup,{"schema":"tcsd-cleanup-result/v1","jobId":job["jobId"],"ownerJobId":job["jobId"],"closedMatlabSessions":[],"stoppedMcpProcesses":[],"removedEntries":removed})
-        finish(job,stage,status="partial" if result["completion"]=="partial" else "completed",summary="最终 manifest、时间线、产物清单与 job 资源清理记录已完成。",artifacts=[artifact(root,manifest),artifact(root,timeline),artifact(root,artifact_manifest),artifact(root,cleanup),artifact(root,workbook,"xlsx","workbook")],executionManifest=result,artifactManifest=read_json(artifact_manifest)["artifacts"],evidence={"executionManifest":str(manifest.relative_to(root)),"timeline":str(timeline.relative_to(root)),"artifactManifest":str(artifact_manifest.relative_to(root)),"cleanup":str(cleanup.relative_to(root))}); return
+        finish(job,stage,status="completed",summary="任务归属资源清理证据已生成，等待宿主整理最终 manifest。",artifacts=[artifact(root,cleanup)],evidence={"cleanup":str(cleanup.relative_to(root))}); return
     raise RuntimeError(f"unsupported stage {stage}")
 
 def main() -> int:

@@ -42,6 +42,8 @@ export class TcsdPipelineJobService {
   constructor(options = {}) {
     this.jobDir = options.jobDir;
     this.executor = options.executor;
+    this.prepareJob = options.prepareJob || null;
+    this.checkpointValidator = options.checkpointValidator || validateStageCheckpoint;
     this.running = new Map();
     this.starting = new Map();
   }
@@ -132,6 +134,7 @@ export class TcsdPipelineJobService {
       error: null,
       input
     };
+    if (this.prepareJob) job.skillSnapshot = await this.prepareJob(job);
     await this.save(job);
     this.run(job.jobId);
     return job;
@@ -200,12 +203,13 @@ export class TcsdPipelineJobService {
       return null;
     }
     try {
-      return await validateStageCheckpoint(raw, {
+      return await this.checkpointValidator(raw, {
         jobId: job.jobId,
         stageIndex: index,
         workspaceDir: job.input.workspaceDir,
-        priorSessionIds: this.priorSessionIds(job, index)
-      });
+        priorSessionIds: this.priorSessionIds(job, index),
+        pipelineState: job
+      }, job);
     } catch (cause) {
       if (options.throwOnInvalid) {
         throw Object.assign(new Error(`第 ${index} 阶段 checkpoint 验证失败：${cause.message}`), {
@@ -303,6 +307,9 @@ export class TcsdPipelineJobService {
     }
     if (checkpoint.stageIndex === 12) {
       job.artifacts = checkpoint.artifactManifest || checkpoint.artifacts || job.artifacts;
+      if (checkpoint.executionManifest?.coverage?.final) {
+        job.coverage.final = checkpoint.executionManifest.coverage.final;
+      }
       if (checkpoint.executionManifest?.completion) job.completion = checkpoint.executionManifest.completion;
     }
   }

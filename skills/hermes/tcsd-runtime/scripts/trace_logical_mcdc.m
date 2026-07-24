@@ -19,7 +19,7 @@ if ~opts.WorkspaceInitialized
     setup_ut_support(rootDir, opts.InitScripts);
 end
 if nargin >= 3 && ~isempty(matFileName)
-    load_mat_to_base(fullfile(rootDir, char(string(matFileName))));
+    load_mat_to_base(resolve_workspace_file(rootDir, matFileName));
 end
 load_workspace_libraries(rootDir, modelNames);
 allReports = struct();
@@ -365,6 +365,13 @@ payload = load(matPath);
 names = fieldnames(payload);
 for i = 1:numel(names)
     assignin('base', names{i}, payload.(names{i}));
+end
+end
+
+function filePath = resolve_workspace_file(rootDir, fileName)
+filePath = char(string(fileName));
+if ~isfile(filePath)
+    filePath = fullfile(rootDir, filePath);
 end
 end
 

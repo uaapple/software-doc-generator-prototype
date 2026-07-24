@@ -16,6 +16,7 @@ import { HermesAgentClient } from "./services/hermes-agent-client.js";
 import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js";
 import { TCSD_ERROR_CODES } from "./services/tcsd-pipeline-contract.js";
 import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.js";
+import { TcsdHermesSkillRegistry } from "./services/tcsd-hermes-skill-registry.js";
 
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
@@ -891,9 +892,17 @@ export async function createHermesApp() {
   const llmService = new LlmService();
   const templateService = new TemplateService();
   const tcsdStageExecutor = new TcsdHermesStageExecutor();
+  const tcsdSkillRegistry = new TcsdHermesSkillRegistry({
+    command: tcsdStageExecutor.command,
+    profile: tcsdStageExecutor.profile,
+    stateDbPath: tcsdStageExecutor.stateDbPath,
+    catalog: tcsdStageExecutor.catalog
+  });
   const tcsdJobs = new TcsdPipelineJobService({
     jobDir: config.tcsdPipeline?.jobStoreDir || path.join(config.dataDir, "tcsd-pipeline-jobs"),
-    executor: (stageIndex, input, job, options) => tcsdStageExecutor.execute(stageIndex, input, job, options)
+    prepareJob: () => tcsdSkillRegistry.prepare(),
+    executor: (stageIndex, input, job, options) => tcsdStageExecutor.execute(stageIndex, input, job, options),
+    checkpointValidator: (checkpoint, context, job) => tcsdStageExecutor.validateCheckpoint(checkpoint, context, job)
   });
   await tcsdJobs.recoverAll();
 

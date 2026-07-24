@@ -1,5 +1,7 @@
 ---
 name: tcsd-stage-08-simulate-backfill
+metadata:
+  version: "1.1.0"
 description: Simulate initial TCSD cases and backfill stable top-level expected outputs with item-level evidence for stage 8. Use only when a tcsd_stage_execute prompt explicitly requests simulation and backfill with a tcsd-agent-stage-input/v1 manifest.
 ---
 
