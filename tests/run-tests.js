@@ -73,7 +73,7 @@ async function withTempConfig(run) {
       projectAdminCode: "114301",
       defaultProjects: "01_楚能,02_TMS",
       projectAddonRoot: path.join(tempDir, "project-addons"),
-      skillName: "simulink-ut-tcsd-generator",
+      pipelineName: "tcsd-stage-skills",
       expectedOutputPattern: "outputs/*_tcsd.xlsx",
       agentWorkspaceRoot: ""
     },
@@ -125,11 +125,9 @@ async function withTempConfig(run) {
           anchor_index_build: 2000,
           outline_build: 2000,
           content_generate: 4000,
-          simulink_ut_tcsd_generate: 5000,
           simulink_module_description_generate: 5000
         },
       stepMaxTurns: {
-        simulink_ut_tcsd_generate: 10000,
         simulink_module_description_generate: 10000
       },
       maxTurns: 8,
@@ -2960,16 +2958,17 @@ const tests = [
       const serverSource = await fs.readFile(new URL("../src/hermes-server.js", import.meta.url), "utf8");
 
       assert.match(configSource, /serverRequestTimeoutMs:\s*Number\(process\.env\.HERMES_SERVER_REQUEST_TIMEOUT_MS\s*\|\|\s*0\)/);
-      assert.match(configSource, /simulink_ut_tcsd_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS\s*\|\|\s*3600000\)/);
+      assert.match(configSource, /stageTimeoutMs:\s*Number\(process\.env\.TCSD_STAGE_HERMES_TIMEOUT_MS\s*\|\|\s*3600000\)/);
+      assert.match(configSource, /stageMaxTurns:\s*Number\(process\.env\.TCSD_STAGE_HERMES_MAX_TURNS\s*\|\|\s*200\)/);
+      assert.match(configSource, /TCSD_STAGE_HERMES_PROFILE\s*\|\|\s*hermesProfile/);
       assert.match(configSource, /simulink_module_description_generate:\s*Number\(\s*process\.env\.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS\s*\|\|\s*3600000\s*\)/);
-      assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE[\s\S]*:\s*10000/);
       assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE[\s\S]*:\s*10000/);
       assert.ok(serverSource.includes("server.requestTimeout = requestTimeoutMs"));
       assert.ok(serverSource.includes("server.timeout = requestTimeoutMs"));
     }
   },
   {
-    name: "Hermes agent client builds simulink_ut_tcsd_generate prompt and timeout",
+    name: "Hermes agent client rejects the removed whole-task TCSD entry",
     run: async () => {
       await withTempConfig(async (tempDir) => {
         const workspaceDir = path.join(tempDir, "ut-workspace");
@@ -2979,12 +2978,6 @@ const tests = [
         const client = new HermesAgentClient({
           transport: "cli",
           timeoutMs: 120000,
-          stepTimeoutMs: {
-            simulink_ut_tcsd_generate: 3600000
-          },
-          stepMaxTurns: {
-            simulink_ut_tcsd_generate: 10000
-          },
           usageReader: async () => null,
           commandRunner: async (command, args, options) => {
             invocations.push({ command, args, options });
@@ -2996,49 +2989,17 @@ const tests = [
           }
         });
 
-        const result = await client.executeStep({
-          taskId: "ut-task-1",
-          stepType: "simulink_ut_tcsd_generate",
-          allowedPaths: [workspaceDir],
-          workdir: workspaceDir,
-          inputArtifact: {
-            workspaceDir,
-            modelSlxPath: path.join(workspaceDir, "Demo.slx"),
-            modelMatPath: path.join(workspaceDir, "Demo.mat"),
-            modelInitScriptPath: path.join(workspaceDir, "inputs", "Demo_init.m"),
-            outputDir,
-            unitTestProject: { id: "01", name: "楚能", label: "01_楚能" },
-            skillName: "simulink-ut-tcsd-generator",
-            expectedOutputPattern: "outputs/*_tcsd.xlsx",
-            modelInitScriptFileName: "Demo_init.m",
-            projectInitScripts: ["inputs/Demo_init.m"]
-          }
-        });
-
-        assert.equal(invocations.length, 1);
-        assert.equal(invocations[0].options.timeout, 3600000);
-        assert.equal(invocations[0].args[invocations[0].args.indexOf("--max-turns") + 1], "10000");
-        assert.match(invocations[0].args[2], /simulink_ut_tcsd_generate/);
-        assert.match(invocations[0].args[2], /simulink-ut-tcsd-generator/);
-        assert.match(invocations[0].args[2], /Demo\.slx/);
-        assert.match(invocations[0].args[2], /Demo\.mat/);
-        assert.match(invocations[0].args[2], /Demo_init\.m/);
-        assert.match(invocations[0].args[2], /projectInitScripts/);
-        assert.match(invocations[0].args[2], /setup_ut_support\(rootDir, projectInitScripts\)/);
-        assert.match(invocations[0].args[2], /no model-specific init script was uploaded/);
-        assert.match(invocations[0].args[2], /outputs\/\*_tcsd\.xlsx/);
-        assert.match(invocations[0].args[2], /unitTestProject/);
-        assert.match(invocations[0].args[2], /01_楚能/);
-        assert.match(invocations[0].args[2], /addon package into `workspaceDir`/);
-        assert.match(invocations[0].args[2], /MATLAB Cleanup Contract/);
-        assert.match(invocations[0].args[2], /build_tcsd_from_json\.py/);
-        assert.match(invocations[0].args[2], /Artifact-first checkpointing is mandatory/);
-        assert.match(invocations[0].args[2], /before extracting cases, running `simulate_tcsd_cases`/);
-        assert.match(invocations[0].args[2], /timed out after 600\.0s/);
-        assert.match(invocations[0].args[2], /Simulation-backed expected-output backfill is required/);
-        assert.match(invocations[0].args[2], /do not mark the task completed/);
-        assert.match(invocations[0].args[2], /contains at least one `expValue\(\.\.\.\)` expectation/);
-        assert.equal(result.artifact.outputFiles[0].relativePath, "outputs/Demo_Test0001_tcsd.xlsx");
+        await assert.rejects(
+          () => client.executeStep({
+            taskId: "ut-task-1",
+            stepType: "simulink_ut_tcsd_generate",
+            allowedPaths: [workspaceDir],
+            workdir: workspaceDir,
+            inputArtifact: { workspaceDir, outputDir }
+          }),
+          /Unsupported Hermes CLI step/
+        );
+        assert.equal(invocations.length, 0);
       });
     }
   },
@@ -3143,11 +3104,12 @@ const tests = [
         config.hermes.transport = "cli";
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
+              taskId: "addon-copy-job",
+              idempotencyKey: "addon-copy-job",
               allowedPaths: [workspaceDir],
               inputArtifact: {
                 workspaceDir,
@@ -3158,10 +3120,10 @@ const tests = [
               }
             })
           });
-          assert.equal(response.status, 200);
+          assert.equal(response.status, 202);
           const body = await response.json();
-          assert.equal(body.status, "succeeded");
-          assert.equal(body.artifact.summary, "addon copied");
+          assert.equal(body.schema, "tcsd-agent-stage-pipeline/v2");
+          assert.ok(body.jobId);
           assert.equal(await fs.readFile(path.join(workspaceDir, "init_Global.m"), "utf8"), "% addon marker");
         });
       });
@@ -3238,7 +3200,7 @@ const tests = [
         await fs.writeFile(path.join(addonDir, "Demo.slx"), "conflict", "utf8");
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -3261,7 +3223,7 @@ const tests = [
         await fs.rm(path.join(addonDir, "Demo.slx"), { force: true });
         await fs.writeFile(path.join(tempDir, "outside.m"), "% outside init", "utf8");
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -3330,11 +3292,12 @@ const tests = [
         await fs.writeFile(path.join(addonDir, "Demo.slx"), "conflict", "utf8");
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
+              taskId: "addon-model-conflict",
+              idempotencyKey: "addon-model-conflict",
               allowedPaths: [workspaceDir],
               inputArtifact: {
                 workspaceDir,
@@ -3369,11 +3332,12 @@ const tests = [
         await fs.writeFile(path.join(addonDir, "inputs", "Demo_init.m"), "% conflict", "utf8");
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
+              taskId: "addon-init-conflict",
+              idempotencyKey: "addon-init-conflict",
               allowedPaths: [workspaceDir],
               inputArtifact: {
                 workspaceDir,
@@ -3406,11 +3370,12 @@ const tests = [
         await fs.writeFile(outsideInit, "% outside init", "utf8");
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
+              taskId: "outside-init",
+              idempotencyKey: "outside-init",
               allowedPaths: [workspaceDir],
               inputArtifact: {
                 workspaceDir,
@@ -4119,12 +4084,10 @@ const tests = [
         await assert.rejects(
           () =>
             client.executeStep({
-              stepType: "simulink_ut_tcsd_generate",
+              stepType: "outline_build",
               inputArtifact: {
-                workspaceDir: "/tmp/workspace",
-                modelSlxPath: "/tmp/workspace/model.slx",
-                modelMatPath: "/tmp/workspace/model.mat",
-                outputDir: "/tmp/workspace/outputs"
+                evidence: [],
+                recalledAtoms: []
               }
             }),
           (error) => {
@@ -10290,16 +10253,11 @@ const tests = [
       await withTempConfig(async (tempDir) => {
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
-            async executeStep(payload, runtime = {}) {
+            job: null,
+            async startTcsdPipelineJob(payload) {
               assert.match(payload.inputArtifact.modelInitScriptPath, /inputs[\\/]Demo_init\.m$/);
               assert.equal(payload.inputArtifact.modelInitScriptFileName, "Demo_init.m");
               assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
-              await runtime.onEvent?.({
-                status: "completed",
-                label: "Hermes mock completed",
-                message: "Mock TCSD workbook generated.",
-                transport: "mock"
-              });
               const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
               await fs.mkdir(path.dirname(outputPath), { recursive: true });
               await createMinimalXlsx(outputPath, {
@@ -10319,17 +10277,22 @@ const tests = [
                   ]
                 ]
               });
-              return {
-                status: "succeeded",
-                stepType: "simulink_ut_tcsd_generate",
-                artifact: {
-                  status: "completed",
-                  summary: "已生成 Demo_Test0001_tcsd.xlsx。",
-                  outputFiles: [{ relativePath: "outputs/Demo_Test0001_tcsd.xlsx" }]
-                },
-                metrics: { tokenUsage: { totalTokens: 12 } },
-                logs: []
+              this.job = {
+                schema: "tcsd-agent-stage-pipeline/v2",
+                jobId: "mock-completed-job",
+                status: "已完成",
+                completion: "complete",
+                stages: [],
+                checkpoints: [],
+                artifacts: [{ path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx" }],
+                coverage: null,
+                repair: {},
+                updatedAt: new Date().toISOString()
               };
+              return this.job;
+            },
+            async getTcsdPipelineJob() {
+              return this.job;
             }
           }
         });
@@ -10390,7 +10353,8 @@ const tests = [
       await withTempConfig(async (tempDir) => {
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
-            async executeStep(payload) {
+            job: null,
+            async startTcsdPipelineJob(payload) {
               const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
               await fs.mkdir(path.dirname(outputPath), { recursive: true });
               await createMinimalXlsx(outputPath, {
@@ -10400,16 +10364,22 @@ const tests = [
                   ["TC_001", "Case", "Test", "REQ-1", "测试方法：等价类。", "InputA = 0;", "[+0.1s]\nInputA = 1;\n[+0.1s]", "reviewed", ""]
                 ]
               });
-              return {
-                status: "succeeded",
-                stepType: "simulink_ut_tcsd_generate",
-                artifact: {
-                  status: "completed",
-                  summary: "生成了没有期望值的 workbook。",
-                  outputFiles: [{ relativePath: "outputs/Demo_Test0001_tcsd.xlsx" }]
-                },
-                logs: []
+              this.job = {
+                schema: "tcsd-agent-stage-pipeline/v2",
+                jobId: "mock-no-expectation-job",
+                status: "已完成",
+                completion: "complete",
+                stages: [],
+                checkpoints: [],
+                artifacts: [{ path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx" }],
+                coverage: null,
+                repair: {},
+                updatedAt: new Date().toISOString()
               };
+              return this.job;
+            },
+            async getTcsdPipelineJob() {
+              return this.job;
             }
           }
         });
@@ -10434,7 +10404,7 @@ const tests = [
       await withTempConfig(async (tempDir) => {
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
-            async executeStep() {
+            async startTcsdPipelineJob() {
               const error = new Error("MATLAB unavailable");
               error.code = "matlab_unavailable";
               throw error;
