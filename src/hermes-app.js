@@ -15,7 +15,7 @@ import { ModelRequirementViewService } from "./services/model-requirement-view-s
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
 import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js";
 import { TCSD_ERROR_CODES } from "./services/tcsd-pipeline-contract.js";
-import { TcsdWindowsStageExecutor } from "./services/tcsd-windows-stage-executor.js";
+import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.js";
 
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
@@ -190,8 +190,8 @@ async function normalizeProjectInitScripts(inputArtifact = {}, workspaceDir = ""
 }
 
 async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = [], options = {}) {
-  const stepLabel = options.stepType || "simulink_ut_tcsd_generate";
-  const defaultSkillName = options.defaultSkillName || "simulink-ut-tcsd-generator";
+  const stepLabel = options.stepType || "tcsd_stage_execute";
+  const defaultSkillName = options.defaultSkillName || "tcsd-stage-skills";
   const defaultExpectedOutputPattern = options.defaultExpectedOutputPattern || "outputs/*_tcsd.xlsx";
   const workspaceValue = String(inputArtifact.workspaceDir || "").trim();
   if (!workspaceValue) {
@@ -890,10 +890,10 @@ export async function createHermesApp() {
   const extractionService = new ExtractionService();
   const llmService = new LlmService();
   const templateService = new TemplateService();
-  const tcsdStageExecutor = new TcsdWindowsStageExecutor();
+  const tcsdStageExecutor = new TcsdHermesStageExecutor();
   const tcsdJobs = new TcsdPipelineJobService({
     jobDir: config.tcsdPipeline?.jobStoreDir || path.join(config.dataDir, "tcsd-pipeline-jobs"),
-    executor: (stageIndex, input, job) => tcsdStageExecutor.execute(stageIndex, input, job)
+    executor: (stageIndex, input, job, options) => tcsdStageExecutor.execute(stageIndex, input, job, options)
   });
   await tcsdJobs.recoverAll();
 
@@ -1145,38 +1145,6 @@ export async function createHermesApp() {
               replayRecordCount: Array.isArray(records) ? records.length : 0,
               candidateSkillCount: Array.isArray(inventoryItems) ? inventoryItems.length : 0
             }
-          })
-        );
-      }
-
-      if (stepType === "simulink_ut_tcsd_generate") {
-        const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
-        const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
-        const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
-        const hermesClient = new HermesAgentClient({
-          transport: "cli",
-          workdir: inputArtifact.workspaceDir
-        });
-        const result = await hermesClient.executeStep(
-          {
-            ...payload,
-            stepType,
-            workdir: inputArtifact.workspaceDir,
-            allowedPaths: [inputArtifact.workspaceDir],
-            inputArtifact: {
-              ...inputArtifact,
-              projectAddonCopy: {
-                copiedFileCount: addonCopy.copiedFileCount,
-                unitTestProject: addonCopy.unitTestProject
-              }
-            }
-          },
-          {}
-        );
-        return res.json(
-          buildStepResponse(stepType, result.artifact || {}, startedAt, {
-            metrics: result.metrics || {},
-            logs: result.logs || []
           })
         );
       }
