@@ -1,20 +1,14 @@
 # Hermes Agent Handoff
 
-Read this reference when another agent must generate Simulink unit-test TCSD cases without access to the original development conversation. It captures the reusable lessons from the ACCtl sample, PwrLimEng generation/repair, and HvGrid generation work.
+Read this shared runtime reference only when an atomic TCSD stage skill needs detailed deterministic model or coverage behavior. The host owns orchestration, validation, retries, and checkpoints.
 
 ## Mission
 
-Given a module-level Simulink model `<model>.slx` and its matching `<model>.mat`, generate a unit-test TCSD Excel workbook in the same style as the ACCtl/PwrLimEng examples. The first priority is model coverage, especially decision coverage. Expected outputs are secondary and must be derived from simulation only where stable and only for top-level Outports.
+Given a module-level Simulink model `<model>.slx` and its matching `<model>.mat`, generate a unit-test TCSD Excel workbook from the model's own interface and runtime evidence. The first priority is model coverage, especially decision coverage. Expected outputs are secondary and must be derived from simulation only where stable and only for top-level Outports.
 
 ## Default Task Contract
 
-If a user tells Hermes or another agent to use `simulink-ut-tcsd-generator` for a model, all standard requirements in this handoff are implicit. Do not ask the user to repeat them.
-
-A minimal prompt is sufficient:
-
-```text
-使用 simulink-ut-tcsd-generator，为 <workdir>/<model>.slx 和 <workdir>/<model>.mat 生成单元测试 TCSD 用例。
-```
+The `tcsd_stage_execute` prompt explicitly names one `$tcsd-stage-*` skill, one input manifest, and one result path. Execute only that stage and never synthesize a host checkpoint.
 
 The agent must automatically:
 
@@ -150,7 +144,7 @@ At task completion, including failures:
 - Shut down task-owned MCP/SATK sessions. If a task-owned `matlab-mcp-core-server` remains and blocks future calls, terminate only that stale task-owned process and report it in the task warnings. On dedicated Windows Workers, close a previous task-owned MATLAB session when necessary; on interactive developer machines, do not force-close unrelated MATLAB Desktop sessions unless the user explicitly approves it.
 - Put cleanup in `try`/`catch` or MATLAB `onCleanup` so it runs after model-load errors, failed simulations, timeouts, and interrupted Hermes runs.
 
-## TCSD Style Learned From ACCtl/PwrLimEng
+## Generic TCSD Workbook Rules
 
 - The bundled `assets/templates/tcsd_template.xlsx` is the canonical Excel input form for the downstream automatic test software. Do not create a blank workbook from scratch.
 - One `TCSD` sheet.
@@ -241,7 +235,7 @@ For models with recognizable functional domains, each present domain needs at le
 - mode/config enum inputs such as `stMod`, `stMode`, `stCfg`, gear request, charge mode, drive mode, scene mode;
 - Stateflow target states or transition families;
 - diagnostic/error paths such as `Diag`, `ErrCheck`, lock/unlock, stuck, plausibility, timeout;
-- special operating modes such as APA/RPA, cruise/ACC, charging, anti-theft, wash, traction, camping, cart, OTA, and similar model-visible feature gates.
+- distinct model-visible operating modes and feature gates.
 
 Prefer splitting unrelated modes and diagnostic paths into focused Tests. Do not hide them inside one broad scenario when the resulting expected outputs cannot prove which condition actually changed.
 
@@ -254,7 +248,7 @@ Treat every decision outcome as an obligation:
 - Invalid `MultiPortSwitch` selector errors must be diagnosed, not hidden. The simulation script reports `simulate_tcsd_cases:InvalidMultiPortSwitchSelector` with block/source/indexing details. Fix the TCSD stimulus, settle time, or safe scalar override first; use `TCSD_ALLOW_MPS_DEFAULT_OVERRIDE=1` only for temporary diagnosis and do not use that run for trusted expected-output backfill unless the default behavior is intentionally justified.
 - `Saturate`: cover below-low, pass-through, and above-high regions by proving the pre-saturation input crosses the limits. If calibration/lookup values can never exceed a limit, record the remaining region as unreachable rather than unsafe table manipulation.
 - `RelationalOperator`/`Switch`: cover both true and false by driving the actual trigger signal across the block criterion. For `==`/`~=` comparisons, resolve the compared enum/constant and include matching and non-matching values. For `>` / `<` / `>=` / `<=`, include below/equal/above when equality changes the outcome. For sign criteria such as `< 0`, `<= 0`, `~= 0`, or `u2 ~= 0`, include negative, zero, and positive/equality-side values as applicable. If a mode/config signal is checked against several constants, such as `stMod == 2` and `stMod == 3`, generate cases for each compared value; a default `stMod = 1` case alone is not coverage for those conditions.
-- `Logical Operator`: satisfy MC/DC from model structure during the initial production run. For N-input OR, use all inputs false plus one case for each single true input. For N-input AND, use all inputs true plus one case for each single false input. For chained logic, NOT-fed inputs, relational outputs, and enum equality banks, target the truth vector at the logical operator input ports and resolve the raw root-input values needed to produce that vector. Write the resolved enum/state values into TCSD root-input assignments, such as BMS activity states `4/8/9` or relay closed state `2`, when those constants are present in the loaded model data. Record the mapping from desired operator-input truth vector to raw TCSD assignments so the case is auditable.
+- `Logical Operator`: satisfy MC/DC from model structure during the initial production run. For N-input OR, use all inputs false plus one case for each single true input. For N-input AND, use all inputs true plus one case for each single false input. For chained logic, NOT-fed inputs, relational outputs, and enum equality banks, target the truth vector at the logical operator input ports and resolve the raw root-input values needed to produce that vector. Write only constants resolved from the loaded model data, and record the mapping from desired truth vector to raw TCSD assignments.
 - `Logical Operator` feedback fed by stateful paths: if an uncovered MC/DC condition is a latch, inverted latch, Memory/UnitDelay output, EdgeRising/EdgeFalling output, CountR/StopWatch flag, or Switch trigger, synthesize the prerequisite sequence before claiming the truth vector. Use set/hold/reset/timeout action steps, keep reset blockers such as inverted allows/enables inactive while setting the state, and verify the relevant block input with a coverage rerun or focused probe. A Test description that says "targets MC/DC" is not evidence.
 - `Safe_Divide`: denominator zero/protected path and normal nonzero path.
 - `Lookup_n-D`: use low/mid/high and edge breakpoints that influence downstream decisions.
@@ -269,9 +263,9 @@ Treat every decision outcome as an obligation:
 SATK/MCP/MATLAB is the authority. Static `.slx` XML inspection is only a supplement after SATK/MCP/MATLAB model reading has been attempted or used, and only for exact SIDs, block parameters, and line connectivity:
 
 ```bash
-SKILL_DIR=/path/to/simulink-ut-tcsd-generator
+RUNTIME_DIR=/path/to/tcsd-runtime
 MODEL_SLX=MODEL.slx
-python3 "$SKILL_DIR/scripts/inspect_slx_xml.py" "$MODEL_SLX" --pattern "MultiPortSwitch|MinMax|Saturate|<Line|<Branch"
+python3 "$RUNTIME_DIR/scripts/inspect_slx_xml.py" "$MODEL_SLX" --pattern "MultiPortSwitch|MinMax|Saturate|<Line|<Branch"
 ```
 
 Do not pipe `.slx`/zip/XML output directly into interpreters such as `python3 -c`, `perl`, `ruby`, or `node -e`. That pattern can trigger security approval and encourages bypassing SATK/MCP model reading.
@@ -299,7 +293,7 @@ Use static inspection to find SIDs, constants, block parameters, `DataPortOrder`
 - Bracketed vectors may be convenient inside intermediate JSON/spec drafts, but the final TCSD workbook for the current target toolchain should use element assignments.
 - The generic simulation script handles vector root inputs/outputs; backfill should still usually allow only scalar top-level outputs unless vector TCSD macro mapping is confirmed.
 - `openpyxl` is required for the Python workbook scripts. If system Python lacks it, use the runtime Python available in the agent environment or install/use an environment with `openpyxl`.
-- For large models such as GearLvr, keep simulation/backfill behind the artifact-first checkpoint. If a 600s MCP call timeout occurs during backfill, do not make a second simulation attempt in the same request; mark the task failed/partial instead of returning a workbook with no expected values as completed.
+- For large models, keep simulation/backfill behind the artifact-first checkpoint. An MCP timeout is a hard stage failure; do not retry simulation inside the same stage session or return a workbook with no expected values as completed.
 - Write model-specific helper scripts only when the generic scripts cannot reasonably support a model-specific constraint. If such a script encodes a working MATLAB setup, parameterize paths instead of hardcoding one workbook forever.
 
 ## SATK Runtime for Hermes and Windows VMs
@@ -325,68 +319,14 @@ set SATK_MATLAB_ROOT=C:\Program Files\MATLAB\R2026a
 
 If SATK initialization fails before any MATLAB code executes, inspect `server-*.log` and `watchdog-*.log` in `SATK_MCP_LOG_FOLDER`. Errors such as `socket file access timed out`, `bind: invalid argument`, or `bind: operation not permitted` are MCP runtime/socket problems. Do not treat them as model-load failures and do not replace SATK reading with static SLX parsing; fix the runtime by using a short log folder and a host execution mode that allows local socket binding.
 
-## PwrLimEng Lessons
+## Generic Coverage Lessons
 
-Relevant root outputs for expected values:
-
-- `PwrLimEng_tqEngMax`
-- `PwrLimEng_tqISGMax`
-- `PwrLimEng_tqISGMin`
-- `PwrLimEng_pwrMaxISGMecChrg`
-- `PwrLimEng_pwrMaxISGMecDchrg`
-- `PwrLimEng_effISGDchrg`
-
-Important misses and fixes:
-
-- The first draft covered execution well but decision coverage was low. The feedback screenshot showed condition coverage around 90.9%, decision coverage around 69.3%, and execution 100%.
-- A later `PwrLimEng_Test0002` repair improved coverage but still missed outcomes because several Tests described the desired branch without making the internal decision input actually reach it. For future repair passes, create `PwrLimEng_Test0003_tcsd.xlsx` or another versioned workbook and verify each feedback item with coverage/probes.
-- A `Max` in `A02_ISGMaxMinTq/B01_PredSpd` had only input 1 winning. Add a speed-decrease case so derivative/filter output is negative and the zero/other input wins, then a speed-increase step to cover the other side.
-- `Abs` blocks need source-sign coverage, not just magnitude coverage. In `A01_EngMaxTq`, a normal negative `icisg_tqISGMin` covers only the negative-source side; add a positive-source case if the coverage report flags the other side. In `B01_PredSpd`/efficiency paths, use negative speed or a strong transition before the `Abs` when the source sign is what matters.
-- `B02_ISGPwrEff` `MultiPortSwitch` covered selector `0/1/2` but missed `3` and `4`. Use 380V/400V in Initialization or shorten `PwrLimEng_tiISGVoltFilt_C`; a short 0.2s step with the original LowPass may not settle enough.
-- For `B02_ISGPwrEff`, setting `icisg_uAct` to 400 or 450 is not sufficient evidence that selector `*,4` was reached. Probe the selector after LowPass/lookup, or force a settled high-voltage selector with Initialization/parameter override.
-- `B02_ISGPwrEff` `Saturation1` must cover below-low, pass-through, and above-high pre-saturation values. Before generating cases, inspect or probe the signal entering `Saturation1`; extreme `icisg_uAct`, speed, or torque values are not evidence by themselves. If the MAT lookup/calibration tables keep values within `[0.1, 1]`, document low/high saturation branches as unreachable rather than using unsafe table edits.
-- AWD and non-AWD efficiency paths can have separate MultiPortSwitch/Saturate blocks; cover high-voltage selector regions in both when present.
-- In `B04_ISGPwrEffAWD`, the final Switch true branch requires `icisg_tqAct < 0`. AWD mode, high voltage, or `icisg_tqAct > 0` only exercises the false branch; include a negative `icisg_tqAct` step and confirm the logical trigger is true.
-- `B03_ISGLimTq` final output Min/Max blocks need tests where each candidate wins: input torque limit, power-derived limit, zero override/protection, startup/temperature limit.
-- For `B03_ISGLimTq`, final candidate coverage must be checked by probing the candidate inputs of the final Max/Min blocks. Reducing charge/discharge power or disabling ramping can still leave a different candidate winning.
-- For final Min/Max candidate coverage, use explicit `p ...RampEna_C = 0` when ramp limiters otherwise prevent the intended candidate from becoming selected within the test interval. Keep separate tests for GradientLimiter behavior.
-- Do not backfill hold-window expected values for ramped torque outputs. The instant value can be right while the later hold check fails.
-- When regenerating after coverage feedback, write a versioned workbook such as `PwrLimEng_Test0002_tcsd.xlsx` and preserve the previous workbook.
-
-## HvGrid Lessons
-
-HvGrid is a larger integration-style model. The main lesson is to build a strong nominal baseline before targeting branches:
-
-- Many unrelated gate signals can make a desired branch unreachable if they are left at zero.
-- Cover feature clusters as separate Tests:
-  - high-voltage ready normal drive path;
-  - zero-voltage Safe_Divide protection;
-  - battery charge/discharge limits;
-  - V2L/V2In/DC-charge modes;
-  - ECC priority, SOC hysteresis, and low-temperature logic;
-  - APU charging and engine-start request;
-  - energy/odometer reset edges;
-  - front/rear motor bypass and stall heating;
-  - relay open/close and heating delay paths.
-- HvGrid has vector root inputs such as `EMTqFil_dtqIncGrdt` and `EMTqFil_dtqDecGrdt`; express them element by element in final TCSD initialization/action, for example `EMTqFil_dtqIncGrdt 1=5000;` through `EMTqFil_dtqIncGrdt 4=5000;`.
-- HvGrid has vector root outputs such as `HvGrid_pwrAvl`. Do not auto-backfill vector outputs unless the target TCSD/MQT macro syntax and element mapping are known. Build and pass a scalar-output allowlist to the backfill script.
-- For latch/hysteresis/delay, use multi-step sequences that cross low/high thresholds and then return. Static one-shot initialization is rarely enough.
-- Each HvGrid Test should include a final `[+0.1s]` or equivalent delay at the end of `Action`; otherwise the downstream runner may not execute/sample after the last expected-value line.
-
-## HvCoorn Lessons
-
-HvCoorn feedback exposed a recurring logical-operator miss:
-
-- Relay-state OR logic, such as "one of several relay/battery states matches", needs an all-false baseline and single-true cases for every OR input port. Do not cover only the all-false or nominal state.
-- HVIL/status AND logic, especially nested AND chains with NOT-fed inputs, needs one satisfying baseline and one single-fault case per condition. Derive the required raw root-input value from the actual operator input polarity.
-- Coverage reports may label combined logic as `Includes N blocks` with `C1..Cn`. Treat each listed condition as an obligation and generate the `N+1` MC/DC pattern unless a condition is unreachable.
-- Probe logical-operator input ports or their immediate relational outputs when repairing coverage; the final mode/status output alone is not enough evidence.
-
-For production generation without coverage feedback, still apply the same MC/DC pattern to AND/OR groups that can be traced from the model. If a required truth vector cannot be mapped to root inputs or scalar parameters, do not invent a Boolean `0/1` assignment or add a fake coverage row.
-
-HvCoorn also exposed a state-machine expected-output failure pattern:
-
-- Outputs such as `HvCoorn_stHVP` and downstream mode requests (`HvCoorn_stFMCUModeReq`, `HvCoorn_stRMCUModeReq`, `HvCoorn_stISGModeReq`) can transition during the initial delay. If a Test writes `expValue` after `[+500ms]`, the expected value must match the state reached after 500 ms. Do not keep expecting the initialization state (`1`/`2`) unless a trusted trace proves it remains stable.
+- A Test name or comment is never evidence that a branch was covered; require coverage feedback or a focused probe of the relevant block input.
+- For `MinMax`, prove each candidate wins without ties. For `MultiPortSwitch`, probe the settled selector rather than inferring it from an upstream command.
+- For `Abs`, cover both source signs. For `Saturate`, prove below-low, pass-through, and above-high at the pre-saturation signal or record structurally justified unreachability.
+- For filtered, delayed, latched, or ramp-limited paths, use an explicit multi-step stimulus and enough hold time. Do not backfill a held expectation from one transient sample.
+- For vector root inputs, expand element assignments in the final workbook. Omit vector expected outputs unless the importer mapping is proven.
+- Apply the standard MC/DC truth-vector pattern to traceable AND/OR groups. If a vector cannot be mapped to root inputs or scalar parameters, keep it unresolved rather than inventing a Boolean assignment.
 
 ## Validation Checklist Before Delivery
 

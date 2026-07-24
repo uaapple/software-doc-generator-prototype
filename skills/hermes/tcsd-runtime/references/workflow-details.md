@@ -65,9 +65,9 @@ When reading parameters, never call `double(obj)` on a `CornexCsc.Parameter` / `
 Use SATK/MCP/MATLAB as the authority. Static `.slx` XML inspection is only a supplement after SATK/MCP/MATLAB has been attempted or used, and only when you need exact block parameters, SIDs, or connectivity.
 
 ```bash
-SKILL_DIR=/path/to/simulink-ut-tcsd-generator
+RUNTIME_DIR=/path/to/tcsd-runtime
 MODEL_SLX=MODEL.slx
-python3 "$SKILL_DIR/scripts/inspect_slx_xml.py" "$MODEL_SLX" --pattern "MultiPortSwitch|MinMax|Saturate|<Line|PwrLim"
+python3 "$RUNTIME_DIR/scripts/inspect_slx_xml.py" "$MODEL_SLX" --pattern "MultiPortSwitch|MinMax|Saturate|<Line"
 ```
 
 This is especially useful for:
@@ -132,7 +132,7 @@ For models with identifiable functional domains, build a short checklist before 
 - Mode/config enums: inputs such as `stMod`, `stMode`, `stCfg`, gear requests, charge modes, drive modes, and scene modes should cover each model-visible configuration that gates logic.
 - Stateflow target states: every reachable target state or transition family should have a focused Test or a documented reason for grouping.
 - Diagnostic/error paths: `Diag`, `ErrCheck`, lock/unlock, stuck, sensor plausibility, and timeout paths should not be hidden inside nominal mode Tests when they drive distinct outputs.
-- Special operating modes: APA/RPA, cruise/ACC, charging, anti-theft, wash, traction, camping, cart, OTA, and similar feature gates should be split when present and model-visible.
+- Distinct model-visible operating modes and feature gates should be split into focused Tests.
 
 Do not combine many unrelated modes or many Stateflow transitions into one broad traversal Test unless every step has distinct stimulus, enough hold time, and simulation evidence proving the intended output change. If the expected outputs remain identical across all steps, split or rewrite the Tests before delivery.
 
@@ -192,9 +192,9 @@ Do not let expected-output stability rules reduce stimulus coverage. It is accep
 
 At validation time, compare the workbook back to the coverage-obligation matrix. Every traceable RelationalOperator condition, Switch side, MinMax candidate winner, MultiPortSwitch selector/default, Abs source sign, and AND/OR MC/DC vector should be `covered`, `unreachable/invalid` with a specific model reason, or `unresolved` and called out in the task result.
 
-For larger modules such as HvGrid, many root outputs may be vectors or unsupported by the target TCSD import. Build a root-output allowlist from model metadata and backfill scalar top-level outputs first. Validate vector outputs are absent unless the vector macro syntax and element mapping are confirmed.
+For larger modules, many root outputs may be vectors or unsupported by the target TCSD import. Build a root-output allowlist from model metadata and backfill scalar top-level outputs first. Validate vector outputs are absent unless the vector macro syntax and element mapping are confirmed.
 
-For vector root inputs in the final TCSD workbook, expand values element by element, for example `EMTqFil_dtqIncGrdt 1=5000;` through `EMTqFil_dtqIncGrdt 4=5000;`. Do not leave whole-vector assignments such as `EMTqFil_dtqIncGrdt = [5000 5000 5000 5000];` unless the downstream importer has been explicitly confirmed to accept them.
+For vector root inputs in the final TCSD workbook, expand values element by element, for example `VectorInput 1=5000;` through `VectorInput 4=5000;`. Do not leave whole-vector assignments such as `VectorInput = [5000 5000 5000 5000];` unless the downstream importer has been explicitly confirmed to accept them.
 
 Every Test row must be self-contained. Keep common startup values in the JSON TestGroup if helpful, but build the final workbook so each `Type = Test` row repeats the full root-input initialization set with its own overrides applied. Some downstream runners and the simulation extraction script execute a Test row directly and do not inherit TestGroup cells.
 

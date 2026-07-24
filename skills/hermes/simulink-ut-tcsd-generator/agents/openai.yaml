@@ -1,4 +1,0 @@
-interface:
-  display_name: "Simulink UT TCSD Generator"
-  short_description: "Generate TCSD tests with hard coverage closure."
-  default_prompt: "Use $simulink-ut-tcsd-generator to generate coverage-first Simulink TCSD unit tests from a .slx/.mat pair, validate and simulate the workbook, run actual Condition, Decision, and MC/DC coverage, and when any metric is below 80%, perform one report-guided repair pass before delivering the final measured result."

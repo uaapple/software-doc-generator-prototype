@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 12 整理与清理"
+  short_description: "Package artifacts and clean task-owned resources"
+  default_prompt: "Use $tcsd-stage-12-package-cleanup to package artifacts and clean task-owned resources."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 02 环境检查"
+  short_description: "Check MATLAB SATK MCP and worker prerequisites"
+  default_prompt: "Use $tcsd-stage-02-check-environment to check the TCSD worker environment."

@@ -91,13 +91,13 @@ Validate the Excel text, not only the extracted simulation Dataset. A simulation
 Allowed example:
 
 ```text
-PwrLimEng_tqISGMax = expValue(171.88733);
+Model_OutputA = expValue(171.88733);
 ```
 
 Forbidden example:
 
 ```text
-PwrLimEng_nPredISGChrg = expValue(2000);
+Model_InternalSignal = expValue(2000);
 ```
 
 The documented expectation call is:
@@ -137,7 +137,7 @@ Rules:
 
 - Before simulation evidence exists, use only request/target/attempt wording.
 - After backfill, success wording such as `shifted`, `reached`, `entered`, `切换到`, or `进入` is allowed only when `expValue(...)` proves it.
-- Inline comments such as `stDrvGear=1(D)` must exactly match the corresponding `GearLvr_stDrvGear = expValue(...)` value.
+- Inline comments that claim a named state value must exactly match the corresponding top-level state output `expValue(...)`.
 - If a mismatch is found, the workbook is not deliverable. Repair the stimulus and rerun backfill, rewrite the Test as blocked/not-reached/inhibited, or remove the success claim.
 - Never keep a row where text says the transition succeeded while the simulation-backed expectation shows the old/default state.
 - Do not set `Work Status = reviewed` for any Test with an unresolved semantic mismatch.

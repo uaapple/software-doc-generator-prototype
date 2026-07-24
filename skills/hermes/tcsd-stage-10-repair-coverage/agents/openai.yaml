@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 10 修正覆盖用例"
+  short_description: "Apply one deterministic coverage repair pass"
+  default_prompt: "Use $tcsd-stage-10-repair-coverage to apply one coverage-guided repair pass."

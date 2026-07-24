@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -10,14 +11,68 @@ from pathlib import Path
 from openpyxl import Workbook
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "run_tcsd_pipeline_stage.py"
+SESSION_READER = Path(__file__).resolve().parents[1] / "scripts" / "read_hermes_session.py"
+SATK_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "satk_eval.py"
 SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
 RUNNER = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 SPEC.loader.exec_module(RUNNER)
+SATK_SPEC = importlib.util.spec_from_file_location("satk_eval", SATK_SCRIPT)
+SATK = importlib.util.module_from_spec(SATK_SPEC)
+assert SATK_SPEC.loader
+SATK_SPEC.loader.exec_module(SATK)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
-    def test_first_three_stages_write_owned_authoritative_checkpoints(self):
+    def test_satk_runner_treats_tool_result_is_error_as_failure(self):
+        self.assertTrue(SATK.mcp_response_failed({"error": {"code": -1}}))
+        self.assertTrue(SATK.mcp_response_failed({"result": {"isError": True, "content": []}}))
+        self.assertFalse(SATK.mcp_response_failed({"result": {"isError": False, "content": []}}))
+
+    def test_hermes_session_reader_reports_actual_model_and_token_usage(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "state.db"
+            connection = sqlite3.connect(database)
+            try:
+                connection.execute(
+                    """
+                    create table sessions (
+                      id text primary key,
+                      model text,
+                      input_tokens integer,
+                      output_tokens integer,
+                      cache_read_tokens integer,
+                      cache_write_tokens integer,
+                      reasoning_tokens integer
+                    )
+                    """
+                )
+                connection.execute(
+                    "insert into sessions values (?, ?, ?, ?, ?, ?, ?)",
+                    ("session-actual", "provider/model-v2", 100, 20, 5, 2, 7),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SESSION_READER),
+                    "--state-db",
+                    str(database),
+                    "--session-id",
+                    "session-actual",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            usage = json.loads(result.stdout)
+            self.assertEqual(usage["model"], "provider/model-v2")
+            self.assertEqual(usage["totalTokens"], 127)
+            self.assertEqual(usage["reasoningTokens"], 7)
+
+    def test_first_three_stages_write_candidate_results_but_not_host_checkpoints(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             output = root / "outputs"
@@ -43,15 +98,18 @@ class PipelineStageRunnerTests(unittest.TestCase):
             os.environ["TCSD_PIPELINE_SETUP_FIXTURE"] = "1"
             try:
                 for stage in (1, 2, 3):
+                    result_path = output / ".tcsd-results" / f"stage-{stage:02d}.json"
+                    job["_stageResultPath"] = str(result_path)
                     RUNNER.stage_run(stage, job)
-                    checkpoint = json.loads((output / ".tcsd-checkpoints" / f"stage-{stage:02d}.json").read_text(encoding="utf-8"))
-                    self.assertEqual(checkpoint["schema"], "tcsd-stage-checkpoint/v1")
-                    self.assertEqual(checkpoint["jobId"], "job-generic")
-                    self.assertEqual(checkpoint["stageIndex"], stage)
-                    self.assertTrue(checkpoint["artifacts"])
+                    result = json.loads(result_path.read_text(encoding="utf-8"))
+                    self.assertEqual(result["schema"], "tcsd-agent-stage-result/v1")
+                    self.assertEqual(result["jobId"], "job-generic")
+                    self.assertEqual(result["stageIndex"], stage)
+                    self.assertTrue(result["artifacts"])
+                    self.assertFalse((output / ".tcsd-checkpoints").exists())
                 resources = json.loads((output / ".tcsd-runtime" / "owned-resources.json").read_text(encoding="utf-8"))
                 self.assertEqual(resources["jobId"], "job-generic")
-                initialized = json.loads((output / ".tcsd-checkpoints" / "workspace-initialization.json").read_text(encoding="utf-8"))
+                initialized = json.loads((output / ".tcsd-evidence" / "workspace-initialization.json").read_text(encoding="utf-8"))
                 self.assertEqual(initialized["schema"], "tcsd-workspace-initialization/v1")
                 self.assertTrue(initialized["completed"])
             finally:
@@ -118,15 +176,38 @@ class PipelineStageRunnerTests(unittest.TestCase):
                 probe["GenericModel"]["observations"].append({"test_id": f"STATE_PROBE_{index:04d}", "row": index, "step_index": 2, "time_s": 0.1, "inputs": {"Enable": int(label[0] == "T"), "Request": int(label[1] == "T")}, "params": {}, "vectors": {"decision": {"id": "GenericModel:1", "label": label, "ok": True}}, "stimulus": {"initial_inputs": {"Enable": 0, "Request": 1}, "initial_params": {}, "steps": [{"index": 1, "delay_s": 0.01, "input_updates": {"Enable": 1}, "param_updates": {}}, {"index": 2, "delay_s": 0.1, "input_updates": {}, "param_updates": {}}], "evidence_step": 2}, "prediction_status": "observed"})
             probe_fixture = root / "probe-results.json"; probe_fixture.write_text(json.dumps(probe), encoding="utf-8")
             job = {"jobId": "job-cli", "resources": {"ownerJobId": "job-cli"}, "input": {"workspaceDir": str(root), "outputDir": str(output), "modelSlxPath": str(model), "modelMatPath": str(mat), "coverageThreshold": 80}}
-            job_path = root / "job.json"; job_path.write_text(json.dumps(job), encoding="utf-8")
-            subprocess.run([sys.executable, str(SCRIPT), "--job", str(job_path), "--stage", "5"], check=True, cwd=root)
+            def run_stage(stage, env=None):
+                manifest_path = root / f"stage-{stage:02d}-input.json"
+                result_path = output / ".tcsd-results" / f"stage-{stage:02d}.json"
+                manifest_path.write_text(
+                    json.dumps(
+                        {
+                            "schema": "tcsd-agent-stage-input/v1",
+                            "jobId": "job-cli",
+                            "stageIndex": stage,
+                            "attempt": 1,
+                            "job": job,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                subprocess.run(
+                    [sys.executable, str(SCRIPT), "--manifest", str(manifest_path), "--result", str(result_path)],
+                    check=True,
+                    cwd=root,
+                    env=env,
+                )
+                return json.loads(result_path.read_text(encoding="utf-8"))
+
+            run_stage(5)
             before = json.loads((output / "GenericModel_coverage_obligations.json").read_text(encoding="utf-8"))
             self.assertGreater(before["summary"]["unresolved_count"], 0)
             env = dict(os.environ); env["TCSD_PIPELINE_PROBE_RESULTS_FIXTURE"] = str(probe_fixture)
-            subprocess.run([sys.executable, str(SCRIPT), "--job", str(job_path), "--stage", "6"], check=True, cwd=root, env=env)
-            checkpoint = json.loads((output / ".tcsd-checkpoints" / "stage-06.json").read_text(encoding="utf-8"))
+            result = run_stage(6, env=env)
             after = json.loads((output / "GenericModel_coverage_obligations.json").read_text(encoding="utf-8"))
-            self.assertTrue(checkpoint["evidence"]["probeExecuted"])
+            self.assertEqual(result["schema"], "tcsd-agent-stage-result/v1")
+            self.assertTrue(result["evidence"]["probeExecuted"])
+            self.assertFalse((output / ".tcsd-checkpoints").exists())
             self.assertEqual(after["summary"]["unresolved_count"], 0)
 
     def test_coverage_threshold_uses_all_three_metrics_for_every_model(self):

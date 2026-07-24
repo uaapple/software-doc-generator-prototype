@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Authoritative, restart-safe stage runner for the Windows TCSD pipeline."""
+"""Shared deterministic runtime invoked by one atomic TCSD stage skill."""
 from __future__ import annotations
 
 import argparse, importlib.util, json, math, os, re, shutil, subprocess, sys
 from pathlib import Path
 from typing import Any
 
-SCHEMA = "tcsd-stage-checkpoint/v1"
+INPUT_SCHEMA = "tcsd-agent-stage-input/v1"
+RESULT_SCHEMA = "tcsd-agent-stage-result/v1"
 
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path); module = importlib.util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module); return module
@@ -18,12 +19,23 @@ def model_name(job: dict[str, Any]) -> str: return Path(job["input"]["modelSlxPa
 def outputs(job: dict[str, Any]) -> Path: return Path(job["input"]["outputDir"]).resolve()
 def workspace(job: dict[str, Any]) -> Path: return Path(job["input"]["workspaceDir"]).resolve()
 def scripts() -> Path: return Path(__file__).resolve().parent
-def state_path(job: dict[str, Any]) -> Path: return outputs(job) / ".tcsd-checkpoints" / "runner-state.json"
-def checkpoint_path(job: dict[str, Any], stage: int) -> Path: return outputs(job) / ".tcsd-checkpoints" / f"stage-{stage:02d}.json"
+def state_path(job: dict[str, Any]) -> Path: return outputs(job) / ".tcsd-runtime" / "runner-state.json"
 def load_state(job: dict[str, Any]) -> dict[str, Any]: return read_json(state_path(job)) if state_path(job).exists() else {"schema": "tcsd-stage-runner-state/v1", "jobId": job["jobId"], "resources": job.get("resources", {})}
 def save_state(job: dict[str, Any], state: dict[str, Any]) -> None: write_json(state_path(job), state)
 def finish(job: dict[str, Any], stage: int, *, status="completed", summary="", artifacts=None, **extra):
-    payload = {"schema": SCHEMA, "jobId": job["jobId"], "stageIndex": stage, "status": status, "summary": summary, "artifacts": artifacts or [], **extra}; write_json(checkpoint_path(job, stage), payload)
+    payload = {"schema": RESULT_SCHEMA, "jobId": job["jobId"], "stageIndex": stage, "status": status, "summary": summary, "artifacts": artifacts or [], **extra}
+    write_json(Path(job["_stageResultPath"]), payload)
+
+def ensure_within(root: Path, candidate: Path, label: str) -> Path:
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(root.resolve()): raise RuntimeError(f"{label} is outside the task workspace: {resolved}")
+    return resolved
+
+def hard_error_code(stage: int, error: BaseException) -> str:
+    if isinstance(error, subprocess.TimeoutExpired): return "tcsd_stage_timeout"
+    if stage == 1: return "tcsd_input_invalid"
+    if stage == 2: return "tcsd_environment_gate_failed"
+    return "tcsd_stage_runtime_failed"
 
 def run(command: list[str], cwd: Path) -> None: subprocess.run(command, cwd=cwd, check=True)
 def matlab_cell(items: list[str]) -> str: return "{" + ",".join("'" + item.replace("'", "''") + "'" for item in items) + "}"
@@ -108,19 +120,23 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
     root, out, model, state = workspace(job), outputs(job), model_name(job), load_state(job); inp = job["input"]; out.mkdir(parents=True, exist_ok=True)
     quality = load_module("tcsd_quality", scripts() / "run_tcsd_quality_loop.py")
     if stage == 1:
-        required = [Path(inp["modelSlxPath"]), Path(inp["modelMatPath"])]; missing = [str(item) for item in required if not item.is_file()]
+        required = [ensure_within(root, Path(inp["modelSlxPath"]), "modelSlxPath"), ensure_within(root, Path(inp["modelMatPath"]), "modelMatPath")]
+        required.extend(ensure_within(root, root / item, "projectInitScript") for item in inp.get("projectInitScripts", []))
+        ensure_within(root, out, "outputDir")
+        missing = [str(item) for item in required if not item.is_file()]
         if missing: raise RuntimeError(f"required inputs missing: {missing}")
-        manifest = out / ".tcsd-checkpoints" / "input-manifest.json"; write_json(manifest, {"schema": "tcsd-input-manifest/v1", "jobId": job["jobId"], "files": [{"path": str(item), "size": item.stat().st_size} for item in required], "projectAddon": inp.get("projectAddonCopy", {})})
+        manifest = out / ".tcsd-evidence" / "input-manifest.json"; write_json(manifest, {"schema": "tcsd-input-manifest/v1", "jobId": job["jobId"], "files": [{"path": str(item), "size": item.stat().st_size} for item in required], "projectAddon": inp.get("projectAddonCopy", {})})
         finish(job, stage, summary="输入文件与项目附件已验证。", artifacts=[artifact(root, manifest)]); return
     if stage == 2:
         matlab_root = Path(os.environ.get("MATLAB_ROOT", inp.get("matlabRoot", "C:/Program Files/MATLAB/R2026a")))
         matlab = matlab_root / "bin" / ("matlab.exe" if os.name == "nt" else "matlab")
         if os.environ.get("TCSD_PIPELINE_SKIP_MATLAB_GATE") != "1" and not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
-        env = out / ".tcsd-checkpoints" / "environment.json"; write_json(env, {"schema": "tcsd-environment-gate/v1", "jobId": job["jobId"], "matlabRoot": str(matlab_root), "runner": str(scripts() / "satk_eval.py"), "passed": True})
+        if not (scripts() / "satk_eval.py").is_file(): raise RuntimeError("SATK runtime runner is missing")
+        env = out / ".tcsd-evidence" / "environment.json"; write_json(env, {"schema": "tcsd-environment-gate/v1", "jobId": job["jobId"], "matlabRoot": str(matlab_root), "python": sys.executable, "runner": str(scripts() / "satk_eval.py"), "passed": True})
         finish(job, stage, summary="MATLAB 与模型工具环境门禁通过。", artifacts=[artifact(root, env)]); return
     if stage == 3:
         runtime = out / ".tcsd-runtime"; runtime.mkdir(exist_ok=True); resources = runtime / "owned-resources.json"
-        init_manifest = out / ".tcsd-checkpoints" / "workspace-initialization.json"; entry = runtime / "stage03_initialize.m"; init = inp.get("projectInitScripts", [])
+        init_manifest = out / ".tcsd-evidence" / "workspace-initialization.json"; entry = runtime / "stage03_initialize.m"; init = inp.get("projectInitScripts", [])
         root_m = str(root).replace("'", "''"); scripts_m = str(scripts()).replace("'", "''"); manifest_m = str(init_manifest).replace("'", "''")
         job_id_m = str(job["jobId"]).replace("'", "''")
         entry.write_text(f"rootDir='{root_m}'; initScripts={matlab_cell(init)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); p=struct('schema','tcsd-workspace-initialization/v1','jobId','{job_id_m}','workspace',rootDir,'initScripts',{{initScripts}},'completed',true); fid=fopen('{manifest_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid);", encoding="utf-8")
@@ -201,5 +217,37 @@ def stage_run(stage: int, job: dict[str, Any]) -> None:
     raise RuntimeError(f"unsupported stage {stage}")
 
 def main() -> int:
-    parser=argparse.ArgumentParser(); parser.add_argument("--job",required=True); parser.add_argument("--stage",required=True,type=int); args=parser.parse_args(); job=read_json(Path(args.job)); stage_run(args.stage,job); return 0
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--result", required=True)
+    args = parser.parse_args()
+    manifest = read_json(Path(args.manifest))
+    if manifest.get("schema") != INPUT_SCHEMA: raise RuntimeError("stage input manifest schema is invalid")
+    stage = int(manifest.get("stageIndex") or 0)
+    if stage < 1 or stage > 12: raise RuntimeError("stage input manifest stageIndex is invalid")
+    job = manifest.get("job")
+    if not isinstance(job, dict) or job.get("jobId") != manifest.get("jobId"): raise RuntimeError("stage input manifest job snapshot is invalid")
+    result_path = ensure_within(workspace(job), Path(args.result), "resultPath")
+    job["_stageResultPath"] = str(result_path)
+    try:
+        stage_run(stage, job)
+        result = read_json(result_path)
+        if result.get("schema") != RESULT_SCHEMA or result.get("jobId") != job["jobId"] or result.get("stageIndex") != stage:
+            raise RuntimeError("stage runtime produced an invalid result envelope")
+        return 0
+    except BaseException as error:
+        write_json(result_path, {
+            "schema": RESULT_SCHEMA,
+            "jobId": job["jobId"],
+            "stageIndex": stage,
+            "status": "failed",
+            "summary": "TCSD deterministic stage runtime failed.",
+            "artifacts": [],
+            "error": {
+                "code": hard_error_code(stage, error),
+                "message": str(error),
+                "hard": True
+            }
+        })
+        return 1
 if __name__ == "__main__": raise SystemExit(main())

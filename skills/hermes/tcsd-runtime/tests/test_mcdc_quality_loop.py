@@ -259,7 +259,7 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertEqual(completed["coverage"]["repair_passes"], 1)
             self.assertEqual(completed["workbook"], "outputs/A02_Test0002_tcsd.xlsx")
 
-    def test_atomic_planner_builds_seven_a02_vectors_and_sensitizes_bypass(self) -> None:
+    def test_a02_black_box_regression_uses_generic_topology_rules(self) -> None:
         planner = load_script_module("build_atomic_mcdc_repair_plan.py")
 
         def root(name: str) -> dict:

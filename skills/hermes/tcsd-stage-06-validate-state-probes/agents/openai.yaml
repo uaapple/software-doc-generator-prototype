@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 06 验证状态刺激"
+  short_description: "Validate model state and timing probe evidence"
+  default_prompt: "Use $tcsd-stage-06-validate-state-probes to validate state and timing probes."

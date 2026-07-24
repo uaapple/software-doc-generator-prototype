@@ -84,6 +84,13 @@ def wait_for_id(proc: subprocess.Popen[str], msg_id: int, timeout_s: float = 180
     raise TimeoutError(f"Timed out waiting for MCP response id={msg_id}")
 
 
+def mcp_response_failed(message: dict) -> bool:
+    if "error" in message:
+        return True
+    result = message.get("result")
+    return isinstance(result, dict) and result.get("isError") is True
+
+
 def process_rows() -> list[tuple[int, str]]:
     if platform.system() == "Windows":
         return windows_process_rows()
@@ -254,7 +261,7 @@ def main() -> int:
             },
         )
         init = wait_for_id(proc, 1, 120.0)
-        if "error" in init:
+        if mcp_response_failed(init):
             print(json.dumps(init, ensure_ascii=False, indent=2))
             return 1
 
@@ -273,7 +280,7 @@ def main() -> int:
         )
         result = wait_for_id(proc, 2, 600.0)
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 1 if "error" in result else 0
+        return 1 if mcp_response_failed(result) else 0
     finally:
         try:
             if proc.stdin:
