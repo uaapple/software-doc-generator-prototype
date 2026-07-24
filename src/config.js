@@ -117,14 +117,17 @@ const appConfig = {
       process.env.UNIT_TEST_CASE_PROJECT_ADDON_ROOT,
       resolveDefaultUnitTestProjectAddonRoot()
     ),
-    skillName: process.env.UNIT_TEST_CASE_SKILL_NAME || "simulink-ut-tcsd-generator",
+    pipelineName: "tcsd-stage-skills",
     expectedOutputPattern: process.env.UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN || "outputs/*_tcsd.xlsx",
     agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || "",
     remotePollWindowMs: Number(process.env.UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS || 300000),
     reconcileIntervalMs: Number(process.env.UNIT_TEST_CASE_RECONCILE_INTERVAL_MS || 30000)
   },
   tcsdPipeline: {
-    jobStoreDir: path.join(dataDir, "tcsd-pipeline-jobs")
+    jobStoreDir: path.join(dataDir, "tcsd-pipeline-jobs"),
+    hermesProfile: String(process.env.TCSD_STAGE_HERMES_PROFILE || hermesProfile || "").trim() || "default",
+    stageMaxTurns: Number(process.env.TCSD_STAGE_HERMES_MAX_TURNS || 200),
+    stageTimeoutMs: Number(process.env.TCSD_STAGE_HERMES_TIMEOUT_MS || 3600000)
   },
   softwareModuleDescription: {
     taskStoreDir: path.join(dataDir, "software-module-description-generation", "tasks"),
@@ -184,7 +187,6 @@ const appConfig = {
       software_requirement_markdown_generate: Number(process.env.HERMES_TIMEOUT_SOFTWARE_REQUIREMENT_MARKDOWN_GENERATE_MS || 600000),
       document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
       slx_interpret_answer: Number(process.env.HERMES_TIMEOUT_SLX_INTERPRET_ANSWER_MS || 600000),
-      simulink_ut_tcsd_generate: Number(process.env.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS || 3600000),
       simulink_module_description_generate: Number(
         process.env.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS || 3600000
       ),
@@ -194,9 +196,6 @@ const appConfig = {
     taskConcurrency: Number(process.env.HERMES_TASK_CONCURRENCY || 1),
     maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
     stepMaxTurns: {
-      simulink_ut_tcsd_generate: process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE
-        ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE)
-        : 10000,
       simulink_module_description_generate: process.env.HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE
         ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE)
         : 10000
