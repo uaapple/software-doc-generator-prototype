@@ -101,6 +101,7 @@ shared:
   - src/services/model-fact-bundle.js
   - src/services/hermes-command.js
   - src/services/hermes-agent-client.js
+  - src/services/python-command.js
   - src/services/zip-archive.js
   - src/services/tcsd-pipeline-contract.js
   - src/services/tcsd-stage-catalog.js

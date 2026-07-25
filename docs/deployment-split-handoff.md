@@ -180,6 +180,8 @@ checkpoint 记录技能名/版本/SKILL.md hash/bundle hash、runtime hash、Her
 
 Linux 的 `UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS` 只控制单次同步窗口；超时或短暂网络失败保持 `running/workerPending`，由 `UNIT_TEST_CASE_RECONCILE_INTERVAL_MS` 继续对账。404 job-not-found 才作为永久失败。Windows 需要配置 `TCSD_PIPELINE_PYTHON`、`MATLAB_ROOT` 和上述阶段 Hermes 变量。
 
+Windows 供应阶段应运行 `py -3.11 -c "import sys; print(sys.executable)"`，并将输出的绝对 `python.exe` 路径配置为 `TCSD_PIPELINE_PYTHON`。不要使用 PATH 中的 `python` 或 `python3` 示例，因为它们可能解析到旧版本或 Microsoft Store alias。变量未配置时，共享 Node resolver 才回退到 executable `py` 和独立参数前缀 `-3.11`；Linux/macOS 无显式配置时仍使用 `python3`。
+
 ## 独立软件详设 / 模块功能描述生成 V1
 
 本功能新增独立页面 `/software-detail-design-generation`，UI 展示为“软件详设生成”，代码、API 和任务类型使用 `software_module_description_generation` / `module-description` 语义，不接入旧 `/detail-design-generation`、`detail_design`、`generator.js` 或旧软件详设生成服务。平台端接收 1 个 `.slx`、1 个 `.mat`、可选 1 个模型初始化 `.m` 脚本和 1 个项目编号，在 `data/software-module-description-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并通过 Hermes step `simulink_module_description_generate` 发给 Windows VM。平台端只登记项目、任务和下载 `workspace/outputs/*.docx`；上传文件、任务 JSON 和生成 DOCX 都属于运行态数据，不进入 release 分支。

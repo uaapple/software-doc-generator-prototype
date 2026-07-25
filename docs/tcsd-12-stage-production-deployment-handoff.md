@@ -155,7 +155,7 @@ HERMES_SERVER_REQUEST_TIMEOUT_MS=0
 
 TCSD_STAGE_HERMES_TIMEOUT_MS=3600000
 TCSD_STAGE_HERMES_MAX_TURNS=200
-TCSD_PIPELINE_PYTHON=python
+TCSD_PIPELINE_PYTHON=C:\\Path\\From\\PyLauncher\\python.exe
 
 UNIT_TEST_CASE_PROJECT_ADDON_ROOT=C:\\ProgramData\\SoftwareDocGenerator\\project-addons
 UNIT_TEST_CASE_PROJECT_ADMIN_CODE=114301
@@ -181,6 +181,8 @@ TCSD_STAGE_HERMES_SKILLS_DIR=<该 profile 的 skills 目录>
 ```
 
 不要把 macOS 的 `/Applications/MATLAB_R2026a.app` 配置带入生产。Windows 必须继续使用 `SATK_MATLAB_SESSION_MODE=new`，避免依赖跨阶段共享的 MATLAB base workspace。
+
+Windows 部署前先执行 `py -3.11 -c "import sys; print(sys.executable)"`，把输出的绝对 `python.exe` 路径写入 `TCSD_PIPELINE_PYTHON`；不要配置为 PATH 中可能指向 Python 3.9 或 Microsoft Store alias 的 `python`/`python3`。仅在未配置该变量时，Node 生产代码才回退为独立 executable `py` 与参数前缀 `-3.11`。
 
 ### 5.3 Shared
 
