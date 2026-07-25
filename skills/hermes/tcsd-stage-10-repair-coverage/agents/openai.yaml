@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 10 修正覆盖用例"
+  short_description: "分析覆盖缺口并生成经宿主验证的定向修正用例"
+  default_prompt: "Use $tcsd-stage-10-repair-coverage to inspect measured coverage deficits, analyze each target's local model slice, and submit one bounded repair proposal for deterministic validation."

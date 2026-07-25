@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 09 采集覆盖率"
+  short_description: "Collect normalized initial model coverage evidence"
+  default_prompt: "Use $tcsd-stage-09-collect-coverage to collect initial model coverage."

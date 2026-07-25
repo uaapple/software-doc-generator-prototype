@@ -4,14 +4,23 @@ import path from "node:path";
 import { config } from "../config.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
 import { readJson, writeJson, pathExists } from "./storage.js";
+import { TCSD_PIPELINE_SCHEMA } from "./tcsd-pipeline-contract.js";
 import { normalizeUploadedFileName } from "./upload-filename.js";
+import { openZipArchive } from "./zip-archive.js";
 
 const TASK_FILE_NAME = "task.json";
+const PROJECTS_FILE_NAME = "projects.json";
 const QUEUE_TYPE = "unit_test_case_generation";
-const STEP_TYPE = "simulink_ut_tcsd_generate";
+const STEP_TYPE = "tcsd_stage_execute";
+const PROJECT_ID_PATTERN = /^\d{2,}$/;
 
 function now() {
   return new Date().toISOString();
+}
+
+function finalWorkbookFileName(task = {}) {
+  const modelFileName = task.inputs?.modelSlx?.originalName || task.inputs?.modelSlx?.workspaceName || "Model.slx";
+  return `${path.basename(modelFileName, path.extname(modelFileName))}_Test0001_tcsd.xlsx`;
 }
 
 function createHttpError(message, statusCode = 400, code = "unit_test_case_generation_error", details = {}) {
@@ -26,10 +35,146 @@ function unitTestCaseConfig() {
   return {
     taskStoreDir: config.unitTestCase?.taskStoreDir || path.join(config.dataDir, "unit-test-case-generation", "tasks"),
     uploadTempDir: config.unitTestCase?.uploadTempDir || path.join(config.dataDir, "unit-test-case-generation", "_incoming"),
-    skillName: config.unitTestCase?.skillName || "simulink-ut-tcsd-generator",
+    projectRegistryPath: config.unitTestCase?.projectRegistryPath || path.join(config.dataDir, "unit-test-case-generation", PROJECTS_FILE_NAME),
+    projectAdminCode: String(config.unitTestCase?.projectAdminCode || "114301"),
+    defaultProjects: config.unitTestCase?.defaultProjects || "01_楚能,02_TMS",
+    pipelineName: config.unitTestCase?.pipelineName || "tcsd-stage-skills",
     expectedOutputPattern: config.unitTestCase?.expectedOutputPattern || "outputs/*_tcsd.xlsx",
-    agentWorkspaceRoot: String(config.unitTestCase?.agentWorkspaceRoot || "").trim()
+    agentWorkspaceRoot: String(config.unitTestCase?.agentWorkspaceRoot || "").trim(),
+    defaultWorkerId: String(config.unitTestCase?.defaultWorkerId || "").trim(),
+    workerProfiles: Array.isArray(config.unitTestCase?.workerProfiles) ? config.unitTestCase.workerProfiles : []
   };
+}
+
+function normalizeProjectName(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .slice(0, 60);
+}
+
+function normalizeProjectId(value = "") {
+  return String(value || "").trim();
+}
+
+function normalizeProjectRecord(project = {}) {
+  project ||= {};
+  const id = normalizeProjectId(project.id);
+  const name = normalizeProjectName(project.name || String(project.label || "").replace(/^\d{2,}_/, ""));
+  if (!PROJECT_ID_PATTERN.test(id) || !name) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    label: `${id}_${name}`
+  };
+}
+
+function parseDefaultProjects(value = "") {
+  const projects = String(value || "01_楚能,02_TMS")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const match = item.match(/^(\d{2,})_(.+)$/);
+      if (!match) {
+        return null;
+      }
+      return normalizeProjectRecord({ id: match[1], name: match[2] });
+    })
+    .filter(Boolean);
+  return projects.length ? projects : [
+    { id: "01", name: "楚能", label: "01_楚能" },
+    { id: "02", name: "TMS", label: "02_TMS" }
+  ];
+}
+
+function buildProjectRegistry(projects = []) {
+  const normalized = [];
+  const seen = new Set();
+  for (const project of projects) {
+    const record = normalizeProjectRecord(project);
+    if (!record || seen.has(record.id)) {
+      continue;
+    }
+    seen.add(record.id);
+    normalized.push(record);
+  }
+  normalized.sort((a, b) => a.id.localeCompare(b.id, "zh-CN", { numeric: true }));
+  const maxNumber = normalized.reduce((max, project) => Math.max(max, Number(project.id) || 0), 0);
+  return {
+    version: 1,
+    nextProjectNumber: Math.max(1, maxNumber + 1),
+    projects: normalized
+  };
+}
+
+function publicProject(project = {}) {
+  const normalized = normalizeProjectRecord(project);
+  return normalized ? { ...normalized } : null;
+}
+
+function defaultLegacyProject() {
+  return (
+    parseDefaultProjects(unitTestCaseConfig().defaultProjects).find((project) => project.id === "01") ||
+    { id: "01", name: "楚能", label: "01_楚能" }
+  );
+}
+
+function normalizeTaskProjectSnapshot(project = null) {
+  return publicProject(project) || defaultLegacyProject();
+}
+
+export function publicUnitTestWorkerProfile(profile = {}) {
+  const id = String(profile?.id || "").trim();
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    label: String(profile.label || id).trim() || id,
+    isDefault: Boolean(profile.isDefault),
+    hermesBaseURL: String(profile.hermesBaseURL || "").trim(),
+    hermesApiMode: String(profile.hermesApiMode || "json").trim() || "json",
+    matlabBaseURL: String(profile.matlabBaseURL || "").trim(),
+    matlabHttpMode: String(profile.matlabHttpMode || "path").trim() || "path",
+    authConfigured: {
+      hermes: Boolean(profile.hermesAuthToken),
+      matlabWorker: Boolean(profile.matlabAuthToken)
+    }
+  };
+}
+
+export function listUnitTestWorkerProfiles() {
+  const cfg = unitTestCaseConfig();
+  const profiles = cfg.workerProfiles.map(publicUnitTestWorkerProfile).filter(Boolean);
+  if (!profiles.length) {
+    return [];
+  }
+  return profiles.map((profile) => ({
+    ...profile,
+    isDefault: profile.id === cfg.defaultWorkerId || profile.isDefault
+  }));
+}
+
+export function resolveUnitTestWorkerProfile(workerId = "") {
+  const cfg = unitTestCaseConfig();
+  const requestedId = String(workerId || cfg.defaultWorkerId || "").trim();
+  const profiles = cfg.workerProfiles.filter((profile) => profile?.id);
+  const profile = profiles.find((item) => item.id === requestedId) || (!requestedId ? profiles[0] : null);
+  if (!profile) {
+    throw createHttpError("Unit test Worker is not configured.", 400, "unit_test_case_worker_not_found", { workerId: requestedId });
+  }
+  return profile;
+}
+
+function assertProjectAdminCode(authCode = "") {
+  const expected = unitTestCaseConfig().projectAdminCode;
+  if (String(authCode || "") !== expected) {
+    throw createHttpError("项目授权码不正确。", 403, "unit_test_case_project_auth_failed");
+  }
 }
 
 function normalizeExtension(fileName = "") {
@@ -63,7 +208,8 @@ function toMatlabModelBase(originalName = "", fallbackBase = "model") {
 function normalizeTaskFiles(files = {}) {
   return {
     modelSlx: Array.isArray(files.modelSlx) ? files.modelSlx : [],
-    modelMat: Array.isArray(files.modelMat) ? files.modelMat : []
+    modelMat: Array.isArray(files.modelMat) ? files.modelMat : [],
+    modelInitScript: Array.isArray(files.modelInitScript) ? files.modelInitScript : []
   };
 }
 
@@ -81,6 +227,38 @@ function isWorkbookOutput(relativePath = "") {
   }
   const parts = normalized.split("/").filter(Boolean);
   return parts.length === 2 && parts[0] === "outputs" && parts[1].toLowerCase().endsWith(".xlsx");
+}
+
+function countTextOccurrences(text = "", needle = "") {
+  if (!needle) {
+    return 0;
+  }
+  let count = 0;
+  let offset = 0;
+  while (true) {
+    const index = text.indexOf(needle, offset);
+    if (index === -1) {
+      return count;
+    }
+    count += 1;
+    offset = index + needle.length;
+  }
+}
+
+async function summarizeWorkbookExpectedValues(absolutePath = "") {
+  const archive = await openZipArchive(absolutePath, {
+    maxArchiveBytes: 256 * 1024 * 1024,
+    maxEntryUncompressedBytes: 64 * 1024 * 1024,
+    maxTotalUncompressedBytes: 256 * 1024 * 1024
+  });
+  let expValueCount = 0;
+  for (const entry of archive.readTextEntriesBySuffix(".xml")) {
+    if (!entry.fileName.startsWith("xl/worksheets/") && entry.fileName !== "xl/sharedStrings.xml") {
+      continue;
+    }
+    expValueCount += countTextOccurrences(entry.text, "expValue(");
+  }
+  return { expValueCount };
 }
 
 function toPlatformPath(filePath = "") {
@@ -135,6 +313,8 @@ function taskFilePath(taskDir = "") {
 
 function publicTask(task = {}) {
   const clone = structuredClone(task);
+  clone.unitTestProject = normalizeTaskProjectSnapshot(clone.unitTestProject);
+  clone.workerProfile = publicUnitTestWorkerProfile(clone.workerProfile) || publicUnitTestWorkerProfile(resolveUnitTestWorkerProfile(""));
   if (clone.workspace) {
     clone.workspace = {
       directory: clone.workspace.directory,
@@ -153,7 +333,7 @@ async function copyUploadedFile(file = {}, targetPath = "") {
 }
 
 async function cleanupTempFiles(files = {}) {
-  const allFiles = [...(files.modelSlx || []), ...(files.modelMat || [])];
+  const allFiles = [...(files.modelSlx || []), ...(files.modelMat || []), ...(files.modelInitScript || [])];
   await Promise.all(
     allFiles
       .map((file) => file?.path)
@@ -164,7 +344,13 @@ async function cleanupTempFiles(files = {}) {
 
 export class UnitTestCaseGenerationService {
   constructor(options = {}) {
-    this.hermesAgentClient = options.hermesAgentClient || new HermesAgentClient();
+    this.hermesAgentClient = options.hermesAgentClient || null;
+    this.hermesAgentClientFactory = typeof options.hermesAgentClientFactory === "function"
+      ? options.hermesAgentClientFactory
+      : null;
+    this.deletedTaskIds = new Set();
+    this.remotePollWindowMs = Number(options.remotePollWindowMs ?? config.unitTestCase?.remotePollWindowMs ?? 5 * 60 * 1000);
+    this.sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   get storeDir() {
@@ -176,19 +362,119 @@ export class UnitTestCaseGenerationService {
   }
 
   getTaskDir(taskId = "") {
-    return path.join(this.storeDir, String(taskId || ""));
+    const id = String(taskId || "").trim();
+    const storeDir = path.resolve(this.storeDir);
+    const taskDir = path.resolve(storeDir, id);
+    if (!id || taskDir === storeDir || !taskDir.startsWith(`${storeDir}${path.sep}`)) {
+      throw createHttpError("任务 ID 非法。", 400, "unit_test_case_invalid_task_id");
+    }
+    return taskDir;
   }
 
   async ensureDirs() {
     const cfg = unitTestCaseConfig();
     await Promise.all([
       fs.mkdir(cfg.taskStoreDir, { recursive: true }),
-      fs.mkdir(cfg.uploadTempDir, { recursive: true })
+      fs.mkdir(cfg.uploadTempDir, { recursive: true }),
+      fs.mkdir(path.dirname(cfg.projectRegistryPath), { recursive: true })
     ]);
   }
 
-  async listTasks() {
+  async readProjectRegistry() {
     await this.ensureDirs();
+    const cfg = unitTestCaseConfig();
+    const fallback = buildProjectRegistry(parseDefaultProjects(cfg.defaultProjects));
+    const stored = await readJson(cfg.projectRegistryPath, null);
+    if (!stored || !Array.isArray(stored.projects)) {
+      await writeJson(cfg.projectRegistryPath, fallback);
+      return fallback;
+    }
+    const normalized = buildProjectRegistry(stored.projects);
+    normalized.nextProjectNumber = Math.max(
+      Number(stored.nextProjectNumber || 0) || 0,
+      normalized.nextProjectNumber
+    );
+    if (JSON.stringify(stored) !== JSON.stringify(normalized)) {
+      await writeJson(cfg.projectRegistryPath, normalized);
+    }
+    return normalized;
+  }
+
+  async saveProjectRegistry(registry = {}) {
+    await this.ensureDirs();
+    const normalized = buildProjectRegistry(registry.projects || []);
+    normalized.nextProjectNumber = Math.max(
+      Number(registry.nextProjectNumber || 0) || 0,
+      normalized.nextProjectNumber
+    );
+    await writeJson(unitTestCaseConfig().projectRegistryPath, normalized);
+    return normalized;
+  }
+
+  async listProjects() {
+    const registry = await this.readProjectRegistry();
+    return registry.projects.map(publicProject).filter(Boolean);
+  }
+
+  async getUnitTestProject(projectId = "") {
+    const id = normalizeProjectId(projectId);
+    if (!PROJECT_ID_PATTERN.test(id)) {
+      throw createHttpError("请选择有效的项目编号。", 400, "unit_test_case_invalid_project_id");
+    }
+    const projects = await this.listProjects();
+    const project = projects.find((item) => item.id === id);
+    if (!project) {
+      throw createHttpError("单元测试项目不存在。", 400, "unit_test_case_project_not_found", { projectId: id });
+    }
+    return project;
+  }
+
+  async createProject(input = {}) {
+    assertProjectAdminCode(input.authCode);
+    const name = normalizeProjectName(input.name);
+    if (!name) {
+      throw createHttpError("项目名不能为空。", 400, "unit_test_case_project_name_required");
+    }
+    const registry = await this.readProjectRegistry();
+    const usedIds = new Set(registry.projects.map((project) => project.id));
+    let candidateNumber = Math.max(1, Number(registry.nextProjectNumber || 1) || 1);
+    let id = String(candidateNumber).padStart(2, "0");
+    while (usedIds.has(id)) {
+      candidateNumber += 1;
+      id = String(candidateNumber).padStart(2, "0");
+    }
+    const project = { id, name, label: `${id}_${name}` };
+    const saved = await this.saveProjectRegistry({
+      nextProjectNumber: candidateNumber + 1,
+      projects: [...registry.projects, project]
+    });
+    return publicProject(saved.projects.find((item) => item.id === id));
+  }
+
+  async deleteProject(projectId = "", input = {}) {
+    assertProjectAdminCode(input.authCode);
+    const id = normalizeProjectId(projectId);
+    if (!PROJECT_ID_PATTERN.test(id)) {
+      throw createHttpError("项目编号非法。", 400, "unit_test_case_invalid_project_id");
+    }
+    const registry = await this.readProjectRegistry();
+    const nextProjects = registry.projects.filter((project) => project.id !== id);
+    if (nextProjects.length === registry.projects.length) {
+      throw createHttpError("单元测试项目不存在。", 404, "unit_test_case_project_not_found", { projectId: id });
+    }
+    await this.saveProjectRegistry({
+      nextProjectNumber: registry.nextProjectNumber,
+      projects: nextProjects
+    });
+    return { deleted: true, projectId: id };
+  }
+
+  async listTasks(options = {}) {
+    await this.ensureDirs();
+    const filterProjectId = normalizeProjectId(options.projectId || "");
+    if (filterProjectId && !PROJECT_ID_PATTERN.test(filterProjectId)) {
+      throw createHttpError("项目编号非法。", 400, "unit_test_case_invalid_project_id");
+    }
     const entries = await fs.readdir(this.storeDir, { withFileTypes: true }).catch(() => []);
     const tasks = [];
     for (const entry of entries) {
@@ -197,7 +483,10 @@ export class UnitTestCaseGenerationService {
       }
       const task = await readJson(taskFilePath(path.join(this.storeDir, entry.name)), null);
       if (task?.id) {
-        tasks.push(publicTask(task));
+        const publicRecord = publicTask(task);
+        if (!filterProjectId || publicRecord.unitTestProject?.id === filterProjectId) {
+          tasks.push(publicRecord);
+        }
       }
     }
     return tasks.sort((a, b) => Date.parse(b.updatedAt || b.createdAt || "") - Date.parse(a.updatedAt || a.createdAt || ""));
@@ -213,38 +502,65 @@ export class UnitTestCaseGenerationService {
   }
 
   async saveTask(task = {}) {
+    if (this.deletedTaskIds.has(task.id)) {
+      return publicTask(task);
+    }
     const taskDir = this.getTaskDir(task.id);
     await fs.mkdir(taskDir, { recursive: true });
     await writeJson(taskFilePath(taskDir), task);
     return publicTask(task);
   }
 
+  async deleteTask(taskId = "") {
+    const task = await this.readTask(taskId);
+    if (!task) {
+      throw createHttpError("任务不存在。", 404, "unit_test_case_task_not_found");
+    }
+    this.deletedTaskIds.add(task.id);
+    const taskDir = this.getTaskDir(task.id);
+    await fs.rm(taskDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    return {
+      deleted: true,
+      taskId: task.id,
+      status: task.status || "",
+      removedArtifacts: Array.isArray(task.artifacts) ? task.artifacts.length : 0,
+      removedWorkspace: true
+    };
+  }
+
   validateUploadFiles(files = {}) {
     const normalized = normalizeTaskFiles(files);
-    if (normalized.modelSlx.length !== 1 || normalized.modelMat.length !== 1) {
+    if (normalized.modelSlx.length !== 1 || normalized.modelMat.length !== 1 || normalized.modelInitScript.length > 1) {
       throw createHttpError("需要同时上传 1 个 .slx 模型文件和 1 个 .mat 数据文件。", 400, "unit_test_case_invalid_upload_count", {
         modelSlxCount: normalized.modelSlx.length,
-        modelMatCount: normalized.modelMat.length
+        modelMatCount: normalized.modelMat.length,
+        modelInitScriptCount: normalized.modelInitScript.length
       });
     }
 
     const [modelSlx] = normalized.modelSlx;
     const [modelMat] = normalized.modelMat;
+    const [modelInitScript] = normalized.modelInitScript;
     if (normalizeExtension(modelSlx.originalname) !== ".slx") {
       throw createHttpError("模型文件只接受 .slx。", 400, "unit_test_case_invalid_slx_extension");
     }
     if (normalizeExtension(modelMat.originalname) !== ".mat") {
       throw createHttpError("数据文件只接受 .mat。", 400, "unit_test_case_invalid_mat_extension");
     }
+    if (modelInitScript && normalizeExtension(modelInitScript.originalname) !== ".m") {
+      throw createHttpError("初始化脚本只接受 .m。", 400, "unit_test_case_invalid_init_script_extension");
+    }
 
-    return { modelSlx, modelMat };
+    return { modelSlx, modelMat, modelInitScript: modelInitScript || null };
   }
 
   async createTask(files = {}, metadata = {}) {
     await this.ensureDirs();
     const normalized = normalizeTaskFiles(files);
     try {
-      const { modelSlx, modelMat } = this.validateUploadFiles(normalized);
+      const { modelSlx, modelMat, modelInitScript } = this.validateUploadFiles(normalized);
+      const unitTestProject = await this.getUnitTestProject(metadata.unitTestProjectId || metadata.projectId || "");
+      const workerProfile = resolveUnitTestWorkerProfile(metadata.workerId || metadata.unitTestWorkerId || "");
       const taskId = randomUUID();
       const taskDir = this.getTaskDir(taskId);
       const inputDir = path.join(taskDir, "inputs");
@@ -262,14 +578,26 @@ export class UnitTestCaseGenerationService {
       const workspaceModelBase = toMatlabModelBase(modelSlx.originalname, "model");
       const workspaceSlxName = `${workspaceModelBase}.slx`;
       const workspaceMatName = `${workspaceModelBase}.mat`;
+      const initScriptName = modelInitScript ? sanitizeStoredFileName(modelInitScript.originalname, "model_init.m") : "";
+      const workspaceInitScriptName = modelInitScript
+        ? `${toMatlabModelBase(modelInitScript.originalname, `${workspaceModelBase}_init`)}.m`
+        : "";
       const archivedSlxPath = path.join(inputDir, slxName);
       const archivedMatPath = path.join(inputDir, matName);
+      const archivedInitScriptPath = modelInitScript ? path.join(inputDir, initScriptName) : "";
       const workspaceSlxPath = path.join(workspaceDir, workspaceSlxName);
       const workspaceMatPath = path.join(workspaceDir, workspaceMatName);
+      const workspaceInitScriptPath = modelInitScript ? path.join(workspaceInputDir, workspaceInitScriptName) : "";
       await copyUploadedFile(modelSlx, archivedSlxPath);
       await copyUploadedFile(modelMat, archivedMatPath);
+      if (modelInitScript) {
+        await copyUploadedFile(modelInitScript, archivedInitScriptPath);
+      }
       await fs.copyFile(archivedSlxPath, workspaceSlxPath);
       await fs.copyFile(archivedMatPath, workspaceMatPath);
+      if (modelInitScript) {
+        await fs.copyFile(archivedInitScriptPath, workspaceInitScriptPath);
+      }
 
       const cfg = unitTestCaseConfig();
       const agentWorkspaceDir = buildAgentPath(workspaceDir, {
@@ -288,6 +616,21 @@ export class UnitTestCaseGenerationService {
         agentWorkspaceRoot: cfg.agentWorkspaceRoot,
         localTaskStoreDir: cfg.taskStoreDir
       });
+      const agentInitScriptPath = modelInitScript ? buildAgentPath(workspaceInitScriptPath, {
+        agentWorkspaceRoot: cfg.agentWorkspaceRoot,
+        localTaskStoreDir: cfg.taskStoreDir
+      }) : "";
+      const initScriptInput = modelInitScript
+        ? {
+            originalName: normalizeUploadedFileName(modelInitScript.originalname),
+            storedName: initScriptName,
+            workspaceName: workspaceInitScriptName,
+            size: Number(modelInitScript.size || 0) || 0,
+            mimeType: modelInitScript.mimetype || "",
+            archiveRelativePath: normalizeStoredRelativePath(path.relative(taskDir, archivedInitScriptPath)),
+            workspaceRelativePath: normalizeStoredRelativePath(path.relative(workspaceDir, workspaceInitScriptPath))
+          }
+        : null;
 
       const createdAt = now();
       const task = {
@@ -303,6 +646,8 @@ export class UnitTestCaseGenerationService {
         summary: "",
         errorMessage: "",
         progress: buildProgress("queued"),
+        unitTestProject,
+        workerProfile: publicUnitTestWorkerProfile(workerProfile),
         inputs: {
           modelSlx: {
             originalName: normalizeUploadedFileName(modelSlx.originalname),
@@ -329,15 +674,17 @@ export class UnitTestCaseGenerationService {
           outputDir,
           modelSlxPath: workspaceSlxPath,
           modelMatPath: workspaceMatPath,
+          modelInitScriptPath: workspaceInitScriptPath,
           agentDirectory: agentWorkspaceDir,
           agentModelSlxPath: agentSlxPath,
           agentModelMatPath: agentMatPath,
+          agentModelInitScriptPath: agentInitScriptPath,
           agentOutputDir
         },
         hermes: {
           stepType: STEP_TYPE,
           queueType: QUEUE_TYPE,
-          skillName: cfg.skillName,
+          pipelineName: cfg.pipelineName,
           expectedOutputPattern: cfg.expectedOutputPattern,
           summary: "",
           metrics: null,
@@ -350,10 +697,13 @@ export class UnitTestCaseGenerationService {
           {
             at: createdAt,
             status: "queued",
-            message: "任务已创建并等待 Hermes Agent 执行。"
+            message: `任务已创建并等待 Hermes Agent 执行，项目：${unitTestProject.label}。`
           }
         ]
       };
+      if (initScriptInput) {
+        task.inputs.modelInitScript = initScriptInput;
+      }
       await this.saveTask(task);
       return publicTask(task);
     } finally {
@@ -417,29 +767,117 @@ export class UnitTestCaseGenerationService {
     return normalizedEvent;
   }
 
+  getHermesAgentClientForWorker(workerProfile = {}) {
+    if (this.hermesAgentClient) {
+      return this.hermesAgentClient;
+    }
+    if (this.hermesAgentClientFactory) {
+      return this.hermesAgentClientFactory(workerProfile);
+    }
+    return new HermesAgentClient({
+      transport: workerProfile.hermesTransport || "api",
+      baseURL: workerProfile.hermesBaseURL,
+      apiMode: workerProfile.hermesApiMode || config.hermes.apiMode || "json",
+      authToken: workerProfile.hermesAuthToken || "",
+      timeoutMs: config.hermes.timeoutMs,
+      stepTimeoutMs: config.hermes.stepTimeoutMs,
+      maxTurns: config.hermes.maxTurns,
+      stepMaxTurns: config.hermes.stepMaxTurns,
+      heartbeatIntervalMs: config.hermes.heartbeatIntervalMs
+    });
+  }
+
   buildHermesPayload(task = {}) {
     const cfg = unitTestCaseConfig();
     const workspaceDir = task.workspace?.agentDirectory || task.workspace?.directory || "";
     const modelSlxPath = task.workspace?.agentModelSlxPath || task.workspace?.modelSlxPath || "";
     const modelMatPath = task.workspace?.agentModelMatPath || task.workspace?.modelMatPath || "";
+    const modelInitScriptPath = task.workspace?.agentModelInitScriptPath || task.workspace?.modelInitScriptPath || "";
     const outputDir = task.workspace?.agentOutputDir || task.workspace?.outputDir || "";
+    const modelInitScriptRelativePath = task.inputs?.modelInitScript?.workspaceRelativePath || "";
+    const inputArtifact = {
+      workspaceDir,
+      modelSlxPath,
+      modelMatPath,
+      outputDir,
+      unitTestProject: normalizeTaskProjectSnapshot(task.unitTestProject),
+      pipelineSchema: TCSD_PIPELINE_SCHEMA,
+      expectedOutputPattern: cfg.expectedOutputPattern,
+      localPlatformWorkspaceDir: task.workspace?.directory || "",
+      modelSlxFileName: task.inputs?.modelSlx?.originalName || path.basename(modelSlxPath),
+      modelMatFileName: task.inputs?.modelMat?.originalName || path.basename(modelMatPath)
+    };
+    if (modelInitScriptPath && modelInitScriptRelativePath) {
+      inputArtifact.modelInitScriptPath = modelInitScriptPath;
+      inputArtifact.modelInitScriptFileName = task.inputs?.modelInitScript?.workspaceName || path.basename(modelInitScriptPath);
+      inputArtifact.projectInitScripts = [modelInitScriptRelativePath];
+    }
     return {
       stepType: STEP_TYPE,
       type: QUEUE_TYPE,
       allowedPaths: [workspaceDir],
       workdir: workspaceDir,
-      inputArtifact: {
-        workspaceDir,
-        modelSlxPath,
-        modelMatPath,
-        outputDir,
-        skillName: cfg.skillName,
-        expectedOutputPattern: cfg.expectedOutputPattern,
-        localPlatformWorkspaceDir: task.workspace?.directory || "",
-        modelSlxFileName: task.inputs?.modelSlx?.originalName || path.basename(modelSlxPath),
-        modelMatFileName: task.inputs?.modelMat?.originalName || path.basename(modelMatPath)
-      }
+      inputArtifact
     };
+  }
+
+  async syncPipelineJob(taskId, job) {
+    const task = await this.readTask(taskId);
+    if (!task) return null;
+    task.pipeline = {
+      jobId: job.jobId,
+      schema: job.schema,
+      status: job.status,
+      completion: job.completion || "",
+      stages: Array.isArray(job.stages) ? job.stages : [],
+      checkpoints: Array.isArray(job.checkpoints) ? job.checkpoints : [],
+      coverage: job.coverage || null,
+      repair: job.repair || { attempted: false, applied: false },
+      error: job.error || null,
+      updatedAt: job.updatedAt || now()
+    };
+    task.status = job.status === "失败" ? "failed" : job.status === "部分完成" ? "partial" : job.status === "已完成" ? "completed" : "running";
+    task.workerPending = false;
+    task.progress = buildProgress(task.status, job.stages?.find((stage) => stage.status === "正在执行")?.name || job.error?.message || "正在同步 TCSD 十二阶段进度。");
+    task.updatedAt = now();
+    await this.saveTask(task);
+    return task;
+  }
+
+  async runRemotePipeline(taskId, task, workerProfile = null) {
+    const resolvedWorkerProfile = workerProfile || resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
+    const hermesAgentClient = this.getHermesAgentClientForWorker(resolvedWorkerProfile);
+    const existingJobId = task.pipeline?.jobId || "";
+    const started = existingJobId
+      ? { jobId: existingJobId, status: task.pipeline?.status || "正在执行", schema: task.pipeline?.schema || "" }
+      : await hermesAgentClient.startTcsdPipelineJob({
+          ...this.buildHermesPayload(task),
+          taskId,
+          idempotencyKey: taskId
+        });
+    let job = { ...started, stages: [] };
+    await this.syncPipelineJob(taskId, job);
+    const deadline = Date.now() + this.remotePollWindowMs;
+    let delayMs = 1000;
+    while (Date.now() < deadline) {
+      try {
+        job = await hermesAgentClient.getTcsdPipelineJob(started.jobId);
+        await this.syncPipelineJob(taskId, job);
+        if (["已完成", "部分完成", "失败"].includes(job.status)) break;
+        delayMs = 1000;
+      } catch (error) {
+        // A temporary network break is not a MATLAB failure; retain the last confirmed job state.
+        if (error.code === "tcsd_job_not_found") throw error;
+        delayMs = Math.min(15000, Math.round(delayMs * 1.8));
+      }
+      await this.sleep(delayMs);
+    }
+    if (!job || !["已完成", "部分完成", "失败"].includes(job.status)) {
+      const pending = await this.readTask(taskId); pending.status = "running"; pending.workerPending = true; pending.progress = buildProgress("running", "Windows 作业仍在执行，平台将在后台继续同步。"); pending.updatedAt = now(); await this.saveTask(pending);
+      return { status: "pending", jobId: started.jobId };
+    }
+    if (job.status === "失败") throw createHttpError(job.error?.message || "TCSD 阶段执行失败。", 502, job.error?.code || "tcsd_stage_failed");
+    return { status: "succeeded", artifact: { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [], warnings: [] }, metrics: { pipelineJobId: job.jobId }, pipelineJob: job };
   }
 
   async runTask(taskId = "") {
@@ -451,9 +889,11 @@ export class UnitTestCaseGenerationService {
     task = await this.readTask(taskId);
 
     try {
-      const result = await this.hermesAgentClient.executeStep(this.buildHermesPayload(task), {
-        onEvent: (event) => this.appendRuntimeEvent(taskId, event)
-      });
+      const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
+      task.workerProfile = publicUnitTestWorkerProfile(workerProfile);
+      await this.saveTask(task);
+      const result = await this.runRemotePipeline(taskId, task, workerProfile);
+      if (result?.status === "pending") return this.getTask(taskId);
       const artifact = result?.artifact || {};
       if (result?.status && result.status !== "succeeded") {
         throw createHttpError(result?.error?.message || "Hermes Agent 执行失败。", 502, "unit_test_case_hermes_failed");
@@ -463,6 +903,9 @@ export class UnitTestCaseGenerationService {
       }
       return await this.completeTask(taskId, artifact, result);
     } catch (error) {
+      if (["tcsd_worker_unavailable", "tcsd_poll_timeout"].includes(error.code)) {
+        const pending = await this.readTask(taskId); pending.status = pending.pipeline?.jobId ? "running" : "queued"; pending.workerPending = true; pending.updatedAt = now(); pending.progress = buildProgress(pending.status, "Windows Worker 暂不可用，平台将在后台继续尝试。"); await this.saveTask(pending); return this.getTask(taskId);
+      }
       await this.failTask(taskId, error);
       throw error;
     }
@@ -508,8 +951,21 @@ export class UnitTestCaseGenerationService {
       }
     }
 
+    const finalValidationStage = (task.pipeline?.stages || []).find((stage) => Number(stage?.index) === 11);
+    const validatedWorkbookRelativePath = (finalValidationStage?.checkpoint?.artifacts || [])
+      .find((item) => item?.kind === "xlsx" && item?.path)?.path;
+    const packagingStage = (task.pipeline?.stages || []).find((stage) => Number(stage?.index) === 12);
+    const packagedWorkbookRelativePath = (packagingStage?.checkpoint?.artifacts || [])
+      .find((item) => item?.kind === "xlsx" && item?.role === "final-workbook" && item?.path)?.path;
+    const finalWorkbookRelativePath = packagedWorkbookRelativePath || validatedWorkbookRelativePath;
+    const normalizedFinalWorkbookPath = normalizeStoredRelativePath(finalWorkbookRelativePath || "");
+    const selectedCandidates =
+      normalizedFinalWorkbookPath && candidates.has(normalizedFinalWorkbookPath)
+        ? [candidates.get(normalizedFinalWorkbookPath)]
+        : [...candidates.values()];
+
     const artifacts = [];
-    for (const candidate of candidates.values()) {
+    for (const candidate of selectedCandidates) {
       const absolutePath = path.resolve(workspaceDir, ...candidate.relativePath.split("/"));
       if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`) || !(await pathExists(absolutePath))) {
         continue;
@@ -518,6 +974,7 @@ export class UnitTestCaseGenerationService {
       if (!stat.isFile()) {
         continue;
       }
+      const expectedValueSummary = await summarizeWorkbookExpectedValues(absolutePath);
       artifacts.push({
         id: randomUUID(),
         kind: candidate.kind || "tcsd_workbook",
@@ -525,7 +982,12 @@ export class UnitTestCaseGenerationService {
         relativePath: candidate.relativePath,
         size: stat.size,
         mimeType: candidate.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        description: candidate.description || "生成的 TCSD 单元测试用例 Excel",
+        description: candidate.description || (
+          candidate.relativePath === normalizedFinalWorkbookPath
+            ? "最终 TCSD 单元测试用例 Excel"
+            : "生成的 TCSD 单元测试用例 Excel"
+        ),
+        expectedValueCount: expectedValueSummary.expValueCount,
         createdAt: now()
       });
     }
@@ -543,8 +1005,22 @@ export class UnitTestCaseGenerationService {
         expectedOutputPattern: task.hermes?.expectedOutputPattern || unitTestCaseConfig().expectedOutputPattern
       });
     }
+    const usableArtifacts = artifacts.filter((artifact) => Number(artifact.expectedValueCount || 0) > 0);
+    if (!usableArtifacts.length) {
+      throw createHttpError(
+        "Hermes 已生成 TCSD workbook，但未检测到 expValue(...) 期望值；该用例无法作为自动化测试执行结果使用。",
+        502,
+        "unit_test_case_expected_values_missing",
+        {
+          artifacts: artifacts.map((artifact) => ({
+            relativePath: artifact.relativePath,
+            expectedValueCount: artifact.expectedValueCount || 0
+          }))
+        }
+      );
+    }
     const timestamp = now();
-    task.status = "completed";
+    task.status = hermesArtifact.status === "partial" ? "partial" : "completed";
     task.completedAt = timestamp;
     task.updatedAt = timestamp;
     task.summary = hermesArtifact.summary || `已生成 ${artifacts.length} 个 TCSD Excel 文件。`;
@@ -595,10 +1071,28 @@ export class UnitTestCaseGenerationService {
     for (const task of tasks) {
       const updatedAt = Date.parse(task.updatedAt || task.createdAt || "") || 0;
       if (["queued", "running"].includes(task.status) && updatedAt < cutoff) {
-        await this.failTask(task.id, createHttpError("服务重启后任务未恢复，已标记为失败。", 500, "unit_test_case_task_recovered_failed"));
+        if (task.pipeline?.jobId) await this.reconcileTask(task.id);
+        else if (task.status === "running") await this.failTask(task.id, createHttpError("服务重启后任务缺少可恢复的 Windows jobId。", 500, "unit_test_case_task_recovered_failed"));
       }
     }
   }
+
+  async reconcileTask(taskId = "") {
+    const task = await this.readTask(taskId); if (!task?.pipeline?.jobId || !["queued", "running"].includes(task.status)) return task;
+    try {
+      const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
+      const hermesAgentClient = this.getHermesAgentClientForWorker(workerProfile);
+      const job = await hermesAgentClient.getTcsdPipelineJob(task.pipeline.jobId); await this.syncPipelineJob(taskId, job);
+      if (job.status === "失败") return this.failTask(taskId, createHttpError(job.error?.message || "Windows 阶段执行失败。", 502, job.error?.code || "tcsd_stage_failed"));
+      if (["已完成", "部分完成"].includes(job.status)) return this.completeTask(taskId, { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [] }, { metrics: { pipelineJobId: job.jobId } });
+      return this.getTask(taskId);
+    } catch (error) {
+      if (error.code === "tcsd_job_not_found") return this.failTask(taskId, createHttpError("Windows Worker 中不存在该 jobId。", 404, "tcsd_job_not_found"));
+      const pending = await this.readTask(taskId); pending.status = "running"; pending.workerPending = true; pending.updatedAt = now(); pending.progress = buildProgress("running", error.code === "tcsd_worker_unavailable" ? "Windows Worker 暂不可用，等待后台重连。" : "进度同步暂时中断，等待后台重试。"); await this.saveTask(pending); return pending;
+    }
+  }
+
+  async reconcileRemoteTasks() { const results = []; for (const task of await this.listTasks()) if (["queued", "running"].includes(task.status)) results.push(task.pipeline?.jobId ? await this.reconcileTask(task.id) : await this.runTask(task.id)); return results; }
 
   async getArtifact(taskId = "", artifactId = "") {
     const task = await this.readTask(taskId);
@@ -619,6 +1113,12 @@ export class UnitTestCaseGenerationService {
     }
     return {
       ...artifact,
+      fileName: artifact.relativePath === (task.pipeline?.stages || [])
+        .find((stage) => Number(stage?.index) === 11)
+        ?.checkpoint?.artifacts?.find((item) => item?.kind === "xlsx" && item?.path)
+        ?.path
+        ? finalWorkbookFileName(task)
+        : artifact.fileName,
       absolutePath
     };
   }

@@ -48,7 +48,7 @@
 ## Linux 和 Windows 边界
 
 - Linux 生产端必须通过 HTTP 调 Windows VM，不在 Linux 上直接跑 `hermes` 或 MATLAB MCP stdio。
-- Windows VM 是工具宿主机。Hermes CLI、MATLAB、SATK、MCP server、`simulink-ut-tcsd-generator` skill 都应在 Windows VM 可见。
+- Windows VM 是工具宿主机。Hermes CLI、MATLAB、SATK、MCP server、十二个 `tcsd-stage-*` 技能和共享 `tcsd-runtime` 都应在 Windows VM 可见。
 - Linux 传给 Windows 的路径不能默认复用 Linux 绝对路径。如果两边没有共享盘，需要用 multipart 上传、受控下载 URL，或设置 `UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT` 做路径映射。
 - 最小验证可以用 Linux 临时 HTTP 服务暴露 SLX，但生产链路应使用受控下载接口、multipart 文件投递或明确的共享目录。
 
@@ -81,28 +81,17 @@
 
 ## TCSD 生成链路
 
-1. 入口页面是 `/unit-test-case-generation`。平台端接收 `.slx` 和 `.mat`，创建 `data/unit-test-case-generation/tasks/<taskId>/workspace`，再调用 Hermes step `simulink_ut_tcsd_generate`。
+以下内容以 `docs/deployment-split-handoff.md` 的“单元测试 TCSD Agent 十二阶段流水线 V2”为当前权威说明。旧的单次整体 Hermes step、长连接、stdout JSON/Excel 兜底和 best-effort workbook 行为已经删除，不得恢复。
 
-2. 生产配置要给长任务留足空间：
+1. 入口页面是 `/unit-test-case-generation`。平台端接收 `.slx` 和 `.mat`，创建隔离 workspace，并把用户所选 Windows Worker 固化到任务快照。
 
-   ```dotenv
-   HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS=7200000
-   HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE=10000
-   UNIT_TEST_CASE_SKILL_NAME=simulink-ut-tcsd-generator
-   UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN=outputs/*_tcsd.xlsx
-   ```
+2. Linux 通过所选 Worker 的 Hermes Client 调用 `POST /internal/tcsd-pipeline/jobs`，随后用同一 Client 轮询 `GET /internal/tcsd-pipeline/jobs/:jobId`；服务重启后的任务对账也必须保持同一 Worker。
 
-   本地 sidecar 或 Windows Agent 还要避免 HTTP server 在 5 分钟左右中断长连接，必要时设置 `HERMES_SERVER_REQUEST_TIMEOUT_MS=0`。
+3. Windows Hermes Agent 为十二个阶段分别启动全新的 Hermes session，技能发现、技能加载证据、Python 依赖、MATLAB/SATK Canary、阶段 checkpoint 和最终产物验证均 fail-closed。
 
-3. skill 产物必须落在 `outputs/*.xlsx`。后端只登记这个范围内的 Excel，避免把任意 Windows 路径或临时文件暴露给平台下载。
+4. TCSD skill 和共享 runtime 只在 Windows 发布目标中执行。Python 必须通过 `requirements/tcsd-runtime.txt` 安装并由 `scripts/check-tcsd-python.py` 门禁验证，不能依赖偶然存在于某个解释器环境中的包。
 
-4. Hermes CLI 不一定返回严格 JSON。当前兜底策略是：如果 stdout/stderr 不能解析成 JSON，但 `outputs/` 下已经有 `.xlsx`，后端仍回收产物并登记结果。
-
-5. multipart 远程调用时，不能只返回 Windows 侧绝对路径。Windows Agent 需要把 `outputs/*.xlsx` 读成受限大小的 base64 `outputFiles`，Linux 客户端再写回本地 task workspace。否则 UI 会看到 Hermes 成功但下载列表为空。
-
-6. `execute_code` 的隔离 Python 环境不一定有 `openpyxl`。TCSD skill 需要用终端里的 Python 执行 `scripts/build_tcsd_from_json.py`，确保能访问已安装依赖。
-
-7. MATLAB/SATK 不稳定或仿真回填失败时，仍应生成带 warnings 的 best-effort workbook，而不是整个任务无 Excel 失败。验证目标先是产物闭环，再逐步提高用例质量。
+5. 最终 Excel 仍只从任务 workspace 的 `outputs/*.xlsx` 登记和回传；任意绝对 Windows 路径、未验证中间产物、Agent 文本或隐藏推理都不是权威结果。
 
 ## Windows Worker 部署
 
@@ -156,4 +145,3 @@ git diff --name-status
 - `data/unit-test-case-generation/**`
 - `data/skills.sqlite`
 - `data/skill-rules/bundle-base.json`
-

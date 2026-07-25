@@ -15,9 +15,12 @@ import {
 import { SlxModelAnalysisService } from "./services/slx-model-analysis-service.js";
 import { ModelRequirementViewService } from "./services/model-requirement-view-service.js";
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
+import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js";
+import { TCSD_ERROR_CODES } from "./services/tcsd-pipeline-contract.js";
+import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.js";
+import { TcsdHermesSkillRegistry } from "./services/tcsd-hermes-skill-registry.js";
 
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
-const MAX_TRANSFERRED_DOCX_OUTPUT_BYTES = 50 * 1024 * 1024;
 
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
@@ -74,18 +77,6 @@ function safeUploadRelativePath(value = "") {
     .filter((part) => part && part !== "." && part !== "..")
     .join(path.sep);
   return normalized || "uploaded-file";
-}
-
-function isMatlabIdentifier(value = "") {
-  return /^[A-Za-z][A-Za-z0-9_]*$/.test(String(value || ""));
-}
-
-function matlabSafeSlxFileName(value = "", fallback = "model") {
-  const parsed = path.parse(String(value || ""));
-  const candidate = parsed.name || fallback;
-  const normalized = candidate.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
-  const modelName = isMatlabIdentifier(normalized) ? normalized : fallback;
-  return `${modelName}.slx`;
 }
 
 function getHermesUploadTempDir() {
@@ -176,19 +167,10 @@ async function prepareMultipartStepPayload(req) {
     if (!mapping) {
       throw createHttpError("Multipart upload has an invalid root index", 400, "hermes_upload_root_invalid");
     }
-    const uploadName = fileEntry?.relativePath || upload.originalname || "";
     const targetPath =
       mapping.type === "file"
-        ? path.join(
-            path.dirname(mapping.remoteRoot),
-            String(uploadName).toLowerCase().endsWith(".slx")
-              ? matlabSafeSlxFileName(uploadName, `model_${rootIndex}`)
-              : safeUploadRelativePath(uploadName || path.basename(mapping.remoteRoot))
-          )
-        : path.join(mapping.remoteRoot, safeUploadRelativePath(uploadName));
-    if (mapping.type === "file") {
-      mapping.remoteRoot = targetPath;
-    }
+        ? mapping.remoteRoot
+        : path.join(mapping.remoteRoot, safeUploadRelativePath(fileEntry?.relativePath || upload.originalname || ""));
     await moveFile(upload.path, targetPath);
   }
 
@@ -382,8 +364,8 @@ async function normalizeProjectInitScripts(inputArtifact = {}, workspaceDir = ""
 }
 
 async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = [], options = {}) {
-  const stepLabel = options.stepType || "simulink_ut_tcsd_generate";
-  const defaultSkillName = options.defaultSkillName || "simulink-ut-tcsd-generator";
+  const stepLabel = options.stepType || "tcsd_stage_execute";
+  const defaultSkillName = options.defaultSkillName || "tcsd-stage-skills";
   const defaultExpectedOutputPattern = options.defaultExpectedOutputPattern || "outputs/*_tcsd.xlsx";
   const workspaceValue = String(inputArtifact.workspaceDir || "").trim();
   if (!workspaceValue) {
@@ -473,21 +455,6 @@ function normalizeTcsdOutputRelativePath(value = "") {
   return parts.join("/");
 }
 
-function normalizeModuleDescriptionOutputRelativePath(value = "") {
-  const normalized = String(value || "").replace(/\\/g, "/").replace(/^\.\/+/, "");
-  if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
-    return "";
-  }
-  const parts = normalized.split("/").filter(Boolean);
-  if (parts.some((part) => part === "." || part === "..")) {
-    return "";
-  }
-  if (parts.length !== 2 || parts[0] !== "outputs" || !parts[1].toLowerCase().endsWith(".docx")) {
-    return "";
-  }
-  return parts.join("/");
-}
-
 async function attachUnitTestCaseOutputFiles(artifact = {}, inputArtifact = {}) {
   const workspaceDir = path.resolve(String(inputArtifact.workspaceDir || ""));
   const outputDir = path.resolve(String(inputArtifact.outputDir || path.join(workspaceDir, "outputs")));
@@ -545,75 +512,6 @@ async function attachUnitTestCaseOutputFiles(artifact = {}, inputArtifact = {}) 
       kind: candidate.kind || "tcsd_workbook",
       mimeType: candidate.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       description: candidate.description || "Generated TCSD Excel workbook",
-      size: stat.size,
-      encoding: "base64",
-      contentBase64: (await fs.readFile(absolutePath)).toString("base64")
-    });
-  }
-
-  return {
-    ...artifact,
-    outputFiles
-  };
-}
-
-async function attachModuleDescriptionOutputFiles(artifact = {}, inputArtifact = {}) {
-  const workspaceDir = path.resolve(String(inputArtifact.workspaceDir || ""));
-  const outputDir = path.resolve(String(inputArtifact.outputDir || path.join(workspaceDir, "outputs")));
-  if (!workspaceDir || !isPathAllowed(outputDir, [workspaceDir])) {
-    return artifact;
-  }
-
-  const candidates = new Map();
-  const addCandidate = (relativePath = "", meta = {}) => {
-    const normalized = normalizeModuleDescriptionOutputRelativePath(relativePath);
-    if (normalized) {
-      candidates.set(normalized, { ...meta, relativePath: normalized });
-    }
-  };
-
-  for (const item of Array.isArray(artifact.outputFiles) ? artifact.outputFiles : []) {
-    if (typeof item === "string") {
-      addCandidate(item);
-      continue;
-    }
-    if (!item || typeof item !== "object") {
-      continue;
-    }
-    const itemPath = item.relativePath || item.path || item.filePath || item.absolutePath || "";
-    if (path.isAbsolute(String(itemPath))) {
-      const absolute = path.resolve(String(itemPath));
-      if (absolute.startsWith(`${workspaceDir}${path.sep}`)) {
-        addCandidate(path.relative(workspaceDir, absolute), item);
-      }
-    } else {
-      addCandidate(itemPath, item);
-    }
-  }
-
-  const entries = await fs.readdir(outputDir, { withFileTypes: true }).catch(() => []);
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.toLowerCase().endsWith(".docx")) {
-      addCandidate(path.join("outputs", entry.name));
-    }
-  }
-
-  const outputFiles = [];
-  for (const candidate of candidates.values()) {
-    const absolutePath = path.resolve(workspaceDir, ...candidate.relativePath.split("/"));
-    if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`)) {
-      continue;
-    }
-    const stat = await fs.stat(absolutePath).catch(() => null);
-    if (!stat?.isFile() || stat.size > MAX_TRANSFERRED_DOCX_OUTPUT_BYTES) {
-      continue;
-    }
-    outputFiles.push({
-      relativePath: candidate.relativePath,
-      fileName: candidate.fileName || path.basename(absolutePath),
-      kind: candidate.kind || "software_module_description_docx",
-      mimeType: candidate.mimeType || "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      description: candidate.description || "Generated software module description DOCX",
       size: stat.size,
       encoding: "base64",
       contentBase64: (await fs.readFile(absolutePath)).toString("base64")
@@ -1168,18 +1066,16 @@ async function buildSlxParseFallbackArtifact(inputArtifact = {}, allowedPaths = 
   };
 }
 
-function buildSlxInterpretAgentPrompt(inputArtifact = {}, absolutePath = "") {
-  const model = inputArtifact?.model || {};
-  const fileName = String(model.fileName || model.originalName || path.basename(absolutePath || "model.slx")).trim();
-  const question = String(inputArtifact.question || "").trim();
-  return [
-    `使用 MCP/SATK 基于模型文件 ${fileName}，回答问题：“${question}”。`,
-    absolutePath ? `模型文件绝对路径：${absolutePath}` : "",
-    "如果无法调用 MCP/SATK 或无法读取模型文件，请直接说明失败原因。"
-  ].filter(Boolean).join("\n");
+function normalizeSlxInterpretEvidence(item = {}, fallbackFile = "") {
+  return {
+    fileName: String(item.fileName || item.originalName || fallbackFile || "").trim(),
+    fileRole: String(item.fileRole || item.role || "simulink_slx").trim(),
+    location: String(item.location || "").trim(),
+    excerpt: truncateText(item.excerpt || item.summary || item.behavior || "", 260)
+  };
 }
 
-async function buildSlxInterpretArtifact(inputArtifact = {}, allowedPaths = []) {
+async function buildSlxInterpretFallbackArtifact(inputArtifact = {}, allowedPaths = []) {
   const model = inputArtifact?.model || {};
   const absolutePath = path.resolve(String(model.absolutePath || ""));
   if (!absolutePath || !isPathAllowed(absolutePath, allowedPaths)) {
@@ -1190,40 +1086,61 @@ async function buildSlxInterpretArtifact(inputArtifact = {}, allowedPaths = []) 
     );
   }
 
-  const prompt = String(inputArtifact.prompt || "").trim() || buildSlxInterpretAgentPrompt(inputArtifact, absolutePath);
-  const fileName = String(model.fileName || model.originalName || path.basename(absolutePath)).trim();
-  const hermesClient = new HermesAgentClient({
-    transport: "cli",
-    command: config.hermes.command,
-    timeoutMs: config.hermes.timeoutMs,
-    stepTimeoutMs: config.hermes.stepTimeoutMs,
-    maxTurns: config.hermes.maxTurns,
-    heartbeatIntervalMs: config.hermes.heartbeatIntervalMs,
-    workdir: config.rootDir,
-    stateDbPath: config.hermes.stateDbPath
+  const file = {
+    id: model.assetId || model.id || "",
+    role: "simulink_slx",
+    fileRole: "simulink_slx",
+    originalName: model.fileName || model.originalName || path.basename(absolutePath),
+    absolutePath
+  };
+  const slxAnalysisService = new SlxModelAnalysisService();
+  const extraction = await slxAnalysisService.analyzeAndConvertToExtraction(file, { documentType: "software_requirement" });
+  const modelRequirementView = new ModelRequirementViewService().build({
+    project: inputArtifact.project || {},
+    assets: [{
+      assetId: file.id,
+      fileName: file.originalName,
+      fileRole: "simulink_slx",
+      absolutePath
+    }],
+    extractions: [extraction]
   });
-  const response = await hermesClient.executeCliStep({
-    taskId: inputArtifact.taskId || "",
-    stepType: "slx_interpret_answer",
-    allowedPaths: [absolutePath],
-    workdir: config.rootDir,
-    inputArtifact: {
-      ...inputArtifact,
-      prompt,
-      model: {
-        ...model,
-        fileName,
-        absolutePath
-      },
-      history: []
-    }
-  });
-  const artifact = response.artifact || {};
-  const answerMarkdown = String(artifact.answerMarkdown || "").trim();
-  if (!answerMarkdown) {
-    throw createHttpError("Hermes Agent did not return an SLX interpreter answer", 502, "hermes_slx_interpret_empty_answer");
-  }
-  return artifact;
+
+  const facts = Array.isArray(modelRequirementView.facts) ? modelRequirementView.facts.slice(0, 8) : [];
+  const evidence = facts
+    .flatMap((fact) => Array.isArray(fact.sourceRefs) ? fact.sourceRefs : [])
+    .map((item) => normalizeSlxInterpretEvidence(item, file.originalName))
+    .filter((item) => item.fileName || item.location || item.excerpt)
+    .slice(0, 8);
+  const fallbackEvidence = evidence.length
+    ? evidence
+    : (Array.isArray(extraction.evidence) ? extraction.evidence : [])
+        .map((item) => normalizeSlxInterpretEvidence(item, file.originalName))
+        .filter((item) => item.fileName || item.location || item.excerpt)
+        .slice(0, 8);
+  const question = String(inputArtifact.question || "").trim();
+  const factLines = facts.length
+    ? facts.map((fact, index) => `${index + 1}. ${truncateText(fact.behavior || fact.topic || "", 220)}`).join("\n")
+    : "- 当前回退解释未识别到可结构化展示的模型事实。";
+
+  return {
+    answerMarkdown: [
+      `已读取选定模型 **${file.originalName}**，并基于 Simulink Agentic Toolkit 可获得的模型事实回答：${question || "当前问题"}`,
+      "",
+      "### 模型事实摘要",
+      factLines,
+      "",
+      "### 结论",
+      facts.length
+        ? "上面的事实是本次回答的主要依据；请结合 evidence 中的 block path / source ref 复核具体模型位置。"
+        : "当前环境未返回足够的结构化事实，建议确认 MATLAB MCP / SATK 是否能读取该模型。"
+    ].join("\n"),
+    summary: facts.length
+      ? `已读取 ${file.originalName} 并提取 ${facts.length} 条模型事实。`
+      : `已尝试读取 ${file.originalName}，但未得到足够模型事实。`,
+    evidence: fallbackEvidence,
+    warnings: facts.length ? [] : ["未识别到可用于结构化回答的模型事实，请检查 MATLAB MCP / SATK 可用性。"]
+  };
 }
 
 export async function createHermesApp() {
@@ -1239,6 +1156,21 @@ export async function createHermesApp() {
       fileSize: Number(config.hermes.maxUploadBytes || 250 * 1024 * 1024)
     }
   });
+  const tcsdStageExecutor = new TcsdHermesStageExecutor();
+  const tcsdSkillRegistry = new TcsdHermesSkillRegistry({
+    command: tcsdStageExecutor.command,
+    commandArgsPrefix: tcsdStageExecutor.commandArgsPrefix,
+    profile: tcsdStageExecutor.profile,
+    stateDbPath: tcsdStageExecutor.stateDbPath,
+    catalog: tcsdStageExecutor.catalog
+  });
+  const tcsdJobs = new TcsdPipelineJobService({
+    jobDir: config.tcsdPipeline?.jobStoreDir || path.join(config.dataDir, "tcsd-pipeline-jobs"),
+    prepareJob: () => tcsdSkillRegistry.prepare(),
+    executor: (stageIndex, input, job, options) => tcsdStageExecutor.execute(stageIndex, input, job, options),
+    checkpointValidator: (checkpoint, context, job) => tcsdStageExecutor.validateCheckpoint(checkpoint, context, job)
+  });
+  await tcsdJobs.recoverAll();
 
   app.use(express.json({ limit: "8mb" }));
 
@@ -1262,6 +1194,22 @@ export async function createHermesApp() {
       apiKeyEnv: process.env.HERMES_LLM_API_KEY_ENV || "",
       hasApiKey: Boolean(config.openai.apiKey)
     });
+  });
+
+  app.post("/internal/tcsd-pipeline/jobs", requireHermesAuth, async (req, res, next) => {
+    try {
+      const payload = req.body || {};
+      const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
+      const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
+      const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
+      const job = await tcsdJobs.start({ taskId: payload.taskId, idempotencyKey: payload.idempotencyKey || payload.taskId, ...inputArtifact, projectAddonCopy: addonCopy });
+      res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema });
+    } catch (error) { next(error); }
+  });
+  app.get("/internal/tcsd-pipeline/jobs/:jobId", requireHermesAuth, async (req, res) => {
+    const job = await tcsdJobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: "TCSD 作业不存在。", code: TCSD_ERROR_CODES.jobNotFound });
+    return res.json(job);
   });
 
   const executeStepRequest = async (req, res, next) => {
@@ -1445,7 +1393,7 @@ export async function createHermesApp() {
 
       if (stepType === "slx_interpret_answer") {
         const allowedPaths = normalizeAllowedPaths(payload.allowedPaths);
-        const artifact = await buildSlxInterpretArtifact(payload.inputArtifact || {}, allowedPaths);
+        const artifact = await buildSlxInterpretFallbackArtifact(payload.inputArtifact || {}, allowedPaths);
         return res.json(
           buildStepResponse(stepType, artifact, startedAt, {
             metrics: {
@@ -1501,39 +1449,6 @@ export async function createHermesApp() {
         );
       }
 
-      if (stepType === "simulink_ut_tcsd_generate") {
-        const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
-        const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
-        const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
-        const hermesClient = new HermesAgentClient({
-          transport: "cli",
-          workdir: inputArtifact.workspaceDir
-        });
-        const result = await hermesClient.executeStep(
-          {
-            ...payload,
-            stepType,
-            workdir: inputArtifact.workspaceDir,
-            allowedPaths: [inputArtifact.workspaceDir],
-            inputArtifact: {
-              ...inputArtifact,
-              projectAddonCopy: {
-                copiedFileCount: addonCopy.copiedFileCount,
-                unitTestProject: addonCopy.unitTestProject
-              }
-            }
-          },
-          {}
-        );
-        const artifact = await attachUnitTestCaseOutputFiles(result.artifact || {}, inputArtifact);
-        return res.json(
-          buildStepResponse(stepType, artifact, startedAt, {
-            metrics: result.metrics || {},
-            logs: result.logs || []
-          })
-        );
-      }
-
       if (stepType === "simulink_module_description_generate") {
         const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
         const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths, {
@@ -1562,9 +1477,8 @@ export async function createHermesApp() {
           },
           {}
         );
-        const artifact = await attachModuleDescriptionOutputFiles(result.artifact || {}, inputArtifact);
         return res.json(
-          buildStepResponse(stepType, artifact, startedAt, {
+          buildStepResponse(stepType, result.artifact || {}, startedAt, {
             metrics: result.metrics || {},
             logs: result.logs || []
           })
@@ -1589,7 +1503,7 @@ export async function createHermesApp() {
       retainUploadedFiles =
         prepared.payload?.stepType === "windows_worker_probe" &&
         prepared.payload?.inputArtifact?.retainUploadedFiles === true;
-      return await executeStepRequest(req, res, next);
+      return executeStepRequest(req, res, next);
     } catch (error) {
       return next(error);
     } finally {

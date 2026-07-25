@@ -60,6 +60,28 @@ function loadDotEnv(filePath, options = {}) {
   }
 }
 
+function trimTrailingSlash(value = "") {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function parseCommandArgsPrefix(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return [];
+  }
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item || "").trim()).filter(Boolean);
+      }
+    } catch (_error) {
+      return [];
+    }
+  }
+  return raw.split(/\s+/).map((item) => item.trim()).filter(Boolean);
+}
+
 const hermesHomeDir = path.resolve(process.env.HERMES_HOME || path.join(homeDir, ".hermes"));
 const hermesProfile = String(process.env.HERMES_PROFILE || "").trim();
 
@@ -80,9 +102,112 @@ function resolveHermesStateDbPath() {
   return path.join(hermesHomeDir, "state.db");
 }
 
+function resolveEnvReference(value = "", fallback = "") {
+  const key = String(value || "").trim();
+  return key ? process.env[key] || fallback : fallback;
+}
+
+function normalizeWorkerId(value = "", fallback = "") {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return normalized || fallback;
+}
+
+function normalizeUnitTestWorkerProfile(profile = {}, index = 0, defaults = {}) {
+  const hermes = profile.hermes || {};
+  const matlabWorker = profile.matlabWorker || profile.matlab || {};
+  const id = normalizeWorkerId(profile.id || profile.workerId, `worker-${index + 1}`);
+  const hermesBaseURL = trimTrailingSlash(profile.hermesBaseURL || hermes.baseURL || profile.baseURL || defaults.hermesBaseURL);
+  const matlabBaseURL = trimTrailingSlash(
+    profile.matlabBaseURL || profile.matlabWorkerBaseURL || matlabWorker.baseURL || defaults.matlabBaseURL
+  );
+  if (!id || !hermesBaseURL || !matlabBaseURL) {
+    return null;
+  }
+  return {
+    id,
+    label: String(profile.label || profile.name || id).trim() || id,
+    hermesTransport: String(profile.hermesTransport || hermes.transport || "api").trim().toLowerCase() || "api",
+    hermesBaseURL,
+    hermesApiMode: String(profile.hermesApiMode || hermes.apiMode || defaults.hermesApiMode || "json").trim() || "json",
+    hermesAuthToken: resolveEnvReference(
+      profile.hermesAuthTokenEnv || hermes.authTokenEnv,
+      String(profile.hermesAuthToken ?? hermes.authToken ?? defaults.hermesAuthToken ?? "")
+    ),
+    matlabBaseURL,
+    matlabHttpMode: String(profile.matlabHttpMode || matlabWorker.httpMode || defaults.matlabHttpMode || "path").trim() || "path",
+    matlabAuthToken: resolveEnvReference(
+      profile.matlabAuthTokenEnv || matlabWorker.authTokenEnv,
+      String(profile.matlabAuthToken ?? matlabWorker.authToken ?? defaults.matlabAuthToken ?? "")
+    )
+  };
+}
+
+function buildUnitTestWorkerProfiles() {
+  const defaults = {
+    hermesBaseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
+    hermesApiMode: process.env.HERMES_API_MODE || "json",
+    hermesAuthToken: process.env.HERMES_AUTH_TOKEN || "",
+    matlabBaseURL: process.env.MATLAB_MCP_BASE_URL || "http://127.0.0.1:5100",
+    matlabHttpMode: process.env.MATLAB_MCP_HTTP_MODE || "path",
+    matlabAuthToken: process.env.MATLAB_MCP_AUTH_TOKEN || ""
+  };
+  const raw = String(process.env.UNIT_TEST_WORKER_PROFILES_JSON || process.env.UNIT_TEST_WORKERS_JSON || "").trim();
+  let configuredProfiles = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        configuredProfiles = parsed;
+      } else if (Array.isArray(parsed?.profiles)) {
+        configuredProfiles = parsed.profiles;
+      } else if (Array.isArray(parsed?.workers)) {
+        configuredProfiles = parsed.workers;
+      }
+    } catch (error) {
+      console.warn(`Failed to parse UNIT_TEST_WORKER_PROFILES_JSON: ${error.message}`);
+    }
+  }
+  const profiles = configuredProfiles
+    .map((profile, index) => normalizeUnitTestWorkerProfile(profile, index, defaults))
+    .filter(Boolean);
+  if (!profiles.length) {
+    profiles.push(normalizeUnitTestWorkerProfile({
+      id: process.env.UNIT_TEST_DEFAULT_WORKER_ID || "default",
+      label: process.env.UNIT_TEST_DEFAULT_WORKER_LABEL || "Default Windows Worker"
+    }, 0, defaults));
+  }
+  const deduped = [];
+  const seen = new Set();
+  for (const profile of profiles) {
+    if (!profile || seen.has(profile.id)) {
+      continue;
+    }
+    seen.add(profile.id);
+    deduped.push(profile);
+  }
+  const requestedDefaultId = normalizeWorkerId(process.env.UNIT_TEST_DEFAULT_WORKER_ID || "");
+  const defaultWorkerId = deduped.some((profile) => profile.id === requestedDefaultId)
+    ? requestedDefaultId
+    : deduped[0]?.id || "";
+  return {
+    defaultWorkerId,
+    workerProfiles: deduped.map((profile) => ({
+      ...profile,
+      isDefault: profile.id === defaultWorkerId
+    }))
+  };
+}
+
+const unitTestWorkerConfig = buildUnitTestWorkerProfiles();
+
 export const config = {
   host: process.env.HOST || "::",
   port: Number(process.env.PORT || 3000),
+  publicBaseURL: trimTrailingSlash(process.env.APP_PUBLIC_BASE_URL || process.env.APP_BASE_URL || ""),
   rootDir,
   publicDir: path.join(rootDir, "public"),
   legacySkillDir: skillRootDir,
@@ -100,9 +225,19 @@ export const config = {
       process.env.UNIT_TEST_CASE_PROJECT_ADDON_ROOT,
       resolveDefaultUnitTestProjectAddonRoot()
     ),
-    skillName: process.env.UNIT_TEST_CASE_SKILL_NAME || "simulink-ut-tcsd-generator",
+    pipelineName: "tcsd-stage-skills",
     expectedOutputPattern: process.env.UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN || "outputs/*_tcsd.xlsx",
-    agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || ""
+    agentWorkspaceRoot: process.env.UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT || "",
+    defaultWorkerId: unitTestWorkerConfig.defaultWorkerId,
+    workerProfiles: unitTestWorkerConfig.workerProfiles,
+    remotePollWindowMs: Number(process.env.UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS || 300000),
+    reconcileIntervalMs: Number(process.env.UNIT_TEST_CASE_RECONCILE_INTERVAL_MS || 30000)
+  },
+  tcsdPipeline: {
+    jobStoreDir: path.join(dataDir, "tcsd-pipeline-jobs"),
+    hermesProfile: String(process.env.TCSD_STAGE_HERMES_PROFILE || hermesProfile || "").trim() || "default",
+    stageMaxTurns: Number(process.env.TCSD_STAGE_HERMES_MAX_TURNS || 200),
+    stageTimeoutMs: Number(process.env.TCSD_STAGE_HERMES_TIMEOUT_MS || 3600000)
   },
   softwareModuleDescription: {
     taskStoreDir: path.join(dataDir, "software-module-description-generation", "tasks"),
@@ -144,12 +279,23 @@ export const config = {
   },
   hermes: {
     transport: process.env.HERMES_TRANSPORT || "cli",
+    slxInterpreterTransport: String(process.env.HERMES_SLX_INTERPRETER_TRANSPORT || "").trim().toLowerCase(),
     host: process.env.HERMES_HOST || "127.0.0.1",
     port: Number(process.env.HERMES_PORT || 3101),
     baseURL: process.env.HERMES_BASE_URL || `http://127.0.0.1:${Number(process.env.HERMES_PORT || 3101)}`,
     apiMode: process.env.HERMES_API_MODE || "json",
     authToken: process.env.HERMES_AUTH_TOKEN || "",
+    openAiApi: {
+      baseURL: trimTrailingSlash(process.env.HERMES_OPENAI_API_BASE_URL || process.env.HERMES_API_SERVER_BASE_URL || ""),
+      apiKey: process.env.HERMES_OPENAI_API_KEY || process.env.HERMES_API_SERVER_KEY || "",
+      model: process.env.HERMES_OPENAI_API_MODEL || process.env.HERMES_API_SERVER_MODEL || "",
+      pollIntervalMs: Number(process.env.HERMES_OPENAI_API_POLL_INTERVAL_MS || 5000),
+      requestTimeoutMs: Number(process.env.HERMES_OPENAI_API_REQUEST_TIMEOUT_MS || 30000),
+      autoApprove: String(process.env.HERMES_OPENAI_API_AUTO_APPROVE || "true").trim().toLowerCase() !== "false",
+      approvalChoice: process.env.HERMES_OPENAI_API_APPROVAL_CHOICE || "session"
+    },
     command: process.env.HERMES_COMMAND || "hermes",
+    commandArgsPrefix: parseCommandArgsPrefix(process.env.HERMES_COMMAND_ARGS_PREFIX || ""),
     profile: hermesProfile,
     homeDir: hermesHomeDir,
     stateDbPath: resolveHermesStateDbPath(),
@@ -166,7 +312,6 @@ export const config = {
       software_requirement_markdown_generate: Number(process.env.HERMES_TIMEOUT_SOFTWARE_REQUIREMENT_MARKDOWN_GENERATE_MS || 600000),
       document_extract_generate: Number(process.env.HERMES_TIMEOUT_DOCUMENT_EXTRACT_GENERATE_MS || 240000),
       slx_interpret_answer: Number(process.env.HERMES_TIMEOUT_SLX_INTERPRET_ANSWER_MS || 600000),
-      simulink_ut_tcsd_generate: Number(process.env.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS || 7200000),
       simulink_module_description_generate: Number(
         process.env.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS || 3600000
       ),
@@ -174,11 +319,9 @@ export const config = {
     },
     heartbeatIntervalMs: Number(process.env.HERMES_HEARTBEAT_INTERVAL_MS || 5000),
     taskConcurrency: Number(process.env.HERMES_TASK_CONCURRENCY || 1),
+    taskQueueActiveTimeoutMs: Number(process.env.HERMES_TASK_QUEUE_ACTIVE_TIMEOUT_MS || 0),
     maxTurns: Number(process.env.HERMES_MAX_TURNS || 40),
     stepMaxTurns: {
-      simulink_ut_tcsd_generate: process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE
-        ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE)
-        : 10000,
       simulink_module_description_generate: process.env.HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE
         ? Number(process.env.HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE)
         : 10000
@@ -231,7 +374,7 @@ function buildMatlabMcpServerArgs() {
   const analysisBackend = String(process.env.SLX_ANALYSIS_BACKEND || "satk").trim().toLowerCase();
   if (analysisBackend === "legacy") {
     return [
-      "--matlab-root=" + (process.env.MATLAB_ROOT || deriveMatlabRoot(process.env.MATLAB_EXECUTABLE || "")),
+      "--matlab-root=" + (process.env.MATLAB_ROOT || "/Applications/MATLAB_R2026a.app"),
       "--matlab-display-mode=nodesktop",
       "--extension-file=" + path.join(rootDir, "tools", "matlab-mcp-extension.json"),
       "--initial-working-folder=" + path.join(rootDir, "tools", "matlab-functions")
@@ -243,15 +386,6 @@ function buildMatlabMcpServerArgs() {
     "--matlab-session-mode=existing",
     "--extension-file=" + (process.env.SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE || path.join(toolkitRoot, "tools", "tools.json"))
   ];
-}
-
-function deriveMatlabRoot(matlabExecutable = "") {
-  const executable = String(matlabExecutable || "").trim();
-  if (!executable) {
-    return process.platform === "win32" ? "C:\\Program Files\\MATLAB\\R2025b" : "/Applications/MATLAB_R2026a.app";
-  }
-  const binDir = path.dirname(executable);
-  return path.basename(binDir).toLowerCase() === "bin" ? path.dirname(binDir) : binDir;
 }
 
 function firstExistingPath(paths = []) {

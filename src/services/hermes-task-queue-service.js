@@ -42,14 +42,53 @@ function buildQueueKey(type = "", id = "") {
   return `${type}:${id}`;
 }
 
+function normalizeResourceKey(value = "") {
+  return String(value || "").trim();
+}
+
+function workerResourceKey(task = {}, defaultWorkerId = "") {
+  const workerId = String(task.workerProfile?.id || task.workerId || defaultWorkerId || "").trim();
+  return workerId ? `worker:${workerId}` : "";
+}
+
+function resolveDefaultActiveTimeoutMs() {
+  const configured = Number(config.hermes?.taskQueueActiveTimeoutMs || 0) || 0;
+  if (configured > 0) {
+    return configured;
+  }
+  const stepTimeouts = Object.values(config.hermes?.stepTimeoutMs || {})
+    .map((value) => Number(value || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const baseTimeoutMs = stepTimeouts.length
+    ? Math.max(...stepTimeouts)
+    : Number(config.hermes?.timeoutMs || 120000) || 120000;
+  return baseTimeoutMs + 5 * 60 * 1000;
+}
+
+function createQueueTimeoutError(item = {}, timeoutMs = 0) {
+  const error = new Error(`Hermes queue item timed out after ${timeoutMs}ms`);
+  error.code = "hermes_queue_item_timeout";
+  error.statusCode = 504;
+  error.details = {
+    taskId: item.id || "",
+    type: item.type || "",
+    timeoutMs
+  };
+  return error;
+}
+
 export class HermesTaskQueueService {
   constructor(options = {}) {
     this.projectService = options.projectService || null;
     this.replayTaskService = options.replayTaskService || null;
     this.unitTestCaseGenerationService = options.unitTestCaseGenerationService || null;
+    this.softwareModuleDescriptionGenerationService = options.softwareModuleDescriptionGenerationService || null;
     this.concurrency = Math.max(1, Number(options.concurrency || config.hermes?.taskConcurrency || 1) || 1);
+    const configuredActiveTimeoutMs = options.activeTimeoutMs ?? resolveDefaultActiveTimeoutMs();
+    this.activeTimeoutMs = Math.max(0, Number(configuredActiveTimeoutMs) || 0);
     this.items = [];
     this.activeCount = 0;
+    this.activeByResource = new Map();
   }
 
   setReplayTaskService(replayTaskService) {
@@ -58,6 +97,10 @@ export class HermesTaskQueueService {
 
   setUnitTestCaseGenerationService(unitTestCaseGenerationService) {
     this.unitTestCaseGenerationService = unitTestCaseGenerationService;
+  }
+
+  setSoftwareModuleDescriptionGenerationService(softwareModuleDescriptionGenerationService) {
+    this.softwareModuleDescriptionGenerationService = softwareModuleDescriptionGenerationService;
   }
 
   enqueue(input = {}) {
@@ -82,6 +125,8 @@ export class HermesTaskQueueService {
       projectId: input.projectId || "",
       moduleId: input.moduleId || "",
       documentType: input.documentType || "",
+      resourceKey: normalizeResourceKey(input.resourceKey),
+      resourceCapacity: Math.max(1, Number(input.resourceCapacity || 1) || 1),
       status: "queued",
       enqueuedAt: now(),
       startedAt: "",
@@ -99,9 +144,15 @@ export class HermesTaskQueueService {
     return item.promise;
   }
 
+  canStartItem(item = {}) {
+    if (item.status !== "queued") return false;
+    if (!item.resourceKey) return true;
+    return (this.activeByResource.get(item.resourceKey) || 0) < item.resourceCapacity;
+  }
+
   dispatch() {
     while (this.activeCount < this.concurrency) {
-      const item = this.items.find((candidate) => candidate.status === "queued");
+      const item = this.items.find((candidate) => this.canStartItem(candidate));
       if (!item) return;
       this.startItem(item);
     }
@@ -110,29 +161,63 @@ export class HermesTaskQueueService {
   startItem(item) {
     item.status = "running";
     item.startedAt = now();
+    item.finished = false;
     this.activeCount += 1;
-
-    Promise.resolve()
-      .then(() => item.onStart({ startedAt: item.startedAt }))
-      .then(() => item.run())
-      .then((result) => {
-        item.status = "completed";
-        item.resolve(result);
-      })
-      .catch(async (error) => {
-        item.status = "failed";
+    if (item.resourceKey) {
+      this.activeByResource.set(item.resourceKey, (this.activeByResource.get(item.resourceKey) || 0) + 1);
+    }
+    if (this.activeTimeoutMs > 0) {
+      item.timeoutHandle = setTimeout(async () => {
+        const error = createQueueTimeoutError(item, this.activeTimeoutMs);
         try {
           await item.onError(error);
         } catch (_error) {
           // The task-specific runner already owns persisted failure state.
         }
-        item.resolve(null);
+        this.finishItem(item, "failed");
+      }, this.activeTimeoutMs);
+      item.timeoutHandle.unref?.();
+    }
+
+    Promise.resolve()
+      .then(() => item.onStart({ startedAt: item.startedAt }))
+      .then(() => item.run())
+      .then((result) => {
+        this.finishItem(item, "completed", result);
       })
-      .finally(() => {
-        this.activeCount = Math.max(0, this.activeCount - 1);
-        this.items = this.items.filter((candidate) => candidate !== item);
-        this.dispatch();
+      .catch(async (error) => {
+        try {
+          await item.onError(error);
+        } catch (_error) {
+          // The task-specific runner already owns persisted failure state.
+        }
+        this.finishItem(item, "failed");
       });
+  }
+
+  finishItem(item, status = "completed", result = null) {
+    if (!item || item.finished) {
+      return false;
+    }
+    item.finished = true;
+    if (item.timeoutHandle) {
+      clearTimeout(item.timeoutHandle);
+      item.timeoutHandle = null;
+    }
+    item.status = status;
+    item.resolve(status === "completed" ? result : null);
+    this.activeCount = Math.max(0, this.activeCount - 1);
+    if (item.resourceKey) {
+      const nextCount = Math.max(0, (this.activeByResource.get(item.resourceKey) || 0) - 1);
+      if (nextCount) {
+        this.activeByResource.set(item.resourceKey, nextCount);
+      } else {
+        this.activeByResource.delete(item.resourceKey);
+      }
+    }
+    this.items = this.items.filter((candidate) => candidate !== item);
+    this.dispatch();
+    return true;
   }
 
   getQueuePosition(type = "", id = "") {
@@ -142,18 +227,31 @@ export class HermesTaskQueueService {
     return index >= 0 ? index + 1 : 0;
   }
 
+  cancelQueued(type = "", id = "") {
+    const key = buildQueueKey(type, id);
+    const item = this.items.find((candidate) => candidate.key === key && candidate.status === "queued");
+    if (!item) {
+      return false;
+    }
+    item.status = "cancelled";
+    this.items = this.items.filter((candidate) => candidate !== item);
+    item.resolve?.(null);
+    return true;
+  }
+
   getRuntimeSnapshot(type = "", id = "") {
     const key = buildQueueKey(type, id);
     return this.items.find((item) => item.key === key) || null;
   }
 
   async listTaskSummaries() {
-    const [projectTasks, replayTasks, unitTestCaseTasks] = await Promise.all([
+    const [projectTasks, replayTasks, unitTestCaseTasks, softwareModuleDescriptionTasks] = await Promise.all([
       this.listProjectTaskSummaries(),
       this.listReplayTaskSummaries(),
-      this.listUnitTestCaseTaskSummaries()
+      this.listUnitTestCaseTaskSummaries(),
+      this.listSoftwareModuleDescriptionTaskSummaries()
     ]);
-    const sorted = [...projectTasks, ...replayTasks, ...unitTestCaseTasks].sort((a, b) => {
+    const sorted = [...projectTasks, ...replayTasks, ...unitTestCaseTasks, ...softwareModuleDescriptionTasks].sort((a, b) => {
       const rank = { running: 0, queued: 1, failed: 2, completed: 3 };
       const statusDiff = (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
       if (statusDiff) return statusDiff;
@@ -208,6 +306,54 @@ export class HermesTaskQueueService {
     if (!this.unitTestCaseGenerationService) return [];
     const tasks = await this.unitTestCaseGenerationService.listTasks();
     return tasks.map((task) => this.buildUnitTestCaseSummary(task));
+  }
+
+  async listSoftwareModuleDescriptionTaskSummaries() {
+    if (!this.softwareModuleDescriptionGenerationService) return [];
+    const tasks = await this.softwareModuleDescriptionGenerationService.listTasks();
+    return tasks.map((task) => this.buildSoftwareModuleDescriptionSummary(task));
+  }
+
+  async restorePersistedQueuedTasks() {
+    const definitions = [
+      {
+        service: this.unitTestCaseGenerationService,
+        type: "unit_test_case_generation",
+        title: "Unit test case generation"
+      },
+      {
+        service: this.softwareModuleDescriptionGenerationService,
+        type: "software_module_description_generation",
+        title: "Software detail design generation"
+      }
+    ];
+    const queued = [];
+    for (const definition of definitions) {
+      if (!definition.service || typeof definition.service.listTasks !== "function") continue;
+      const tasks = await definition.service.listTasks();
+      for (const task of tasks.filter((candidate) => normalizeStatus(candidate.status) === "queued")) {
+        queued.push({ ...definition, task });
+      }
+    }
+    queued.sort((a, b) => taskTime(a.task) - taskTime(b.task));
+    const counts = {
+      unitTestCaseGeneration: 0,
+      softwareModuleDescriptionGeneration: 0
+    };
+    for (const item of queued) {
+      const defaultWorkerId = config.unitTestCase?.defaultWorkerId || "";
+      this.enqueue({
+        id: item.task.id,
+        type: item.type,
+        title: item.title,
+        resourceKey: workerResourceKey(item.task, defaultWorkerId),
+        run: () => item.service.runTask(item.task.id),
+        onError: (error) => item.service.failTask(item.task.id, error)
+      });
+      if (item.type === "unit_test_case_generation") counts.unitTestCaseGeneration += 1;
+      if (item.type === "software_module_description_generation") counts.softwareModuleDescriptionGeneration += 1;
+    }
+    return counts;
   }
 
   buildGenerationSummary(project = {}, module = {}, documentType = "", task = {}) {
@@ -351,6 +497,30 @@ export class HermesTaskQueueService {
       startedAt: task.startedAt || "",
       updatedAt: task.updatedAt || task.createdAt || "",
       detailUrl: `/unit-test-case-generation?taskId=${task.id}`
+    };
+  }
+
+  buildSoftwareModuleDescriptionSummary(task = {}) {
+    const type = "software_module_description_generation";
+    const status = normalizeStatus(task.status);
+    const modelName = task.inputs?.modelSlx?.originalName || "Simulink 模型";
+    return {
+      id: task.id,
+      type,
+      status,
+      title: `软件详设 · ${modelName}`,
+      projectId: "",
+      projectName: task.unitTestProject?.label || "",
+      moduleId: "",
+      moduleName: modelName,
+      documentType: "software_module_description",
+      queuePosition: status === "queued" ? this.getQueuePosition(type, task.id) : 0,
+      progress: task.progress || null,
+      latestMessage: getLatestMessage(task),
+      createdAt: task.createdAt || "",
+      startedAt: task.startedAt || "",
+      updatedAt: task.updatedAt || task.createdAt || "",
+      detailUrl: `/software-detail-design-generation?taskId=${task.id}`
     };
   }
 }

@@ -1,0 +1,49 @@
+%% 
+%% 
+%%
+%% Copyright 1990-2011 The MathWorks, Inc.
+%% 
+%implements * "C"
+
+%% GetSet is a custom storage class that is used to define signals
+%% (including states) whose values are read and written to using 
+%% "get" and "set" functions
+
+%% Function: DataAccess ======================================================
+%% Abstract:
+%%   DataAccess provides an API for requesting code fragments or other
+%%   information corresponding to data of this custom storage class.
+%%
+%function DataAccess(record, request, idx, reim, extra) void
+  %% LibDataAccessInSpecificTLC takes only 4 input arguement. This is the only case
+  %% sofar taking an extra input argument
+  %assign genType = "Simulink::GetSet.tlc"
+  %if !%<GENERATE_TYPE_FUNCTION_EXISTS(record, "DataAccess", genType)>
+    %assign toFilePath  = FcnGetTLCPathFromPackageName("Simulink", "GetSet.tlc")
+    %generatefile "%<genType>" "%<toFilePath>"
+    %assert(GENERATE_TYPE_FUNCTION_EXISTS(record, "DataAccess", genType))
+  %endif
+
+  %return GENERATE_TYPE(record, "DataAccess", genType, request, idx, reim, extra)
+%endfunction
+
+
+
+%% Function: ClassAccess ============================================
+%% Abstract:
+%%   ClassAccess provides an API for requesting information or action
+%%   corresponding to the custom storage class
+%%
+%function ClassAccess(record, request) void
+  
+  %return LibClassAccessInSpecificTLC("Simulink", "GetSet.tlc", record, request)
+  
+%endfunction
+
+
+%% Function: Version ============================================
+%% Abstract:
+%%
+%function Version(record) void
+  %return 2
+%endfunction

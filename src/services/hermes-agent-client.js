@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
-import fsSync, { promises as fs } from "node:fs";
+import { promises as fs } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
 import { promisify } from "node:util";
+import { runHermesCommand } from "./hermes-command.js";
 import { config } from "../config.js";
 import { getAllowedKindsForAreasAndLayer } from "../../public/skill-kind-matrix.js";
 
@@ -106,7 +107,8 @@ function sanitizeAssetItem(item = {}) {
     assetId: String(item.assetId || item.id || "").trim(),
     fileName: String(item.fileName || item.originalName || "").trim(),
     fileRole: String(item.fileRole || item.role || "").trim(),
-    absolutePath: clipText(item.absolutePath || item.path || "", CLI_PATH_MAX_LENGTH)
+    absolutePath: clipText(item.absolutePath || item.path || "", CLI_PATH_MAX_LENGTH),
+    downloadUrl: clipText(item.downloadUrl || "", 1000)
   };
 }
 
@@ -413,6 +415,25 @@ function buildUsageSummary(usage = {}) {
     `output ${usage.outputTokens || 0}`,
     `total ${usage.totalTokens || 0}`
   ].join(", ");
+}
+
+function normalizeOpenAiRunUsage(usage = {}) {
+  if (!usage || typeof usage !== "object") {
+    return null;
+  }
+  const inputTokens = usage.inputTokens ?? usage.input_tokens ?? 0;
+  const outputTokens = usage.outputTokens ?? usage.output_tokens ?? 0;
+  const totalTokens = usage.totalTokens ?? usage.total_tokens ?? 0;
+  const normalized = normalizeTokenUsage({
+    model: usage.model || "",
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cacheReadTokens: usage.cacheReadTokens ?? usage.cache_read_tokens ?? 0,
+    cacheWriteTokens: usage.cacheWriteTokens ?? usage.cache_write_tokens ?? 0,
+    reasoningTokens: usage.reasoningTokens ?? usage.reasoning_tokens ?? 0
+  });
+  return normalized.totalTokens ? normalized : null;
 }
 
 function parseSqliteUsageRow(stdout = "") {
@@ -1128,20 +1149,68 @@ function buildSlxParsePrompt(payload = {}) {
   ].join("\n");
 }
 
+function sanitizeSlxInterpreterHistory(history = []) {
+  return Array.isArray(history)
+    ? history.map((message) => ({
+        role: String(message?.role || "").trim() === "user" ? "user" : "assistant",
+        content: clipText(message?.content || "", 2400),
+        status: String(message?.status || "").trim(),
+        createdAt: String(message?.createdAt || "").trim()
+      })).filter((message) => message.content)
+    : [];
+}
+
 function buildSlxInterpretPrompt(payload = {}) {
   const inputArtifact = payload.inputArtifact || {};
-  const directPrompt = String(inputArtifact.prompt || "").trim();
-  if (directPrompt) {
-    return directPrompt;
-  }
-  const model = inputArtifact.model || {};
-  const absolutePath = String(model.absolutePath || "").trim();
-  const fileName = String(model.fileName || model.originalName || path.basename(absolutePath || "model.slx")).trim();
+  const project = sanitizeProjectContext(inputArtifact.project || {});
+  const model = sanitizeAssetItem(inputArtifact.model || {});
   const question = clipText(inputArtifact.question || "", 8000);
+  const history = sanitizeSlxInterpreterHistory(inputArtifact.history || []);
   return [
-    `使用 MCP/SATK 基于模型文件 ${fileName}，回答问题：“${question}”。`,
-    absolutePath ? `模型文件绝对路径：${absolutePath}` : "",
-    "如果无法调用 MCP/SATK 或无法读取模型文件，请直接说明失败原因。"
+    "You are executing the Hermes step `slx_interpret_answer` for an interactive SLX model interpreter.",
+    "Answer the user's question about exactly one selected Simulink .slx model.",
+    "You must inspect the selected model with the available Simulink Agentic Toolkit / MATLAB MCP capabilities before answering.",
+    "Prefer these tools when available: model_overview, model_read, model_query_params, model_resolve_params.",
+    "If the selected model includes `downloadUrl`, download that file onto the API-server host before calling MATLAB/SATK; Linux absolute paths are not readable from Windows.",
+    "Do not answer from cached modelRequirementView JSON unless the tool path is unavailable; the selected .slx model is the source of truth.",
+    "Return strict JSON only. No markdown fences. No explanation outside JSON.",
+    "",
+    "Project and module context:",
+    JSON.stringify(project, null, 2),
+    "",
+    "Selected SLX model:",
+    JSON.stringify(model, null, 2),
+    "",
+    "Conversation history:",
+    JSON.stringify(history, null, 2),
+    "",
+    "User question:",
+    question,
+    "",
+    "Required JSON shape:",
+    JSON.stringify(
+      {
+        answerMarkdown: "A concise but useful Markdown answer in Chinese unless the user asked otherwise.",
+        summary: "One-sentence task summary.",
+        evidence: [{
+          fileName: "model.slx",
+          fileRole: "simulink_slx",
+          location: "model/block/path or SATK scope",
+          excerpt: "Short evidence from the model or tool result"
+        }],
+        warnings: ["Optional limitations, unavailable tools, or assumptions"]
+      },
+      null,
+      2
+    ),
+    "",
+    "Rules:",
+    "- Use only the selected SLX model and the explicit conversation context.",
+    "- When `downloadUrl` is present, fetch that exact URL and analyze the downloaded local copy on the tool host.",
+    "- If MATLAB MCP / SATK is unavailable, say so in warnings and answer only what can be supported by available evidence.",
+    "- Preserve block paths, signal names, state names, parameter names, and threshold values exactly.",
+    "- Keep the answer focused on the user's question; do not dump the full model structure.",
+    "- evidence must cite the model file and the most relevant scope/block/path or tool excerpt."
   ].join("\n");
 }
 
@@ -1164,97 +1233,6 @@ function buildSoftwareRequirementMarkdownPrompt(payload = {}) {
         taskBriefPath: inputArtifact.taskBriefPath || "",
         promptPath: inputArtifact.promptPath || "",
         outputRelativePath: inputArtifact.outputRelativePath || "outputs/software-requirements.md"
-      },
-      null,
-      2
-    )
-  ].join("\n");
-}
-
-function sanitizeSimulinkUtTcsdArtifact(inputArtifact = {}) {
-  const project = inputArtifact.unitTestProject && typeof inputArtifact.unitTestProject === "object"
-    ? inputArtifact.unitTestProject
-    : null;
-  return {
-    workspaceDir: clipText(inputArtifact.workspaceDir || "", CLI_PATH_MAX_LENGTH),
-    modelSlxPath: clipText(inputArtifact.modelSlxPath || "", CLI_PATH_MAX_LENGTH),
-    modelMatPath: clipText(inputArtifact.modelMatPath || "", CLI_PATH_MAX_LENGTH),
-    modelInitScriptPath: clipText(inputArtifact.modelInitScriptPath || "", CLI_PATH_MAX_LENGTH),
-    outputDir: clipText(inputArtifact.outputDir || "", CLI_PATH_MAX_LENGTH),
-    unitTestProject: project
-      ? {
-          id: clipText(project.id || "", 40),
-          name: clipText(project.name || "", 120),
-          label: clipText(project.label || "", 180)
-        }
-      : null,
-    skillName: clipText(inputArtifact.skillName || "simulink-ut-tcsd-generator", 160),
-    expectedOutputPattern: clipText(inputArtifact.expectedOutputPattern || "outputs/*_tcsd.xlsx", 200),
-    modelSlxFileName: clipText(inputArtifact.modelSlxFileName || path.basename(inputArtifact.modelSlxPath || "model.slx"), 200),
-    modelMatFileName: clipText(inputArtifact.modelMatFileName || path.basename(inputArtifact.modelMatPath || "model.mat"), 200),
-    modelInitScriptFileName: clipText(inputArtifact.modelInitScriptFileName || path.basename(inputArtifact.modelInitScriptPath || ""), 200),
-    projectInitScripts: Array.isArray(inputArtifact.projectInitScripts)
-      ? inputArtifact.projectInitScripts.map((item) => clipText(item || "", 240)).filter(Boolean)
-      : []
-  };
-}
-
-function buildSimulinkUtTcsdPrompt(payload = {}) {
-  const inputArtifact = sanitizeSimulinkUtTcsdArtifact(payload.inputArtifact || {});
-  return [
-    "You are executing the Hermes step `simulink_ut_tcsd_generate`.",
-    "Use the Codex skill `simulink-ut-tcsd-generator` for the full workflow.",
-    "The task is to generate coverage-oriented Simulink unit-test TCSD Excel cases from one `.slx` model and its matching `.mat` data file.",
-    "",
-    "Workspace artifact:",
-    JSON.stringify(inputArtifact, null, 2),
-    "",
-    "Execution contract:",
-    "- Treat `workspaceDir` as the sandbox root. Do not read or write outside it.",
-    "- The model input is `modelSlxPath`; the matching data file is `modelMatPath`.",
-    "- `unitTestProject.id` is the internal project number, such as `01`; display labels such as `01_楚能` must never be used as paths.",
-    "- The Hermes Agent service has already copied the selected project's addon package into `workspaceDir` before this CLI run. Load support files such as `init_Global.m`, `ITKLib.slx`, `.sldd`, and project tool folders from the workspace, not from the external addon root.",
-    "- If `projectInitScripts` is non-empty, it contains the uploaded model-specific initialization `.m` script relative to `workspaceDir`; treat it as the explicit initialization entrypoint and pass it to the skill bootstrap, for example `setup_ut_support(rootDir, projectInitScripts)`, or set `TCSD_PROJECT_INIT_SCRIPTS` to that semicolon-separated list before calling `setup_ut_support(rootDir)`. In that case, do not rely on addon auto-discovery for initialization script selection.",
-    "- If `projectInitScripts` is empty, no model-specific init script was uploaded; rely on `setup_ut_support(rootDir)` to auto-discover common initialization scripts from the copied project addon/workspace.",
-    "- Before loading Simulink files, change MATLAB current folder to `workspaceDir`.",
-    "- If `ITKLib` or the target model is already loaded from another path, close that loaded model first with `bdclose` before calling `load_system`.",
-    "- Prefer the canonical workspace filenames `modelSlxFileName`, `modelMatFileName`, and when present `modelInitScriptFileName` for MATLAB `load`, `load_system`, init bootstrap, and simulation steps; avoid loading timestamped upload archive names.",
-    "- Use the skill named by `skillName` and follow its SATK/MATLAB/TCSD rules.",
-    "- In this environment, `model_overview` and `model_read` can be registered but fail because the backing MATLAB functions are unavailable; do not spend repeated retries on them. Prefer `evaluate_matlab_code` for MATLAB inspection, and use static SLX XML inspection only as a fallback.",
-    "- Artifact-first checkpointing is mandatory: after model inspection and case design, immediately build and verify the TCSD workbook under `outputDir` before extracting cases, running `simulate_tcsd_cases`, running coverage, or doing expected-output backfill. This checkpoint is not sufficient for final completion by itself.",
-    "- Use the skill's `scripts/build_tcsd_from_json.py` from a terminal command with `python3` so it can access the installed `openpyxl`; do not rely on the isolated `execute_code` Python environment for openpyxl.",
-    "- After building the checkpoint workbook, run the skill's `scripts/validate_tcsd_workbook.py` against the compiled root Inport/Outport interface. If it reports unknown inputs, unknown `expValue` outputs, vector assignment issues, or missing final delays, treat only that workbook/spec draft as invalid: inspect the reported rows/signals, repair the generated cases, rebuild the workbook, and rerun validation before simulation. Do not return `status: \"failed\"` to the platform for these self-generated workbook issues until a bounded repair attempt has been exhausted or the model interface itself cannot be derived.",
-    "- Do not start any long MATLAB simulation/backfill step until an `outputs/*_tcsd.xlsx` workbook already exists and `unzip -t` or equivalent workbook validation has passed.",
-    "- Simulation-backed expected-output backfill is required for final `status: \"completed\"`. The final workbook must contain top-level Outport `expValue(...)` lines suitable for automated test execution.",
-    "- Keep simulation bounded and checkpointed: run a focused backfill pass from the already-built workbook, avoid unbounded coverage repair loops, and write the workbook after successful backfill.",
-    "- If any simulation/backfill MATLAB, MCP, or SATK call times out once, including `mcp_matlab_satk_evaluate_matlab_code timed out after 600.0s`, stop simulation/backfill immediately. Do not retry `sim()`, output extraction, or coverage exploration in the same Hermes request.",
-    "- If expected-output backfill cannot complete, return strict JSON with `status: \"failed\"`, an `errorMessage`, and warnings. You may include the checkpoint workbook in `outputFiles` for diagnosis, but do not mark the task completed.",
-    "- Before returning `status: \"completed\"`, verify the workbook file exists under `outputDir`, contains at least one `expValue(...)` expectation, and include it in `outputFiles` using a relative path that matches `outputs/*_tcsd.xlsx`.",
-    "- Before returning, clean up MATLAB state per the skill's MATLAB Cleanup Contract: close task-loaded workspace models/libraries, clear task-local variables, restore current folder/path when possible, and report cleanup warnings.",
-    "- Write generated workbooks only under `outputDir`.",
-    "- The expected final workbook pattern is `outputs/*_tcsd.xlsx`.",
-    "- If MATLAB, SATK, Simulink, or required skill assets are unavailable, fail clearly and include the missing dependency in `warnings` or `errorMessage`.",
-    "",
-    "Return strict JSON only. No markdown fences. No prose outside JSON.",
-    "Required JSON shape:",
-    JSON.stringify(
-      {
-        status: "completed",
-        summary: "One-sentence Chinese summary of the generated TCSD workbook.",
-        outputFiles: [
-          {
-            relativePath: "outputs/model_Test0001_tcsd.xlsx",
-            kind: "tcsd_workbook",
-            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            description: "Generated TCSD Excel workbook"
-          }
-        ],
-        expectedValueSummary: {
-          backfillStatus: "completed",
-          expValueCount: 1,
-          testsWithoutExpectedValue: 0
-        },
-        warnings: []
       },
       null,
       2
@@ -1804,8 +1782,6 @@ function buildCliPrompt(payload = {}) {
       return buildSlxParsePrompt(payload);
     case "software_requirement_markdown_generate":
       return buildSoftwareRequirementMarkdownPrompt(payload);
-    case "simulink_ut_tcsd_generate":
-      return buildSimulinkUtTcsdPrompt(payload);
     case "simulink_module_description_generate":
       return buildSimulinkModuleDescriptionPrompt(payload);
     case "anchor_index_build":
@@ -1905,48 +1881,6 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
       summary: String(artifact.summary || "").trim()
     };
   }
-  if (stepType === "simulink_ut_tcsd_generate") {
-    const artifact = parsed && typeof parsed === "object" ? parsed : {};
-    const outputFiles = Array.isArray(artifact.outputFiles)
-      ? artifact.outputFiles
-          .map((item) => {
-            if (typeof item === "string") {
-              return {
-                relativePath: item.trim(),
-                kind: "tcsd_workbook",
-                mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                description: ""
-              };
-            }
-            if (!item || typeof item !== "object") {
-              return null;
-            }
-            return {
-              relativePath: String(item.relativePath || item.path || item.filePath || "").trim(),
-              absolutePath: String(item.absolutePath || "").trim(),
-              fileName: String(item.fileName || "").trim(),
-              kind: String(item.kind || "tcsd_workbook").trim(),
-              mimeType: String(
-                item.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              ).trim(),
-              description: String(item.description || "").trim(),
-              contentBase64: String(item.contentBase64 || item.base64 || "").trim(),
-              encoding: String(item.encoding || "").trim(),
-              size: Number(item.size || 0) || 0
-            };
-          })
-          .filter((item) => item && (item.relativePath || item.absolutePath))
-      : [];
-    return {
-      status: String(artifact.status || "completed").trim(),
-      summary: String(artifact.summary || "").trim(),
-      outputFiles,
-      warnings: Array.isArray(artifact.warnings)
-        ? artifact.warnings.map((item) => clipText(item || "", 300)).filter(Boolean).slice(0, 20)
-        : [],
-      errorMessage: String(artifact.errorMessage || artifact.error || "").trim()
-    };
-  }
   if (stepType === "simulink_module_description_generate") {
     const artifact = parsed && typeof parsed === "object" ? parsed : {};
     const outputFiles = Array.isArray(artifact.outputFiles)
@@ -2044,37 +1978,6 @@ async function buildMarkdownArtifactFromWorkspace(payload = {}, workdir = "") {
       warnings: ["Hermes CLI 未返回严格 JSON，后端从 outputs 目录回收了 DOCX 产物。"]
     };
   }
-  if (payload.stepType === "simulink_ut_tcsd_generate") {
-    const inputArtifact = payload.inputArtifact || {};
-    const outputDir = inputArtifact.outputDir || path.join(workdir || inputArtifact.workspaceDir || process.cwd(), "outputs");
-    const absoluteOutputDir = path.isAbsolute(outputDir)
-      ? outputDir
-      : path.join(workdir || inputArtifact.workspaceDir || process.cwd(), ...String(outputDir).split("/").filter(Boolean));
-    const entries = await fs.readdir(absoluteOutputDir, { withFileTypes: true }).catch(() => []);
-    const outputFiles = entries
-      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".xlsx"))
-      .map((entry) => {
-        const absolutePath = path.join(absoluteOutputDir, entry.name);
-        const relativePath = path
-          .relative(workdir || inputArtifact.workspaceDir || process.cwd(), absolutePath)
-          .replace(/\\/g, "/");
-        return {
-          relativePath,
-          kind: "tcsd_workbook",
-          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          description: "Generated TCSD Excel workbook"
-        };
-      });
-    if (!outputFiles.length) {
-      return null;
-    }
-    return {
-      status: "completed",
-      summary: "Hermes wrote TCSD workbook artifacts but did not return strict JSON.",
-      outputFiles,
-      warnings: ["Hermes CLI 未返回严格 JSON，后端从 outputs 目录回收了 Excel 产物。"]
-    };
-  }
   if (payload.stepType !== "software_requirement_markdown_generate") {
     return null;
   }
@@ -2113,12 +2016,11 @@ async function buildMarkdownArtifactFromWorkspace(payload = {}, workdir = "") {
 }
 
 async function defaultCommandRunner(command, args, options = {}) {
-  const invocation = buildCommandRunnerInvocation(command, args);
-  return execFileAsync(invocation.command, invocation.args, {
+  return execFileAsync(command, args, {
     cwd: options.cwd,
     timeout: options.timeout,
     maxBuffer: options.maxBuffer,
-    env: { ...(options.env || process.env), ...(invocation.env || {}) }
+    env: options.env
   });
 }
 
@@ -2143,17 +2045,19 @@ function quoteWindowsCmdArg(value = "") {
 
 export function buildCommandRunnerInvocation(command, args = [], options = {}) {
   const normalizedCommand = String(command || "").trim();
-  const extension = path.extname(normalizedCommand).toLowerCase();
-  if (isWindowsPlatform(options) === "win32" && extension === ".cmd") {
-    const commandDir = path.dirname(normalizedCommand);
+  const platform = isWindowsPlatform(options);
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const extension = pathApi.extname(normalizedCommand).toLowerCase();
+  if (platform === "win32" && extension === ".cmd") {
+    const commandDir = pathApi.dirname(normalizedCommand);
     const pythonCandidates = [
-      path.join(commandDir, "venv", "Scripts", "python.exe"),
-      path.join(commandDir, "python", "python.exe")
+      pathApi.join(commandDir, "venv", "Scripts", "python.exe"),
+      pathApi.join(commandDir, "python", "python.exe")
     ];
     const pathExists = options.pathExists || fsSync.existsSync;
     const hermesPython = pythonCandidates.find((candidate) => pathExists(candidate));
-    if (path.basename(normalizedCommand).toLowerCase() === "hermes.cmd" && hermesPython) {
-      const hermesHome = path.resolve(commandDir, "..", "hermes-home");
+    if (pathApi.basename(normalizedCommand).toLowerCase() === "hermes.cmd" && hermesPython) {
+      const hermesHome = pathApi.resolve(commandDir, "..", "hermes-home");
       return {
         command: hermesPython,
         args: ["-m", "hermes_cli.main", ...args],
@@ -2161,7 +2065,7 @@ export function buildCommandRunnerInvocation(command, args = [], options = {}) {
       };
     }
   }
-  if (isWindowsPlatform(options) === "win32" && [".cmd", ".bat"].includes(extension)) {
+  if (platform === "win32" && [".cmd", ".bat"].includes(extension)) {
     return {
       command: "cmd.exe",
       args: ["/d", "/s", "/c", [quoteWindowsCmdArg(normalizedCommand), ...args.map(quoteWindowsCmdArg)].join(" ")]
@@ -2170,7 +2074,7 @@ export function buildCommandRunnerInvocation(command, args = [], options = {}) {
   return { command: normalizedCommand, args };
 }
 
-async function postJsonWithTimeout(url, payload, timeoutMs) {
+async function postJsonWithTimeout(url, payload, timeoutMs, headers = {}) {
   const body = JSON.stringify(payload);
   const target = new URL(url);
   const transport = target.protocol === "https:" ? https : http;
@@ -2182,7 +2086,8 @@ async function postJsonWithTimeout(url, payload, timeoutMs) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body)
+          "Content-Length": Buffer.byteLength(body),
+          ...headers
         }
       },
       (response) => {
@@ -2295,7 +2200,6 @@ function isConnectionError(error) {
 }
 
 const TRANSFERRED_OUTPUT_EXTENSIONS = {
-  simulink_ut_tcsd_generate: ".xlsx",
   simulink_module_description_generate: ".docx"
 };
 
@@ -2349,26 +2253,42 @@ function buildProfiledCliArgs(profile = "", args = []) {
   return ["-p", profileName, ...args];
 }
 
-function assertHermesCliCommand(command = "") {
-  const commandName = path.basename(String(command || "").trim()).toLowerCase();
-  if (["powershell.exe", "powershell", "pwsh.exe", "pwsh", "cmd.exe", "cmd"].includes(commandName)) {
-    const error = new Error(
-      `Invalid HERMES_COMMAND '${command}'. Configure HERMES_COMMAND to the Hermes CLI executable, not a shell.`
-    );
-    error.code = "hermes_command_invalid";
-    throw error;
+function normalizeCommandArgsPrefix(value = []) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
   }
+  return String(value || "").trim().split(/\s+/).filter(Boolean);
 }
 
 export class HermesAgentClient {
   constructor(options = {}) {
     this.transport = String(options.transport || config.hermes.transport || "cli").trim().toLowerCase();
     this.baseURL = trimTrailingSlash(options.baseURL || config.hermes.baseURL);
+    this.slxInterpreterTransport = String(
+      options.slxInterpreterTransport || config.hermes.slxInterpreterTransport || ""
+    ).trim().toLowerCase();
+    const openAiApiOptions = options.openAiApi || {};
+    this.openAiApi = {
+      baseURL: trimTrailingSlash(openAiApiOptions.baseURL || config.hermes.openAiApi?.baseURL || ""),
+      apiKey: String(openAiApiOptions.apiKey ?? config.hermes.openAiApi?.apiKey ?? "").trim(),
+      model: String(openAiApiOptions.model || config.hermes.openAiApi?.model || "").trim(),
+      pollIntervalMs: Math.max(
+        250,
+        Number(openAiApiOptions.pollIntervalMs ?? config.hermes.openAiApi?.pollIntervalMs ?? 5000) || 5000
+      ),
+      requestTimeoutMs: Math.max(
+        1000,
+        Number(openAiApiOptions.requestTimeoutMs ?? config.hermes.openAiApi?.requestTimeoutMs ?? 30000) || 30000
+      ),
+      autoApprove: openAiApiOptions.autoApprove ?? config.hermes.openAiApi?.autoApprove ?? true,
+      approvalChoice: String(openAiApiOptions.approvalChoice || config.hermes.openAiApi?.approvalChoice || "session").trim() || "session"
+    };
     this.apiMode = String(options.apiMode || config.hermes.apiMode || "json").trim().toLowerCase();
     this.authToken = String(options.authToken || config.hermes.authToken || "").trim();
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs || config.hermes.timeoutMs) || config.hermes.timeoutMs);
     this.stepTimeoutMs = normalizeStepTimeoutMap(options.stepTimeoutMs || config.hermes.stepTimeoutMs || {});
     this.command = String(options.command || config.hermes.command || "hermes").trim() || "hermes";
+    this.commandArgsPrefix = normalizeCommandArgsPrefix(options.commandArgsPrefix || config.hermes.commandArgsPrefix || []);
     this.profile = String(options.profile || config.hermes.profile || "").trim();
     this.maxTurns = Math.max(1, Number(options.maxTurns || config.hermes.maxTurns) || config.hermes.maxTurns || 40);
     this.stepMaxTurns = normalizeStepMaxTurnsMap(options.stepMaxTurns || config.hermes.stepMaxTurns || {});
@@ -2386,12 +2306,288 @@ export class HermesAgentClient {
     return this.stepTimeoutMs[String(stepType || "").trim()] || this.timeoutMs;
   }
 
+  getTransportForStep(stepType = "") {
+    if (String(stepType || "").trim() === "slx_interpret_answer" && this.slxInterpreterTransport) {
+      return this.slxInterpreterTransport;
+    }
+    return this.transport;
+  }
+
   getMaxTurnsForStep(stepType = "") {
     const normalizedStepType = String(stepType || "").trim();
     if (Object.prototype.hasOwnProperty.call(this.stepMaxTurns, normalizedStepType)) {
       return this.stepMaxTurns[normalizedStepType];
     }
     return this.maxTurns;
+  }
+
+  buildOpenAiApiUrl(pathname = "") {
+    const baseURL = this.openAiApi.baseURL;
+    const normalizedPath = String(pathname || "").startsWith("/") ? String(pathname || "") : `/${pathname}`;
+    if (baseURL.toLowerCase().endsWith("/v1") && normalizedPath.startsWith("/v1/")) {
+      return `${baseURL}${normalizedPath.slice(3)}`;
+    }
+    return `${baseURL}${normalizedPath}`;
+  }
+
+  async fetchOpenAiApiJson(pathname, options = {}) {
+    if (!this.openAiApi.baseURL) {
+      const error = new Error("Hermes OpenAI-compatible API base URL is not configured");
+      error.code = "hermes_openai_api_not_configured";
+      throw error;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.openAiApi.requestTimeoutMs);
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    };
+    if (this.openAiApi.apiKey) {
+      headers.Authorization = `Bearer ${this.openAiApi.apiKey}`;
+    }
+
+    try {
+      const response = await fetch(this.buildOpenAiApiUrl(pathname), {
+        method: options.method || "GET",
+        headers,
+        body: Object.hasOwn(options, "body") ? JSON.stringify(options.body || {}) : undefined,
+        signal: controller.signal
+      });
+      const raw = await response.text();
+      let parsed = null;
+      try {
+        parsed = raw ? JSON.parse(raw) : {};
+      } catch (_error) {
+        const error = new Error("Hermes OpenAI-compatible API returned an invalid JSON response");
+        error.code = "hermes_invalid_response";
+        error.status = response.status;
+        error.rawOutput = raw;
+        throw error;
+      }
+      if (!response.ok) {
+        const message = parsed?.error?.message || parsed?.error || parsed?.message || `Hermes OpenAI-compatible API failed with status ${response.status}`;
+        const error = new Error(message);
+        error.code = parsed?.error?.code || parsed?.code || "hermes_openai_api_request_failed";
+        error.status = response.status;
+        error.details = parsed;
+        throw error;
+      }
+      return parsed;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        const timeoutError = new Error(`Hermes OpenAI-compatible API request timed out after ${this.openAiApi.requestTimeoutMs}ms`);
+        timeoutError.code = "hermes_timeout";
+        throw timeoutError;
+      }
+      if (error instanceof TypeError) {
+        const connectionError = new Error(`Hermes OpenAI-compatible API is unavailable at ${this.openAiApi.baseURL}`);
+        connectionError.code = "hermes_unavailable";
+        throw connectionError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  buildOpenAiRunRequest(payload = {}) {
+    const input = buildCliPrompt(payload);
+    const request = {
+      input,
+      instructions: [
+        "You are running inside the Hermes built-in OpenAI-compatible API Server.",
+        "Tools execute on the API-server host.",
+        "For SLX interpreter tasks, use the server-side terminal/file tools and matlab_satk MCP tools.",
+        "Do not call the project-specific /internal/steps/execute interface.",
+        "Return strict JSON only, matching the requested schema."
+      ].join("\n"),
+      session_id: payload.taskId || undefined
+    };
+    if (this.openAiApi.model) {
+      request.model = this.openAiApi.model;
+    }
+    return request;
+  }
+
+  async executeOpenAiRunStep(payload = {}, runtime = {}) {
+    if (payload.stepType !== "slx_interpret_answer") {
+      const error = new Error(`Hermes OpenAI-compatible API transport only supports slx_interpret_answer, not ${payload.stepType || "(empty)"}`);
+      error.code = "hermes_openai_api_step_unsupported";
+      throw error;
+    }
+
+    const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+    let runId = "";
+
+    await emitHermesEvent(runtime.onEvent, {
+      type: "agent_runtime",
+      transport: "openai-api",
+      stepType: payload.stepType || "",
+      status: "started",
+      label: "Hermes OpenAI API run started",
+      message: "Submitting SLX interpreter task to Hermes /v1/runs.",
+      startedAt: new Date(startedAt).toISOString(),
+      elapsedMs: 0
+    });
+
+    try {
+      const startResponse = await this.fetchOpenAiApiJson("/v1/runs", {
+        method: "POST",
+        body: this.buildOpenAiRunRequest(payload)
+      });
+      runId = String(startResponse.run_id || startResponse.id || "").trim();
+      if (!runId) {
+        const error = new Error("Hermes OpenAI-compatible API did not return a run_id");
+        error.code = "hermes_openai_api_missing_run_id";
+        throw error;
+      }
+
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "openai-api",
+        stepType: payload.stepType || "",
+        status: "running",
+        label: "Hermes OpenAI API run accepted",
+        message: `Hermes run ${runId} has started.`,
+        sessionId: runId,
+        startedAt: new Date(startedAt).toISOString(),
+        elapsedMs: Date.now() - startedAt
+      });
+
+      let lastStatus = "";
+      let lastEvent = "";
+      while (Date.now() < deadline) {
+        const runStatus = await this.fetchOpenAiApiJson(`/v1/runs/${encodeURIComponent(runId)}`);
+        const status = String(runStatus.status || "").trim();
+        const eventName = String(runStatus.last_event || "").trim();
+        const elapsedMs = Date.now() - startedAt;
+
+        if (status !== lastStatus || eventName !== lastEvent) {
+          lastStatus = status;
+          lastEvent = eventName;
+          await emitHermesEvent(runtime.onEvent, {
+            type: "agent_runtime",
+            transport: "openai-api",
+            stepType: payload.stepType || "",
+            status: status || "running",
+            label: "Hermes OpenAI API run status",
+            message: eventName ? `Hermes run ${runId}: ${status || "running"} (${eventName}).` : `Hermes run ${runId}: ${status || "running"}.`,
+            sessionId: runId,
+            startedAt: new Date(startedAt).toISOString(),
+            heartbeatAt: new Date().toISOString(),
+            elapsedMs
+          });
+        }
+
+        if (status === "waiting_for_approval") {
+          if (!this.openAiApi.autoApprove) {
+            await delay(Math.min(this.openAiApi.pollIntervalMs, Math.max(250, deadline - Date.now())));
+            continue;
+          }
+          await this.fetchOpenAiApiJson(`/v1/runs/${encodeURIComponent(runId)}/approval`, {
+            method: "POST",
+            body: {
+              choice: this.openAiApi.approvalChoice,
+              resolve_all: true
+            }
+          });
+          await emitHermesEvent(runtime.onEvent, {
+            type: "agent_runtime",
+            transport: "openai-api",
+            stepType: payload.stepType || "",
+            status: "running",
+            label: "Hermes OpenAI API approval sent",
+            message: `Approved pending tools for Hermes run ${runId}.`,
+            sessionId: runId,
+            startedAt: new Date(startedAt).toISOString(),
+            elapsedMs
+          });
+        }
+
+        if (status === "completed") {
+          const output = String(runStatus.output || "").trim();
+          let parsed = null;
+          try {
+            parsed = JSON.parse(extractJsonText(output));
+          } catch (_error) {
+            const invalidError = new Error("Hermes OpenAI-compatible API returned an invalid JSON response");
+            invalidError.code = "hermes_invalid_response";
+            invalidError.rawOutput = output;
+            invalidError.sessionId = runId;
+            throw invalidError;
+          }
+          const tokenUsage = normalizeOpenAiRunUsage(runStatus.usage || {});
+          await emitHermesEvent(runtime.onEvent, {
+            type: "agent_runtime",
+            transport: "openai-api",
+            stepType: payload.stepType || "",
+            status: "completed",
+            label: "Hermes OpenAI API run completed",
+            message: tokenUsage
+              ? `Hermes run ${runId} completed, ${buildUsageSummary(tokenUsage)}.`
+              : `Hermes run ${runId} completed.`,
+            sessionId: runId,
+            startedAt: new Date(startedAt).toISOString(),
+            heartbeatAt: new Date().toISOString(),
+            elapsedMs: Date.now() - startedAt,
+            tokenUsage,
+            stdoutExcerpt: clipText(output, 2000)
+          });
+          return {
+            status: "succeeded",
+            stepType: payload.stepType,
+            artifact: normalizeCliArtifact(payload.stepType, parsed, payload),
+            metrics: {
+              durationMs: Date.now() - startedAt,
+              ...(tokenUsage ? { tokenUsage } : {})
+            },
+            logs: [],
+            error: null,
+            sessionId: runId
+          };
+        }
+
+        if (["failed", "cancelled"].includes(status)) {
+          const error = new Error(runStatus.error || `Hermes OpenAI-compatible API run ${status}`);
+          error.code = status === "cancelled" ? "hermes_cancelled" : "hermes_request_failed";
+          error.sessionId = runId;
+          throw error;
+        }
+
+        await delay(Math.min(this.openAiApi.pollIntervalMs, Math.max(250, deadline - Date.now())));
+      }
+
+      const timeoutError = new Error(`Hermes OpenAI-compatible API run timed out after ${timeoutMs}ms`);
+      timeoutError.code = "hermes_timeout";
+      timeoutError.sessionId = runId;
+      try {
+        await this.fetchOpenAiApiJson(`/v1/runs/${encodeURIComponent(runId)}/stop`, {
+          method: "POST",
+          body: {}
+        });
+      } catch (_stopError) {
+        // The timeout error is more useful to callers than a best-effort stop failure.
+      }
+      throw timeoutError;
+    } catch (error) {
+      await emitHermesEvent(runtime.onEvent, {
+        type: "agent_runtime",
+        transport: "openai-api",
+        stepType: payload.stepType || "",
+        status: "failed",
+        level: "error",
+        label: "Hermes OpenAI API run failed",
+        message: error?.message || "Hermes OpenAI-compatible API run failed.",
+        sessionId: runId,
+        startedAt: new Date(startedAt).toISOString(),
+        elapsedMs: Date.now() - startedAt,
+        stdoutExcerpt: clipText(error?.rawOutput || "", 2000)
+      });
+      throw error;
+    }
   }
 
   _authHeaders() {
@@ -2611,9 +2807,21 @@ export class HermesAgentClient {
   }
 
   async executeCliStep(payload = {}, runtime = {}) {
-    assertHermesCliCommand(this.command);
     const prompt = buildCliPrompt(payload);
-    const args = buildProfiledCliArgs(this.profile, ["--yolo", "-z", prompt]);
+    const maxTurns = this.getMaxTurnsForStep(payload.stepType);
+    const rawArgs = [
+      "chat",
+      "-q",
+      prompt,
+      "-Q",
+      "--source",
+      "tool"
+    ];
+    if (maxTurns > 0) {
+      rawArgs.push("--max-turns", String(maxTurns));
+    }
+    rawArgs.push("--yolo");
+    const args = [...this.commandArgsPrefix, ...buildProfiledCliArgs(this.profile, rawArgs)];
     const startedAt = Date.now();
     const timeoutMs = this.getTimeoutMsForStep(payload.stepType);
     const workdir = String(payload.workdir || payload.inputArtifact?.workspaceDir || this.workdir || process.cwd());
@@ -2646,12 +2854,17 @@ export class HermesAgentClient {
           elapsedMs: Date.now() - startedAt
         });
       }, this.heartbeatIntervalMs);
-      const { stdout = "", stderr = "" } = await this.commandRunner(this.command, args, {
-        cwd: workdir,
-        timeout: timeoutMs,
-        maxBuffer: 16 * 1024 * 1024,
-        env: { ...process.env, NO_COLOR: "1" }
-      });
+      const { stdout = "", stderr = "" } = await runHermesCommand(
+        this.commandRunner,
+        this.command,
+        args,
+        {
+          cwd: workdir,
+          timeout: timeoutMs,
+          maxBuffer: 16 * 1024 * 1024,
+          env: { ...process.env, NO_COLOR: "1" }
+        }
+      );
       const stdoutResponse = parseCliResponse(stdout);
       const stderrResponse = parseCliResponse(stderr);
       const body = stdoutResponse.body;
@@ -2668,53 +2881,14 @@ export class HermesAgentClient {
       try {
         parsed = JSON.parse(extractJsonText(body));
       } catch (_error) {
-        if (payload.stepType === "slx_interpret_answer" && String(body || "").trim()) {
-          const rawArtifact = {
-            answerMarkdown: String(body || "").trim(),
-            summary: "Hermes Agent returned a raw SLX interpretation answer.",
-            evidence: [],
-            warnings: []
-          };
-          await emitHermesEvent(runtime.onEvent, {
-            type: "agent_runtime",
-            transport: "cli",
-            stepType: payload.stepType || "",
-            status: "completed",
-            label: "Hermes CLI 已返回文本答案",
-            message: "Hermes CLI 返回了文本答案，后端将原样写回聊天窗口。",
-            sessionId,
-            startedAt: new Date(startedAt).toISOString(),
-            heartbeatAt: new Date().toISOString(),
-            elapsedMs: Date.now() - startedAt,
-            tokenUsage,
-            stdoutExcerpt: clipText(body, 2000),
-            stderrExcerpt: clipText(stderr, 2000)
-          });
-          return {
-            status: "succeeded",
-            stepType: payload.stepType,
-            artifact: normalizeCliArtifact(payload.stepType, rawArtifact, payload),
-            metrics: tokenUsage ? { tokenUsage } : {},
-            logs: stderr ? [clipText(stderr, 4000)] : [],
-            error: null,
-            sessionId
-          };
-        }
-
         const fallbackArtifact = await buildMarkdownArtifactFromWorkspace(payload, workdir);
         if (fallbackArtifact) {
-          const fallbackLabel =
-            payload.stepType === "simulink_ut_tcsd_generate"
-              ? "Hermes CLI 已写入 TCSD 产物"
-              : payload.stepType === "simulink_module_description_generate"
-                ? "Hermes CLI 已写入软件详设 DOCX 产物"
-                : "Hermes CLI 已写入 Markdown 产物";
-          const fallbackMessage =
-            payload.stepType === "simulink_ut_tcsd_generate"
-              ? "Hermes CLI 未返回严格 JSON，但已写入 TCSD Excel 产物，后端将继续登记结果文件。"
-              : payload.stepType === "simulink_module_description_generate"
-                ? "Hermes CLI 未返回严格 JSON，但已写入软件详设 DOCX 产物，后端将继续登记结果文件。"
-                : "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。";
+          const fallbackLabel = payload.stepType === "simulink_module_description_generate"
+            ? "Hermes CLI 已写入软件详设 DOCX 产物"
+            : "Hermes CLI 已写入 Markdown 产物";
+          const fallbackMessage = payload.stepType === "simulink_module_description_generate"
+            ? "Hermes CLI 未返回严格 JSON，但已写入软件详设 DOCX 产物，后端将继续登记结果文件。"
+            : "Hermes CLI 未返回严格 JSON，但已写入 Markdown 产物，后端将继续解析产物文件。";
           await emitHermesEvent(runtime.onEvent, {
             type: "agent_runtime",
             transport: "cli",
@@ -2851,9 +3025,53 @@ export class HermesAgentClient {
   }
 
   async executeStep(payload = {}, runtime = {}) {
-    if (this.transport === "api") {
+    const transport = this.getTransportForStep(payload.stepType);
+    if (["openai-api", "openai", "api-server"].includes(transport)) {
+      return this.executeOpenAiRunStep(payload, runtime);
+    }
+    if (transport === "api") {
       return this.executeApiStep(payload, runtime);
     }
+    if (transport !== "cli") {
+      const error = new Error(`Unsupported Hermes transport: ${transport || "(empty)"}`);
+      error.code = "hermes_transport_unsupported";
+      throw error;
+    }
     return this.executeCliStep(payload, runtime);
+  }
+
+  async startTcsdPipelineJob(payload = {}) {
+    let response;
+    try {
+      response = await postJsonWithTimeout(
+        `${this.baseURL}/internal/tcsd-pipeline/jobs`,
+        payload,
+        this.timeoutMs,
+        this._authHeaders()
+      );
+    }
+    catch (cause) { const error = new Error(`TCSD Worker 不可用：${cause.message}`); error.code = "tcsd_worker_unavailable"; error.cause = cause; throw error; }
+    let body = null;
+    try { body = JSON.parse(response.text); } catch (_error) { body = null; }
+    if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 启动作业失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
+    return body;
+  }
+
+  async getTcsdPipelineJob(jobId = "") {
+    const target = new URL(`${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}`);
+    const transport = target.protocol === "https:" ? https : http;
+    let response;
+    try { response = await new Promise((resolve, reject) => {
+      const request = transport.request(target, {
+        method: "GET",
+        timeout: this.timeoutMs,
+        headers: this._authHeaders()
+      }, (result) => {
+        let text = ""; result.setEncoding("utf8"); result.on("data", (chunk) => { text += chunk; }); result.on("end", () => resolve({ ok: result.statusCode >= 200 && result.statusCode < 300, status: result.statusCode, text }));
+      }); request.on("timeout", () => request.destroy(Object.assign(new Error("TCSD Worker 轮询超时。"), { code: "tcsd_poll_timeout" }))); request.on("error", reject); request.end();
+    }); } catch (cause) { if (cause.code === "tcsd_poll_timeout") throw cause; const error = new Error(`TCSD Worker 不可用：${cause.message}`); error.code = "tcsd_worker_unavailable"; error.cause = cause; throw error; }
+    let body = null; try { body = JSON.parse(response.text); } catch (_error) { body = null; }
+    if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 作业查询失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
+    return body;
   }
 }

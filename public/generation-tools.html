@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>生成工具</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/feedback-widget.css" />
+  </head>
+  <body data-page-kind="generation-tools">
+    <main class="layout">
+      <nav class="top-nav">
+        <div class="brand-mark">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" class="brand-mark-logo" />
+          <div>
+            <p class="brand-kicker">ITK ENGINEERING</p>
+            <strong>生成工具</strong>
+          </div>
+        </div>
+        <div class="nav-links">
+          <a class="nav-link" href="/">工程列表</a>
+          <a class="nav-link active" href="/generation-tools.html">生成工具</a>
+          <a class="nav-link" href="/skill-management">技能管理</a>
+          <a class="nav-link" href="/replay-lab">Replay Lab</a>
+        </div>
+      </nav>
+
+      <section class="workbench-strip card">
+        <div>
+          <p class="strip-label">Toolbox</p>
+          <h1>生成工具</h1>
+          <p class="strip-text">选择要使用的生成能力，进入对应工作台发起任务并查看结果。</p>
+        </div>
+        <div class="strip-actions">
+          <a class="hero-link secondary" href="/">返回工程列表</a>
+        </div>
+      </section>
+
+      <section class="tool-hub-grid">
+        <article class="card tool-hub-card">
+          <div>
+            <p class="strip-label">01</p>
+            <h2>单元测试用例生成</h2>
+            <p>上传 Simulink 模型、同名数据文件和可选初始化脚本，生成 TCSD Excel 测试用例。</p>
+          </div>
+          <a class="hero-link" href="/unit-test-case-generation">进入工具</a>
+        </article>
+
+        <article class="card tool-hub-card">
+          <div>
+            <p class="strip-label">02</p>
+            <h2>软件详设生成</h2>
+            <p>上传 Simulink 模型、同名数据文件和可选初始化脚本，生成可审核的软件详细设计草稿。</p>
+          </div>
+          <a class="hero-link" href="/software-detail-design-generation.html">进入工具</a>
+        </article>
+      </section>
+    </main>
+
+    <script type="module" src="/task-queue-widget.js"></script>
+    <script type="module" src="/feedback-widget.js"></script>
+  </body>
+</html>
