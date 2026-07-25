@@ -10,6 +10,14 @@ START_HERMES_AGENT="${START_HERMES_AGENT:-1}"
 PLATFORM_HERMES_TRANSPORT="${HERMES_TRANSPORT:-api}"
 HERMES_BASE_URL_FROM_ENV="${HERMES_BASE_URL:-}"
 HERMES_BASE_URL="${HERMES_BASE_URL_FROM_ENV:-http://127.0.0.1:$HERMES_PORT}"
+LOCAL_TCSD_ENV=()
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  LOCAL_TCSD_ENV=(
+    MATLAB_ROOT="/Applications/MATLAB_R2026a.app"
+    SATK_MATLAB_ROOT="/Applications/MATLAB_R2026a.app"
+    SATK_MATLAB_SESSION_MODE="new"
+  )
+fi
 
 while (($# > 0)); do
   case "$1" in
@@ -133,6 +141,7 @@ if [[ "$START_HERMES_AGENT" == "1" && "$PLATFORM_HERMES_TRANSPORT" == "api" ]]; 
     (
       cd "$PROJECT_ROOT"
       nohup env \
+        "${LOCAL_TCSD_ENV[@]}" \
         APP_RUNTIME_ROLE="hermes-agent" \
         HERMES_TRANSPORT="cli" \
         HERMES_HOST="127.0.0.1" \
@@ -168,6 +177,7 @@ echo "Starting local service from $PROJECT_ROOT"
 (
   cd "$PROJECT_ROOT"
   nohup env \
+    "${LOCAL_TCSD_ENV[@]}" \
     APP_RUNTIME_ROLE="platform" \
     HOST="$HOST" \
     PORT="$PORT" \

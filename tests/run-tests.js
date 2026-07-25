@@ -9028,6 +9028,14 @@ const tests = [
       const restartWindows = await fs.readFile(path.join(config.rootDir, "scripts", "restart-local.ps1"), "utf8");
       const startCommand = await fs.readFile(path.join(config.rootDir, "start-local.cmd"), "utf8");
       const restartCommand = await fs.readFile(path.join(config.rootDir, "restart-local.cmd"), "utf8");
+      const windowsProductionEnv = await fs.readFile(
+        path.join(config.rootDir, ".env.windows-prod.example"),
+        "utf8"
+      );
+      const linuxProductionTarget = JSON.parse(await fs.readFile(
+        path.join(config.rootDir, "deploy", "targets", "linux-prod.json"),
+        "utf8"
+      ));
 
       assert.ok(startShell.includes("src/hermes-server.js"));
       assert.ok(startShell.includes("hermes-agent.pid"));
@@ -9035,6 +9043,11 @@ const tests = [
       assert.ok(startShell.includes('APP_RUNTIME_ROLE="platform"'));
       assert.ok(startShell.includes('HERMES_TRANSPORT="$PLATFORM_HERMES_TRANSPORT"'));
       assert.ok(startShell.includes("HERMES_SERVER_REQUEST_TIMEOUT_MS"));
+      assert.ok(startShell.includes('if [[ "$(uname -s)" == "Darwin" ]]'));
+      assert.ok(startShell.includes('MATLAB_ROOT="/Applications/MATLAB_R2026a.app"'));
+      assert.ok(startShell.includes('SATK_MATLAB_ROOT="/Applications/MATLAB_R2026a.app"'));
+      assert.ok(startShell.includes('SATK_MATLAB_SESSION_MODE="new"'));
+      assert.equal((startShell.match(/"\${LOCAL_TCSD_ENV\[@\]}"/g) || []).length, 2);
       assert.ok(stopShell.includes("hermes-agent.pid"));
 
       assert.ok(startWindows.includes("src/hermes-server.js"));
@@ -9043,6 +9056,11 @@ const tests = [
       assert.ok(startWindows.includes('APP_RUNTIME_ROLE = "platform"'));
       assert.ok(startWindows.includes('HERMES_TRANSPORT = "$platformHermesTransport"'));
       assert.ok(startWindows.includes("HERMES_SERVER_REQUEST_TIMEOUT_MS"));
+      assert.ok(!startWindows.includes("/Applications/MATLAB_R2026a.app"));
+      assert.ok(windowsProductionEnv.includes("SATK_MATLAB_SESSION_MODE=new"));
+      assert.ok(!windowsProductionEnv.includes("/Applications/MATLAB_R2026a.app"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-runtime"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-stage-*"));
       assert.ok(stopWindows.includes("hermes-agent.pid"));
       assert.ok(restartWindows.includes("HermesPort"));
       assert.ok(startCommand.includes("%*"));
@@ -10303,9 +10321,11 @@ const tests = [
               assert.match(payload.inputArtifact.modelInitScriptPath, /inputs[\\/]Demo_init\.m$/);
               assert.equal(payload.inputArtifact.modelInitScriptFileName, "Demo_init.m");
               assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
-              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
-              await fs.mkdir(path.dirname(outputPath), { recursive: true });
-              await createMinimalXlsx(outputPath, {
+              const initialOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test_coverage_ir_iter0.xlsx");
+              const finalOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test_coverage_ir_iter1.xlsx");
+              const legacyOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
+              await fs.mkdir(path.dirname(finalOutputPath), { recursive: true });
+              const workbookSheets = {
                 TCSD: [
                   ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action", "Work Status", "Report Links"],
                   ["TG_001", "Group", "TestGroup", "", "", "", "", "", ""],
@@ -10321,15 +10341,44 @@ const tests = [
                     ""
                   ]
                 ]
-              });
+              };
+              await createMinimalXlsx(initialOutputPath, workbookSheets);
+              await createMinimalXlsx(finalOutputPath, workbookSheets);
+              await createMinimalXlsx(legacyOutputPath, workbookSheets);
               this.job = {
                 schema: "tcsd-agent-stage-pipeline/v2",
                 jobId: "mock-completed-job",
                 status: "已完成",
                 completion: "complete",
-                stages: [],
+                stages: Array.from({ length: 12 }, (_unused, index) => ({
+                  index: index + 1,
+                  status: "已完成",
+                  checkpoint: index === 10
+                    ? {
+                        artifacts: [
+                          {
+                            path: "outputs/Demo_Test_coverage_ir_iter1.xlsx",
+                            kind: "xlsx",
+                            role: "workbook"
+                          }
+                        ]
+                      }
+                    : index === 11
+                      ? {
+                          artifacts: [
+                            { path: "outputs/Demo_Test_coverage_ir_iter0.xlsx", kind: "xlsx", role: "workbook" },
+                            { path: "outputs/Demo_Test_coverage_ir_iter1.xlsx", kind: "xlsx", role: "workbook" },
+                            { path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx", role: "final-workbook" }
+                          ]
+                        }
+                    : { artifacts: [] }
+                })),
                 checkpoints: [],
-                artifacts: [{ path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx" }],
+                artifacts: [
+                  { path: "outputs/Demo_Test_coverage_ir_iter0.xlsx", kind: "xlsx" },
+                  { path: "outputs/Demo_Test_coverage_ir_iter1.xlsx", kind: "xlsx" },
+                  { path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx" }
+                ],
                 coverage: null,
                 repair: {},
                 updatedAt: new Date().toISOString()
@@ -10364,6 +10413,7 @@ const tests = [
         assert.equal(completed.status, "completed");
         assert.equal(completed.artifacts.length, 1);
         assert.equal(completed.artifacts[0].fileName, "Demo_Test0001_tcsd.xlsx");
+        assert.equal(completed.artifacts[0].description, "最终 TCSD 单元测试用例 Excel");
         assert.equal(completed.artifacts[0].expectedValueCount, 1);
         const artifact = await service.getArtifact(task.id, completed.artifacts[0].id);
         assert.equal(path.basename(artifact.absolutePath), "Demo_Test0001_tcsd.xlsx");

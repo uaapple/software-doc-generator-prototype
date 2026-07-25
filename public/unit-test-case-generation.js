@@ -560,6 +560,20 @@ function renderTaskDetail(task) {
   }
   const projectLabel = normalizeTaskProject(task.unitTestProject).label;
   const initScriptLabel = task.inputs?.modelInitScript?.originalName || "使用项目 addon 初始化";
+  const finalValidationStage = (task.pipeline?.stages || []).find((stage) => Number(stage?.index) === 11);
+  const validatedWorkbookPath = (finalValidationStage?.checkpoint?.artifacts || [])
+    .find((artifact) => artifact?.kind === "xlsx" && artifact?.path)?.path;
+  const modelFileName = task.inputs?.modelSlx?.originalName || "Model.slx";
+  const finalWorkbookFileName = `${modelFileName.replace(/\.[^.]+$/, "")}_Test0001_tcsd.xlsx`;
+  const standardizedWorkbookPath = `outputs/${finalWorkbookFileName}`;
+  const finalWorkbookPath = (task.artifacts || []).some(
+    (artifact) => artifact.relativePath === standardizedWorkbookPath && Number(artifact.expectedValueCount || 0) > 0
+  )
+    ? standardizedWorkbookPath
+    : validatedWorkbookPath;
+  const displayedArtifacts = finalWorkbookPath
+    ? (task.artifacts || []).filter((artifact) => artifact.relativePath === finalWorkbookPath)
+    : (task.artifacts || []);
   elements.detailSubtitle.textContent = [
     task.inputs?.modelSlx?.originalName || "Simulink 模型",
     projectLabel,
@@ -567,7 +581,7 @@ function renderTaskDetail(task) {
   ]
     .filter(Boolean)
     .join(" · ");
-  const artifactHtml = (task.artifacts || []).length
+  const artifactHtml = displayedArtifacts.length
     ? `
       <div class="unit-detail-section unit-artifact-section">
         <div class="unit-artifact-head">
@@ -578,13 +592,13 @@ function renderTaskDetail(task) {
           <span>XLSX</span>
         </div>
         <div class="unit-artifact-list">
-          ${(task.artifacts || [])
+          ${displayedArtifacts
             .map(
               (artifact) => `
                 <a class="unit-artifact-link" href="/api/unit-test-case-generation/tasks/${encodeURIComponent(task.id)}/artifacts/${encodeURIComponent(artifact.id)}/download">
                   <span>
-                    <strong>${escapeHtml(artifact.fileName)}</strong>
-                    <small>${escapeHtml(formatBytes(artifact.size))} · ${escapeHtml(artifact.relativePath)}</small>
+                    <strong>${escapeHtml(finalWorkbookPath ? finalWorkbookFileName : artifact.fileName)}</strong>
+                    <small>${escapeHtml(formatBytes(artifact.size))} · ${escapeHtml(finalWorkbookPath ? `outputs/${finalWorkbookFileName}` : artifact.relativePath)}</small>
                   </span>
                   <b>下载 Excel</b>
                 </a>

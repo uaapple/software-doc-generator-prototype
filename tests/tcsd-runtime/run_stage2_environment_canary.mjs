@@ -53,7 +53,8 @@ await execFileAsync(process.env.TCSD_PIPELINE_PYTHON || "python3", [
   env: {
     ...process.env,
     MATLAB_ROOT: process.env.MATLAB_ROOT || "/Applications/MATLAB_R2026a.app",
-    SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || "/Applications/MATLAB_R2026a.app"
+    SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || "/Applications/MATLAB_R2026a.app",
+    SATK_MATLAB_SESSION_MODE: process.env.SATK_MATLAB_SESSION_MODE || "new"
   },
   timeout: 10 * 60 * 1000,
   maxBuffer: 8 * 1024 * 1024
@@ -74,6 +75,10 @@ console.log(JSON.stringify({
   pythonModules: Object.keys(environment.pythonDependencies.modules).sort(),
   matlabVersion: environment.matlab.version,
   simulinkVersion: environment.simulink.version,
+  matlabRoot: environment.matlabRoot,
+  matlabSessionMode: process.env.SATK_MATLAB_SESSION_MODE || "new",
+  nonce: environment.nonce,
+  nonceMatched: environment.matlab.nonce === environment.nonce && environment.satkMcp.nonceMatched === true,
   satkSentinelWritten: environment.satkMcp.sentinelWritten,
   workspaceIo: environment.workspaceIo
 }));

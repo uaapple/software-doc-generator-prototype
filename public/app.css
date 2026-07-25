@@ -3221,14 +3221,21 @@ body[data-page-kind="unit-test-case-generation"] .unit-task-detail {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-task-detail-card {
   position: sticky;
   top: 16px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(100vh - 32px);
   max-height: calc(100vh - 32px);
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-detail-summary {
@@ -3492,8 +3499,15 @@ body[data-page-kind="unit-test-case-generation"] #unit-project-status[data-tone=
 
   body[data-page-kind="unit-test-case-generation"] .unit-task-detail-card {
     position: static;
+    display: block;
+    height: auto;
     max-height: none;
     overflow: visible;
+  }
+
+  body[data-page-kind="unit-test-case-generation"] .unit-task-detail {
+    overflow: visible;
+    padding-right: 0;
   }
 
   body[data-page-kind="unit-test-case-generation"] .unit-artifact-head,

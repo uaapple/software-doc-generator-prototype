@@ -18,6 +18,11 @@ function now() {
   return new Date().toISOString();
 }
 
+function finalWorkbookFileName(task = {}) {
+  const modelFileName = task.inputs?.modelSlx?.originalName || task.inputs?.modelSlx?.workspaceName || "Model.slx";
+  return `${path.basename(modelFileName, path.extname(modelFileName))}_Test0001_tcsd.xlsx`;
+}
+
 function createHttpError(message, statusCode = 400, code = "unit_test_case_generation_error", details = {}) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -915,8 +920,21 @@ export class UnitTestCaseGenerationService {
       }
     }
 
+    const finalValidationStage = (task.pipeline?.stages || []).find((stage) => Number(stage?.index) === 11);
+    const validatedWorkbookRelativePath = (finalValidationStage?.checkpoint?.artifacts || [])
+      .find((item) => item?.kind === "xlsx" && item?.path)?.path;
+    const packagingStage = (task.pipeline?.stages || []).find((stage) => Number(stage?.index) === 12);
+    const packagedWorkbookRelativePath = (packagingStage?.checkpoint?.artifacts || [])
+      .find((item) => item?.kind === "xlsx" && item?.role === "final-workbook" && item?.path)?.path;
+    const finalWorkbookRelativePath = packagedWorkbookRelativePath || validatedWorkbookRelativePath;
+    const normalizedFinalWorkbookPath = normalizeStoredRelativePath(finalWorkbookRelativePath || "");
+    const selectedCandidates =
+      normalizedFinalWorkbookPath && candidates.has(normalizedFinalWorkbookPath)
+        ? [candidates.get(normalizedFinalWorkbookPath)]
+        : [...candidates.values()];
+
     const artifacts = [];
-    for (const candidate of candidates.values()) {
+    for (const candidate of selectedCandidates) {
       const absolutePath = path.resolve(workspaceDir, ...candidate.relativePath.split("/"));
       if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`) || !(await pathExists(absolutePath))) {
         continue;
@@ -933,7 +951,11 @@ export class UnitTestCaseGenerationService {
         relativePath: candidate.relativePath,
         size: stat.size,
         mimeType: candidate.mimeType || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        description: candidate.description || "生成的 TCSD 单元测试用例 Excel",
+        description: candidate.description || (
+          candidate.relativePath === normalizedFinalWorkbookPath
+            ? "最终 TCSD 单元测试用例 Excel"
+            : "生成的 TCSD 单元测试用例 Excel"
+        ),
         expectedValueCount: expectedValueSummary.expValueCount,
         createdAt: now()
       });
@@ -1058,6 +1080,12 @@ export class UnitTestCaseGenerationService {
     }
     return {
       ...artifact,
+      fileName: artifact.relativePath === (task.pipeline?.stages || [])
+        .find((stage) => Number(stage?.index) === 11)
+        ?.checkpoint?.artifacts?.find((item) => item?.kind === "xlsx" && item?.path)
+        ?.path
+        ? finalWorkbookFileName(task)
+        : artifact.fileName,
       absolutePath
     };
   }
