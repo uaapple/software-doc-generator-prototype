@@ -1,0 +1,5 @@
+# Stage 02 direct runtime dependencies.
+PyYAML==6.0.3
+openpyxl==3.1.5
+# openpyxl's sole runtime dependency is pinned to keep installs reproducible.
+et_xmlfile==2.0.0

@@ -55,6 +55,7 @@ export class SlxModelFactAdapter {
 
       for (const fact of facts) {
         if (!fact || typeof fact !== "object") continue;
+        if (field === "traceRefs" && fact.name === "satk_tool_summary") continue;
 
         const tags = [fieldTag];
         if (sourceTag) tags.push(sourceTag);

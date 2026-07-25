@@ -15,6 +15,10 @@ import {
 import { SlxModelAnalysisService } from "./services/slx-model-analysis-service.js";
 import { ModelRequirementViewService } from "./services/model-requirement-view-service.js";
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
+import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js";
+import { TCSD_ERROR_CODES } from "./services/tcsd-pipeline-contract.js";
+import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.js";
+import { TcsdHermesSkillRegistry } from "./services/tcsd-hermes-skill-registry.js";
 
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
 
@@ -360,8 +364,8 @@ async function normalizeProjectInitScripts(inputArtifact = {}, workspaceDir = ""
 }
 
 async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = [], options = {}) {
-  const stepLabel = options.stepType || "simulink_ut_tcsd_generate";
-  const defaultSkillName = options.defaultSkillName || "simulink-ut-tcsd-generator";
+  const stepLabel = options.stepType || "tcsd_stage_execute";
+  const defaultSkillName = options.defaultSkillName || "tcsd-stage-skills";
   const defaultExpectedOutputPattern = options.defaultExpectedOutputPattern || "outputs/*_tcsd.xlsx";
   const workspaceValue = String(inputArtifact.workspaceDir || "").trim();
   if (!workspaceValue) {
@@ -1152,6 +1156,21 @@ export async function createHermesApp() {
       fileSize: Number(config.hermes.maxUploadBytes || 250 * 1024 * 1024)
     }
   });
+  const tcsdStageExecutor = new TcsdHermesStageExecutor();
+  const tcsdSkillRegistry = new TcsdHermesSkillRegistry({
+    command: tcsdStageExecutor.command,
+    commandArgsPrefix: tcsdStageExecutor.commandArgsPrefix,
+    profile: tcsdStageExecutor.profile,
+    stateDbPath: tcsdStageExecutor.stateDbPath,
+    catalog: tcsdStageExecutor.catalog
+  });
+  const tcsdJobs = new TcsdPipelineJobService({
+    jobDir: config.tcsdPipeline?.jobStoreDir || path.join(config.dataDir, "tcsd-pipeline-jobs"),
+    prepareJob: () => tcsdSkillRegistry.prepare(),
+    executor: (stageIndex, input, job, options) => tcsdStageExecutor.execute(stageIndex, input, job, options),
+    checkpointValidator: (checkpoint, context, job) => tcsdStageExecutor.validateCheckpoint(checkpoint, context, job)
+  });
+  await tcsdJobs.recoverAll();
 
   app.use(express.json({ limit: "8mb" }));
 
@@ -1163,6 +1182,22 @@ export async function createHermesApp() {
       host: config.hermes.host,
       port: config.hermes.port
     });
+  });
+
+  app.post("/internal/tcsd-pipeline/jobs", requireHermesAuth, async (req, res, next) => {
+    try {
+      const payload = req.body || {};
+      const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
+      const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
+      const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
+      const job = await tcsdJobs.start({ taskId: payload.taskId, idempotencyKey: payload.idempotencyKey || payload.taskId, ...inputArtifact, projectAddonCopy: addonCopy });
+      res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema });
+    } catch (error) { next(error); }
+  });
+  app.get("/internal/tcsd-pipeline/jobs/:jobId", requireHermesAuth, async (req, res) => {
+    const job = await tcsdJobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: "TCSD 作业不存在。", code: TCSD_ERROR_CODES.jobNotFound });
+    return res.json(job);
   });
 
   const executeStepRequest = async (req, res, next) => {
@@ -1398,39 +1433,6 @@ export async function createHermesApp() {
               replayRecordCount: Array.isArray(records) ? records.length : 0,
               candidateSkillCount: Array.isArray(inventoryItems) ? inventoryItems.length : 0
             }
-          })
-        );
-      }
-
-      if (stepType === "simulink_ut_tcsd_generate") {
-        const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
-        const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
-        const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
-        const hermesClient = new HermesAgentClient({
-          transport: "cli",
-          workdir: inputArtifact.workspaceDir
-        });
-        const result = await hermesClient.executeStep(
-          {
-            ...payload,
-            stepType,
-            workdir: inputArtifact.workspaceDir,
-            allowedPaths: [inputArtifact.workspaceDir],
-            inputArtifact: {
-              ...inputArtifact,
-              projectAddonCopy: {
-                copiedFileCount: addonCopy.copiedFileCount,
-                unitTestProject: addonCopy.unitTestProject
-              }
-            }
-          },
-          {}
-        );
-        const artifact = await attachUnitTestCaseOutputFiles(result.artifact || {}, inputArtifact);
-        return res.json(
-          buildStepResponse(stepType, artifact, startedAt, {
-            metrics: result.metrics || {},
-            logs: result.logs || []
           })
         );
       }

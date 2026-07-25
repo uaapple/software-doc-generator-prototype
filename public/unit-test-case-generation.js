@@ -37,6 +37,7 @@ const STATUS_LABELS = {
   queued: "排队中",
   running: "运行中",
   completed: "已完成",
+  partial: "部分完成",
   failed: "失败"
 };
 
@@ -62,6 +63,71 @@ function formatBytes(value = 0) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function compactJson(value, maxLength = 1600) {
+  if (value === null || value === undefined || value === "") return "未记录";
+  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  return text.length > maxLength ? `${text.slice(0, maxLength)}\n…` : text;
+}
+
+function formatTokenUsage(usage = null) {
+  if (!usage) return "未记录";
+  return [
+    `input ${Number(usage.inputTokens || 0)}`,
+    `output ${Number(usage.outputTokens || 0)}`,
+    `total ${Number(usage.totalTokens || 0)}`
+  ].join(" · ");
+}
+
+function renderPipelineStage(stage, pipelineCheckpoints = []) {
+  const checkpoint = stage.checkpoint || null;
+  const checkpointIndex = pipelineCheckpoints.find((item) => item.stageIndex === stage.index) || null;
+  const skill = checkpoint?.skill || {};
+  const agent = checkpoint?.agent || {};
+  const artifacts = Array.isArray(checkpoint?.artifacts) ? checkpoint.artifacts : [];
+  const attempts = Array.isArray(stage.attempts) ? stage.attempts : [];
+  const artifactSummary = artifacts.length
+    ? artifacts.map((item) => `${item.role || item.kind || "artifact"}: ${item.path || ""}`).join("\n")
+    : "无";
+  const attemptSummary = attempts.length
+    ? attempts.map((item) => {
+        const trace = [item.status, item.sessionId, item.model, item.validationReportPath].filter(Boolean).join(" · ");
+        return `#${item.attempt}: ${trace}`;
+      }).join("\n")
+    : "无";
+  return `
+    <details class="unit-runtime-item unit-stage-trace">
+      <summary>
+        <strong>${escapeHtml(`${stage.index}. ${stage.name} · ${stage.status}`)}</strong>
+        <span>${escapeHtml(stage.summary || stage.skipReason || stage.error?.message || "等待执行")}</span>
+      </summary>
+      <div class="unit-stage-trace-body">
+        <dl class="unit-meta-list">
+          <div><dt>技能</dt><dd>${escapeHtml(skill.name || stage.skillName || "等待执行")}</dd></div>
+          <div><dt>版本 / bundle</dt><dd>${escapeHtml([skill.version || stage.skillVersion, skill.bundleVersion || stage.bundleVersion, skill.bundleHash].filter(Boolean).join(" · ") || "未记录")}</dd></div>
+          <div><dt>Profile / Model</dt><dd>${escapeHtml([agent.profile, agent.model].filter(Boolean).join(" · ") || "未记录")}</dd></div>
+          <div><dt>Session</dt><dd>${escapeHtml(agent.sessionId || "未记录")}</dd></div>
+          <div><dt>Token</dt><dd>${escapeHtml(formatTokenUsage(agent.tokenUsage))}</dd></div>
+          <div><dt>尝试次数</dt><dd>${escapeHtml(String(stage.attempt || 0))}</dd></div>
+          <div><dt>Checkpoint</dt><dd>${escapeHtml(checkpointIndex?.path || checkpoint?.schema || "未生成")}</dd></div>
+          <div><dt>开始 / 结束</dt><dd>${escapeHtml([formatTime(stage.startedAt), formatTime(stage.endedAt)].filter(Boolean).join(" → ") || "未记录")}</dd></div>
+        </dl>
+        <h4>尝试与会话</h4>
+        <pre>${escapeHtml(attemptSummary)}</pre>
+        <h4>输入</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.input))}</pre>
+        <h4>结果</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.result))}</pre>
+        <h4>宿主验证</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.validation || stage.error))}</pre>
+        <h4>产物</h4>
+        <pre>${escapeHtml(artifactSummary)}</pre>
+        <h4>工具日志摘要</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.toolLogs))}</pre>
+      </div>
+    </details>
+  `;
 }
 
 function isActiveStatus(status = "") {
@@ -587,6 +653,20 @@ function renderTaskDetail(task) {
   const projectLabel = normalizeTaskProject(task.unitTestProject).label;
   const workerLabel = normalizeTaskWorker(task.workerProfile).label;
   const initScriptLabel = task.inputs?.modelInitScript?.originalName || "使用项目 addon 初始化";
+  const finalValidationStage = (task.pipeline?.stages || []).find((stage) => Number(stage?.index) === 11);
+  const validatedWorkbookPath = (finalValidationStage?.checkpoint?.artifacts || [])
+    .find((artifact) => artifact?.kind === "xlsx" && artifact?.path)?.path;
+  const modelFileName = task.inputs?.modelSlx?.originalName || "Model.slx";
+  const finalWorkbookFileName = `${modelFileName.replace(/\.[^.]+$/, "")}_Test0001_tcsd.xlsx`;
+  const standardizedWorkbookPath = `outputs/${finalWorkbookFileName}`;
+  const finalWorkbookPath = (task.artifacts || []).some(
+    (artifact) => artifact.relativePath === standardizedWorkbookPath && Number(artifact.expectedValueCount || 0) > 0
+  )
+    ? standardizedWorkbookPath
+    : validatedWorkbookPath;
+  const displayedArtifacts = finalWorkbookPath
+    ? (task.artifacts || []).filter((artifact) => artifact.relativePath === finalWorkbookPath)
+    : (task.artifacts || []);
   elements.detailSubtitle.textContent = [
     task.inputs?.modelSlx?.originalName || "Simulink 模型",
     projectLabel,
@@ -595,7 +675,7 @@ function renderTaskDetail(task) {
   ]
     .filter(Boolean)
     .join(" · ");
-  const artifactHtml = (task.artifacts || []).length
+  const artifactHtml = displayedArtifacts.length
     ? `
       <div class="unit-detail-section unit-artifact-section">
         <div class="unit-artifact-head">
@@ -606,13 +686,13 @@ function renderTaskDetail(task) {
           <span>XLSX</span>
         </div>
         <div class="unit-artifact-list">
-          ${(task.artifacts || [])
+          ${displayedArtifacts
             .map(
               (artifact) => `
                 <a class="unit-artifact-link" href="/api/unit-test-case-generation/tasks/${encodeURIComponent(task.id)}/artifacts/${encodeURIComponent(artifact.id)}/download">
                   <span>
-                    <strong>${escapeHtml(artifact.fileName)}</strong>
-                    <small>${escapeHtml(formatBytes(artifact.size))} · ${escapeHtml(artifact.relativePath)}</small>
+                    <strong>${escapeHtml(finalWorkbookPath ? finalWorkbookFileName : artifact.fileName)}</strong>
+                    <small>${escapeHtml(formatBytes(artifact.size))} · ${escapeHtml(finalWorkbookPath ? `outputs/${finalWorkbookFileName}` : artifact.relativePath)}</small>
                   </span>
                   <b>下载 Excel</b>
                 </a>
@@ -664,6 +744,11 @@ function renderTaskDetail(task) {
       </div>
     `
     : "";
+  const pipelineStages = Array.isArray(task.pipeline?.stages) ? task.pipeline.stages : [];
+  const pipelineCheckpoints = Array.isArray(task.pipeline?.checkpoints) ? task.pipeline.checkpoints : [];
+  const pipelineHtml = pipelineStages.length
+    ? `<div class="unit-detail-section"><h3>十二阶段运行态</h3><p>每个阶段由独立 Hermes Agent 会话执行；展开可查看技能、模型、token、验证与产物追溯。</p><div class="unit-runtime-list">${pipelineStages.map((stage) => renderPipelineStage(stage, pipelineCheckpoints)).join("")}</div></div>`
+    : "";
 
   elements.taskDetail.innerHTML = `
     <div class="unit-detail-summary">
@@ -690,14 +775,15 @@ function renderTaskDetail(task) {
       <div class="unit-detail-section">
         <h3>Hermes Step</h3>
         <dl class="unit-meta-list">
-          <div><dt>Step</dt><dd>${escapeHtml(task.hermes?.stepType || "simulink_ut_tcsd_generate")}</dd></div>
-          <div><dt>Skill</dt><dd>${escapeHtml(task.hermes?.skillName || "simulink-ut-tcsd-generator")}</dd></div>
+          <div><dt>Step</dt><dd>${escapeHtml(task.hermes?.stepType || "tcsd_stage_execute")}</dd></div>
+          <div><dt>Pipeline</dt><dd>${escapeHtml(task.hermes?.pipelineName || "tcsd-stage-skills")}</dd></div>
           <div><dt>输出</dt><dd>${escapeHtml(task.hermes?.expectedOutputPattern || "outputs/*_tcsd.xlsx")}</dd></div>
         </dl>
       </div>
     </div>
     ${errorHtml}
     ${warningHtml}
+    ${pipelineHtml}
     ${runtimeHtml}
   `;
 }

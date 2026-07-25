@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 03 初始化工作区"
+  short_description: "Initialize the model workspace and owned resources"
+  default_prompt: "Use $tcsd-stage-03-initialize-workspace to initialize the TCSD model workspace."

@@ -123,7 +123,9 @@ function modelFactBundleToEvidenceItems(bundle = {}, extraction = {}) {
   ];
 
   return fields.flatMap(([field, tag]) =>
-    (Array.isArray(bundle[field]) ? bundle[field] : []).map((fact, index) => ({
+    (Array.isArray(bundle[field]) ? bundle[field] : [])
+      .filter((fact) => field !== "traceRefs" || fact?.name !== "satk_tool_summary")
+      .map((fact, index) => ({
       id: `${field}-${index + 1}`,
       assetId: extraction.fileId || "",
       fileId: extraction.fileId || "",
@@ -134,7 +136,7 @@ function modelFactBundleToEvidenceItems(bundle = {}, extraction = {}) {
       summary: fact.description || fact.text || fact.name || "",
       tags: [tag, `model:${bundle.source?.modelName || ""}`].filter(Boolean),
       anchorId: `${field}-${index + 1}`
-    }))
+      }))
   );
 }
 

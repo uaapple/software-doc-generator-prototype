@@ -256,6 +256,11 @@ export async function createApp() {
   await unitTestCaseGenerationService.recoverStaleTasks();
   await softwareModuleDescriptionGenerationService.recoverStaleTasks();
   await hermesTaskQueueService.restorePersistedQueuedTasks();
+  const tcsdReconcileTimer = setInterval(() => {
+    unitTestCaseGenerationService.reconcileRemoteTasks().catch(() => null);
+  }, Math.max(5000, Number(config.unitTestCase?.reconcileIntervalMs || 30000)));
+  tcsdReconcileTimer.unref?.();
+  app.locals.tcsdReconcileTimer = tcsdReconcileTimer;
 
   function requestField(req, ...keys) {
     for (const key of keys) {

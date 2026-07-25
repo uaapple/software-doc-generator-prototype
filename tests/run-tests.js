@@ -34,10 +34,17 @@ import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-ge
 import { SoftwareModuleDescriptionGenerationService } from "../src/services/software-module-description-generation-service.js";
 import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
 import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
+import { TCSD_STAGE_DEFINITIONS } from "../src/services/tcsd-pipeline-contract.js";
 import {
   buildOutlineItems,
   parseRequirementMarkdownBlocks
 } from "../src/services/software-requirement-markdown-agent-service.js";
+import { parseZipArchive } from "../src/services/zip-archive.js";
+import {
+  buildTcsdPythonDependencyCommand,
+  runTcsdPythonDependencyCommand
+} from "../scripts/tcsd-python-dependencies.mjs";
+import { buildZipArchive } from "./zip-fixture.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -73,7 +80,7 @@ async function withTempConfig(run) {
       projectAdminCode: "114301",
       defaultProjects: "01_\u695a\u80fd,02_TMS",
       projectAddonRoot: path.join(tempDir, "project-addons"),
-      skillName: "simulink-ut-tcsd-generator",
+      pipelineName: "tcsd-stage-skills",
       expectedOutputPattern: "outputs/*_tcsd.xlsx",
       agentWorkspaceRoot: "",
       defaultWorkerId: "default",
@@ -132,20 +139,20 @@ async function withTempConfig(run) {
         host: "127.0.0.1",
         port: 0,
         baseURL: "http://127.0.0.1:0",
-      command: "hermes",
-      commandArgsPrefix: [],
-      workdir: tempDir,
+        command: "hermes",
+        commandArgsPrefix: [],
+        profile: "default",
+        homeDir: path.join(tempDir, "hermes"),
+        workdir: tempDir,
         timeoutMs: 2000,
         stepTimeoutMs: {
           replay_proposal_generate: 4000,
           anchor_index_build: 2000,
           outline_build: 2000,
           content_generate: 4000,
-          simulink_ut_tcsd_generate: 5000,
           simulink_module_description_generate: 5000
         },
       stepMaxTurns: {
-        simulink_ut_tcsd_generate: 10000,
         simulink_module_description_generate: 10000
       },
       maxTurns: 8,
@@ -153,6 +160,11 @@ async function withTempConfig(run) {
       maxOutlineSections: 6,
       maxEvidenceForGeneration: 40,
       maxAnchorsForGeneration: 80
+    },
+    tcsdPipeline: {
+      ...config.tcsdPipeline,
+      jobStoreDir: path.join(tempDir, "data", "tcsd-pipeline-jobs"),
+      hermesProfile: "default"
     }
   });
   config.openai.apiKey = "";
@@ -259,92 +271,68 @@ function buildSheetXml(rows = []) {
 }
 
 async function createMinimalXlsx(filePath, rowsBySheet = {}) {
-  const workbookDir = await fs.mkdtemp(path.join(os.tmpdir(), "xlsx-fixture-"));
-  try {
-    await fs.mkdir(path.join(workbookDir, "_rels"), { recursive: true });
-    await fs.mkdir(path.join(workbookDir, "xl", "_rels"), { recursive: true });
-    await fs.mkdir(path.join(workbookDir, "xl", "worksheets"), { recursive: true });
-
-    const sheetEntries = Object.entries(rowsBySheet);
-    const workbookSheets = sheetEntries
-      .map(([name], index) => `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
-      .join("");
-    const workbookRels = sheetEntries
-      .map(
-        ([,], index) =>
-          `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
-      )
-      .join("");
-    const contentTypes = [
-      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
-      ...sheetEntries.map(
-        ([,], index) =>
-          `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
-      )
-    ].join("");
-
-    await fs.writeFile(
-      path.join(workbookDir, "[Content_Types].xml"),
+  const sheetEntries = Object.entries(rowsBySheet);
+  const workbookSheets = sheetEntries
+    .map(([name], index) => `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+    .join("");
+  const workbookRels = sheetEntries
+    .map(
+      ([,], index) =>
+        `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+    )
+    .join("");
+  const contentTypes = [
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+    ...sheetEntries.map(
+      ([,], index) =>
+        `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+    )
+  ].join("");
+  const entries = [
+    {
+      name: "[Content_Types].xml",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   ${contentTypes}
-</Types>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "_rels", ".rels"),
+</Types>`
+    },
+    {
+      name: "_rels/.rels",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "xl", "workbook.xml"),
+</Relationships>`
+    },
+    {
+      name: "xl/workbook.xml",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>${workbookSheets}</sheets>
-</workbook>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "xl", "_rels", "workbook.xml.rels"),
+</workbook>`
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   ${workbookRels}
-</Relationships>`,
-      "utf8"
-    );
-
-    for (const [index, [, rows]] of sheetEntries.entries()) {
-      await fs.writeFile(path.join(workbookDir, "xl", "worksheets", `sheet${index + 1}.xml`), buildSheetXml(rows), "utf8");
+</Relationships>`
     }
+  ];
 
-    if (process.platform === "win32") {
-      const escapedSource = workbookDir.replaceAll("'", "''");
-      const escapedDestination = filePath.replaceAll("'", "''");
-      await execFileAsync("powershell.exe", [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        [
-          "Add-Type -AssemblyName System.IO.Compression.FileSystem;",
-          `Remove-Item -LiteralPath '${escapedDestination}' -Force -ErrorAction SilentlyContinue;`,
-          `[System.IO.Compression.ZipFile]::CreateFromDirectory('${escapedSource}', '${escapedDestination}');`
-        ].join(" ")
-      ]);
-    } else {
-      await execFileAsync("zip", ["-rq", filePath, "."], { cwd: workbookDir });
-    }
-  } finally {
-    await fs.rm(workbookDir, { recursive: true, force: true });
+  for (const [index, [, rows]] of sheetEntries.entries()) {
+    entries.push({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: buildSheetXml(rows)
+    });
   }
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, buildZipArchive(entries, { compressionMethod: 8 }));
 }
 
 function buildManualTitleOutline(sections = [{ sectionTitle: "智能补电", itemTitles: ["激活判断", "退出判断"] }]) {
@@ -600,6 +588,140 @@ async function seedWikiFixture(rootDir, overrides = {}) {
 }
 
 const tests = [
+  {
+    name: "TCSD Python dependency commands preserve interpreter prefixes and release boundaries",
+    run: async () => {
+      const calls = [];
+      await runTcsdPythonDependencyCommand("install", {
+        platform: "win32",
+        env: {},
+        requirementsPath: "C:\\release\\requirements\\tcsd-runtime.txt",
+        commandRunner: async (executable, args, options) => {
+          calls.push({ executable, args, options });
+          return { stdout: "", stderr: "" };
+        }
+      });
+      assert.equal(calls[0].executable, "py");
+      assert.deepEqual(calls[0].args, [
+        "-3.11",
+        "-m",
+        "pip",
+        "install",
+        "--requirement",
+        "C:\\release\\requirements\\tcsd-runtime.txt"
+      ]);
+
+      assert.deepEqual(
+        buildTcsdPythonDependencyCommand("check", {
+          python: "C:\\Python311\\python.exe",
+          platform: "win32",
+          env: {},
+          gatePath: "C:\\release\\scripts\\check-tcsd-python.py",
+          requirementsPath: "C:\\release\\requirements\\tcsd-runtime.txt"
+        }),
+        {
+          executable: "C:\\Python311\\python.exe",
+          args: [
+            "C:\\release\\scripts\\check-tcsd-python.py",
+            "--requirements",
+            "C:\\release\\requirements\\tcsd-runtime.txt"
+          ]
+        }
+      );
+      for (const platform of ["darwin", "linux"]) {
+        const command = buildTcsdPythonDependencyCommand("check", {
+          platform,
+          env: {},
+          gatePath: "check.py",
+          requirementsPath: "requirements.txt"
+        });
+        assert.equal(command.executable, "python3");
+        assert.deepEqual(command.args, ["check.py", "--requirements", "requirements.txt"]);
+      }
+      assert.deepEqual(
+        buildTcsdPythonDependencyCommand("check", {
+          platform: "win32",
+          env: {},
+          gatePath: "check.py",
+          requirementsPath: "requirements.txt"
+        }),
+        {
+          executable: "py",
+          args: ["-3.11", "check.py", "--requirements", "requirements.txt"]
+        }
+      );
+
+      const targets = Object.fromEntries(
+        await Promise.all(
+          ["linux-prod", "windows-prod-full", "windows-prod-source"].map(async (targetId) => [
+            targetId,
+            JSON.parse(await fs.readFile(
+              path.join(config.rootDir, "deploy", "targets", `${targetId}.json`),
+              "utf8"
+            ))
+          ])
+        )
+      );
+      const included = (target, candidate) => {
+        const selected = target.includePaths.some(
+          (entry) => candidate === entry || candidate.startsWith(`${entry}/`)
+        );
+        const excluded = target.excludePaths.some(
+          (entry) => candidate === entry || candidate.startsWith(`${entry}/`)
+        );
+        return selected && !excluded;
+      };
+      for (const targetId of ["windows-prod-full", "windows-prod-source"]) {
+        assert.equal(included(targets[targetId], "requirements/tcsd-runtime.txt"), true);
+        assert.equal(included(targets[targetId], "scripts/tcsd-python-dependencies.mjs"), true);
+        assert.equal(included(targets[targetId], "scripts/check-tcsd-python.py"), true);
+      }
+      assert.equal(included(targets["linux-prod"], "requirements/tcsd-runtime.txt"), false);
+      assert.equal(included(targets["linux-prod"], "scripts/tcsd-python-dependencies.mjs"), false);
+      assert.equal(included(targets["linux-prod"], "scripts/check-tcsd-python.py"), false);
+
+      const packageJson = JSON.parse(await fs.readFile(path.join(config.rootDir, "package.json"), "utf8"));
+      assert.equal(
+        packageJson.scripts["install:tcsd-python"],
+        "node scripts/tcsd-python-dependencies.mjs install"
+      );
+      assert.equal(
+        packageJson.scripts["check:tcsd-python"],
+        "node scripts/tcsd-python-dependencies.mjs check"
+      );
+      const releaseBuilder = await fs.readFile(
+        path.join(config.rootDir, "scripts", "build-release-zip.mjs"),
+        "utf8"
+      );
+      assert.match(releaseBuilder, /target\.id === "windows-prod-full".+windows-prod-source/s);
+      assert.match(releaseBuilder, /npm\(\["run", "check:tcsd-python"\]\)/);
+      assert.doesNotMatch(releaseBuilder, /npm\(\["run", "install:tcsd-python"\]\)/);
+    }
+  },
+  {
+    name: "Change classifier includes untracked files in working-tree mode",
+    run: async () => {
+      const root = path.resolve(process.cwd());
+      const probe = path.join(root, "tests", `.classifier-untracked-probe-${process.pid}.txt`);
+      const reportPath = path.join(os.tmpdir(), `classifier-report-${process.pid}.json`);
+      try {
+        await fs.writeFile(probe, "untracked classifier probe\n", "utf8");
+        await execFileAsync(process.execPath, [
+          path.join(root, "scripts", "classify-changes.mjs"),
+          "--allow-ambiguous",
+          "--json-out",
+          reportPath
+        ], { cwd: root });
+        const report = JSON.parse(await fs.readFile(reportPath, "utf8"));
+        const relativeProbe = path.relative(root, probe).replaceAll(path.sep, "/");
+        const entry = report.entries.find((item) => item.path === relativeProbe);
+        assert.equal(entry?.category, "dev-only");
+      } finally {
+        await fs.rm(probe, { force: true });
+        await fs.rm(reportPath, { force: true });
+      }
+    }
+  },
   {
     name: "C extractor finds macros, functions, conditions, and assignments",
     run: async () => {
@@ -1127,7 +1249,7 @@ const tests = [
     }
   },
   {
-    name: "Replay artifact service writes expected file-driven Hermes replay artifact structure",
+    name: "Replay artifact service writes POSIX protocol paths for file-driven Hermes artifacts",
     run: async () => {
       await withTempConfig(async () => {
         const replayArtifactService = new ReplayArtifactService();
@@ -1201,6 +1323,7 @@ const tests = [
             files: {
               "requirement_validation.md": "# 校验\n- 禁止越界扩写",
               "examples/good_examples.md": "# 正例\n- 只写记忆行为",
+              [path.win32.join("nested", "windows-path.md")]: "# Windows 路径回归",
               "domain-knowledge.json": {
                 version: 1,
                 ruleHints: [{ id: "hint-1", note: "只保留人工范例边界" }]
@@ -1257,13 +1380,17 @@ const tests = [
         assert.ok(artifact.writtenFiles.includes("rejections.json"));
         assert.ok(artifact.writtenFiles.includes("effective-skill-manifest.json"));
         assert.ok(artifact.writtenFiles.includes("effective-skill/requirement_validation.md"));
+        assert.ok(artifact.writtenFiles.includes("effective-skill/nested/windows-path.md"));
         assert.ok(artifact.writtenFiles.some((item) => item.startsWith("reference-assets/")));
+        assert.equal(artifact.writtenFiles.every((item) => !item.includes("\\")), true);
 
         const manifest = JSON.parse(await fs.readFile(path.join(outputDir, "manifest.json"), "utf8"));
         assert.equal(manifest.taskContext.moduleSkillKey, "charging_management");
         assert.equal(manifest.rejectionContext.records[0].id, "rej-1");
         assert.equal(manifest.layerSkillInventory[0].skillCode, "MOD-充电管理-validation-001");
         assert.equal(manifest.effectiveSkillFiles[0].artifactPath.startsWith("effective-skill/"), true);
+        assert.equal(manifest.effectiveSkillFiles.every((item) => !item.artifactPath.includes("\\")), true);
+        assert.equal(manifest.referenceAssets.every((item) => !item.artifactPath.includes("\\")), true);
         assert.equal(manifest.counts.rejections, 1);
         assert.equal(manifest.counts.layerSkillItems, 1);
         assert.equal(manifest.counts.referenceAssets, 2);
@@ -2831,83 +2958,6 @@ const tests = [
     }
   },
   {
-    name: "Hermes agent client materializes transferred TCSD workbook from API multipart response",
-    run: async () => {
-      await withTempConfig(async () => {
-        const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-api-tcsd-transfer-"));
-        const outputDir = path.join(workspaceDir, "outputs");
-        const modelSlxPath = path.join(workspaceDir, "Demo.slx");
-        const modelMatPath = path.join(workspaceDir, "Demo.mat");
-        const outputRelativePath = "outputs/Demo_Test0001_tcsd.xlsx";
-        const outputBytes = Buffer.from("xlsx-bytes", "utf8");
-        await fs.mkdir(outputDir, { recursive: true });
-        await fs.writeFile(modelSlxPath, "slx", "utf8");
-        await fs.writeFile(modelMatPath, "mat", "utf8");
-
-        const server = http.createServer((req, res) => {
-          req.resume();
-          req.on("end", () => {
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({
-              status: "succeeded",
-              artifact: {
-                status: "completed",
-                summary: "done",
-                outputFiles: [
-                  {
-                    relativePath: outputRelativePath,
-                    kind: "tcsd_workbook",
-                    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    contentBase64: outputBytes.toString("base64")
-                  }
-                ]
-              }
-            }));
-          });
-        });
-        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-        const address = server.address();
-        const client = new HermesAgentClient({
-          transport: "api",
-          apiMode: "multipart",
-          baseURL: `http://127.0.0.1:${address.port}`,
-          timeoutMs: 5000,
-          stepTimeoutMs: { simulink_ut_tcsd_generate: 5000 }
-        });
-
-        try {
-          const response = await client.executeStep({
-            taskId: "task-api-tcsd-transfer",
-            stepType: "simulink_ut_tcsd_generate",
-            allowedPaths: [workspaceDir],
-            inputArtifact: {
-              workspaceDir,
-              modelSlxPath,
-              modelMatPath,
-              outputDir
-            }
-          });
-
-          const materialized = await fs.readFile(path.join(workspaceDir, ...outputRelativePath.split("/")));
-          assert.equal(response.status, "succeeded");
-          assert.equal(response.artifact.outputFiles[0].relativePath, outputRelativePath);
-          assert.equal(materialized.toString("utf8"), "xlsx-bytes");
-        } finally {
-          await new Promise((resolve, reject) => {
-            server.close((error) => {
-              if (error) {
-                reject(error);
-                return;
-              }
-              resolve();
-            });
-          });
-          await fs.rm(workspaceDir, { recursive: true, force: true });
-        }
-      });
-    }
-  },
-  {
     name: "Hermes agent client materializes transferred module description DOCX from API multipart response",
     run: async () => {
       await withTempConfig(async () => {
@@ -2980,6 +3030,59 @@ const tests = [
             });
           });
           await fs.rm(workspaceDir, { recursive: true, force: true });
+        }
+      });
+    }
+  },
+  {
+    name: "Hermes agent client authenticates staged TCSD job start and polling",
+    run: async () => {
+      await withTempConfig(async () => {
+        const requests = [];
+        const server = http.createServer((req, res) => {
+          requests.push({
+            method: req.method,
+            url: req.url,
+            authorization: req.headers.authorization || ""
+          });
+          req.resume();
+          req.on("end", () => {
+            res.writeHead(req.method === "POST" ? 202 : 200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(
+              req.method === "POST"
+                ? { jobId: "tcsd-job-auth", status: "queued" }
+                : { jobId: "tcsd-job-auth", status: "running" }
+            ));
+          });
+        });
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const address = server.address();
+        const client = new HermesAgentClient({
+          transport: "api",
+          baseURL: `http://127.0.0.1:${address.port}`,
+          authToken: "worker-secret",
+          timeoutMs: 5000
+        });
+
+        try {
+          assert.equal((await client.startTcsdPipelineJob({ taskId: "task-auth" })).jobId, "tcsd-job-auth");
+          assert.equal((await client.getTcsdPipelineJob("tcsd-job-auth")).status, "running");
+          assert.deepEqual(requests, [
+            {
+              method: "POST",
+              url: "/internal/tcsd-pipeline/jobs",
+              authorization: "Bearer worker-secret"
+            },
+            {
+              method: "GET",
+              url: "/internal/tcsd-pipeline/jobs/tcsd-job-auth",
+              authorization: "Bearer worker-secret"
+            }
+          ]);
+        } finally {
+          await new Promise((resolve, reject) => {
+            server.close((error) => error ? reject(error) : resolve());
+          });
         }
       });
     }
@@ -3173,6 +3276,50 @@ const tests = [
             });
           });
         }
+      });
+    }
+  },
+  {
+    name: "Hermes agent client runs JavaScript CLI commands through the Node executable",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const invocations = [];
+        const commandPath = path.join(tempDir, "fake-hermes-cli.js");
+        const client = new HermesAgentClient({
+          transport: "cli",
+          command: commandPath,
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"items\":[{\"title\":\"JS CLI item\",\"requirementText\":\"JS CLI text\",\"sourceAnchorIds\":[]}]}\n",
+              stderr: ""
+            };
+          },
+          usageReader: async () => null
+        });
+
+        const response = await client.executeStep({
+          taskId: "task-js-cli",
+          stepType: "content_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            project: { name: "JS CLI Project", documentType: "software_requirement" },
+            evidence: [],
+            recalledAtoms: [],
+            outline: { sections: [{ title: "Section", objective: "Goal" }] },
+            template: { requirementIdPrefix: "SWR", sections: [] }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].command, process.execPath);
+        assert.equal(invocations[0].args[0], commandPath);
+        assert.ok(invocations[0].args.includes("chat"));
+        assert.equal(response.status, "succeeded");
+        assert.equal(response.artifact.items[0].title, "JS CLI item");
       });
     }
   },
@@ -3377,16 +3524,17 @@ const tests = [
       const serverSource = await fs.readFile(new URL("../src/hermes-server.js", import.meta.url), "utf8");
 
       assert.match(configSource, /serverRequestTimeoutMs:\s*Number\(process\.env\.HERMES_SERVER_REQUEST_TIMEOUT_MS\s*\|\|\s*0\)/);
-      assert.match(configSource, /simulink_ut_tcsd_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS\s*\|\|\s*7200000\)/);
+      assert.match(configSource, /stageTimeoutMs:\s*Number\(process\.env\.TCSD_STAGE_HERMES_TIMEOUT_MS\s*\|\|\s*3600000\)/);
+      assert.match(configSource, /stageMaxTurns:\s*Number\(process\.env\.TCSD_STAGE_HERMES_MAX_TURNS\s*\|\|\s*200\)/);
+      assert.match(configSource, /TCSD_STAGE_HERMES_PROFILE\s*\|\|\s*hermesProfile/);
       assert.match(configSource, /simulink_module_description_generate:\s*Number\(\s*process\.env\.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS\s*\|\|\s*3600000\s*\)/);
-      assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE[\s\S]*:\s*10000/);
       assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE[\s\S]*:\s*10000/);
       assert.ok(serverSource.includes("server.requestTimeout = requestTimeoutMs"));
       assert.ok(serverSource.includes("server.timeout = requestTimeoutMs"));
     }
   },
   {
-    name: "Hermes agent client builds simulink_ut_tcsd_generate prompt and timeout",
+    name: "Hermes agent client rejects the removed whole-task TCSD entry",
     run: async () => {
       await withTempConfig(async (tempDir) => {
         const workspaceDir = path.join(tempDir, "ut-workspace");
@@ -3396,12 +3544,6 @@ const tests = [
         const client = new HermesAgentClient({
           transport: "cli",
           timeoutMs: 120000,
-          stepTimeoutMs: {
-            simulink_ut_tcsd_generate: 7200000
-          },
-          stepMaxTurns: {
-            simulink_ut_tcsd_generate: 10000
-          },
           usageReader: async () => null,
           commandRunner: async (command, args, options) => {
             invocations.push({ command, args, options });
@@ -3413,39 +3555,17 @@ const tests = [
           }
         });
 
-        const result = await client.executeStep({
-          taskId: "ut-task-1",
-          stepType: "simulink_ut_tcsd_generate",
-          allowedPaths: [workspaceDir],
-          workdir: workspaceDir,
-          inputArtifact: {
-            workspaceDir,
-            modelSlxPath: path.join(workspaceDir, "Demo.slx"),
-            modelMatPath: path.join(workspaceDir, "Demo.mat"),
-            modelInitScriptPath: path.join(workspaceDir, "inputs", "Demo_init.m"),
-            outputDir,
-            skillName: "simulink-ut-tcsd-generator",
-            expectedOutputPattern: "outputs/*_tcsd.xlsx",
-            modelInitScriptFileName: "Demo_init.m",
-            projectInitScripts: ["inputs/Demo_init.m"]
-          }
-        });
-
-        assert.equal(invocations.length, 1);
-        assert.equal(invocations[0].options.timeout, 7200000);
-        assert.equal(invocations[0].args[invocations[0].args.indexOf("--max-turns") + 1], "10000");
-        assert.match(invocations[0].args[2], /simulink_ut_tcsd_generate/);
-        assert.match(invocations[0].args[2], /simulink-ut-tcsd-generator/);
-        assert.match(invocations[0].args[2], /Demo\.slx/);
-        assert.match(invocations[0].args[2], /Demo\.mat/);
-        assert.match(invocations[0].args[2], /Demo_init\.m/);
-        assert.match(invocations[0].args[2], /projectInitScripts/);
-        assert.match(invocations[0].args[2], /setup_ut_support\(rootDir, projectInitScripts\)/);
-        assert.match(invocations[0].args[2], /no model-specific init script was uploaded/);
-        assert.match(invocations[0].args[2], /outputs\/\*_tcsd\.xlsx/);
-        assert.match(invocations[0].args[2], /MATLAB Cleanup Contract/);
-        assert.match(invocations[0].args[2], /build_tcsd_from_json\.py/);
-        assert.equal(result.artifact.outputFiles[0].relativePath, "outputs/Demo_Test0001_tcsd.xlsx");
+        await assert.rejects(
+          () => client.executeStep({
+            taskId: "ut-task-1",
+            stepType: "simulink_ut_tcsd_generate",
+            allowedPaths: [workspaceDir],
+            workdir: workspaceDir,
+            inputArtifact: { workspaceDir, outputDir }
+          }),
+          /Unsupported Hermes CLI step/
+        );
+        assert.equal(invocations.length, 0);
       });
     }
   },
@@ -3531,17 +3651,21 @@ const tests = [
         await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
         await fs.writeFile(path.join(addonDir, "init_Global.m"), "% addon marker", "utf8");
 
-        const commandPath = path.join(tempDir, "fake-hermes-cli.js");
+        const commandPath = path.join(tempDir, "fake-hermes-cli.cjs");
         await fs.writeFile(
           commandPath,
           [
             "#!/usr/bin/env node",
             "const fs = require('fs');",
-            "if (!fs.existsSync('init_Global.m')) {",
+            `const stageSkills = ${JSON.stringify(TCSD_STAGE_DEFINITIONS.map((stage) => stage.skillName))};`,
+            "if (process.argv.includes('skills') && process.argv.includes('list')) {",
+            "  console.log(stageSkills.join('\\n'));",
+            "} else if (!fs.existsSync('init_Global.m')) {",
             "  console.error('addon marker missing');",
             "  process.exit(3);",
+            "} else {",
+            "  console.log(JSON.stringify({ status: 'completed', summary: 'addon copied', outputFiles: [], warnings: [] }));",
             "}",
-            "console.log(JSON.stringify({ status: 'completed', summary: 'addon copied', outputFiles: [], warnings: [] }));"
           ].join("\n"),
           "utf8"
         );
@@ -3551,11 +3675,12 @@ const tests = [
         config.hermes.transport = "cli";
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
+              taskId: "addon-copy-job",
+              idempotencyKey: "addon-copy-job",
               allowedPaths: [workspaceDir],
               inputArtifact: {
                 workspaceDir,
@@ -3566,11 +3691,20 @@ const tests = [
               }
             })
           });
-          assert.equal(response.status, 200);
           const body = await response.json();
-          assert.equal(body.status, "succeeded");
-          assert.equal(body.artifact.summary, "addon copied");
+          assert.equal(response.status, 202, JSON.stringify(body));
+          assert.equal(body.schema, "tcsd-agent-stage-pipeline/v2");
+          assert.ok(body.jobId);
           assert.equal(await fs.readFile(path.join(workspaceDir, "init_Global.m"), "utf8"), "% addon marker");
+          let terminal = false;
+          for (let attempt = 0; attempt < 100; attempt += 1) {
+            const jobResponse = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs/${body.jobId}`);
+            const job = await jobResponse.json();
+            terminal = ["已完成", "部分完成", "失败"].includes(job.status);
+            if (terminal) break;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          assert.equal(terminal, true, "TCSD test job should stop before its temporary workspace is removed");
         });
       });
     }
@@ -3647,7 +3781,7 @@ const tests = [
         await fs.writeFile(path.join(addonDir, "Demo.slx"), "conflict", "utf8");
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -3670,7 +3804,7 @@ const tests = [
         await fs.rm(path.join(addonDir, "Demo.slx"), { force: true });
         await fs.writeFile(path.join(tempDir, "outside.m"), "% outside init", "utf8");
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -3739,11 +3873,12 @@ const tests = [
         await fs.writeFile(path.join(addonDir, "Demo.slx"), "conflict", "utf8");
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
+              taskId: "addon-model-conflict",
+              idempotencyKey: "addon-model-conflict",
               allowedPaths: [workspaceDir],
               inputArtifact: {
                 workspaceDir,
@@ -3778,11 +3913,12 @@ const tests = [
         await fs.writeFile(path.join(addonDir, "inputs", "Demo_init.m"), "% conflict", "utf8");
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
+              taskId: "addon-init-conflict",
+              idempotencyKey: "addon-init-conflict",
               allowedPaths: [workspaceDir],
               inputArtifact: {
                 workspaceDir,
@@ -3815,11 +3951,12 @@ const tests = [
         await fs.writeFile(outsideInit, "% outside init", "utf8");
 
         await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
+              taskId: "outside-init",
+              idempotencyKey: "outside-init",
               allowedPaths: [workspaceDir],
               inputArtifact: {
                 workspaceDir,
@@ -4528,12 +4665,10 @@ const tests = [
         await assert.rejects(
           () =>
             client.executeStep({
-              stepType: "simulink_ut_tcsd_generate",
+              stepType: "outline_build",
               inputArtifact: {
-                workspaceDir: "/tmp/workspace",
-                modelSlxPath: "/tmp/workspace/model.slx",
-                modelMatPath: "/tmp/workspace/model.mat",
-                outputDir: "/tmp/workspace/outputs"
+                evidence: [],
+                recalledAtoms: []
               }
             }),
           (error) => {
@@ -6640,6 +6775,44 @@ const tests = [
     }
   },
   {
+    name: "ZIP archive helper reads store and deflate entries and rejects unsafe archives",
+    run: async () => {
+      const archive = parseZipArchive(
+        buildZipArchive([
+          { name: "exact/store.xml", content: "<store>ok</store>", compressionMethod: 0 },
+          { name: "nested/deflate.xml", content: "<deflate>ok</deflate>", compressionMethod: 8 },
+          { name: "nested/readme.txt", content: "ignored", compressionMethod: 8 }
+        ])
+      );
+
+      assert.equal(archive.readText("exact/store.xml"), "<store>ok</store>");
+      assert.equal(archive.readText("nested/deflate.xml"), "<deflate>ok</deflate>");
+      assert.equal(archive.readText("missing.xml"), null);
+      assert.deepEqual(
+        archive.readTextEntriesBySuffix(".xml").map((entry) => entry.fileName),
+        ["exact/store.xml", "nested/deflate.xml"]
+      );
+      assert.deepEqual(
+        archive.readTextEntries((entry) => entry.fileName.startsWith("nested/")).map((entry) => entry.fileName),
+        ["nested/deflate.xml", "nested/readme.txt"]
+      );
+
+      assert.throws(
+        () => parseZipArchive(buildZipArchive([{ name: "../escape.xml", content: "unsafe" }])),
+        /path is unsafe/
+      );
+      assert.throws(
+        () => parseZipArchive(buildZipArchive([{ name: "unsupported.xml", content: "data", compressionMethod: 12 }])),
+        /compression method 12/
+      );
+      const validArchive = buildZipArchive([{ name: "bounded.xml", content: "data" }]);
+      assert.throws(
+        () => parseZipArchive(validArchive.subarray(0, validArchive.length - 1)),
+        /end of central directory/
+      );
+    }
+  },
+  {
     name: "Spreadsheet extraction service parses Basic Report HIL rows from xlsx",
     run: async () => {
       await withTempConfig(async (tempDir) => {
@@ -6658,7 +6831,18 @@ const tests = [
         });
 
         const service = new SpreadsheetExtractionService();
-        const result = await service.parseHilSpreadsheet(spreadsheetPath);
+        const originalPath = process.env.PATH;
+        let result;
+        try {
+          process.env.PATH = "";
+          result = await service.parseHilSpreadsheet(spreadsheetPath);
+        } finally {
+          if (originalPath === undefined) {
+            delete process.env.PATH;
+          } else {
+            process.env.PATH = originalPath;
+          }
+        }
 
         assert.equal(result.sheetName, "Basic Report");
         assert.equal(result.cases.length, 1);
@@ -9443,6 +9627,14 @@ const tests = [
       const restartWindows = await fs.readFile(path.join(config.rootDir, "scripts", "restart-local.ps1"), "utf8");
       const startCommand = await fs.readFile(path.join(config.rootDir, "start-local.cmd"), "utf8");
       const restartCommand = await fs.readFile(path.join(config.rootDir, "restart-local.cmd"), "utf8");
+      const windowsProductionEnv = await fs.readFile(
+        path.join(config.rootDir, ".env.windows-prod.example"),
+        "utf8"
+      );
+      const linuxProductionTarget = JSON.parse(await fs.readFile(
+        path.join(config.rootDir, "deploy", "targets", "linux-prod.json"),
+        "utf8"
+      ));
 
       assert.ok(startShell.includes("src/hermes-server.js"));
       assert.ok(startShell.includes("hermes-agent.pid"));
@@ -9450,6 +9642,11 @@ const tests = [
       assert.ok(startShell.includes('APP_RUNTIME_ROLE="platform"'));
       assert.ok(startShell.includes('HERMES_TRANSPORT="$PLATFORM_HERMES_TRANSPORT"'));
       assert.ok(startShell.includes("HERMES_SERVER_REQUEST_TIMEOUT_MS"));
+      assert.ok(startShell.includes('if [[ "$(uname -s)" == "Darwin" ]]'));
+      assert.ok(startShell.includes('MATLAB_ROOT="/Applications/MATLAB_R2026a.app"'));
+      assert.ok(startShell.includes('SATK_MATLAB_ROOT="/Applications/MATLAB_R2026a.app"'));
+      assert.ok(startShell.includes('SATK_MATLAB_SESSION_MODE="new"'));
+      assert.equal((startShell.match(/"\${LOCAL_TCSD_ENV\[@\]}"/g) || []).length, 2);
       assert.ok(stopShell.includes("hermes-agent.pid"));
 
       assert.ok(startWindows.includes("src/hermes-server.js"));
@@ -9458,6 +9655,11 @@ const tests = [
       assert.ok(startWindows.includes('APP_RUNTIME_ROLE = "platform"'));
       assert.ok(startWindows.includes('HERMES_TRANSPORT = "$platformHermesTransport"'));
       assert.ok(startWindows.includes("HERMES_SERVER_REQUEST_TIMEOUT_MS"));
+      assert.ok(!startWindows.includes("/Applications/MATLAB_R2026a.app"));
+      assert.ok(windowsProductionEnv.includes("SATK_MATLAB_SESSION_MODE=new"));
+      assert.ok(!windowsProductionEnv.includes("/Applications/MATLAB_R2026a.app"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-runtime"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-stage-*"));
       assert.ok(stopWindows.includes("hermes-agent.pid"));
       assert.ok(restartWindows.includes("HermesPort"));
       assert.ok(startCommand.includes("%*"));
@@ -10697,35 +10899,66 @@ const tests = [
       await withTempConfig(async (tempDir) => {
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
-            async executeStep(payload, runtime = {}) {
+            job: null,
+            async startTcsdPipelineJob(payload) {
               assert.match(payload.inputArtifact.modelInitScriptPath, /inputs[\\/]Demo_init\.m$/);
               assert.equal(payload.inputArtifact.modelInitScriptFileName, "Demo_init.m");
               assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
-              await runtime.onEvent?.({
-                status: "completed",
-                label: "Hermes mock completed",
-                message: "Mock TCSD workbook generated.",
-                transport: "mock"
-              });
-              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
-              await fs.mkdir(path.dirname(outputPath), { recursive: true });
-              await createMinimalXlsx(outputPath, {
+              const initialOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test_coverage_ir_iter0.xlsx");
+              const finalOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test_coverage_ir_iter1.xlsx");
+              const legacyOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
+              await fs.mkdir(path.dirname(finalOutputPath), { recursive: true });
+              const workbookSheets = {
                 TCSD: [
                   ["TestID", "Name", "Type", "Expected"],
                   ["TC_001", "Case", "Test", "expValue(Out1, 1)"]
                 ]
-              });
-              return {
-                status: "succeeded",
-                stepType: "simulink_ut_tcsd_generate",
-                artifact: {
-                  status: "completed",
-                  summary: "已生成 Demo_Test0001_tcsd.xlsx。",
-                  outputFiles: [{ relativePath: "outputs/Demo_Test0001_tcsd.xlsx" }]
-                },
-                metrics: { tokenUsage: { totalTokens: 12 } },
-                logs: []
               };
+              await createMinimalXlsx(initialOutputPath, workbookSheets);
+              await createMinimalXlsx(finalOutputPath, workbookSheets);
+              await createMinimalXlsx(legacyOutputPath, workbookSheets);
+              this.job = {
+                schema: "tcsd-agent-stage-pipeline/v2",
+                jobId: "mock-completed-job",
+                status: "已完成",
+                completion: "complete",
+                stages: Array.from({ length: 12 }, (_unused, index) => ({
+                  index: index + 1,
+                  status: "已完成",
+                  checkpoint: index === 10
+                    ? {
+                        artifacts: [
+                          {
+                            path: "outputs/Demo_Test_coverage_ir_iter1.xlsx",
+                            kind: "xlsx",
+                            role: "workbook"
+                          }
+                        ]
+                      }
+                    : index === 11
+                      ? {
+                          artifacts: [
+                            { path: "outputs/Demo_Test_coverage_ir_iter0.xlsx", kind: "xlsx", role: "workbook" },
+                            { path: "outputs/Demo_Test_coverage_ir_iter1.xlsx", kind: "xlsx", role: "workbook" },
+                            { path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx", role: "final-workbook" }
+                          ]
+                        }
+                    : { artifacts: [] }
+                })),
+                checkpoints: [],
+                artifacts: [
+                  { path: "outputs/Demo_Test_coverage_ir_iter0.xlsx", kind: "xlsx" },
+                  { path: "outputs/Demo_Test_coverage_ir_iter1.xlsx", kind: "xlsx" },
+                  { path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx" }
+                ],
+                coverage: null,
+                repair: {},
+                updatedAt: new Date().toISOString()
+              };
+              return this.job;
+            },
+            async getTcsdPipelineJob() {
+              return this.job;
             }
           }
         });
@@ -10752,6 +10985,8 @@ const tests = [
         assert.equal(completed.status, "completed");
         assert.equal(completed.artifacts.length, 1);
         assert.equal(completed.artifacts[0].fileName, "Demo_Test0001_tcsd.xlsx");
+        assert.equal(completed.artifacts[0].description, "最终 TCSD 单元测试用例 Excel");
+        assert.equal(completed.artifacts[0].expectedValueCount, 1);
         const artifact = await service.getArtifact(task.id, completed.artifacts[0].id);
         assert.equal(path.basename(artifact.absolutePath), "Demo_Test0001_tcsd.xlsx");
 
@@ -10780,12 +11015,119 @@ const tests = [
     }
   },
   {
+    name: "UnitTestCaseGenerationService rejects TCSD workbooks without expValue expectations",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const service = new UnitTestCaseGenerationService({
+          hermesAgentClient: {
+            job: null,
+            async startTcsdPipelineJob(payload) {
+              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
+              await fs.mkdir(path.dirname(outputPath), { recursive: true });
+              await createMinimalXlsx(outputPath, {
+                TCSD: [
+                  ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action", "Work Status", "Report Links"],
+                  ["TG_001", "Group", "TestGroup", "", "", "", "", "", ""],
+                  ["TC_001", "Case", "Test", "REQ-1", "测试方法：等价类。", "InputA = 0;", "[+0.1s]\nInputA = 1;\n[+0.1s]", "reviewed", ""]
+                ]
+              });
+              this.job = {
+                schema: "tcsd-agent-stage-pipeline/v2",
+                jobId: "mock-no-expectation-job",
+                status: "已完成",
+                completion: "complete",
+                stages: [],
+                checkpoints: [],
+                artifacts: [{ path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx" }],
+                coverage: null,
+                repair: {},
+                updatedAt: new Date().toISOString()
+              };
+              return this.job;
+            },
+            async getTcsdPipelineJob() {
+              return this.job;
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
+
+        await assert.rejects(() => service.runTask(task.id), /未检测到 expValue/);
+        const stored = await service.readTask(task.id);
+        assert.equal(stored.status, "failed");
+        assert.equal(stored.hermes.errorCode, "unit_test_case_expected_values_missing");
+      });
+    }
+  },
+  {
+    name: "UnitTestCaseGenerationService keeps the selected Worker for staged job start and reconciliation",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        config.unitTestCase.workerProfiles.push({
+          ...config.unitTestCase.workerProfiles[0],
+          id: "secondary",
+          label: "Secondary Test Worker",
+          hermesBaseURL: "http://127.0.0.1:3102",
+          matlabBaseURL: "http://127.0.0.1:5102",
+          isDefault: false
+        });
+        const clientSelections = [];
+        const service = new UnitTestCaseGenerationService({
+          remotePollWindowMs: 0,
+          hermesAgentClientFactory(workerProfile) {
+            clientSelections.push(workerProfile.id);
+            return {
+              async startTcsdPipelineJob() {
+                return {
+                  schema: "tcsd-agent-stage-pipeline/v2",
+                  jobId: "secondary-job",
+                  status: "正在执行"
+                };
+              },
+              async getTcsdPipelineJob() {
+                return {
+                  schema: "tcsd-agent-stage-pipeline/v2",
+                  jobId: "secondary-job",
+                  status: "正在执行",
+                  stages: [],
+                  checkpoints: [],
+                  updatedAt: new Date().toISOString()
+                };
+              }
+            };
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Secondary.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Secondary.mat", "mat")]
+          },
+          { unitTestProjectId: "01", workerId: "secondary" }
+        );
+
+        const pending = await service.runTask(task.id);
+        assert.equal(pending.status, "running");
+        assert.equal(pending.workerProfile.id, "secondary");
+        assert.deepEqual(clientSelections, ["secondary"]);
+
+        await service.reconcileTask(task.id);
+        assert.deepEqual(clientSelections, ["secondary", "secondary"]);
+      });
+    }
+  },
+  {
     name: "UnitTestCaseGenerationService records Hermes failures",
     run: async () => {
       await withTempConfig(async (tempDir) => {
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
-            async executeStep() {
+            async startTcsdPipelineJob() {
               const error = new Error("MATLAB unavailable");
               error.code = "matlab_unavailable";
               throw error;

@@ -3333,14 +3333,21 @@ body[data-page-kind="unit-test-case-generation"] .unit-task-detail {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-task-detail-card {
   position: sticky;
   top: 16px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(100vh - 32px);
   max-height: calc(100vh - 32px);
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 body[data-page-kind="unit-test-case-generation"] .unit-detail-summary {
@@ -3507,6 +3514,40 @@ body[data-page-kind="unit-test-case-generation"] .unit-runtime-item small {
   color: var(--ink-soft);
 }
 
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace summary {
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  list-style-position: outside;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace summary span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace-body {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace-body h4 {
+  margin: 14px 0 6px;
+}
+
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace-body pre {
+  background: var(--surface);
+  border-radius: 8px;
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 body[data-page-kind="unit-test-case-generation"] .unit-error-box {
   border-color: rgba(181, 72, 67, 0.35);
   background: var(--danger-soft);
@@ -3573,8 +3614,15 @@ body[data-page-kind="unit-test-case-generation"] #unit-worker-status[data-tone="
 
   body[data-page-kind="unit-test-case-generation"] .unit-task-detail-card {
     position: static;
+    display: block;
+    height: auto;
     max-height: none;
     overflow: visible;
+  }
+
+  body[data-page-kind="unit-test-case-generation"] .unit-task-detail {
+    overflow: visible;
+    padding-right: 0;
   }
 
   body[data-page-kind="unit-test-case-generation"] .unit-artifact-head,

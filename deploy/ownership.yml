@@ -56,17 +56,27 @@ linux:
   - src/services/rejection-service.js
 
 windows:
+  - requirements/tcsd-runtime.txt
+  - skills/hermes/**
   - .env.windows-prod.example
   - deploy/targets/windows-prod*.json
   - src/hermes-app.js
   - src/hermes-server.js
   - src/services/matlab-mcp-client.js
+  - src/services/tcsd-pipeline-job-service.js
+  - src/services/tcsd-hermes-stage-executor.js
+  - src/services/tcsd-host-semantic-validator.js
+  - src/services/tcsd-hermes-skill-registry.js
   - src/services/slx-model-analysis-service.js
   - src/services/satk-model-fact-builder.js
   - src/services/slx-model-fact-adapter.js
   - tools/**
   - scripts/deploy-release.ps1
   - scripts/install-windows-services.ps1
+  - scripts/install-tcsd-hermes-skills.mjs
+  - scripts/install-tcsd-hermes-skills.ps1
+  - scripts/tcsd-python-dependencies.mjs
+  - scripts/check-tcsd-python.py
 
 shared:
   - .env.dev-distributed.example
@@ -92,12 +102,18 @@ shared:
   - src/services/openai-compatible-chat.js
   - src/services/model-requirement-view-service.js
   - src/services/model-fact-bundle.js
+  - src/services/hermes-command.js
   - src/services/hermes-agent-client.js
+  - src/services/python-command.js
+  - src/services/zip-archive.js
+  - src/services/tcsd-pipeline-contract.js
+  - src/services/tcsd-stage-catalog.js
   - src/services/software-requirement-agent-shared.js
   - src/services/software-requirement-markdown-agent-service.js
   - templates/**
   - skills/**
   - docs/**
+dev-only:
   - tests/**
   - test-fixtures/**
 

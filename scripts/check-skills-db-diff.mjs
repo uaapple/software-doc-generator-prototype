@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 
@@ -14,7 +15,7 @@ import path from "node:path";
  *    or integrity_check failed. Do not make a DB commit decision from this result.
  */
 
-const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
+const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const dbPath = path.join(repoRoot, "data", "skills.sqlite");
 const baseGitRef = "HEAD:data/skills.sqlite";
 
