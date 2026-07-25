@@ -17,7 +17,12 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { TcsdHermesStageExecutor } from "../src/services/tcsd-hermes-stage-executor.js";
 import { TcsdHermesSkillRegistry } from "../src/services/tcsd-hermes-skill-registry.js";
+import { TcsdHostSemanticValidator } from "../src/services/tcsd-host-semantic-validator.js";
 import { TcsdPipelineJobService } from "../src/services/tcsd-pipeline-job-service.js";
+import {
+  resolvePythonInvocation,
+  runPythonCommand
+} from "../src/services/python-command.js";
 import {
   TCSD_CHECKPOINT_SCHEMA,
   TCSD_ERROR_CODES,
@@ -48,6 +53,9 @@ const coverage = (percent) => ({
 });
 const rel = (root, target) => path.relative(root, target).replaceAll(path.sep, "/");
 const execFileAsync = promisify(execFile);
+const pythonInvocation = resolvePythonInvocation();
+const execPythonAsync = (args, options = {}) =>
+  runPythonCommand(execFileAsync, pythonInvocation, args, options);
 const fixtureBuilder = path.join(repo, "tests", "tcsd-runtime", "build_contract_workbook.py");
 const repairValidator = path.join(
   repo,
@@ -67,6 +75,44 @@ assert.equal(canTransition("正在执行", "等待执行"), true);
 assert.equal(canTransition("已完成", "正在执行"), false);
 assert.equal(normalizeCoverageReport(coverage(81)).aggregate.mcdc.percent, 81);
 assert.throws(() => normalizeCoverageReport({ GenericModel: { condition: 80 } }), /没有有效模型记录/);
+assert.deepEqual(
+  resolvePythonInvocation({ platform: "win32", env: {} }),
+  { executable: "py", prefixArgs: ["-3.11"] }
+);
+assert.deepEqual(
+  resolvePythonInvocation({ python: "C:\\Python311\\python.exe", platform: "win32", env: {} }),
+  { executable: "C:\\Python311\\python.exe", prefixArgs: [] }
+);
+assert.deepEqual(
+  resolvePythonInvocation({
+    platform: "win32",
+    env: { TCSD_PIPELINE_PYTHON: "D:\\Runtime\\Python311\\python.exe" }
+  }),
+  { executable: "D:\\Runtime\\Python311\\python.exe", prefixArgs: [] }
+);
+assert.deepEqual(
+  resolvePythonInvocation({ platform: "darwin", env: {} }),
+  { executable: "python3", prefixArgs: [] }
+);
+assert.deepEqual(
+  resolvePythonInvocation({ platform: "linux", env: {} }),
+  { executable: "python3", prefixArgs: [] }
+);
+{
+  const calls = [];
+  await runPythonCommand(
+    async (command, args) => {
+      calls.push({ command, args });
+      return { stdout: "", stderr: "" };
+    },
+    resolvePythonInvocation({ platform: "win32", env: {} }),
+    ["fixture.py", "--output", "fixture.xlsx"]
+  );
+  assert.deepEqual(calls, [{
+    command: "py",
+    args: ["-3.11", "fixture.py", "--output", "fixture.xlsx"]
+  }]);
+}
 assert.equal(parseExecutionManifest({
   schema: "simulink-ut-tcsd-execution-manifest/v1",
   status: "completed",
@@ -85,6 +131,97 @@ assert.equal(parseExecutionManifest({
     repair_evidence: "outputs/repair.json"
   }
 }).completion, "partial");
+
+{
+  const root = await mkdtemp(path.join(os.tmpdir(), "tcsd-python-validator-"));
+  const calls = [];
+  const validator = new TcsdHostSemanticValidator({
+    platform: "win32",
+    env: {},
+    commandRunner: async (command, args) => {
+      calls.push({ command, args });
+      return {
+        stdout: JSON.stringify({
+          schema: "tcsd-host-semantic-validation/v1",
+          stageIndex: 2,
+          passed: true,
+          details: {}
+        }),
+        stderr: ""
+      };
+    }
+  });
+  await validator.validate({
+    raw: { stageIndex: 2, artifacts: [], evidence: {} },
+    job: {
+      jobId: "python-validator",
+      input: { workspaceDir: root, coverageThreshold: 80 },
+      stages: []
+    },
+    runtime: { installedPath: path.join(root, "runtime") },
+    requestPath: path.join(root, "request.json")
+  });
+  assert.equal(calls[0].command, "py");
+  assert.deepEqual(calls[0].args.slice(0, 2), [
+    "-3.11",
+    path.join(root, "runtime", "scripts", "host_validate_tcsd_stage.py")
+  ]);
+}
+
+{
+  const calls = [];
+  const skillFileHash = "a".repeat(64);
+  const executor = new TcsdHermesStageExecutor({
+    platform: "win32",
+    env: {},
+    stateDbPath: "state.db",
+    commandRunner: async (command, args) => {
+      calls.push({ command, args });
+      return {
+        stdout: JSON.stringify({
+          model: "test-model",
+          totalTokens: 1,
+          skillLoad: {
+            source: "hermes-state-db+skill-usage",
+            loaded: true,
+            skillName: "tcsd-stage-01-input-validation",
+            skillFileSha256: skillFileHash
+          }
+        }),
+        stderr: ""
+      };
+    }
+  });
+  await executor.readSessionUsage(
+    "session-1",
+    { directory: "runtime" },
+    {
+      name: "tcsd-stage-01-input-validation",
+      directory: "skill",
+      skillFileHash
+    },
+    {
+      usageFile: "usage.json",
+      useCountBefore: 0,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:01.000Z"
+    }
+  );
+  assert.equal(calls[0].command, "py");
+  assert.deepEqual(calls[0].args.slice(0, 2), [
+    "-3.11",
+    path.join("runtime", "scripts", "read_hermes_session.py")
+  ]);
+  assert.match(executor.buildPrompt({
+    definition: { index: 1, skillName: "tcsd-stage-01-input-validation" },
+    skill: { name: "tcsd-stage-01-input-validation" },
+    runtime: { directory: "runtime" },
+    manifestPath: "input.json",
+    resultPath: "result.json",
+    validationReportPath: "",
+    attempt: 1
+  }), /py -3\.11 .*run_tcsd_pipeline_stage\.py/);
+}
 
 {
   const skillDirs = (await readdir(skillsRoot, { withFileTypes: true }))
@@ -176,7 +313,7 @@ async function createWorkspace() {
   const modelMatPath = path.join(root, "GenericModel.mat");
   await writeFile(modelSlxPath, "slx");
   await writeFile(modelMatPath, "mat");
-  await execFileAsync("python3", [
+  await execPythonAsync([
     fixtureBuilder,
     "--output",
     path.join(outputDir, "GenericModel_Test0001_tcsd.xlsx")
@@ -350,7 +487,7 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
   }
   if (stage === 8) {
     if (options.wrongExpValue) {
-      await execFileAsync("python3", [fixtureBuilder, "--output", workbook, "--expected", "2"]);
+      await execPythonAsync([fixtureBuilder, "--output", workbook, "--expected", "2"]);
     }
     const simulation = path.join(workspace.outputDir, "simulation.json");
     await writeFile(simulation, JSON.stringify(options.emptySimulation ? {} : {
@@ -405,7 +542,7 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
     const tracesPath = path.join(workspace.outputDir, "traces.json");
     const originalCoverageIrPath = path.join(workspace.outputDir, "stage-5-ir.json");
     const noApplicableRepair = Boolean(options.noApplicableRepair);
-    await execFileAsync("python3", [
+    await execPythonAsync([
       repairValidator,
       "prepare",
       "--job-id",
@@ -458,7 +595,7 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
         evidence: "Focused probe cannot observe the target decision port."
       }] : []
     }));
-    await execFileAsync("python3", [
+    await execPythonAsync([
       repairValidator,
       "validate",
       "--brief",
