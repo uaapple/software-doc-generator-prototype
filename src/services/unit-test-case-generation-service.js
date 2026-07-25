@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { inflateRawSync } from "node:zlib";
 import { config } from "../config.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
 import { readJson, writeJson, pathExists } from "./storage.js";
 import { TCSD_PIPELINE_SCHEMA } from "./tcsd-pipeline-contract.js";
 import { normalizeUploadedFileName } from "./upload-filename.js";
+import { openZipArchive } from "./zip-archive.js";
 
 const TASK_FILE_NAME = "task.json";
 const PROJECTS_FILE_NAME = "projects.json";
@@ -200,65 +200,14 @@ function countTextOccurrences(text = "", needle = "") {
   }
 }
 
-function findZipEndOfCentralDirectory(buffer) {
-  const signature = 0x06054b50;
-  const start = Math.max(0, buffer.length - 66000);
-  for (let offset = buffer.length - 22; offset >= start; offset -= 1) {
-    if (buffer.readUInt32LE(offset) === signature) {
-      return offset;
-    }
-  }
-  return -1;
-}
-
-function unzipXmlEntries(buffer) {
-  const entries = [];
-  const eocdOffset = findZipEndOfCentralDirectory(buffer);
-  if (eocdOffset < 0) {
-    throw new Error("Invalid xlsx zip: end of central directory not found");
-  }
-  const totalEntries = buffer.readUInt16LE(eocdOffset + 10);
-  let offset = buffer.readUInt32LE(eocdOffset + 16);
-  for (let index = 0; index < totalEntries; index += 1) {
-    if (buffer.readUInt32LE(offset) !== 0x02014b50) {
-      throw new Error("Invalid xlsx zip: central directory entry not found");
-    }
-    const compressionMethod = buffer.readUInt16LE(offset + 10);
-    const compressedSize = buffer.readUInt32LE(offset + 20);
-    const fileNameLength = buffer.readUInt16LE(offset + 28);
-    const extraLength = buffer.readUInt16LE(offset + 30);
-    const commentLength = buffer.readUInt16LE(offset + 32);
-    const localHeaderOffset = buffer.readUInt32LE(offset + 42);
-    const fileName = buffer.subarray(offset + 46, offset + 46 + fileNameLength).toString("utf8");
-
-    offset += 46 + fileNameLength + extraLength + commentLength;
-    if (!fileName.endsWith(".xml")) {
-      continue;
-    }
-    if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) {
-      throw new Error("Invalid xlsx zip: local file header not found");
-    }
-    const localFileNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
-    const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
-    const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
-    const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
-    let data = null;
-    if (compressionMethod === 0) {
-      data = compressed;
-    } else if (compressionMethod === 8) {
-      data = inflateRawSync(compressed);
-    } else {
-      continue;
-    }
-    entries.push({ fileName, text: data.toString("utf8") });
-  }
-  return entries;
-}
-
 async function summarizeWorkbookExpectedValues(absolutePath = "") {
-  const buffer = await fs.readFile(absolutePath);
+  const archive = await openZipArchive(absolutePath, {
+    maxArchiveBytes: 256 * 1024 * 1024,
+    maxEntryUncompressedBytes: 64 * 1024 * 1024,
+    maxTotalUncompressedBytes: 256 * 1024 * 1024
+  });
   let expValueCount = 0;
-  for (const entry of unzipXmlEntries(buffer)) {
+  for (const entry of archive.readTextEntriesBySuffix(".xml")) {
     if (!entry.fileName.startsWith("xl/worksheets/") && entry.fileName !== "xl/sharedStrings.xml") {
       continue;
     }
