@@ -31,12 +31,20 @@ import { createHermesApp } from "../src/hermes-app.js";
 import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
 import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
+import { SoftwareModuleDescriptionGenerationService } from "../src/services/software-module-description-generation-service.js";
 import { SpreadsheetExtractionService } from "../src/services/spreadsheet-extraction-service.js";
 import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
+import { TCSD_STAGE_DEFINITIONS } from "../src/services/tcsd-pipeline-contract.js";
 import {
   buildOutlineItems,
   parseRequirementMarkdownBlocks
 } from "../src/services/software-requirement-markdown-agent-service.js";
+import { parseZipArchive } from "../src/services/zip-archive.js";
+import {
+  buildTcsdPythonDependencyCommand,
+  runTcsdPythonDependencyCommand
+} from "../scripts/tcsd-python-dependencies.mjs";
+import { buildZipArchive } from "./zip-fixture.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -68,8 +76,34 @@ async function withTempConfig(run) {
     unitTestCase: {
       taskStoreDir: path.join(tempDir, "data", "unit-test-case-generation", "tasks"),
       uploadTempDir: path.join(tempDir, "data", "unit-test-case-generation", "_incoming"),
-      skillName: "simulink-ut-tcsd-generator",
+      projectRegistryPath: path.join(tempDir, "data", "unit-test-case-generation", "projects.json"),
+      projectAdminCode: "114301",
+      defaultProjects: "01_\u695a\u80fd,02_TMS",
+      projectAddonRoot: path.join(tempDir, "project-addons"),
+      pipelineName: "tcsd-stage-skills",
       expectedOutputPattern: "outputs/*_tcsd.xlsx",
+      agentWorkspaceRoot: "",
+      defaultWorkerId: "default",
+      workerProfiles: [
+        {
+          id: "default",
+          label: "Default Test Worker",
+          hermesTransport: "api",
+          hermesBaseURL: "http://127.0.0.1:0",
+          hermesApiMode: "json",
+          hermesAuthToken: "",
+          matlabBaseURL: "http://127.0.0.1:0",
+          matlabHttpMode: "path",
+          matlabAuthToken: "",
+          isDefault: true
+        }
+      ]
+    },
+    softwareModuleDescription: {
+      taskStoreDir: path.join(tempDir, "data", "software-module-description-generation", "tasks"),
+      uploadTempDir: path.join(tempDir, "data", "software-module-description-generation", "_incoming"),
+      skillName: "simulink-module-description-generator",
+      expectedOutputPattern: "outputs/*.docx",
       agentWorkspaceRoot: ""
     },
     dataDir: path.join(tempDir, "data"),
@@ -105,21 +139,32 @@ async function withTempConfig(run) {
         host: "127.0.0.1",
         port: 0,
         baseURL: "http://127.0.0.1:0",
-      command: "hermes",
-      workdir: tempDir,
+        command: "hermes",
+        commandArgsPrefix: [],
+        profile: "default",
+        homeDir: path.join(tempDir, "hermes"),
+        workdir: tempDir,
         timeoutMs: 2000,
         stepTimeoutMs: {
           replay_proposal_generate: 4000,
           anchor_index_build: 2000,
           outline_build: 2000,
           content_generate: 4000,
-          simulink_ut_tcsd_generate: 5000
+          simulink_module_description_generate: 5000
         },
+      stepMaxTurns: {
+        simulink_module_description_generate: 10000
+      },
       maxTurns: 8,
       maxRecalledAtoms: 24,
       maxOutlineSections: 6,
       maxEvidenceForGeneration: 40,
       maxAnchorsForGeneration: 80
+    },
+    tcsdPipeline: {
+      ...config.tcsdPipeline,
+      jobStoreDir: path.join(tempDir, "data", "tcsd-pipeline-jobs"),
+      hermesProfile: "default"
     }
   });
   config.openai.apiKey = "";
@@ -226,92 +271,68 @@ function buildSheetXml(rows = []) {
 }
 
 async function createMinimalXlsx(filePath, rowsBySheet = {}) {
-  const workbookDir = await fs.mkdtemp(path.join(os.tmpdir(), "xlsx-fixture-"));
-  try {
-    await fs.mkdir(path.join(workbookDir, "_rels"), { recursive: true });
-    await fs.mkdir(path.join(workbookDir, "xl", "_rels"), { recursive: true });
-    await fs.mkdir(path.join(workbookDir, "xl", "worksheets"), { recursive: true });
-
-    const sheetEntries = Object.entries(rowsBySheet);
-    const workbookSheets = sheetEntries
-      .map(([name], index) => `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
-      .join("");
-    const workbookRels = sheetEntries
-      .map(
-        ([,], index) =>
-          `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
-      )
-      .join("");
-    const contentTypes = [
-      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
-      ...sheetEntries.map(
-        ([,], index) =>
-          `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
-      )
-    ].join("");
-
-    await fs.writeFile(
-      path.join(workbookDir, "[Content_Types].xml"),
+  const sheetEntries = Object.entries(rowsBySheet);
+  const workbookSheets = sheetEntries
+    .map(([name], index) => `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+    .join("");
+  const workbookRels = sheetEntries
+    .map(
+      ([,], index) =>
+        `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+    )
+    .join("");
+  const contentTypes = [
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+    ...sheetEntries.map(
+      ([,], index) =>
+        `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+    )
+  ].join("");
+  const entries = [
+    {
+      name: "[Content_Types].xml",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   ${contentTypes}
-</Types>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "_rels", ".rels"),
+</Types>`
+    },
+    {
+      name: "_rels/.rels",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "xl", "workbook.xml"),
+</Relationships>`
+    },
+    {
+      name: "xl/workbook.xml",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>${workbookSheets}</sheets>
-</workbook>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "xl", "_rels", "workbook.xml.rels"),
+</workbook>`
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   ${workbookRels}
-</Relationships>`,
-      "utf8"
-    );
-
-    for (const [index, [, rows]] of sheetEntries.entries()) {
-      await fs.writeFile(path.join(workbookDir, "xl", "worksheets", `sheet${index + 1}.xml`), buildSheetXml(rows), "utf8");
+</Relationships>`
     }
+  ];
 
-    if (process.platform === "win32") {
-      const escapedSource = workbookDir.replaceAll("'", "''");
-      const escapedDestination = filePath.replaceAll("'", "''");
-      await execFileAsync("powershell.exe", [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        [
-          "Add-Type -AssemblyName System.IO.Compression.FileSystem;",
-          `Remove-Item -LiteralPath '${escapedDestination}' -Force -ErrorAction SilentlyContinue;`,
-          `[System.IO.Compression.ZipFile]::CreateFromDirectory('${escapedSource}', '${escapedDestination}');`
-        ].join(" ")
-      ]);
-    } else {
-      await execFileAsync("zip", ["-rq", filePath, "."], { cwd: workbookDir });
-    }
-  } finally {
-    await fs.rm(workbookDir, { recursive: true, force: true });
+  for (const [index, [, rows]] of sheetEntries.entries()) {
+    entries.push({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: buildSheetXml(rows)
+    });
   }
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, buildZipArchive(entries, { compressionMethod: 8 }));
 }
 
 function buildManualTitleOutline(sections = [{ sectionTitle: "智能补电", itemTitles: ["激活判断", "退出判断"] }]) {
@@ -567,6 +588,140 @@ async function seedWikiFixture(rootDir, overrides = {}) {
 }
 
 const tests = [
+  {
+    name: "TCSD Python dependency commands preserve interpreter prefixes and release boundaries",
+    run: async () => {
+      const calls = [];
+      await runTcsdPythonDependencyCommand("install", {
+        platform: "win32",
+        env: {},
+        requirementsPath: "C:\\release\\requirements\\tcsd-runtime.txt",
+        commandRunner: async (executable, args, options) => {
+          calls.push({ executable, args, options });
+          return { stdout: "", stderr: "" };
+        }
+      });
+      assert.equal(calls[0].executable, "py");
+      assert.deepEqual(calls[0].args, [
+        "-3.11",
+        "-m",
+        "pip",
+        "install",
+        "--requirement",
+        "C:\\release\\requirements\\tcsd-runtime.txt"
+      ]);
+
+      assert.deepEqual(
+        buildTcsdPythonDependencyCommand("check", {
+          python: "C:\\Python311\\python.exe",
+          platform: "win32",
+          env: {},
+          gatePath: "C:\\release\\scripts\\check-tcsd-python.py",
+          requirementsPath: "C:\\release\\requirements\\tcsd-runtime.txt"
+        }),
+        {
+          executable: "C:\\Python311\\python.exe",
+          args: [
+            "C:\\release\\scripts\\check-tcsd-python.py",
+            "--requirements",
+            "C:\\release\\requirements\\tcsd-runtime.txt"
+          ]
+        }
+      );
+      for (const platform of ["darwin", "linux"]) {
+        const command = buildTcsdPythonDependencyCommand("check", {
+          platform,
+          env: {},
+          gatePath: "check.py",
+          requirementsPath: "requirements.txt"
+        });
+        assert.equal(command.executable, "python3");
+        assert.deepEqual(command.args, ["check.py", "--requirements", "requirements.txt"]);
+      }
+      assert.deepEqual(
+        buildTcsdPythonDependencyCommand("check", {
+          platform: "win32",
+          env: {},
+          gatePath: "check.py",
+          requirementsPath: "requirements.txt"
+        }),
+        {
+          executable: "py",
+          args: ["-3.11", "check.py", "--requirements", "requirements.txt"]
+        }
+      );
+
+      const targets = Object.fromEntries(
+        await Promise.all(
+          ["linux-prod", "windows-prod-full", "windows-prod-source"].map(async (targetId) => [
+            targetId,
+            JSON.parse(await fs.readFile(
+              path.join(config.rootDir, "deploy", "targets", `${targetId}.json`),
+              "utf8"
+            ))
+          ])
+        )
+      );
+      const included = (target, candidate) => {
+        const selected = target.includePaths.some(
+          (entry) => candidate === entry || candidate.startsWith(`${entry}/`)
+        );
+        const excluded = target.excludePaths.some(
+          (entry) => candidate === entry || candidate.startsWith(`${entry}/`)
+        );
+        return selected && !excluded;
+      };
+      for (const targetId of ["windows-prod-full", "windows-prod-source"]) {
+        assert.equal(included(targets[targetId], "requirements/tcsd-runtime.txt"), true);
+        assert.equal(included(targets[targetId], "scripts/tcsd-python-dependencies.mjs"), true);
+        assert.equal(included(targets[targetId], "scripts/check-tcsd-python.py"), true);
+      }
+      assert.equal(included(targets["linux-prod"], "requirements/tcsd-runtime.txt"), false);
+      assert.equal(included(targets["linux-prod"], "scripts/tcsd-python-dependencies.mjs"), false);
+      assert.equal(included(targets["linux-prod"], "scripts/check-tcsd-python.py"), false);
+
+      const packageJson = JSON.parse(await fs.readFile(path.join(config.rootDir, "package.json"), "utf8"));
+      assert.equal(
+        packageJson.scripts["install:tcsd-python"],
+        "node scripts/tcsd-python-dependencies.mjs install"
+      );
+      assert.equal(
+        packageJson.scripts["check:tcsd-python"],
+        "node scripts/tcsd-python-dependencies.mjs check"
+      );
+      const releaseBuilder = await fs.readFile(
+        path.join(config.rootDir, "scripts", "build-release-zip.mjs"),
+        "utf8"
+      );
+      assert.match(releaseBuilder, /target\.id === "windows-prod-full".+windows-prod-source/s);
+      assert.match(releaseBuilder, /npm\(\["run", "check:tcsd-python"\]\)/);
+      assert.doesNotMatch(releaseBuilder, /npm\(\["run", "install:tcsd-python"\]\)/);
+    }
+  },
+  {
+    name: "Change classifier includes untracked files in working-tree mode",
+    run: async () => {
+      const root = path.resolve(process.cwd());
+      const probe = path.join(root, "tests", `.classifier-untracked-probe-${process.pid}.txt`);
+      const reportPath = path.join(os.tmpdir(), `classifier-report-${process.pid}.json`);
+      try {
+        await fs.writeFile(probe, "untracked classifier probe\n", "utf8");
+        await execFileAsync(process.execPath, [
+          path.join(root, "scripts", "classify-changes.mjs"),
+          "--allow-ambiguous",
+          "--json-out",
+          reportPath
+        ], { cwd: root });
+        const report = JSON.parse(await fs.readFile(reportPath, "utf8"));
+        const relativeProbe = path.relative(root, probe).replaceAll(path.sep, "/");
+        const entry = report.entries.find((item) => item.path === relativeProbe);
+        assert.equal(entry?.category, "dev-only");
+      } finally {
+        await fs.rm(probe, { force: true });
+        await fs.rm(reportPath, { force: true });
+      }
+    }
+  },
   {
     name: "C extractor finds macros, functions, conditions, and assignments",
     run: async () => {
@@ -1094,7 +1249,7 @@ const tests = [
     }
   },
   {
-    name: "Replay artifact service writes expected file-driven Hermes replay artifact structure",
+    name: "Replay artifact service writes POSIX protocol paths for file-driven Hermes artifacts",
     run: async () => {
       await withTempConfig(async () => {
         const replayArtifactService = new ReplayArtifactService();
@@ -1168,6 +1323,7 @@ const tests = [
             files: {
               "requirement_validation.md": "# 校验\n- 禁止越界扩写",
               "examples/good_examples.md": "# 正例\n- 只写记忆行为",
+              [path.win32.join("nested", "windows-path.md")]: "# Windows 路径回归",
               "domain-knowledge.json": {
                 version: 1,
                 ruleHints: [{ id: "hint-1", note: "只保留人工范例边界" }]
@@ -1224,13 +1380,17 @@ const tests = [
         assert.ok(artifact.writtenFiles.includes("rejections.json"));
         assert.ok(artifact.writtenFiles.includes("effective-skill-manifest.json"));
         assert.ok(artifact.writtenFiles.includes("effective-skill/requirement_validation.md"));
+        assert.ok(artifact.writtenFiles.includes("effective-skill/nested/windows-path.md"));
         assert.ok(artifact.writtenFiles.some((item) => item.startsWith("reference-assets/")));
+        assert.equal(artifact.writtenFiles.every((item) => !item.includes("\\")), true);
 
         const manifest = JSON.parse(await fs.readFile(path.join(outputDir, "manifest.json"), "utf8"));
         assert.equal(manifest.taskContext.moduleSkillKey, "charging_management");
         assert.equal(manifest.rejectionContext.records[0].id, "rej-1");
         assert.equal(manifest.layerSkillInventory[0].skillCode, "MOD-充电管理-validation-001");
         assert.equal(manifest.effectiveSkillFiles[0].artifactPath.startsWith("effective-skill/"), true);
+        assert.equal(manifest.effectiveSkillFiles.every((item) => !item.artifactPath.includes("\\")), true);
+        assert.equal(manifest.referenceAssets.every((item) => !item.artifactPath.includes("\\")), true);
         assert.equal(manifest.counts.rejections, 1);
         assert.equal(manifest.counts.layerSkillItems, 1);
         assert.equal(manifest.counts.referenceAssets, 2);
@@ -2587,6 +2747,36 @@ const tests = [
     }
   },
   {
+    name: "Module asset download API serves binary uploads for remote Hermes tools",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl }) => {
+          const projectService = new ProjectService();
+          const project = await projectService.createProject({ name: "Asset Download Workspace" });
+          const module = await projectService.createModule(project.id, { name: "SLX Module" });
+
+          const form = new FormData();
+          const slxBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x53, 0x4c, 0x58]);
+          form.append("slx", new Blob([slxBytes], { type: "application/octet-stream" }), "model.slx");
+
+          const uploadResponse = await fetch(`${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets`, {
+            method: "POST",
+            body: form
+          });
+          assert.equal(uploadResponse.status, 201);
+          const uploadPayload = await uploadResponse.json();
+          const asset = uploadPayload.assets[0];
+
+          const downloadResponse = await fetch(`${baseUrl}/api/projects/${project.id}/modules/${module.id}/assets/${asset.id}/download`);
+          assert.equal(downloadResponse.status, 200);
+          assert.match(downloadResponse.headers.get("content-disposition") || "", /model\.slx/);
+          const downloaded = new Uint8Array(await downloadResponse.arrayBuffer());
+          assert.deepEqual([...downloaded], [...slxBytes]);
+        });
+      });
+    }
+  },
+  {
     name: "Project service deletes completed and running tasks, including accepted snapshots",
     run: async () => {
       await withTempConfig(async () => {
@@ -2768,204 +2958,6 @@ const tests = [
     }
   },
   {
-    name: "Hermes API server reports uploaded Windows worker probe path",
-    run: async () => {
-      await withTempConfig(async () => {
-        const uploadFixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-worker-probe-"));
-        const filePath = path.join(uploadFixtureDir, "windows-worker-upload-probe.txt");
-        const probeText = "windows worker probe fixture";
-        await fs.writeFile(filePath, probeText, "utf8");
-
-        try {
-          await withHermesServer(async ({ baseUrl }) => {
-            const client = new HermesAgentClient({
-              transport: "api",
-              apiMode: "multipart",
-              baseURL: baseUrl,
-              timeoutMs: 5000
-            });
-
-            const response = await client.executeStep({
-              taskId: "task-worker-probe",
-              stepType: "windows_worker_probe",
-              allowedPaths: [filePath],
-              inputArtifact: {
-                probeId: "probe-test",
-                probeFilePath: filePath,
-                expectedText: probeText,
-                retainUploadedFiles: false
-              }
-            });
-
-            assert.equal(response.status, "succeeded");
-            assert.equal(response.artifact.ok, true);
-            assert.equal(response.artifact.file.exists, true);
-            assert.equal(response.artifact.file.contentMatches, true);
-            assert.notEqual(path.resolve(response.artifact.receivedPath), path.resolve(filePath));
-            assert.ok(response.artifact.receivedDirectory.includes("step-"));
-          });
-        } finally {
-          await fs.rm(uploadFixtureDir, { recursive: true, force: true });
-        }
-      });
-    }
-  },
-  {
-    name: "Hermes API rejects unit-test project addons that overwrite uploaded init scripts",
-    run: async () => {
-      await withTempConfig(async (tempDir) => {
-        const workspaceDir = path.join(tempDir, "ut-workspace");
-        const workspaceInputDir = path.join(workspaceDir, "inputs");
-        const outputDir = path.join(workspaceDir, "outputs");
-        config.unitTestCase.projectAddonRoot = path.join(tempDir, "project-addons");
-        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
-        await fs.mkdir(workspaceInputDir, { recursive: true });
-        await fs.mkdir(outputDir, { recursive: true });
-        await fs.mkdir(path.join(addonDir, "inputs"), { recursive: true });
-        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
-        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
-        await fs.writeFile(path.join(workspaceInputDir, "Demo_init.m"), "% upload init", "utf8");
-        await fs.writeFile(path.join(addonDir, "inputs", "Demo_init.m"), "% conflict", "utf8");
-
-        await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
-              allowedPaths: [workspaceDir],
-              inputArtifact: {
-                workspaceDir,
-                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
-                modelMatPath: path.join(workspaceDir, "Demo.mat"),
-                modelInitScriptPath: path.join(workspaceInputDir, "Demo_init.m"),
-                outputDir,
-                projectInitScripts: ["inputs/Demo_init.m"],
-                unitTestProject: { id: "01", name: "??", label: "01_??" }
-              }
-            })
-          });
-          assert.equal(response.status, 400);
-          const body = await response.json();
-          assert.equal(body.code, "hermes_project_addon_input_conflict");
-        });
-      });
-    }
-  },
-  {
-    name: "Hermes API rejects uploaded init scripts outside the unit-test workspace",
-    run: async () => {
-      await withTempConfig(async (tempDir) => {
-        const workspaceDir = path.join(tempDir, "ut-workspace");
-        const outputDir = path.join(workspaceDir, "outputs");
-        const outsideInit = path.join(tempDir, "Demo_init.m");
-        await fs.mkdir(outputDir, { recursive: true });
-        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
-        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
-        await fs.writeFile(outsideInit, "% outside init", "utf8");
-
-        await withHermesServer(async ({ baseUrl }) => {
-          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              stepType: "simulink_ut_tcsd_generate",
-              allowedPaths: [workspaceDir],
-              inputArtifact: {
-                workspaceDir,
-                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
-                modelMatPath: path.join(workspaceDir, "Demo.mat"),
-                modelInitScriptPath: outsideInit,
-                outputDir,
-                unitTestProject: { id: "01", name: "??", label: "01_??" }
-              }
-            })
-          });
-          assert.equal(response.status, 403);
-          const body = await response.json();
-          assert.equal(body.code, "hermes_path_forbidden");
-        });
-      });
-    }
-  },
-  {
-    name: "Hermes agent client materializes transferred TCSD workbook from API multipart response",
-    run: async () => {
-      await withTempConfig(async () => {
-        const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-api-tcsd-transfer-"));
-        const outputDir = path.join(workspaceDir, "outputs");
-        const modelSlxPath = path.join(workspaceDir, "Demo.slx");
-        const modelMatPath = path.join(workspaceDir, "Demo.mat");
-        const outputRelativePath = "outputs/Demo_Test0001_tcsd.xlsx";
-        const outputBytes = Buffer.from("xlsx-bytes", "utf8");
-        await fs.mkdir(outputDir, { recursive: true });
-        await fs.writeFile(modelSlxPath, "slx", "utf8");
-        await fs.writeFile(modelMatPath, "mat", "utf8");
-
-        const server = http.createServer((req, res) => {
-          req.resume();
-          req.on("end", () => {
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({
-              status: "succeeded",
-              artifact: {
-                status: "completed",
-                summary: "done",
-                outputFiles: [
-                  {
-                    relativePath: outputRelativePath,
-                    kind: "tcsd_workbook",
-                    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    contentBase64: outputBytes.toString("base64")
-                  }
-                ]
-              }
-            }));
-          });
-        });
-        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-        const address = server.address();
-        const client = new HermesAgentClient({
-          transport: "api",
-          apiMode: "multipart",
-          baseURL: `http://127.0.0.1:${address.port}`,
-          timeoutMs: 5000,
-          stepTimeoutMs: { simulink_ut_tcsd_generate: 5000 }
-        });
-
-        try {
-          const response = await client.executeStep({
-            taskId: "task-api-tcsd-transfer",
-            stepType: "simulink_ut_tcsd_generate",
-            allowedPaths: [workspaceDir],
-            inputArtifact: {
-              workspaceDir,
-              modelSlxPath,
-              modelMatPath,
-              outputDir
-            }
-          });
-
-          const materialized = await fs.readFile(path.join(workspaceDir, ...outputRelativePath.split("/")));
-          assert.equal(response.status, "succeeded");
-          assert.equal(response.artifact.outputFiles[0].relativePath, outputRelativePath);
-          assert.equal(materialized.toString("utf8"), "xlsx-bytes");
-        } finally {
-          await new Promise((resolve, reject) => {
-            server.close((error) => {
-              if (error) {
-                reject(error);
-                return;
-              }
-              resolve();
-            });
-          });
-          await fs.rm(workspaceDir, { recursive: true, force: true });
-        }
-      });
-    }
-  },
-  {
     name: "Hermes agent client materializes transferred module description DOCX from API multipart response",
     run: async () => {
       await withTempConfig(async () => {
@@ -3043,6 +3035,59 @@ const tests = [
     }
   },
   {
+    name: "Hermes agent client authenticates staged TCSD job start and polling",
+    run: async () => {
+      await withTempConfig(async () => {
+        const requests = [];
+        const server = http.createServer((req, res) => {
+          requests.push({
+            method: req.method,
+            url: req.url,
+            authorization: req.headers.authorization || ""
+          });
+          req.resume();
+          req.on("end", () => {
+            res.writeHead(req.method === "POST" ? 202 : 200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(
+              req.method === "POST"
+                ? { jobId: "tcsd-job-auth", status: "queued" }
+                : { jobId: "tcsd-job-auth", status: "running" }
+            ));
+          });
+        });
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const address = server.address();
+        const client = new HermesAgentClient({
+          transport: "api",
+          baseURL: `http://127.0.0.1:${address.port}`,
+          authToken: "worker-secret",
+          timeoutMs: 5000
+        });
+
+        try {
+          assert.equal((await client.startTcsdPipelineJob({ taskId: "task-auth" })).jobId, "tcsd-job-auth");
+          assert.equal((await client.getTcsdPipelineJob("tcsd-job-auth")).status, "running");
+          assert.deepEqual(requests, [
+            {
+              method: "POST",
+              url: "/internal/tcsd-pipeline/jobs",
+              authorization: "Bearer worker-secret"
+            },
+            {
+              method: "GET",
+              url: "/internal/tcsd-pipeline/jobs/tcsd-job-auth",
+              authorization: "Bearer worker-secret"
+            }
+          ]);
+        } finally {
+          await new Promise((resolve, reject) => {
+            server.close((error) => error ? reject(error) : resolve());
+          });
+        }
+      });
+    }
+  },
+  {
     name: "Hermes agent client parses quiet CLI output and session id",
     run: async () => {
       await withTempConfig(async () => {
@@ -3090,8 +3135,8 @@ const tests = [
 
         assert.equal(invocations.length, 1);
         assert.equal(invocations[0].command, "hermes");
-        assert.ok(invocations[0].args.includes("-z"));
-        assert.ok(invocations[0].args.includes("--yolo"));
+        assert.ok(invocations[0].args.includes("chat"));
+        assert.ok(invocations[0].args.includes("-Q"));
         assert.equal(response.status, "succeeded");
         assert.equal(response.sessionId, "20260421_144500_abcd12");
         assert.equal(response.artifact.items[0].title, "CLI item");
@@ -3099,6 +3144,182 @@ const tests = [
         assert.deepEqual(usageReaderInvocations, ["20260421_144500_abcd12"]);
         assert.equal(response.metrics.tokenUsage.totalTokens, 1550);
         assert.equal(response.metrics.tokenUsage.inputTokens, 1200);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client routes SLX interpreter through OpenAI-compatible runs API",
+    run: async () => {
+      await withTempConfig(async () => {
+        const requests = [];
+        const approvals = [];
+        let pollCount = 0;
+        const readJsonBody = (req) =>
+          new Promise((resolve, reject) => {
+            const chunks = [];
+            req.on("data", (chunk) => chunks.push(chunk));
+            req.on("error", reject);
+            req.on("end", () => {
+              const raw = Buffer.concat(chunks).toString("utf8");
+              resolve(raw ? JSON.parse(raw) : {});
+            });
+          });
+        const server = http.createServer(async (req, res) => {
+          requests.push({ method: req.method, url: req.url, auth: req.headers.authorization || "" });
+          try {
+            if (req.method === "POST" && req.url === "/v1/runs") {
+              const body = await readJsonBody(req);
+              assert.equal(req.headers.authorization, "Bearer test-key");
+              assert.equal(body.model, "deepseek-v4-pro");
+              assert.match(body.input, /slx_interpret_answer/);
+              assert.match(body.input, /downloadUrl/);
+              assert.match(body.instructions, /internal\/steps\/execute/);
+              res.writeHead(202, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ run_id: "run_slx_1", status: "started" }));
+              return;
+            }
+            if (req.method === "GET" && req.url === "/v1/runs/run_slx_1") {
+              pollCount += 1;
+              res.writeHead(200, { "Content-Type": "application/json" });
+              if (pollCount === 1) {
+                res.end(JSON.stringify({ run_id: "run_slx_1", status: "waiting_for_approval", last_event: "approval.request" }));
+                return;
+              }
+              res.end(JSON.stringify({
+                run_id: "run_slx_1",
+                status: "completed",
+                last_event: "run.completed",
+                output: [
+                  "```json",
+                  JSON.stringify({
+                    answerMarkdown: "模型顶层输入为 A，输出为 B。",
+                    summary: "已回答 SLX 接口问题。",
+                    evidence: [{ fileName: "model.slx", fileRole: "simulink_slx", location: "SATK", excerpt: "A -> B" }],
+                    warnings: []
+                  }),
+                  "```"
+                ].join("\n"),
+                usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+              }));
+              return;
+            }
+            if (req.method === "POST" && req.url === "/v1/runs/run_slx_1/approval") {
+              approvals.push(await readJsonBody(req));
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ ok: true }));
+              return;
+            }
+            res.writeHead(404, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "not found" }));
+          } catch (error) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: error.message }));
+          }
+        });
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const address = server.address();
+        const client = new HermesAgentClient({
+          transport: "api",
+          slxInterpreterTransport: "openai-api",
+          timeoutMs: 1000,
+          openAiApi: {
+            baseURL: `http://127.0.0.1:${address.port}`,
+            apiKey: "test-key",
+            model: "deepseek-v4-pro",
+            pollIntervalMs: 1,
+            requestTimeoutMs: 500
+          }
+        });
+        const events = [];
+
+        try {
+          const response = await client.executeStep(
+            {
+              taskId: "task-openai-slx",
+              stepType: "slx_interpret_answer",
+              inputArtifact: {
+                project: { name: "OpenAI SLX Project", language: "zh-CN" },
+                model: {
+                  assetId: "asset-slx",
+                  fileName: "model.slx",
+                  fileRole: "simulink_slx",
+                  absolutePath: "/opt/software-doc-generator/prod-data/uploads/project/module/model.slx",
+                  downloadUrl: "http://10.36.77.221:3000/api/projects/project/modules/module/assets/asset-slx/download"
+                },
+                question: "这个模型的顶层输入输出是什么？",
+                history: []
+              }
+            },
+            {
+              onEvent: async (event) => {
+                events.push(event);
+              }
+            }
+          );
+
+          assert.equal(response.status, "succeeded");
+          assert.equal(response.sessionId, "run_slx_1");
+          assert.equal(response.metrics.tokenUsage.totalTokens, 15);
+          assert.equal(response.artifact.answerMarkdown, "模型顶层输入为 A，输出为 B。");
+          assert.equal(response.artifact.evidence[0].fileName, "model.slx");
+          assert.deepEqual(approvals, [{ choice: "session", resolve_all: true }]);
+          assert.ok(requests.every((item) => !item.url.includes("/internal/steps/execute")));
+          assert.ok(events.some((event) => event.transport === "openai-api" && event.status === "completed"));
+        } finally {
+          await new Promise((resolve, reject) => {
+            server.close((error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve();
+            });
+          });
+        }
+      });
+    }
+  },
+  {
+    name: "Hermes agent client runs JavaScript CLI commands through the Node executable",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const invocations = [];
+        const commandPath = path.join(tempDir, "fake-hermes-cli.js");
+        const client = new HermesAgentClient({
+          transport: "cli",
+          command: commandPath,
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"items\":[{\"title\":\"JS CLI item\",\"requirementText\":\"JS CLI text\",\"sourceAnchorIds\":[]}]}\n",
+              stderr: ""
+            };
+          },
+          usageReader: async () => null
+        });
+
+        const response = await client.executeStep({
+          taskId: "task-js-cli",
+          stepType: "content_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            project: { name: "JS CLI Project", documentType: "software_requirement" },
+            evidence: [],
+            recalledAtoms: [],
+            outline: { sections: [{ title: "Section", objective: "Goal" }] },
+            template: { requirementIdPrefix: "SWR", sections: [] }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].command, process.execPath);
+        assert.equal(invocations[0].args[0], commandPath);
+        assert.ok(invocations[0].args.includes("chat"));
+        assert.equal(response.status, "succeeded");
+        assert.equal(response.artifact.items[0].title, "JS CLI item");
       });
     }
   },
@@ -3149,7 +3370,7 @@ const tests = [
 
         assert.equal(invocations.length, 1);
         assert.equal(invocations[0].command, "hermes");
-        assert.deepEqual(invocations[0].args.slice(0, 4), ["-p", "deepseek", "--yolo", "-z"]);
+        assert.deepEqual(invocations[0].args.slice(0, 3), ["-p", "deepseek", "chat"]);
         assert.deepEqual(usageReaderInvocations, [
           {
             sessionId: "20260522_170000_deepseek",
@@ -3303,14 +3524,17 @@ const tests = [
       const serverSource = await fs.readFile(new URL("../src/hermes-server.js", import.meta.url), "utf8");
 
       assert.match(configSource, /serverRequestTimeoutMs:\s*Number\(process\.env\.HERMES_SERVER_REQUEST_TIMEOUT_MS\s*\|\|\s*0\)/);
-      assert.match(configSource, /simulink_ut_tcsd_generate:\s*Number\(process\.env\.HERMES_TIMEOUT_SIMULINK_UT_TCSD_GENERATE_MS\s*\|\|\s*7200000\)/);
-      assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_UT_TCSD_GENERATE[\s\S]*:\s*10000/);
+      assert.match(configSource, /stageTimeoutMs:\s*Number\(process\.env\.TCSD_STAGE_HERMES_TIMEOUT_MS\s*\|\|\s*3600000\)/);
+      assert.match(configSource, /stageMaxTurns:\s*Number\(process\.env\.TCSD_STAGE_HERMES_MAX_TURNS\s*\|\|\s*200\)/);
+      assert.match(configSource, /TCSD_STAGE_HERMES_PROFILE\s*\|\|\s*hermesProfile/);
+      assert.match(configSource, /simulink_module_description_generate:\s*Number\(\s*process\.env\.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS\s*\|\|\s*3600000\s*\)/);
+      assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE[\s\S]*:\s*10000/);
       assert.ok(serverSource.includes("server.requestTimeout = requestTimeoutMs"));
       assert.ok(serverSource.includes("server.timeout = requestTimeoutMs"));
     }
   },
   {
-    name: "Hermes agent client builds simulink_ut_tcsd_generate prompt and timeout",
+    name: "Hermes agent client rejects the removed whole-task TCSD entry",
     run: async () => {
       await withTempConfig(async (tempDir) => {
         const workspaceDir = path.join(tempDir, "ut-workspace");
@@ -3320,12 +3544,6 @@ const tests = [
         const client = new HermesAgentClient({
           transport: "cli",
           timeoutMs: 120000,
-          stepTimeoutMs: {
-            simulink_ut_tcsd_generate: 7200000
-          },
-          stepMaxTurns: {
-            simulink_ut_tcsd_generate: 10000
-          },
           usageReader: async () => null,
           commandRunner: async (command, args, options) => {
             invocations.push({ command, args, options });
@@ -3337,9 +3555,51 @@ const tests = [
           }
         });
 
+        await assert.rejects(
+          () => client.executeStep({
+            taskId: "ut-task-1",
+            stepType: "simulink_ut_tcsd_generate",
+            allowedPaths: [workspaceDir],
+            workdir: workspaceDir,
+            inputArtifact: { workspaceDir, outputDir }
+          }),
+          /Unsupported Hermes CLI step/
+        );
+        assert.equal(invocations.length, 0);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client builds simulink_module_description_generate prompt and only normalizes DOCX outputs",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "module-description-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        await fs.mkdir(outputDir, { recursive: true });
+        const invocations = [];
+        const client = new HermesAgentClient({
+          transport: "cli",
+          timeoutMs: 120000,
+          stepTimeoutMs: {
+            simulink_module_description_generate: 3600000
+          },
+          stepMaxTurns: {
+            simulink_module_description_generate: 10000
+          },
+          usageReader: async () => null,
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"status\":\"completed\",\"summary\":\"完成\",\"outputFiles\":[{\"relativePath\":\"outputs/Demo_软件模块功能描述.docx\"},{\"relativePath\":\"outputs/Demo.md\"}],\"warnings\":[]}\n\nsession_id: 20260702_module_doc\n",
+              stderr: ""
+            };
+          }
+        });
+
         const result = await client.executeStep({
-          taskId: "ut-task-1",
-          stepType: "simulink_ut_tcsd_generate",
+          taskId: "module-description-task-1",
+          stepType: "simulink_module_description_generate",
           allowedPaths: [workspaceDir],
           workdir: workspaceDir,
           inputArtifact: {
@@ -3348,29 +3608,413 @@ const tests = [
             modelMatPath: path.join(workspaceDir, "Demo.mat"),
             modelInitScriptPath: path.join(workspaceDir, "inputs", "Demo_init.m"),
             outputDir,
-            skillName: "simulink-ut-tcsd-generator",
-            expectedOutputPattern: "outputs/*_tcsd.xlsx",
+            unitTestProject: { id: "01", name: "楚能", label: "01_楚能" },
+            skillName: "simulink-module-description-generator",
+            expectedOutputPattern: "outputs/*.docx",
             modelInitScriptFileName: "Demo_init.m",
             projectInitScripts: ["inputs/Demo_init.m"]
           }
         });
 
         assert.equal(invocations.length, 1);
-        assert.equal(invocations[0].options.timeout, 7200000);
-        assert.ok(invocations[0].args.includes("-z"));
-        const promptArg = invocations[0].args[invocations[0].args.indexOf("-z") + 1];
-        assert.match(promptArg, /simulink_ut_tcsd_generate/);
-        assert.match(promptArg, /simulink-ut-tcsd-generator/);
-        assert.match(promptArg, /Demo\.slx/);
-        assert.match(promptArg, /Demo\.mat/);
-        assert.match(promptArg, /Demo_init\.m/);
-        assert.match(promptArg, /projectInitScripts/);
-        assert.match(promptArg, /setup_ut_support\(rootDir, projectInitScripts\)/);
-        assert.match(promptArg, /no model-specific init script was uploaded/);
-        assert.match(promptArg, /outputs\/\*_tcsd\.xlsx/);
-        assert.match(promptArg, /MATLAB Cleanup Contract/);
-        assert.match(promptArg, /build_tcsd_from_json\.py/);
-        assert.equal(result.artifact.outputFiles[0].relativePath, "outputs/Demo_Test0001_tcsd.xlsx");
+        assert.equal(invocations[0].options.timeout, 3600000);
+        assert.equal(invocations[0].args[invocations[0].args.indexOf("--max-turns") + 1], "10000");
+        assert.match(invocations[0].args[2], /simulink_module_description_generate/);
+        assert.match(invocations[0].args[2], /simulink-module-description-generator/);
+        assert.match(invocations[0].args[2], /Template_Software_Detailed_Design\.docx/);
+        assert.match(invocations[0].args[2], /outputs\/\*\.docx/);
+        assert.match(invocations[0].args[2], /软件模块功能描述\.docx/);
+        assert.match(invocations[0].args[2], /does not receive a requirements PDF/);
+        assert.match(invocations[0].args[2], /Do not call or reuse legacy software detail design code paths/);
+        assert.deepEqual(
+          result.artifact.outputFiles.map((item) => item.relativePath),
+          ["outputs/Demo_软件模块功能描述.docx"]
+        );
+        assert.equal(result.artifact.outputFiles[0].kind, "software_module_description_docx");
+        assert.equal(
+          result.artifact.outputFiles[0].mimeType,
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+      });
+    }
+  },
+  {
+    name: "Hermes API copies selected unit-test project addon before running CLI",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(addonDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(addonDir, "init_Global.m"), "% addon marker", "utf8");
+
+        const commandPath = path.join(tempDir, "fake-hermes-cli.cjs");
+        await fs.writeFile(
+          commandPath,
+          [
+            "#!/usr/bin/env node",
+            "const fs = require('fs');",
+            `const stageSkills = ${JSON.stringify(TCSD_STAGE_DEFINITIONS.map((stage) => stage.skillName))};`,
+            "if (process.argv.includes('skills') && process.argv.includes('list')) {",
+            "  console.log(stageSkills.join('\\n'));",
+            "} else if (!fs.existsSync('init_Global.m')) {",
+            "  console.error('addon marker missing');",
+            "  process.exit(3);",
+            "} else {",
+            "  console.log(JSON.stringify({ status: 'completed', summary: 'addon copied', outputFiles: [], warnings: [] }));",
+            "}",
+          ].join("\n"),
+          "utf8"
+        );
+        await fs.chmod(commandPath, 0o755);
+        config.hermes.command = process.execPath;
+        config.hermes.commandArgsPrefix = [commandPath];
+        config.hermes.transport = "cli";
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              taskId: "addon-copy-job",
+              idempotencyKey: "addon-copy-job",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          const body = await response.json();
+          assert.equal(response.status, 202, JSON.stringify(body));
+          assert.equal(body.schema, "tcsd-agent-stage-pipeline/v2");
+          assert.ok(body.jobId);
+          assert.equal(await fs.readFile(path.join(workspaceDir, "init_Global.m"), "utf8"), "% addon marker");
+          let terminal = false;
+          for (let attempt = 0; attempt < 100; attempt += 1) {
+            const jobResponse = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs/${body.jobId}`);
+            const job = await jobResponse.json();
+            terminal = ["已完成", "部分完成", "失败"].includes(job.status);
+            if (terminal) break;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          assert.equal(terminal, true, "TCSD test job should stop before its temporary workspace is removed");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API copies selected project addon for simulink_module_description_generate",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "module-description-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "02");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(addonDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(addonDir, "module_doc_support.m"), "% module doc addon marker", "utf8");
+
+        const commandPath = path.join(tempDir, "fake-hermes-cli.js");
+        await fs.writeFile(
+          commandPath,
+          [
+            "#!/usr/bin/env node",
+            "const fs = require('fs');",
+            "if (!fs.existsSync('module_doc_support.m')) {",
+            "  console.error('module description addon marker missing');",
+            "  process.exit(3);",
+            "}",
+            "console.log(JSON.stringify({ status: 'completed', summary: 'module addon copied', outputFiles: [{ relativePath: 'outputs/Demo_软件模块功能描述.docx' }], warnings: [] }));"
+          ].join("\n"),
+          "utf8"
+        );
+        await fs.chmod(commandPath, 0o755);
+        config.hermes.command = process.execPath;
+        config.hermes.commandArgsPrefix = [commandPath];
+        config.hermes.transport = "cli";
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_module_description_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "02", name: "TMS", label: "02_TMS" }
+              }
+            })
+          });
+          assert.equal(response.status, 200);
+          const body = await response.json();
+          assert.equal(body.status, "succeeded");
+          assert.equal(body.artifact.summary, "module addon copied");
+          assert.equal(body.artifact.outputFiles[0].kind, "software_module_description_docx");
+          assert.equal(await fs.readFile(path.join(workspaceDir, "module_doc_support.m"), "utf8"), "% module doc addon marker");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects unsafe project addons for simulink_module_description_generate",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "module-description-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(addonDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(addonDir, "Demo.slx"), "conflict", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_module_description_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_input_conflict");
+        });
+
+        await fs.rm(path.join(addonDir, "Demo.slx"), { force: true });
+        await fs.writeFile(path.join(tempDir, "outside.m"), "% outside init", "utf8");
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_module_description_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                modelInitScriptPath: path.join(tempDir, "outside.m"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 403);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_path_forbidden");
+        });
+
+        const symlinkTarget = path.join(tempDir, "symlink-target.m");
+        await fs.writeFile(symlinkTarget, "% symlink target", "utf8");
+        await fs.symlink(symlinkTarget, path.join(addonDir, "linked_init.m")).catch((error) => {
+          if (error.code !== "EPERM" && error.code !== "ENOTSUP") {
+            throw error;
+          }
+        });
+        const symlinkCreated = await fs.lstat(path.join(addonDir, "linked_init.m")).then((stat) => stat.isSymbolicLink()).catch(() => false);
+        if (!symlinkCreated) {
+          return;
+        }
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/steps/execute`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              stepType: "simulink_module_description_generate",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_symlink_forbidden");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API server reports uploaded Windows worker probe path",
+    run: async () => {
+      await withTempConfig(async () => {
+        const uploadFixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-worker-probe-"));
+        const filePath = path.join(uploadFixtureDir, "windows-worker-upload-probe.txt");
+        const probeText = "windows worker probe fixture";
+        await fs.writeFile(filePath, probeText, "utf8");
+
+        try {
+          await withHermesServer(async ({ baseUrl }) => {
+            const client = new HermesAgentClient({
+              transport: "api",
+              apiMode: "multipart",
+              baseURL: baseUrl,
+              timeoutMs: 5000
+            });
+
+            const response = await client.executeStep({
+              taskId: "task-worker-probe",
+              stepType: "windows_worker_probe",
+              allowedPaths: [filePath],
+              inputArtifact: {
+                probeId: "probe-test",
+                probeFilePath: filePath,
+                expectedText: probeText,
+                retainUploadedFiles: false
+              }
+            });
+
+            assert.equal(response.status, "succeeded");
+            assert.equal(response.artifact.ok, true);
+            assert.equal(response.artifact.file.exists, true);
+            assert.equal(response.artifact.file.contentMatches, true);
+            assert.notEqual(path.resolve(response.artifact.receivedPath), path.resolve(filePath));
+            assert.ok(response.artifact.receivedDirectory.includes("step-"));
+          });
+        } finally {
+          await fs.rm(uploadFixtureDir, { recursive: true, force: true });
+        }
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects unit-test project addons that overwrite uploaded model files",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(addonDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(addonDir, "Demo.slx"), "conflict", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              taskId: "addon-model-conflict",
+              idempotencyKey: "addon-model-conflict",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_input_conflict");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects unit-test project addons that overwrite uploaded init scripts",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const workspaceInputDir = path.join(workspaceDir, "inputs");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const addonDir = path.join(config.unitTestCase.projectAddonRoot, "01");
+        await fs.mkdir(workspaceInputDir, { recursive: true });
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(path.join(addonDir, "inputs"), { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(path.join(workspaceInputDir, "Demo_init.m"), "% upload init", "utf8");
+        await fs.writeFile(path.join(addonDir, "inputs", "Demo_init.m"), "% conflict", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              taskId: "addon-init-conflict",
+              idempotencyKey: "addon-init-conflict",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                modelInitScriptPath: path.join(workspaceInputDir, "Demo_init.m"),
+                outputDir,
+                projectInitScripts: ["inputs/Demo_init.m"],
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 400);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_project_addon_input_conflict");
+        });
+      });
+    }
+  },
+  {
+    name: "Hermes API rejects uploaded init scripts outside the unit-test workspace",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const workspaceDir = path.join(tempDir, "ut-workspace");
+        const outputDir = path.join(workspaceDir, "outputs");
+        const outsideInit = path.join(tempDir, "Demo_init.m");
+        await fs.mkdir(outputDir, { recursive: true });
+        await fs.writeFile(path.join(workspaceDir, "Demo.slx"), "slx", "utf8");
+        await fs.writeFile(path.join(workspaceDir, "Demo.mat"), "mat", "utf8");
+        await fs.writeFile(outsideInit, "% outside init", "utf8");
+
+        await withHermesServer(async ({ baseUrl }) => {
+          const response = await fetch(`${baseUrl}/internal/tcsd-pipeline/jobs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              taskId: "outside-init",
+              idempotencyKey: "outside-init",
+              allowedPaths: [workspaceDir],
+              inputArtifact: {
+                workspaceDir,
+                modelSlxPath: path.join(workspaceDir, "Demo.slx"),
+                modelMatPath: path.join(workspaceDir, "Demo.mat"),
+                modelInitScriptPath: outsideInit,
+                outputDir,
+                unitTestProject: { id: "01", name: "楚能", label: "01_楚能" }
+              }
+            })
+          });
+          assert.equal(response.status, 403);
+          const body = await response.json();
+          assert.equal(body.code, "hermes_path_forbidden");
+        });
       });
     }
   },
@@ -4064,12 +4708,10 @@ const tests = [
         await assert.rejects(
           () =>
             client.executeStep({
-              stepType: "simulink_ut_tcsd_generate",
+              stepType: "outline_build",
               inputArtifact: {
-                workspaceDir: "/tmp/workspace",
-                modelSlxPath: "/tmp/workspace/model.slx",
-                modelMatPath: "/tmp/workspace/model.mat",
-                outputDir: "/tmp/workspace/outputs"
+                evidence: [],
+                recalledAtoms: []
               }
             }),
           (error) => {
@@ -6176,6 +6818,44 @@ const tests = [
     }
   },
   {
+    name: "ZIP archive helper reads store and deflate entries and rejects unsafe archives",
+    run: async () => {
+      const archive = parseZipArchive(
+        buildZipArchive([
+          { name: "exact/store.xml", content: "<store>ok</store>", compressionMethod: 0 },
+          { name: "nested/deflate.xml", content: "<deflate>ok</deflate>", compressionMethod: 8 },
+          { name: "nested/readme.txt", content: "ignored", compressionMethod: 8 }
+        ])
+      );
+
+      assert.equal(archive.readText("exact/store.xml"), "<store>ok</store>");
+      assert.equal(archive.readText("nested/deflate.xml"), "<deflate>ok</deflate>");
+      assert.equal(archive.readText("missing.xml"), null);
+      assert.deepEqual(
+        archive.readTextEntriesBySuffix(".xml").map((entry) => entry.fileName),
+        ["exact/store.xml", "nested/deflate.xml"]
+      );
+      assert.deepEqual(
+        archive.readTextEntries((entry) => entry.fileName.startsWith("nested/")).map((entry) => entry.fileName),
+        ["nested/deflate.xml", "nested/readme.txt"]
+      );
+
+      assert.throws(
+        () => parseZipArchive(buildZipArchive([{ name: "../escape.xml", content: "unsafe" }])),
+        /path is unsafe/
+      );
+      assert.throws(
+        () => parseZipArchive(buildZipArchive([{ name: "unsupported.xml", content: "data", compressionMethod: 12 }])),
+        /compression method 12/
+      );
+      const validArchive = buildZipArchive([{ name: "bounded.xml", content: "data" }]);
+      assert.throws(
+        () => parseZipArchive(validArchive.subarray(0, validArchive.length - 1)),
+        /end of central directory/
+      );
+    }
+  },
+  {
     name: "Spreadsheet extraction service parses Basic Report HIL rows from xlsx",
     run: async () => {
       await withTempConfig(async (tempDir) => {
@@ -6194,7 +6874,18 @@ const tests = [
         });
 
         const service = new SpreadsheetExtractionService();
-        const result = await service.parseHilSpreadsheet(spreadsheetPath);
+        const originalPath = process.env.PATH;
+        let result;
+        try {
+          process.env.PATH = "";
+          result = await service.parseHilSpreadsheet(spreadsheetPath);
+        } finally {
+          if (originalPath === undefined) {
+            delete process.env.PATH;
+          } else {
+            process.env.PATH = originalPath;
+          }
+        }
 
         assert.equal(result.sheetName, "Basic Report");
         assert.equal(result.cases.length, 1);
@@ -8979,6 +9670,14 @@ const tests = [
       const restartWindows = await fs.readFile(path.join(config.rootDir, "scripts", "restart-local.ps1"), "utf8");
       const startCommand = await fs.readFile(path.join(config.rootDir, "start-local.cmd"), "utf8");
       const restartCommand = await fs.readFile(path.join(config.rootDir, "restart-local.cmd"), "utf8");
+      const windowsProductionEnv = await fs.readFile(
+        path.join(config.rootDir, ".env.windows-prod.example"),
+        "utf8"
+      );
+      const linuxProductionTarget = JSON.parse(await fs.readFile(
+        path.join(config.rootDir, "deploy", "targets", "linux-prod.json"),
+        "utf8"
+      ));
 
       assert.ok(startShell.includes("src/hermes-server.js"));
       assert.ok(startShell.includes("hermes-agent.pid"));
@@ -8986,6 +9685,11 @@ const tests = [
       assert.ok(startShell.includes('APP_RUNTIME_ROLE="platform"'));
       assert.ok(startShell.includes('HERMES_TRANSPORT="$PLATFORM_HERMES_TRANSPORT"'));
       assert.ok(startShell.includes("HERMES_SERVER_REQUEST_TIMEOUT_MS"));
+      assert.ok(startShell.includes('if [[ "$(uname -s)" == "Darwin" ]]'));
+      assert.ok(startShell.includes('MATLAB_ROOT="/Applications/MATLAB_R2026a.app"'));
+      assert.ok(startShell.includes('SATK_MATLAB_ROOT="/Applications/MATLAB_R2026a.app"'));
+      assert.ok(startShell.includes('SATK_MATLAB_SESSION_MODE="new"'));
+      assert.equal((startShell.match(/"\${LOCAL_TCSD_ENV\[@\]}"/g) || []).length, 2);
       assert.ok(stopShell.includes("hermes-agent.pid"));
 
       assert.ok(startWindows.includes("src/hermes-server.js"));
@@ -8994,6 +9698,11 @@ const tests = [
       assert.ok(startWindows.includes('APP_RUNTIME_ROLE = "platform"'));
       assert.ok(startWindows.includes('HERMES_TRANSPORT = "$platformHermesTransport"'));
       assert.ok(startWindows.includes("HERMES_SERVER_REQUEST_TIMEOUT_MS"));
+      assert.ok(!startWindows.includes("/Applications/MATLAB_R2026a.app"));
+      assert.ok(windowsProductionEnv.includes("SATK_MATLAB_SESSION_MODE=new"));
+      assert.ok(!windowsProductionEnv.includes("/Applications/MATLAB_R2026a.app"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-runtime"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-stage-*"));
       assert.ok(stopWindows.includes("hermes-agent.pid"));
       assert.ok(restartWindows.includes("HermesPort"));
       assert.ok(startCommand.includes("%*"));
@@ -9518,6 +10227,8 @@ const tests = [
         "task-detail.html",
         "requirement-generation.html",
         "detail-design-generation.html",
+        "generation-tools.html",
+        "software-detail-design-generation.html",
         "hil-test-case-generation.html",
         "feedback-tickets.html",
         "feedback-pool.html",
@@ -9667,15 +10378,97 @@ const tests = [
     }
   },
   {
-    name: "Project list replaces Skill Refinement shortcut with unit test case generation workbench",
+    name: "Project list opens generation tools with standalone software detail design page",
     run: async () => {
       const indexHtml = await fs.readFile(path.join(config.rootDir, "public", "index.html"), "utf8");
+      const toolsHtml = await fs.readFile(path.join(config.rootDir, "public", "generation-tools.html"), "utf8");
+      const moduleDescriptionHtml = await fs.readFile(path.join(config.rootDir, "public", "software-detail-design-generation.html"), "utf8");
+      const moduleDescriptionScript = await fs.readFile(path.join(config.rootDir, "public", "software-detail-design-generation.js"), "utf8");
+      const unitScript = await fs.readFile(path.join(config.rootDir, "public", "unit-test-case-generation.js"), "utf8");
+      const stylesheet = await fs.readFile(path.join(config.rootDir, "public", "app.css"), "utf8");
 
-      assert.ok(indexHtml.includes('href="/unit-test-case-generation"'));
-      assert.ok(indexHtml.includes("单元测试用例生成"));
+      assert.ok(indexHtml.includes('href="/generation-tools.html"'));
+      assert.ok(indexHtml.includes("生成工具"));
+      assert.equal(indexHtml.includes('href="/unit-test-case-generation"'), false);
       assert.equal(indexHtml.includes('href="/skill-refinement">Skill Refinement'), false);
+      assert.ok(toolsHtml.includes('href="/unit-test-case-generation"'));
+      assert.ok(toolsHtml.includes('href="/software-detail-design-generation.html"'));
+      assert.ok(toolsHtml.includes("单元测试用例生成"));
+      assert.ok(toolsHtml.includes("软件详设生成"));
+      assert.equal(toolsHtml.includes("/detail-design-generation"), false);
+      assert.equal(toolsHtml.includes("需求 PDF"), false);
+      assert.ok(moduleDescriptionHtml.includes("<title>软件详设生成</title>"));
+      assert.ok(moduleDescriptionHtml.includes('data-page-kind="software-module-description-generation"'));
+      assert.ok(moduleDescriptionHtml.includes('id="module-description-form"'));
+      assert.ok(moduleDescriptionHtml.includes('name="modelSlx"'));
+      assert.ok(moduleDescriptionHtml.includes('name="modelMat"'));
+      assert.ok(moduleDescriptionHtml.includes('name="modelInitScript"'));
+      assert.ok(moduleDescriptionHtml.includes('accept=".slx"'));
+      assert.ok(moduleDescriptionHtml.includes('accept=".mat"'));
+      assert.ok(moduleDescriptionHtml.includes('accept=".m"'));
+      assert.ok(moduleDescriptionHtml.includes('name="projectId"'));
+      assert.ok(moduleDescriptionHtml.includes('id="module-description-add-project-button"'));
+      assert.ok(moduleDescriptionHtml.includes('id="module-description-delete-project-button"'));
+      assert.ok(moduleDescriptionHtml.includes('id="module-description-task-project-filter"'));
+      assert.ok(moduleDescriptionHtml.includes('/software-detail-design-generation.js'));
+      assert.equal(moduleDescriptionHtml.includes('name="systemPdf"'), false);
+      assert.equal(moduleDescriptionHtml.includes('name="modelPdf"'), false);
+      assert.equal(moduleDescriptionHtml.includes('name="referenceExample"'), false);
+      assert.equal(moduleDescriptionHtml.includes("/detail-design-generation"), false);
+      assert.equal(moduleDescriptionHtml.includes("detail_design"), false);
+      assert.ok(moduleDescriptionScript.includes("/api/unit-test-case-generation/projects"));
+      assert.ok(moduleDescriptionScript.includes("/api/software-module-description-generation/tasks"));
+      assert.ok(moduleDescriptionScript.includes('formData.set("projectId"'));
+      assert.ok(moduleDescriptionScript.includes("validateFile(elements.slxInput"));
+      assert.ok(moduleDescriptionScript.includes("validateFile(elements.matInput"));
+      assert.ok(moduleDescriptionScript.includes("validateOptionalFile(elements.initScriptInput"));
+      assert.ok(moduleDescriptionScript.includes("暂无选中的生成任务。"));
+      assert.ok(moduleDescriptionScript.includes("软件详设 DOCX 已生成"));
+      assert.ok(moduleDescriptionScript.includes("下载 DOCX"));
+      assert.ok(moduleDescriptionScript.includes("simulink_module_description_generate"));
+      assert.ok(moduleDescriptionScript.includes("simulink-module-description-generator"));
+      assert.ok(moduleDescriptionScript.includes("outputs/*.docx"));
+      assert.ok(moduleDescriptionScript.includes("data-delete-task-id"));
+      assert.ok(moduleDescriptionScript.includes("taskProjectFilter"));
+      assert.equal(moduleDescriptionScript.includes("输入要求"), false);
+      assert.equal(moduleDescriptionScript.includes("/detail-design-generation"), false);
+      assert.equal(moduleDescriptionScript.includes("detail_design"), false);
+      assert.equal(moduleDescriptionScript.includes("generator.js"), false);
+      assert.equal(moduleDescriptionScript.includes("systemPdf"), false);
+      assert.equal(moduleDescriptionScript.includes("modelPdf"), false);
+      assert.equal(moduleDescriptionScript.includes("referenceExample"), false);
+      assert.equal(moduleDescriptionScript.includes("documentType"), false);
+      assert.ok(unitScript.includes("data-delete-task-id"));
+      assert.ok(unitScript.includes('method: "DELETE"'));
+      assert.ok(unitScript.includes("任务已删除，相关文件已清理。"));
+      assert.ok(unitScript.includes("taskProjectFilter"));
+      assert.ok(unitScript.includes("projectId="));
+      assert.ok(unitScript.includes("taskMatchesProjectFilter"));
+      assert.ok(unitScript.includes(".filter(taskMatchesProjectFilter)"));
+      assert.ok(unitScript.includes("modelInitScript"));
+      assert.ok(unitScript.includes("\u4f7f\u7528\u9879\u76ee addon \u521d\u59cb\u5316"));
+      assert.ok(stylesheet.includes(".tool-hub-grid"));
+      assert.ok(stylesheet.includes(".module-description-tool-grid"));
+      assert.ok(stylesheet.includes(".module-description-project-actions"));
+      assert.ok(stylesheet.includes(".module-description-task-filter"));
+      assert.ok(stylesheet.includes(".module-description-task-delete"));
+      assert.ok(stylesheet.includes(".module-description-artifact-link"));
+      assert.ok(stylesheet.includes(".unit-task-delete"));
+      assert.ok(stylesheet.includes(".unit-task-filter"));
 
       await withTestServer(async ({ baseUrl }) => {
+        const toolsResponse = await fetch(`${baseUrl}/generation-tools`);
+        assert.equal(toolsResponse.status, 200);
+        const servedToolsHtml = await toolsResponse.text();
+        assert.ok(servedToolsHtml.includes("<title>生成工具</title>"));
+        assert.ok(servedToolsHtml.includes('href="/software-detail-design-generation.html"'));
+
+        const moduleDescriptionResponse = await fetch(`${baseUrl}/software-detail-design-generation`);
+        assert.equal(moduleDescriptionResponse.status, 200);
+        const servedModuleDescriptionHtml = await moduleDescriptionResponse.text();
+        assert.ok(servedModuleDescriptionHtml.includes("<title>软件详设生成</title>"));
+        assert.ok(servedModuleDescriptionHtml.includes('id="module-description-form"'));
+
         const response = await fetch(`${baseUrl}/unit-test-case-generation`);
         assert.equal(response.status, 200);
         const html = await response.text();
@@ -9684,6 +10477,14 @@ const tests = [
         assert.ok(html.includes('id="unit-test-form"'));
         assert.ok(html.includes('name="modelSlx"'));
         assert.ok(html.includes('name="modelMat"'));
+        assert.ok(html.includes('name="modelInitScript"'));
+        assert.ok(html.includes('accept=".m"'));
+        assert.ok(html.includes('name="unitTestProjectId"'));
+        assert.ok(html.includes('name="workerId"'));
+        assert.ok(html.includes('id="unit-worker-select"'));
+        assert.ok(html.includes('id="unit-add-project-button"'));
+        assert.ok(html.includes('id="unit-delete-project-button"'));
+        assert.ok(html.includes('id="unit-task-project-filter"'));
         assert.ok(html.includes('id="unit-start-button"'));
         assert.ok(html.includes('/unit-test-case-generation.js'));
       });
@@ -9694,6 +10495,13 @@ const tests = [
     run: async () => {
       await withTempConfig(async () => {
         await withTestServer(async ({ baseUrl }) => {
+          const workersResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/workers`);
+          assert.equal(workersResponse.status, 200);
+          const workersBody = await workersResponse.json();
+          assert.equal(workersBody.defaultWorkerId, "default");
+          assert.equal(workersBody.workers[0].id, "default");
+          assert.equal(workersBody.workers[0].label, "Default Test Worker");
+
           const missingMat = new FormData();
           missingMat.append("modelSlx", new Blob(["slx"]), "Demo.slx");
           const missingResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
@@ -9707,6 +10515,7 @@ const tests = [
           const wrongExt = new FormData();
           wrongExt.append("modelSlx", new Blob(["txt"]), "Demo.txt");
           wrongExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongExt.append("unitTestProjectId", "01");
           const wrongExtResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
             method: "POST",
             body: wrongExt
@@ -9715,9 +10524,49 @@ const tests = [
           const wrongExtBody = await wrongExtResponse.json();
           assert.equal(wrongExtBody.code, "unit_test_case_invalid_slx_extension");
 
+          const wrongInitExt = new FormData();
+          wrongInitExt.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          wrongInitExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongInitExt.append("modelInitScript", new Blob(["txt"]), "Demo.txt");
+          wrongInitExt.append("unitTestProjectId", "01");
+          const wrongInitExtResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: wrongInitExt
+          });
+          assert.equal(wrongInitExtResponse.status, 400);
+          const wrongInitExtBody = await wrongInitExtResponse.json();
+          assert.equal(wrongInitExtBody.code, "unit_test_case_invalid_init_script_extension");
+
+          const duplicateInit = new FormData();
+          duplicateInit.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          duplicateInit.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          duplicateInit.append("modelInitScript", new Blob(["init1"]), "Demo_init.m");
+          duplicateInit.append("modelInitScript", new Blob(["init2"]), "Demo_init_2.m");
+          duplicateInit.append("unitTestProjectId", "01");
+          const duplicateInitResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: duplicateInit
+          });
+          assert.equal(duplicateInitResponse.status, 400);
+
+          const invalidWorker = new FormData();
+          invalidWorker.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          invalidWorker.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          invalidWorker.append("unitTestProjectId", "01");
+          invalidWorker.append("workerId", "missing-worker");
+          const invalidWorkerResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: invalidWorker
+          });
+          assert.equal(invalidWorkerResponse.status, 400);
+          const invalidWorkerBody = await invalidWorkerResponse.json();
+          assert.equal(invalidWorkerBody.code, "unit_test_case_worker_not_found");
+
           const valid = new FormData();
           valid.append("modelSlx", new Blob(["slx"]), "Demo.slx");
           valid.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          valid.append("unitTestProjectId", "01");
+          valid.append("workerId", "default");
           const validResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
             method: "POST",
             body: valid
@@ -9732,12 +10581,358 @@ const tests = [
           assert.equal(validBody.task.inputs.modelMat.workspaceName, "Demo.mat");
           assert.equal(validBody.task.inputs.modelSlx.workspaceRelativePath, "Demo.slx");
           assert.equal(validBody.task.inputs.modelMat.workspaceRelativePath, "Demo.mat");
+          assert.equal(validBody.task.unitTestProject.id, "01");
+          assert.equal(validBody.task.workerProfile.id, "default");
+
+          const validWithInit = new FormData();
+          validWithInit.append("modelSlx", new Blob(["slx"]), "DemoWithInit.slx");
+          validWithInit.append("modelMat", new Blob(["mat"]), "DemoWithInit.mat");
+          validWithInit.append("modelInitScript", new Blob(["% init"]), "DemoWithInit_init.m");
+          validWithInit.append("unitTestProjectId", "02");
+          validWithInit.append("workerId", "default");
+          const validWithInitResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`, {
+            method: "POST",
+            body: validWithInit
+          });
+          assert.equal(validWithInitResponse.status, 202);
+          const validWithInitBody = await validWithInitResponse.json();
+          assert.equal(validWithInitBody.task.inputs.modelInitScript.originalName, "DemoWithInit_init.m");
+          assert.equal(validWithInitBody.task.inputs.modelInitScript.workspaceName, "DemoWithInit_init.m");
+          assert.equal(validWithInitBody.task.inputs.modelInitScript.workspaceRelativePath, "inputs/DemoWithInit_init.m");
+          assert.equal(validWithInitBody.task.unitTestProject.id, "02");
 
           const listResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks`);
           assert.equal(listResponse.status, 200);
           const listBody = await listResponse.json();
           assert.ok(listBody.tasks.some((task) => task.id === validBody.task.id));
+
+          const filteredListResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks?projectId=01`);
+          assert.equal(filteredListResponse.status, 200);
+          const filteredListBody = await filteredListResponse.json();
+          assert.ok(filteredListBody.tasks.some((task) => task.id === validBody.task.id));
+          assert.ok(filteredListBody.tasks.every((task) => task.unitTestProject.id === "01"));
+
+          const invalidFilterResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks?projectId=01_%E6%A5%9A%E8%83%BD`);
+          assert.equal(invalidFilterResponse.status, 400);
+          const invalidFilterBody = await invalidFilterResponse.json();
+          assert.equal(invalidFilterBody.code, "unit_test_case_invalid_project_id");
+
+          const taskDir = path.join(config.unitTestCase.taskStoreDir, validBody.task.id);
+          await fs.access(taskDir);
+
+          const deleteResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks/${validBody.task.id}`, {
+            method: "DELETE"
+          });
+          assert.equal(deleteResponse.status, 200);
+          const deleteBody = await deleteResponse.json();
+          assert.equal(deleteBody.deleted, true);
+          assert.equal(deleteBody.taskId, validBody.task.id);
+          await assert.rejects(() => fs.access(taskDir));
+
+          const deletedDetailResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks/${validBody.task.id}`);
+          assert.equal(deletedDetailResponse.status, 404);
         });
+      });
+    }
+  },
+  {
+    name: "Software module description generation API validates uploads and creates queued DOCX tasks",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl }) => {
+          const missingMat = new FormData();
+          missingMat.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          missingMat.append("projectId", "01");
+          const missingResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: missingMat
+          });
+          assert.equal(missingResponse.status, 400);
+          const missingBody = await missingResponse.json();
+          assert.equal(missingBody.code, "software_module_description_invalid_upload_count");
+
+          const wrongExt = new FormData();
+          wrongExt.append("modelSlx", new Blob(["txt"]), "Demo.txt");
+          wrongExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongExt.append("projectId", "01");
+          const wrongExtResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: wrongExt
+          });
+          assert.equal(wrongExtResponse.status, 400);
+          const wrongExtBody = await wrongExtResponse.json();
+          assert.equal(wrongExtBody.code, "software_module_description_invalid_slx_extension");
+
+          const missingProject = new FormData();
+          missingProject.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          missingProject.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          const missingProjectResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: missingProject
+          });
+          assert.equal(missingProjectResponse.status, 400);
+          const missingProjectBody = await missingProjectResponse.json();
+          assert.equal(missingProjectBody.code, "software_module_description_invalid_project_id");
+
+          const wrongInitExt = new FormData();
+          wrongInitExt.append("modelSlx", new Blob(["slx"]), "Demo.slx");
+          wrongInitExt.append("modelMat", new Blob(["mat"]), "Demo.mat");
+          wrongInitExt.append("modelInitScript", new Blob(["txt"]), "Demo.txt");
+          wrongInitExt.append("projectId", "01");
+          const wrongInitExtResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: wrongInitExt
+          });
+          assert.equal(wrongInitExtResponse.status, 400);
+          const wrongInitExtBody = await wrongInitExtResponse.json();
+          assert.equal(wrongInitExtBody.code, "software_module_description_invalid_init_script_extension");
+
+          const invalidWorker = new FormData();
+          invalidWorker.append("modelSlx", new Blob(["slx"]), "InvalidWorker.slx");
+          invalidWorker.append("modelMat", new Blob(["mat"]), "InvalidWorker.mat");
+          invalidWorker.append("projectId", "01");
+          invalidWorker.append("workerId", "missing-worker");
+          const invalidWorkerResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: invalidWorker
+          });
+          assert.equal(invalidWorkerResponse.status, 400);
+          const invalidWorkerBody = await invalidWorkerResponse.json();
+          assert.equal(invalidWorkerBody.code, "unit_test_case_worker_not_found");
+
+          const validWithInit = new FormData();
+          validWithInit.append("modelSlx", new Blob(["slx"]), "ModuleDoc.slx");
+          validWithInit.append("modelMat", new Blob(["mat"]), "ModuleDoc.mat");
+          validWithInit.append("modelInitScript", new Blob(["% init"]), "ModuleDoc_init.m");
+          validWithInit.append("projectId", "02");
+          const validResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`, {
+            method: "POST",
+            body: validWithInit
+          });
+          assert.equal(validResponse.status, 202);
+          const validBody = await validResponse.json();
+          assert.equal(validBody.taskStarted, true);
+          assert.equal(validBody.task.type, "software_module_description_generation");
+          assert.equal(validBody.task.inputs.modelSlx.originalName, "ModuleDoc.slx");
+          assert.equal(validBody.task.inputs.modelMat.originalName, "ModuleDoc.mat");
+          assert.equal(validBody.task.inputs.modelInitScript.originalName, "ModuleDoc_init.m");
+          assert.equal(validBody.task.inputs.modelInitScript.workspaceRelativePath, "inputs/ModuleDoc_init.m");
+          assert.equal(validBody.task.unitTestProject.id, "02");
+          assert.equal(validBody.task.workerProfile.id, config.unitTestCase.defaultWorkerId);
+          assert.equal(validBody.task.hermes.stepType, "simulink_module_description_generate");
+          assert.equal(validBody.task.hermes.skillName, "simulink-module-description-generator");
+          assert.equal(validBody.task.hermes.expectedOutputPattern, "outputs/*.docx");
+
+          const detailResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks/${validBody.task.id}`);
+          assert.equal(detailResponse.status, 200);
+          const detailBody = await detailResponse.json();
+          assert.equal(detailBody.id, validBody.task.id);
+
+          const filteredListResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks?projectId=02`);
+          assert.equal(filteredListResponse.status, 200);
+          const filteredListBody = await filteredListResponse.json();
+          assert.ok(filteredListBody.tasks.some((task) => task.id === validBody.task.id));
+          assert.ok(filteredListBody.tasks.every((task) => task.unitTestProject.id === "02"));
+
+          const invalidFilterResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks?projectId=02_TMS`);
+          assert.equal(invalidFilterResponse.status, 400);
+          const invalidFilterBody = await invalidFilterResponse.json();
+          assert.equal(invalidFilterBody.code, "software_module_description_invalid_project_id");
+
+          const taskDir = path.join(config.softwareModuleDescription.taskStoreDir, validBody.task.id);
+          await fs.access(taskDir);
+
+          const deleteResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks/${validBody.task.id}`, {
+            method: "DELETE"
+          });
+          assert.equal(deleteResponse.status, 200);
+          const deleteBody = await deleteResponse.json();
+          assert.equal(deleteBody.deleted, true);
+          assert.equal(deleteBody.taskId, validBody.task.id);
+          await assert.rejects(() => fs.access(taskDir));
+
+          const deletedDetailResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks/${validBody.task.id}`);
+          assert.equal(deletedDetailResponse.status, 404);
+        });
+      });
+    }
+  },
+  {
+    name: "UnitTestCaseGenerationService assigns legacy tasks to project 01 and filters by project",
+    run: async () => {
+      await withTempConfig(async () => {
+        const service = new UnitTestCaseGenerationService();
+        await service.saveTask({
+          id: "legacy-task",
+          type: "unit_test_case_generation",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          inputs: {
+            modelSlx: { originalName: "Legacy.slx" },
+            modelMat: { originalName: "Legacy.mat" }
+          },
+          workspace: {},
+          hermes: {},
+          artifacts: []
+        });
+        await service.saveTask({
+          id: "project-02-task",
+          type: "unit_test_case_generation",
+          status: "completed",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          unitTestProject: { id: "02", name: "TMS", label: "02_TMS" },
+          inputs: {
+            modelSlx: { originalName: "Tms.slx" },
+            modelMat: { originalName: "Tms.mat" }
+          },
+          workspace: {},
+          hermes: {},
+          artifacts: []
+        });
+
+        const legacyTask = await service.getTask("legacy-task");
+        assert.equal(legacyTask.unitTestProject.id, "01");
+        assert.equal(legacyTask.unitTestProject.label, "01_楚能");
+
+        const project01Tasks = await service.listTasks({ projectId: "01" });
+        assert.deepEqual(project01Tasks.map((task) => task.id), ["legacy-task"]);
+
+        const project02Tasks = await service.listTasks({ projectId: "02" });
+        assert.deepEqual(project02Tasks.map((task) => task.id), ["project-02-task"]);
+
+        const allTasks = await service.listTasks();
+        assert.deepEqual(allTasks.map((task) => task.id), ["project-02-task", "legacy-task"]);
+        await assert.rejects(() => service.listTasks({ projectId: "01_楚能" }), /项目编号非法/);
+      });
+    }
+  },
+  {
+    name: "SoftwareModuleDescriptionGenerationService builds Hermes payloads and records DOCX artifacts only",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const seenPayloads = [];
+        const service = new SoftwareModuleDescriptionGenerationService({
+          hermesAgentClient: {
+            async executeStep(payload, runtime = {}) {
+              seenPayloads.push(payload);
+              assert.equal(payload.stepType, "simulink_module_description_generate");
+              assert.equal(payload.type, "software_module_description_generation");
+              assert.equal(payload.inputArtifact.skillName, "simulink-module-description-generator");
+              assert.equal(payload.inputArtifact.expectedOutputPattern, "outputs/*.docx");
+              assert.equal(payload.inputArtifact.unitTestProject.id, "01");
+              assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
+              await runtime.onEvent?.({
+                status: "completed",
+                label: "Hermes mock completed",
+                message: "Mock software module description generated.",
+                transport: "mock",
+                stepType: "simulink_module_description_generate"
+              });
+              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_软件模块功能描述.docx");
+              await fs.mkdir(path.dirname(outputPath), { recursive: true });
+              await fs.writeFile(outputPath, "docx");
+              await fs.writeFile(path.join(payload.inputArtifact.outputDir, "Demo.md"), "markdown");
+              return {
+                status: "succeeded",
+                stepType: "simulink_module_description_generate",
+                artifact: {
+                  status: "completed",
+                  summary: "已生成 Demo_软件模块功能描述.docx。",
+                  outputFiles: [
+                    { relativePath: "outputs/Demo_软件模块功能描述.docx" },
+                    { relativePath: "outputs/Demo.md" }
+                  ]
+                },
+                metrics: { tokenUsage: { totalTokens: 12 } },
+                logs: []
+              };
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")],
+            modelInitScript: [await createMockUploadFile(tempDir, "Demo_init.m", "% init")]
+          },
+          { projectId: "01" }
+        );
+        const created = await service.readTask(task.id);
+        const payload = service.buildHermesPayload(created);
+        assert.equal(payload.stepType, "simulink_module_description_generate");
+        assert.equal(payload.inputArtifact.modelInitScriptFileName, "Demo_init.m");
+        assert.equal(payload.inputArtifact.modelSlxFileName, "Demo.slx");
+        assert.equal(payload.inputArtifact.modelMatFileName, "Demo.mat");
+        assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
+        assert.equal(payload.inputArtifact.unitTestProject.id, "01");
+        assert.equal(payload.inputArtifact.skillName, "simulink-module-description-generator");
+        assert.equal(payload.inputArtifact.expectedOutputPattern, "outputs/*.docx");
+
+        const completed = await service.runTask(task.id);
+        assert.equal(seenPayloads.length, 1);
+        assert.equal(completed.status, "completed");
+        assert.equal(completed.artifacts.length, 1);
+        assert.equal(completed.artifacts[0].kind, "software_module_description_docx");
+        assert.equal(completed.artifacts[0].fileName, "Demo_软件模块功能描述.docx");
+        assert.equal(completed.artifacts[0].relativePath, "outputs/Demo_软件模块功能描述.docx");
+        assert.equal(
+          completed.artifacts[0].mimeType,
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+        const artifact = await service.getArtifact(task.id, completed.artifacts[0].id);
+        assert.equal(path.basename(artifact.absolutePath), "Demo_软件模块功能描述.docx");
+
+        const stored = await service.readTask(task.id);
+        stored.artifacts.push({
+          id: "bad-artifact",
+          fileName: "bad.docx",
+          relativePath: "../bad.docx",
+          size: 1
+        });
+        await service.saveTask(stored);
+        await assert.rejects(
+          () => service.getArtifact(task.id, "bad-artifact"),
+          /outputs\/\*\.docx/
+        );
+      });
+    }
+  },
+  {
+    name: "SoftwareModuleDescriptionGenerationService fails when Hermes returns no DOCX outputs",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const service = new SoftwareModuleDescriptionGenerationService({
+          hermesAgentClient: {
+            async executeStep(payload) {
+              await fs.mkdir(payload.inputArtifact.outputDir, { recursive: true });
+              await fs.writeFile(path.join(payload.inputArtifact.outputDir, "Demo.md"), "markdown");
+              return {
+                status: "succeeded",
+                stepType: "simulink_module_description_generate",
+                artifact: {
+                  status: "completed",
+                  summary: "只生成了 Markdown。",
+                  outputFiles: [{ relativePath: "outputs/Demo.md" }]
+                },
+                logs: []
+              };
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+          },
+          { projectId: "01" }
+        );
+
+        await assert.rejects(() => service.runTask(task.id), /未在 workspace\/outputs 下找到 \.docx/);
+        const stored = await service.readTask(task.id);
+        assert.equal(stored.status, "failed");
+        assert.equal(stored.hermes.errorCode, "software_module_description_output_missing");
       });
     }
   },
@@ -9747,46 +10942,94 @@ const tests = [
       await withTempConfig(async (tempDir) => {
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
-            async executeStep(payload, runtime = {}) {
-              await runtime.onEvent?.({
-                status: "completed",
-                label: "Hermes mock completed",
-                message: "Mock TCSD workbook generated.",
-                transport: "mock"
-              });
-              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
-              await fs.mkdir(path.dirname(outputPath), { recursive: true });
-              await fs.writeFile(outputPath, "xlsx");
-              return {
-                status: "succeeded",
-                stepType: "simulink_ut_tcsd_generate",
-                artifact: {
-                  status: "completed",
-                  summary: "已生成 Demo_Test0001_tcsd.xlsx。",
-                  outputFiles: [{ relativePath: "outputs/Demo_Test0001_tcsd.xlsx" }]
-                },
-                metrics: { tokenUsage: { totalTokens: 12 } },
-                logs: []
+            job: null,
+            async startTcsdPipelineJob(payload) {
+              assert.match(payload.inputArtifact.modelInitScriptPath, /inputs[\\/]Demo_init\.m$/);
+              assert.equal(payload.inputArtifact.modelInitScriptFileName, "Demo_init.m");
+              assert.deepEqual(payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
+              const initialOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test_coverage_ir_iter0.xlsx");
+              const finalOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test_coverage_ir_iter1.xlsx");
+              const legacyOutputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
+              await fs.mkdir(path.dirname(finalOutputPath), { recursive: true });
+              const workbookSheets = {
+                TCSD: [
+                  ["TestID", "Name", "Type", "Expected"],
+                  ["TC_001", "Case", "Test", "expValue(Out1, 1)"]
+                ]
               };
+              await createMinimalXlsx(initialOutputPath, workbookSheets);
+              await createMinimalXlsx(finalOutputPath, workbookSheets);
+              await createMinimalXlsx(legacyOutputPath, workbookSheets);
+              this.job = {
+                schema: "tcsd-agent-stage-pipeline/v2",
+                jobId: "mock-completed-job",
+                status: "已完成",
+                completion: "complete",
+                stages: Array.from({ length: 12 }, (_unused, index) => ({
+                  index: index + 1,
+                  status: "已完成",
+                  checkpoint: index === 10
+                    ? {
+                        artifacts: [
+                          {
+                            path: "outputs/Demo_Test_coverage_ir_iter1.xlsx",
+                            kind: "xlsx",
+                            role: "workbook"
+                          }
+                        ]
+                      }
+                    : index === 11
+                      ? {
+                          artifacts: [
+                            { path: "outputs/Demo_Test_coverage_ir_iter0.xlsx", kind: "xlsx", role: "workbook" },
+                            { path: "outputs/Demo_Test_coverage_ir_iter1.xlsx", kind: "xlsx", role: "workbook" },
+                            { path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx", role: "final-workbook" }
+                          ]
+                        }
+                    : { artifacts: [] }
+                })),
+                checkpoints: [],
+                artifacts: [
+                  { path: "outputs/Demo_Test_coverage_ir_iter0.xlsx", kind: "xlsx" },
+                  { path: "outputs/Demo_Test_coverage_ir_iter1.xlsx", kind: "xlsx" },
+                  { path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx" }
+                ],
+                coverage: null,
+                repair: {},
+                updatedAt: new Date().toISOString()
+              };
+              return this.job;
+            },
+            async getTcsdPipelineJob() {
+              return this.job;
             }
           }
         });
-        const task = await service.createTask({
-          modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
-          modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
-        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")],
+            modelInitScript: [await createMockUploadFile(tempDir, "Demo_init.m", "% init")]
+          },
+          { unitTestProjectId: "01" }
+        );
         const created = await service.readTask(task.id);
         assert.equal(created.inputs.modelSlx.workspaceName, "Demo.slx");
         assert.equal(created.inputs.modelMat.workspaceName, "Demo.mat");
+        assert.equal(created.inputs.modelInitScript.workspaceName, "Demo_init.m");
         assert.equal(created.inputs.modelSlx.workspaceRelativePath, "Demo.slx");
         assert.equal(created.inputs.modelMat.workspaceRelativePath, "Demo.mat");
+        assert.equal(created.inputs.modelInitScript.workspaceRelativePath, "inputs/Demo_init.m");
         assert.ok(created.workspace.modelSlxPath.endsWith(`${path.sep}Demo.slx`));
         assert.ok(created.workspace.modelMatPath.endsWith(`${path.sep}Demo.mat`));
+        assert.ok(created.workspace.modelInitScriptPath.endsWith(`${path.sep}inputs${path.sep}Demo_init.m`));
 
         const completed = await service.runTask(task.id);
         assert.equal(completed.status, "completed");
         assert.equal(completed.artifacts.length, 1);
         assert.equal(completed.artifacts[0].fileName, "Demo_Test0001_tcsd.xlsx");
+        assert.equal(completed.artifacts[0].description, "最终 TCSD 单元测试用例 Excel");
+        assert.equal(completed.artifacts[0].expectedValueCount, 1);
         const artifact = await service.getArtifact(task.id, completed.artifacts[0].id);
         assert.equal(path.basename(artifact.absolutePath), "Demo_Test0001_tcsd.xlsx");
 
@@ -9802,6 +11045,122 @@ const tests = [
           () => service.getArtifact(task.id, "bad-artifact"),
           /outputs\/\*\.xlsx/
         );
+
+        const taskDir = service.getTaskDir(task.id);
+        await fs.access(taskDir);
+        const deleted = await service.deleteTask(task.id);
+        assert.equal(deleted.deleted, true);
+        assert.equal(deleted.removedArtifacts, 2);
+        await assert.rejects(() => fs.access(taskDir));
+        assert.equal(await service.getTask(task.id), null);
+        await assert.rejects(() => service.deleteTask(task.id), /任务不存在/);
+      });
+    }
+  },
+  {
+    name: "UnitTestCaseGenerationService rejects TCSD workbooks without expValue expectations",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const service = new UnitTestCaseGenerationService({
+          hermesAgentClient: {
+            job: null,
+            async startTcsdPipelineJob(payload) {
+              const outputPath = path.join(payload.inputArtifact.outputDir, "Demo_Test0001_tcsd.xlsx");
+              await fs.mkdir(path.dirname(outputPath), { recursive: true });
+              await createMinimalXlsx(outputPath, {
+                TCSD: [
+                  ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action", "Work Status", "Report Links"],
+                  ["TG_001", "Group", "TestGroup", "", "", "", "", "", ""],
+                  ["TC_001", "Case", "Test", "REQ-1", "测试方法：等价类。", "InputA = 0;", "[+0.1s]\nInputA = 1;\n[+0.1s]", "reviewed", ""]
+                ]
+              });
+              this.job = {
+                schema: "tcsd-agent-stage-pipeline/v2",
+                jobId: "mock-no-expectation-job",
+                status: "已完成",
+                completion: "complete",
+                stages: [],
+                checkpoints: [],
+                artifacts: [{ path: "outputs/Demo_Test0001_tcsd.xlsx", kind: "xlsx" }],
+                coverage: null,
+                repair: {},
+                updatedAt: new Date().toISOString()
+              };
+              return this.job;
+            },
+            async getTcsdPipelineJob() {
+              return this.job;
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Demo.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Demo.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
+
+        await assert.rejects(() => service.runTask(task.id), /未检测到 expValue/);
+        const stored = await service.readTask(task.id);
+        assert.equal(stored.status, "failed");
+        assert.equal(stored.hermes.errorCode, "unit_test_case_expected_values_missing");
+      });
+    }
+  },
+  {
+    name: "UnitTestCaseGenerationService keeps the selected Worker for staged job start and reconciliation",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        config.unitTestCase.workerProfiles.push({
+          ...config.unitTestCase.workerProfiles[0],
+          id: "secondary",
+          label: "Secondary Test Worker",
+          hermesBaseURL: "http://127.0.0.1:3102",
+          matlabBaseURL: "http://127.0.0.1:5102",
+          isDefault: false
+        });
+        const clientSelections = [];
+        const service = new UnitTestCaseGenerationService({
+          remotePollWindowMs: 0,
+          hermesAgentClientFactory(workerProfile) {
+            clientSelections.push(workerProfile.id);
+            return {
+              async startTcsdPipelineJob() {
+                return {
+                  schema: "tcsd-agent-stage-pipeline/v2",
+                  jobId: "secondary-job",
+                  status: "正在执行"
+                };
+              },
+              async getTcsdPipelineJob() {
+                return {
+                  schema: "tcsd-agent-stage-pipeline/v2",
+                  jobId: "secondary-job",
+                  status: "正在执行",
+                  stages: [],
+                  checkpoints: [],
+                  updatedAt: new Date().toISOString()
+                };
+              }
+            };
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Secondary.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Secondary.mat", "mat")]
+          },
+          { unitTestProjectId: "01", workerId: "secondary" }
+        );
+
+        const pending = await service.runTask(task.id);
+        assert.equal(pending.status, "running");
+        assert.equal(pending.workerProfile.id, "secondary");
+        assert.deepEqual(clientSelections, ["secondary"]);
+
+        await service.reconcileTask(task.id);
+        assert.deepEqual(clientSelections, ["secondary", "secondary"]);
       });
     }
   },
@@ -9811,17 +11170,20 @@ const tests = [
       await withTempConfig(async (tempDir) => {
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
-            async executeStep() {
+            async startTcsdPipelineJob() {
               const error = new Error("MATLAB unavailable");
               error.code = "matlab_unavailable";
               throw error;
             }
           }
         });
-        const task = await service.createTask({
-          modelSlx: [await createMockUploadFile(tempDir, "Fail.slx", "slx")],
-          modelMat: [await createMockUploadFile(tempDir, "Fail.mat", "mat")]
-        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Fail.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Fail.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
         await assert.rejects(() => service.runTask(task.id), /MATLAB unavailable/);
         const failed = await service.getTask(task.id);
         assert.equal(failed.status, "failed");
@@ -9932,6 +11294,170 @@ const tests = [
       releaseFirst();
       await Promise.all([first, second, third]);
       assert.deepEqual(events, ["start-1", "run-1", "done-1", "start-2", "run-2", "start-3", "run-3"]);
+    }
+  },
+  {
+    name: "Hermes task queue runs different workers concurrently and serializes the same worker",
+    run: async () => {
+      const events = [];
+      let releaseVm = null;
+      const vmCanFinish = new Promise((resolve) => {
+        releaseVm = resolve;
+      });
+      const queue = new HermesTaskQueueService({ concurrency: 2 });
+
+      const vmFirst = queue.enqueue({
+        id: "vm-detail",
+        type: "software_module_description_generation",
+        resourceKey: "worker:vm",
+        run: async () => {
+          events.push("vm-detail:start");
+          await vmCanFinish;
+          events.push("vm-detail:done");
+        }
+      });
+      const vmSecond = queue.enqueue({
+        id: "vm-unit",
+        type: "unit_test_case_generation",
+        resourceKey: "worker:vm",
+        run: async () => events.push("vm-unit:start")
+      });
+      const physical = queue.enqueue({
+        id: "physical-unit",
+        type: "unit_test_case_generation",
+        resourceKey: "worker:physical",
+        run: async () => events.push("physical:start")
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.deepEqual(events, ["vm-detail:start", "physical:start"]);
+      assert.equal(queue.getQueuePosition("unit_test_case_generation", "vm-unit"), 1);
+      releaseVm();
+      await Promise.all([vmFirst, vmSecond, physical]);
+      assert.deepEqual(events, ["vm-detail:start", "physical:start", "vm-detail:done", "vm-unit:start"]);
+    }
+  },
+  {
+    name: "Hermes task queue can cancel queued unit test case tasks",
+    run: async () => {
+      const events = [];
+      let releaseFirst = null;
+      const firstCanFinish = new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+      const queue = new HermesTaskQueueService({ concurrency: 1 });
+
+      const first = queue.enqueue({
+        id: "task-1",
+        type: "unit_test_case_generation",
+        run: async () => {
+          events.push("run-1");
+          await firstCanFinish;
+        }
+      });
+      const second = queue.enqueue({
+        id: "task-2",
+        type: "unit_test_case_generation",
+        run: async () => {
+          events.push("run-2");
+        }
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(queue.cancelQueued("unit_test_case_generation", "task-2"), true);
+      assert.equal(queue.getQueuePosition("unit_test_case_generation", "task-2"), 0);
+      releaseFirst();
+      await Promise.all([first, second]);
+      assert.deepEqual(events, ["run-1"]);
+      assert.equal(queue.cancelQueued("unit_test_case_generation", "task-2"), false);
+    }
+  },
+  {
+    name: "Hermes task queue releases active slot after timeout",
+    run: async () => {
+      const events = [];
+      const queue = new HermesTaskQueueService({ concurrency: 1, activeTimeoutMs: 30 });
+      const keepAlive = setInterval(() => null, 5);
+
+      try {
+        const first = queue.enqueue({
+          id: "task-1",
+          type: "generation",
+          onError: async (error) => {
+            events.push(`error:${error.code}`);
+          },
+          run: async () => new Promise(() => {})
+        });
+        const second = queue.enqueue({
+          id: "task-2",
+          type: "generation",
+          run: async () => {
+            events.push("run-2");
+          }
+        });
+
+        await second;
+        await first;
+        assert.deepEqual(events, ["error:hermes_queue_item_timeout", "run-2"]);
+        assert.equal(queue.getQueuePosition("generation", "task-2"), 0);
+      } finally {
+        clearInterval(keepAlive);
+      }
+    }
+  },
+  {
+    name: "Hermes task queue restores persisted queued worker tasks",
+    run: async () => {
+      const events = [];
+      const queue = new HermesTaskQueueService({ concurrency: 2, activeTimeoutMs: 1000 });
+      const unitTestCaseGenerationService = {
+        async listTasks() {
+          return [
+            {
+              id: "unit-1",
+              status: "queued",
+              createdAt: "2026-04-24T01:00:00.000Z",
+              updatedAt: "2026-04-24T01:00:00.000Z",
+              workerProfile: { id: "physical" }
+            }
+          ];
+        },
+        async runTask(taskId) {
+          events.push(`unit:${taskId}`);
+        },
+        async failTask(taskId, error) {
+          events.push(`unit-fail:${taskId}:${error.code}`);
+        }
+      };
+      const softwareModuleDescriptionGenerationService = {
+        async listTasks() {
+          return [
+            {
+              id: "module-doc-1",
+              status: "queued",
+              createdAt: "2026-04-24T01:01:00.000Z",
+              updatedAt: "2026-04-24T01:01:00.000Z"
+            }
+          ];
+        },
+        async runTask(taskId) {
+          events.push(`module:${taskId}`);
+        },
+        async failTask(taskId, error) {
+          events.push(`module-fail:${taskId}:${error.code}`);
+        }
+      };
+
+      queue.setUnitTestCaseGenerationService(unitTestCaseGenerationService);
+      queue.setSoftwareModuleDescriptionGenerationService(softwareModuleDescriptionGenerationService);
+      const restored = await queue.restorePersistedQueuedTasks();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      assert.deepEqual(restored, {
+        unitTestCaseGeneration: 1,
+        softwareModuleDescriptionGeneration: 1
+      });
+      assert.deepEqual(events, ["unit:unit-1", "module:module-doc-1"]);
     }
   },
   {
@@ -10049,7 +11575,30 @@ const tests = [
           ];
         }
       };
-      const queue = new HermesTaskQueueService({ projectService, replayTaskService, unitTestCaseGenerationService });
+      const softwareModuleDescriptionGenerationService = {
+        async listTasks() {
+          return [
+            {
+              id: "module-doc-1",
+              status: "queued",
+              unitTestProject: { id: "02", name: "TMS", label: "02_TMS" },
+              inputs: {
+                modelSlx: { originalName: "ModuleDoc.slx" }
+              },
+              progress: { message: "等待生成软件详设", percent: 5 },
+              createdAt: "2026-04-24T01:08:00.000Z",
+              updatedAt: "2026-04-24T01:08:00.000Z"
+            }
+          ];
+        }
+      };
+      const queue = new HermesTaskQueueService({
+        projectService,
+        concurrency: 1,
+        replayTaskService,
+        unitTestCaseGenerationService,
+        softwareModuleDescriptionGenerationService
+      });
       queue.enqueue({
         id: "blocker",
         type: "generation",
@@ -10070,6 +11619,11 @@ const tests = [
         type: "unit_test_case_generation",
         run: async () => null
       });
+      queue.enqueue({
+        id: "module-doc-1",
+        type: "software_module_description_generation",
+        run: async () => null
+      });
 
       const summaries = await queue.listTaskSummaries();
       const ids = summaries.map((task) => task.id);
@@ -10079,6 +11633,7 @@ const tests = [
       assert.ok(ids.includes("slx-1"));
       assert.ok(ids.includes("interp-task-1"));
       assert.ok(ids.includes("unit-1"));
+      assert.ok(ids.includes("module-doc-1"));
       assert.equal(summaries.find((task) => task.id === "gen-1").queuePosition, 1);
       assert.equal(summaries.find((task) => task.id === "extract-1").detailUrl, "/projects/project-1/modules/module-1?openHistory=1&highlightTaskId=extract-1");
       assert.equal(summaries.find((task) => task.id === "replay-1").detailUrl, "/feedback-pool?projectId=project-1&moduleId=module-1&taskId=replay-1");
@@ -10099,6 +11654,13 @@ const tests = [
       assert.equal(unitSummary.title, "单元测试用例 · Demo.slx");
       assert.equal(unitSummary.detailUrl, "/unit-test-case-generation?taskId=unit-1");
       assert.equal(unitSummary.queuePosition, 3);
+      const moduleDescriptionSummary = summaries.find((task) => task.id === "module-doc-1");
+      assert.equal(moduleDescriptionSummary.type, "software_module_description_generation");
+      assert.equal(moduleDescriptionSummary.documentType, "software_module_description");
+      assert.equal(moduleDescriptionSummary.title, "软件详设 · ModuleDoc.slx");
+      assert.equal(moduleDescriptionSummary.projectName, "02_TMS");
+      assert.equal(moduleDescriptionSummary.detailUrl, "/software-detail-design-generation?taskId=module-doc-1");
+      assert.equal(moduleDescriptionSummary.queuePosition, 4);
     }
   },
   {
@@ -10112,7 +11674,9 @@ const tests = [
         "document-extractor.html",
         "requirement-generation.html",
         "slx-parser.html",
-        "unit-test-case-generation.html"
+        "unit-test-case-generation.html",
+        "generation-tools.html",
+        "software-detail-design-generation.html"
       ];
       for (const page of pages) {
         const html = await fs.readFile(path.join(config.rootDir, "public", page), "utf8");

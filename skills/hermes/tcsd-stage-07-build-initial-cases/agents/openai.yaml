@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 07 构建首版用例"
+  short_description: "Build and validate initial TCSD workbook cases"
+  default_prompt: "Use $tcsd-stage-07-build-initial-cases to build the initial TCSD cases."

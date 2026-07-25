@@ -42,7 +42,6 @@
             <span class="section-index">01</span>
             <div>
               <h2>发起任务</h2>
-              <p>当前版本固定调用 `simulink-ut-tcsd-generator` skill。</p>
             </div>
           </div>
 
@@ -56,6 +55,33 @@
             <input id="model-mat-input" type="file" name="modelMat" accept=".mat" required />
           </label>
 
+          <label class="unit-file-field">
+            <span>初始化脚本（可选）</span>
+            <input id="model-init-script-input" type="file" name="modelInitScript" accept=".m" />
+          </label>
+
+          <div class="unit-project-field">
+            <div class="unit-project-head">
+              <label for="unit-project-select">项目</label>
+              <div class="unit-project-actions">
+                <button id="unit-add-project-button" type="button">新增项目</button>
+                <button id="unit-delete-project-button" type="button" class="danger">删除项目</button>
+              </div>
+            </div>
+            <select id="unit-project-select" name="unitTestProjectId" required>
+              <option value="">正在加载项目...</option>
+            </select>
+            <p id="unit-project-status" class="status" hidden></p>
+          </div>
+
+          <label class="unit-worker-field">
+            <span>Worker</span>
+            <select id="unit-worker-select" name="workerId" required>
+              <option value="">正在加载 Worker...</option>
+            </select>
+            <p id="unit-worker-status" class="status" hidden></p>
+          </label>
+
           <p id="unit-form-status" class="status" hidden></p>
           <button id="unit-start-button" type="submit">发起生成任务</button>
         </form>
@@ -65,9 +91,14 @@
             <span class="section-index">02</span>
             <div>
               <h2>任务列表</h2>
-              <p>最近的 Hermes 单元测试用例生成任务。</p>
             </div>
           </div>
+          <label class="unit-task-filter">
+            <span>项目筛选</span>
+            <select id="unit-task-project-filter">
+              <option value="">全部项目</option>
+            </select>
+          </label>
           <div id="unit-task-list" class="unit-task-list"></div>
         </section>
 

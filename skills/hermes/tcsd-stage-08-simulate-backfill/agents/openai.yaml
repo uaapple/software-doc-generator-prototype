@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 08 仿真回填"
+  short_description: "Simulate TCSD cases and backfill expected outputs"
+  default_prompt: "Use $tcsd-stage-08-simulate-backfill to simulate and backfill expected outputs."

@@ -1300,6 +1300,32 @@ export class ProjectService {
     };
   }
 
+  async getModuleAssetDownload(projectId, moduleId, assetId) {
+    const module = await this.getModule(projectId, moduleId);
+    const asset = module.assets.find((item) => item.id === assetId);
+    if (!asset) {
+      throw new Error("Asset not found");
+    }
+
+    const assetPath = resolveStoredFilePath(asset, { baseDir: config.uploadDir });
+    if (!assetPath) {
+      throw new Error("Asset not found");
+    }
+
+    const stat = await fs.stat(assetPath).catch(() => null);
+    if (!stat?.isFile()) {
+      throw new Error("Asset not found");
+    }
+
+    return {
+      asset,
+      path: assetPath,
+      fileName: asset.originalName || asset.storedName || path.basename(assetPath),
+      mimeType: asset.mimeType || "application/octet-stream",
+      size: stat.size
+    };
+  }
+
   async attachModuleAssets(projectId, moduleId, filesByField, options = {}) {
     const { project, module } = await this.getProjectAndModule(projectId, moduleId);
     const referenceRole =

@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 01 输入校验"
+  short_description: "Validate TCSD model and project input artifacts"
+  default_prompt: "Use $tcsd-stage-01-validate-inputs to validate the stage input manifest."

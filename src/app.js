@@ -14,7 +14,12 @@ import { LlmProfileService } from "./services/llm-profile-service.js";
 import { RejectionService } from "./services/rejection-service.js";
 import { ReplayTaskService } from "./services/replay-task-service.js";
 import { HermesTaskQueueService } from "./services/hermes-task-queue-service.js";
-import { UnitTestCaseGenerationService } from "./services/unit-test-case-generation-service.js";
+import {
+  UnitTestCaseGenerationService,
+  listUnitTestWorkerProfiles,
+  resolveUnitTestWorkerProfile
+} from "./services/unit-test-case-generation-service.js";
+import { SoftwareModuleDescriptionGenerationService } from "./services/software-module-description-generation-service.js";
 import { ModuleSkillService } from "./services/module-skill-service.js";
 import { SkillManagementService } from "./services/skill-management-service.js";
 import { SkillWorkOrderService } from "./services/skill-work-order-service.js";
@@ -89,18 +94,26 @@ function getBearerHeaders(token = "") {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
 }
 
-function getWorkerDebugConfig() {
+function getWorkerDebugConfig(workerProfile = null) {
   return {
+    worker: workerProfile
+      ? {
+          id: workerProfile.id,
+          label: workerProfile.label,
+          isDefault: Boolean(workerProfile.isDefault)
+        }
+      : null,
     hermes: {
-      baseURL: config.hermes.baseURL,
-      apiMode: config.hermes.apiMode || "json",
-      authConfigured: Boolean(config.hermes.authToken)
+      baseURL: workerProfile?.hermesBaseURL || config.hermes.baseURL,
+      apiMode: workerProfile?.hermesApiMode || config.hermes.apiMode || "json",
+      authConfigured: Boolean(workerProfile?.hermesAuthToken || config.hermes.authToken)
     },
     matlabWorker: {
-      baseURL: config.matlabMcp.baseURL,
-      httpMode: config.matlabMcp.httpMode || "path",
-      authConfigured: Boolean(config.matlabMcp.authToken)
-    }
+      baseURL: workerProfile?.matlabBaseURL || config.matlabMcp.baseURL,
+      httpMode: workerProfile?.matlabHttpMode || config.matlabMcp.httpMode || "path",
+      authConfigured: Boolean(workerProfile?.matlabAuthToken || config.matlabMcp.authToken)
+    },
+    unitTestWorkers: listUnitTestWorkerProfiles()
   };
 }
 
@@ -149,12 +162,12 @@ async function fetchWorkerJson(url, options = {}) {
   }
 }
 
-function createDebugHermesClient(timeoutMs) {
+function createDebugHermesClient(timeoutMs, workerProfile = null) {
   return new HermesAgentClient({
-    transport: "api",
-    baseURL: config.hermes.baseURL,
-    apiMode: config.hermes.apiMode || "json",
-    authToken: config.hermes.authToken || "",
+    transport: workerProfile?.hermesTransport || "api",
+    baseURL: workerProfile?.hermesBaseURL || config.hermes.baseURL,
+    apiMode: workerProfile?.hermesApiMode || config.hermes.apiMode || "json",
+    authToken: workerProfile?.hermesAuthToken || config.hermes.authToken || "",
     timeoutMs,
     stepTimeoutMs: {
       ...(config.hermes.stepTimeoutMs || {}),
@@ -162,6 +175,30 @@ function createDebugHermesClient(timeoutMs) {
       windows_worker_probe: timeoutMs
     }
   });
+}
+
+async function checkWorkerHealth(workerProfile = null, timeoutMs = 10000) {
+  const hermesBaseURL = String(workerProfile?.hermesBaseURL || config.hermes.baseURL || "").replace(/\/+$/, "");
+  const matlabBaseURL = String(workerProfile?.matlabBaseURL || config.matlabMcp.baseURL || "").replace(/\/+$/, "");
+  const [hermes, matlabWorker] = await Promise.all([
+    fetchWorkerJson(`${hermesBaseURL}/api/health`, {
+      timeoutMs,
+      headers: getBearerHeaders(workerProfile?.hermesAuthToken || config.hermes.authToken)
+    }),
+    fetchWorkerJson(`${matlabBaseURL}/health`, {
+      timeoutMs,
+      headers: getBearerHeaders(workerProfile?.matlabAuthToken || config.matlabMcp.authToken)
+    })
+  ]);
+  return {
+    ok: Boolean(hermes.ok && matlabWorker.ok),
+    checkedAt: new Date().toISOString(),
+    config: getWorkerDebugConfig(workerProfile),
+    checks: {
+      hermes,
+      matlabWorker
+    }
+  };
 }
 
 function createRuntimeEventCollector() {
@@ -193,7 +230,12 @@ export async function createApp() {
   const app = express();
   const projectService = new ProjectService();
   const unitTestCaseGenerationService = new UnitTestCaseGenerationService();
-  const hermesTaskQueueService = new HermesTaskQueueService({ projectService, unitTestCaseGenerationService });
+  const softwareModuleDescriptionGenerationService = new SoftwareModuleDescriptionGenerationService();
+  const hermesTaskQueueService = new HermesTaskQueueService({
+    projectService,
+    unitTestCaseGenerationService,
+    softwareModuleDescriptionGenerationService
+  });
   const pipelineService = new PipelineService(projectService, { hermesTaskQueueService });
   const benchmarkCaseService = new BenchmarkCaseService();
   const skillRefinementService = new SkillRefinementService();
@@ -212,6 +254,13 @@ export async function createApp() {
   await llmProfileService.ensureInitialized();
   await projectService.recoverStaleGenerationTasks();
   await unitTestCaseGenerationService.recoverStaleTasks();
+  await softwareModuleDescriptionGenerationService.recoverStaleTasks();
+  await hermesTaskQueueService.restorePersistedQueuedTasks();
+  const tcsdReconcileTimer = setInterval(() => {
+    unitTestCaseGenerationService.reconcileRemoteTasks().catch(() => null);
+  }, Math.max(5000, Number(config.unitTestCase?.reconcileIntervalMs || 30000)));
+  tcsdReconcileTimer.unref?.();
+  app.locals.tcsdReconcileTimer = tcsdReconcileTimer;
 
   function requestField(req, ...keys) {
     for (const key of keys) {
@@ -346,7 +395,27 @@ export async function createApp() {
       }
     }),
     limits: {
-      files: 2
+      files: 3
+    }
+  });
+
+  const softwareModuleDescriptionUpload = multer({
+    storage: multer.diskStorage({
+      destination: async (_req, _file, cb) => {
+        try {
+          await fs.mkdir(softwareModuleDescriptionGenerationService.uploadTempDir, { recursive: true });
+          cb(null, softwareModuleDescriptionGenerationService.uploadTempDir);
+        } catch (error) {
+          cb(error);
+        }
+      },
+      filename: (_req, file, cb) => {
+        const safeName = buildStoredUploadName(file.originalname);
+        cb(null, safeName);
+      }
+    }),
+    limits: {
+      files: 3
     }
   });
 
@@ -372,10 +441,56 @@ export async function createApp() {
     }
   });
 
-  app.get("/api/unit-test-case-generation/tasks", async (_req, res, next) => {
+  app.get("/api/unit-test-case-generation/workers", (_req, res) => {
+    res.json({
+      defaultWorkerId: config.unitTestCase?.defaultWorkerId || "",
+      workers: listUnitTestWorkerProfiles()
+    });
+  });
+
+  app.post("/api/unit-test-case-generation/workers/:workerId/health", async (req, res, next) => {
     try {
-      const tasks = await unitTestCaseGenerationService.listTasks();
+      const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
+      const workerProfile = resolveUnitTestWorkerProfile(req.params.workerId);
+      res.json(await checkWorkerHealth(workerProfile, timeoutMs));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/unit-test-case-generation/tasks", async (req, res, next) => {
+    try {
+      const tasks = await unitTestCaseGenerationService.listTasks({
+        projectId: req.query.projectId
+      });
       res.json({ tasks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/unit-test-case-generation/projects", async (_req, res, next) => {
+    try {
+      const projects = await unitTestCaseGenerationService.listProjects();
+      res.json({ projects });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/unit-test-case-generation/projects", async (req, res, next) => {
+    try {
+      const project = await unitTestCaseGenerationService.createProject(req.body || {});
+      res.status(201).json({ project });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/unit-test-case-generation/projects/:projectId", async (req, res, next) => {
+    try {
+      const result = await unitTestCaseGenerationService.deleteProject(req.params.projectId, req.body || {});
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -402,11 +517,22 @@ export async function createApp() {
     }
   });
 
+  app.delete("/api/unit-test-case-generation/tasks/:taskId", async (req, res, next) => {
+    try {
+      const queueCancelled = hermesTaskQueueService.cancelQueued("unit_test_case_generation", req.params.taskId);
+      const result = await unitTestCaseGenerationService.deleteTask(req.params.taskId);
+      res.json({ ...result, queueCancelled });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post(
     "/api/unit-test-case-generation/tasks",
     unitTestUpload.fields([
       { name: "modelSlx", maxCount: 1 },
-      { name: "modelMat", maxCount: 1 }
+      { name: "modelMat", maxCount: 1 },
+      { name: "modelInitScript", maxCount: 1 }
     ]),
     async (req, res, next) => {
       try {
@@ -415,10 +541,96 @@ export async function createApp() {
           id: task.id,
           type: "unit_test_case_generation",
           title: "单元测试用例生成",
+          resourceKey: `worker:${task.workerProfile?.id || config.unitTestCase?.defaultWorkerId || "default"}`,
           run: () => unitTestCaseGenerationService.runTask(task.id),
           onError: (error) => unitTestCaseGenerationService.failTask(task.id, error)
         });
         const queuedTask = await unitTestCaseGenerationService.getTask(task.id);
+        res.status(202).json({ task: queuedTask, taskStarted: true });
+      } catch (error) {
+        next(error);
+      }
+    }
+  );
+
+  app.get("/api/software-module-description-generation/workers", (_req, res) => {
+    res.json({
+      defaultWorkerId: config.unitTestCase?.defaultWorkerId || "",
+      workers: listUnitTestWorkerProfiles()
+    });
+  });
+
+  app.post("/api/software-module-description-generation/workers/:workerId/health", async (req, res, next) => {
+    try {
+      const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
+      const workerProfile = resolveUnitTestWorkerProfile(req.params.workerId);
+      res.json(await checkWorkerHealth(workerProfile, timeoutMs));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/software-module-description-generation/tasks", async (req, res, next) => {
+    try {
+      const tasks = await softwareModuleDescriptionGenerationService.listTasks({
+        projectId: req.query.projectId
+      });
+      res.json({ tasks });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/software-module-description-generation/tasks/:taskId", async (req, res, next) => {
+    try {
+      const task = await softwareModuleDescriptionGenerationService.getTask(req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "软件详设生成任务不存在", code: "software_module_description_task_not_found" });
+      }
+      res.json(task);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/software-module-description-generation/tasks/:taskId/artifacts/:artifactId/download", async (req, res, next) => {
+    try {
+      const artifact = await softwareModuleDescriptionGenerationService.getArtifact(req.params.taskId, req.params.artifactId);
+      res.download(artifact.absolutePath, artifact.fileName);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/software-module-description-generation/tasks/:taskId", async (req, res, next) => {
+    try {
+      const queueCancelled = hermesTaskQueueService.cancelQueued("software_module_description_generation", req.params.taskId);
+      const result = await softwareModuleDescriptionGenerationService.deleteTask(req.params.taskId);
+      res.json({ ...result, queueCancelled });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post(
+    "/api/software-module-description-generation/tasks",
+    softwareModuleDescriptionUpload.fields([
+      { name: "modelSlx", maxCount: 1 },
+      { name: "modelMat", maxCount: 1 },
+      { name: "modelInitScript", maxCount: 1 }
+    ]),
+    async (req, res, next) => {
+      try {
+        const task = await softwareModuleDescriptionGenerationService.createTask(req.files || {}, req.body || {});
+        hermesTaskQueueService.enqueue({
+          id: task.id,
+          type: "software_module_description_generation",
+          title: "软件详设生成",
+          resourceKey: `worker:${task.workerProfile?.id || config.unitTestCase?.defaultWorkerId || "default"}`,
+          run: () => softwareModuleDescriptionGenerationService.runTask(task.id),
+          onError: (error) => softwareModuleDescriptionGenerationService.failTask(task.id, error)
+        });
+        const queuedTask = await softwareModuleDescriptionGenerationService.getTask(task.id);
         res.status(202).json({ task: queuedTask, taskStarted: true });
       } catch (error) {
         next(error);
@@ -476,6 +688,12 @@ export async function createApp() {
   app.get("/detail-design-generation", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "detail-design-generation.html"));
   });
+  app.get("/generation-tools", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "generation-tools.html"));
+  });
+  app.get("/software-detail-design-generation", (_req, res) => {
+    res.sendFile(path.join(config.publicDir, "software-detail-design-generation.html"));
+  });
   app.get("/document-extractor", (_req, res) => {
     res.sendFile(path.join(config.publicDir, "document-extractor.html"));
   });
@@ -521,29 +739,14 @@ export async function createApp() {
     res.json(getWorkerDebugConfig());
   });
 
-  app.post("/api/windows-worker-debug/health", async (req, res) => {
-    const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
-    const hermesBaseURL = String(config.hermes.baseURL || "").replace(/\/+$/, "");
-    const matlabBaseURL = String(config.matlabMcp.baseURL || "").replace(/\/+$/, "");
-    const [hermes, matlabWorker] = await Promise.all([
-      fetchWorkerJson(`${hermesBaseURL}/api/health`, {
-        timeoutMs,
-        headers: getBearerHeaders(config.hermes.authToken)
-      }),
-      fetchWorkerJson(`${matlabBaseURL}/health`, {
-        timeoutMs,
-        headers: getBearerHeaders(config.matlabMcp.authToken)
-      })
-    ]);
-    res.json({
-      ok: Boolean(hermes.ok && matlabWorker.ok),
-      checkedAt: new Date().toISOString(),
-      config: getWorkerDebugConfig(),
-      checks: {
-        hermes,
-        matlabWorker
-      }
-    });
+  app.post("/api/windows-worker-debug/health", async (req, res, next) => {
+    try {
+      const timeoutMs = normalizeDebugTimeoutMs(req.body?.timeoutMs, 10000);
+      const workerProfile = req.body?.workerId ? resolveUnitTestWorkerProfile(req.body.workerId) : null;
+      res.json(await checkWorkerHealth(workerProfile, timeoutMs));
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post("/api/windows-worker-debug/upload-probe", async (req, res, next) => {
@@ -837,6 +1040,24 @@ export async function createApp() {
         req.params.assetId
       );
       res.json(payload);
+    } catch (error) {
+      if (error.message === "Asset not found") {
+        return res.status(404).json({ error: "资产不存在" });
+      }
+      next(error);
+    }
+  });
+
+  app.get("/api/projects/:projectId/modules/:moduleId/assets/:assetId/download", async (req, res, next) => {
+    try {
+      const payload = await projectService.getModuleAssetDownload(
+        req.params.projectId,
+        req.params.moduleId,
+        req.params.assetId
+      );
+      res.setHeader("Content-Type", payload.mimeType || "application/octet-stream");
+      res.setHeader("Content-Length", String(payload.size || 0));
+      res.download(payload.path, payload.fileName);
     } catch (error) {
       if (error.message === "Asset not found") {
         return res.status(404).json({ error: "资产不存在" });

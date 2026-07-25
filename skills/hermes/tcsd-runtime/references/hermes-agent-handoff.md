@@ -1,0 +1,376 @@
+# Hermes Agent Handoff
+
+Read this shared runtime reference only when an atomic TCSD stage skill needs detailed deterministic model or coverage behavior. The host owns orchestration, validation, retries, and checkpoints.
+
+## Mission
+
+Given a module-level Simulink model `<model>.slx` and its matching `<model>.mat`, generate a unit-test TCSD Excel workbook from the model's own interface and runtime evidence. The first priority is model coverage, especially decision coverage. Expected outputs are secondary and must be derived from simulation only where stable and only for top-level Outports.
+
+## Default Task Contract
+
+The `tcsd_stage_execute` prompt explicitly names one `$tcsd-stage-*` skill, one input manifest, and one result path. Execute only that stage and never synthesize a host checkpoint.
+
+The agent must automatically:
+
+- assume the platform/Hermes Agent has already copied the selected project addon into the workspace root before skill execution;
+- treat every copied addon file/folder as intentionally provided project context and run the workspace bootstrap before loading or reading the model;
+- use Simulink Agentic Toolkit / SATK to read and structurally check the model;
+- generate coverage-first unit-test TCSD cases, prioritizing decision coverage;
+- derive Condition, Decision, and MCDC obligations from the model itself before writing TCSD rows;
+- write expected values only for top-level Outports;
+- simulate when possible and backfill stable top-level outputs from simulation;
+- run actual Condition, Decision, and MC/DC coverage after the first valid/backfilled workbook; deliver immediately when all metrics meet 80%, otherwise perform exactly one report-guided repair pass and deliver the final measured result even if a metric remains below 80%;
+- omit hold-style expectations for ramping or continuously changing outputs;
+- build the workbook from the bundled canonical template `assets/templates/tcsd_template.xlsx`;
+- save `outputs/<model>_Test0001_tcsd.xlsx`, or the next versioned filename if it exists;
+- deliver the Excel workbook with `expValue(...)` expectations as the required output. JSON/spec/simulation files may be used as internal script artifacts, but a separate validation report is not required unless the user explicitly asks for one.
+- always generate `outputs/<model>_tcsd_execution_manifest.json` through the completed quality loop. Although internal reports are not user deliverables, this manifest is mandatory platform completion evidence and must reference the actual simulation and coverage artifacts.
+- build and validate the `.xlsx` before any simulation, coverage run, or expected-output backfill. In Hermes/production, this workbook is an artifact checkpoint; final success still requires simulation-backed top-level `expValue(...)` lines.
+- stop simulation/backfill after the first MATLAB/MCP/SATK timeout, including a 600s `mcp_matlab_satk_evaluate_matlab_code` timeout, and return `status: "failed"` with a clear warning rather than marking a workbook without expectations as completed.
+- clean the MATLAB/SATK session before returning, so later Hermes tasks do not inherit loaded models, project-addon support paths, or stale MCP state from this task.
+
+Only ask for clarification when the `.slx`, matching `.mat`, MATLAB/SATK runtime, or a required dependency is actually missing.
+
+## Assumptions and Required Runtime
+
+- The agent runs on the same machine/user account that can read this skill directory.
+- MATLAB, Simulink, Simulink Agentic Toolkit, and the local SATK bridge are available. SATK 2026.06.01+ adds `model_check` and Stateflow-aware `model_query_params`; use them when present, but keep the workflow compatible with older SATK versions by skipping unavailable optional tools.
+- The supplied `.mat` is the model-specific authority for signal objects, calibration objects, lookup tables, and parameter values.
+- The user normally provides only `<model>.slx` and `<model>.mat`; reusable project-specific dependencies must already be present in the workspace because the platform/Hermes Agent copied the selected project addon there.
+- Direct `model_read` / `model_overview` can appear in the agent tool list while MATLAB cannot find the backing SATK functions. If MATLAB reports `函数或变量 'model_read' 无法识别`, repair the SATK tools path first instead of treating MCP model reading as unavailable.
+
+If any of those assumptions are false, stop and report the missing runtime or file dependency before inventing cases.
+
+## Project Addon Support Files
+
+Project-specific reusable dependencies are no longer a production default bundled inside this skill. They are maintained outside the skill and copied into the task workspace before the skill starts.
+
+```text
+Windows production: C:\ProgramData\SoftwareDocGenerator\project-addons\<projectId>\
+Mac local dev: .local/project-addons/<projectId>
+```
+
+External source path examples only, handled by the platform/Hermes Agent before this skill runs. If an operator registers 楚能 as project `01`, its addon source may be maintained at:
+
+```text
+C:\ProgramData\SoftwareDocGenerator\project-addons\01\
+.local/project-addons/01
+```
+
+The skill does not read those external paths and has no special behavior for `01` or 楚能.
+
+The copied workspace contents are project-specific. File names, file types, folder layout, and file count may differ by project. The following are examples from a Cornex/ITK-style package, not required names for every project:
+
+- `Cornex_Config.sldd`
+- `CornexMdlCfg.mat`
+- `ITKLib.slx`
+- `init_Global.m`
+- `ITKCToolsV015/ModelingTools/01_Csc` including `+CornexCsc`
+- `ITKCToolsV015/GenLib`
+
+The skill should inspect the current workspace and load the actual support files found there. Before attempting model load, SATK model reading, structural checks, simulation, or expected-output backfill, run `setup_ut_support(rootDir)` so the whole copied workspace/addon tree is added to the MATLAB path and recognized project initialization scripts run. Discovery includes project bootstrap names such as `init_Global.m` and `Global_*.m`. Explicit/environment model init lists are merged after auto-discovered addon scripts and de-duplicated; they must not suppress addon discovery. Confirm the `TCSD_PROJECT_INIT_SCRIPTS_EXECUTED=...` log when diagnosing missing constants or MIL output. Do not wait until a missing library, missing class, missing data dictionary, or missing init script error appears before bringing addon contents into the MATLAB context. The selected project addon source folder is handled by the platform/Hermes Agent before skill execution; the skill must not read from the external addon root. The skill still owns the canonical TCSD template and reusable scripts, but it should not copy the old `assets/support-package` as the production source of project dependencies.
+
+## Known Dependency Lessons
+
+- For Cornex/ITK packages, if `CornexCsc.Signal` or `CornexCsc.Parameter` is missing, MATLAB may load MAT variables as raw numeric arrays such as `uint32 [6x1]`. Fix the path, clear the workspace, and reload the MAT.
+- Add the model workdir, the skill `scripts/` folder, and all non-generated workspace support/tool folders to the MATLAB path before loading/simulating. For Cornex/ITK packages, this usually includes folders such as `ITKCToolsV015/ModelingTools/01_Csc` and `ITKCToolsV015/GenLib`; other projects may use different names.
+- If any helper calls `restoredefaultpath`, add the SATK root and `simulink/tools` tree back to the MATLAB path before later direct MCP calls. The bundled `scripts/setup_ut_support.m` does this automatically, and also restores the MATLAB MCP Core add-on path when it can find it; keep that behavior in copied model-specific helpers.
+- If the model’s original config references generated-code headers such as `rte_bsw_analog.h`, search the current workspace for copied addon header folders first. Some project packages may provide them under `VC600M_Interface*`; this folder is optional and must not be treated as a universal dependency. Append discovered folders to the in-memory simulation config's `SimUserIncludeDirs`; if any referenced header is still missing, attach `CodexSimOnlyCfg` with custom-code parsing disabled and simulate with that. Do not edit the source `.slx`.
+- Load workspace support libraries required by the target model before the model when they are present or referenced. Do not assume a fixed library name such as `ITKLib.slx`.
+- For simulation/backfill, root Inport compiled metadata is authoritative. After loading support files and attaching any simulation-only config, compile/update the model and query each root Inport's `CompiledPortDataType` and `CompiledPortDimensions`. Build Dataset timeseries per port from those values. Do not infer external-input types from `CornexCsc.Signal` / `Simulink.Signal` objects alone, do not rely on signal-name prefixes such as `b*`, and do not convert all Boolean-looking inputs to `single`.
+- Explicitly enable external input loading for simulation. If logs show `LoadExternalInput: off` or `Parameter 'ExternalInput' is ignored when 'LoadExternalInput' is off`, the run did not exercise the TCSD stimulus and must be repaired immediately.
+- When reading calibration objects, use `.Value` on `CornexCsc.Parameter` / `Simulink.Parameter`; `double(parameterObject)` is not a valid general conversion. Unsupported metadata queries such as `BlockType` on a block diagram or `DataLogging` on an Outport are nonfatal and should be skipped after one failure, not retried until the outer request times out.
+- Treat MATLAB as a reusable long-lived process unless production explicitly uses `SATK_MATLAB_SESSION_MODE=new`. If a model or library required by this task is already loaded from a path outside the current workdir, close that loaded instance before loading the current workdir copy.
+- Kill stale task-owned `matlab-mcp-core-server` processes after SATK calls if they remain running and block later calls.
+
+## Preferred End-to-End Workflow
+
+Production invocation is intentionally minimal: the backend may provide only `<model>.slx`, `<model>.mat`, the selected project metadata, and this skill. The platform/Hermes Agent must prepare the project addon in the workspace before invoking the skill. The agent must not wait for screenshots, prior chat context, feedback documents, or MQTester reports before generating model-derived Condition, Decision, and AND/OR MC/DC stimuli.
+
+### Artifact-First Failure Policy
+
+For Hermes and Windows VM runs, artifact creation is a hard gate:
+
+1. Inspect the model and design coverage-oriented Tests.
+2. Build `outputs/<model>_Test0001_tcsd.xlsx` from `assets/templates/tcsd_template.xlsx`.
+3. Verify the workbook exists and passes basic workbook/TCSD validation, including `scripts/validate_tcsd_workbook.py` against the compiled root Inport/Outport interface.
+4. If workbook validation reports unknown signal names, vector assignment issues, or final-delay problems, treat the generated workbook/spec as invalid, repair it in the same Hermes task, rebuild, and rerun validation. Only after validation passes should you extract cases, run simulation, collect coverage, or backfill `expValue(...)`.
+
+If the post-workbook simulation/backfill phase hits any MATLAB/MCP/SATK timeout or instability, stop that phase immediately. Do not retry `sim()`, do not run extra coverage exploration, and do not let the outer Hermes request reach its one-hour timeout. Return strict JSON with `status: "failed"`, a clear `errorMessage`, and a warning that expected-output backfill was skipped or partial. A checkpoint workbook may be included in `outputFiles` for diagnosis, but it must not be presented as a completed automated-test deliverable.
+
+1. Create or select a clean model workdir.
+2. Confirm the platform/Hermes Agent has copied the selected project addon into the workdir root.
+3. Place the user’s `<model>.slx` and `<model>.mat` in the same workdir; these user-provided files remain authoritative.
+4. Run `setup_ut_support(rootDir)` as the first MATLAB bootstrap step. This restores SATK/MCP paths, adds the full copied workspace/addon tree except generated/cache folders, and runs explicit or recognized project initialization scripts. Only after that, load the MAT, load any workspace libraries/data dictionaries referenced by the target model, then load the model.
+5. Verify `which model_read` and `which model_overview` are nonempty after MATLAB setup. If not, restore the SATK tools path before deriving model facts.
+6. If `model_check` is available, run it once after the workspace-supported model is loadable. Use unconnected-port, dangling-line, and edit-time Stateflow findings as early diagnostics; fail only when they block root I/O, compile/update, simulation/backfill, or the requested coverage target.
+7. Derive root Inports and Outports from the model, including port order, data type, and dimensions. Do not guess.
+   For simulation data type and width, use compiled root Inport metadata, not only MAT object metadata.
+8. Inspect hierarchy and decision-producing blocks: Switch, RelationalOperator, Logical Operator, MinMax, MultiPortSwitch, Saturate, Lookup, Safe_Divide, Delay, Latch, StopWatch, LowPass, GradientLimiter, Stateflow charts, and MATLAB Function blocks.
+9. Use SATK container classification to identify Enabled, Triggered, If Action, Function-call, Variant, and similar execution-gated Subsystems. Derive enable/trigger/if-action prerequisites before claiming coverage of contained blocks.
+10. For Stateflow charts and nested blocks, prefer SATK 2026.06.01+ `model_query_params` to read state names, transition labels, guards, and entry/exit/during actions before falling back to static XML.
+11. Build a coverage-obligation matrix before writing TCSD rows. Include `block path/SID`, `coverage class` (`Condition`, `Decision`, `MCDC`), `required outcome`, `controlling root input or scalar parameter`, `planned Test/action`, and `evidence state`.
+12. Create a JSON spec or workbook draft, then build the final workbook from `assets/templates/tcsd_template.xlsx`.
+13. Validate workbook existence, sheet shape, self-contained Test initialization, final action delays, Excel zip integrity, and workbook-vs-rootPorts signal names before starting simulation/backfill. If validation fails, repair the candidate workbook/spec and rerun this validation before moving on.
+14. Extract TCSD actions to simulation JSON.
+15. Run one bounded simulation pass and export results.
+    Use per-port compiled Dataset typing, set `LoadExternalInput=on`, and map outputs by root Outport names or port order if logged line names are blank. Prefer port-order fallback over renaming model lines, because line names that match non-`Simulink.Signal` base variables can cause signal-object resolution errors.
+16. Backfill stable top-level output expectations when simulation succeeds within the time budget.
+17. Rerun workbook validation with `--require-exp-values`; validate workbook shape, ordinary input assignment left-hand names, `expValue` left-hand names, vector-output omissions, and Excel zip integrity. Confirm the execution manifest exists with `status=completed`, initial/final coverage artifacts, and exactly one repair pass when the initial report was below threshold. If either validation fails, repair and rerun the necessary downstream steps before returning `status: "completed"`.
+18. Run the MATLAB cleanup contract before returning the final artifact JSON.
+19. Run actual Condition, Decision, and MC/DC coverage. If all metrics meet 80%, deliver the current workbook. If any metric is below 80%, use the coverage report to add focused versioned supplemental Tests, rerun validation/simulation/backfill, and collect coverage once more. Stop after this single repair pass and deliver the final workbook while reporting any residual gaps; do not start an unbounded repair loop.
+
+## MATLAB Cleanup Contract for Hermes
+
+Hermes generation tasks must leave MATLAB in a clean enough state for the next task. This matters on developer Macs that reuse a MATLAB desktop and on Windows VMs that may keep a MATLAB/SATK process warm for throughput.
+
+At task start:
+
+- Record the original MATLAB current folder and path.
+- Record models/libraries already loaded before the task.
+- If a project support library/model or the target model is already loaded from another path, close that loaded instance with `bdclose(name)` before loading the workspace copy.
+- On a dedicated unattended Windows Worker / Hermes Agent with no interactive user MATLAB Desktop, run SATK through a task-owned new session and pre-clean stale task-owned `matlab-mcp-core-server` processes that use the configured `SATK_MCP_LOG_FOLDER`. This is the aggressive cleanup mode; it is not the default rule for developer Macs or shared MATLAB desktops.
+
+During the task:
+
+- Track each model/library loaded from the task workdir, including support libraries.
+- Avoid saving source models or libraries unless the user explicitly requested model edits.
+
+At task completion, including failures:
+
+- Close every model/library loaded by this task whose `FileName` is under the task workdir.
+- Clear task-local variables and simulation outputs.
+- Restore the original current folder and path when possible; otherwise remove the task workdir, project-addon support paths, and skill script paths that were added by this run.
+- Shut down task-owned MCP/SATK sessions. If a task-owned `matlab-mcp-core-server` remains and blocks future calls, terminate only that stale task-owned process and report it in the task warnings. On dedicated Windows Workers, close a previous task-owned MATLAB session when necessary; on interactive developer machines, do not force-close unrelated MATLAB Desktop sessions unless the user explicitly approves it.
+- Put cleanup in `try`/`catch` or MATLAB `onCleanup` so it runs after model-load errors, failed simulations, timeouts, and interrupted Hermes runs.
+
+## Generic TCSD Workbook Rules
+
+- The bundled `assets/templates/tcsd_template.xlsx` is the canonical Excel input form for the downstream automatic test software. Do not create a blank workbook from scratch.
+- One `TCSD` sheet.
+- Row 2 is `TestGroup`.
+- Test rows use `Type = Test` and `Work Status = reviewed`.
+- Preserve the template's columns, freeze pane, cell styles, comments/status options, and workbook structure.
+- `Test Case Description` should include a method, such as requirement analysis, boundary value, equivalence class, or coverage feedback.
+- Each Test row's `Initialization` assigns all root inputs required for deterministic startup, plus explicit parameter overrides as `p ParamName = value;`. Do not rely on the TestGroup row or previous Tests being inherited by the downstream runner.
+- Every ordinary executable assignment in `Initialization` or `Action` must use an exact compiled root Inport name. Do not carry over common initialization from another model or invent naming aliases such as adding `bSel` unless that exact root Inport exists.
+- If using a JSON spec, keep shared startup values in `test_group.initialization_1/2` for readability and put only per-Test overrides in `test.initialization`; `scripts/build_tcsd_from_json.py` expands the shared startup values into every Test row and lets the Test-specific values win.
+- `Action` uses relative time markers like `[+100ms]` or `[+0.2s]`.
+- Vector root inputs are initialized element by element, for example `VectorSig 1=5000;`, not as `VectorSig = [5000 5000];`.
+- Every Test `Action` ends with a final relative delay marker such as `[+0.1s]` after the last assignment or expectation.
+- Executable lines end with English semicolons.
+- Comments use `//`.
+- Keep comments practical: name the branch/selector/condition change being targeted.
+- For state, gear, or mode transitions, comments and descriptions should say "request/target/attempt" until simulation evidence proves the target state. After backfill, do not claim "shifted/entered/reached" unless the matching top-level output expectation proves it in the same action step.
+- Inline comments that state concrete values, such as `stDrvGear=1(D)`, must match the corresponding `expValue(...)` line after backfill. If not, repair the stimulus and rerun backfill, rewrite the Test as blocked/not-reached/inhibited, or remove the claim.
+- Do not combine many state transitions into one Stateflow traversal Test unless every transition step has distinct stimulus, enough hold time, and simulation evidence that the state output changed as intended.
+
+## Expected Output Rules
+
+The biggest correctness issue in the thread was expected-output semantics:
+
+- Only top-level Outports may be used as `expValue(...)` left-hand sides. Do not put internal/local signals or `out_mil_ec` names into TCSD expected outputs.
+- `expValue(var1,duration,offset)` means:
+  - `var1`: expected value or input-signal name string;
+  - `duration`: check duration;
+  - `offset`: offset from the current interval.
+- The second and third arguments are not numeric tolerance. Do not use them to express tolerance.
+- For simulation-sampled expected values, write `expValue(value)` by default.
+- If an output ramps or changes during the following hold interval, omit that output from the Test. Do not write one sampled value and then let the unit-test/MQT checker compare it as a held constant.
+- For Stateflow/state-machine/history-feedback outputs, omit expectations unless a full simulation or MQTester-equivalent trace confirms the stable post-delay value. Do not copy initialization/default values into later `[+delay]` intervals.
+- Stimulus coverage and expected-output coverage are separate. Keep a Test/action if it improves model coverage even when few outputs are stable enough to backfill.
+- Treat semantic consistency as a hard quality gate after backfill. For every claim that a state, gear, or mode was reached, identify the proof output, resolve the claimed value from model constants or trusted simulation evidence, and compare it with the `expValue(...)` lines in the same step. If a Test says the model reached D, charging, ready, sleep, traction, or another named state/mode but the relevant top-level `expValue(...)` still shows the old/default value, repair the stimulus/prerequisites/hold timing and rerun backfill, rewrite the Test as a blocked/not-reached path, or remove the success claim before returning the workbook. Do not mark mismatched Tests as `reviewed`.
+
+## Default Backfill Output Scope
+
+By default, call `scripts/backfill_expected_outputs.py --outputs` with every scalar root Outport discovered during model inspection.
+
+- Do not hand-select only a few outputs to keep Actions short; that hides simulation evidence.
+- Let the simulation `stable=false` metadata suppress ramping or dynamic outputs per Test.
+- Pass model-inspected stateful-risk outputs through `--exclude-outputs` unless a trusted trace proves stable post-delay behavior.
+- Omit vector root outputs unless the target TCSD/MQT vector macro syntax and element mapping are confirmed.
+- A smaller output allowlist is acceptable only for a documented importer/readability/performance limit or an intentionally narrow diagnostic run.
+
+## Continuous Output Plausibility
+
+Continuous physical outputs need an engineering-scale sanity check after backfill.
+
+Treat root Outports as continuous when names or metadata indicate power, torque, voltage, current, speed, temperature, SOC, pressure, gradient, limit, maximum/minimum, peak, continuous, or threshold quantities. Examples include `pwr*`, `tq*`, voltage/current/speed/temperature/SOC signals, `*Max*`, `*Min*`, `*Peak*`, `*Contns*`, and `*Lim*`.
+
+For each continuous output:
+
+- compare values across Tests and action steps;
+- flag unexplained `expValue(0)` or `expValue(1)` for non-Boolean continuous outputs;
+- flag order-of-magnitude jumps relative to neighboring steps or same-family outputs;
+- flag implausible family ordering, such as peak/maximum limits lower than continuous limits, unless model logic explains it;
+- flag default/sentinel values when the Test claims a limiting path is active.
+
+Suspicious values are not automatically wrong, but they must be justified with simulation/probe evidence, repaired by changing stimulus/hold timing and rerunning backfill, or omitted from the affected Test. Do not return a reviewed workbook with unexplained rows such as `pwrMax... = expValue(1)` when neighboring power expectations are in the thousands or tens of thousands.
+
+## Output Family Consistency
+
+Group related outputs before final validation:
+
+- Boolean `b*` outputs may use `0`/`1`.
+- Enum/state `st*` outputs may use small integers when resolved from model constants.
+- Continuous family outputs such as `pwrMax*`, `pwrPeak*`, `pwrContns*`, torque limits, voltage/current limits, SOC limits, and threshold/limit signals should remain in a plausible engineering scale unless model evidence says otherwise.
+- Charge/discharge sign conventions and zero-limit protective states must be explained when they produce values that look unusual.
+
+## State Transition Design Rules
+
+For Stateflow charts, enum state outputs, latches, edge-triggered paths, and mode/gear state machines:
+
+- Trace transition conditions before drafting TCSD rows. Use Stateflow guards, Switch/RelationalOperator criteria, and prerequisite enables to identify the root inputs or scalar parameters that must be set.
+- Resolve enum and constant values from the loaded MAT/init/data dictionary/model workspace. Do not guess mode values from similar signal names.
+- Do not assume a request signal alone reaches the target state. Set all prerequisite gates first, such as brake, door, seatbelt, ready, authentication, speed, voltage, fault-validity, and mode enables.
+- Use enough hold time for filters, debounce logic, LowPass blocks, StopWatch/Delay blocks, and chart entry/exit actions. Prefer measured probe timing. If timing is unknown, hold prerequisites for around `[+1s]`, change the request/trigger, then hold another `[+1s]` before checking state outputs.
+- Split transitions into narrower Tests when one long sequence would make failures ambiguous.
+
+## Minimum Functional-Domain Coverage
+
+For models with recognizable functional domains, each present domain needs at least one independent Test, a clear merge reason, or an unreachable/invalid explanation:
+
+- fault and validity signal families such as `*SigErr`, `*Vld`, `*Flt`, `*FltLvl`, diagnostic enable/reset;
+- continuous threshold inputs such as speed, voltage, current, torque, temperature, slope, and pedal position, covering both sides of thresholds and equality where relevant;
+- mode/config enum inputs such as `stMod`, `stMode`, `stCfg`, gear request, charge mode, drive mode, scene mode;
+- Stateflow target states or transition families;
+- diagnostic/error paths such as `Diag`, `ErrCheck`, lock/unlock, stuck, plausibility, timeout;
+- distinct model-visible operating modes and feature gates.
+
+Prefer splitting unrelated modes and diagnostic paths into focused Tests. Do not hide them inside one broad scenario when the resulting expected outputs cannot prove which condition actually changed.
+
+## Coverage Design Rules
+
+Treat every decision outcome as an obligation:
+
+- `MinMax`: every input port should win at least once. Avoid equal/tie values because coverage attribution can be ambiguous.
+- `MultiPortSwitch`: cover every valid selector value and default/otherwise only if the model safely accepts that selector.
+- Invalid `MultiPortSwitch` selector errors must be diagnosed, not hidden. The simulation script reports `simulate_tcsd_cases:InvalidMultiPortSwitchSelector` with block/source/indexing details. Fix the TCSD stimulus, settle time, or safe scalar override first; use `TCSD_ALLOW_MPS_DEFAULT_OVERRIDE=1` only for temporary diagnosis and do not use that run for trusted expected-output backfill unless the default behavior is intentionally justified.
+- `Saturate`: cover below-low, pass-through, and above-high regions by proving the pre-saturation input crosses the limits. If calibration/lookup values can never exceed a limit, record the remaining region as unreachable rather than unsafe table manipulation.
+- `RelationalOperator`/`Switch`: cover both true and false by driving the actual trigger signal across the block criterion. For `==`/`~=` comparisons, resolve the compared enum/constant and include matching and non-matching values. For `>` / `<` / `>=` / `<=`, include below/equal/above when equality changes the outcome. For sign criteria such as `< 0`, `<= 0`, `~= 0`, or `u2 ~= 0`, include negative, zero, and positive/equality-side values as applicable. If a mode/config signal is checked against several constants, such as `stMod == 2` and `stMod == 3`, generate cases for each compared value; a default `stMod = 1` case alone is not coverage for those conditions.
+- `Logical Operator`: satisfy MC/DC from model structure during the initial production run. For N-input OR, use all inputs false plus one case for each single true input. For N-input AND, use all inputs true plus one case for each single false input. For chained logic, NOT-fed inputs, relational outputs, and enum equality banks, target the truth vector at the logical operator input ports and resolve the raw root-input values needed to produce that vector. Write only constants resolved from the loaded model data, and record the mapping from desired truth vector to raw TCSD assignments.
+- `Logical Operator` feedback fed by stateful paths: if an uncovered MC/DC condition is a latch, inverted latch, Memory/UnitDelay output, EdgeRising/EdgeFalling output, CountR/StopWatch flag, or Switch trigger, synthesize the prerequisite sequence before claiming the truth vector. Use set/hold/reset/timeout action steps, keep reset blockers such as inverted allows/enables inactive while setting the state, and verify the relevant block input with a coverage rerun or focused probe. A Test description that says "targets MC/DC" is not evidence.
+- `Safe_Divide`: denominator zero/protected path and normal nonzero path.
+- `Lookup_n-D`: use low/mid/high and edge breakpoints that influence downstream decisions.
+- `LowPass`/filter/GradientLimiter upstream of a selector: use Initialization, longer hold time, or explicit scalar parameter override so the intended selector/result actually settles.
+- Delay/latch/StopWatch: use multi-step action sequences for initial, set, hold, reset, and timeout states.
+- Latch-controlled Boolean root outputs: when such an output is the proof signal for an active state, the workbook must show both inactive and active expectations if both states are reachable. Do not return a coverage-repaired workbook where every expectation for that output remains `expValue(0)` while the coverage report still shows zero hits for the active Switch side, active-latch side, or the false side of an inverted active-state condition. Report the remaining item as unresolved/unreachable with the upstream blocker instead.
+- Coverage closure requires evidence. Do not mark a feedback item fixed only because a Test comment says it targets that outcome; confirm with a coverage rerun or a focused probe of the relevant internal block inputs/selectors.
+- A coverage-obligation item is complete only when it is mapped to a TCSD Test/action that drives the relevant block input, or it is marked unreachable/invalid with a concrete model reason. Otherwise report it as unresolved instead of implying the workbook is coverage-closed.
+
+## Static SLX Inspection
+
+SATK/MCP/MATLAB is the authority. Static `.slx` XML inspection is only a supplement after SATK/MCP/MATLAB model reading has been attempted or used, and only for exact SIDs, block parameters, and line connectivity:
+
+```bash
+RUNTIME_DIR=/path/to/tcsd-runtime
+MODEL_SLX=MODEL.slx
+python3 "$RUNTIME_DIR/scripts/inspect_slx_xml.py" "$MODEL_SLX" --pattern "MultiPortSwitch|MinMax|Saturate|<Line|<Branch"
+```
+
+Do not pipe `.slx`/zip/XML output directly into interpreters such as `python3 -c`, `perl`, `ruby`, or `node -e`. That pattern can trigger security approval and encourages bypassing SATK/MCP model reading.
+
+Use static inspection to find SIDs, constants, block parameters, `DataPortOrder`, `Inputs`, `UpperLimit`, `LowerLimit`, and line connectivity. Always run simulation after designing stimuli.
+
+## SATK 2026.06.01 Adaptation Notes
+
+- `model_check`: run when available as an early structural diagnostic. Do not let it replace workbook validation, simulation, or expected-output backfill.
+- Stateflow-aware `model_query_params`: use it for chart state names, transition labels, guard conditions, and actions before static XML fallback.
+- MATLAB Function block `model_read` improvements: include exposed branch/protection logic in the coverage-obligation matrix.
+- Granular Subsystem/container classification: derive enable/trigger/if-action prerequisites and hold time for execution-gated logic before designing TCSD actions.
+- `model_test` remains optional diagnostic support. It is not the primary TCSD generation path because the deliverable is the Excel workbook.
+
+## Simulation and Script Lessons
+
+- Use the skill scripts rather than rewriting large boilerplate:
+  - `scripts/build_tcsd_from_json.py`
+  - `scripts/extract_tcsd_cases.py`
+  - `scripts/simulate_tcsd_cases.m`
+  - `scripts/backfill_expected_outputs.py`
+  - `scripts/setup_ut_support.m`
+  - `scripts/satk_eval.py`
+- The generic builder expands bracketed vector assignments into TCSD element assignments, and the extractor can read element syntax such as `VectorSig 1=5000;`.
+- Bracketed vectors may be convenient inside intermediate JSON/spec drafts, but the final TCSD workbook for the current target toolchain should use element assignments.
+- The generic simulation script handles vector root inputs/outputs; backfill should still usually allow only scalar top-level outputs unless vector TCSD macro mapping is confirmed.
+- `openpyxl` is required for the Python workbook scripts. If system Python lacks it, use the runtime Python available in the agent environment or install/use an environment with `openpyxl`.
+- For large models, keep simulation/backfill behind the artifact-first checkpoint. An MCP timeout is a hard stage failure; do not retry simulation inside the same stage session or return a workbook with no expected values as completed.
+- Write model-specific helper scripts only when the generic scripts cannot reasonably support a model-specific constraint. If such a script encodes a working MATLAB setup, parameterize paths instead of hardcoding one workbook forever.
+
+## SATK Runtime for Hermes and Windows VMs
+
+Hermes production must make SATK startup deterministic. The skill's `scripts/satk_eval.py` supports these environment variables:
+
+- `SATK_MCP_SERVER`: full path to `matlab-mcp-core-server` or `matlab-mcp-core-server.exe` when the toolkit is not in the default user `.matlab/agentic-toolkits` folder.
+- `SATK_MCP_EXTENSION`: full path to `simulink/tools/tools.json`.
+- `SATK_MCP_LOG_FOLDER`: short ASCII log/socket folder. Use `C:\Temp\matlab-mcp-core-server-codex` on Windows when possible.
+- `SATK_MATLAB_SESSION_MODE`: use `new` for unattended production VMs, or `existing` only when MATLAB is already open and intended to be reused.
+- `SATK_MATLAB_ROOT`: MATLAB installation root, for example `C:\Program Files\MATLAB\R2026a`; this is passed only when `SATK_MATLAB_SESSION_MODE` is not `existing`.
+- `TCSD_DEDICATED_WORKER`: set to `1` only on unattended worker hosts. This makes `scripts/satk_eval.py` default to a task-owned `new` MATLAB session and terminate stale task-owned `matlab-mcp-core-server` processes that match the same `SATK_MCP_LOG_FOLDER` before startup.
+- `TCSD_CLEAN_STALE_MCP`: set to `1` to enable only the same-log-folder stale MCP cleanup without changing the MATLAB session-mode default.
+
+Recommended Windows VM bootstrap before invoking Hermes generation:
+
+```bat
+set SATK_MCP_LOG_FOLDER=C:\Temp\matlab-mcp-core-server-codex
+set TCSD_DEDICATED_WORKER=1
+set SATK_MATLAB_SESSION_MODE=new
+set SATK_MATLAB_ROOT=C:\Program Files\MATLAB\R2026a
+```
+
+If SATK initialization fails before any MATLAB code executes, inspect `server-*.log` and `watchdog-*.log` in `SATK_MCP_LOG_FOLDER`. Errors such as `socket file access timed out`, `bind: invalid argument`, or `bind: operation not permitted` are MCP runtime/socket problems. Do not treat them as model-load failures and do not replace SATK reading with static SLX parsing; fix the runtime by using a short log folder and a host execution mode that allows local socket binding.
+
+## Generic Coverage Lessons
+
+- A Test name or comment is never evidence that a branch was covered; require coverage feedback or a focused probe of the relevant block input.
+- For `MinMax`, prove each candidate wins without ties. For `MultiPortSwitch`, probe the settled selector rather than inferring it from an upstream command.
+- For `Abs`, cover both source signs. For `Saturate`, prove below-low, pass-through, and above-high at the pre-saturation signal or record structurally justified unreachability.
+- For filtered, delayed, latched, or ramp-limited paths, use an explicit multi-step stimulus and enough hold time. Do not backfill a held expectation from one transient sample.
+- For vector root inputs, expand element assignments in the final workbook. Omit vector expected outputs unless the importer mapping is proven.
+- Apply the standard MC/DC truth-vector pattern to traceable AND/OR groups. If a vector cannot be mapped to root inputs or scalar parameters, keep it unresolved rather than inventing a Boolean assignment.
+
+## Validation Checklist Before Delivery
+
+- Workbook path is under `outputs/`.
+- Source `.slx` and `.mat` are unchanged.
+- `unzip -t <workbook>.xlsx` succeeds.
+- `scripts/validate_tcsd_workbook.py` passes against the model-derived root Inport/Outport list; final delivery uses `--require-exp-values`. Any validation failure was handled as an internal repair loop before platform delivery, unless the interface could not be derived or the bounded repair pass was exhausted.
+- Sheet name is `TCSD`.
+- Test rows have `Type = Test` and `Work Status = reviewed`.
+- Every Test row is independently runnable: all root inputs needed for startup are initialized in that row, not only in the TestGroup row.
+- Every ordinary executable assignment in `Initialization` and `Action` has a root Inport left-hand side. Unknown input names invalidate the candidate workbook even if simulation extraction would ignore them; repair them before returning success.
+- Every `expValue(...)` left-hand side is a top-level Outport.
+- No internal/local/MIL signal names appear as expected outputs.
+- No three-argument `expValue` is present unless it is intentionally checking a stable window.
+- Continuous physical outputs have no unexplained Boolean-scale `0`/`1` expectations, order-of-magnitude jumps, default/sentinel values, or impossible same-family ordering.
+- Output families such as `pwrMax*` / `pwrPeak*` / `pwrContns*` were checked together; Boolean `b*` and enum/state `st*` outputs were classified separately.
+- Vector outputs are omitted unless explicitly supported.
+- Vector root inputs are not written as whole-vector bracket assignments in the final workbook.
+- Every Test `Action` has a final relative delay marker such as `[+0.1s]`.
+- Selector values do not make simulation stop.
+- AND/OR `Logical Operator` blocks have MC/DC-style truth vectors, not only the nominal all-true/all-false case.
+- RelationalOperator equality banks, Switch trigger sides, MinMax candidate winners, MultiPortSwitch selectors, and Abs source signs have traceable TCSD assignments or explicit unreachable/unresolved notes.
+- Coverage feedback, if available, has been translated into supplemental Tests or justified as unreachable/invalid.
+
+## Readiness for Hermes
+
+This skill is suitable for a Hermes-style agent if it can:
+
+- read the skill directory and its `assets/`, `references/`, and `scripts/`;
+- receive a workspace where the selected project addon has already been copied by the platform/Hermes Agent;
+- run Python with `openpyxl`;
+- run SATK/MATLAB to load and simulate the model;
+- create local MCP watchdog sockets in `SATK_MCP_LOG_FOLDER`;
+- create small model-specific JSON/spec helper scripts when model structure requires judgment.
+
+It is not a fully push-button generator. The intended agent still must inspect the model and design coverage-oriented stimuli. The bundled scripts make Excel creation, action extraction, simulation, and expected-output backfill repeatable.
+
+
+## Logical MC/DC Automation Notes
+
+For Windows/Hermes runs, keep the MC/DC loop inside the task workspace. `trace_logical_mcdc.m` and `probe_logical_mcdc_vectors.m` expect the selected addon files to already be copied into `workspaceDir` and should be called after `setup_ut_support(rootDir, initScripts)`.
+
+Probe runs add temporary `To Workspace` blocks and may set linked library parents to `LinkStatus=inactive` in memory. They must close models with `saveflag=0`; never save the probed model or library back to disk.
+
+When `build_probe_mcdc_obligations.py` leaves any vector `unresolved`, do not mark the TCSD task complete. Either add mapped supplemental Tests, rerun the probe after those Tests are extracted, or mark the vector `unreachable` with a concrete structural reason and probe evidence.
+
+For a relational, Switch, MinMax, UnitDelay, Delay, Memory, or feedback-driven unresolved port, do not ask the model to guess a final static input snapshot. Run `build_state_probe_plan.py` and pass the generated plan through the explicit `CaseJson` option. A successful mapping must retain the full probe-observed `stimulus` sequence. `candidate_exhausted`, `unsupported_semantics`, and `simulation_mismatch` remain explicit unresolved evidence states; none of them means unreachable.

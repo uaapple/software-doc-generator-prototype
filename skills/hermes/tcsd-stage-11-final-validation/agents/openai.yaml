@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 11 最终验证"
+  short_description: "Run final simulation backfill and coverage checks"
+  default_prompt: "Use $tcsd-stage-11-final-validation to run final TCSD validation."

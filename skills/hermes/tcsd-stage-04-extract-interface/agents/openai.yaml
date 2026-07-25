@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 04 提取接口"
+  short_description: "Extract verified Simulink root interface evidence"
+  default_prompt: "Use $tcsd-stage-04-extract-interface to extract the model root interface."

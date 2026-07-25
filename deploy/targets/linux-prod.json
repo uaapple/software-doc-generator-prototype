@@ -1,0 +1,41 @@
+{
+  "id": "linux-prod",
+  "description": "Linux platform package for the web/backend entrypoint that calls remote Hermes and MATLAB worker services.",
+  "releaseBranch": "release/linux-prod",
+  "packagePrefix": "software-doc-generator-linux",
+  "latestAlias": "latest-linux.zip",
+  "includePaths": [
+    ".env.defaults",
+    ".env.linux-prod.example",
+    "README.md",
+    "package.json",
+    "package-lock.json",
+    "src",
+    "public",
+    "wiki",
+    "skills",
+    "scripts",
+    "templates",
+    "docs"
+  ],
+  "excludePaths": [
+    "data",
+    "input",
+    "output",
+    "release-dist",
+    "test-fixtures",
+    "videos",
+    "skills/hermes/tcsd-runtime",
+    "skills/hermes/tcsd-stage-*",
+    "tools",
+    "scripts/deploy-release.ps1",
+    "scripts/install-windows-services.ps1",
+    "scripts/install-tcsd-hermes-skills.mjs",
+    "scripts/install-tcsd-hermes-skills.ps1",
+    "scripts/tcsd-python-dependencies.mjs",
+    "scripts/check-tcsd-python.py",
+    "requirements/tcsd-runtime.txt"
+  ],
+  "copyFiles": [],
+  "runtimeDataPolicy": "Linux production keeps APP_DATA_DIR and APP_SKILLS_DIR outside the code directory, persists Windows TCSD jobId state, and reconciles remote staged jobs through HTTP without packaging runtime data."
+}

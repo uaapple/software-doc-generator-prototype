@@ -1,0 +1,4 @@
+interface:
+  display_name: "TCSD 05 分析覆盖目标"
+  short_description: "Build deterministic model coverage obligations"
+  default_prompt: "Use $tcsd-stage-05-analyze-coverage to build deterministic coverage obligations."

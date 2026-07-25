@@ -1,0 +1,38 @@
+{
+  "id": "windows-prod-full",
+  "description": "Windows VM full release package with source, scripts, skills, docs, templates, and MATLAB/Hermes tooling.",
+  "releaseBranch": "release/windows-prod",
+  "packagePrefix": "software-doc-generator-windows-full",
+  "latestAlias": "latest-windows-full.zip",
+  "includePaths": [
+    ".env.defaults",
+    ".env.windows-prod.example",
+    "README.md",
+    "package.json",
+    "package-lock.json",
+    "src",
+    "public",
+    "wiki",
+    "skills",
+    "scripts",
+    "requirements/tcsd-runtime.txt",
+    "tools",
+    "templates",
+    "docs"
+  ],
+  "excludePaths": [
+    "data",
+    "input",
+    "output",
+    "release-dist",
+    "test-fixtures",
+    "videos"
+  ],
+  "copyFiles": [
+    "scripts/deploy-release.ps1",
+    "scripts/install-windows-services.ps1",
+    "scripts/install-tcsd-hermes-skills.mjs",
+    "scripts/install-tcsd-hermes-skills.ps1"
+  ],
+  "runtimeDataPolicy": "APP_DATA_DIR and APP_SKILLS_DIR are external to the release package; TCSD jobs, Hermes sessions, stage inputs/results, validation reports, checkpoints, logs, coverage and generated workbooks remain runtime data."
+}
