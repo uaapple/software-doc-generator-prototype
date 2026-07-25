@@ -2,11 +2,8 @@ import { MatlabMcpClient, MatlabMcpError } from "./matlab-mcp-client.js";
 import { validateModelFactBundle } from "./model-fact-bundle.js";
 import { SlxModelFactAdapter } from "./slx-model-fact-adapter.js";
 import { buildModelFactBundleFromSatk } from "./satk-model-fact-builder.js";
+import { openZipArchive } from "./zip-archive.js";
 import { config } from "../config.js";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
 const RAW_SLX_DCDC_BUCK_PATTERNS = [
   "DCDCActSt_buck",
   "DCDCReqSt_buck",
@@ -508,10 +505,12 @@ function addNamedFact(target = [], fact = {}) {
 
 async function readRawSlxXml(slxPath) {
   try {
-    const { stdout } = await execFileAsync("unzip", ["-p", slxPath, "*.xml"], {
-      maxBuffer: 80 * 1024 * 1024
+    const archive = await openZipArchive(slxPath, {
+      maxArchiveBytes: 512 * 1024 * 1024,
+      maxEntryUncompressedBytes: 80 * 1024 * 1024,
+      maxTotalUncompressedBytes: 256 * 1024 * 1024
     });
-    return stdout;
+    return archive.readTextEntriesBySuffix(".xml").map((entry) => entry.text).join("\n");
   } catch (_error) {
     return "";
   }
