@@ -4,6 +4,7 @@ import http from "node:http";
 import https from "node:https";
 import path from "node:path";
 import { promisify } from "node:util";
+import { runHermesCommand } from "./hermes-command.js";
 import { config } from "../config.js";
 import { getAllowedKindsForAreasAndLayer } from "../../public/skill-kind-matrix.js";
 
@@ -2169,12 +2170,17 @@ export class HermesAgentClient {
           elapsedMs: Date.now() - startedAt
         });
       }, this.heartbeatIntervalMs);
-      const { stdout = "", stderr = "" } = await this.commandRunner(this.command, args, {
-        cwd: workdir,
-        timeout: timeoutMs,
-        maxBuffer: 16 * 1024 * 1024,
-        env: { ...process.env, NO_COLOR: "1" }
-      });
+      const { stdout = "", stderr = "" } = await runHermesCommand(
+        this.commandRunner,
+        this.command,
+        args,
+        {
+          cwd: workdir,
+          timeout: timeoutMs,
+          maxBuffer: 16 * 1024 * 1024,
+          env: { ...process.env, NO_COLOR: "1" }
+        }
+      );
       const stdoutResponse = parseCliResponse(stdout);
       const stderrResponse = parseCliResponse(stderr);
       const body = stdoutResponse.body;

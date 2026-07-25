@@ -99,6 +99,7 @@ shared:
   - src/services/openai-compatible-chat.js
   - src/services/model-requirement-view-service.js
   - src/services/model-fact-bundle.js
+  - src/services/hermes-command.js
   - src/services/hermes-agent-client.js
   - src/services/tcsd-pipeline-contract.js
   - src/services/tcsd-stage-catalog.js
