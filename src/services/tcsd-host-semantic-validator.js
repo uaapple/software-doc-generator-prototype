@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { resolvePythonInvocation, runPythonCommand } from "./python-command.js";
 import { TCSD_ERROR_CODES } from "./tcsd-pipeline-contract.js";
 import { writeJson } from "./storage.js";
 
@@ -57,7 +58,7 @@ function publicSemanticError(stageIndex, cause) {
 
 export class TcsdHostSemanticValidator {
   constructor(options = {}) {
-    this.python = options.python || process.env.TCSD_PIPELINE_PYTHON || (process.platform === "win32" ? "python" : "python3");
+    this.pythonInvocation = resolvePythonInvocation(options);
     this.commandRunner = options.commandRunner || execFileAsync;
   }
 
@@ -96,8 +97,9 @@ export class TcsdHostSemanticValidator {
     await writeJson(requestPath, request);
     const script = path.join(runtimeDirectory, "scripts", "host_validate_tcsd_stage.py");
     try {
-      const { stdout = "" } = await this.commandRunner(
-        this.python,
+      const { stdout = "" } = await runPythonCommand(
+        this.commandRunner,
+        this.pythonInvocation,
         [script, "--request", requestPath],
         {
           cwd: job.input.workspaceDir,

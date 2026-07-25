@@ -16,6 +16,11 @@ import {
   validateStageResult
 } from "./tcsd-pipeline-contract.js";
 import { runHermesCommand } from "./hermes-command.js";
+import {
+  formatPythonCommand,
+  resolvePythonInvocation,
+  runPythonCommand
+} from "./python-command.js";
 import { TcsdHostSemanticValidator } from "./tcsd-host-semantic-validator.js";
 import { hashTcsdBundle, TcsdStageCatalog } from "./tcsd-stage-catalog.js";
 import { readJson, writeJson } from "./storage.js";
@@ -113,7 +118,7 @@ function defaultStateDbPath(profile) {
 export class TcsdHermesStageExecutor {
   constructor(options = {}) {
     this.command = options.command || config.hermes.command || "hermes";
-    this.python = options.python || process.env.TCSD_PIPELINE_PYTHON || (process.platform === "win32" ? "python" : "python3");
+    this.pythonInvocation = resolvePythonInvocation(options);
     this.profile = String(options.profile ?? config.tcsdPipeline.hermesProfile ?? config.hermes.profile ?? "").trim() || "default";
     this.maxTurns = Math.max(1, Number(options.maxTurns ?? config.tcsdPipeline.stageMaxTurns ?? 200) || 200);
     this.timeoutMs = Math.max(
@@ -123,7 +128,9 @@ export class TcsdHermesStageExecutor {
     this.stateDbPath = options.stateDbPath || defaultStateDbPath(this.profile);
     this.commandRunner = options.commandRunner || execFileAsync;
     this.catalog = options.catalog || new TcsdStageCatalog();
-    this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({ python: this.python });
+    this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({
+      pythonInvocation: this.pythonInvocation
+    });
     this.usageReader = options.usageReader ||
       ((sessionId, runtime, skill, invocation) => this.readSessionUsage(sessionId, runtime, skill, invocation));
     this.now = options.now || (() => new Date().toISOString());
@@ -131,8 +138,9 @@ export class TcsdHermesStageExecutor {
 
   async readSessionUsage(sessionId, runtime, skill, invocation) {
     const script = path.join(runtime.directory, "scripts", "read_hermes_session.py");
-    const { stdout = "" } = await this.commandRunner(
-      this.python,
+    const { stdout = "" } = await runPythonCommand(
+      this.commandRunner,
+      this.pythonInvocation,
       [
         script,
         "--state-db",
@@ -244,14 +252,13 @@ export class TcsdHermesStageExecutor {
           "Repair only the reported deterministic validation defects, then rerun the same stage in this new session."
         ]
       : ["This is the initial stage attempt. No earlier session context is available."];
-    const runtimeCommand = [
-      this.python,
-      `"${path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py")}"`,
+    const runtimeCommand = formatPythonCommand(this.pythonInvocation, [
+      path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py"),
       "--manifest",
-      `"${manifestPath}"`,
+      manifestPath,
       "--result",
-      `"${resultPath}"`
-    ].join(" ");
+      resultPath
+    ]);
     if (definition.index === 10) {
       const repairBriefPath = path.join(path.dirname(resultPath), "repair-brief.json");
       const repairProposalPath = path.join(path.dirname(resultPath), "repair-proposal.json");
