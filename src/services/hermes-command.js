@@ -15,7 +15,8 @@ export function resolveHermesCommand(command, args = [], options = {}) {
   const executable = String(command || "").trim();
   const commandArgs = Array.isArray(args) ? args : [];
   const platform = options.platform || process.platform;
-  const extension = path.extname(executable).toLowerCase();
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const extension = pathApi.extname(executable).toLowerCase();
   if (extension === ".js") {
     return {
       command: process.execPath,
@@ -23,13 +24,19 @@ export function resolveHermesCommand(command, args = [], options = {}) {
     };
   }
   if (platform === "win32" && extension === ".cmd") {
-    const embeddedPython = path.join(path.dirname(executable), "python", "python.exe");
-    if (path.basename(executable).toLowerCase() === "hermes.cmd" && fs.existsSync(embeddedPython)) {
-      const hermesHome = path.resolve(path.dirname(executable), "..", "hermes-home");
+    const commandDir = pathApi.dirname(executable);
+    const pathExists = options.pathExists || fs.existsSync;
+    const pythonCandidates = [
+      pathApi.join(commandDir, "venv", "Scripts", "python.exe"),
+      pathApi.join(commandDir, "python", "python.exe")
+    ];
+    const hermesPython = pythonCandidates.find((candidate) => pathExists(candidate));
+    if (pathApi.basename(executable).toLowerCase() === "hermes.cmd" && hermesPython) {
+      const hermesHome = pathApi.resolve(commandDir, "..", "hermes-home");
       return {
-        command: embeddedPython,
+        command: hermesPython,
         args: ["-m", "hermes_cli.main", ...commandArgs],
-        env: fs.existsSync(hermesHome) ? { HERMES_HOME: hermesHome } : {}
+        env: pathExists(hermesHome) ? { HERMES_HOME: hermesHome } : {}
       };
     }
   }
@@ -46,7 +53,7 @@ export function resolveHermesCommand(command, args = [], options = {}) {
 }
 
 export function runHermesCommand(commandRunner, command, args, options = {}) {
-  const invocation = resolveHermesCommand(command, args);
+  const invocation = resolveHermesCommand(command, args, options);
   return commandRunner(invocation.command, invocation.args, {
     ...options,
     env: { ...(options.env || process.env), ...(invocation.env || {}) }
