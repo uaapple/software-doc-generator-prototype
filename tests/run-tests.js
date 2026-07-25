@@ -40,6 +40,10 @@ import {
   parseRequirementMarkdownBlocks
 } from "../src/services/software-requirement-markdown-agent-service.js";
 import { parseZipArchive } from "../src/services/zip-archive.js";
+import {
+  buildTcsdPythonDependencyCommand,
+  runTcsdPythonDependencyCommand
+} from "../scripts/tcsd-python-dependencies.mjs";
 import { buildZipArchive } from "./zip-fixture.js";
 
 const execFileAsync = promisify(execFile);
@@ -568,6 +572,116 @@ async function seedWikiFixture(rootDir, overrides = {}) {
 }
 
 const tests = [
+  {
+    name: "TCSD Python dependency commands preserve interpreter prefixes and release boundaries",
+    run: async () => {
+      const calls = [];
+      await runTcsdPythonDependencyCommand("install", {
+        platform: "win32",
+        env: {},
+        requirementsPath: "C:\\release\\requirements\\tcsd-runtime.txt",
+        commandRunner: async (executable, args, options) => {
+          calls.push({ executable, args, options });
+          return { stdout: "", stderr: "" };
+        }
+      });
+      assert.equal(calls[0].executable, "py");
+      assert.deepEqual(calls[0].args, [
+        "-3.11",
+        "-m",
+        "pip",
+        "install",
+        "--requirement",
+        "C:\\release\\requirements\\tcsd-runtime.txt"
+      ]);
+
+      assert.deepEqual(
+        buildTcsdPythonDependencyCommand("check", {
+          python: "C:\\Python311\\python.exe",
+          platform: "win32",
+          env: {},
+          gatePath: "C:\\release\\scripts\\check-tcsd-python.py",
+          requirementsPath: "C:\\release\\requirements\\tcsd-runtime.txt"
+        }),
+        {
+          executable: "C:\\Python311\\python.exe",
+          args: [
+            "C:\\release\\scripts\\check-tcsd-python.py",
+            "--requirements",
+            "C:\\release\\requirements\\tcsd-runtime.txt"
+          ]
+        }
+      );
+      for (const platform of ["darwin", "linux"]) {
+        const command = buildTcsdPythonDependencyCommand("check", {
+          platform,
+          env: {},
+          gatePath: "check.py",
+          requirementsPath: "requirements.txt"
+        });
+        assert.equal(command.executable, "python3");
+        assert.deepEqual(command.args, ["check.py", "--requirements", "requirements.txt"]);
+      }
+      assert.deepEqual(
+        buildTcsdPythonDependencyCommand("check", {
+          platform: "win32",
+          env: {},
+          gatePath: "check.py",
+          requirementsPath: "requirements.txt"
+        }),
+        {
+          executable: "py",
+          args: ["-3.11", "check.py", "--requirements", "requirements.txt"]
+        }
+      );
+
+      const targets = Object.fromEntries(
+        await Promise.all(
+          ["linux-prod", "windows-prod-full", "windows-prod-source"].map(async (targetId) => [
+            targetId,
+            JSON.parse(await fs.readFile(
+              path.join(config.rootDir, "deploy", "targets", `${targetId}.json`),
+              "utf8"
+            ))
+          ])
+        )
+      );
+      const included = (target, candidate) => {
+        const selected = target.includePaths.some(
+          (entry) => candidate === entry || candidate.startsWith(`${entry}/`)
+        );
+        const excluded = target.excludePaths.some(
+          (entry) => candidate === entry || candidate.startsWith(`${entry}/`)
+        );
+        return selected && !excluded;
+      };
+      for (const targetId of ["windows-prod-full", "windows-prod-source"]) {
+        assert.equal(included(targets[targetId], "requirements/tcsd-runtime.txt"), true);
+        assert.equal(included(targets[targetId], "scripts/tcsd-python-dependencies.mjs"), true);
+        assert.equal(included(targets[targetId], "scripts/check-tcsd-python.py"), true);
+      }
+      assert.equal(included(targets["linux-prod"], "requirements/tcsd-runtime.txt"), false);
+      assert.equal(included(targets["linux-prod"], "scripts/tcsd-python-dependencies.mjs"), false);
+      assert.equal(included(targets["linux-prod"], "scripts/check-tcsd-python.py"), false);
+
+      const packageJson = JSON.parse(await fs.readFile(path.join(config.rootDir, "package.json"), "utf8"));
+      assert.equal(
+        packageJson.scripts["install:tcsd-python"],
+        "node scripts/tcsd-python-dependencies.mjs install"
+      );
+      assert.equal(
+        packageJson.scripts["check:tcsd-python"],
+        "node scripts/tcsd-python-dependencies.mjs check"
+      );
+      const releaseBuilder = await fs.readFile(
+        path.join(config.rootDir, "scripts", "build-release-zip.mjs"),
+        "utf8"
+      );
+      assert.match(releaseBuilder, /target\.id === "windows-prod-full".+windows-prod-source/s);
+      assert.match(releaseBuilder, /npm\(\["run", "check:tcsd-python"\]\)/);
+      assert.doesNotMatch(releaseBuilder, /npm\(\["run", "install:tcsd-python"\]\)/);
+    }
+  },
   {
     name: "Change classifier includes untracked files in working-tree mode",
     run: async () => {
