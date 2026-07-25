@@ -506,7 +506,11 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }
             fake_matlab_root = root / "fake-matlab"
             (fake_matlab_root / "bin").mkdir(parents=True)
-            (fake_matlab_root / "bin" / "matlab").write_text("fixture", encoding="utf-8")
+            fake_matlab_executable = "matlab.exe" if os.name == "nt" else "matlab"
+            (fake_matlab_root / "bin" / fake_matlab_executable).write_text(
+                "fixture",
+                encoding="utf-8",
+            )
             fake_mcp_server = root / "fake-matlab-mcp-server"
             fake_mcp_server.write_bytes(b"offline MCP fixture")
             job["input"]["matlabRoot"] = str(fake_matlab_root)

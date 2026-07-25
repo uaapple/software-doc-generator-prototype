@@ -248,77 +248,140 @@ function buildSheetXml(rows = []) {
 </worksheet>`;
 }
 
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function buildZipArchive(entries = []) {
+  const localRecords = [];
+  const centralRecords = [];
+  let localOffset = 0;
+
+  for (const entry of entries) {
+    const name = Buffer.from(String(entry.name || "").replaceAll("\\", "/"), "utf8");
+    const content = Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(String(entry.content || ""), "utf8");
+    const checksum = crc32(content);
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0x0800, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0x0021, 12);
+    localHeader.writeUInt32LE(checksum, 14);
+    localHeader.writeUInt32LE(content.length, 18);
+    localHeader.writeUInt32LE(content.length, 22);
+    localHeader.writeUInt16LE(name.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+    localRecords.push(localHeader, name, content);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0x0800, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(0x0021, 14);
+    centralHeader.writeUInt32LE(checksum, 16);
+    centralHeader.writeUInt32LE(content.length, 20);
+    centralHeader.writeUInt32LE(content.length, 24);
+    centralHeader.writeUInt16LE(name.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(localOffset, 42);
+    centralRecords.push(centralHeader, name);
+
+    localOffset += localHeader.length + name.length + content.length;
+  }
+
+  const centralDirectory = Buffer.concat(centralRecords);
+  const endOfCentralDirectory = Buffer.alloc(22);
+  endOfCentralDirectory.writeUInt32LE(0x06054b50, 0);
+  endOfCentralDirectory.writeUInt16LE(0, 4);
+  endOfCentralDirectory.writeUInt16LE(0, 6);
+  endOfCentralDirectory.writeUInt16LE(entries.length, 8);
+  endOfCentralDirectory.writeUInt16LE(entries.length, 10);
+  endOfCentralDirectory.writeUInt32LE(centralDirectory.length, 12);
+  endOfCentralDirectory.writeUInt32LE(localOffset, 16);
+  endOfCentralDirectory.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localRecords, centralDirectory, endOfCentralDirectory]);
+}
+
 async function createMinimalXlsx(filePath, rowsBySheet = {}) {
-  const workbookDir = await fs.mkdtemp(path.join(os.tmpdir(), "xlsx-fixture-"));
-  try {
-    await fs.mkdir(path.join(workbookDir, "_rels"), { recursive: true });
-    await fs.mkdir(path.join(workbookDir, "xl", "_rels"), { recursive: true });
-    await fs.mkdir(path.join(workbookDir, "xl", "worksheets"), { recursive: true });
-
-    const sheetEntries = Object.entries(rowsBySheet);
-    const workbookSheets = sheetEntries
-      .map(([name], index) => `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
-      .join("");
-    const workbookRels = sheetEntries
-      .map(
-        ([,], index) =>
-          `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
-      )
-      .join("");
-    const contentTypes = [
-      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
-      ...sheetEntries.map(
-        ([,], index) =>
-          `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
-      )
-    ].join("");
-
-    await fs.writeFile(
-      path.join(workbookDir, "[Content_Types].xml"),
+  const sheetEntries = Object.entries(rowsBySheet);
+  const workbookSheets = sheetEntries
+    .map(([name], index) => `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+    .join("");
+  const workbookRels = sheetEntries
+    .map(
+      ([,], index) =>
+        `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+    )
+    .join("");
+  const contentTypes = [
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+    ...sheetEntries.map(
+      ([,], index) =>
+        `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+    )
+  ].join("");
+  const entries = [
+    {
+      name: "[Content_Types].xml",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   ${contentTypes}
-</Types>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "_rels", ".rels"),
+</Types>`
+    },
+    {
+      name: "_rels/.rels",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-</Relationships>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "xl", "workbook.xml"),
+</Relationships>`
+    },
+    {
+      name: "xl/workbook.xml",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>${workbookSheets}</sheets>
-</workbook>`,
-      "utf8"
-    );
-
-    await fs.writeFile(
-      path.join(workbookDir, "xl", "_rels", "workbook.xml.rels"),
+</workbook>`
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content:
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   ${workbookRels}
-</Relationships>`,
-      "utf8"
-    );
-
-    for (const [index, [, rows]] of sheetEntries.entries()) {
-      await fs.writeFile(path.join(workbookDir, "xl", "worksheets", `sheet${index + 1}.xml`), buildSheetXml(rows), "utf8");
+</Relationships>`
     }
+  ];
 
-    await execFileAsync("zip", ["-rq", filePath, "."], { cwd: workbookDir });
-  } finally {
-    await fs.rm(workbookDir, { recursive: true, force: true });
+  for (const [index, [, rows]] of sheetEntries.entries()) {
+    entries.push({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: buildSheetXml(rows)
+    });
   }
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, buildZipArchive(entries));
 }
 
 function buildManualTitleOutline(sections = [{ sectionTitle: "智能补电", itemTitles: ["激活判断", "退出判断"] }]) {
@@ -1125,7 +1188,7 @@ const tests = [
     }
   },
   {
-    name: "Replay artifact service writes expected file-driven Hermes replay artifact structure",
+    name: "Replay artifact service writes POSIX protocol paths for file-driven Hermes artifacts",
     run: async () => {
       await withTempConfig(async () => {
         const replayArtifactService = new ReplayArtifactService();
@@ -1199,6 +1262,7 @@ const tests = [
             files: {
               "requirement_validation.md": "# 校验\n- 禁止越界扩写",
               "examples/good_examples.md": "# 正例\n- 只写记忆行为",
+              [path.win32.join("nested", "windows-path.md")]: "# Windows 路径回归",
               "domain-knowledge.json": {
                 version: 1,
                 ruleHints: [{ id: "hint-1", note: "只保留人工范例边界" }]
@@ -1254,14 +1318,18 @@ const tests = [
         assert.ok(artifact.writtenFiles.includes("task-brief.md"));
         assert.ok(artifact.writtenFiles.includes("rejections.json"));
         assert.ok(artifact.writtenFiles.includes("effective-skill-manifest.json"));
-        assert.ok(artifact.writtenFiles.includes(path.join("effective-skill", "requirement_validation.md")));
+        assert.ok(artifact.writtenFiles.includes("effective-skill/requirement_validation.md"));
+        assert.ok(artifact.writtenFiles.includes("effective-skill/nested/windows-path.md"));
         assert.ok(artifact.writtenFiles.some((item) => item.startsWith("reference-assets/")));
+        assert.equal(artifact.writtenFiles.every((item) => !item.includes("\\")), true);
 
         const manifest = JSON.parse(await fs.readFile(path.join(outputDir, "manifest.json"), "utf8"));
         assert.equal(manifest.taskContext.moduleSkillKey, "charging_management");
         assert.equal(manifest.rejectionContext.records[0].id, "rej-1");
         assert.equal(manifest.layerSkillInventory[0].skillCode, "MOD-充电管理-validation-001");
         assert.equal(manifest.effectiveSkillFiles[0].artifactPath.startsWith("effective-skill/"), true);
+        assert.equal(manifest.effectiveSkillFiles.every((item) => !item.artifactPath.includes("\\")), true);
+        assert.equal(manifest.referenceAssets.every((item) => !item.artifactPath.includes("\\")), true);
         assert.equal(manifest.counts.rejections, 1);
         assert.equal(manifest.counts.layerSkillItems, 1);
         assert.equal(manifest.counts.referenceAssets, 2);
@@ -2799,6 +2867,50 @@ const tests = [
         assert.deepEqual(usageReaderInvocations, ["20260421_144500_abcd12"]);
         assert.equal(response.metrics.tokenUsage.totalTokens, 1550);
         assert.equal(response.metrics.tokenUsage.inputTokens, 1200);
+      });
+    }
+  },
+  {
+    name: "Hermes agent client runs JavaScript CLI commands through the Node executable",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const invocations = [];
+        const commandPath = path.join(tempDir, "fake-hermes-cli.js");
+        const client = new HermesAgentClient({
+          transport: "cli",
+          command: commandPath,
+          commandRunner: async (command, args, options) => {
+            invocations.push({ command, args, options });
+            return {
+              stdout:
+                "{\"items\":[{\"title\":\"JS CLI item\",\"requirementText\":\"JS CLI text\",\"sourceAnchorIds\":[]}]}\n",
+              stderr: ""
+            };
+          },
+          usageReader: async () => null
+        });
+
+        const response = await client.executeStep({
+          taskId: "task-js-cli",
+          stepType: "content_generate",
+          allowedPaths: [],
+          inputArtifact: {
+            project: { name: "JS CLI Project", documentType: "software_requirement" },
+            evidence: [],
+            recalledAtoms: [],
+            outline: { sections: [{ title: "Section", objective: "Goal" }] },
+            template: { requirementIdPrefix: "SWR", sections: [] }
+          },
+          skillInventory: { items: [] },
+          llmProfileSnapshot: null
+        });
+
+        assert.equal(invocations.length, 1);
+        assert.equal(invocations[0].command, process.execPath);
+        assert.equal(invocations[0].args[0], commandPath);
+        assert.ok(invocations[0].args.includes("chat"));
+        assert.equal(response.status, "succeeded");
+        assert.equal(response.artifact.items[0].title, "JS CLI item");
       });
     }
   },

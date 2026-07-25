@@ -146,6 +146,26 @@ assert.equal(parseExecutionManifest({
     })
   });
   await assert.rejects(() => registry.prepare(), /did not discover all TCSD stage skills/);
+
+  const jsCommandPath = path.join(root, "fake-hermes-cli.js");
+  const invocations = [];
+  const jsRegistry = new TcsdHermesSkillRegistry({
+    command: jsCommandPath,
+    stateDbPath: path.join(root, "profile", "state.db"),
+    skillsDir: path.join(root, "profile", "skills"),
+    catalog,
+    commandRunner: async (command, args, options) => {
+      invocations.push({ command, args, options });
+      return {
+        stdout: TCSD_STAGE_DEFINITIONS.map((stage) => stage.skillName).join("\n"),
+        stderr: ""
+      };
+    }
+  });
+  await jsRegistry.prepare();
+  assert.equal(invocations.length, 1);
+  assert.equal(invocations[0].command, process.execPath);
+  assert.deepEqual(invocations[0].args, [jsCommandPath, "skills", "list"]);
 }
 
 async function createWorkspace() {
