@@ -2,6 +2,8 @@
 
 本文档给部署端 AI 使用，用于把开发分支改动拆分到 `release/linux-prod` 和 `release/windows-prod`。当前开发分支已经引入部署边界显性化机制，后续不要再完全按旧方式人工扫所有 diff，应优先使用仓库内的分类器和部署目标清单。
 
+TCSD 从整体 Agent 任务升级到十二阶段流水线的完整生产部署步骤、Linux/Windows 文件边界、环境变量、验收与回滚要求，统一见 `docs/tcsd-12-stage-production-deployment-handoff.md`。
+
 ## 关键提交
 
 与新拆分流程相关的提交：
@@ -203,7 +205,7 @@ HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE=10000
 
 如果 Linux 平台和 Windows VM 不是同一套绝对路径，`SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT` 可显式设置；未设置时会回退到 `UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT`。Windows VM 需要安装或随包携带 `simulink-module-description-generator` skill，并准备 MATLAB/SATK 环境。
 
-Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent sidecar：平台端监听 `3000`，Hermes Agent 监听 `3101`，平台端通过 `HERMES_TRANSPORT=api` 调用 sidecar，并将 `HERMES_SERVER_REQUEST_TIMEOUT_MS` 设为 `0` 以支持长任务。sidecar health 只证明 Node API 壳可访问；只有 checkpoint 中的真实外部 model、12 个不同 session、token usage，以及 `state.db` 精确 slash invocation 与 Hermes skill-usage 计数/时间组合证据才能证明 LLM-backed 阶段执行，fake Hermes E2E 不能替代。TCSD 每阶段默认 `TCSD_STAGE_HERMES_TIMEOUT_MS=3600000`、`TCSD_STAGE_HERMES_MAX_TURNS=200`。可以通过 `TCSD_STAGE_HERMES_PROFILE=deepseek` 只覆盖 TCSD 阶段 profile；未设置时回退 `HERMES_PROFILE`。若使用命名 profile，必须确保对应的 Hermes `state.db` 可由 Agent 读取，必要时设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`。
+Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent sidecar：平台端监听 `3000`，Hermes Agent 监听 `3101`，平台端通过 `HERMES_TRANSPORT=api` 调用 sidecar，并将 `HERMES_SERVER_REQUEST_TIMEOUT_MS` 设为 `0` 以支持长任务。在 Darwin 上，`scripts/start-local.sh` 仅为本机 all-in-one 进程显式注入 `MATLAB_ROOT=/Applications/MATLAB_R2026a.app`、`SATK_MATLAB_ROOT=/Applications/MATLAB_R2026a.app` 和 `SATK_MATLAB_SESSION_MODE=new`，避免电脑重启后 Stage 02 依赖不存在的共享 MATLAB 会话；该 macOS 路径不得进入 Windows/Linux 生产环境配置，Windows 生产仍使用自己配置的 MATLAB 根目录与 `SATK_MATLAB_SESSION_MODE=new`。sidecar health 只证明 Node API 壳可访问；只有 checkpoint 中的真实外部 model、12 个不同 session、token usage，以及 `state.db` 精确 slash invocation 与 Hermes skill-usage 计数/时间组合证据才能证明 LLM-backed 阶段执行，fake Hermes E2E 不能替代。TCSD 每阶段默认 `TCSD_STAGE_HERMES_TIMEOUT_MS=3600000`、`TCSD_STAGE_HERMES_MAX_TURNS=200`。可以通过 `TCSD_STAGE_HERMES_PROFILE=deepseek` 只覆盖 TCSD 阶段 profile；未设置时回退 `HERMES_PROFILE`。若使用命名 profile，必须确保对应的 Hermes `state.db` 可由 Agent 读取，必要时设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`。
 
 项目选择只在平台端保存编号和展示名，例如 `01_楚能`、`02_TMS`；任务 payload 内部只依赖 `unitTestProject.id`，例如 `01`。Hermes Agent 启动 CLI 前会从当前 Agent 进程的 `UNIT_TEST_CASE_PROJECT_ADDON_ROOT/<编号>` 复制全部 addon 内容到 workspace 根目录。Mac 本地默认 addon root 是 `.local/project-addons`，目录示例为 `.local/project-addons/01`；Windows 生产默认 addon root 是 `C:\ProgramData\SoftwareDocGenerator\project-addons`，目录示例为 `C:\ProgramData\SoftwareDocGenerator\project-addons\01`。
 
