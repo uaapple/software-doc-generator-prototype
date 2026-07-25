@@ -4,9 +4,9 @@
 >
 > 仓库：`https://github.com/uaapple/software-doc-generator-prototype.git`
 >
-> 部署源分支：`codex/tcsd-deterministic-pipeline`
+> 部署源：三个基于各自生产快照完成语义整合的 v1.4 目标标签
 >
-> 固定发布标签：`tcsd-12-stage-pipeline-v1.3`（由主任务完成最终验收后创建）
+> 固定发布标签：`tcsd-12-stage-pipeline-v1.4-linux`、`tcsd-12-stage-pipeline-v1.4-windows-rwp`、`tcsd-12-stage-pipeline-v1.4-windows-wx11p`
 >
 > 开发基线：`main@79bc8ea7cfa9625637be0888584080cfa79e62cd`
 >
@@ -15,6 +15,8 @@
 ## 1. 部署结论
 
 本次不是单独更新一个技能，而是同时更新 Linux 平台、Windows Hermes/MATLAB Worker、共享协议和十二个阶段技能。两个生产端必须部署同一标签对应的代码，不能只更新一端。
+
+这里的“同一标签对应的代码”是指同一 v1.4 发布组中的目标标签，不是让三台机器合并同一个 Git commit。三个目标标签分别以各自生产快照为父提交，已经保留生产专有页面、Worker 路由、Hermes profile、Windows 启动器和服务脚本；部署端应使用与当前 checkout 一一对应的标签做 `--ff-only` 更新，不再把通用 v1.3 标签直接合入生产分支。
 
 - Linux 后端负责上传、任务创建、Windows 作业轮询、断点对账、十二阶段状态展示和最终 Excel 下载。
 - Windows Worker 负责 Hermes Agent、十二个独立 Hermes session、十二个原子技能、MATLAB/SATK、仿真、覆盖率、宿主校验和最终产物整理。
@@ -25,25 +27,32 @@
 
 ## 2. 从远端取得固定版本
 
+目标映射固定如下：
+
+| 生产 checkout | 快照基线 | v1.4 集成分支 | 不可变标签 |
+|---|---|---|---|
+| `release/linux-prod` | `7e233769027e297517a83914cf7fac5af3d49317` | `codex/tcsd-v1.4-linux-integration` | `tcsd-12-stage-pipeline-v1.4-linux` |
+| `release/windows-prod`（RWP） | `41aa502b35e807d5e206b458512042558702f133` | `codex/tcsd-v1.4-windows-rwp-integration` | `tcsd-12-stage-pipeline-v1.4-windows-rwp` |
+| `worker/wx11p-laptop10` | `dd7c39fef06ed9636cc801d5c0c6a58ba622c132` | `codex/tcsd-v1.4-windows-wx11p-integration` | `tcsd-12-stage-pipeline-v1.4-windows-wx11p` |
+
+每个标签的 peeled commit 都必须是对应生产分支当前 HEAD 的后代：
+
 ```bash
-git clone https://github.com/uaapple/software-doc-generator-prototype.git
-cd software-doc-generator-prototype
 git fetch origin --prune --tags
-git show --no-patch --decorate tcsd-12-stage-pipeline-v1.3
-git diff --stat 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-v1.3
+git merge-base --is-ancestor <当前生产HEAD> '<目标标签>^{}'
+git show --no-patch --decorate '<目标标签>^{}'
 ```
 
-如果仓库已经存在：
+如果两个 Windows checkout 仍停留在此前合并 v1.3 产生的未解决状态，只能在以下事实全部匹配时执行 `git merge --abort`：
 
-```bash
-git fetch origin codex/tcsd-deterministic-pipeline --tags
-git switch codex/tcsd-deterministic-pipeline
-git pull --ff-only origin codex/tcsd-deterministic-pipeline
-git rev-parse HEAD
-git rev-parse 'tcsd-12-stage-pipeline-v1.3^{}'
+```text
+RWP ORIG_HEAD     = 41aa502b35e807d5e206b458512042558702f133
+WX11P ORIG_HEAD   = dd7c39fef06ed9636cc801d5c0c6a58ba622c132
+MERGE_HEAD object = a7956211babfaefa14a325251777ca5515810ade
+MERGE_HEAD peeled = a882c1e22c9fa10bfd761ec6a3487899ee988d0a
 ```
 
-上述两个 SHA 必须相同。不要使用本机工作区中的未提交文件，也不要从 `data/**`、`input/**` 或 `output/**` 复制代码。
+任一值不匹配就停止并报告，不得猜测或清理。abort 后必须确认 HEAD 回到对应快照、index/worktree 干净且不存在 merge/rebase/cherry-pick 状态，再获取和快进目标标签。不要使用 checkout 中的未提交文件，也不要从 `data/**`、`input/**` 或 `output/**` 复制代码。
 
 ## 3. 十二阶段内容
 
@@ -210,8 +219,9 @@ Windows 部署前先执行 `py -3.11 -c "import sys; print(sys.executable)"`，�
 
 ```bash
 git switch release/linux-prod
-git pull --ff-only origin release/linux-prod
-git merge --no-ff tcsd-12-stage-pipeline-v1.3
+git fetch origin --prune --tags
+git merge-base --is-ancestor 7e233769027e297517a83914cf7fac5af3d49317 'tcsd-12-stage-pipeline-v1.4-linux^{}'
+git merge --ff-only tcsd-12-stage-pipeline-v1.4-linux
 npm ci
 npm test
 npm run classify:changes -- --allow-ambiguous
@@ -234,8 +244,9 @@ output/
 
 ```powershell
 git switch release/windows-prod
-git pull --ff-only origin release/windows-prod
-git merge --no-ff tcsd-12-stage-pipeline-v1.3
+git fetch origin --prune --tags
+git merge-base --is-ancestor 41aa502b35e807d5e206b458512042558702f133 'tcsd-12-stage-pipeline-v1.4-windows-rwp^{}'
+git merge --ff-only tcsd-12-stage-pipeline-v1.4-windows-rwp
 $PythonExe = py -3.11 -c "import sys; print(sys.executable)"
 $env:TCSD_PIPELINE_PYTHON = $PythonExe.Trim()
 npm run install:tcsd-python
@@ -245,6 +256,16 @@ npm test
 npm run classify:changes -- --allow-ambiguous
 npm run release:zip:windows-full
 ```
+
+WX11P 使用同一套门禁，但其 checkout/标签必须替换为：
+
+```powershell
+git switch worker/wx11p-laptop10
+git merge-base --is-ancestor dd7c39fef06ed9636cc801d5c0c6a58ba622c132 'tcsd-12-stage-pipeline-v1.4-windows-wx11p^{}'
+git merge --ff-only tcsd-12-stage-pipeline-v1.4-windows-wx11p
+```
+
+不得把 RWP 标签合入 WX11P，也不得把 WX11P 标签合入 RWP。两者共享十二阶段协议和载荷，但保留各自的生产专有提交。
 
 如果生产机已有经过验证的 MATLAB/MCP 二进制，只更新源代码可使用：
 
@@ -372,7 +393,7 @@ MATLAB 临时文件和覆盖率运行产物
 部署 Agent 如需确认文件归属，先运行：
 
 ```bash
-npm run classify:changes -- 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-v1.3 --allow-ambiguous
+npm run classify:changes -- 7e233769027e297517a83914cf7fac5af3d49317..tcsd-12-stage-pipeline-v1.4-linux --allow-ambiguous
 ```
 
-分类结果以 `deploy/ownership.yml` 和三个 `deploy/targets/*.json` 为准，不能根据文件名猜测。
+Windows 应把范围替换为本节映射表中的对应快照和目标标签。分类结果以 `deploy/ownership.yml` 和三个 `deploy/targets/*.json` 为准，不能根据文件名猜测。
