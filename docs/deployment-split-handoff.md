@@ -84,6 +84,9 @@ npm run classify:changes -- release/linux-prod..feat/slx-parser-integration --al
 - `deploy/targets/windows-prod-source.json`
 - `scripts/classify-changes.mjs`
 - `scripts/build-release-zip.mjs`
+- `requirements/tcsd-runtime.txt`
+- `scripts/tcsd-python-dependencies.mjs`
+- `scripts/check-tcsd-python.py`
 - `src/config.js`
 - `package.json`
 
@@ -181,6 +184,8 @@ checkpoint 记录技能名/版本/SKILL.md hash/bundle hash、runtime hash、Her
 Linux 的 `UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS` 只控制单次同步窗口；超时或短暂网络失败保持 `running/workerPending`，由 `UNIT_TEST_CASE_RECONCILE_INTERVAL_MS` 继续对账。404 job-not-found 才作为永久失败。Windows 需要配置 `TCSD_PIPELINE_PYTHON`、`MATLAB_ROOT` 和上述阶段 Hermes 变量。
 
 Windows 供应阶段应运行 `py -3.11 -c "import sys; print(sys.executable)"`，并将输出的绝对 `python.exe` 路径配置为 `TCSD_PIPELINE_PYTHON`。不要使用 PATH 中的 `python` 或 `python3` 示例，因为它们可能解析到旧版本或 Microsoft Store alias。变量未配置时，共享 Node resolver 才回退到 executable `py` 和独立参数前缀 `-3.11`；Linux/macOS 无显式配置时仍使用 `python3`。
+
+Windows full/source 包同时携带固定清单 `requirements/tcsd-runtime.txt`、跨平台入口 `scripts/tcsd-python-dependencies.mjs` 和离线门禁 `scripts/check-tcsd-python.py`。供应顺序固定为：设置上述绝对解释器路径，运行 `npm run install:tcsd-python`，再运行 `npm run check:tcsd-python`、`npm ci` 和 `npm test`。安装入口只用同一解释器执行 `-m pip install --requirement requirements/tcsd-runtime.txt`；门禁核对 Python 3.11、PyYAML 6.0.3、openpyxl 3.1.5 和必要传递依赖 et_xmlfile 2.0.0。正式构包只执行门禁，不自动 pip install 或联网。Linux target 显式排除这两个脚本和清单，也不执行 TCSD Python 门禁。
 
 ## 独立软件详设 / 模块功能描述生成 V1
 

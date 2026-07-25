@@ -6,7 +6,7 @@
 >
 > 部署源分支：`codex/tcsd-deterministic-pipeline`
 >
-> 固定发布标签：`tcsd-12-stage-pipeline-v1`
+> 固定发布标签占位符：`tcsd-12-stage-pipeline-vNEXT`（主任务验收并发布后必须替换）
 >
 > 开发基线：`main@79bc8ea7cfa9625637be0888584080cfa79e62cd`
 >
@@ -29,8 +29,8 @@
 git clone https://github.com/uaapple/software-doc-generator-prototype.git
 cd software-doc-generator-prototype
 git fetch origin --prune --tags
-git show --no-patch --decorate tcsd-12-stage-pipeline-v1
-git diff --stat 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-v1
+git show --no-patch --decorate tcsd-12-stage-pipeline-vNEXT
+git diff --stat 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-vNEXT
 ```
 
 如果仓库已经存在：
@@ -40,7 +40,7 @@ git fetch origin codex/tcsd-deterministic-pipeline --tags
 git switch codex/tcsd-deterministic-pipeline
 git pull --ff-only origin codex/tcsd-deterministic-pipeline
 git rev-parse HEAD
-git rev-parse tcsd-12-stage-pipeline-v1
+git rev-parse tcsd-12-stage-pipeline-vNEXT
 ```
 
 上述两个 SHA 必须相同。不要使用本机工作区中的未提交文件，也不要从 `data/**`、`input/**` 或 `output/**` 复制代码。
@@ -207,7 +207,7 @@ Windows 部署前先执行 `py -3.11 -c "import sys; print(sys.executable)"`，�
 ```bash
 git switch release/linux-prod
 git pull --ff-only origin release/linux-prod
-git merge --no-ff tcsd-12-stage-pipeline-v1
+git merge --no-ff tcsd-12-stage-pipeline-vNEXT
 npm ci
 npm test
 npm run classify:changes -- --allow-ambiguous
@@ -231,7 +231,11 @@ output/
 ```powershell
 git switch release/windows-prod
 git pull --ff-only origin release/windows-prod
-git merge --no-ff tcsd-12-stage-pipeline-v1
+git merge --no-ff tcsd-12-stage-pipeline-vNEXT
+$PythonExe = py -3.11 -c "import sys; print(sys.executable)"
+$env:TCSD_PIPELINE_PYTHON = $PythonExe.Trim()
+npm run install:tcsd-python
+npm run check:tcsd-python
 npm ci
 npm test
 npm run classify:changes -- --allow-ambiguous
@@ -244,17 +248,21 @@ npm run release:zip:windows-full
 npm run release:zip:windows-source
 ```
 
-完整包与源码包都必须包含十二个 `skills/hermes/tcsd-stage-*` 目录、`skills/hermes/tcsd-runtime` 和技能安装脚本。源码包不包含仓库内的 MCP 二进制，必须复用生产机现有且通过 Stage 02 canary 的 MCP。
+完整包与源码包都必须包含十二个 `skills/hermes/tcsd-stage-*` 目录、`skills/hermes/tcsd-runtime`、技能安装脚本、`requirements/tcsd-runtime.txt`、`scripts/tcsd-python-dependencies.mjs` 和 `scripts/check-tcsd-python.py`。源码包不包含仓库内的 MCP 二进制，必须复用生产机现有且通过 Stage 02 canary 的 MCP。Linux 包明确排除这两个 Python 安装/门禁脚本和 TCSD requirements 清单。
 
-`scripts/build-release-zip.mjs` 要求当前分支与目标定义中的 release branch 一致、worktree 干净，并自动运行工程测试、wiki 和编码检查。不要设置 `SKIP_RELEASE_CHECKS=1` 进行正式发布。
+`scripts/build-release-zip.mjs` 要求当前分支与目标定义中的 release branch 一致、worktree 干净。Windows full/source 构包先运行 `check:tcsd-python`，再运行工程测试、wiki 和编码检查；Linux 构包不执行 TCSD Python 门禁。构包不会执行 pip 或联网安装。不要设置 `SKIP_RELEASE_CHECKS=1` 进行正式发布。
 
 ## 7. Windows 技能安装与启动前检查
 
-部署包解压并安装 Node/Python 依赖后执行：
+部署包解压后，先解析并固定同一个 Python 3.11 解释器，再安装固定依赖、执行门禁和安装 Node 依赖：
 
 ```powershell
+$PythonExe = py -3.11 -c "import sys; print(sys.executable)"
+$env:TCSD_PIPELINE_PYTHON = $PythonExe.Trim()
+npm run install:tcsd-python
+npm run check:tcsd-python
 npm ci
-python -c "import yaml, openpyxl; print('PYTHON_OK')"
+npm test
 hermes --version
 matlab -batch "disp(version); disp(ver('simulink'))"
 .\scripts\install-tcsd-hermes-skills.ps1 `
@@ -360,7 +368,7 @@ MATLAB 临时文件和覆盖率运行产物
 部署 Agent 如需确认文件归属，先运行：
 
 ```bash
-npm run classify:changes -- 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-v1 --allow-ambiguous
+npm run classify:changes -- 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-vNEXT --allow-ambiguous
 ```
 
 分类结果以 `deploy/ownership.yml` 和三个 `deploy/targets/*.json` 为准，不能根据文件名猜测。

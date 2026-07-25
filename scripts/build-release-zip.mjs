@@ -132,6 +132,9 @@ if (currentBranch !== releaseBranch) {
 assertCleanWorktree();
 
 if (!skipChecks) {
+  if (target.id === "windows-prod-full" || target.id === "windows-prod-source") {
+    npm(["run", "check:tcsd-python"]);
+  }
   npm(["test"]);
   npm(["run", "check:wiki"]);
   npm(["run", "check:encoding"]);
