@@ -15,6 +15,7 @@ import {
   validateStageCheckpoint,
   validateStageResult
 } from "./tcsd-pipeline-contract.js";
+import { runHermesCommand } from "./hermes-command.js";
 import { TcsdHostSemanticValidator } from "./tcsd-host-semantic-validator.js";
 import { hashTcsdBundle, TcsdStageCatalog } from "./tcsd-stage-catalog.js";
 import { readJson, writeJson } from "./storage.js";
@@ -532,19 +533,24 @@ export class TcsdHermesStageExecutor {
     const startedAt = Date.now();
     let commandResult;
     try {
-      commandResult = await this.commandRunner(this.command, args, {
-        cwd: workspaceDir,
-        env: {
-          ...process.env,
-          NO_COLOR: "1",
-          TCSD_JOB_ID: job.jobId,
-          TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
-          SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
-        },
-        timeout: this.timeoutMs,
-        maxBuffer: 16 * 1024 * 1024,
-        windowsHide: true
-      });
+      commandResult = await runHermesCommand(
+        this.commandRunner,
+        this.command,
+        args,
+        {
+          cwd: workspaceDir,
+          env: {
+            ...process.env,
+            NO_COLOR: "1",
+            TCSD_JOB_ID: job.jobId,
+            TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
+            SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
+          },
+          timeout: this.timeoutMs,
+          maxBuffer: 16 * 1024 * 1024,
+          windowsHide: true
+        }
+      );
     } catch (cause) {
       const failedResult = await readJson(resultPath, null).catch(() => null);
       const runtimeError = stageRuntimeResultError(failedResult, stageIndex, attempt);

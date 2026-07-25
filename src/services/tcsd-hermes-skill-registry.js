@@ -7,6 +7,7 @@ import {
   TCSD_ERROR_CODES,
   TCSD_STAGE_DEFINITIONS
 } from "./tcsd-pipeline-contract.js";
+import { runHermesCommand } from "./hermes-command.js";
 import { hashTcsdBundle } from "./tcsd-stage-catalog.js";
 
 const execFileAsync = promisify(execFile);
@@ -141,7 +142,8 @@ export class TcsdHermesSkillRegistry {
     }
     let commandResult;
     try {
-      commandResult = await this.commandRunner(
+      commandResult = await runHermesCommand(
+        this.commandRunner,
         this.command,
         profileArgs(this.profile, ["skills", "list"]),
         {
