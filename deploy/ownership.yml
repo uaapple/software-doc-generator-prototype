@@ -56,6 +56,7 @@ linux:
   - src/services/rejection-service.js
 
 windows:
+  - requirements/tcsd-runtime.txt
   - skills/hermes/**
   - .env.windows-prod.example
   - deploy/targets/windows-prod*.json
@@ -74,6 +75,8 @@ windows:
   - scripts/install-windows-services.ps1
   - scripts/install-tcsd-hermes-skills.mjs
   - scripts/install-tcsd-hermes-skills.ps1
+  - scripts/tcsd-python-dependencies.mjs
+  - scripts/check-tcsd-python.py
 
 shared:
   - .env.dev-distributed.example

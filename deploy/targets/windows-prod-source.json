@@ -15,6 +15,7 @@
     "wiki",
     "skills",
     "scripts",
+    "requirements/tcsd-runtime.txt",
     "tools/matlab-functions",
     "tools/matlab-mcp-extension.json",
     "templates",
