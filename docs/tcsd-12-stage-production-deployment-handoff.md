@@ -6,7 +6,7 @@
 >
 > 部署源分支：`codex/tcsd-deterministic-pipeline`
 >
-> 固定发布标签占位符：`tcsd-12-stage-pipeline-vNEXT`（主任务验收并发布后必须替换）
+> 固定发布标签：`tcsd-12-stage-pipeline-v1.3`（由主任务完成最终验收后创建）
 >
 > 开发基线：`main@79bc8ea7cfa9625637be0888584080cfa79e62cd`
 >
@@ -29,8 +29,8 @@
 git clone https://github.com/uaapple/software-doc-generator-prototype.git
 cd software-doc-generator-prototype
 git fetch origin --prune --tags
-git show --no-patch --decorate tcsd-12-stage-pipeline-vNEXT
-git diff --stat 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-vNEXT
+git show --no-patch --decorate tcsd-12-stage-pipeline-v1.3
+git diff --stat 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-v1.3
 ```
 
 如果仓库已经存在：
@@ -40,7 +40,7 @@ git fetch origin codex/tcsd-deterministic-pipeline --tags
 git switch codex/tcsd-deterministic-pipeline
 git pull --ff-only origin codex/tcsd-deterministic-pipeline
 git rev-parse HEAD
-git rev-parse tcsd-12-stage-pipeline-vNEXT
+git rev-parse 'tcsd-12-stage-pipeline-v1.3^{}'
 ```
 
 上述两个 SHA 必须相同。不要使用本机工作区中的未提交文件，也不要从 `data/**`、`input/**` 或 `output/**` 复制代码。
@@ -207,7 +207,7 @@ Windows 部署前先执行 `py -3.11 -c "import sys; print(sys.executable)"`，�
 ```bash
 git switch release/linux-prod
 git pull --ff-only origin release/linux-prod
-git merge --no-ff tcsd-12-stage-pipeline-vNEXT
+git merge --no-ff tcsd-12-stage-pipeline-v1.3
 npm ci
 npm test
 npm run classify:changes -- --allow-ambiguous
@@ -231,7 +231,7 @@ output/
 ```powershell
 git switch release/windows-prod
 git pull --ff-only origin release/windows-prod
-git merge --no-ff tcsd-12-stage-pipeline-vNEXT
+git merge --no-ff tcsd-12-stage-pipeline-v1.3
 $PythonExe = py -3.11 -c "import sys; print(sys.executable)"
 $env:TCSD_PIPELINE_PYTHON = $PythonExe.Trim()
 npm run install:tcsd-python
@@ -368,7 +368,7 @@ MATLAB 临时文件和覆盖率运行产物
 部署 Agent 如需确认文件归属，先运行：
 
 ```bash
-npm run classify:changes -- 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-vNEXT --allow-ambiguous
+npm run classify:changes -- 79bc8ea7cfa9625637be0888584080cfa79e62cd..tcsd-12-stage-pipeline-v1.3 --allow-ambiguous
 ```
 
 分类结果以 `deploy/ownership.yml` 和三个 `deploy/targets/*.json` 为准，不能根据文件名猜测。
