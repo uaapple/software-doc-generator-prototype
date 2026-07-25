@@ -23,6 +23,15 @@ ALLOWED_UNRESOLVED_REASONS = {
     "unsupported_model_semantics",
 }
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
+SAMPLE_PERIOD_TEXT_RE = re.compile(
+    r"(?i)(simulation|solver|sample|sampling|unit\s*delay|counter|timer|周期|采样|计数|仿真)"
+)
+ACTION_STEP_LIMIT_TEXT_RE = re.compile(
+    r"(?i)(exceed(?:s|ing|ed)?|more\s+than|greater\s+than|over|超过|大于|超出)"
+    r".{0,80}(?:action\s*)?(?:step|steps|步|guardrail|limit|限制)"
+    r"|(?:step|steps|步|guardrail|limit|限制).{0,80}"
+    r"(?:exceed(?:s|ing|ed)?|more\s+than|greater\s+than|over|超过|大于|超出)"
+)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -184,6 +193,9 @@ def build_brief(
         "guardrails": {
             "maxCandidateTests": 16,
             "maxStepsPerTest": 8,
+            "stepCountSemantics": "stimulus_action_entries",
+            "simulationSamplePeriodsDoNotCountAsSteps": True,
+            "longHoldAsSingleActionAllowed": True,
             "parametersOnlyInInitialization": True,
             "analyzeOnlyTargetUpstreamSlice": True,
             "fullRootInputEnumerationForbidden": True,
@@ -204,6 +216,21 @@ def validate_identifiers(values: dict[str, Any], label: str) -> None:
     invalid = [name for name in values if not IDENTIFIER_RE.fullmatch(str(name))]
     if invalid:
         raise ValueError(f"{label} contains invalid identifiers: {invalid}")
+
+
+def unresolved_confuses_sample_periods_with_action_steps(
+    *,
+    reason_code: str,
+    evidence: str,
+    guardrails: dict[str, Any],
+) -> bool:
+    if reason_code != "state_sequence_not_constructible":
+        return False
+    if guardrails.get("simulationSamplePeriodsDoNotCountAsSteps") is not True:
+        return False
+    if guardrails.get("longHoldAsSingleActionAllowed") is not True:
+        return False
+    return bool(SAMPLE_PERIOD_TEXT_RE.search(evidence) and ACTION_STEP_LIMIT_TEXT_RE.search(evidence))
 
 
 def validate_proposal(
@@ -348,6 +375,7 @@ def validate_proposal(
         )
 
     normalized_unresolved: list[dict[str, Any]] = []
+    guardrails = brief.get("guardrails") if isinstance(brief.get("guardrails"), dict) else {}
     for index, item in enumerate(unresolved, 1):
         if not isinstance(item, dict):
             raise ValueError("unresolved repair entry must be an object")
@@ -361,6 +389,18 @@ def validate_proposal(
             raise ValueError("unresolved repair entry must identify block path and SID")
         if reason_code not in ALLOWED_UNRESOLVED_REASONS or not evidence:
             raise ValueError("unresolved repair entry requires a specific allowed reason and evidence")
+        if unresolved_confuses_sample_periods_with_action_steps(
+            reason_code=reason_code,
+            evidence=evidence,
+            guardrails=guardrails,
+        ):
+            max_steps = int(guardrails.get("maxStepsPerTest") or 8)
+            raise ValueError(
+                "state_sequence_not_constructible incorrectly treats simulation sample periods as "
+                f"TCSD action steps: maxStepsPerTest={max_steps} counts only stimulus.steps entries. "
+                "Encode the finite counter/timer hold as one positive delay_s action, then let the "
+                "deterministic host validate it by simulation."
+            )
         normalized_unresolved.append(
             {
                 "coverage_class": coverage_class,

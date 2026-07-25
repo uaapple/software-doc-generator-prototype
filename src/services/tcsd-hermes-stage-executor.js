@@ -82,6 +82,22 @@ function publicRuntimeError(cause, stageIndex, timeoutMs) {
   });
 }
 
+function stageRuntimeResultError(result, stageIndex, attempt, sessionId = "") {
+  if (result?.status !== "failed") return null;
+  return Object.assign(
+    new Error(result.error?.message || result.summary || `TCSD stage ${stageIndex} deterministic runtime failed.`),
+    {
+      code: result.error?.code || TCSD_ERROR_CODES.stageRuntime,
+      details: {
+        stageIndex,
+        attempt,
+        sessionId,
+        hard: result.error?.hard !== false
+      }
+    }
+  );
+}
+
 function defaultStateDbPath(profile) {
   if (process.env.TCSD_STAGE_HERMES_STATE_DB_PATH) return process.env.TCSD_STAGE_HERMES_STATE_DB_PATH;
   const hermesHomeDir = config.hermes?.homeDir ||
@@ -264,6 +280,8 @@ export class TcsdHermesStageExecutor {
         prepareCommand,
         `Read the resulting authoritative coverage repair brief at: ${repairBriefPath}`,
         "Inspect only the uncovered target block and its local upstream model slice.",
+        "The maxStepsPerTest limit counts JSON stimulus.steps action entries only; it does not count Simulink solver steps, sample hits, counter increments, or Unit Delay updates.",
+        "A finite hold spanning many sample periods is one action step: compute the justified duration and encode it as one positive delay_s instead of declaring the sequence unconstructible.",
         `Write the required Agent repair proposal to: ${repairProposalPath}`,
         "Then run this exact deterministic apply command:",
         applyCommand,
@@ -303,6 +321,21 @@ export class TcsdHermesStageExecutor {
       .reverse()
       .flatMap((stage) => stage.checkpoint?.artifacts || [])
       .find((artifact) => artifact.kind === "xlsx")?.path || "";
+    if (!latestWorkbook) {
+      throw Object.assign(new Error("Host cannot package TCSD completion without a verified final workbook."), {
+        code: TCSD_ERROR_CODES.validation
+      });
+    }
+    const modelName = path.basename(job.input.modelSlxPath, path.extname(job.input.modelSlxPath));
+    const finalWorkbookPath = relativeToWorkspace(
+      workspaceDir,
+      path.join(outputDir, `${modelName}_Test0001_tcsd.xlsx`)
+    );
+    const latestWorkbookAbsolutePath = path.resolve(workspaceDir, latestWorkbook);
+    const finalWorkbookAbsolutePath = path.resolve(workspaceDir, finalWorkbookPath);
+    if (latestWorkbookAbsolutePath !== finalWorkbookAbsolutePath) {
+      await fs.copyFile(latestWorkbookAbsolutePath, finalWorkbookAbsolutePath);
+    }
     const latestSimulation = job.stages?.[10]?.checkpoint?.evidence?.simulationResult ||
       job.stages?.[7]?.checkpoint?.evidence?.simulationResult ||
       "";
@@ -350,7 +383,7 @@ export class TcsdHermesStageExecutor {
       status: "completed",
       completion,
       generatedAt: this.now(),
-      workbook: latestWorkbook,
+      workbook: finalWorkbookPath,
       simulation: {
         status: latestSimulation ? "completed" : "not_required",
         result: latestSimulation
@@ -395,7 +428,8 @@ export class TcsdHermesStageExecutor {
     await writeJson(executionPath, executionManifest);
     await writeJson(timelinePath, timeline);
     const hostArtifacts = [
-      ...artifacts,
+      ...artifacts.filter((artifact) => artifact.path !== finalWorkbookPath),
+      { path: finalWorkbookPath, kind: "xlsx", role: "final-workbook" },
       { path: relativeToWorkspace(workspaceDir, executionPath), kind: "json", role: "execution-manifest" },
       { path: relativeToWorkspace(workspaceDir, timelinePath), kind: "json", role: "timeline" }
     ];
@@ -512,6 +546,9 @@ export class TcsdHermesStageExecutor {
         windowsHide: true
       });
     } catch (cause) {
+      const failedResult = await readJson(resultPath, null).catch(() => null);
+      const runtimeError = stageRuntimeResultError(failedResult, stageIndex, attempt);
+      if (runtimeError) throw runtimeError;
       throw publicRuntimeError(cause, stageIndex, this.timeoutMs);
     }
     const stdout = String(commandResult?.stdout || "");
@@ -551,12 +588,8 @@ export class TcsdHermesStageExecutor {
     } catch (cause) {
       resultReadError = cause;
     }
-    if (result?.status === "failed") {
-      throw Object.assign(new Error(result.error?.message || result.summary || "TCSD deterministic runtime failed."), {
-        code: result.error?.code || TCSD_ERROR_CODES.stageRuntime,
-        details: { stageIndex, attempt, sessionId, hard: result.error?.hard !== false }
-      });
-    }
+    const runtimeError = stageRuntimeResultError(result, stageIndex, attempt, sessionId);
+    if (runtimeError) throw runtimeError;
     let validatedResult;
     let semanticEvidence;
     try {

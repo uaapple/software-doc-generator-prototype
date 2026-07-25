@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from openpyxl import Workbook
 
@@ -116,7 +117,13 @@ class PipelineStageRunnerTests(unittest.TestCase):
             "repairRequired": True,
             "metricDeficits": [{"coverage_class": "Decision"}],
             "coverageTargets": [],
-            "guardrails": {"maxCandidateTests": 16, "maxStepsPerTest": 8},
+            "guardrails": {
+                "maxCandidateTests": 16,
+                "maxStepsPerTest": 8,
+                "stepCountSemantics": "stimulus_action_entries",
+                "simulationSamplePeriodsDoNotCountAsSteps": True,
+                "longHoldAsSingleActionAllowed": True,
+            },
         }
         proposal = {
             "schema": REPAIR.PROPOSAL_SCHEMA,
@@ -144,6 +151,109 @@ class PipelineStageRunnerTests(unittest.TestCase):
                 brief,
                 {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
             )
+
+    def test_stage10_rejects_sample_period_count_as_action_step_limit(self):
+        brief = {
+            "schema": REPAIR.BRIEF_SCHEMA,
+            "jobId": "job-counter",
+            "model": "GenericCounter",
+            "repairRequired": True,
+            "metricDeficits": [{"coverage_class": "Decision"}],
+            "coverageTargets": [{
+                "coverage_class": "Decision",
+                "block": {"path": "GenericCounter/MinMax", "sid": "GenericCounter:15"},
+                "missing_outcomes": ["input 2"],
+                "requires_model_inspection": False,
+            }],
+            "guardrails": {
+                "maxCandidateTests": 16,
+                "maxStepsPerTest": 8,
+                "stepCountSemantics": "stimulus_action_entries",
+                "simulationSamplePeriodsDoNotCountAsSteps": True,
+                "longHoldAsSingleActionAllowed": True,
+            },
+        }
+        proposal = {
+            "schema": REPAIR.PROPOSAL_SCHEMA,
+            "jobId": "job-counter",
+            "model": "GenericCounter",
+            "tests": [],
+            "unresolved": [{
+                "coverage_class": "Decision",
+                "block": {"path": "GenericCounter/MinMax", "sid": "GenericCounter:15"},
+                "reason_code": "state_sequence_not_constructible",
+                "evidence": (
+                    "The counter needs 65535 simulation sample steps, far exceeding "
+                    "the 8-step per-test guardrail."
+                ),
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "sample periods as TCSD action steps"):
+            REPAIR.validate_proposal(
+                proposal,
+                brief,
+                {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+            )
+
+    def test_stage10_accepts_long_hold_as_one_action_step(self):
+        brief = {
+            "schema": REPAIR.BRIEF_SCHEMA,
+            "jobId": "job-counter",
+            "model": "GenericCounter",
+            "repairRequired": True,
+            "metricDeficits": [{"coverage_class": "Decision"}],
+            "coverageTargets": [{
+                "coverage_class": "Decision",
+                "block": {"path": "GenericCounter/MinMax", "sid": "GenericCounter:15"},
+                "missing_outcomes": ["input 2"],
+                "requires_model_inspection": False,
+            }],
+            "guardrails": {
+                "maxCandidateTests": 16,
+                "maxStepsPerTest": 8,
+                "stepCountSemantics": "stimulus_action_entries",
+                "simulationSamplePeriodsDoNotCountAsSteps": True,
+                "longHoldAsSingleActionAllowed": True,
+            },
+        }
+        proposal = {
+            "schema": REPAIR.PROPOSAL_SCHEMA,
+            "jobId": "job-counter",
+            "model": "GenericCounter",
+            "tests": [{
+                "id": "counter-input2",
+                "coverage_class": "Decision",
+                "block": {"path": "GenericCounter/MinMax", "sid": "GenericCounter:15"},
+                "required_outcome": "input 2",
+                "controller": {"direct_inputs": {"Enable": 1}, "parameters": {}},
+                "stimulus": {
+                    "initial_inputs": {"Enable": 1},
+                    "initial_params": {},
+                    "steps": [{"delay_s": 655.36, "input_updates": {}, "param_updates": {}}],
+                    "evidence_step": 1,
+                },
+                "analysis": {
+                    "upstream_slice": [
+                        "GenericCounter/MinMax",
+                        "GenericCounter/Sum",
+                        "GenericCounter/Unit Delay",
+                    ],
+                    "rationale": (
+                        "A 0.01 second sample time needs 65536 sample periods, "
+                        "represented by one finite hold action."
+                    ),
+                },
+            }],
+            "unresolved": [],
+        }
+        ir, report = REPAIR.validate_proposal(
+            proposal,
+            brief,
+            {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+        )
+        self.assertEqual(report["acceptedCandidateCount"], 1)
+        self.assertEqual(len(ir["items"][0]["stimulus"]["steps"]), 1)
+        self.assertEqual(ir["items"][0]["analysis"]["cumulative_wait_s"], 655.36)
 
     def test_satk_server_discovery_priority_is_cross_platform_and_deterministic(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -205,6 +315,53 @@ class PipelineStageRunnerTests(unittest.TestCase):
         self.assertTrue(SATK.mcp_response_failed({"error": {"code": -1}}))
         self.assertTrue(SATK.mcp_response_failed({"result": {"isError": True, "content": []}}))
         self.assertFalse(SATK.mcp_response_failed({"result": {"isError": False, "content": []}}))
+
+    def test_stage02_extracts_public_mcp_error_from_satk_failure(self):
+        response = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {
+                "isError": True,
+                "content": [{
+                    "type": "text",
+                    "text": "failed to attach to MATLAB session",
+                }],
+            },
+        })
+        failure = subprocess.CalledProcessError(
+            1,
+            ["python3", "satk_eval.py", "canary.m"],
+            output=response,
+            stderr="",
+        )
+        with mock.patch.object(RUNNER.subprocess, "run", side_effect=failure):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"Stage 02 environment gate failed: SATK/MCP failed: failed to attach to MATLAB session",
+            ):
+                RUNNER.run_satk(
+                    ["python3", "satk_eval.py", "canary.m"],
+                    Path("/tmp"),
+                    stage=2,
+                    context="environment gate failed",
+                )
+
+    def test_stage02_matlab_root_falls_back_to_satk_root(self):
+        with mock.patch.dict(
+            os.environ,
+            {"SATK_MATLAB_ROOT": "/Applications/MATLAB_R2026a.app"},
+            clear=True,
+        ):
+            self.assertEqual(
+                RUNNER.matlab_root_path({"matlabRoot": "/ignored/input/root"}),
+                Path("/Applications/MATLAB_R2026a.app"),
+            )
+
+    def test_public_stage_error_redacts_credentials(self):
+        self.assertEqual(
+            RUNNER.public_error_text("failed password=visible token: also-visible"),
+            "failed password=[REDACTED] token: [REDACTED]",
+        )
 
     def test_planning_mapping_gaps_are_advisory_and_superseded_by_measured_coverage(self):
         with tempfile.TemporaryDirectory() as temp:

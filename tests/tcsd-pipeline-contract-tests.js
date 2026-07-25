@@ -186,7 +186,9 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
     result.status = "failed";
     result.error = {
       code: stage === 2 ? TCSD_ERROR_CODES.environment : TCSD_ERROR_CODES.stageRuntime,
-      message: "hard runtime failure",
+      message: stage === 2
+        ? "Stage 02 environment gate failed: SATK/MCP failed: failed to attach to MATLAB session"
+        : "hard runtime failure",
       hard: true
     };
     await writeFile(resultPath, JSON.stringify(result));
@@ -625,6 +627,13 @@ function createFakeHermes(workspace, options = {}) {
         await writeFile(path.join(workspace.root, result.artifacts[0].path), "");
       }
     }
+    if (options.rejectAfterResultStage === manifest.stageIndex) {
+      throw Object.assign(new Error("generic Hermes process failure"), {
+        code: 1,
+        stdout: "",
+        stderr: "generic process failure"
+      });
+    }
     return { stdout: `non-authoritative agent text claims success\nsession_id: ${sessionId}\n`, stderr: "" };
   };
   return { invocations, commandRunner, attemptByStage };
@@ -790,6 +799,10 @@ for (const [options, stageIndex, label] of [
   assert.equal(job.stages[10].status, "已完成");
   assert.equal(job.stages[11].checkpoint.executionManifest.authority, "host");
   assert.equal(job.stages[11].checkpoint.executionManifest.completion, "partial");
+  assert.equal(
+    job.stages[11].checkpoint.executionManifest.workbook,
+    "outputs/GenericModel_Test0001_tcsd.xlsx"
+  );
   assert.equal(job.stages[11].checkpoint.executionManifest.evidence.checkpointCount, 12);
   assert.equal(
     job.stages[11].checkpoint.executionManifest.evidence.planningMappingAssessment.authority,
@@ -833,8 +846,19 @@ for (const [options, stageIndex, label] of [
   const { fake, job } = await runAgentPipeline({ hardFailureStage: 2 });
   assert.equal(job.status, "失败");
   assert.equal(job.error.code, TCSD_ERROR_CODES.environment);
+  assert.match(job.error.message, /Stage 02 environment gate failed/);
+  assert.match(job.error.message, /failed to attach to MATLAB session/);
+  assert.match(job.stages[1].summary, /failed to attach to MATLAB session/);
   assert.equal(job.stages[1].attempt, 1);
   assert.equal(fake.attemptByStage.get(2), 1);
+}
+
+{
+  const { job } = await runAgentPipeline({ hardFailureStage: 2, rejectAfterResultStage: 2 });
+  assert.equal(job.status, "失败");
+  assert.equal(job.error.code, TCSD_ERROR_CODES.environment);
+  assert.match(job.error.message, /failed to attach to MATLAB session/);
+  assert.doesNotMatch(job.error.message, /generic Hermes process failure/);
 }
 
 {

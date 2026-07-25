@@ -58,7 +58,57 @@ def hard_error_code(stage: int, error: BaseException) -> str:
     if stage == 2: return "tcsd_environment_gate_failed"
     return "tcsd_stage_runtime_failed"
 
-def run(command: list[str], cwd: Path) -> None: subprocess.run(command, cwd=cwd, check=True)
+PUBLIC_ERROR_LIMIT = 2000
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(api[_-]?key|authorization|bearer|password|secret|token)\b(\s*[:=]\s*|\s+)([^\s,;]+)"
+)
+
+def public_error_text(value: Any) -> str:
+    text = str(value or "").replace("\x00", "").replace("\r", "\n")
+    text = SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", text)
+    text = " ".join(text.split())
+    return text[:PUBLIC_ERROR_LIMIT]
+
+def mcp_error_text(output: str) -> str:
+    try:
+        payload = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    error = payload.get("error")
+    if isinstance(error, dict) and error.get("message"):
+        return public_error_text(error["message"])
+    result = payload.get("result")
+    if not isinstance(result, dict) or result.get("isError") is not True:
+        return ""
+    content = result.get("content")
+    if not isinstance(content, list):
+        return ""
+    messages = [
+        public_error_text(item.get("text"))
+        for item in content
+        if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+    ]
+    return " ".join(message for message in messages if message)
+
+def run(command: list[str], cwd: Path) -> None:
+    subprocess.run(command, cwd=cwd, check=True)
+
+def run_satk(command: list[str], cwd: Path, *, stage: int, context: str) -> None:
+    try:
+        subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as error:
+        detail = mcp_error_text(error.stdout or "")
+        if not detail:
+            detail = public_error_text(error.stderr or "")
+        if not detail:
+            detail = f"satk_eval exited with code {error.returncode}"
+        raise RuntimeError(f"Stage {stage:02d} {context}: SATK/MCP failed: {detail}") from None
+def matlab_root_path(inp: dict[str, Any]) -> Path:
+    return Path(
+        os.environ.get("MATLAB_ROOT")
+        or os.environ.get("SATK_MATLAB_ROOT")
+        or inp.get("matlabRoot", "C:/Program Files/MATLAB/R2026a")
+    )
 def matlab_cell(items: list[str]) -> str: return "{" + ",".join("'" + item.replace("'", "''") + "'" for item in items) + "}"
 def matlab_string(value: str) -> str: return "'" + value.replace("'", "''") + "'"
 def stage4_matlab_code(*, root: Path, scripts_dir: Path, interface: Path, model: str, mat_name: str, init_scripts: list[str]) -> str:
@@ -157,7 +207,7 @@ def stage_run(
         manifest = out / ".tcsd-evidence" / "input-manifest.json"; write_json(manifest, {"schema": "tcsd-input-manifest/v1", "jobId": job["jobId"], "files": [{"path": str(item), "size": item.stat().st_size} for item in required], "projectAddon": inp.get("projectAddonCopy", {})})
         finish(job, stage, summary="输入文件与项目附件已验证。", artifacts=[artifact(root, manifest)]); return
     if stage == 2:
-        matlab_root = Path(os.environ.get("MATLAB_ROOT", inp.get("matlabRoot", "C:/Program Files/MATLAB/R2026a")))
+        matlab_root = matlab_root_path(inp)
         matlab = matlab_root / "bin" / ("matlab.exe" if os.name == "nt" else "matlab")
         if not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
         if not (scripts() / "satk_eval.py").is_file(): raise RuntimeError("SATK runtime runner is missing")
@@ -203,7 +253,12 @@ def stage_run(
                 ]),
                 encoding="utf-8",
             )
-            run([sys.executable, str(scripts() / "satk_eval.py"), str(canary_script)], root)
+            run_satk(
+                [sys.executable, str(scripts() / "satk_eval.py"), str(canary_script)],
+                root,
+                stage=stage,
+                context="environment gate failed",
+            )
             if not matlab_sentinel.is_file(): raise RuntimeError("SATK/MCP returned without writing the MATLAB sentinel")
             matlab_result = read_json(matlab_sentinel)
             if (
@@ -248,7 +303,13 @@ def stage_run(
         job_id_m = str(job["jobId"]).replace("'", "''")
         entry.write_text(f"rootDir='{root_m}'; initScripts={matlab_cell(init)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); p=struct('schema','tcsd-workspace-initialization/v1','jobId','{job_id_m}','workspace',rootDir,'initScripts',{{initScripts}},'completed',true); fid=fopen('{manifest_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid);", encoding="utf-8")
         if os.environ.get("TCSD_PIPELINE_SETUP_FIXTURE") == "1": write_json(init_manifest, {"schema":"tcsd-workspace-initialization/v1","jobId":job["jobId"],"workspace":str(root),"initScripts":init,"completed":True})
-        else: run([sys.executable, str(scripts() / "satk_eval.py"), str(entry)], root)
+        else:
+            run_satk(
+                [sys.executable, str(scripts() / "satk_eval.py"), str(entry)],
+                root,
+                stage=stage,
+                context="workspace initialization failed",
+            )
         initialized = read_json(init_manifest)
         if initialized.get("jobId") != job["jobId"] or initialized.get("completed") is not True: raise RuntimeError("workspace initialization manifest is invalid")
         write_json(resources, {"schema": "tcsd-owned-resources/v1", "jobId": job["jobId"], "workspace": str(root), "generatedEntries": [str(entry.relative_to(root))]}); state["resources"] = str(resources); state["initializationManifest"] = str(init_manifest); save_state(job, state)
@@ -257,7 +318,13 @@ def stage_run(
     if stage == 4:
         entry = out / ".tcsd-runtime" / "stage04_interface.m"
         code = stage4_matlab_code(root=root, scripts_dir=scripts(), interface=interface, model=model, mat_name=Path(inp["modelMatPath"]).name, init_scripts=inp.get("projectInitScripts", []))
-        entry.write_text(code, encoding="utf-8"); run([sys.executable, str(scripts() / "satk_eval.py"), str(entry)], root)
+        entry.write_text(code, encoding="utf-8")
+        run_satk(
+            [sys.executable, str(scripts() / "satk_eval.py"), str(entry)],
+            root,
+            stage=stage,
+            context="model interface extraction failed",
+        )
         validate_interface(read_json(interface)); read_json(traces); state.update({"interface": str(interface), "traces": str(traces)}); save_state(job, state)
         finish(job, stage, summary="模型已加载并提取根输入输出接口。", artifacts=[artifact(root, interface), artifact(root, traces)]); return
     mapping, obligations, coverage_ir = out / f"{model}_logical_operators.json", out / f"{model}_coverage_obligations.json", out / f"{model}_coverage_ir.json"
