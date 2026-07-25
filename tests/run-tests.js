@@ -39,6 +39,8 @@ import {
   buildOutlineItems,
   parseRequirementMarkdownBlocks
 } from "../src/services/software-requirement-markdown-agent-service.js";
+import { parseZipArchive } from "../src/services/zip-archive.js";
+import { buildZipArchive } from "./zip-fixture.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -248,77 +250,6 @@ function buildSheetXml(rows = []) {
 </worksheet>`;
 }
 
-function crc32(buffer) {
-  let crc = 0xffffffff;
-  for (const byte of buffer) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function buildZipArchive(entries = []) {
-  const localRecords = [];
-  const centralRecords = [];
-  let localOffset = 0;
-
-  for (const entry of entries) {
-    const name = Buffer.from(String(entry.name || "").replaceAll("\\", "/"), "utf8");
-    const content = Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(String(entry.content || ""), "utf8");
-    const checksum = crc32(content);
-    const localHeader = Buffer.alloc(30);
-    localHeader.writeUInt32LE(0x04034b50, 0);
-    localHeader.writeUInt16LE(20, 4);
-    localHeader.writeUInt16LE(0x0800, 6);
-    localHeader.writeUInt16LE(0, 8);
-    localHeader.writeUInt16LE(0, 10);
-    localHeader.writeUInt16LE(0x0021, 12);
-    localHeader.writeUInt32LE(checksum, 14);
-    localHeader.writeUInt32LE(content.length, 18);
-    localHeader.writeUInt32LE(content.length, 22);
-    localHeader.writeUInt16LE(name.length, 26);
-    localHeader.writeUInt16LE(0, 28);
-    localRecords.push(localHeader, name, content);
-
-    const centralHeader = Buffer.alloc(46);
-    centralHeader.writeUInt32LE(0x02014b50, 0);
-    centralHeader.writeUInt16LE(20, 4);
-    centralHeader.writeUInt16LE(20, 6);
-    centralHeader.writeUInt16LE(0x0800, 8);
-    centralHeader.writeUInt16LE(0, 10);
-    centralHeader.writeUInt16LE(0, 12);
-    centralHeader.writeUInt16LE(0x0021, 14);
-    centralHeader.writeUInt32LE(checksum, 16);
-    centralHeader.writeUInt32LE(content.length, 20);
-    centralHeader.writeUInt32LE(content.length, 24);
-    centralHeader.writeUInt16LE(name.length, 28);
-    centralHeader.writeUInt16LE(0, 30);
-    centralHeader.writeUInt16LE(0, 32);
-    centralHeader.writeUInt16LE(0, 34);
-    centralHeader.writeUInt16LE(0, 36);
-    centralHeader.writeUInt32LE(0, 38);
-    centralHeader.writeUInt32LE(localOffset, 42);
-    centralRecords.push(centralHeader, name);
-
-    localOffset += localHeader.length + name.length + content.length;
-  }
-
-  const centralDirectory = Buffer.concat(centralRecords);
-  const endOfCentralDirectory = Buffer.alloc(22);
-  endOfCentralDirectory.writeUInt32LE(0x06054b50, 0);
-  endOfCentralDirectory.writeUInt16LE(0, 4);
-  endOfCentralDirectory.writeUInt16LE(0, 6);
-  endOfCentralDirectory.writeUInt16LE(entries.length, 8);
-  endOfCentralDirectory.writeUInt16LE(entries.length, 10);
-  endOfCentralDirectory.writeUInt32LE(centralDirectory.length, 12);
-  endOfCentralDirectory.writeUInt32LE(localOffset, 16);
-  endOfCentralDirectory.writeUInt16LE(0, 20);
-
-  return Buffer.concat([...localRecords, centralDirectory, endOfCentralDirectory]);
-}
-
 async function createMinimalXlsx(filePath, rowsBySheet = {}) {
   const sheetEntries = Object.entries(rowsBySheet);
   const workbookSheets = sheetEntries
@@ -381,7 +312,7 @@ async function createMinimalXlsx(filePath, rowsBySheet = {}) {
     });
   }
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, buildZipArchive(entries));
+  await fs.writeFile(filePath, buildZipArchive(entries, { compressionMethod: 8 }));
 }
 
 function buildManualTitleOutline(sections = [{ sectionTitle: "智能补电", itemTitles: ["激活判断", "退出判断"] }]) {
@@ -6337,6 +6268,44 @@ const tests = [
     }
   },
   {
+    name: "ZIP archive helper reads store and deflate entries and rejects unsafe archives",
+    run: async () => {
+      const archive = parseZipArchive(
+        buildZipArchive([
+          { name: "exact/store.xml", content: "<store>ok</store>", compressionMethod: 0 },
+          { name: "nested/deflate.xml", content: "<deflate>ok</deflate>", compressionMethod: 8 },
+          { name: "nested/readme.txt", content: "ignored", compressionMethod: 8 }
+        ])
+      );
+
+      assert.equal(archive.readText("exact/store.xml"), "<store>ok</store>");
+      assert.equal(archive.readText("nested/deflate.xml"), "<deflate>ok</deflate>");
+      assert.equal(archive.readText("missing.xml"), null);
+      assert.deepEqual(
+        archive.readTextEntriesBySuffix(".xml").map((entry) => entry.fileName),
+        ["exact/store.xml", "nested/deflate.xml"]
+      );
+      assert.deepEqual(
+        archive.readTextEntries((entry) => entry.fileName.startsWith("nested/")).map((entry) => entry.fileName),
+        ["nested/deflate.xml", "nested/readme.txt"]
+      );
+
+      assert.throws(
+        () => parseZipArchive(buildZipArchive([{ name: "../escape.xml", content: "unsafe" }])),
+        /path is unsafe/
+      );
+      assert.throws(
+        () => parseZipArchive(buildZipArchive([{ name: "unsupported.xml", content: "data", compressionMethod: 12 }])),
+        /compression method 12/
+      );
+      const validArchive = buildZipArchive([{ name: "bounded.xml", content: "data" }]);
+      assert.throws(
+        () => parseZipArchive(validArchive.subarray(0, validArchive.length - 1)),
+        /end of central directory/
+      );
+    }
+  },
+  {
     name: "Spreadsheet extraction service parses Basic Report HIL rows from xlsx",
     run: async () => {
       await withTempConfig(async (tempDir) => {
@@ -6355,7 +6324,18 @@ const tests = [
         });
 
         const service = new SpreadsheetExtractionService();
-        const result = await service.parseHilSpreadsheet(spreadsheetPath);
+        const originalPath = process.env.PATH;
+        let result;
+        try {
+          process.env.PATH = "";
+          result = await service.parseHilSpreadsheet(spreadsheetPath);
+        } finally {
+          if (originalPath === undefined) {
+            delete process.env.PATH;
+          } else {
+            process.env.PATH = originalPath;
+          }
+        }
 
         assert.equal(result.sheetName, "Basic Report");
         assert.equal(result.cases.length, 1);

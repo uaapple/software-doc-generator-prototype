@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { validateModelFactBundle, createEmptyModelFactBundle, MODEL_FACT_FIELDS } from "../src/services/model-fact-bundle.js";
 import { SlxModelFactAdapter } from "../src/services/slx-model-fact-adapter.js";
 import { SlxModelAnalysisService, SlxAnalysisError, appendRawSlxSemanticFactsFromXml } from "../src/services/slx-model-analysis-service.js";
 import { MatlabMcpClient, MatlabMcpError } from "../src/services/matlab-mcp-client.js";
 import { ExtractionService } from "../src/services/extraction-service.js";
 import { ModelRequirementViewService } from "../src/services/model-requirement-view-service.js";
+import { buildZipArchive } from "./zip-fixture.js";
 
 // ── ModelFactBundle ──
 
@@ -321,6 +325,68 @@ async function testRawSlxDataflowFactsAreGeneric() {
   assert.ok(dataflowFact.action.includes("ReqInc"));
   assert.ok(dataflowFact.action.includes("ReqDec"));
   assert.ok(bundle.traceRefs.some((fact) => fact.name === "raw_slx_xml_dataflow_scan"));
+}
+
+async function testRawSlxZipReadingDoesNotRequireUnzip() {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "slx-zip-reader-"));
+  const slxPath = path.join(tempDir, "generic.slx");
+  const rawXml = `
+    <System>
+      <Block BlockType="Inport" Name="InputA" SID="1"></Block>
+      <Block BlockType="Switch" Name="SelectA" SID="2">
+        <P Name="Criteria">u2 ~= 0</P>
+      </Block>
+      <Block BlockType="Outport" Name="OutputA" SID="3"></Block>
+      <Line><P Name="Src">1#out:1</P><P Name="Dst">2#in:1</P></Line>
+      <Line><P Name="Src">1#out:1</P><P Name="Dst">2#in:2</P></Line>
+      <Line><P Name="Src">2#out:1</P><P Name="Dst">3#in:1</P></Line>
+    </System>
+  `;
+  await fs.writeFile(
+    slxPath,
+    buildZipArchive([
+      {
+        name: "metadata/coreProperties.xml",
+        content: "<Metadata>DCDCActSt_buck</Metadata>",
+        compressionMethod: 0
+      },
+      {
+        name: "simulink/blockdiagram.xml",
+        content: rawXml,
+        compressionMethod: 8
+      },
+      {
+        name: "simulink/ignored.xml.bak",
+        content: "<System>not an XML entry</System>",
+        compressionMethod: 8
+      }
+    ])
+  );
+
+  const bundle = createEmptyModelFactBundle();
+  bundle.source = { fileName: "generic.slx", modelName: "GenericModel" };
+  const service = new SlxModelAnalysisService({
+    analysisBackend: "legacy",
+    mcpClient: createFakeMcpClient(bundle)
+  });
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = "";
+    const result = await service.analyze({
+      id: "slx-zip",
+      originalName: "generic.slx",
+      absolutePath: slxPath
+    });
+    assert.ok(result.logicRules.some((fact) => fact.name === "raw_slx_dcdc_buck_exit_logic"));
+    assert.ok(result.logicRules.some((fact) => fact.name.startsWith("raw_slx_dataflow_")));
+  } finally {
+    if (originalPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = originalPath;
+    }
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 // ── SlxModelAnalysisService ──
@@ -1126,6 +1192,7 @@ const tests = [
   testCompactModelRequirementViewKeepsLowVoltageCriticalFacts,
   testModelRequirementViewKeepsSignalArrowsAsLogic,
   testRawSlxDataflowFactsAreGeneric,
+  testRawSlxZipReadingDoesNotRequireUnzip,
   testAnalysisServiceSuccess,
   testAnalysisServiceConvertToExtraction,
   testAnalysisServiceUsesSatkToolsByDefault,
