@@ -74,6 +74,36 @@ assert.deepEqual(
     args: ["/d", "/s", "/c", "\"C:\\Hermes Runtime\\hermes.cmd\" skills list"]
   }
 );
+{
+  const hermesCommand = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\hermes.cmd";
+  const venvPython = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\venv\\Scripts\\python.exe";
+  const legacyPython = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\python\\python.exe";
+  const hermesHome = "C:\\SoftwareDocWorker\\runtime\\hermes-home";
+  const args = ["chat", "-q", "中文 prompt with spaces"];
+
+  assert.deepEqual(
+    resolveHermesCommand(hermesCommand, args, {
+      platform: "win32",
+      pathExists: (candidate) => [venvPython, legacyPython, hermesHome].includes(candidate)
+    }),
+    {
+      command: venvPython,
+      args: ["-m", "hermes_cli.main", ...args],
+      env: { HERMES_HOME: hermesHome }
+    }
+  );
+  assert.deepEqual(
+    resolveHermesCommand(hermesCommand, args, {
+      platform: "win32",
+      pathExists: (candidate) => [legacyPython, hermesHome].includes(candidate)
+    }),
+    {
+      command: legacyPython,
+      args: ["-m", "hermes_cli.main", ...args],
+      env: { HERMES_HOME: hermesHome }
+    }
+  );
+}
 
 assert.equal(TCSD_STAGE_DEFINITIONS.length, 12);
 assert.equal(TCSD_PIPELINE_SCHEMA, "tcsd-agent-stage-pipeline/v2");
