@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { inflateRawSync } from "node:zlib";
+import { parseZipArchive } from "./zip-archive.js";
 
 export const TCSD_PIPELINE_SCHEMA = "tcsd-agent-stage-pipeline/v2";
 export const TCSD_LEGACY_PIPELINE_SCHEMA = "tcsd-deterministic-pipeline/v1";
@@ -222,35 +222,18 @@ async function assertArtifact(rootDir, artifact = {}) {
 }
 
 function xlsxText(buffer) {
-  const result = [];
-  let eocd = -1;
-  for (let offset = buffer.length - 22; offset >= Math.max(0, buffer.length - 66000); offset -= 1) {
-    if (buffer.readUInt32LE(offset) === 0x06054b50) {
-      eocd = offset;
-      break;
-    }
+  try {
+    return parseZipArchive(buffer, {
+      maxArchiveBytes: 256 * 1024 * 1024,
+      maxEntryUncompressedBytes: 64 * 1024 * 1024,
+      maxTotalUncompressedBytes: 256 * 1024 * 1024
+    })
+      .readTextEntriesBySuffix(".xml")
+      .map((entry) => entry.text)
+      .join("\n");
+  } catch (_error) {
+    throw contractError("XLSX zip 目录或 entry 非法");
   }
-  if (eocd < 0) throw contractError("XLSX zip 目录非法");
-  let offset = buffer.readUInt32LE(eocd + 16);
-  const count = buffer.readUInt16LE(eocd + 10);
-  for (let index = 0; index < count; index += 1) {
-    if (buffer.readUInt32LE(offset) !== 0x02014b50) throw contractError("XLSX zip entry 非法");
-    const method = buffer.readUInt16LE(offset + 10);
-    const size = buffer.readUInt32LE(offset + 20);
-    const nameLength = buffer.readUInt16LE(offset + 28);
-    const extra = buffer.readUInt16LE(offset + 30);
-    const comment = buffer.readUInt16LE(offset + 32);
-    const local = buffer.readUInt32LE(offset + 42);
-    const name = buffer.subarray(offset + 46, offset + 46 + nameLength).toString("utf8");
-    offset += 46 + nameLength + extra + comment;
-    if (!name.endsWith(".xml")) continue;
-    const localName = buffer.readUInt16LE(local + 26);
-    const localExtra = buffer.readUInt16LE(local + 28);
-    const start = local + 30 + localName + localExtra;
-    const compressed = buffer.subarray(start, start + size);
-    result.push((method === 8 ? inflateRawSync(compressed) : compressed).toString("utf8"));
-  }
-  return result.join("\n");
 }
 
 async function evidenceJson(rootDir, relativePath, expectedSchema) {

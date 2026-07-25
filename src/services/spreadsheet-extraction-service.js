@@ -1,9 +1,5 @@
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
-const ZIP_READ_MAX_BUFFER = 8 * 1024 * 1024;
+import { openZipArchive } from "./zip-archive.js";
 
 function decodeXmlEntities(value = "") {
   return String(value || "")
@@ -40,22 +36,6 @@ function columnRefToIndex(cellRef = "") {
     index = index * 26 + (letter.charCodeAt(0) - 64);
   }
   return Math.max(0, index - 1);
-}
-
-async function readZipEntry(filePath, entryPath) {
-  try {
-    const { stdout } = await execFileAsync("unzip", ["-p", filePath, entryPath], {
-      encoding: "utf8",
-      maxBuffer: ZIP_READ_MAX_BUFFER
-    });
-    return String(stdout || "");
-  } catch (error) {
-    const message = String(error?.message || "");
-    if (message.includes("filename not matched")) {
-      return "";
-    }
-    throw error;
-  }
 }
 
 function parseSharedStrings(xml = "") {
@@ -176,8 +156,13 @@ export class SpreadsheetExtractionService {
       throw new Error("当前仅支持 .xlsx 格式的 HIL Excel 导入");
     }
 
-    const workbookXml = await readZipEntry(resolvedPath, "xl/workbook.xml");
-    const workbookRelsXml = await readZipEntry(resolvedPath, "xl/_rels/workbook.xml.rels");
+    const archive = await openZipArchive(resolvedPath, {
+      maxArchiveBytes: 64 * 1024 * 1024,
+      maxEntryUncompressedBytes: 8 * 1024 * 1024,
+      maxTotalUncompressedBytes: 64 * 1024 * 1024
+    });
+    const workbookXml = archive.readText("xl/workbook.xml");
+    const workbookRelsXml = archive.readText("xl/_rels/workbook.xml.rels");
     if (!workbookXml || !workbookRelsXml) {
       throw new Error("无法读取 Excel 工作簿内容");
     }
@@ -194,9 +179,9 @@ export class SpreadsheetExtractionService {
       throw new Error("无法定位 Excel 工作表内容");
     }
 
-    const sharedStringsXml = await readZipEntry(resolvedPath, "xl/sharedStrings.xml");
+    const sharedStringsXml = archive.readText("xl/sharedStrings.xml");
     const sharedStrings = sharedStringsXml ? parseSharedStrings(sharedStringsXml) : [];
-    const sheetXml = await readZipEntry(resolvedPath, `xl/${targetPath.replace(/^xl\//, "")}`);
+    const sheetXml = archive.readText(`xl/${targetPath.replace(/^xl\//, "")}`);
     if (!sheetXml) {
       throw new Error("无法读取目标工作表内容");
     }
