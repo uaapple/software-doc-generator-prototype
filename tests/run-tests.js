@@ -44,6 +44,11 @@ import {
   buildTcsdPythonDependencyCommand,
   runTcsdPythonDependencyCommand
 } from "../scripts/tcsd-python-dependencies.mjs";
+import {
+  npm as runReleaseNpm,
+  resolveNpmInvocation,
+  run as runReleaseCommand
+} from "../scripts/build-release-zip.mjs";
 import { buildZipArchive } from "./zip-fixture.js";
 
 const execFileAsync = promisify(execFile);
@@ -678,6 +683,54 @@ const tests = [
       }
       assert.equal(server.listening, false);
       assert.equal(closeEvents, 2);
+    }
+  },
+  {
+    name: "Release builder invokes npm CLI through Node on Windows",
+    run: async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "release-npm-cli-"));
+      const npmCli = path.join(tempDir, "npm-cli.js");
+      try {
+        await fs.writeFile(npmCli, "// npm CLI fixture\n", "utf8");
+        const calls = [];
+        runReleaseNpm(["run", "check:tcsd-python"], {
+          platform: "win32",
+          env: { npm_execpath: npmCli },
+          nodeExecutable: "C:\\Node\\node.exe",
+          commandRunner: (command, args) => calls.push({ command, args })
+        });
+        assert.deepEqual(calls, [{
+          command: "C:\\Node\\node.exe",
+          args: [npmCli, "run", "check:tcsd-python"]
+        }]);
+        assert.throws(
+          () => resolveNpmInvocation({
+            platform: "win32",
+            env: { npm_execpath: path.join(tempDir, "missing-cli.js") }
+          }),
+          /npm_execpath must reference an existing npm CLI file/
+        );
+        assert.throws(
+          () => resolveNpmInvocation({ platform: "win32", env: {} }),
+          /invoke the builder through an npm script/
+        );
+        assert.deepEqual(
+          resolveNpmInvocation({ platform: "linux", env: {} }),
+          { command: "npm", prefixArgs: [] }
+        );
+        assert.throws(
+          () => runReleaseCommand("missing-command", [], {
+            spawnSync: () => ({
+              status: null,
+              signal: null,
+              error: Object.assign(new Error("sensitive detail"), { code: "ENOENT" })
+            })
+          }),
+          /status=null, signal=none, spawnError=ENOENT/
+        );
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
     }
   },
   {
