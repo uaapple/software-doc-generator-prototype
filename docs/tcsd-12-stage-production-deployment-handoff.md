@@ -273,7 +273,7 @@ git merge --ff-only tcsd-12-stage-pipeline-v1.4-windows-wx11p
 npm run release:zip:windows-source
 ```
 
-完整包与源码包都必须包含十二个 `skills/hermes/tcsd-stage-*` 目录、`skills/hermes/tcsd-runtime`、技能安装脚本、`requirements/tcsd-runtime.txt`、`scripts/tcsd-python-dependencies.mjs` 和 `scripts/check-tcsd-python.py`。源码包不包含仓库内的 MCP 二进制，必须复用生产机现有且通过 Stage 02 canary 的 MCP。Linux 包明确排除这两个 Python 安装/门禁脚本和 TCSD requirements 清单。
+完整包与源码包都必须包含十二个 `skills/hermes/tcsd-stage-*` 目录、`skills/hermes/tcsd-runtime`、技能安装脚本、`requirements/tcsd-runtime.txt`、`scripts/tcsd-python-dependencies.mjs` 和 `scripts/check-tcsd-python.py`。`npm run check:tcsd-python` 除固定版本核对外，还会用配置的同一解释器以 `-I -B` 执行 `host_validate_tcsd_stage.py --self-check`，验证隔离 `sys.path` 下 runtime 同目录导入闭包；该自检不需要任务 request，不调用 MATLAB/Hermes，也不写 runtime/local 数据。源码包不包含仓库内的 MCP 二进制，必须复用生产机现有且通过 Stage 02 canary 的 MCP。Linux 包明确排除这两个 Python 安装/门禁脚本、TCSD requirements 清单与 TCSD runtime。
 
 `scripts/build-release-zip.mjs` 要求当前分支与目标定义中的 release branch 一致、worktree 干净。Windows full/source 构包先运行 `check:tcsd-python`，再运行工程测试、wiki 和编码检查；Linux 构包不执行 TCSD Python 门禁。构包不会执行 pip 或联网安装。不要设置 `SKIP_RELEASE_CHECKS=1` 进行正式发布。
 

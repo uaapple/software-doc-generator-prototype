@@ -11,6 +11,14 @@ const execFileAsync = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const TCSD_PYTHON_REQUIREMENTS = path.join(projectRoot, "requirements", "tcsd-runtime.txt");
 export const TCSD_PYTHON_GATE = path.join(projectRoot, "scripts", "check-tcsd-python.py");
+export const TCSD_HOST_VALIDATOR = path.join(
+  projectRoot,
+  "skills",
+  "hermes",
+  "tcsd-runtime",
+  "scripts",
+  "host_validate_tcsd_stage.py"
+);
 
 export function buildTcsdPythonDependencyCommand(mode, options = {}) {
   const invocation = resolvePythonInvocation(options);
@@ -32,7 +40,9 @@ export function buildTcsdPythonDependencyCommand(mode, options = {}) {
       args: pythonArgs(invocation, [
         options.gatePath || TCSD_PYTHON_GATE,
         "--requirements",
-        options.requirementsPath || TCSD_PYTHON_REQUIREMENTS
+        options.requirementsPath || TCSD_PYTHON_REQUIREMENTS,
+        "--validator",
+        options.validatorPath || TCSD_HOST_VALIDATOR
       ])
     };
   }

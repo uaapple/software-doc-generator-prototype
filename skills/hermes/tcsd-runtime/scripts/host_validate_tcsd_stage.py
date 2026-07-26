@@ -12,21 +12,49 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from openpyxl import load_workbook
-
-from run_tcsd_pipeline_stage import simulation_backfill_evidence
-from validate_agent_coverage_repair import (
-    BRIEF_SCHEMA,
-    IR_SCHEMA,
-    PROPOSAL_SCHEMA,
-    VALIDATION_SCHEMA,
-    build_brief,
-    validate_proposal,
-)
-from validate_tcsd_workbook import load_interface_names, validate_workbook
-
-
 REPORT_SCHEMA = "tcsd-host-semantic-validation/v1"
+SELF_CHECK_SCHEMA = "tcsd-host-semantic-self-check/v1"
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+SCRIPT_DIRECTORY_TEXT = str(SCRIPT_DIRECTORY)
+if not sys.path or sys.path[0] != SCRIPT_DIRECTORY_TEXT:
+    sys.path[:] = [entry for entry in sys.path if entry != SCRIPT_DIRECTORY_TEXT]
+    sys.path.insert(0, SCRIPT_DIRECTORY_TEXT)
+
+try:
+    from openpyxl import load_workbook
+
+    import run_tcsd_pipeline_stage as pipeline_stage_module
+    import validate_agent_coverage_repair as coverage_repair_module
+    import validate_tcsd_workbook as workbook_validation_module
+except ModuleNotFoundError as error:
+    missing_module = str(error.name or "")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", missing_module):
+        missing_module = "unknown"
+    print(
+        json.dumps(
+            {
+                "schema": REPORT_SCHEMA,
+                "stageIndex": 0,
+                "passed": False,
+                "message": f"host validator import failed: missing module {missing_module}",
+            },
+            ensure_ascii=False,
+        ),
+        file=sys.stderr,
+    )
+    raise SystemExit(1) from None
+
+simulation_backfill_evidence = pipeline_stage_module.simulation_backfill_evidence
+BRIEF_SCHEMA = coverage_repair_module.BRIEF_SCHEMA
+IR_SCHEMA = coverage_repair_module.IR_SCHEMA
+PROPOSAL_SCHEMA = coverage_repair_module.PROPOSAL_SCHEMA
+VALIDATION_SCHEMA = coverage_repair_module.VALIDATION_SCHEMA
+build_brief = coverage_repair_module.build_brief
+validate_proposal = coverage_repair_module.validate_proposal
+load_interface_names = workbook_validation_module.load_interface_names
+validate_workbook = workbook_validation_module.validate_workbook
+
+
 COVERAGE_SCHEMA = "tcsd-coverage-report/v1"
 SIMULATION_SCHEMA = "tcsd-simulation-result/v1"
 ENVIRONMENT_SCHEMA = "tcsd-environment-gate/v2"
@@ -34,6 +62,23 @@ PROBE_PLAN_SCHEMA = "simulink-ut-state-probe-plan/v1"
 PROBE_RESULT_SCHEMA = "simulink-ut-logical-mcdc-probe/v2"
 REPAIR_CANDIDATE_SCHEMA = "tcsd-repair-candidate-validation/v1"
 SYNTHESIS_SCHEMA = "simulink-ut-tcsd-coverage-ir-synthesis/v1"
+
+
+def self_check() -> dict[str, Any]:
+    local_modules = {
+        "run_tcsd_pipeline_stage": pipeline_stage_module,
+        "validate_agent_coverage_repair": coverage_repair_module,
+        "validate_tcsd_workbook": workbook_validation_module,
+    }
+    for name, module in local_modules.items():
+        module_path = Path(str(getattr(module, "__file__", ""))).resolve()
+        if module_path.parent != SCRIPT_DIRECTORY:
+            raise RuntimeError(f"host validator local import resolved outside its trusted script directory: {name}")
+    return {
+        "schema": SELF_CHECK_SCHEMA,
+        "passed": True,
+        "localModules": sorted(local_modules),
+    }
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -495,9 +540,14 @@ def validate(request: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--request", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--request")
+    mode.add_argument("--self-check", action="store_true")
     args = parser.parse_args()
     try:
+        if args.self_check:
+            print(json.dumps(self_check(), ensure_ascii=False, sort_keys=True))
+            return 0
         request = read_json(Path(args.request))
         print(json.dumps(validate(request), ensure_ascii=False))
         return 0

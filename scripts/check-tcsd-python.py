@@ -4,6 +4,7 @@ import argparse
 import importlib
 import importlib.metadata
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -12,6 +13,12 @@ MODULES = {
     "pyyaml": "yaml",
     "openpyxl": "openpyxl",
 }
+HOST_VALIDATOR_SELF_CHECK_SCHEMA = "tcsd-host-semantic-self-check/v1"
+HOST_VALIDATOR_LOCAL_MODULES = [
+    "run_tcsd_pipeline_stage",
+    "validate_agent_coverage_repair",
+    "validate_tcsd_workbook",
+]
 
 
 def normalized_name(value: str) -> str:
@@ -35,9 +42,35 @@ def load_requirements(path: Path) -> dict[str, tuple[str, str]]:
     return requirements
 
 
+def run_host_validator_self_check(python: str, validator: Path) -> dict[str, object]:
+    completed = subprocess.run(
+        [python, "-I", "-B", str(validator.resolve()), "--self-check"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"host validator isolated import self-check failed with exit code {completed.returncode}"
+        )
+    try:
+        report = json.loads(completed.stdout.strip())
+    except json.JSONDecodeError as error:
+        raise RuntimeError("host validator isolated import self-check returned invalid JSON") from error
+    if (
+        not isinstance(report, dict)
+        or report.get("schema") != HOST_VALIDATOR_SELF_CHECK_SCHEMA
+        or report.get("passed") is not True
+        or report.get("localModules") != HOST_VALIDATOR_LOCAL_MODULES
+    ):
+        raise RuntimeError("host validator isolated import self-check returned an invalid report")
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--requirements", required=True)
+    parser.add_argument("--validator", required=True)
     args = parser.parse_args()
 
     if sys.version_info[:2] != (3, 11):
@@ -64,6 +97,7 @@ def main() -> int:
                     f"{module_name} module version mismatch: expected {expected}, received {module_version or 'unknown'}"
                 )
 
+    validator_report = run_host_validator_self_check(sys.executable, Path(args.validator))
     print(
         json.dumps(
             {
@@ -72,6 +106,7 @@ def main() -> int:
                 "executable": sys.executable,
                 "requirements": str(requirements_path),
                 "versions": versions,
+                "hostValidator": validator_report,
             },
             ensure_ascii=False,
             sort_keys=True,
