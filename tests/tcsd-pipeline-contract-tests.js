@@ -1071,6 +1071,17 @@ for (const [options, stageIndex, label] of [
   assert.equal(job.error.code, TCSD_ERROR_CODES.validation, label);
   assert.equal(job.stages[stageIndex - 1].attempt, 2, label);
   assert.equal(fake.attemptByStage.get(stageIndex), 2, label);
+  if (stageIndex === 6) {
+    assert.deepEqual(job.error.details.semanticDiagnostics, {
+      category: "process_exit",
+      exitCode: 1,
+      signal: null,
+      stderrLineCount: 1,
+      stderrHasJsonLine: true,
+      stderrTailIsJson: true,
+      structuredErrorFound: true
+    });
+  }
 }
 
 {
