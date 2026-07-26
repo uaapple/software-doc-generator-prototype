@@ -23,7 +23,8 @@ const appPaths = [
   "templates",
   "skills",
   "public",
-  "docs"
+  "docs",
+  "requirements"
 ];
 
 function shouldCopy(sourcePath) {
@@ -203,6 +204,10 @@ try {
     path.join(bundleRoot, "Update-WindowsWorkerSource.ps1")
   );
   fs.copyFileSync(
+    path.join(projectRoot, "scripts", "restore-windows-worker-source.ps1"),
+    path.join(bundleRoot, "Restore-WindowsWorkerSource.ps1")
+  );
+  fs.copyFileSync(
     path.join(projectRoot, "scripts", "Deploy-WindowsWorkerSourceUpdate.ps1"),
     path.join(bundleRoot, "Deploy-WindowsWorkerSourceUpdate.ps1")
   );
@@ -233,6 +238,7 @@ try {
     "2. Double-click Deploy-WindowsWorkerSourceUpdate.cmd from the same folder, or run the launcher already installed at C:\\SoftwareDocWorker\\Deploy-WindowsWorkerSourceUpdate.cmd.",
     "",
     "The deployer automatically finds the newest software-doc-windows-worker-source*.zip in C:\\temp, expands it, applies the update to C:\\SoftwareDocWorker, restarts worker tasks, and checks health.",
+    "Before source replacement it writes and validates a SHA-256 backup manifest. If update fails it automatically invokes the supported restore entrypoint.",
     "",
     "Before building a production source update, run:",
     "npm run windows-worker:sync-official-deps",
@@ -241,6 +247,10 @@ try {
     "Manual fallback:",
     "Copy this zip to the Windows VM, expand it, then run from an elevated PowerShell:",
     "powershell -NoProfile -ExecutionPolicy Bypass -File .\\Update-WindowsWorkerSource.ps1",
+    "",
+    "Validate or restore a recorded source backup:",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\SoftwareDocWorker\\app\\scripts\\restore-windows-worker-source.ps1 -InstallDir C:\\SoftwareDocWorker -BackupDir C:\\SoftwareDocWorker\\backups\\source-update-YYYYMMDD-HHMMSS -ValidateOnly",
+    "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\SoftwareDocWorker\\app\\scripts\\restore-windows-worker-source.ps1 -InstallDir C:\\SoftwareDocWorker -BackupDir C:\\SoftwareDocWorker\\backups\\source-update-YYYYMMDD-HHMMSS",
     "",
     "Default install directory:",
     "C:\\SoftwareDocWorker",
