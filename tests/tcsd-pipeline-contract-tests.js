@@ -16,7 +16,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { TcsdHermesStageExecutor } from "../src/services/tcsd-hermes-stage-executor.js";
-import { TcsdHermesSkillRegistry } from "../src/services/tcsd-hermes-skill-registry.js";
+import {
+  renameDirectoryWithRetry,
+  TcsdHermesSkillRegistry
+} from "../src/services/tcsd-hermes-skill-registry.js";
 import {
   publicSemanticError,
   TcsdHostSemanticValidator
@@ -80,6 +83,52 @@ assert.deepEqual(
     args: ["/d", "/s", "/c", "\"C:\\Hermes Runtime\\hermes.cmd\" skills list"]
   }
 );
+{
+  const transient = Object.assign(new Error("locked"), { code: "EPERM" });
+  const delays = [];
+  let attempts = 0;
+  await renameDirectoryWithRetry("source", "target", {
+    platform: "win32",
+    delays: [10, 20],
+    rename: async () => {
+      attempts += 1;
+      if (attempts <= 2) throw transient;
+    },
+    sleep: async (delayMs) => delays.push(delayMs)
+  });
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [10, 20]);
+
+  const nonTransient = Object.assign(new Error("collision"), { code: "ENOTEMPTY" });
+  let nonTransientAttempts = 0;
+  await assert.rejects(
+    () => renameDirectoryWithRetry("source", "target", {
+      platform: "win32",
+      rename: async () => {
+        nonTransientAttempts += 1;
+        throw nonTransient;
+      },
+      sleep: async () => assert.fail("non-transient rename must not sleep")
+    }),
+    (cause) => cause === nonTransient
+  );
+  assert.equal(nonTransientAttempts, 1);
+
+  let exhaustedAttempts = 0;
+  await assert.rejects(
+    () => renameDirectoryWithRetry("source", "target", {
+      platform: "win32",
+      delays: [10, 20],
+      rename: async () => {
+        exhaustedAttempts += 1;
+        throw transient;
+      },
+      sleep: async () => {}
+    }),
+    (cause) => cause === transient
+  );
+  assert.equal(exhaustedAttempts, 3);
+}
 {
   const hermesCommand = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\hermes.cmd";
   const venvPython = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\venv\\Scripts\\python.exe";
