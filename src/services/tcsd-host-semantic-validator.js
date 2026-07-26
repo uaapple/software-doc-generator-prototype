@@ -155,7 +155,7 @@ export class TcsdHostSemanticValidator {
       const { stdout = "" } = await runPythonCommand(
         this.commandRunner,
         this.pythonInvocation,
-        ["-B", script, "--request", requestPath],
+        ["-I", "-B", script, "--request", requestPath],
         {
           cwd: job.input.workspaceDir,
           env: { ...process.env, NO_COLOR: "1" },

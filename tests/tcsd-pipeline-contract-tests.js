@@ -273,8 +273,9 @@ assert.equal(parseExecutionManifest({
   };
   await validator.validate(validationInput);
   assert.equal(calls[0].command, "py");
-  assert.deepEqual(calls[0].args.slice(0, 3), [
+  assert.deepEqual(calls[0].args.slice(0, 4), [
     "-3.11",
+    "-I",
     "-B",
     path.join(root, "runtime", "scripts", "host_validate_tcsd_stage.py")
   ]);
@@ -306,7 +307,8 @@ assert.equal(parseExecutionManifest({
     requestPath: path.join(root, "absolute-request.json")
   });
   assert.equal(absoluteCalls[0].command, "C:\\Python311\\python.exe");
-  assert.deepEqual(absoluteCalls[0].args.slice(0, 2), [
+  assert.deepEqual(absoluteCalls[0].args.slice(0, 3), [
+    "-I",
     "-B",
     path.join(root, "runtime", "scripts", "host_validate_tcsd_stage.py")
   ]);
@@ -457,7 +459,7 @@ assert.equal(parseExecutionManifest({
   };
   const executor = new TcsdHermesStageExecutor({
     profile: "default",
-    python: "python3",
+    python: process.env.TCSD_PIPELINE_PYTHON || "python3",
     catalog
   });
   const firstResolution = await executor.resolveInstalledBundles(job, 2);
