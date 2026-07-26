@@ -145,6 +145,7 @@ export class TcsdHermesStageExecutor {
       this.commandRunner,
       this.pythonInvocation,
       [
+        "-B",
         script,
         "--state-db",
         this.stateDbPath,
@@ -256,6 +257,7 @@ export class TcsdHermesStageExecutor {
         ]
       : ["This is the initial stage attempt. No earlier session context is available."];
     const runtimeCommand = formatPythonCommand(this.pythonInvocation, [
+      "-B",
       path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py"),
       "--manifest",
       manifestPath,
