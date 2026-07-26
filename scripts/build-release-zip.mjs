@@ -6,11 +6,6 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DEFAULT_TARGET = "windows-prod-full";
-const args = parseArgs(process.argv.slice(2));
-const target = loadTarget(args.target || process.env.RELEASE_TARGET || DEFAULT_TARGET);
-const releaseBranch = process.env.RELEASE_BRANCH || target.releaseBranch || "release/windows-prod";
-const outputDir = path.resolve(args.outputDir || path.join(projectRoot, "release-dist"));
-const skipChecks = process.env.SKIP_RELEASE_CHECKS === "1";
 
 function parseArgs(rawArgs = []) {
   const parsed = { target: "", outputDir: "" };
@@ -62,17 +57,24 @@ function normalizePathList(value = []) {
     : [];
 }
 
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+export function run(command, args, options = {}) {
+  const result = (options.spawnSync || spawnSync)(command, args, {
     cwd: options.cwd || projectRoot,
     stdio: options.capture ? "pipe" : "inherit",
     shell: false,
     encoding: "utf8"
   });
 
-  if (result.status !== 0) {
+  if (result.error || result.status !== 0) {
     const detail = options.capture ? `${result.stdout || ""}${result.stderr || ""}`.trim() : "";
-    throw new Error(`Command failed: ${command} ${args.join(" ")}${detail ? `\n${detail}` : ""}`);
+    const status = Number.isInteger(result.status) ? result.status : "null";
+    const signal = result.signal || "none";
+    const spawnError = result.error?.code || result.error?.name || "none";
+    throw new Error(
+      `Command failed: ${command} ${args.join(" ")} ` +
+      `(status=${status}, signal=${signal}, spawnError=${spawnError})` +
+      `${detail ? `\n${detail}` : ""}`
+    );
   }
 
   return options.capture ? String(result.stdout || "").trim() : "";
@@ -82,8 +84,31 @@ function git(args, options = {}) {
   return run("git", args, options);
 }
 
-function npm(args) {
-  run(process.platform === "win32" ? "npm.cmd" : "npm", args);
+export function resolveNpmInvocation(options = {}) {
+  const environment = options.env || process.env;
+  const npmExecPath = String(environment.npm_execpath || "").trim();
+  if (npmExecPath) {
+    const cliPath = path.resolve(npmExecPath);
+    if (!fs.existsSync(cliPath) || !fs.statSync(cliPath).isFile()) {
+      throw new Error("npm_execpath must reference an existing npm CLI file.");
+    }
+    return {
+      command: options.nodeExecutable || process.execPath,
+      prefixArgs: [cliPath]
+    };
+  }
+  if ((options.platform || process.platform) === "win32") {
+    throw new Error(
+      "Windows release builds require npm_execpath; invoke the builder through an npm script."
+    );
+  }
+  return { command: "npm", prefixArgs: [] };
+}
+
+export function npm(args, options = {}) {
+  const invocation = resolveNpmInvocation(options);
+  const commandRunner = options.commandRunner || run;
+  commandRunner(invocation.command, [...invocation.prefixArgs, ...args]);
 }
 
 function assertCleanWorktree() {
@@ -124,6 +149,12 @@ function copyIfExists(source, destination) {
   }
 }
 
+function main() {
+const args = parseArgs(process.argv.slice(2));
+const target = loadTarget(args.target || process.env.RELEASE_TARGET || DEFAULT_TARGET);
+const releaseBranch = process.env.RELEASE_BRANCH || target.releaseBranch || "release/windows-prod";
+const outputDir = path.resolve(args.outputDir || path.join(projectRoot, "release-dist"));
+const skipChecks = process.env.SKIP_RELEASE_CHECKS === "1";
 const currentBranch = git(["branch", "--show-current"], { capture: true });
 if (currentBranch !== releaseBranch) {
   throw new Error(`Refusing to build a production release from '${currentBranch}'. Switch to '${releaseBranch}' first.`);
@@ -207,4 +238,11 @@ try {
 } finally {
   fs.rmSync(manifestRoot, { recursive: true, force: true });
   fs.rmSync(tmpZip, { force: true });
+}
+}
+
+const isMain = process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  main();
 }
