@@ -13,6 +13,8 @@ import { hashTcsdBundle } from "./tcsd-stage-catalog.js";
 const execFileAsync = promisify(execFile);
 const SNAPSHOT_SCHEMA = "tcsd-hermes-skill-snapshot/v1";
 const MANAGED_SCHEMA = "tcsd-hermes-managed-skill/v1";
+const WINDOWS_RENAME_RETRY_DELAYS_MS = [40, 80, 160, 320, 640, 1000, 1000];
+const WINDOWS_TRANSIENT_RENAME_CODES = new Set(["EPERM", "EBUSY", "EACCES"]);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function profileArgs(profile, args) {
@@ -37,6 +39,26 @@ async function readJson(filePath) {
   } catch (cause) {
     if (cause?.code === "ENOENT") return null;
     throw cause;
+  }
+}
+
+export async function renameDirectoryWithRetry(source, target, options = {}) {
+  const rename = options.rename || fs.rename;
+  const sleep = options.sleep || ((delayMs) =>
+    new Promise((resolve) => setTimeout(resolve, delayMs)));
+  const delays = options.delays || WINDOWS_RENAME_RETRY_DELAYS_MS;
+  const platform = options.platform || process.platform;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(source, target);
+      return;
+    } catch (cause) {
+      const retryable = platform === "win32" &&
+        WINDOWS_TRANSIENT_RENAME_CODES.has(cause?.code) &&
+        attempt < delays.length;
+      if (!retryable) throw cause;
+      await sleep(delays[attempt]);
+    }
   }
 }
 
@@ -68,13 +90,15 @@ async function replaceManagedDirectory({ source, target, markerPath, expectedHas
     await fs.rm(temporary, { recursive: true, force: true });
     throw error(`Hermes TCSD skill copy hash mismatch: ${target}`);
   }
-  if (current) await fs.rename(target, backup);
   try {
-    await fs.rename(temporary, target);
+    if (current) await renameDirectoryWithRetry(target, backup);
+    await renameDirectoryWithRetry(temporary, target);
     await fs.rm(backup, { recursive: true, force: true });
   } catch (cause) {
     await fs.rm(temporary, { recursive: true, force: true });
-    if (current && await fs.stat(backup).catch(() => null)) await fs.rename(backup, target);
+    if (current && await fs.stat(backup).catch(() => null)) {
+      await renameDirectoryWithRetry(backup, target);
+    }
     throw cause;
   }
   await fs.mkdir(path.dirname(markerPath), { recursive: true });
