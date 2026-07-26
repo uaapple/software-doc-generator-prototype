@@ -346,12 +346,74 @@ function buildManualTitleOutline(sections = [{ sectionTitle: "智能补电", ite
   };
 }
 
+const FETCH_FORBIDDEN_PORTS = new Set([
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53,
+  69, 77, 79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115,
+  117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465, 512,
+  513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587,
+  601, 636, 989, 990, 993, 995, 1719, 1720, 1723, 2049, 3659, 4045,
+  4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679,
+  6697, 10080
+]);
+const FETCH_SAFE_LISTEN_MAX_ATTEMPTS = 20;
+
+async function closeTestServer(server) {
+  if (!server.listening) {
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+}
+
+async function defaultListenAttempt(server, { host }) {
+  return await new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      resolve(server.address());
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(0, host);
+  });
+}
+
+async function listenOnFetchSafePort(server, options = {}) {
+  const host = options.host || "127.0.0.1";
+  const maxAttempts = options.maxAttempts || FETCH_SAFE_LISTEN_MAX_ATTEMPTS;
+  const listenAttempt = options.listenAttempt || defaultListenAttempt;
+  let lastForbiddenPort = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const address = await listenAttempt(server, { attempt, host });
+    const port = Number(address?.port);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+      await closeTestServer(server);
+      throw new Error(`Test server returned an invalid listening port on attempt ${attempt}: ${port}`);
+    }
+    if (!FETCH_FORBIDDEN_PORTS.has(port)) {
+      return { address, port, attempts: attempt };
+    }
+    lastForbiddenPort = port;
+    await closeTestServer(server);
+  }
+
+  throw new Error(
+    `Unable to acquire a Fetch-safe dynamic test port after ${maxAttempts} attempts; ` +
+      `the last candidate (${lastForbiddenPort}) is forbidden by the Fetch standard. ` +
+      "Check the host ephemeral port range and reserved-port configuration."
+  );
+}
+
 async function withTestServer(run) {
   const app = await createApp();
   const server = http.createServer(app);
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const { port } = await listenOnFetchSafePort(server);
+  const baseUrl = `http://127.0.0.1:${port}`;
 
   try {
     return await run({ baseUrl });
@@ -386,9 +448,8 @@ async function createMockUploadFile(tempDir, originalname, content = "fixture") 
 async function withHermesServer(run) {
   const app = await createHermesApp();
   const server = http.createServer(app);
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const { port } = await listenOnFetchSafePort(server);
+  const baseUrl = `http://127.0.0.1:${port}`;
 
   try {
     return await run({ baseUrl });
@@ -588,6 +649,37 @@ async function seedWikiFixture(rootDir, overrides = {}) {
 }
 
 const tests = [
+  {
+    name: "Fetch-safe dynamic listener closes forbidden candidates before retrying",
+    run: async () => {
+      const server = http.createServer((_req, res) => res.end("ok"));
+      let closeEvents = 0;
+      server.on("close", () => {
+        closeEvents += 1;
+      });
+
+      const result = await listenOnFetchSafePort(server, {
+        maxAttempts: 2,
+        listenAttempt: async (candidate, { attempt, host }) => {
+          const actualAddress = await defaultListenAttempt(candidate, { host });
+          return attempt === 1
+            ? { ...actualAddress, port: 6000 }
+            : actualAddress;
+        }
+      });
+
+      try {
+        assert.equal(result.attempts, 2);
+        assert.equal(FETCH_FORBIDDEN_PORTS.has(result.port), false);
+        assert.equal(closeEvents, 1);
+        assert.equal(server.listening, true);
+      } finally {
+        await closeTestServer(server);
+      }
+      assert.equal(server.listening, false);
+      assert.equal(closeEvents, 2);
+    }
+  },
   {
     name: "TCSD Python dependency commands preserve interpreter prefixes and release boundaries",
     run: async () => {
@@ -2863,10 +2955,9 @@ const tests = [
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end("{invalid-json");
         });
-        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-        const address = server.address();
+        const { port } = await listenOnFetchSafePort(server);
         const client = new HermesAgentClient({
-          baseURL: `http://127.0.0.1:${address.port}`,
+          baseURL: `http://127.0.0.1:${port}`,
           timeoutMs: 500
         });
 
@@ -2992,12 +3083,11 @@ const tests = [
             }));
           });
         });
-        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-        const address = server.address();
+        const { port } = await listenOnFetchSafePort(server);
         const client = new HermesAgentClient({
           transport: "api",
           apiMode: "multipart",
-          baseURL: `http://127.0.0.1:${address.port}`,
+          baseURL: `http://127.0.0.1:${port}`,
           timeoutMs: 5000,
           stepTimeoutMs: { simulink_module_description_generate: 5000 }
         });
@@ -3089,11 +3179,10 @@ const tests = [
             ));
           });
         });
-        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-        const address = server.address();
+        const { port } = await listenOnFetchSafePort(server);
         const client = new HermesAgentClient({
           transport: "api",
-          baseURL: `http://127.0.0.1:${address.port}`,
+          baseURL: `http://127.0.0.1:${port}`,
           authToken: "worker-secret",
           timeoutMs: 5000
         });
@@ -3250,14 +3339,13 @@ const tests = [
             res.end(JSON.stringify({ error: error.message }));
           }
         });
-        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-        const address = server.address();
+        const { port } = await listenOnFetchSafePort(server);
         const client = new HermesAgentClient({
           transport: "api",
           slxInterpreterTransport: "openai-api",
           timeoutMs: 1000,
           openAiApi: {
-            baseURL: `http://127.0.0.1:${address.port}`,
+            baseURL: `http://127.0.0.1:${port}`,
             apiKey: "test-key",
             model: "deepseek-v4-pro",
             pollIntervalMs: 1,
