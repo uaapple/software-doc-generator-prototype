@@ -17,7 +17,10 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { TcsdHermesStageExecutor } from "../src/services/tcsd-hermes-stage-executor.js";
 import { TcsdHermesSkillRegistry } from "../src/services/tcsd-hermes-skill-registry.js";
-import { TcsdHostSemanticValidator } from "../src/services/tcsd-host-semantic-validator.js";
+import {
+  publicSemanticError,
+  TcsdHostSemanticValidator
+} from "../src/services/tcsd-host-semantic-validator.js";
 import { TcsdPipelineJobService } from "../src/services/tcsd-pipeline-job-service.js";
 import {
   resolvePythonInvocation,
@@ -172,13 +175,74 @@ assert.equal(parseExecutionManifest({
 }).completion, "partial");
 
 {
+  const error = publicSemanticError(2, {
+    code: 1,
+    stderr: [
+      "RuntimeWarning: interpreter shutdown warning",
+      JSON.stringify({
+        message:
+          "environment canary evidence is invalid at C:\\SoftwareDocWorker\\private\\gate.json; token=do-not-expose"
+      }),
+      "Traceback (most recent call last): finalizer failed"
+    ].join("\r\n")
+  });
+  assert.match(error.message, /environment canary evidence is invalid at \[path\]/);
+  assert.doesNotMatch(error.message, /SoftwareDocWorker|do-not-expose/);
+  assert.deepEqual(error.details, {
+    stageIndex: 2,
+    diagnostics: {
+      category: "process_exit",
+      exitCode: 1,
+      signal: null,
+      stderrLineCount: 3,
+      stderrHasJsonLine: true,
+      stderrTailIsJson: false,
+      structuredErrorFound: true
+    }
+  });
+}
+
+{
+  const error = publicSemanticError(2, {
+    code: 1,
+    stderr: "Fatal Python error: init_import_site failed\nC:\\private\\runtime\\python311.dll"
+  });
+  assert.match(error.message, /host semantic validator returned an unreadable failure/);
+  assert.doesNotMatch(error.message, /private|python311/);
+  assert.deepEqual(error.details.diagnostics, {
+    category: "process_exit",
+    exitCode: 1,
+    signal: null,
+    stderrLineCount: 2,
+    stderrHasJsonLine: false,
+    stderrTailIsJson: false,
+    structuredErrorFound: false
+  });
+}
+
+{
   const root = await mkdtemp(path.join(os.tmpdir(), "tcsd-python-validator-"));
   const calls = [];
+  const gatePath = path.join(root, "outputs", "environment-gate.json");
+  const windowsMcpServer = "C:\\Program Files\\MATLAB\\R2026a\\bin\\win64\\matlab-mcp.exe";
+  await mkdir(path.dirname(gatePath), { recursive: true });
+  await writeFile(gatePath, JSON.stringify({
+    schema: "tcsd-environment-gate/v2",
+    satkMcp: {
+      server: {
+        path: windowsMcpServer,
+        sha256: "a".repeat(64),
+        sizeBytes: 123
+      }
+    }
+  }));
   const validator = new TcsdHostSemanticValidator({
     platform: "win32",
     env: {},
     commandRunner: async (command, args) => {
-      calls.push({ command, args });
+      const requestIndex = args.indexOf("--request");
+      const request = JSON.parse(await readFile(args[requestIndex + 1], "utf8"));
+      calls.push({ command, args, request });
       return {
         stdout: JSON.stringify({
           schema: "tcsd-host-semantic-validation/v1",
@@ -191,7 +255,11 @@ assert.equal(parseExecutionManifest({
     }
   });
   await validator.validate({
-    raw: { stageIndex: 2, artifacts: [], evidence: {} },
+    raw: {
+      stageIndex: 2,
+      artifacts: [{ path: "outputs/environment-gate.json", kind: "json", role: "evidence" }],
+      evidence: { satkServerPath: windowsMcpServer }
+    },
     job: {
       jobId: "python-validator",
       input: { workspaceDir: root, coverageThreshold: 80 },
@@ -205,6 +273,10 @@ assert.equal(parseExecutionManifest({
     "-3.11",
     path.join(root, "runtime", "scripts", "host_validate_tcsd_stage.py")
   ]);
+  assert.equal(calls[0].request.workspaceDir, root);
+  assert.equal(calls[0].request.artifacts[0].path, "outputs/environment-gate.json");
+  assert.equal(calls[0].request.evidence.satkServerPath, windowsMcpServer);
+  assert.equal(JSON.parse(await readFile(gatePath, "utf8")).satkMcp.server.path, windowsMcpServer);
 }
 
 {

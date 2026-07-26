@@ -8,6 +8,13 @@ import { writeJson } from "./storage.js";
 
 const execFileAsync = promisify(execFile);
 const SEMANTIC_STAGES = new Set([2, 6, 7, 8, 9, 10, 11]);
+const PUBLIC_SEMANTIC_MESSAGE_LIMIT = 240;
+const SECRET_ASSIGNMENT_PATTERN =
+  /\b(api[_-]?key|authorization|bearer|password|secret|token)\b(\s*[:=]\s*|\s+)([^\s,;]+)/giu;
+const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s]+/giu;
+const UNC_PATH_PATTERN = /\\\\[^\\\r\n]+\\[^\r\n,;]*/gu;
+const WINDOWS_PATH_PATTERN = /\b[A-Za-z]:[\\/][^\r\n,;]*/gu;
+const POSIX_PATH_PATTERN = /(^|[\s"'(])\/[^\r\n,;]*/gu;
 
 function withinWorkspace(workspaceDir, candidate) {
   const root = path.resolve(workspaceDir);
@@ -39,20 +46,68 @@ async function findPriorJsonArtifact(job, schema) {
   return "";
 }
 
-function publicSemanticError(stageIndex, cause) {
-  let message = "host semantic validator failed";
-  const output = String(cause?.stderr || "").trim();
-  if (output) {
-    try {
-      const parsed = JSON.parse(output.split(/\r?\n/).at(-1));
-      message = String(parsed.message || message);
-    } catch {
-      message = "host semantic validator returned an unreadable failure";
-    }
+function parseJsonObject(line) {
+  try {
+    const parsed = JSON.parse(line);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
+}
+
+function publicMessage(value) {
+  let message = String(value || "")
+    .replaceAll("\0", "")
+    .replace(SECRET_ASSIGNMENT_PATTERN, (_match, name, separator) => `${name}${separator}[REDACTED]`)
+    .replace(URL_PATTERN, "[url]")
+    .replace(UNC_PATH_PATTERN, "[path]")
+    .replace(WINDOWS_PATH_PATTERN, "[path]")
+    .replace(POSIX_PATH_PATTERN, (_match, prefix) => `${prefix}[path]`);
+  message = message.replace(/\s+/gu, " ").trim();
+  return message.slice(0, PUBLIC_SEMANTIC_MESSAGE_LIMIT);
+}
+
+function processFailureCategory(cause) {
+  if (cause?.signal) return "process_signal";
+  if (Number.isInteger(cause?.code) || Number.isInteger(cause?.exitCode)) return "process_exit";
+  if (typeof cause?.code === "string" && cause.code) return "process_spawn";
+  return "invalid_validator_output";
+}
+
+export function publicSemanticError(stageIndex, cause) {
+  const output = String(cause?.stderr || "");
+  const lines = output.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const parsedLines = lines.map(parseJsonObject);
+  const structured = parsedLines.findLast((parsed) =>
+    parsed && typeof parsed.message === "string" && parsed.message.trim()
+  );
+  let message = "host semantic validator returned an unreadable failure";
+  if (structured) {
+    const extracted = publicMessage(structured.message);
+    if (extracted) {
+      message = extracted;
+    }
+  } else if (!output.trim()) {
+    message = "host semantic validator failed";
+  }
+  const numericExitCode = Number.isInteger(cause?.exitCode)
+    ? cause.exitCode
+    : (Number.isInteger(cause?.code) ? cause.code : null);
+  const signal = /^SIG[A-Z0-9]+$/u.test(String(cause?.signal || ""))
+    ? String(cause.signal)
+    : null;
+  const diagnostics = {
+    category: processFailureCategory(cause),
+    exitCode: numericExitCode,
+    signal,
+    stderrLineCount: lines.length,
+    stderrHasJsonLine: parsedLines.some(Boolean),
+    stderrTailIsJson: Boolean(parsedLines.at(-1)),
+    structuredErrorFound: Boolean(structured)
+  };
   return Object.assign(new Error(`TCSD stage ${stageIndex} semantic validation failed: ${message}`), {
     code: TCSD_ERROR_CODES.validation,
-    details: { stageIndex }
+    details: { stageIndex, diagnostics }
   });
 }
 
