@@ -627,6 +627,7 @@ export class TcsdHermesStageExecutor {
         pipelineState: job
       });
     } catch (cause) {
+      const semanticDiagnostics = cause?.details?.diagnostics || null;
       const report = {
         schema: "tcsd-host-validation-report/v1",
         jobId: job.jobId,
@@ -635,6 +636,7 @@ export class TcsdHermesStageExecutor {
         passed: false,
         code: cause.code || TCSD_ERROR_CODES.validation,
         message: cause.message,
+        semanticDiagnostics,
         resultPath: relativeToWorkspace(workspaceDir, resultPath),
         sessionId
       };
@@ -649,6 +651,7 @@ export class TcsdHermesStageExecutor {
           model: tokenUsage.model,
           tokenUsage,
           skill: manifest.skill,
+          semanticDiagnostics,
           validationReportPath: relativeToWorkspace(workspaceDir, validationPath)
         }
       });
