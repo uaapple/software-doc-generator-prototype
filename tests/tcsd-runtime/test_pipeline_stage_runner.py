@@ -14,6 +14,7 @@ from openpyxl import Workbook
 
 RUNTIME = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runtime"
 SCRIPT = RUNTIME / "scripts" / "run_tcsd_pipeline_stage.py"
+QUALITY_LOOP = RUNTIME / "scripts" / "run_tcsd_quality_loop.py"
 SESSION_READER = RUNTIME / "scripts" / "read_hermes_session.py"
 SATK_SCRIPT = RUNTIME / "scripts" / "satk_eval.py"
 REPAIR_SCRIPT = RUNTIME / "scripts" / "validate_agent_coverage_repair.py"
@@ -21,6 +22,10 @@ SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
 RUNNER = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 SPEC.loader.exec_module(RUNNER)
+QUALITY_SPEC = importlib.util.spec_from_file_location("run_tcsd_quality_loop", QUALITY_LOOP)
+QUALITY = importlib.util.module_from_spec(QUALITY_SPEC)
+assert QUALITY_SPEC.loader
+QUALITY_SPEC.loader.exec_module(QUALITY)
 SATK_SPEC = importlib.util.spec_from_file_location("satk_eval", SATK_SCRIPT)
 SATK = importlib.util.module_from_spec(SATK_SPEC)
 assert SATK_SPEC.loader
@@ -32,6 +37,19 @@ REPAIR_SPEC.loader.exec_module(REPAIR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_runtime_python_subprocesses_disable_bytecode_writes(self):
+        command = [sys.executable, "sibling.py", "--check"]
+        self.assertEqual(
+            RUNNER.immutable_python_command(command),
+            [sys.executable, "-B", "sibling.py", "--check"],
+        )
+        with mock.patch.object(QUALITY.subprocess, "run") as run_mock:
+            QUALITY.run(command, cwd=RUNTIME)
+        self.assertEqual(
+            run_mock.call_args.args[0],
+            [sys.executable, "-B", "sibling.py", "--check"],
+        )
+
     def test_stage10_agent_repair_preserves_focused_temporal_stimulus(self):
         brief = {
             "schema": REPAIR.BRIEF_SCHEMA,

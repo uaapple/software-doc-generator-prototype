@@ -19,6 +19,8 @@ from typing import Any
 
 
 def run(cmd: list[str], *, cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
+    if len(cmd) >= 2 and cmd[1] != "-B" and str(cmd[1]).endswith(".py"):
+        cmd = [cmd[0], "-B", *cmd[1:]]
     print("+", " ".join(cmd))
     return subprocess.run(cmd, cwd=cwd, check=check)
 

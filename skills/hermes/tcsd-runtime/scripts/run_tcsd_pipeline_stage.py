@@ -90,12 +90,24 @@ def mcp_error_text(output: str) -> str:
     ]
     return " ".join(message for message in messages if message)
 
+def immutable_python_command(command: list[str]) -> list[str]:
+    if len(command) >= 2 and command[1] != "-B" and str(command[1]).endswith(".py"):
+        return [command[0], "-B", *command[1:]]
+    return command
+
+
 def run(command: list[str], cwd: Path) -> None:
-    subprocess.run(command, cwd=cwd, check=True)
+    subprocess.run(immutable_python_command(command), cwd=cwd, check=True)
 
 def run_satk(command: list[str], cwd: Path, *, stage: int, context: str) -> None:
     try:
-        subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True)
+        subprocess.run(
+            immutable_python_command(command),
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     except subprocess.CalledProcessError as error:
         detail = mcp_error_text(error.stdout or "")
         if not detail:

@@ -48,6 +48,7 @@ const runner = path.join(
 );
 const pythonInvocation = resolvePythonInvocation();
 await runPythonCommand(execFileAsync, pythonInvocation, [
+  "-B",
   runner,
   "--manifest",
   manifestPath,
