@@ -492,13 +492,88 @@ function Backup-ManagedSource {
     [string]$BackupDir,
     [string[]]$ManagedPaths
   )
-  New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
-  foreach ($relativePath in $ManagedPaths) {
-    $source = Join-Path $TargetAppDir $relativePath
-    if (Test-Path -LiteralPath $source) {
-      Copy-Item -LiteralPath $source -Destination (Join-Path $BackupDir $relativePath) -Recurse -Force
+  if (Test-Path -LiteralPath $BackupDir) {
+    throw "Refusing to reuse an existing source backup directory: $BackupDir"
+  }
+  $backupParent = Split-Path -Parent $BackupDir
+  foreach ($safetyRoot in @($InstallDir, $TargetAppDir, $backupParent)) {
+    if (Test-Path -LiteralPath $safetyRoot) {
+      $safetyItem = Get-Item -LiteralPath $safetyRoot -Force
+      if (($safetyItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Source backup root cannot be a reparse point: $safetyRoot"
+      }
     }
   }
+  New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
+  $entries = @()
+  foreach ($relativePath in $ManagedPaths) {
+    $source = Join-Path $TargetAppDir $relativePath
+    $existed = Test-Path -LiteralPath $source
+    if ($existed) {
+      $reparseItems = @(
+        Get-Item -LiteralPath $source -Force
+        if ((Get-Item -LiteralPath $source -Force).PSIsContainer) {
+          Get-ChildItem -LiteralPath $source -Recurse -Force
+        }
+      ) | Where-Object {
+        ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+      }
+      if ($reparseItems.Count) {
+        throw "Managed source path contains a reparse point and cannot be backed up safely: $($reparseItems[0].FullName)"
+      }
+      Copy-Item -LiteralPath $source -Destination (Join-Path $BackupDir $relativePath) -Recurse -Force
+    }
+    $backupPath = Join-Path $BackupDir $relativePath
+    $files = @()
+    if ($existed) {
+      $item = Get-Item -LiteralPath $backupPath -Force
+      $backupFiles = if ($item.PSIsContainer) {
+        @(Get-ChildItem -LiteralPath $backupPath -File -Recurse -Force | Sort-Object FullName)
+      } else {
+        @($item)
+      }
+      $files = @($backupFiles | ForEach-Object {
+        [ordered]@{
+          path = ([IO.Path]::GetFullPath($_.FullName)).Substring(
+            ([IO.Path]::GetFullPath($BackupDir).TrimEnd("\")).Length + 1
+          ).Replace("\", "/")
+          sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+        }
+      })
+    }
+    $entries += [ordered]@{
+      path = $relativePath.Replace("\", "/")
+      existed = [bool]$existed
+      files = $files
+    }
+  }
+
+  $windowsServices = @($taskNames | Where-Object {
+    $service = Get-Service -Name $_ -ErrorAction SilentlyContinue
+    $service -and $service.Status -ne "Stopped"
+  })
+  $scheduledTasks = @($taskNames | Where-Object {
+    $task = Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue
+    $task -and $task.State -eq "Running"
+  })
+  $manifest = [ordered]@{
+    schema = "software-doc-worker-source-backup/v1"
+    createdAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+    installDir = [IO.Path]::GetFullPath($InstallDir).TrimEnd("\")
+    targetAppDir = [IO.Path]::GetFullPath($TargetAppDir).TrimEnd("\")
+    managedPaths = @($ManagedPaths | ForEach-Object { $_.Replace("\", "/") })
+    paths = $entries
+    serviceShape = [ordered]@{
+      windowsServices = $windowsServices
+      scheduledTasks = $scheduledTasks
+    }
+  }
+  $manifestJson = $manifest | ConvertTo-Json -Depth 10
+  [IO.File]::WriteAllText(
+    (Join-Path $BackupDir "source-backup-manifest.json"),
+    $manifestJson + [Environment]::NewLine,
+    [Text.UTF8Encoding]::new($false)
+  )
 }
 
 function Get-EnvFileMap {
@@ -780,7 +855,8 @@ $managedPaths = @(
   "templates",
   "skills",
   "public",
-  "docs"
+  "docs",
+  "requirements"
 )
 
 if (-not (Test-Path -LiteralPath (Join-Path $sourceAppDir "package.json"))) {
@@ -798,76 +874,91 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 $oldLockHash = Get-FileHashValue -Path (Join-Path $targetAppDir "package-lock.json")
 $newLockHash = Get-FileHashValue -Path (Join-Path $sourceAppDir "package-lock.json")
 $backupDir = Join-Path $InstallDir ("backups\source-update-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+$restoreScript = Join-Path $sourceAppDir "scripts\restore-windows-worker-source.ps1"
 
-Stop-WorkerServices -ServiceNames $taskNames
-Stop-WorkerTasks -TaskNames $taskNames
-Stop-WorkerRuntimeProcesses -WorkerInstallDir $InstallDir
-if (Test-Path -LiteralPath $envFile) {
-  Ensure-HermesCommand -Path $envFile -BundleRoot $bundleRoot -WorkerInstallDir $InstallDir
+if (-not (Test-Path -LiteralPath $restoreScript)) {
+  throw "Supported rollback script is missing from source package: $restoreScript"
 }
 Backup-ManagedSource -TargetAppDir $targetAppDir -BackupDir $backupDir -ManagedPaths $managedPaths
-
-foreach ($relativePath in $managedPaths) {
-  Copy-ManagedPath -SourceAppDir $sourceAppDir -TargetAppDir $targetAppDir -RelativePath $relativePath
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restoreScript `
+  -InstallDir $InstallDir -BackupDir $backupDir -ValidateOnly
+if ($LASTEXITCODE -ne 0) {
+  throw "Source backup validation failed with exit code $LASTEXITCODE."
 }
-Ensure-AppRuntimeDirectories -TargetAppDir $targetAppDir
-Sync-HermesLlmProfiles -TargetAppDir $targetAppDir
-Write-HermesLlmMenuLauncher
-Write-SourceUpdateDeployerLauncher
 
-$physicalWorkerAlignment = Join-Path $targetAppDir "scripts\Align-PhysicalWorkerProduction.ps1"
-if (Test-Path -LiteralPath $physicalWorkerAlignment) {
-  & powershell.exe `
-    -NoProfile `
-    -ExecutionPolicy Bypass `
-    -File $physicalWorkerAlignment `
-    -InstallDir $InstallDir
-  if ($LASTEXITCODE -ne 0) {
-    throw "Physical Worker production alignment failed with exit code $LASTEXITCODE"
+try {
+  Stop-WorkerServices -ServiceNames $taskNames
+  Stop-WorkerTasks -TaskNames $taskNames
+  Stop-WorkerRuntimeProcesses -WorkerInstallDir $InstallDir
+  if (Test-Path -LiteralPath $envFile) {
+    Ensure-HermesCommand -Path $envFile -BundleRoot $bundleRoot -WorkerInstallDir $InstallDir
   }
-}
 
-$officialDependenciesInstaller = Join-Path $targetAppDir "scripts\Install-WindowsWorkerOfficialDependencies.ps1"
-if ((Test-Path -LiteralPath $officialDependenciesInstaller) -and (Test-Path -LiteralPath $envFile)) {
-  & $officialDependenciesInstaller `
-    -InstallDir $InstallDir `
-    -BundleRoot $bundleRoot `
-    -TargetAppDir $targetAppDir `
-    -WorkerEnvPath $envFile
-}
-Normalize-HermesLlmProfile -TargetAppDir $targetAppDir
-
-$nodeModulesPath = Join-Path $targetAppDir "node_modules"
-$shouldInstall = $ForceNpmInstall -or (-not (Test-Path -LiteralPath $nodeModulesPath)) -or ($oldLockHash -ne $newLockHash)
-if ($shouldInstall) {
-  $npmCmd = (Get-Command "npm.cmd" -ErrorAction SilentlyContinue).Source
-  if (-not $npmCmd) {
-    throw "npm.cmd was not found. Re-run the full worker deployment or add Node.js to PATH."
+  foreach ($relativePath in $managedPaths) {
+    Copy-ManagedPath -SourceAppDir $sourceAppDir -TargetAppDir $targetAppDir -RelativePath $relativePath
   }
-  Push-Location $targetAppDir
-  try {
-    & $npmCmd ci --omit=dev
-  } finally {
-    Pop-Location
-  }
-} else {
-  Write-Host "package-lock.json is unchanged; keeping existing node_modules."
-}
+  Ensure-AppRuntimeDirectories -TargetAppDir $targetAppDir
+  Sync-HermesLlmProfiles -TargetAppDir $targetAppDir
+  Write-HermesLlmMenuLauncher
+  Write-SourceUpdateDeployerLauncher
 
-if (-not $SkipTaskRestart) {
-  $workerServiceInstaller = Join-Path $targetAppDir "scripts\Install-WindowsWorkerServices.ps1"
-  if (Test-Path -LiteralPath $workerServiceInstaller) {
-    Install-WorkerServices `
-      -ServiceInstallerPath $workerServiceInstaller `
-      -WorkerInstallDir $InstallDir
+  $physicalWorkerAlignment = Join-Path $targetAppDir "scripts\Align-PhysicalWorkerProduction.ps1"
+  if (Test-Path -LiteralPath $physicalWorkerAlignment) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $physicalWorkerAlignment -InstallDir $InstallDir
+    if ($LASTEXITCODE -ne 0) {
+      throw "Physical Worker production alignment failed with exit code $LASTEXITCODE"
+    }
+  }
+
+  $officialDependenciesInstaller = Join-Path $targetAppDir "scripts\Install-WindowsWorkerOfficialDependencies.ps1"
+  if ((Test-Path -LiteralPath $officialDependenciesInstaller) -and (Test-Path -LiteralPath $envFile)) {
+    & $officialDependenciesInstaller -InstallDir $InstallDir -BundleRoot $bundleRoot `
+      -TargetAppDir $targetAppDir -WorkerEnvPath $envFile
+  }
+  Normalize-HermesLlmProfile -TargetAppDir $targetAppDir
+
+  $nodeModulesPath = Join-Path $targetAppDir "node_modules"
+  $shouldInstall = $ForceNpmInstall -or (-not (Test-Path -LiteralPath $nodeModulesPath)) -or ($oldLockHash -ne $newLockHash)
+  if ($shouldInstall) {
+    $npmCmd = (Get-Command "npm.cmd" -ErrorAction SilentlyContinue).Source
+    if (-not $npmCmd) {
+      throw "npm.cmd was not found. Re-run the full worker deployment or add Node.js to PATH."
+    }
+    Push-Location $targetAppDir
+    try {
+      & $npmCmd ci --omit=dev
+    } finally {
+      Pop-Location
+    }
   } else {
-    Ensure-WorkerTasks `
-      -TaskServices $taskServices `
-      -RunnerPath (Join-Path $targetAppDir "scripts\run-windows-worker-service.ps1") `
-      -WorkerInstallDir $InstallDir
-    Start-WorkerTasks -TaskNames $taskNames
+    Write-Host "package-lock.json is unchanged; keeping existing node_modules."
   }
-  Wait-WorkerPorts -TaskPorts $taskPorts
+
+  if (-not $SkipTaskRestart) {
+    $workerServiceInstaller = Join-Path $targetAppDir "scripts\Install-WindowsWorkerServices.ps1"
+    if (Test-Path -LiteralPath $workerServiceInstaller) {
+      Install-WorkerServices -ServiceInstallerPath $workerServiceInstaller -WorkerInstallDir $InstallDir
+    } else {
+      Ensure-WorkerTasks -TaskServices $taskServices `
+        -RunnerPath (Join-Path $targetAppDir "scripts\run-windows-worker-service.ps1") `
+        -WorkerInstallDir $InstallDir
+      Start-WorkerTasks -TaskNames $taskNames
+    }
+    Wait-WorkerPorts -TaskPorts $taskPorts
+  }
+} catch {
+  $updateError = $_
+  Write-Warning "Source update failed; invoking supported rollback from '$backupDir': $($updateError.Exception.Message)"
+  try {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $restoreScript `
+      -InstallDir $InstallDir -BackupDir $backupDir
+    if ($LASTEXITCODE -ne 0) {
+      throw "Rollback exited with code $LASTEXITCODE."
+    }
+  } catch {
+    throw "Source update failed: $($updateError.Exception.Message) Automatic rollback also failed: $($_.Exception.Message)"
+  }
+  throw "Source update failed and the previous managed source was restored: $($updateError.Exception.Message)"
 }
 Write-Host "Windows worker source update applied."
 Write-Host "Install dir: $InstallDir"

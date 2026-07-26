@@ -77,6 +77,9 @@ windows:
   - scripts/install-tcsd-hermes-skills.ps1
   - scripts/tcsd-python-dependencies.mjs
   - scripts/check-tcsd-python.py
+  - scripts/update-windows-worker-source.ps1
+  - scripts/restore-windows-worker-source.ps1
+  - scripts/build-windows-worker-source-update.mjs
 
 shared:
   - .env.dev-distributed.example

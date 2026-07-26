@@ -360,7 +360,37 @@ http://<LINUX_PLATFORM>:3000/unit-test-case-generation
 
 ## 10. 回滚
 
-部署前记录 Linux、Windows 当前 release SHA、环境文件和外置技能目录备份。出现问题时两个生产端应成对回滚到部署前 SHA，避免 V2 协议一端新、一端旧。
+所有 `tcsd-12-stage-pipeline-v1.4-*` 标签均不可移动或覆盖；本轮修复由主任务在完整验收后发布新的 patch 标签。部署前记录 Linux `current` 指向和 Windows source-update 备份目录。两个生产端应成对回滚，避免 V2 协议一端新、一端旧。
+
+Windows source update 在覆盖前生成 `source-backup-manifest.json`，并自动执行同一恢复入口的 `-ValidateOnly`。生产切换前还应显式验证刚生成的备份：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\restore-windows-worker-source.ps1 `
+  -InstallDir C:\SoftwareDocWorker `
+  -BackupDir C:\SoftwareDocWorker\backups\source-update-YYYYMMDD-HHMMSS `
+  -ValidateOnly
+```
+
+需要回滚时只使用已验证入口，不手工 `Copy-Item`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\restore-windows-worker-source.ps1 `
+  -InstallDir C:\SoftwareDocWorker `
+  -BackupDir C:\SoftwareDocWorker\backups\source-update-YYYYMMDD-HHMMSS
+```
+
+该入口只恢复 manifest 声明的托管源码；更新前缺失的托管路径会被删除。它不会修改 `node_modules`、`software-doc-worker.env`、runtime/data/addon、Hermes state/session 或 MATLAB 产物。
+
+Linux 切换前先验证当前旧 release（把 target 替换为部署前 `current` 的真实 release 目录）：
+
+```bash
+sudo scripts/rollback-linux-release.sh \
+  --app-root /opt/software-doc-generator \
+  --target-release /opt/software-doc-generator/releases/<OLD_RELEASE> \
+  --validate-only
+```
+
+正式回滚使用同一入口去掉 `--validate-only`；脚本原子替换 `current`，重启 platform/Wiki 服务并检查健康，失败时尽力恢复原 `current`。
 
 不要删除：
 
@@ -370,7 +400,7 @@ http://<LINUX_PLATFORM>:3000/unit-test-case-generation
 - `UNIT_TEST_CASE_PROJECT_ADDON_ROOT`
 - 用户上传模型或历史任务 workspace
 
-回滚代码后，重新安装与回滚版本匹配的 TCSD 技能，并重启 Windows Hermes Agent；随后再回滚/重启 Linux 平台。
+Windows 源码恢复会按备份记录的服务形态恢复 Hermes/MATLAB Worker 并检查 3101/5100；随后再执行 Linux 受支持的原子回滚。若技能安装目录是外置运行态且版本不匹配，另行使用与回滚版本匹配的受支持技能安装器处理，不能把技能目录混入源码备份。
 
 ## 11. 不得进入提交或发布包的内容
 

@@ -4,6 +4,8 @@
 
 TCSD 从整体 Agent 任务升级到十二阶段流水线的完整生产部署步骤、Linux/Windows 文件边界、环境变量、验收与回滚要求，统一见 `docs/tcsd-12-stage-production-deployment-handoff.md`。
 
+`tcsd-12-stage-pipeline-v1.4-*` 标签是不可变生产证据，不得移动或覆盖；回滚门禁修复应由主任务在验收后使用新的 patch 标签发布。
+
 ## 关键提交
 
 与新拆分流程相关的提交：
@@ -146,6 +148,15 @@ MATLAB_MCP_BASE_URL=http://WINDOWS_VM_HOST:5100
 ```
 
 Windows VM 负责运行 Hermes Agent、MATLAB Worker 和 MATLAB/MCP 相关能力。
+
+Windows source update 必须把 `requirements` 作为托管源码，并在覆盖前生成、校验 SHA-256 backup manifest。验证与恢复只使用：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\restore-windows-worker-source.ps1 -InstallDir C:\SoftwareDocWorker -BackupDir C:\SoftwareDocWorker\backups\source-update-YYYYMMDD-HHMMSS -ValidateOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\SoftwareDocWorker\app\scripts\restore-windows-worker-source.ps1 -InstallDir C:\SoftwareDocWorker -BackupDir C:\SoftwareDocWorker\backups\source-update-YYYYMMDD-HHMMSS
+```
+
+Linux release 在切换前必须先对旧 release 执行 `scripts/rollback-linux-release.sh --app-root /opt/software-doc-generator --target-release /opt/software-doc-generator/releases/<OLD_RELEASE> --validate-only`。真实回滚使用同一命令去掉 `--validate-only`，不得以未经校验的手工软链接或复制命令替代。
 
 ## 单元测试 TCSD Agent 十二阶段流水线 V2
 
