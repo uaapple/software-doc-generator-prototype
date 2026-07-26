@@ -54,6 +54,7 @@ linux:
   - src/services/skill-bundle-service.js
   - src/services/feedback-ticket-service.js
   - src/services/rejection-service.js
+  - scripts/rollback-linux-release.sh
 
 windows:
   - requirements/tcsd-runtime.txt

@@ -29,7 +29,8 @@
     "test-fixtures",
     "videos",
     "tools/matlab-mcp-core-server",
-    "tools/matlab-mcp-core-server.exe"
+    "tools/matlab-mcp-core-server.exe",
+    "scripts/rollback-linux-release.sh"
   ],
   "copyFiles": [
     "scripts/deploy-release.ps1",

@@ -34,7 +34,10 @@
     "scripts/install-tcsd-hermes-skills.ps1",
     "scripts/tcsd-python-dependencies.mjs",
     "scripts/check-tcsd-python.py",
-    "requirements/tcsd-runtime.txt"
+    "requirements/tcsd-runtime.txt",
+    "scripts/restore-windows-worker-source.ps1",
+    "scripts/update-windows-worker-source.ps1",
+    "scripts/build-windows-worker-source-update.mjs"
   ],
   "copyFiles": [],
   "runtimeDataPolicy": "Linux production keeps APP_DATA_DIR and APP_SKILLS_DIR outside the code directory, persists Windows TCSD jobId state, and reconciles remote staged jobs through HTTP without packaging runtime data."

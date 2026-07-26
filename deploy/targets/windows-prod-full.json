@@ -26,7 +26,8 @@
     "output",
     "release-dist",
     "test-fixtures",
-    "videos"
+    "videos",
+    "scripts/rollback-linux-release.sh"
   ],
   "copyFiles": [
     "scripts/deploy-release.ps1",
