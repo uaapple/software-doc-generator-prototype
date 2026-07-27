@@ -215,7 +215,7 @@ Linux 的 `UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS` 只控制单次同步窗口；�
 
 Windows 供应阶段应运行 `py -3.11 -c "import sys; print(sys.executable)"`，并将输出的绝对 `python.exe` 路径配置为 `TCSD_PIPELINE_PYTHON`。不要使用 PATH 中的 `python` 或 `python3` 示例，因为它们可能解析到旧版本或 Microsoft Store alias。变量未配置时，共享 Node resolver 才回退到 executable `py` 和独立参数前缀 `-3.11`；Linux/macOS 无显式配置时仍使用 `python3`。
 
-Windows full/source 包同时携带固定清单 `requirements/tcsd-runtime.txt`、跨平台入口 `scripts/tcsd-python-dependencies.mjs` 和离线门禁 `scripts/check-tcsd-python.py`。供应顺序固定为：设置上述绝对解释器路径，运行 `npm run install:tcsd-python`，再运行 `npm run check:tcsd-python`、`npm ci` 和 `npm test`。安装入口只用同一解释器执行 `-m pip install --requirement requirements/tcsd-runtime.txt`；门禁核对 Python 3.11、PyYAML 6.0.3、openpyxl 3.1.5 和必要传递依赖 et_xmlfile 2.0.0。正式构包只执行门禁，不自动 pip install 或联网。Linux target 显式排除这两个脚本和清单，也不执行 TCSD Python 门禁。
+Windows full/source 包同时携带固定清单 `requirements/tcsd-runtime.txt`、跨平台入口 `scripts/tcsd-python-dependencies.mjs` 和离线门禁 `scripts/check-tcsd-python.py`。供应顺序固定为：设置上述绝对解释器路径，运行 `npm run install:tcsd-python`，再运行 `npm run check:tcsd-python`、`npm ci` 和 `npm test`。安装入口只用同一解释器执行 `-m pip install --requirement requirements/tcsd-runtime.txt`；门禁核对 Python 3.11、PyYAML 6.0.3、openpyxl 3.1.5 和必要传递依赖 et_xmlfile 2.0.0，并以同一解释器通过 `-I -B` 执行 `host_validate_tcsd_stage.py --self-check`，证明隔离 `sys.path` 下三个受信同目录模块的导入闭包可执行。自检不读取任务 request、不调用 MATLAB/Hermes、不写 `__pycache__` 或 runtime/local 数据；失败必须在 `npm test` 之前终止。正式构包只执行门禁，不自动 pip install 或联网。Linux target 显式排除这两个脚本和清单，也不执行 TCSD Python 门禁。
 
 ## 独立软件详设 / 模块功能描述生成 V1
 

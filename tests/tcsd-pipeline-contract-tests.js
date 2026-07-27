@@ -17,7 +17,10 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { TcsdHermesStageExecutor } from "../src/services/tcsd-hermes-stage-executor.js";
 import { TcsdHermesSkillRegistry } from "../src/services/tcsd-hermes-skill-registry.js";
-import { TcsdHostSemanticValidator } from "../src/services/tcsd-host-semantic-validator.js";
+import {
+  publicSemanticError,
+  TcsdHostSemanticValidator
+} from "../src/services/tcsd-host-semantic-validator.js";
 import { TcsdPipelineJobService } from "../src/services/tcsd-pipeline-job-service.js";
 import {
   resolvePythonInvocation,
@@ -36,7 +39,10 @@ import {
   normalizeCoverageReport,
   parseExecutionManifest
 } from "../src/services/tcsd-pipeline-contract.js";
-import { TcsdStageCatalog } from "../src/services/tcsd-stage-catalog.js";
+import {
+  hashTcsdBundle,
+  TcsdStageCatalog
+} from "../src/services/tcsd-stage-catalog.js";
 import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
 import { resolveHermesCommand } from "../src/services/hermes-command.js";
 import { config } from "../src/config.js";
@@ -172,13 +178,74 @@ assert.equal(parseExecutionManifest({
 }).completion, "partial");
 
 {
+  const error = publicSemanticError(2, {
+    code: 1,
+    stderr: [
+      "RuntimeWarning: interpreter shutdown warning",
+      JSON.stringify({
+        message:
+          "environment canary evidence is invalid at C:\\SoftwareDocWorker\\private\\gate.json; token=do-not-expose"
+      }),
+      "Traceback (most recent call last): finalizer failed"
+    ].join("\r\n")
+  });
+  assert.match(error.message, /environment canary evidence is invalid at \[path\]/);
+  assert.doesNotMatch(error.message, /SoftwareDocWorker|do-not-expose/);
+  assert.deepEqual(error.details, {
+    stageIndex: 2,
+    diagnostics: {
+      category: "process_exit",
+      exitCode: 1,
+      signal: null,
+      stderrLineCount: 3,
+      stderrHasJsonLine: true,
+      stderrTailIsJson: false,
+      structuredErrorFound: true
+    }
+  });
+}
+
+{
+  const error = publicSemanticError(2, {
+    code: 1,
+    stderr: "Fatal Python error: init_import_site failed\nC:\\private\\runtime\\python311.dll"
+  });
+  assert.match(error.message, /host semantic validator returned an unreadable failure/);
+  assert.doesNotMatch(error.message, /private|python311/);
+  assert.deepEqual(error.details.diagnostics, {
+    category: "process_exit",
+    exitCode: 1,
+    signal: null,
+    stderrLineCount: 2,
+    stderrHasJsonLine: false,
+    stderrTailIsJson: false,
+    structuredErrorFound: false
+  });
+}
+
+{
   const root = await mkdtemp(path.join(os.tmpdir(), "tcsd-python-validator-"));
   const calls = [];
+  const gatePath = path.join(root, "outputs", "environment-gate.json");
+  const windowsMcpServer = "C:\\Program Files\\MATLAB\\R2026a\\bin\\win64\\matlab-mcp.exe";
+  await mkdir(path.dirname(gatePath), { recursive: true });
+  await writeFile(gatePath, JSON.stringify({
+    schema: "tcsd-environment-gate/v2",
+    satkMcp: {
+      server: {
+        path: windowsMcpServer,
+        sha256: "a".repeat(64),
+        sizeBytes: 123
+      }
+    }
+  }));
   const validator = new TcsdHostSemanticValidator({
     platform: "win32",
     env: {},
     commandRunner: async (command, args) => {
-      calls.push({ command, args });
+      const requestIndex = args.indexOf("--request");
+      const request = JSON.parse(await readFile(args[requestIndex + 1], "utf8"));
+      calls.push({ command, args, request });
       return {
         stdout: JSON.stringify({
           schema: "tcsd-host-semantic-validation/v1",
@@ -190,8 +257,12 @@ assert.equal(parseExecutionManifest({
       };
     }
   });
-  await validator.validate({
-    raw: { stageIndex: 2, artifacts: [], evidence: {} },
+  const validationInput = {
+    raw: {
+      stageIndex: 2,
+      artifacts: [{ path: "outputs/environment-gate.json", kind: "json", role: "evidence" }],
+      evidence: { satkServerPath: windowsMcpServer }
+    },
     job: {
       jobId: "python-validator",
       input: { workspaceDir: root, coverageThreshold: 80 },
@@ -199,10 +270,46 @@ assert.equal(parseExecutionManifest({
     },
     runtime: { installedPath: path.join(root, "runtime") },
     requestPath: path.join(root, "request.json")
-  });
+  };
+  await validator.validate(validationInput);
   assert.equal(calls[0].command, "py");
-  assert.deepEqual(calls[0].args.slice(0, 2), [
+  assert.deepEqual(calls[0].args.slice(0, 4), [
     "-3.11",
+    "-I",
+    "-B",
+    path.join(root, "runtime", "scripts", "host_validate_tcsd_stage.py")
+  ]);
+  assert.equal(calls[0].request.workspaceDir, root);
+  assert.equal(calls[0].request.artifacts[0].path, "outputs/environment-gate.json");
+  assert.equal(calls[0].request.evidence.satkServerPath, windowsMcpServer);
+  assert.equal(JSON.parse(await readFile(gatePath, "utf8")).satkMcp.server.path, windowsMcpServer);
+
+  const absoluteCalls = [];
+  const absoluteValidator = new TcsdHostSemanticValidator({
+    python: "C:\\Python311\\python.exe",
+    platform: "win32",
+    env: {},
+    commandRunner: async (command, args) => {
+      absoluteCalls.push({ command, args });
+      return {
+        stdout: JSON.stringify({
+          schema: "tcsd-host-semantic-validation/v1",
+          stageIndex: 2,
+          passed: true,
+          details: {}
+        }),
+        stderr: ""
+      };
+    }
+  });
+  await absoluteValidator.validate({
+    ...validationInput,
+    requestPath: path.join(root, "absolute-request.json")
+  });
+  assert.equal(absoluteCalls[0].command, "C:\\Python311\\python.exe");
+  assert.deepEqual(absoluteCalls[0].args.slice(0, 3), [
+    "-I",
+    "-B",
     path.join(root, "runtime", "scripts", "host_validate_tcsd_stage.py")
   ]);
 }
@@ -247,8 +354,9 @@ assert.equal(parseExecutionManifest({
     }
   );
   assert.equal(calls[0].command, "py");
-  assert.deepEqual(calls[0].args.slice(0, 2), [
+  assert.deepEqual(calls[0].args.slice(0, 3), [
     "-3.11",
+    "-B",
     path.join("runtime", "scripts", "read_hermes_session.py")
   ]);
   assert.match(executor.buildPrompt({
@@ -259,7 +367,141 @@ assert.equal(parseExecutionManifest({
     resultPath: "result.json",
     validationReportPath: "",
     attempt: 1
-  }), /py -3\.11 .*run_tcsd_pipeline_stage\.py/);
+  }), /py -3\.11 -B .*run_tcsd_pipeline_stage\.py/);
+}
+
+{
+  const root = await mkdtemp(path.join(os.tmpdir(), "tcsd-runtime-immutable-"));
+  const sourceSkills = path.join(root, "source-skills");
+  const installedSkills = path.join(root, "installed-skills");
+  const stageDefinition = TCSD_STAGE_DEFINITIONS[1];
+  const sourceStage = path.join(sourceSkills, stageDefinition.skillName);
+  const installedStage = path.join(installedSkills, stageDefinition.skillName);
+  const sourceRuntime = path.join(sourceSkills, "tcsd-runtime");
+  const installedRuntime = path.join(installedSkills, "tcsd-runtime");
+  await cp(path.join(skillsRoot, stageDefinition.skillName), sourceStage, { recursive: true });
+  await mkdir(path.join(sourceRuntime, "scripts"), { recursive: true });
+  for (const scriptName of [
+    "host_validate_tcsd_stage.py",
+    "run_tcsd_pipeline_stage.py",
+    "validate_agent_coverage_repair.py",
+    "validate_tcsd_workbook.py"
+  ]) {
+    await copyFile(
+      path.join(skillsRoot, "tcsd-runtime", "scripts", scriptName),
+      path.join(sourceRuntime, "scripts", scriptName)
+    );
+  }
+  await cp(sourceStage, installedStage, { recursive: true });
+  await cp(sourceRuntime, installedRuntime, { recursive: true });
+
+  const catalog = new TcsdStageCatalog({ skillsDir: sourceSkills });
+  const sourceSkill = await catalog.describe(2);
+  const sourceRuntimeDescription = await catalog.runtime();
+  const workspaceDir = path.join(root, "workspace");
+  const outputDir = path.join(workspaceDir, "outputs");
+  await mkdir(outputDir, { recursive: true });
+  const fakeServer = path.join(outputDir, "fake-mcp-server");
+  await writeFile(fakeServer, "immutable runtime fixture");
+  const fakeServerSource = await readFile(fakeServer);
+  const gatePath = path.join(outputDir, "environment-gate.json");
+  const nonce = "immutable-runtime-nonce";
+  await writeFile(gatePath, JSON.stringify({
+    schema: "tcsd-environment-gate/v2",
+    jobId: "immutable-runtime",
+    nonce,
+    passed: true,
+    pythonDependencies: {
+      passed: true,
+      modules: {
+        yaml: { version: "6.0.3" },
+        openpyxl: { version: "3.1.5" }
+      }
+    },
+    workspaceIo: { passed: true, created: true, readMatched: true, deleted: true },
+    matlab: { passed: true, nonce, version: "R2026a" },
+    simulink: { passed: true, licenseAvailable: true, loaded: true, version: "R2026a" },
+    satkMcp: {
+      passed: true,
+      runner: "satk_eval.py",
+      server: {
+        path: fakeServer,
+        sha256: hash(fakeServerSource),
+        sizeBytes: fakeServerSource.length
+      },
+      sentinelWritten: true,
+      nonceMatched: true
+    }
+  }));
+  const job = {
+    jobId: "immutable-runtime",
+    input: { workspaceDir, outputDir, coverageThreshold: 80 },
+    stages: [],
+    skillSnapshot: {
+      schema: "tcsd-hermes-skill-snapshot/v1",
+      profile: "default",
+      discovery: { allDiscovered: true },
+      stages: [{
+        index: 2,
+        name: sourceSkill.name,
+        version: sourceSkill.version,
+        bundleVersion: sourceSkill.bundleVersion,
+        bundleHash: sourceSkill.bundleHash,
+        skillFileHash: sourceSkill.skillFileHash,
+        installedPath: installedStage
+      }],
+      runtime: {
+        bundleVersion: sourceRuntimeDescription.bundleVersion,
+        bundleHash: sourceRuntimeDescription.bundleHash,
+        installedPath: installedRuntime
+      }
+    }
+  };
+  const executor = new TcsdHermesStageExecutor({
+    profile: "default",
+    python: process.env.TCSD_PIPELINE_PYTHON || "python3",
+    catalog
+  });
+  const firstResolution = await executor.resolveInstalledBundles(job, 2);
+  const before = await hashTcsdBundle(installedRuntime);
+  const previousBytecodeSetting = process.env.PYTHONDONTWRITEBYTECODE;
+  delete process.env.PYTHONDONTWRITEBYTECODE;
+  try {
+    await executor.semanticValidator.validate({
+      raw: {
+        stageIndex: 2,
+        artifacts: [{
+          path: rel(workspaceDir, gatePath),
+          kind: "json",
+          role: "environment-gate"
+        }],
+        evidence: {}
+      },
+      job,
+      runtime: firstResolution.runtime,
+      requestPath: path.join(outputDir, "semantic-request.json")
+    });
+  } finally {
+    if (previousBytecodeSetting === undefined) delete process.env.PYTHONDONTWRITEBYTECODE;
+    else process.env.PYTHONDONTWRITEBYTECODE = previousBytecodeSetting;
+  }
+  const after = await hashTcsdBundle(installedRuntime);
+  assert.deepEqual(after, before);
+  assert.equal(
+    (await readdir(path.join(installedRuntime, "scripts"))).includes("__pycache__"),
+    false
+  );
+  await executor.resolveInstalledBundles(job, 2);
+
+  const cacheDirectory = path.join(installedRuntime, "scripts", "__pycache__");
+  await mkdir(cacheDirectory);
+  await writeFile(path.join(cacheDirectory, "x.pyc"), "unexpected immutable file");
+  await assert.rejects(
+    () => executor.resolveInstalledBundles(job, 2),
+    (error) =>
+      error.code === TCSD_ERROR_CODES.workerUnavailable &&
+      /runtime changed after the job snapshot/.test(error.message)
+  );
 }
 
 {
@@ -999,6 +1241,17 @@ for (const [options, stageIndex, label] of [
   assert.equal(job.error.code, TCSD_ERROR_CODES.validation, label);
   assert.equal(job.stages[stageIndex - 1].attempt, 2, label);
   assert.equal(fake.attemptByStage.get(stageIndex), 2, label);
+  if (stageIndex === 6) {
+    assert.deepEqual(job.error.details.semanticDiagnostics, {
+      category: "process_exit",
+      exitCode: 1,
+      signal: null,
+      stderrLineCount: 1,
+      stderrHasJsonLine: true,
+      stderrTailIsJson: true,
+      structuredErrorFound: true
+    });
+  }
 }
 
 {

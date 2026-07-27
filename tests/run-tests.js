@@ -734,14 +734,18 @@ const tests = [
           platform: "win32",
           env: {},
           gatePath: "C:\\release\\scripts\\check-tcsd-python.py",
-          requirementsPath: "C:\\release\\requirements\\tcsd-runtime.txt"
+          requirementsPath: "C:\\release\\requirements\\tcsd-runtime.txt",
+          validatorPath:
+            "C:\\release\\skills\\hermes\\tcsd-runtime\\scripts\\host_validate_tcsd_stage.py"
         }),
         {
           executable: "C:\\Python311\\python.exe",
           args: [
             "C:\\release\\scripts\\check-tcsd-python.py",
             "--requirements",
-            "C:\\release\\requirements\\tcsd-runtime.txt"
+            "C:\\release\\requirements\\tcsd-runtime.txt",
+            "--validator",
+            "C:\\release\\skills\\hermes\\tcsd-runtime\\scripts\\host_validate_tcsd_stage.py"
           ]
         }
       );
@@ -750,21 +754,36 @@ const tests = [
           platform,
           env: {},
           gatePath: "check.py",
-          requirementsPath: "requirements.txt"
+          requirementsPath: "requirements.txt",
+          validatorPath: "host-validator.py"
         });
         assert.equal(command.executable, "python3");
-        assert.deepEqual(command.args, ["check.py", "--requirements", "requirements.txt"]);
+        assert.deepEqual(command.args, [
+          "check.py",
+          "--requirements",
+          "requirements.txt",
+          "--validator",
+          "host-validator.py"
+        ]);
       }
       assert.deepEqual(
         buildTcsdPythonDependencyCommand("check", {
           platform: "win32",
           env: {},
           gatePath: "check.py",
-          requirementsPath: "requirements.txt"
+          requirementsPath: "requirements.txt",
+          validatorPath: "host-validator.py"
         }),
         {
           executable: "py",
-          args: ["-3.11", "check.py", "--requirements", "requirements.txt"]
+          args: [
+            "-3.11",
+            "check.py",
+            "--requirements",
+            "requirements.txt",
+            "--validator",
+            "host-validator.py"
+          ]
         }
       );
 
@@ -792,10 +811,24 @@ const tests = [
         assert.equal(included(targets[targetId], "requirements/tcsd-runtime.txt"), true);
         assert.equal(included(targets[targetId], "scripts/tcsd-python-dependencies.mjs"), true);
         assert.equal(included(targets[targetId], "scripts/check-tcsd-python.py"), true);
+        assert.equal(
+          included(
+            targets[targetId],
+            "skills/hermes/tcsd-runtime/scripts/host_validate_tcsd_stage.py"
+          ),
+          true
+        );
       }
       assert.equal(included(targets["linux-prod"], "requirements/tcsd-runtime.txt"), false);
       assert.equal(included(targets["linux-prod"], "scripts/tcsd-python-dependencies.mjs"), false);
       assert.equal(included(targets["linux-prod"], "scripts/check-tcsd-python.py"), false);
+      assert.equal(
+        included(
+          targets["linux-prod"],
+          "skills/hermes/tcsd-runtime/scripts/host_validate_tcsd_stage.py"
+        ),
+        false
+      );
 
       const packageJson = JSON.parse(await fs.readFile(path.join(config.rootDir, "package.json"), "utf8"));
       assert.equal(
