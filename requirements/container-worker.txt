@@ -1,0 +1,6 @@
+# Runtime packages are pinned; Hermes itself is fetched from the immutable
+# 0.18.2 wheel URL and verified by SHA-256 in containers/worker/Containerfile.
+PyYAML==6.0.3
+openpyxl==3.1.5
+et_xmlfile==2.0.0
+

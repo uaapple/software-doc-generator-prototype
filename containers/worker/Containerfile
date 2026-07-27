@@ -1,0 +1,137 @@
+# syntax=docker/dockerfile:1.7
+
+# Official node:22.22.3-bookworm-slim OCI index, resolved 2026-07-27.
+# linux/amd64 resolves to sha256:16d364eebf6b62da439dc993d9b80940c78b0ca38438452f011ab9a25c752644.
+ARG NODE_BASE_IMAGE="node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752"
+# Official python:3.11.9-slim-bookworm OCI index, resolved 2026-07-27.
+# linux/amd64 resolves to sha256:2856e6af199e8128161abd320575eb9b341f3b76f017b5d0c9cd364f60d8a050.
+ARG PYTHON_BASE_IMAGE="python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317"
+
+FROM ${NODE_BASE_IMAGE} AS node-dependencies
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev --ignore-scripts && \
+    npm cache clean --force
+
+FROM ${NODE_BASE_IMAGE} AS source-selection
+WORKDIR /source
+COPY src/ ./src/
+COPY scripts/prepare-worker-source.mjs ./scripts/prepare-worker-source.mjs
+RUN node ./scripts/prepare-worker-source.mjs \
+      --source-root /source \
+      --output /selected \
+      --entries src/hermes-server.js
+
+FROM ${PYTHON_BASE_IMAGE} AS runtime
+ARG HERMES_AGENT_VERSION="0.18.2"
+ARG HERMES_AGENT_WHEEL_URL="https://files.pythonhosted.org/packages/0c/4c/91652c61450763bfe165c65b83026503de0ac9ddad2c11ee522490bf4c2d/hermes_agent-0.18.2-py3-none-any.whl"
+ARG HERMES_AGENT_WHEEL_SHA256="8f02155cfc84b28bd98551cd18dffec0efa9ec070dd08f90f1a850f1c779492f"
+
+LABEL org.opencontainers.image.title="Software Document Generator Hermes Worker" \
+      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.vendor="ITK Engineering" \
+      org.opencontainers.image.base.name="python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317" \
+      io.software-doc-generator.node.base="node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752" \
+      io.software-doc-generator.hermes.version="${HERMES_AGENT_VERSION}"
+
+ENV APP_RUNTIME_ROLE="hermes-agent" \
+    NODE_ENV="production" \
+    PYTHONDONTWRITEBYTECODE="1" \
+    PYTHONUNBUFFERED="1" \
+    PIP_DISABLE_PIP_VERSION_CHECK="1" \
+    PIP_NO_CACHE_DIR="1" \
+    PATH="/opt/sdg/venv/bin:${PATH}" \
+    HOME="/var/lib/sdg/hermes-home" \
+    HERMES_HOME="/var/lib/sdg/hermes-home" \
+    HERMES_HOST="0.0.0.0" \
+    HERMES_PORT="3101" \
+    HERMES_UPLOAD_TMPDIR="/var/lib/sdg/data/uploads" \
+    DATA_DIR="/var/lib/sdg/data" \
+    MATLAB_MCP_TRANSPORT="http" \
+    MATLAB_MCP_HTTP_MODE="upload" \
+    MATLAB_MCP_BASE_URL="http://host.docker.internal:5100" \
+    SATK_GATEWAY_URL="http://host.docker.internal:5100" \
+    SATK_GATEWAY_MAPPING_ID="worker-data" \
+    MATLAB_GATEWAY_CONTAINER_ROOT="/var/lib/sdg/data" \
+    TMPDIR="/var/lib/sdg/tmp"
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      git \
+      procps \
+      ripgrep \
+      tini \
+      unzip \
+      zip && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --gid 10001 sdg && \
+    useradd --uid 10001 --gid sdg --home-dir /var/lib/sdg/hermes-home --no-create-home --shell /usr/sbin/nologin sdg && \
+    python -m venv /opt/sdg/venv && \
+    test "$(python --version)" = "Python 3.11.9"
+
+COPY --from=node-dependencies /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-dependencies /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
+    ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
+    test "$(node --version)" = "v22.22.3"
+
+COPY requirements/container-worker.txt /tmp/container-worker.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --upgrade "pip==26.1.1" && \
+    python -m pip download --no-deps \
+      --dest /tmp/hermes-wheel \
+      "${HERMES_AGENT_WHEEL_URL}" && \
+    printf '%s  %s\n' \
+      "${HERMES_AGENT_WHEEL_SHA256}" \
+      "/tmp/hermes-wheel/hermes_agent-${HERMES_AGENT_VERSION}-py3-none-any.whl" | sha256sum --check --strict && \
+    python -m pip install \
+      "/tmp/hermes-wheel/hermes_agent-${HERMES_AGENT_VERSION}-py3-none-any.whl" \
+      --requirement /tmp/container-worker.txt && \
+    python -c "from importlib.metadata import version; assert version('hermes-agent') == '${HERMES_AGENT_VERSION}'" && \
+    hermes --version | grep -F "${HERMES_AGENT_VERSION}" && \
+    python -c "import yaml, openpyxl, et_xmlfile; assert yaml.__version__ == '6.0.3'; assert openpyxl.__version__ == '3.1.5'; assert et_xmlfile.__version__ == '2.0.0'" && \
+    python -m pip freeze --all | LC_ALL=C sort > /opt/sdg/python-lock.txt && \
+    rm -rf /tmp/hermes-wheel /tmp/container-worker.txt
+
+WORKDIR /opt/sdg/app
+COPY --from=node-dependencies /build/node_modules ./node_modules
+COPY --from=source-selection /selected/src ./src
+COPY --from=source-selection /selected/source-manifest.json ./container-source-manifest.json
+COPY package.json package-lock.json ./
+COPY templates/*.json ./templates/
+
+# The authoritative TCSD runtime is copied file-class by file-class. Project
+# MAT/SLDD/SLX/Addons are supplied through the host-approved project addon store.
+COPY skills/hermes/tcsd-runtime/scripts/ ./skills/hermes/tcsd-runtime/scripts/
+COPY skills/hermes/tcsd-runtime/references/ ./skills/hermes/tcsd-runtime/references/
+COPY skills/hermes/tcsd-runtime/assets/templates/tcsd_template.xlsx ./skills/hermes/tcsd-runtime/assets/templates/tcsd_template.xlsx
+COPY skills/hermes/tcsd-stage-01-validate-inputs/ ./skills/hermes/tcsd-stage-01-validate-inputs/
+COPY skills/hermes/tcsd-stage-02-check-environment/ ./skills/hermes/tcsd-stage-02-check-environment/
+COPY skills/hermes/tcsd-stage-03-initialize-workspace/ ./skills/hermes/tcsd-stage-03-initialize-workspace/
+COPY skills/hermes/tcsd-stage-04-extract-interface/ ./skills/hermes/tcsd-stage-04-extract-interface/
+COPY skills/hermes/tcsd-stage-05-analyze-coverage/ ./skills/hermes/tcsd-stage-05-analyze-coverage/
+COPY skills/hermes/tcsd-stage-06-validate-state-probes/ ./skills/hermes/tcsd-stage-06-validate-state-probes/
+COPY skills/hermes/tcsd-stage-07-build-initial-cases/ ./skills/hermes/tcsd-stage-07-build-initial-cases/
+COPY skills/hermes/tcsd-stage-08-simulate-backfill/ ./skills/hermes/tcsd-stage-08-simulate-backfill/
+COPY skills/hermes/tcsd-stage-09-collect-coverage/ ./skills/hermes/tcsd-stage-09-collect-coverage/
+COPY skills/hermes/tcsd-stage-10-repair-coverage/ ./skills/hermes/tcsd-stage-10-repair-coverage/
+COPY skills/hermes/tcsd-stage-11-final-validation/ ./skills/hermes/tcsd-stage-11-final-validation/
+COPY skills/hermes/tcsd-stage-12-package-cleanup/ ./skills/hermes/tcsd-stage-12-package-cleanup/
+
+RUN mkdir -p \
+      /var/lib/sdg/data/uploads \
+      /var/lib/sdg/data/tcsd-pipeline-jobs \
+      /var/lib/sdg/hermes-home \
+      /var/lib/sdg/logs \
+      /var/lib/sdg/project-addons \
+      /var/lib/sdg/tmp && \
+    chown -R 10001:10001 /var/lib/sdg /opt/sdg/app
+
+USER 10001:10001
+EXPOSE 3101
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:3101/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "--disable-warning=ExperimentalWarning", "src/hermes-server.js"]
