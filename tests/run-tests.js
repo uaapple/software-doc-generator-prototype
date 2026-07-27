@@ -826,6 +826,7 @@ const tests = [
         os.tmpdir(),
         `classifier-empty-global-config-${process.pid}`
       );
+      let decoyRoot = "";
       try {
         await fs.writeFile(probe, "untracked classifier probe\n", "utf8");
         await fs.writeFile(globalConfigPath, "", "utf8");
@@ -866,8 +867,24 @@ const tests = [
               .slice(0, 20)
           })
         );
-        await execFileAsync(process.execPath, [
+        decoyRoot = await fs.mkdtemp(path.join(os.tmpdir(), "classifier-module-root-"));
+        await fs.mkdir(path.join(decoyRoot, "scripts"), { recursive: true });
+        await fs.mkdir(path.join(decoyRoot, "deploy"), { recursive: true });
+        await fs.mkdir(path.join(decoyRoot, "tests"), { recursive: true });
+        const decoyClassifierPath = path.join(decoyRoot, "scripts", "classify-changes.mjs");
+        const decoyProbe = "tests/classifier-decoy-probe.mjs";
+        await fs.copyFile(
           path.join(root, "scripts", "classify-changes.mjs"),
+          decoyClassifierPath
+        );
+        await fs.copyFile(
+          path.join(root, "deploy", "ownership.yml"),
+          path.join(decoyRoot, "deploy", "ownership.yml")
+        );
+        await fs.writeFile(path.join(decoyRoot, decoyProbe), "decoy probe\n", "utf8");
+        await execFileAsync("git", ["init", "--quiet"], { cwd: decoyRoot, env: gitEnv });
+        await execFileAsync(process.execPath, [
+          decoyClassifierPath,
           "--allow-ambiguous",
           "--json-out",
           reportPath
@@ -889,10 +906,23 @@ const tests = [
               .map((item) => ({ path: item.path, category: item.category }))
           })
         );
+        assert.equal(
+          report.entries.some((item) => item.path === decoyProbe),
+          false,
+          "Classifier must not enumerate the checkout containing its module file"
+        );
       } finally {
         await fs.rm(probe, { force: true });
         await fs.rm(reportPath, { force: true });
         await fs.rm(globalConfigPath, { force: true });
+        if (decoyRoot) {
+          await fs.rm(decoyRoot, {
+            recursive: true,
+            force: true,
+            maxRetries: TEST_TEMP_REMOVE_MAX_RETRIES,
+            retryDelay: TEST_TEMP_REMOVE_RETRY_DELAY_MS
+          });
+        }
       }
     }
   },

@@ -3,27 +3,69 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ownershipPath = path.join(projectRoot, "deploy", "ownership.yml");
-const args = parseArgs(process.argv.slice(2));
-const ownership = parseOwnershipFile(ownershipPath);
-const changedFiles = args.files.length ? args.files : listChangedFiles(args.range);
-const report = buildReport(changedFiles, ownership);
-
-if (args.jsonOut) {
-  fs.mkdirSync(path.dirname(path.resolve(args.jsonOut)), { recursive: true });
-  fs.writeFileSync(path.resolve(args.jsonOut), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+export function resolveGitWorktreeRoot(cwd = process.cwd(), options = {}) {
+  const spawn = options.spawnSyncImpl || spawnSync;
+  const result = spawn("git", ["rev-parse", "--show-toplevel"], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (result.status !== 0) {
+    const status = Number.isInteger(result.status) ? result.status : "none";
+    const signal = result.signal || "none";
+    const errorCode = result.error?.code || "none";
+    throw new Error(
+      `Unable to resolve the invocation Git worktree root ` +
+        `(status=${status}, signal=${signal}, error=${errorCode}).`
+    );
+  }
+  const root = String(result.stdout || "").trim();
+  if (!root || !path.isAbsolute(root) || !fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error("Git returned an invalid invocation worktree root.");
+  }
+  return path.resolve(root);
 }
 
-console.log(renderMarkdown(report));
-if (!args.jsonOut) {
-  console.log("\n```json");
-  console.log(JSON.stringify(report, null, 2));
-  console.log("```");
+export function runClassifier(rawArgs = process.argv.slice(2), options = {}) {
+  const projectRoot = resolveGitWorktreeRoot(options.cwd || process.cwd(), options);
+  const ownershipPath = path.join(projectRoot, "deploy", "ownership.yml");
+  const args = parseArgs(rawArgs);
+  const ownership = parseOwnershipFile(ownershipPath);
+  const changedFiles = args.files.length ? args.files : listChangedFiles(args.range, projectRoot);
+  const report = buildReport(changedFiles, ownership, args.range);
+
+  if (args.jsonOut) {
+    fs.mkdirSync(path.dirname(path.resolve(args.jsonOut)), { recursive: true });
+    fs.writeFileSync(path.resolve(args.jsonOut), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  }
+
+  console.log(renderMarkdown(report));
+  if (!args.jsonOut) {
+    console.log("\n```json");
+    console.log(JSON.stringify(report, null, 2));
+    console.log("```");
+  }
+
+  return {
+    report,
+    exitCode: report.groups.ambiguous.length && !args.allowAmbiguous ? 2 : 0
+  };
 }
 
-if (report.groups.ambiguous.length && !args.allowAmbiguous) {
-  process.exitCode = 2;
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch (_error) {
+    return false;
+  }
+}
+
+if (isMainModule()) {
+  const { exitCode } = runClassifier();
+  if (exitCode) {
+    process.exitCode = exitCode;
+  }
 }
 
 function parseArgs(rawArgs = []) {
@@ -80,19 +122,20 @@ function parseOwnershipFile(filePath) {
   return result;
 }
 
-function listChangedFiles(range = "") {
+function listChangedFiles(range = "", projectRoot = "") {
   const tracked = runGit(
     range
       ? ["diff", "--name-only", "--diff-filter=ACMRTDU", range]
-      : ["diff", "--name-only", "--diff-filter=ACMRTDU", "HEAD"]
+      : ["diff", "--name-only", "--diff-filter=ACMRTDU", "HEAD"],
+    projectRoot
   );
   const untracked = range
     ? []
-    : runGit(["ls-files", "--others", "--exclude-standard"]);
+    : runGit(["ls-files", "--others", "--exclude-standard"], projectRoot);
   return [...new Set([...tracked, ...untracked])].sort();
 }
 
-function runGit(gitArgs) {
+function runGit(gitArgs, projectRoot = "") {
   const result = spawnSync("git", gitArgs, {
     cwd: projectRoot,
     encoding: "utf8",
@@ -107,7 +150,7 @@ function runGit(gitArgs) {
     .filter(Boolean);
 }
 
-function buildReport(files = [], ownershipRules = {}) {
+function buildReport(files = [], ownershipRules = {}, range = "") {
   const groups = {
     linux: [],
     windows: [],
@@ -136,7 +179,7 @@ function buildReport(files = [], ownershipRules = {}) {
   });
 
   return {
-    range: args.range || "HEAD working tree",
+    range: range || "HEAD working tree",
     generatedAt: new Date().toISOString(),
     counts: Object.fromEntries(Object.entries(groups).map(([category, values]) => [category, values.length])),
     groups,
