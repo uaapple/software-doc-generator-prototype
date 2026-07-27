@@ -2,6 +2,16 @@ import path from "node:path";
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$/;
 const WINDOWS_ABSOLUTE_PATTERN = /^(?:[A-Za-z]:[\\/]|\\\\|\/\/)/;
+const ALLOWED_MCP_TOOL_ARGUMENTS = Object.freeze({
+  model_overview: new Set(["scope", "detail"]),
+  model_read: new Set(["scope", "depth"]),
+  model_query_params: new Set(["targets", "params", "compile"]),
+  model_resolve_params: new Set(["expressions"])
+});
+const FORBIDDEN_MATLAB_PRIMITIVE_PATTERN =
+  /(?:^|[^A-Za-z0-9_])(?:system|unix|dos|perl|web|urlread|urlwrite|tcpclient|udpport|javaMethod|javaObject|py\.)\s*(?:\(|\.|$)/iu;
+const QUOTED_ABSOLUTE_PATH_PATTERN =
+  /["']((?:\/[^"'\r\n]*|[A-Za-z]:[\\/][^"'\r\n]*|\\\\[^"'\r\n]*))/gu;
 
 export class MatlabGatewayContractError extends Error {
   constructor(code, message, statusCode = 400, details = null) {
@@ -91,45 +101,27 @@ export function createConfiguredWorkspaceMapping(options = {}) {
   return Object.freeze({ id, virtualRoot, hostRoot });
 }
 
-function decodeMatlabString(value = "", quote = "'") {
-  return quote === "'" ? value.replaceAll("''", "'") : value.replaceAll('""', '"');
-}
-
-function matlabStringLiterals(code = "") {
-  const literals = [];
-  const single = /'((?:''|[^'])*)'/g;
-  const double = /"((?:""|[^"])*)"/g;
-  for (const [pattern, quote] of [[single, "'"], [double, '"']]) {
-    let match;
-    while ((match = pattern.exec(code)) !== null) {
-      literals.push({
-        value: decodeMatlabString(match[1], quote),
-        offset: match.index
-      });
-    }
-  }
-  return literals;
-}
-
-function looksAbsolutePath(value = "") {
-  return path.posix.isAbsolute(value) || WINDOWS_ABSOLUTE_PATTERN.test(value) || value.startsWith("~");
-}
-
 export function mapContainerWorkspaceCode(code, mapping) {
   const source = String(code || "");
   const configured = createConfiguredWorkspaceMapping(mapping);
   const virtualRoot = configured.virtualRoot.replace(/\/+$/, "");
   const hostRoot = configured.hostRoot.replace(/[\\/]+$/, "");
 
-  for (const literal of matlabStringLiterals(source)) {
-    if (!looksAbsolutePath(literal.value)) continue;
-    const normalized = literal.value.replaceAll("\\", "/");
+  if (FORBIDDEN_MATLAB_PRIMITIVE_PATTERN.test(source)) {
+    throw new MatlabGatewayContractError(
+      "MATLAB_PRIMITIVE_FORBIDDEN",
+      "MATLAB Gateway evaluate requests cannot invoke operating-system or network command primitives."
+    );
+  }
+
+  for (const match of source.matchAll(QUOTED_ABSOLUTE_PATH_PATTERN)) {
+    const normalized = match[1].replaceAll("\\", "/");
     if (normalized !== virtualRoot && !normalized.startsWith(`${virtualRoot}/`)) {
       throw new MatlabGatewayContractError(
         "UNMAPPED_ABSOLUTE_PATH",
         "MATLAB code contains an absolute path outside the configured shared workspace mapping.",
         400,
-        { offset: literal.offset }
+        { offset: match.index }
       );
     }
   }
@@ -142,6 +134,47 @@ export function mapContainerWorkspaceCode(code, mapping) {
   };
 }
 
+export function validateGatewayToolCall(toolName, args, modelAssetId) {
+  const normalizedToolName = requireGatewayIdentifier(toolName, "toolName");
+  const allowedKeys = ALLOWED_MCP_TOOL_ARGUMENTS[normalizedToolName];
+  if (!allowedKeys) {
+    throw new MatlabGatewayContractError(
+      "MCP_TOOL_FORBIDDEN",
+      `MATLAB Gateway tool is not allowlisted: ${normalizedToolName}`
+    );
+  }
+  if (!modelAssetId) {
+    throw new MatlabGatewayContractError(
+      "MODEL_ASSET_REQUIRED",
+      `${normalizedToolName} requires an uploaded modelAssetId.`
+    );
+  }
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    throw new MatlabGatewayContractError("INVALID_TOOL_ARGUMENTS", "MCP tool arguments must be an object.");
+  }
+  for (const [key, value] of Object.entries(args)) {
+    if (!allowedKeys.has(key)) {
+      throw new MatlabGatewayContractError(
+        "MCP_TOOL_ARGUMENT_FORBIDDEN",
+        `Argument is not allowed for ${normalizedToolName}: ${key}`
+      );
+    }
+    if (!["string", "number", "boolean"].includes(typeof value)) {
+      throw new MatlabGatewayContractError(
+        "INVALID_TOOL_ARGUMENT",
+        `Argument must be a scalar for ${normalizedToolName}: ${key}`
+      );
+    }
+    if (typeof value === "string" && value.length > 100_000) {
+      throw new MatlabGatewayContractError(
+        "TOOL_ARGUMENT_TOO_LARGE",
+        `Argument is too large for ${normalizedToolName}: ${key}`
+      );
+    }
+  }
+  return { toolName: normalizedToolName, arguments: structuredClone(args) };
+}
+
 export function gatewayPath(rootDir, ...identifiers) {
   const root = path.resolve(rootDir);
   const target = path.resolve(root, ...identifiers);
@@ -150,4 +183,3 @@ export function gatewayPath(rootDir, ...identifiers) {
   }
   return target;
 }
-

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { request as httpRequest } from "node:http";
@@ -25,6 +26,7 @@ export class MatlabMcpClient {
     this.baseURL = options.baseURL || process.env.MATLAB_MCP_BASE_URL || "http://127.0.0.1:5100";
     this.httpMode = String(options.httpMode || process.env.MATLAB_MCP_HTTP_MODE || "path").trim().toLowerCase();
     this.authToken = options.authToken || process.env.MATLAB_MCP_AUTH_TOKEN || "";
+    this.gatewayMappingId = options.gatewayMappingId || process.env.SATK_GATEWAY_MAPPING_ID || "worker-data";
     this.timeoutMs = Number(options.timeoutMs || process.env.MATLAB_MCP_TIMEOUT_MS || 120000);
     this.tempDir = options.tempDir || process.env.MATLAB_MCP_TMPDIR || "/tmp";
     this.serverCommand = options.serverCommand || process.env.MATLAB_MCP_SERVER_COMMAND || "";
@@ -246,6 +248,9 @@ export class MatlabMcpClient {
   }
 
   async callTool(toolName, args = {}) {
+    if (this.transport === "http" && this.httpMode === "gateway") {
+      return this._callToolGateway(toolName, args);
+    }
     return this._callTool(toolName, args);
   }
 
@@ -258,6 +263,9 @@ export class MatlabMcpClient {
     }
 
     if (this.transport === "http") {
+      if (this.httpMode === "gateway") {
+        return this._analyzeSlxGateway({ absolutePath, originalName, documentType });
+      }
       return this._analyzeSlxHttp({ absolutePath, originalName, documentType });
     }
 
@@ -399,6 +407,171 @@ export class MatlabMcpClient {
     }
   }
 
+  async _callToolGateway(toolName, args = {}) {
+    this._requireGatewayToken();
+    const workspaceId = `mcp-${randomUUID()}`;
+    const jobId = `tool-${randomUUID()}`;
+    const requestArguments = structuredClone(args || {});
+    let modelPath = "";
+    let modelName = "";
+    if (typeof requestArguments.model === "string" && path.isAbsolute(requestArguments.model)) {
+      modelPath = requestArguments.model;
+      modelName = path.basename(modelPath);
+      delete requestArguments.model;
+    }
+    assertNoAbsolutePathValues(requestArguments);
+
+    await this._gatewayJson(`/api/workspaces/${workspaceId}`, {
+      method: "PUT",
+      body: { mappingId: this.gatewayMappingId }
+    });
+    try {
+      if (modelPath) {
+        await this._gatewayUpload(workspaceId, "model", modelPath, modelName);
+      }
+      return await this._gatewayRunJob(jobId, {
+        workspaceId,
+        operation: "call_mcp_tool",
+        toolName,
+        arguments: requestArguments,
+        ...(modelPath ? { modelAssetId: "model" } : {})
+      });
+    } finally {
+      await this._gatewayCleanup(workspaceId);
+    }
+  }
+
+  async _analyzeSlxGateway({ absolutePath, originalName }) {
+    this._requireGatewayToken();
+    const workspaceId = `slx-${randomUUID()}`;
+    const jobId = `analyze-${randomUUID()}`;
+    await this._gatewayJson(`/api/workspaces/${workspaceId}`, {
+      method: "PUT",
+      body: { mappingId: this.gatewayMappingId }
+    });
+    try {
+      await this._gatewayUpload(
+        workspaceId,
+        "model",
+        absolutePath,
+        originalName || path.basename(absolutePath)
+      );
+      return await this._gatewayRunJob(jobId, {
+        workspaceId,
+        operation: "analyze_slx",
+        inputAssetId: "model"
+      });
+    } finally {
+      await this._gatewayCleanup(workspaceId);
+    }
+  }
+
+  async _gatewayUpload(workspaceId, assetId, absolutePath, fileName) {
+    const fileBuffer = await fs.readFile(absolutePath);
+    const form = new FormData();
+    form.set("asset", new Blob([fileBuffer], { type: "application/octet-stream" }), fileName);
+    return this._gatewayJson(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/assets/${encodeURIComponent(assetId)}/upload`,
+      { method: "PUT", body: form }
+    );
+  }
+
+  async _gatewayRunJob(jobId, requestBody) {
+    await this._gatewayJson(`/api/jobs/${encodeURIComponent(jobId)}`, {
+      method: "POST",
+      body: requestBody
+    });
+    const workspaceId = requestBody.workspaceId;
+    const deadline = Date.now() + this.timeoutMs;
+    while (Date.now() < deadline) {
+      const job = await this._gatewayJson(
+        `/api/jobs/${encodeURIComponent(jobId)}?workspaceId=${encodeURIComponent(workspaceId)}`
+      );
+      if (job.status === "succeeded") {
+        const artifact = await this._gatewayJson(
+          `/api/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(job.artifactId)}`
+        );
+        return artifact.result;
+      }
+      if (["failed", "cancelled", "timed_out"].includes(job.status)) {
+        throw new MatlabMcpError(
+          job.error?.code || "MATLAB_GATEWAY_JOB_FAILED",
+          job.error?.message || `MATLAB Gateway job ${job.status}`
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await this._gatewayJson(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+      body: { workspaceId }
+    }).catch(() => {});
+    throw new MatlabMcpError("TIMEOUT", `MATLAB Gateway request timed out after ${this.timeoutMs}ms`);
+  }
+
+  async _gatewayCleanup(workspaceId) {
+    await this._gatewayJson(`/api/workspaces/${encodeURIComponent(workspaceId)}`, {
+      method: "DELETE"
+    }).catch(() => {});
+  }
+
+  async _gatewayJson(route, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const body = options.body instanceof FormData
+        ? options.body
+        : options.body === undefined
+          ? undefined
+          : JSON.stringify(options.body);
+      const response = await fetch(new URL(route, this.baseURL), {
+        method: options.method || "GET",
+        headers: {
+          ...this._authHeaders(),
+          ...(body && !(body instanceof FormData) ? { "Content-Type": "application/json" } : {})
+        },
+        body,
+        signal: controller.signal
+      });
+      const raw = await response.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new MatlabMcpError(
+          "INVALID_RESPONSE",
+          `MATLAB Gateway returned non-JSON with status ${response.status}`
+        );
+      }
+      if (!response.ok || parsed.error) {
+        throw new MatlabMcpError(
+          parsed.error?.code || `HTTP_${response.status}`,
+          parsed.error?.message || `MATLAB Gateway request failed with status ${response.status}`
+        );
+      }
+      return parsed;
+    } catch (error) {
+      if (error instanceof MatlabMcpError) throw error;
+      if (error?.name === "AbortError") {
+        throw new MatlabMcpError("TIMEOUT", `MATLAB Gateway request timed out after ${this.timeoutMs}ms`);
+      }
+      throw new MatlabMcpError(
+        "CONNECTION_ERROR",
+        `Cannot connect to MATLAB Gateway at ${this.baseURL}: ${error.message}`
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  _requireGatewayToken() {
+    if (!String(this.authToken || "").trim()) {
+      throw new MatlabMcpError(
+        "AUTH_TOKEN_REQUIRED",
+        "MATLAB Gateway transport requires a non-empty authentication token."
+      );
+    }
+  }
+
   _authHeaders() {
     return this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {};
   }
@@ -429,6 +602,27 @@ function extractJsonObjectText(text = "") {
     return "";
   }
   return raw.slice(start, end + 1);
+}
+
+function assertNoAbsolutePathValues(value, pointer = "$") {
+  if (typeof value === "string") {
+    if (path.isAbsolute(value) || /^(?:[A-Za-z]:[\\/]|\\\\|\/\/|~[\\/])/.test(value)) {
+      throw new MatlabMcpError(
+        "ABSOLUTE_PATH_FORBIDDEN",
+        `MATLAB Gateway arguments cannot contain an absolute path (${pointer}).`
+      );
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertNoAbsolutePathValues(entry, `${pointer}[${index}]`));
+    return;
+  }
+  if (value && typeof value === "object") {
+    for (const [key, entry] of Object.entries(value)) {
+      assertNoAbsolutePathValues(entry, `${pointer}.${key}`);
+    }
+  }
 }
 
 export class MatlabMcpError extends Error {

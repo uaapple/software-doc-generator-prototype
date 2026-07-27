@@ -27,25 +27,35 @@ Docker Desktop 与宿主 Gateway 都可访问的本地目录。
 ## 首次准备
 
 要求 Docker Desktop daemon、Buildx 和 Compose plugin 可用。复制示例配置，
-仅在未跟踪文件中填写真实凭据：
+将文件权限收紧后，仅在未跟踪文件中填写真实凭据。以下三个 token 均为必填，
+并应使用三个彼此独立的高熵值；不要把它们提交到 Git、命令行参数或日志：
 
 ```bash
 cp .env.container.example .env.container
+chmod 600 .env.container
 ```
 
-在宿主启动 Gateway 前，设置相同映射以及 MATLAB 根目录：
+宿主 Gateway 的一键入口会安全读取同一个 `.env.container`，不会回显 token。
+它固定使用 `127.0.0.1:5100`、`SATK_MATLAB_SESSION_MODE=new`，默认 MATLAB
+根目录为 `/Applications/MATLAB_R2026a.app`，并在启动前检查该目录存在。
+`MATLAB_GATEWAY_STATE_DIR` 默认为仓库内
+`.local/container/matlab-gateway-state`，权限会收紧为 `0700`，不会落到 `/tmp`。
 
 ```bash
-export MATLAB_ROOT=/Applications/MATLAB_R2026a.app
-export MATLAB_GATEWAY_MAPPING_ID=worker-data
-export MATLAB_GATEWAY_CONTAINER_ROOT=/var/lib/sdg/data
-export MATLAB_GATEWAY_HOST_ROOT="$(pwd)/.local/container/data"
-export SATK_MATLAB_SESSION_MODE=new
+npm run matlab:gateway:check
 npm run matlab:gateway:start
 ```
 
-Gateway 的具体启动入口由 `package.json` 提供。容器侧固定访问
-`http://host.docker.internal:5100`。
+如确需覆盖 MATLAB 安装位置，只能通过 `MATLAB_ROOT` 指向一个已存在的目录；
+启动器会把同一值同时传给 `MATLAB_ROOT` 与 `SATK_MATLAB_ROOT`。Gateway 的
+`evaluate_matlab_code` 使用独立 token 和固定调用方标识，仅供十二阶段运行时；
+通用 MCP 调用只允许显式 allowlist 工具和结构化参数，不能透传任意 MATLAB
+代码或宿主路径。
+
+容器侧固定访问 `http://host.docker.internal:5100`。`container:dev:test` 会从
+Worker 容器真实请求 Gateway 的 health/version；若 Docker Desktop 无法访问
+宿主回环地址，测试会失败并停止，不会自动把 Gateway 降级为未认证的
+`0.0.0.0` 监听。
 
 ## 一键运行
 
@@ -55,6 +65,15 @@ npm run container:dev:build
 npm run container:dev:up
 npm run container:dev:test
 ```
+
+Compose 首先由一次性 `permissions-init` 以最小 `CHOWN/FOWNER` capability 将
+共享 data、两类日志和三个 named volume 调整为组 `20000`、模式 `2770`，
+随后 platform/worker 始终以各自非 root UID 运行。`up` 和 `test` 都会在
+platform 的 data/logs/skills/home 以及 worker 的 data/logs/hermes-home
+执行真实写入并立即清理哨兵文件；不使用 `chmod 777`。
+
+Mac 默认只在 `127.0.0.1` 发布平台 `3000` 和 Worker `3101`。需要局域网访问时
+必须显式修改 Compose 覆盖文件，并先完成认证、主机防火墙和网络边界评审。
 
 停止并保留持久数据：
 

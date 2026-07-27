@@ -14,8 +14,62 @@ x-runtime-defaults: &runtime-defaults
     - /tmp:rw,noexec,nosuid,size=256m
 
 services:
+  permissions-init:
+    platform: linux/amd64
+    image: ${SDG_NODE_IMAGE:-node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752}
+    user: "0:0"
+    read_only: true
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    entrypoint:
+      - /bin/sh
+      - -eu
+      - -c
+    command:
+      - |
+        for directory in \
+          /state/data \
+          /state/logs/platform \
+          /state/logs/worker \
+          /state/hermes-home \
+          /state/platform-skills \
+          /state/platform-home; do
+          chgrp 20000 "$$directory"
+          chmod 2770 "$$directory"
+        done
+    volumes:
+      - type: bind
+        source: ${SDG_CONTAINER_DATA_DIR:-./.local/container/data}
+        target: /state/data
+      - type: bind
+        source: ${SDG_PLATFORM_LOG_DIR:-./.local/container/logs/platform}
+        target: /state/logs/platform
+      - type: bind
+        source: ${SDG_WORKER_LOG_DIR:-./.local/container/logs/worker}
+        target: /state/logs/worker
+      - type: volume
+        source: hermes-home
+        target: /state/hermes-home
+      - type: volume
+        source: platform-skills
+        target: /state/platform-skills
+      - type: volume
+        source: platform-home
+        target: /state/platform-home
+
   worker:
     <<: *runtime-defaults
+    depends_on:
+      permissions-init:
+        condition: service_completed_successfully
+    group_add:
+      - "20000"
     image: ${SDG_WORKER_IMAGE:-sdg-hermes-worker:mac-dev}
     build:
       context: .
@@ -35,7 +89,7 @@ services:
       HERMES_COMMAND: /opt/sdg/venv/bin/hermes
       HERMES_HOME: /var/lib/sdg/hermes-home
       HERMES_STATE_DB_PATH: /var/lib/sdg/hermes-home/state.db
-      HERMES_AUTH_TOKEN: ${HERMES_AUTH_TOKEN:-}
+      HERMES_AUTH_TOKEN: ${HERMES_AGENT_TOKEN:?HERMES_AGENT_TOKEN must be set}
       HERMES_PROFILE: ${HERMES_PROFILE:-}
       HERMES_SERVER_REQUEST_TIMEOUT_MS: "0"
       HERMES_TASK_CONCURRENCY: "1"
@@ -51,7 +105,8 @@ services:
       MATLAB_MCP_TRANSPORT: http
       MATLAB_MCP_BASE_URL: ${MATLAB_MCP_BASE_URL:-http://host.docker.internal:5100}
       MATLAB_MCP_HTTP_MODE: gateway
-      MATLAB_MCP_AUTH_TOKEN: ${MATLAB_MCP_AUTH_TOKEN:-}
+      MATLAB_MCP_AUTH_TOKEN: ${MATLAB_GATEWAY_TOKEN:?MATLAB_GATEWAY_TOKEN must be set}
+      MATLAB_GATEWAY_EVALUATE_TOKEN: ${MATLAB_GATEWAY_EVALUATE_TOKEN:?MATLAB_GATEWAY_EVALUATE_TOKEN must be set}
       MATLAB_MCP_TIMEOUT_MS: ${MATLAB_MCP_TIMEOUT_MS:-300000}
       SATK_GATEWAY_URL: ${SATK_GATEWAY_URL:-http://host.docker.internal:5100}
       SATK_GATEWAY_MAPPING_ID: ${SATK_GATEWAY_MAPPING_ID:-worker-data}
@@ -98,19 +153,23 @@ services:
       args:
         NODE_BASE_IMAGE: ${SDG_NODE_IMAGE:-node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752}
     depends_on:
+      permissions-init:
+        condition: service_completed_successfully
       worker:
         condition: service_healthy
         restart: true
+    group_add:
+      - "20000"
     environment:
       APP_ENV: development
       APP_RUNTIME_ROLE: platform
       HOST: 0.0.0.0
       PORT: 3000
       APP_DATA_DIR: /var/lib/sdg/data
-      APP_SKILLS_DIR: /opt/sdg/skills
+      APP_SKILLS_DIR: /var/lib/sdg/skills
       HERMES_TRANSPORT: api
       HERMES_BASE_URL: http://worker:3101
-      HERMES_AUTH_TOKEN: ${HERMES_AUTH_TOKEN:-}
+      HERMES_AUTH_TOKEN: ${HERMES_AGENT_TOKEN:?HERMES_AGENT_TOKEN must be set}
       HERMES_TASK_CONCURRENCY: "1"
       HERMES_SERVER_REQUEST_TIMEOUT_MS: "0"
       UNIT_TEST_DEFAULT_WORKER_ID: mac-container
@@ -122,7 +181,7 @@ services:
       MATLAB_MCP_TRANSPORT: http
       MATLAB_MCP_BASE_URL: ${MATLAB_MCP_BASE_URL:-http://host.docker.internal:5100}
       MATLAB_MCP_HTTP_MODE: gateway
-      MATLAB_MCP_AUTH_TOKEN: ${MATLAB_MCP_AUTH_TOKEN:-}
+      MATLAB_MCP_AUTH_TOKEN: ${MATLAB_GATEWAY_TOKEN:?MATLAB_GATEWAY_TOKEN must be set}
       MATLAB_MCP_TIMEOUT_MS: ${MATLAB_MCP_TIMEOUT_MS:-300000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}

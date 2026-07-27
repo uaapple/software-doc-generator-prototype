@@ -22,6 +22,17 @@ SPEC.loader.exec_module(SATK)
 
 
 class SatkGatewayTests(unittest.TestCase):
+    def test_gateway_evaluate_headers_use_separate_scoped_token(self):
+        headers = SATK.gateway_headers(
+            {
+                "MATLAB_MCP_AUTH_TOKEN": "api-token",
+                "MATLAB_GATEWAY_EVALUATE_TOKEN": "evaluate-token",
+            }
+        )
+        self.assertEqual(headers["Authorization"], "Bearer api-token")
+        self.assertEqual(headers["X-SDG-Evaluate-Token"], "evaluate-token")
+        self.assertEqual(headers["X-SDG-Gateway-Caller"], "tcsd-runtime")
+
     def test_gateway_unavailable_is_a_public_runtime_error(self):
         with mock.patch.dict(
             os.environ,

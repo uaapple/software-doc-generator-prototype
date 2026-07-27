@@ -107,6 +107,7 @@ shared:
   - scripts/build-release-zip.mjs
   - scripts/classify-changes.mjs
   - scripts/container-dev.mjs
+  - scripts/start-matlab-gateway.mjs
   - scripts/check-container-boundaries.mjs
   - scripts/check-container-secrets.mjs
   - scripts/container-release-manifest.mjs

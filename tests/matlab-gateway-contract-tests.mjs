@@ -9,6 +9,8 @@ import {
   requireGatewayIdentifier
 } from "../src/services/matlab-gateway-contract.js";
 import { createMatlabGatewayApp, MatlabGatewayService } from "../src/matlab-gateway-app.js";
+import { MatlabMcpClient } from "../src/services/matlab-mcp-client.js";
+import { createEmptyModelFactBundle } from "../src/services/model-fact-bundle.js";
 
 const tests = [];
 const test = (name, run) => tests.push({ name, run });
@@ -31,13 +33,19 @@ async function withGateway(run, options = {}) {
         if (options.callTool) return options.callTool(name, args);
         return { isError: false, content: [{ type: "text", text: "ok" }] };
       },
-      async analyzeSlx() {
+      async analyzeSlx(args) {
+        calls.push({ name: "analyze_slx", args });
+        if (options.analyzeSlx) return options.analyzeSlx(args);
         throw new Error("analyzeSlx was not expected");
       },
       async shutdown() {}
     })
   });
-  const app = await createMatlabGatewayApp({ service, authToken: "test-token" });
+  const app = await createMatlabGatewayApp({
+    service,
+    authToken: "test-token",
+    evaluateToken: "test-evaluate-token"
+  });
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const baseURL = `http://127.0.0.1:${server.address().port}`;
@@ -46,6 +54,8 @@ async function withGateway(run, options = {}) {
       ...init,
       headers: {
         authorization: "Bearer test-token",
+        "x-sdg-evaluate-token": "test-evaluate-token",
+        "x-sdg-gateway-caller": "tcsd-runtime",
         ...(init.body && !(init.body instanceof FormData) ? { "content-type": "application/json" } : {}),
         ...(init.headers || {})
       }
@@ -54,7 +64,7 @@ async function withGateway(run, options = {}) {
     return { response, payload };
   };
   try {
-    await run({ root, hostRoot, calls, service, request });
+    await run({ root, hostRoot, calls, service, request, baseURL });
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await fs.rm(root, { recursive: true, force: true });
@@ -103,6 +113,102 @@ test("MATLAB code mapping accepts only the configured virtual root", () => {
       }),
     (error) => error.code === "UNMAPPED_ABSOLUTE_PATH"
   );
+  assert.throws(
+    () =>
+      mapContainerWorkspaceCode("x=a'; system('/bin/sh');", {
+        id: "worker-data",
+        virtualRoot: "/var/lib/sdg/data",
+        hostRoot: "/private/tmp/sdg-data"
+      }),
+    (error) =>
+      error.code === "MATLAB_PRIMITIVE_FORBIDDEN" ||
+      error.code === "UNMAPPED_ABSOLUTE_PATH"
+  );
+});
+
+test("Gateway requires separate non-empty API and evaluate tokens", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "matlab-gateway-auth-"));
+  const hostRoot = path.join(root, "host");
+  await fs.mkdir(hostRoot, { recursive: true });
+  const service = new MatlabGatewayService({
+    rootDir: path.join(root, "state"),
+    hostRoot,
+    createClient: () => ({ async shutdown() {} })
+  });
+  try {
+    await assert.rejects(
+      () =>
+        createMatlabGatewayApp({
+          service,
+          authToken: "",
+          evaluateToken: "",
+          requireAuthToken: true,
+          requireEvaluateToken: true
+        }),
+      (error) => error.code === "AUTH_TOKEN_REQUIRED"
+    );
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("HTTP gateway client uses ID-only analyze and allowlisted tool jobs without stdio fallback", async () => {
+  const bundle = createEmptyModelFactBundle();
+  bundle.source = { fileName: "demo.slx", modelName: "Demo" };
+  await withGateway(
+    async ({ root, calls, baseURL }) => {
+      const modelPath = path.join(root, "demo.slx");
+      await fs.writeFile(modelPath, "fake-slx");
+      const client = new MatlabMcpClient({
+        transport: "http",
+        httpMode: "gateway",
+        baseURL,
+        authToken: "test-token",
+        serverCommand: "/must-not-start"
+      });
+      const analyzed = await client.analyzeSlx({
+        absolutePath: modelPath,
+        originalName: "demo.slx"
+      });
+      assert.equal(analyzed.source.modelName, "Demo");
+      const overview = await client.callTool("model_overview", {
+        model: modelPath,
+        scope: "root",
+        detail: "full"
+      });
+      assert.equal(overview.tool, "model_overview");
+      const toolCall = calls.find((entry) => entry.name === "model_overview");
+      assert.ok(toolCall, "Gateway must execute the allowlisted MCP tool");
+      assert.notEqual(toolCall.args.model, modelPath);
+      assert.match(toolCall.args.model, /asset-data/);
+      assert.equal(client._child, null, "Gateway mode must not spawn the stdio server");
+    },
+    {
+      analyzeSlx: () => bundle,
+      callTool: (name) => ({ tool: name, ok: true })
+    }
+  );
+});
+
+test("Gateway rejects non-allowlisted generic MCP tools", async () => {
+  await withGateway(async ({ request }) => {
+    await request("/api/workspaces/tool-denied", {
+      method: "PUT",
+      body: JSON.stringify({ mappingId: "worker-data" })
+    });
+    const { response, payload } = await request("/api/jobs/tool-denied", {
+      method: "POST",
+      body: JSON.stringify({
+        workspaceId: "tool-denied",
+        operation: "call_mcp_tool",
+        toolName: "evaluate_matlab_code",
+        arguments: {},
+        modelAssetId: "model"
+      })
+    });
+    assert.equal(response.status, 400);
+    assert.equal(payload.error.code, "MCP_TOOL_FORBIDDEN");
+  });
 });
 
 test("Gateway exposes metadata and runs ID-only evaluate/artifact/cleanup flow", async () => {

@@ -7,9 +7,12 @@ import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const requestedAction = String(process.argv[2] || "help").trim().toLowerCase();
-const envPath = fs.existsSync(path.join(rootDir, ".env.container"))
-  ? path.join(rootDir, ".env.container")
-  : path.join(rootDir, ".env.container.example");
+const requestedEnvPath = String(process.env.SDG_CONTAINER_ENV_FILE || "").trim();
+const envPath = requestedEnvPath
+  ? path.resolve(rootDir, requestedEnvPath)
+  : fs.existsSync(path.join(rootDir, ".env.container"))
+    ? path.join(rootDir, ".env.container")
+    : path.join(rootDir, ".env.container.example");
 const envValues = readEnvFile(envPath);
 const composeArgs = [
   "compose",
@@ -19,6 +22,12 @@ const composeArgs = [
   path.join(rootDir, "compose.yaml"),
   "--file",
   path.join(rootDir, "compose.mac.yaml")
+];
+const actionsRequiringSecrets = new Set(["up", "build", "config", "restart", "test"]);
+const requiredSecrets = [
+  "HERMES_AGENT_TOKEN",
+  "MATLAB_GATEWAY_TOKEN",
+  "MATLAB_GATEWAY_EVALUATE_TOKEN"
 ];
 
 function readEnvFile(filePath) {
@@ -36,7 +45,7 @@ function readEnvFile(filePath) {
 }
 
 function resolveLocalDirectory(key, fallback) {
-  const configured = envValues[key] || fallback;
+  const configured = process.env[key] || envValues[key] || fallback;
   const resolved = path.resolve(rootDir, configured);
   const root = path.parse(resolved).root;
   if (resolved === root) {
@@ -56,6 +65,18 @@ function prepareMounts() {
   }
 }
 
+function validateRequiredSecrets() {
+  if (!actionsRequiringSecrets.has(requestedAction)) return;
+  const missing = requiredSecrets.filter(
+    (key) => !String(process.env[key] || envValues[key] || "").trim()
+  );
+  if (missing.length) {
+    throw new Error(
+      `Container preflight requires non-empty ${missing.join(", ")} in ${path.basename(envPath)}.`
+    );
+  }
+}
+
 function runDocker(args, options = {}) {
   const result = spawnSync("docker", args, {
     cwd: rootDir,
@@ -64,7 +85,9 @@ function runDocker(args, options = {}) {
     stdio: options.capture ? "pipe" : "inherit"
   });
   if (result.error?.code === "ENOENT") {
-    throw new Error("Docker CLI is unavailable. Install and start Docker Desktop before running container commands.");
+    throw new Error(
+      "Docker CLI is unavailable on PATH. Start Docker Desktop and ensure its standard /usr/local/bin/docker link is available."
+    );
   }
   if (result.status !== 0) {
     const details = options.capture ? String(result.stderr || result.stdout || "").trim() : "";
@@ -77,6 +100,44 @@ function ensureDocker() {
   runDocker(["version"], { capture: true });
   runDocker(["buildx", "version"], { capture: true });
   runDocker(["compose", "version"], { capture: true });
+}
+
+function verifyWritableMounts() {
+  const checks = [
+    ["worker", ["/var/lib/sdg/data", "/var/lib/sdg/logs", "/var/lib/sdg/hermes-home"]],
+    [
+      "platform",
+      ["/var/lib/sdg/data", "/var/log/sdg", "/var/lib/sdg/skills", "/var/lib/sdg/home"]
+    ]
+  ];
+  for (const [service, directories] of checks) {
+    const script = [
+      "const fs=require('node:fs');",
+      "const path=require('node:path');",
+      `for(const directory of ${JSON.stringify(directories)}){`,
+      "const sentinel=path.join(directory,`.sdg-write-${process.pid}-${Date.now()}`);",
+      "fs.writeFileSync(sentinel,'ok',{flag:'wx'});",
+      "fs.unlinkSync(sentinel);",
+      "}",
+      "console.log('writable mounts verified');"
+    ].join("");
+    runDocker([...composeArgs, "exec", "--no-TTY", service, "node", "-e", script]);
+  }
+}
+
+function verifyWorkerGatewayReachability() {
+  const script = [
+    "(async()=>{",
+    "const base=process.env.MATLAB_MCP_BASE_URL;",
+    "const token=process.env.MATLAB_MCP_AUTH_TOKEN;",
+    "const health=await fetch(new URL('/health',base));",
+    "if(!health.ok||!(await health.json()).ok)throw new Error('Gateway health failed');",
+    "const version=await fetch(new URL('/version',base),{headers:{Authorization:`Bearer ${token}`}});",
+    "if(!version.ok||!(await version.json()).gatewayVersion)throw new Error('Gateway version failed');",
+    "console.log('worker-to-gateway reachability verified');",
+    "})().catch(()=>{console.error('worker-to-gateway reachability failed');process.exit(1)})"
+  ].join("");
+  runDocker([...composeArgs, "exec", "--no-TTY", "worker", "node", "-e", script]);
 }
 
 async function probe(url, label) {
@@ -98,10 +159,12 @@ async function main() {
     console.log("Usage: node scripts/container-dev.mjs <up|down|build|config|status|restart|test>");
     return;
   }
+  validateRequiredSecrets();
   prepareMounts();
   ensureDocker();
   if (requestedAction === "up") {
     runDocker([...composeArgs, "up", "--detach", "--build", "--remove-orphans"]);
+    verifyWritableMounts();
     return;
   }
   if (requestedAction === "down") {
@@ -113,7 +176,7 @@ async function main() {
     return;
   }
   if (requestedAction === "config") {
-    runDocker([...composeArgs, "config"]);
+    runDocker([...composeArgs, "config", "--quiet"]);
     return;
   }
   if (requestedAction === "status") {
@@ -126,8 +189,16 @@ async function main() {
   }
   if (requestedAction === "test") {
     runDocker([...composeArgs, "ps"]);
-    await probe(`http://127.0.0.1:${envValues.SDG_WORKER_PORT || "3101"}/api/health`, "worker");
-    await probe(`http://127.0.0.1:${envValues.SDG_PLATFORM_PORT || "3000"}/api/health`, "platform");
+    verifyWritableMounts();
+    verifyWorkerGatewayReachability();
+    await probe(
+      `http://127.0.0.1:${process.env.SDG_WORKER_PORT || envValues.SDG_WORKER_PORT || "3101"}/api/health`,
+      "worker"
+    );
+    await probe(
+      `http://127.0.0.1:${process.env.SDG_PLATFORM_PORT || envValues.SDG_PLATFORM_PORT || "3000"}/api/health`,
+      "platform"
+    );
     await probe("http://127.0.0.1:5100/health", "MATLAB Gateway");
     return;
   }

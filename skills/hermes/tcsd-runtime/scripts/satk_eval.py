@@ -90,6 +90,10 @@ def gateway_headers(environ=None) -> dict[str, str]:
     token = str(values.get("MATLAB_MCP_AUTH_TOKEN") or "").strip()
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    evaluate_token = str(values.get("MATLAB_GATEWAY_EVALUATE_TOKEN") or "").strip()
+    if evaluate_token:
+        headers["X-SDG-Evaluate-Token"] = evaluate_token
+        headers["X-SDG-Gateway-Caller"] = "tcsd-runtime"
     return headers
 
 

@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { promises as fs } from "node:fs";
 import {
   MatlabGatewayContractError,
@@ -11,7 +11,8 @@ import {
   mapContainerWorkspaceCode,
   rejectAbsolutePathFields,
   requireGatewayIdentifier,
-  requireRelativeFileName
+  requireRelativeFileName,
+  validateGatewayToolCall
 } from "./services/matlab-gateway-contract.js";
 import { MatlabMcpClient, MatlabMcpError } from "./services/matlab-mcp-client.js";
 import { validateModelFactBundle } from "./services/model-fact-bundle.js";
@@ -46,6 +47,7 @@ function publicJob(job) {
     jobId: job.jobId,
     workspaceId: job.workspaceId,
     operation: job.operation,
+    toolName: job.toolName || "",
     status: job.status,
     inputAssetId: job.inputAssetId,
     artifactId: job.artifactId || "",
@@ -212,16 +214,34 @@ export class MatlabGatewayService {
     const id = requireGatewayIdentifier(jobId, "jobId");
     const workspaceId = requireGatewayIdentifier(body.workspaceId, "workspaceId");
     const operation = String(body.operation || "").trim();
-    if (!["evaluate_matlab_code", "analyze_slx"].includes(operation)) {
+    if (!["evaluate_matlab_code", "analyze_slx", "call_mcp_tool"].includes(operation)) {
       throw gatewayError("OPERATION_UNSUPPORTED", `Unsupported MATLAB Gateway operation: ${operation}`);
     }
-    const inputAssetId = requireGatewayIdentifier(body.inputAssetId, "inputAssetId");
-    const asset = await this.getAsset(workspaceId, inputAssetId);
-    if (
-      (operation === "evaluate_matlab_code" && asset.kind !== "matlab-code") ||
-      (operation === "analyze_slx" && asset.kind !== "simulink-slx")
-    ) {
-      throw gatewayError("ASSET_KIND_MISMATCH", "Input asset kind does not match the requested operation.");
+    const inputAssetId = operation === "call_mcp_tool"
+      ? ""
+      : requireGatewayIdentifier(body.inputAssetId, "inputAssetId");
+    if (inputAssetId) {
+      const asset = await this.getAsset(workspaceId, inputAssetId);
+      if (
+        (operation === "evaluate_matlab_code" && asset.kind !== "matlab-code") ||
+        (operation === "analyze_slx" && asset.kind !== "simulink-slx")
+      ) {
+        throw gatewayError("ASSET_KIND_MISMATCH", "Input asset kind does not match the requested operation.");
+      }
+    }
+    const modelAssetId = operation === "call_mcp_tool" && body.modelAssetId
+      ? requireGatewayIdentifier(body.modelAssetId, "modelAssetId")
+      : "";
+    const validatedToolCall = operation === "call_mcp_tool"
+      ? validateGatewayToolCall(body.toolName, body.arguments || {}, modelAssetId)
+      : { toolName: "", arguments: {} };
+    const toolName = validatedToolCall.toolName;
+    const toolArguments = validatedToolCall.arguments;
+    if (modelAssetId) {
+      const modelAsset = await this.getAsset(workspaceId, modelAssetId);
+      if (modelAsset.kind !== "simulink-slx") {
+        throw gatewayError("ASSET_KIND_MISMATCH", "modelAssetId must identify an uploaded SLX asset.");
+      }
     }
     const prior = await readJson(this.jobPath(workspaceId, id));
     if (prior) return publicJob(prior);
@@ -235,6 +255,9 @@ export class MatlabGatewayService {
       workspaceId,
       operation,
       inputAssetId,
+      toolName,
+      toolArguments,
+      modelAssetId,
       artifactId: "",
       status: "queued",
       timeoutMs,
@@ -298,17 +321,19 @@ export class MatlabGatewayService {
       }, job.timeoutMs);
     });
     try {
-      const asset = await this.getAsset(job.workspaceId, job.inputAssetId);
-      const contentPath = this.assetContentPath(job.workspaceId, asset);
       let result;
       if (job.operation === "evaluate_matlab_code") {
+        const asset = await this.getAsset(job.workspaceId, job.inputAssetId);
+        const contentPath = this.assetContentPath(job.workspaceId, asset);
         const code = await fs.readFile(contentPath, "utf8");
         const mapped = mapContainerWorkspaceCode(code, this.mapping);
         result = await Promise.race([
           client.callTool("evaluate_matlab_code", { code: mapped.code }),
           timeout
         ]);
-      } else {
+      } else if (job.operation === "analyze_slx") {
+        const asset = await this.getAsset(job.workspaceId, job.inputAssetId);
+        const contentPath = this.assetContentPath(job.workspaceId, asset);
         result = await Promise.race([
           client.analyzeSlx({
             absolutePath: contentPath,
@@ -325,6 +350,16 @@ export class MatlabGatewayService {
             502
           );
         }
+      } else {
+        const toolArguments = structuredClone(job.toolArguments || {});
+        if (job.modelAssetId) {
+          const modelAsset = await this.getAsset(job.workspaceId, job.modelAssetId);
+          toolArguments.model = this.assetContentPath(job.workspaceId, modelAsset);
+        }
+        result = await Promise.race([
+          client.callTool(job.toolName, toolArguments),
+          timeout
+        ]);
       }
       if (state.cancelled) return;
       const artifactId = `result-${job.jobId}`;
@@ -410,7 +445,33 @@ export class MatlabGatewayService {
 export async function createMatlabGatewayApp(options = {}) {
   const service = options.service || new MatlabGatewayService(options);
   await service.initialize();
-  const authToken = String(options.authToken ?? process.env.MATLAB_MCP_AUTH_TOKEN ?? "").trim();
+  const authToken = String(
+    options.authToken ??
+    process.env.MATLAB_GATEWAY_TOKEN ??
+    process.env.MATLAB_MCP_AUTH_TOKEN ??
+    ""
+  ).trim();
+  const requireAuthToken = options.requireAuthToken ?? process.env.NODE_ENV !== "test";
+  if (requireAuthToken && !authToken) {
+    throw gatewayError(
+      "AUTH_TOKEN_REQUIRED",
+      "MATLAB Gateway requires a non-empty authentication token.",
+      500
+    );
+  }
+  const evaluateToken = String(
+    options.evaluateToken ??
+    process.env.MATLAB_GATEWAY_EVALUATE_TOKEN ??
+    ""
+  ).trim();
+  const requireEvaluateToken = options.requireEvaluateToken ?? requireAuthToken;
+  if (requireEvaluateToken && !evaluateToken) {
+    throw gatewayError(
+      "EVALUATE_TOKEN_REQUIRED",
+      "MATLAB Gateway evaluate operations require a separate non-empty token.",
+      500
+    );
+  }
   const uploadDir = gatewayPath(service.rootDir, "uploads");
   await fs.mkdir(uploadDir, { recursive: true });
   const upload = multer({
@@ -453,7 +514,7 @@ export async function createMatlabGatewayApp(options = {}) {
   app.get("/capabilities", requireAuth, (_req, res) => {
     res.json({
       schema: "matlab-gateway-capabilities/v1",
-      operations: ["evaluate_matlab_code", "analyze_slx"],
+      operations: ["evaluate_matlab_code", "analyze_slx", "call_mcp_tool"],
       contracts: {
         workspaces: true,
         assets: ["matlab-code", "simulink-slx"],
@@ -489,6 +550,21 @@ export async function createMatlabGatewayApp(options = {}) {
     })
   );
   app.post("/api/jobs/:jobId", requireAuth, asyncRoute(async (req, res) => {
+    if (req.body?.operation === "evaluate_matlab_code") {
+      const suppliedEvaluateToken = String(req.get("x-sdg-evaluate-token") || "");
+      const caller = String(req.get("x-sdg-gateway-caller") || "");
+      if (
+        caller !== "tcsd-runtime" ||
+        !evaluateToken ||
+        !constantTimeEqual(suppliedEvaluateToken, evaluateToken)
+      ) {
+        throw gatewayError(
+          "EVALUATE_NOT_AUTHORIZED",
+          "MATLAB evaluate operation is restricted to the authenticated TCSD runtime.",
+          403
+        );
+      }
+    }
     res.status(202).json(await service.submitJob(req.params.jobId, req.body || {}));
   }));
   app.get("/api/jobs/:jobId", requireAuth, asyncRoute(async (req, res) => {
@@ -591,6 +667,16 @@ function createLocalMatlabClient(options = {}) {
       SOFTWARE_DOC_PROJECT_ROOT: rootDir
     }
   });
+}
+
+function constantTimeEqual(left, right) {
+  const leftBuffer = Buffer.from(String(left || ""));
+  const rightBuffer = Buffer.from(String(right || ""));
+  return (
+    leftBuffer.length === rightBuffer.length &&
+    leftBuffer.length > 0 &&
+    timingSafeEqual(leftBuffer, rightBuffer)
+  );
 }
 
 export { GATEWAY_VERSION as MATLAB_GATEWAY_VERSION };
