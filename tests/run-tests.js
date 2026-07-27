@@ -47,6 +47,8 @@ import {
 import { buildZipArchive } from "./zip-fixture.js";
 
 const execFileAsync = promisify(execFile);
+const TEST_TEMP_REMOVE_RETRY_DELAY_MS = 100;
+const TEST_TEMP_REMOVE_MAX_RETRIES = 10;
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -181,7 +183,12 @@ async function withTempConfig(run) {
     config.openai.apiKey = originalConfig.openai.apiKey;
     config.openai.baseURL = originalConfig.openai.baseURL;
     config.openai.model = originalConfig.openai.model;
-    await fs.rm(tempDir, { recursive: true, force: true });
+    await fs.rm(tempDir, {
+      recursive: true,
+      force: true,
+      maxRetries: TEST_TEMP_REMOVE_MAX_RETRIES,
+      retryDelay: TEST_TEMP_REMOVE_RETRY_DELAY_MS
+    });
   }
 }
 
@@ -418,6 +425,7 @@ async function withTestServer(run) {
   try {
     return await run({ baseUrl });
   } finally {
+    clearInterval(app.locals.tcsdReconcileTimer);
     await new Promise((resolve, reject) => {
       server.close((error) => {
         if (error) {
@@ -428,6 +436,23 @@ async function withTestServer(run) {
       });
     });
   }
+}
+
+async function waitForApiTaskTerminal(taskUrl, options = {}) {
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || 100));
+  const delayMs = Math.max(1, Number(options.delayMs || 50));
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(taskUrl);
+    assert.equal(response.status, 200);
+    const task = await response.json();
+    if (["completed", "failed"].includes(task.status)) {
+      return task;
+    }
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error(`Test task did not reach a terminal state after ${maxAttempts} attempts`);
 }
 
 async function createMockUploadFile(tempDir, originalname, content = "fixture") {
@@ -794,7 +819,8 @@ const tests = [
     name: "Change classifier includes untracked files in working-tree mode",
     run: async () => {
       const root = path.resolve(process.cwd());
-      const probe = path.join(root, "tests", `.classifier-untracked-probe-${process.pid}.txt`);
+      const probeName = `classifier-untracked-probe-${process.pid}.mjs`;
+      const probe = path.join(root, "tests", probeName);
       const reportPath = path.join(os.tmpdir(), `classifier-report-${process.pid}.json`);
       const globalConfigPath = path.join(
         os.tmpdir(),
@@ -813,15 +839,33 @@ const tests = [
         for (const name of Object.keys(gitEnv)) {
           if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/u.test(name)) delete gitEnv[name];
         }
+        Object.assign(gitEnv, {
+          GIT_CONFIG_COUNT: "2",
+          GIT_CONFIG_KEY_0: "core.fsmonitor",
+          GIT_CONFIG_VALUE_0: "false",
+          GIT_CONFIG_KEY_1: "core.untrackedCache",
+          GIT_CONFIG_VALUE_1: "false"
+        });
         const relativeProbe = path.relative(root, probe).replaceAll(path.sep, "/");
         const { stdout: untrackedOutput } = await execFileAsync("git", [
           "ls-files",
           "--others",
-          "--exclude-standard",
-          "--",
-          relativeProbe
+          "--exclude-standard"
         ], { cwd: root, env: gitEnv });
-        assert.equal(String(untrackedOutput || "").trim(), relativeProbe);
+        const untrackedFiles = String(untrackedOutput || "")
+          .split(/\r?\n/u)
+          .map((item) => item.trim().replaceAll("\\", "/"))
+          .filter(Boolean);
+        assert.ok(
+          untrackedFiles.includes(relativeProbe),
+          JSON.stringify({
+            relativeProbe,
+            untrackedCount: untrackedFiles.length,
+            untrackedTestProbeEntries: untrackedFiles
+              .filter((item) => item.startsWith("tests/") && item.includes("classifier-untracked-probe-"))
+              .slice(0, 20)
+          })
+        );
         await execFileAsync(process.execPath, [
           path.join(root, "scripts", "classify-changes.mjs"),
           "--allow-ambiguous",
@@ -830,7 +874,21 @@ const tests = [
         ], { cwd: root, env: gitEnv });
         const report = JSON.parse(await fs.readFile(reportPath, "utf8"));
         const entry = report.entries.find((item) => item.path === relativeProbe);
-        assert.equal(entry?.category, "dev-only");
+        assert.equal(
+          entry?.category,
+          "dev-only",
+          JSON.stringify({
+            relativeProbe,
+            untrackedCount: untrackedFiles.length,
+            untrackedTestProbeEntries: untrackedFiles
+              .filter((item) => item.startsWith("tests/") && item.includes("classifier-untracked-probe-"))
+              .slice(0, 20),
+            reportTestProbeEntries: report.entries
+              .filter((item) => item.path.startsWith("tests/") && item.path.includes("classifier-untracked-probe-"))
+              .slice(0, 20)
+              .map((item) => ({ path: item.path, category: item.category }))
+          })
+        );
       } finally {
         await fs.rm(probe, { force: true });
         await fs.rm(reportPath, { force: true });
@@ -10811,6 +10869,9 @@ const tests = [
           const taskDir = path.join(config.softwareModuleDescription.taskStoreDir, validBody.task.id);
           await fs.access(taskDir);
 
+          await waitForApiTaskTerminal(
+            `${baseUrl}/api/software-module-description-generation/tasks/${validBody.task.id}`
+          );
           const deleteResponse = await fetch(`${baseUrl}/api/software-module-description-generation/tasks/${validBody.task.id}`, {
             method: "DELETE"
           });
