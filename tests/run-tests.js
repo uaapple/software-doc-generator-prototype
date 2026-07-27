@@ -796,21 +796,45 @@ const tests = [
       const root = path.resolve(process.cwd());
       const probe = path.join(root, "tests", `.classifier-untracked-probe-${process.pid}.txt`);
       const reportPath = path.join(os.tmpdir(), `classifier-report-${process.pid}.json`);
+      const globalConfigPath = path.join(
+        os.tmpdir(),
+        `classifier-empty-global-config-${process.pid}`
+      );
       try {
         await fs.writeFile(probe, "untracked classifier probe\n", "utf8");
+        await fs.writeFile(globalConfigPath, "", "utf8");
+        const gitEnv = {
+          ...process.env,
+          GIT_CONFIG_GLOBAL: globalConfigPath,
+          GIT_CONFIG_NOSYSTEM: "1"
+        };
+        delete gitEnv.GIT_CONFIG_COUNT;
+        delete gitEnv.GIT_CONFIG_PARAMETERS;
+        for (const name of Object.keys(gitEnv)) {
+          if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/u.test(name)) delete gitEnv[name];
+        }
+        const relativeProbe = path.relative(root, probe).replaceAll(path.sep, "/");
+        const { stdout: untrackedOutput } = await execFileAsync("git", [
+          "ls-files",
+          "--others",
+          "--exclude-standard",
+          "--",
+          relativeProbe
+        ], { cwd: root, env: gitEnv });
+        assert.equal(String(untrackedOutput || "").trim(), relativeProbe);
         await execFileAsync(process.execPath, [
           path.join(root, "scripts", "classify-changes.mjs"),
           "--allow-ambiguous",
           "--json-out",
           reportPath
-        ], { cwd: root });
+        ], { cwd: root, env: gitEnv });
         const report = JSON.parse(await fs.readFile(reportPath, "utf8"));
-        const relativeProbe = path.relative(root, probe).replaceAll(path.sep, "/");
         const entry = report.entries.find((item) => item.path === relativeProbe);
         assert.equal(entry?.category, "dev-only");
       } finally {
         await fs.rm(probe, { force: true });
         await fs.rm(reportPath, { force: true });
+        await fs.rm(globalConfigPath, { force: true });
       }
     }
   },
