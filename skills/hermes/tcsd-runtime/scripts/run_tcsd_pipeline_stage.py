@@ -209,7 +209,8 @@ def stage_run(
     if stage == 2:
         matlab_root = matlab_root_path(inp)
         matlab = matlab_root / "bin" / ("matlab.exe" if os.name == "nt" else "matlab")
-        if not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
+        gateway_mode = bool(str(os.environ.get("SATK_GATEWAY_URL") or "").strip())
+        if not gateway_mode and not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
         if not (scripts() / "satk_eval.py").is_file(): raise RuntimeError("SATK runtime runner is missing")
         env = out / ".tcsd-evidence" / "environment.json"; env.parent.mkdir(parents=True, exist_ok=True)
         fixture = os.environ.get("TCSD_PIPELINE_ENV_CANARY_FIXTURE", "")
@@ -271,7 +272,7 @@ def stage_run(
                 "schema": "tcsd-environment-gate/v2",
                 "jobId": job["jobId"],
                 "nonce": nonce,
-                "matlabRoot": str(matlab_root),
+                "matlabRoot": "host-matlab-gateway" if gateway_mode else str(matlab_root),
                 "python": sys.executable,
                 "runner": str(scripts() / "satk_eval.py"),
                 "pythonDependencies": {"passed": True, "modules": modules},

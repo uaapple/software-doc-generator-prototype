@@ -7,11 +7,16 @@ import json
 import hashlib
 import os
 import platform
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
 from pathlib import Path
 
 
@@ -74,7 +79,67 @@ def resolve_server(**kwargs) -> tuple[Path, str]:
     raise FileNotFoundError(f"SATK MCP server not found; searched: {searched}")
 
 
+def gateway_url(environ=None) -> str:
+    values = os.environ if environ is None else environ
+    return str(values.get("SATK_GATEWAY_URL") or "").strip().rstrip("/")
+
+
+def gateway_headers(environ=None) -> dict[str, str]:
+    values = os.environ if environ is None else environ
+    headers = {"Content-Type": "application/json"}
+    token = str(values.get("MATLAB_MCP_AUTH_TOKEN") or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def gateway_request(
+    method: str,
+    route: str,
+    *,
+    payload: dict | None = None,
+    environ=None,
+    timeout_s: float = 30.0,
+) -> dict:
+    base_url = gateway_url(environ)
+    if not base_url:
+        raise RuntimeError("SATK_GATEWAY_URL is not configured")
+    body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        f"{base_url}{route}",
+        data=body,
+        headers=gateway_headers(environ),
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        response_text = exc.read().decode("utf-8", errors="replace")
+        try:
+            response = json.loads(response_text)
+            message = response.get("error", {}).get("message") or response_text
+            code = response.get("error", {}).get("code") or f"HTTP_{exc.code}"
+        except json.JSONDecodeError:
+            message = response_text or str(exc)
+            code = f"HTTP_{exc.code}"
+        raise RuntimeError(f"MATLAB Gateway {code}: {message}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"MATLAB Gateway is unavailable: {exc.reason}") from exc
+
+
 def server_info(**kwargs) -> dict[str, object]:
+    values = kwargs.get("environ")
+    if gateway_url(values):
+        version = gateway_request("GET", "/version", environ=values)
+        return {
+            "discovery": "matlab-gateway",
+            "gatewayUrl": gateway_url(values),
+            "gatewayVersion": version.get("gatewayVersion", "unknown"),
+            "matlabRelease": version.get("matlabRelease", "unknown"),
+            "matlabMcpVersion": version.get("matlabMcpVersion", "unknown"),
+            "satkVersion": version.get("satkVersion", "unknown"),
+        }
     server, source = resolve_server(**kwargs)
     digest = hashlib.sha256()
     with server.open("rb") as handle:
@@ -154,6 +219,122 @@ def mcp_response_failed(message: dict) -> bool:
         return True
     result = message.get("result")
     return isinstance(result, dict) and result.get("isError") is True
+
+
+def mirror_runtime_matlab_scripts(code: str, *, environ=None) -> str:
+    values = os.environ if environ is None else environ
+    container_root_text = str(
+        values.get("MATLAB_GATEWAY_CONTAINER_ROOT") or "/var/lib/sdg/data"
+    ).strip()
+    container_root = Path(container_root_text).resolve()
+    source_dir = Path(__file__).resolve().parent
+    matlab_sources = sorted(source_dir.glob("*.m"))
+    digest = hashlib.sha256()
+    for source in matlab_sources:
+        digest.update(source.name.encode("utf-8"))
+        digest.update(source.read_bytes())
+    mirror_dir = (
+        container_root
+        / ".matlab-gateway-runtime"
+        / digest.hexdigest()
+        / "scripts"
+    )
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    for source in matlab_sources:
+        target = mirror_dir / source.name
+        if not target.exists() or target.read_bytes() != source.read_bytes():
+            shutil.copy2(source, target)
+    return code.replace(str(source_dir), str(mirror_dir))
+
+
+def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
+    values = os.environ if environ is None else environ
+    mapping_id = str(values.get("SATK_GATEWAY_MAPPING_ID") or "worker-data").strip()
+    workspace_id = f"satk-{uuid.uuid4().hex}"
+    asset_id = "matlab-code"
+    job_id = f"eval-{uuid.uuid4().hex}"
+    timeout_s = max(1.0, float(values.get("SATK_GATEWAY_TIMEOUT_SECONDS") or 600))
+    code = mirror_runtime_matlab_scripts(code_file.read_text(encoding="utf-8"), environ=values)
+    workspace_route = f"/api/workspaces/{urllib.parse.quote(workspace_id)}"
+    job_route = f"/api/jobs/{urllib.parse.quote(job_id)}"
+    query = urllib.parse.urlencode({"workspaceId": workspace_id})
+    created = False
+    try:
+        gateway_request(
+            "PUT",
+            workspace_route,
+            payload={"mappingId": mapping_id},
+            environ=values,
+        )
+        created = True
+        gateway_request(
+            "PUT",
+            f"{workspace_route}/assets/{asset_id}/text",
+            payload={"fileName": code_file.name, "content": code},
+            environ=values,
+        )
+        gateway_request(
+            "POST",
+            job_route,
+            payload={
+                "workspaceId": workspace_id,
+                "operation": "evaluate_matlab_code",
+                "inputAssetId": asset_id,
+                "timeoutMs": int(timeout_s * 1000),
+            },
+            environ=values,
+        )
+        deadline = time.monotonic() + timeout_s + 10.0
+        while time.monotonic() < deadline:
+            job = gateway_request(
+                "GET",
+                f"{job_route}?{query}",
+                environ=values,
+            )
+            status = job.get("status")
+            if status == "succeeded":
+                artifact_id = urllib.parse.quote(str(job.get("artifactId") or ""))
+                artifact = gateway_request(
+                    "GET",
+                    f"{workspace_route}/artifacts/{artifact_id}",
+                    environ=values,
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "result": artifact.get("result"),
+                }
+            if status in {"failed", "cancelled", "timed_out"}:
+                error = job.get("error") or {}
+                return {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "error": {
+                        "code": error.get("code") or "MATLAB_GATEWAY_JOB_FAILED",
+                        "message": error.get("message") or f"MATLAB Gateway job {status}",
+                    },
+                }
+            time.sleep(0.2)
+        gateway_request(
+            "POST",
+            f"{job_route}/cancel",
+            payload={"workspaceId": workspace_id},
+            environ=values,
+        )
+        return {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "error": {
+                "code": "MATLAB_GATEWAY_POLL_TIMEOUT",
+                "message": f"Timed out waiting for MATLAB Gateway after {timeout_s:g}s",
+            },
+        }
+    finally:
+        if created:
+            try:
+                gateway_request("DELETE", workspace_route, environ=values)
+            except RuntimeError:
+                pass
 
 
 def process_rows() -> list[tuple[int, str]]:
@@ -289,6 +470,22 @@ def main() -> int:
         print("usage: satk_eval.py MATLAB_CODE_FILE | --server-info", file=sys.stderr)
         return 2
 
+    code_file = Path(sys.argv[1])
+    if gateway_url():
+        try:
+            result = evaluate_over_gateway(code_file)
+        except (OSError, RuntimeError, ValueError) as exc:
+            result = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "error": {
+                    "code": "MATLAB_GATEWAY_REQUEST_FAILED",
+                    "message": str(exc),
+                },
+            }
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1 if mcp_response_failed(result) else 0
+
     try:
         selected_server, _ = resolve_server()
     except FileNotFoundError as exc:
@@ -298,7 +495,7 @@ def main() -> int:
         print(f"SATK MCP extension file not found: {DEFAULT_EXTENSION}", file=sys.stderr)
         return 1
 
-    code = Path(sys.argv[1]).read_text(encoding="utf-8")
+    code = code_file.read_text(encoding="utf-8")
     LOG_FOLDER.mkdir(parents=True, exist_ok=True)
     clean_stale_mcp_processes()
     command = [
