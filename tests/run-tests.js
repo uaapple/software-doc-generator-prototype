@@ -819,16 +819,13 @@ const tests = [
     name: "Change classifier includes untracked files in working-tree mode",
     run: async () => {
       const root = path.resolve(process.cwd());
-      const probeName = `classifier-untracked-probe-${process.pid}.mjs`;
-      const probe = path.join(root, "tests", probeName);
       const reportPath = path.join(os.tmpdir(), `classifier-report-${process.pid}.json`);
       const globalConfigPath = path.join(
         os.tmpdir(),
         `classifier-empty-global-config-${process.pid}`
       );
-      let decoyRoot = "";
+      let fixtureRoot = "";
       try {
-        await fs.writeFile(probe, "untracked classifier probe\n", "utf8");
         await fs.writeFile(globalConfigPath, "", "utf8");
         const gitEnv = {
           ...process.env,
@@ -840,6 +837,9 @@ const tests = [
         for (const name of Object.keys(gitEnv)) {
           if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/u.test(name)) delete gitEnv[name];
         }
+        for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"]) {
+          delete gitEnv[name];
+        }
         Object.assign(gitEnv, {
           GIT_CONFIG_COUNT: "2",
           GIT_CONFIG_KEY_0: "core.fsmonitor",
@@ -847,12 +847,53 @@ const tests = [
           GIT_CONFIG_KEY_1: "core.untrackedCache",
           GIT_CONFIG_VALUE_1: "false"
         });
-        const relativeProbe = path.relative(root, probe).replaceAll(path.sep, "/");
+        fixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "classifier-two-roots-"));
+        const invocationRoot = path.join(fixtureRoot, "invocation");
+        const decoyRoot = path.join(fixtureRoot, "module");
+        const relativeProbe = "tests/classifier-invocation-probe.mjs";
+        const decoyProbe = "tests/classifier-decoy-probe.mjs";
+        for (const repositoryRoot of [invocationRoot, decoyRoot]) {
+          await fs.mkdir(path.join(repositoryRoot, "deploy"), { recursive: true });
+          await fs.mkdir(path.join(repositoryRoot, "tests"), { recursive: true });
+          await fs.copyFile(
+            path.join(root, "deploy", "ownership.yml"),
+            path.join(repositoryRoot, "deploy", "ownership.yml")
+          );
+          await fs.writeFile(path.join(repositoryRoot, "baseline.txt"), "baseline\n", "utf8");
+          await execFileAsync("git", ["init", "--quiet"], { cwd: repositoryRoot, env: gitEnv });
+        }
+        await fs.mkdir(path.join(decoyRoot, "scripts"), { recursive: true });
+        const decoyClassifierPath = path.join(decoyRoot, "scripts", "classify-changes.mjs");
+        await fs.copyFile(
+          path.join(root, "scripts", "classify-changes.mjs"),
+          decoyClassifierPath
+        );
+        const gitCommitConfig = [
+          "-c", "user.name=TCSD Test",
+          "-c", "user.email=tcsd-test@example.invalid",
+          "-c", "commit.gpgSign=false"
+        ];
+        for (const repositoryRoot of [invocationRoot, decoyRoot]) {
+          await execFileAsync("git", [...gitCommitConfig, "add", "--", "."], {
+            cwd: repositoryRoot,
+            env: gitEnv
+          });
+          await execFileAsync("git", [...gitCommitConfig, "commit", "--quiet", "-m", "fixture baseline"], {
+            cwd: repositoryRoot,
+            env: gitEnv
+          });
+        }
+        await fs.writeFile(
+          path.join(invocationRoot, relativeProbe),
+          "untracked invocation probe\n",
+          "utf8"
+        );
+        await fs.writeFile(path.join(decoyRoot, decoyProbe), "untracked decoy probe\n", "utf8");
         const { stdout: untrackedOutput } = await execFileAsync("git", [
           "ls-files",
           "--others",
           "--exclude-standard"
-        ], { cwd: root, env: gitEnv });
+        ], { cwd: invocationRoot, env: gitEnv });
         const untrackedFiles = String(untrackedOutput || "")
           .split(/\r?\n/u)
           .map((item) => item.trim().replaceAll("\\", "/"))
@@ -867,28 +908,12 @@ const tests = [
               .slice(0, 20)
           })
         );
-        decoyRoot = await fs.mkdtemp(path.join(os.tmpdir(), "classifier-module-root-"));
-        await fs.mkdir(path.join(decoyRoot, "scripts"), { recursive: true });
-        await fs.mkdir(path.join(decoyRoot, "deploy"), { recursive: true });
-        await fs.mkdir(path.join(decoyRoot, "tests"), { recursive: true });
-        const decoyClassifierPath = path.join(decoyRoot, "scripts", "classify-changes.mjs");
-        const decoyProbe = "tests/classifier-decoy-probe.mjs";
-        await fs.copyFile(
-          path.join(root, "scripts", "classify-changes.mjs"),
-          decoyClassifierPath
-        );
-        await fs.copyFile(
-          path.join(root, "deploy", "ownership.yml"),
-          path.join(decoyRoot, "deploy", "ownership.yml")
-        );
-        await fs.writeFile(path.join(decoyRoot, decoyProbe), "decoy probe\n", "utf8");
-        await execFileAsync("git", ["init", "--quiet"], { cwd: decoyRoot, env: gitEnv });
         await execFileAsync(process.execPath, [
           decoyClassifierPath,
           "--allow-ambiguous",
           "--json-out",
           reportPath
-        ], { cwd: root, env: gitEnv });
+        ], { cwd: invocationRoot, env: gitEnv });
         const report = JSON.parse(await fs.readFile(reportPath, "utf8"));
         const entry = report.entries.find((item) => item.path === relativeProbe);
         assert.equal(
@@ -912,11 +937,10 @@ const tests = [
           "Classifier must not enumerate the checkout containing its module file"
         );
       } finally {
-        await fs.rm(probe, { force: true });
         await fs.rm(reportPath, { force: true });
         await fs.rm(globalConfigPath, { force: true });
-        if (decoyRoot) {
-          await fs.rm(decoyRoot, {
+        if (fixtureRoot) {
+          await fs.rm(fixtureRoot, {
             recursive: true,
             force: true,
             maxRetries: TEST_TEMP_REMOVE_MAX_RETRIES,
