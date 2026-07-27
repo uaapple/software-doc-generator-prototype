@@ -1,0 +1,12 @@
+services:
+  worker:
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - ${SDG_WORKER_PORT:-3101}:3101
+
+  platform:
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - ${SDG_PLATFORM_PORT:-3000}:3000

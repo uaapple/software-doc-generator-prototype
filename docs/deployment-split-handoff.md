@@ -6,6 +6,21 @@ TCSD 从整体 Agent 任务升级到十二阶段流水线的完整生产部署�
 
 `tcsd-12-stage-pipeline-v1.4-*` 标签是不可变生产证据，不得移动或覆盖；回滚门禁修复应由主任务在验收后使用新的 patch 标签发布。
 
+## OCI 容器化开发候选
+
+Mac 开发侧新增 `sdg-platform` 与 `sdg-hermes-worker` 两个 `linux/amd64`
+镜像，统一入口与安全边界见 `docs/containerized-mac-runtime.md`。MATLAB、
+Simulink、SATK 和 MCP 仍由宿主原生 Gateway 提供，不进入镜像。
+
+这次变化不直接切换任何生产流量。未来 Linux 生产只部署经过 amd64 验证的
+platform digest；Windows Worker 使用同一 worker image digest，并通过 WSL2/
+Docker Desktop 访问 Windows 宿主 Gateway。生产持久数据、Hermes Home、项目
+addon、日志、secrets、模型/MAT/SLX 和 MATLAB 许可证始终位于镜像外。
+
+旧 ZIP/源码包和原生服务在灰度验收完成前继续保留为回滚路径。OCI 交付必须
+携带源码 SHA、基础镜像引用、运行时版本、技能 hash、应用镜像 digest、SBOM、
+依赖许可证结果和漏洞扫描结果；不能把本地可变 tag 当成发布证据。
+
 ## 关键提交
 
 与新拆分流程相关的提交：

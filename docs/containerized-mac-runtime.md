@@ -1,0 +1,89 @@
+# Mac 容器化开发运行说明
+
+本运行方式把平台与 Hermes Worker 固定为 `linux/amd64` 容器，同时让
+MATLAB R2026a、Simulink、SATK 和 MCP 保留在 macOS 宿主。它不会替换现有
+原生启动脚本，删除容器不会影响原生回滚路径。
+
+## 运行边界
+
+- `sdg-platform`：前端、后端、Wiki、调度和 Worker 路由。
+- `sdg-hermes-worker`：Hermes Agent、固定 Node/Python、十二阶段技能及运行脚本。
+- 宿主 MATLAB Gateway：提供受限的 workspace/job/asset/artifact API；容器不提交
+  `/Users/...` 或 Windows 盘符路径。
+- 任务数据、项目 addon、Hermes Home、平台技能状态和日志全部挂载在镜像外。
+
+容器与 Gateway 使用共同映射：
+
+```text
+mappingId=worker-data
+containerRoot=/var/lib/sdg/data
+hostRoot=<SDG_CONTAINER_DATA_DIR 的宿主绝对路径>
+```
+
+Gateway 只接受 `mappingId`、`workspaceId`、`assetId`、`artifactId` 和 `jobId`
+组合，不接受调用方指定的任意宿主绝对路径。`SDG_CONTAINER_DATA_DIR` 必须是
+Docker Desktop 与宿主 Gateway 都可访问的本地目录。
+
+## 首次准备
+
+要求 Docker Desktop daemon、Buildx 和 Compose plugin 可用。复制示例配置，
+仅在未跟踪文件中填写真实凭据：
+
+```bash
+cp .env.container.example .env.container
+```
+
+在宿主启动 Gateway 前，设置相同映射以及 MATLAB 根目录：
+
+```bash
+export MATLAB_ROOT=/Applications/MATLAB_R2026a.app
+export MATLAB_GATEWAY_MAPPING_ID=worker-data
+export MATLAB_GATEWAY_CONTAINER_ROOT=/var/lib/sdg/data
+export MATLAB_GATEWAY_HOST_ROOT="$(pwd)/.local/container/data"
+export SATK_MATLAB_SESSION_MODE=new
+npm run matlab:gateway:start
+```
+
+Gateway 的具体启动入口由 `package.json` 提供。容器侧固定访问
+`http://host.docker.internal:5100`。
+
+## 一键运行
+
+```bash
+npm run container:dev:config
+npm run container:dev:build
+npm run container:dev:up
+npm run container:dev:test
+```
+
+停止并保留持久数据：
+
+```bash
+npm run container:dev:down
+```
+
+`down` 不删除 volume。若要清理任务数据、Hermes 状态或 addon，必须单独确认
+精确目录/volume 后处理。
+
+## 发布候选证据
+
+发布候选必须显式构建 `linux/amd64`，不能以 Apple Silicon 原生架构构建结果
+代替。生成 manifest 和扫描入口：
+
+```bash
+npm run container:manifest
+npm run container:scan
+```
+
+manifest 记录源码 Git SHA、基础镜像引用、Node/Python/Hermes 版本、技能 hash
+和最终镜像 digest。生产交付时基础镜像和两个应用镜像都必须替换为
+`@sha256:` 引用；本地 `:mac-dev` 标签不是生产证据。
+
+扫描脚本会调用已安装的 Syft、Trivy 或 Grype。工具缺失会明确记为未执行，
+不会生成伪造的通过结果。生成的 SBOM、扫描报告和 release manifest 位于
+`release-dist/`，不提交源码。
+
+## 回滚
+
+容器化没有删除、覆盖或接管原生 Mac 启动脚本。停止 Compose 后，可继续使用
+现有原生 `scripts/start-local.sh`；容器运行态目录与原生运行态目录应保持分离。

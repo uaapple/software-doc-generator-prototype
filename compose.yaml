@@ -1,0 +1,164 @@
+name: software-doc-generator
+
+x-runtime-defaults: &runtime-defaults
+  platform: linux/amd64
+  init: true
+  restart: unless-stopped
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 30s
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=256m
+
+services:
+  worker:
+    <<: *runtime-defaults
+    image: ${SDG_WORKER_IMAGE:-sdg-hermes-worker:mac-dev}
+    build:
+      context: .
+      dockerfile: containers/worker/Containerfile
+      args:
+        NODE_BASE_IMAGE: ${SDG_NODE_IMAGE:-node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752}
+        PYTHON_BASE_IMAGE: ${SDG_PYTHON_IMAGE:-python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317}
+    environment:
+      APP_ENV: development
+      APP_RUNTIME_ROLE: hermes-agent
+      APP_DATA_DIR: /var/lib/sdg/data
+      APP_SKILLS_DIR: /opt/sdg/app/skills
+      HERMES_HOST: 0.0.0.0
+      HERMES_PORT: 3101
+      HERMES_BASE_URL: http://worker:3101
+      HERMES_TRANSPORT: cli
+      HERMES_COMMAND: /opt/sdg/venv/bin/hermes
+      HERMES_HOME: /var/lib/sdg/hermes-home
+      HERMES_STATE_DB_PATH: /var/lib/sdg/hermes-home/state.db
+      HERMES_AUTH_TOKEN: ${HERMES_AUTH_TOKEN:-}
+      HERMES_PROFILE: ${HERMES_PROFILE:-}
+      HERMES_SERVER_REQUEST_TIMEOUT_MS: "0"
+      HERMES_TASK_CONCURRENCY: "1"
+      TCSD_PIPELINE_PYTHON: /opt/sdg/venv/bin/python
+      TCSD_STAGE_HERMES_SKILLS_DIR: /var/lib/sdg/hermes-home/skills
+      TCSD_STAGE_HERMES_PROFILE: ${TCSD_STAGE_HERMES_PROFILE:-}
+      TCSD_STAGE_HERMES_MAX_TURNS: ${TCSD_STAGE_HERMES_MAX_TURNS:-200}
+      TCSD_STAGE_HERMES_TIMEOUT_MS: ${TCSD_STAGE_HERMES_TIMEOUT_MS:-3600000}
+      UNIT_TEST_CASE_PROJECT_ADDON_ROOT: /var/lib/sdg/project-addons
+      UNIT_TEST_CASE_PROJECT_ADMIN_CODE: ${UNIT_TEST_CASE_PROJECT_ADMIN_CODE:-114301}
+      UNIT_TEST_CASE_DEFAULT_PROJECTS: ${UNIT_TEST_CASE_DEFAULT_PROJECTS:-01_楚能,02_TMS}
+      UNIT_TEST_CASE_EXPECTED_OUTPUT_PATTERN: outputs/*_tcsd.xlsx
+      MATLAB_MCP_TRANSPORT: http
+      MATLAB_MCP_BASE_URL: ${MATLAB_MCP_BASE_URL:-http://host.docker.internal:5100}
+      MATLAB_MCP_HTTP_MODE: gateway
+      MATLAB_MCP_AUTH_TOKEN: ${MATLAB_MCP_AUTH_TOKEN:-}
+      MATLAB_MCP_TIMEOUT_MS: ${MATLAB_MCP_TIMEOUT_MS:-300000}
+      SATK_GATEWAY_URL: ${SATK_GATEWAY_URL:-http://host.docker.internal:5100}
+      SATK_GATEWAY_MAPPING_ID: ${SATK_GATEWAY_MAPPING_ID:-worker-data}
+      MATLAB_GATEWAY_CONTAINER_ROOT: ${MATLAB_GATEWAY_CONTAINER_ROOT:-/var/lib/sdg/data}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
+      ZHIPU_MODEL: ${ZHIPU_MODEL:-}
+      ZHIPU_BASE_URL: ${ZHIPU_BASE_URL:-}
+      PYTHONDONTWRITEBYTECODE: "1"
+      TMPDIR: /tmp
+    volumes:
+      - type: bind
+        source: ${SDG_CONTAINER_DATA_DIR:-./.local/container/data}
+        target: /var/lib/sdg/data
+      - type: bind
+        source: ${SDG_PROJECT_ADDONS_DIR:-./.local/project-addons}
+        target: /var/lib/sdg/project-addons
+        read_only: true
+      - type: volume
+        source: hermes-home
+        target: /var/lib/sdg/hermes-home
+      - type: bind
+        source: ${SDG_WORKER_LOG_DIR:-./.local/container/logs/worker}
+        target: /var/lib/sdg/logs
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3101/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  platform:
+    <<: *runtime-defaults
+    image: ${SDG_PLATFORM_IMAGE:-sdg-platform:mac-dev}
+    build:
+      context: .
+      dockerfile: docker/platform.Containerfile
+      args:
+        NODE_BASE_IMAGE: ${SDG_NODE_IMAGE:-node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752}
+    depends_on:
+      worker:
+        condition: service_healthy
+        restart: true
+    environment:
+      APP_ENV: development
+      APP_RUNTIME_ROLE: platform
+      HOST: 0.0.0.0
+      PORT: 3000
+      APP_DATA_DIR: /var/lib/sdg/data
+      APP_SKILLS_DIR: /opt/sdg/skills
+      HERMES_TRANSPORT: api
+      HERMES_BASE_URL: http://worker:3101
+      HERMES_AUTH_TOKEN: ${HERMES_AUTH_TOKEN:-}
+      HERMES_TASK_CONCURRENCY: "1"
+      HERMES_SERVER_REQUEST_TIMEOUT_MS: "0"
+      UNIT_TEST_DEFAULT_WORKER_ID: mac-container
+      UNIT_TEST_WORKER_PROFILES_JSON: '{"workers":[{"id":"mac-container","label":"Mac Container Worker","hermesBaseURL":"http://worker:3101","matlabBaseURL":"${MATLAB_MCP_BASE_URL:-http://host.docker.internal:5100}"}]}'
+      UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT: /var/lib/sdg/data/unit-test-case-generation/tasks
+      SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT: /var/lib/sdg/data/software-module-description-generation/tasks
+      UNIT_TEST_CASE_PROJECT_ADMIN_CODE: ${UNIT_TEST_CASE_PROJECT_ADMIN_CODE:-114301}
+      UNIT_TEST_CASE_DEFAULT_PROJECTS: ${UNIT_TEST_CASE_DEFAULT_PROJECTS:-01_楚能,02_TMS}
+      MATLAB_MCP_TRANSPORT: http
+      MATLAB_MCP_BASE_URL: ${MATLAB_MCP_BASE_URL:-http://host.docker.internal:5100}
+      MATLAB_MCP_HTTP_MODE: gateway
+      MATLAB_MCP_AUTH_TOKEN: ${MATLAB_MCP_AUTH_TOKEN:-}
+      MATLAB_MCP_TIMEOUT_MS: ${MATLAB_MCP_TIMEOUT_MS:-300000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
+      ZHIPU_MODEL: ${ZHIPU_MODEL:-}
+      ZHIPU_BASE_URL: ${ZHIPU_BASE_URL:-}
+      TMPDIR: /tmp
+    volumes:
+      - type: bind
+        source: ${SDG_CONTAINER_DATA_DIR:-./.local/container/data}
+        target: /var/lib/sdg/data
+      - type: volume
+        source: platform-skills
+        target: /var/lib/sdg/skills
+      - type: volume
+        source: platform-home
+        target: /var/lib/sdg/home
+      - type: bind
+        source: ${SDG_PLATFORM_LOG_DIR:-./.local/container/logs/platform}
+        target: /var/log/sdg
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  hermes-home:
+    name: sdg-hermes-home
+  platform-skills:
+    name: sdg-platform-skills
+  platform-home:
+    name: sdg-platform-home

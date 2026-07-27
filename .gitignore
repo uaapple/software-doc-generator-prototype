@@ -19,6 +19,7 @@ data/*
 docs/generated-requirements-overview.html
 docs/skill-overview.html
 .env
+.env.container
 .DS_Store
 tmp/
 release-dist/

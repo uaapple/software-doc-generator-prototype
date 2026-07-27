@@ -22,8 +22,8 @@ const containerInstructions = containerfile
 
 assert.match(
   containerfile,
-  /^ARG NODE_BASE_IMAGE=node:22\.22\.3-bookworm-slim$/m,
-  "platform image must default to the frozen Node 22.22.3 base"
+  /^ARG NODE_BASE_IMAGE=node:22\.22\.3-bookworm-slim@sha256:[a-f0-9]{64}$/m,
+  "platform image must default to the frozen Node 22.22.3 OCI digest"
 );
 assert.match(
   containerfile,
