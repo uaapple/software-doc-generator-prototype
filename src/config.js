@@ -302,6 +302,8 @@ export const config = {
     workdir: process.env.HERMES_WORKDIR || rootDir,
     uploadTempDir: process.env.HERMES_UPLOAD_TMPDIR || path.join(os.tmpdir(), "software-doc-hermes-agent"),
     maxUploadBytes: Number(process.env.HERMES_MAX_UPLOAD_BYTES || 250 * 1024 * 1024),
+    maxUploadTotalBytes: Number(process.env.HERMES_MAX_UPLOAD_TOTAL_BYTES || 1024 * 1024 * 1024),
+    maxUploadFileCount: Number(process.env.HERMES_MAX_UPLOAD_FILE_COUNT || 2048),
     timeoutMs: Number(process.env.HERMES_TIMEOUT_MS || 120000),
     serverRequestTimeoutMs: Number(process.env.HERMES_SERVER_REQUEST_TIMEOUT_MS || 0),
     stepTimeoutMs: {

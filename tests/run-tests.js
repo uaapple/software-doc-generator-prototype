@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import os from "node:os";
+import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { config } from "../src/config.js";
 import { createApp } from "../src/app.js";
@@ -27,7 +28,7 @@ import { SkillDatabaseService } from "../src/services/skill-database-service.js"
 import { SkillWorkOrderService } from "../src/services/skill-work-order-service.js";
 import { ReplayLabService } from "../src/services/replay-lab-service.js";
 import { FeedbackTicketService } from "../src/services/feedback-ticket-service.js";
-import { createHermesApp } from "../src/hermes-app.js";
+import { createAggregateLimitedUploadStorage, createHermesApp } from "../src/hermes-app.js";
 import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
 import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
@@ -674,6 +675,28 @@ async function seedWikiFixture(rootDir, overrides = {}) {
 }
 
 const tests = [
+  {
+    name: "Hermes multipart storage aborts and removes the current file at the aggregate byte limit",
+    run: async () => {
+      const uploadDir = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-upload-limit-"));
+      try {
+        const storage = createAggregateLimitedUploadStorage(uploadDir, 5);
+        const req = {};
+        const error = await new Promise((resolve) => {
+          storage._handleFile(
+            req,
+            { stream: Readable.from([Buffer.from("1234"), Buffer.from("56")]) },
+            (result) => resolve(result || null)
+          );
+        });
+        assert.equal(error?.statusCode, 413);
+        assert.equal(error?.code, "hermes_upload_total_too_large");
+        assert.deepEqual(await fs.readdir(uploadDir), []);
+      } finally {
+        await fs.rm(uploadDir, { recursive: true, force: true });
+      }
+    }
+  },
   {
     name: "Fetch-safe dynamic listener closes forbidden candidates before retrying",
     run: async () => {

@@ -2,7 +2,9 @@ import express from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { promises as fs } from "node:fs";
+import { createWriteStream, promises as fs } from "node:fs";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { config } from "./config.js";
 import { ExtractionService } from "./services/extraction-service.js";
 import { LlmService } from "./services/llm-service.js";
@@ -83,6 +85,48 @@ function safeUploadRelativePath(value = "") {
 
 function getHermesUploadTempDir() {
   return config.hermes.uploadTempDir || path.join(config.rootDir || process.cwd(), "tmp", "hermes-agent-uploads");
+}
+
+export function createAggregateLimitedUploadStorage(destination, maxTotalBytes) {
+  return {
+    _handleFile(req, file, callback) {
+      const filename = `upload-${Date.now()}-${randomUUID()}`;
+      const targetPath = path.join(destination, filename);
+      let fileBytes = 0;
+      const limiter = new Transform({
+        transform(chunk, _encoding, done) {
+          fileBytes += chunk.length;
+          req.sdgMultipartBytes = Number(req.sdgMultipartBytes || 0) + chunk.length;
+          if (req.sdgMultipartBytes > maxTotalBytes) {
+            return done(
+              createHttpError(
+                "Multipart upload exceeds the aggregate size limit",
+                413,
+                "hermes_upload_total_too_large"
+              )
+            );
+          }
+          return done(null, chunk);
+        }
+      });
+      pipeline(file.stream, limiter, createWriteStream(targetPath, { flags: "wx" }))
+        .then(() => callback(null, {
+          destination,
+          filename,
+          path: targetPath,
+          size: fileBytes
+        }))
+        .catch(async (error) => {
+          await fs.rm(targetPath, { force: true }).catch(() => {});
+          callback(error);
+        });
+    },
+    _removeFile(_req, file, callback) {
+      const targetPath = String(file?.path || "");
+      if (!targetPath) return callback();
+      fs.rm(targetPath, { force: true }).then(() => callback(), callback);
+    }
+  };
 }
 
 function isManagedUploadSession(sessionDir = "", uploadRoot = getHermesUploadTempDir()) {
@@ -1163,8 +1207,11 @@ export async function createHermesApp() {
   const templateService = new TemplateService();
   const uploadTempDir = getHermesUploadTempDir();
   await fs.mkdir(uploadTempDir, { recursive: true });
+  const maxUploadTotalBytes = Number(
+    config.hermes.maxUploadTotalBytes || MAX_MULTIPART_TOTAL_BYTES
+  );
   const upload = multer({
-    dest: uploadTempDir,
+    storage: createAggregateLimitedUploadStorage(uploadTempDir, maxUploadTotalBytes),
     limits: {
       fileSize: Number(config.hermes.maxUploadBytes || 250 * 1024 * 1024),
       files: Number(config.hermes.maxUploadFileCount || MAX_MULTIPART_FILE_COUNT),
