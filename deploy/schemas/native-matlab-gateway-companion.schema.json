@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://software-doc-generator.invalid/schemas/native-matlab-gateway-companion.schema.json",
+  "title": "Native MATLAB Gateway companion release",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "sourceRevision",
+    "deploymentToolRevision",
+    "legacyGatewayRevision",
+    "serviceName",
+    "installRoot",
+    "nativeEnv",
+    "imageRevisions",
+    "containerImages",
+    "runtimeDependencies",
+    "files",
+    "toolFiles",
+    "scan"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sdg-native-matlab-gateway-companion/v1"
+    },
+    "sourceRevision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "deploymentToolRevision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "legacyGatewayRevision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "serviceName": {
+      "const": "SoftwareDocMatlabWorker"
+    },
+    "installRoot": {
+      "const": "C:\\SoftwareDocWorker"
+    },
+    "nativeEnv": {
+      "const": "software-doc-worker.env"
+    },
+    "imageRevisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "worker", "rootfsInputsChanged"],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "worker": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "rootfsInputsChanged": {
+          "const": false
+        }
+      }
+    },
+    "containerImages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "buildPerformed", "pushPerformed", "registryReferencesSource"],
+      "properties": {
+        "action": { "const": "reuse" },
+        "buildPerformed": { "const": false },
+        "pushPerformed": { "const": false },
+        "registryReferencesSource": {
+          "const": "previous-approved-container-release-manifest"
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "target", "sha256", "sizeBytes"],
+        "properties": {
+          "source": { "type": "string", "minLength": 1 },
+          "target": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "sizeBytes": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "toolFiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "packagePath", "sha256", "sizeBytes"],
+        "properties": {
+          "source": { "type": "string", "minLength": 1 },
+          "packagePath": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "sizeBytes": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "runtimeDependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["productionBuildRequired", "npmInstallRequired", "reusedPackages"],
+      "properties": {
+        "productionBuildRequired": { "const": false },
+        "npmInstallRequired": { "const": false },
+        "reusedPackages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256", "status"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "status": { "const": "passed" }
+      }
+    }
+  }
+}

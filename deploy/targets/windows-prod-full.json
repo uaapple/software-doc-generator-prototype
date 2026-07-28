@@ -31,6 +31,8 @@
     "release-dist",
     "test-fixtures",
     "videos",
+    "scripts/build-native-matlab-gateway-companion.mjs",
+    "scripts/deploy-native-matlab-gateway.ps1",
     "scripts/rollback-linux-release.sh"
   ],
   "copyFiles": [

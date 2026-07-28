@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://software-doc-generator.invalid/schemas/native-matlab-gateway-companion-release.schema.json",
+  "title": "Native MATLAB Gateway companion release index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "sourceRevision",
+    "deploymentToolRevision",
+    "asset",
+    "manifest",
+    "scan",
+    "imageRevisions",
+    "containerImages"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sdg-native-matlab-gateway-companion-release/v1"
+    },
+    "sourceRevision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "deploymentToolRevision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "asset": { "$ref": "#/$defs/fileEvidence" },
+    "manifest": { "$ref": "#/$defs/fileEvidence" },
+    "scan": {
+      "allOf": [
+        { "$ref": "#/$defs/fileEvidence" },
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": { "status": { "const": "passed" } }
+        }
+      ]
+    },
+    "imageRevisions": {
+      "type": "object",
+      "required": ["platform", "worker", "rootfsInputsChanged"],
+      "properties": {
+        "platform": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "worker": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "rootfsInputsChanged": { "const": false }
+      }
+    },
+    "containerImages": {
+      "type": "object",
+      "required": ["action", "buildPerformed", "pushPerformed", "registryReferencesSource"],
+      "properties": {
+        "action": { "const": "reuse" },
+        "buildPerformed": { "const": false },
+        "pushPerformed": { "const": false },
+        "registryReferencesSource": {
+          "const": "previous-approved-container-release-manifest"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "fileEvidence": {
+      "type": "object",
+      "required": ["file", "sha256"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

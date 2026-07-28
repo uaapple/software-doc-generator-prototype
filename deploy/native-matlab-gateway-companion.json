@@ -1,0 +1,37 @@
+{
+  "schema": "sdg-native-matlab-gateway-companion-config/v1",
+  "legacyGatewayRevision": "464b45448cd691fe94c4c5c843efe64ccd344a68",
+  "expectedImageRevisions": {
+    "platform": "sha256:2260ce959b49b5721fd577c0c0a37e0a91b5a3c49ca84fdefb4e5fd007613ff2",
+    "worker": "sha256:5e57aff413c616faba9d4d690db1ac6af58d26259c1969a8ba9802f3aa7f69ab"
+  },
+  "serviceName": "SoftwareDocMatlabWorker",
+  "installRoot": "C:\\SoftwareDocWorker",
+  "nativeEnv": "software-doc-worker.env",
+  "managedFiles": [
+    {
+      "source": "native-gateway/windows-matlab-worker-server.mjs",
+      "target": "src/matlab-worker-server.js"
+    },
+    {
+      "source": "src/matlab-worker-server.js",
+      "target": "src/matlab-worker-server-runtime.js"
+    },
+    {
+      "source": "src/matlab-gateway-app.js",
+      "target": "src/matlab-gateway-app.js"
+    },
+    {
+      "source": "src/services/matlab-gateway-contract.js",
+      "target": "src/services/matlab-gateway-contract.js"
+    },
+    {
+      "source": "src/services/matlab-mcp-client.js",
+      "target": "src/services/matlab-mcp-client.js"
+    },
+    {
+      "source": "src/services/model-fact-bundle.js",
+      "target": "src/services/model-fact-bundle.js"
+    }
+  ]
+}
