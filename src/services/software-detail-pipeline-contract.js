@@ -78,6 +78,11 @@ function normalizeSessionId(value, field) {
   return requiredText(value, field, SESSION_ID_PATTERN, 200);
 }
 
+function normalizeOptionalSessionId(value, field) {
+  const normalized = String(value || "").trim();
+  return normalized ? normalizeSessionId(normalized, field) : "";
+}
+
 function normalizeArtifacts(rawArtifacts, specifications, options = {}) {
   if (!Array.isArray(rawArtifacts)) {
     throw contractError(
@@ -158,13 +163,20 @@ export function validateSoftwareDetailStageInput(input = {}, options = {}) {
       "stage input status 必须是 running"
     );
   }
-  const matlabSessionId = normalizeSessionId(
-    input.matlabSessionId,
-    "matlabSessionId"
-  );
+  const isInitializeStage = identity.definition.order === 100;
+  const matlabSessionId = isInitializeStage
+    ? normalizeOptionalSessionId(input.matlabSessionId, "matlabSessionId")
+    : normalizeSessionId(input.matlabSessionId, "matlabSessionId");
+  if (isInitializeStage && matlabSessionId) {
+    throw contractError(
+      "software_detail_matlab_session_already_initialized",
+      "阶段 1 启动时不得预置 MATLAB session"
+    );
+  }
   if (
-    options.expectedMatlabSessionId &&
-    matlabSessionId !== options.expectedMatlabSessionId
+    !isInitializeStage &&
+    (!options.expectedMatlabSessionId ||
+      matlabSessionId !== options.expectedMatlabSessionId)
   ) {
     throw contractError(
       "software_detail_matlab_session_mismatch",
@@ -218,13 +230,21 @@ export function validateSoftwareDetailStageResult(result = {}, options = {}) {
       "stage result status 必须是 completed 或 failed"
     );
   }
-  const matlabSessionId = normalizeSessionId(
-    result.matlabSessionId,
-    "matlabSessionId"
-  );
+  const isInitializeStage = identity.definition.order === 100;
+  const matlabSessionId =
+    isInitializeStage && result.status === "failed"
+      ? normalizeOptionalSessionId(result.matlabSessionId, "matlabSessionId")
+      : normalizeSessionId(result.matlabSessionId, "matlabSessionId");
+  if (isInitializeStage && result.status === "failed" && matlabSessionId) {
+    throw contractError(
+      "software_detail_matlab_session_cleanup_required",
+      "阶段 1 失败结果只能表示尚未创建 MATLAB session"
+    );
+  }
   if (
-    options.expectedMatlabSessionId &&
-    matlabSessionId !== options.expectedMatlabSessionId
+    !isInitializeStage &&
+    (!options.expectedMatlabSessionId ||
+      matlabSessionId !== options.expectedMatlabSessionId)
   ) {
     throw contractError(
       "software_detail_matlab_session_mismatch",
@@ -232,25 +252,21 @@ export function validateSoftwareDetailStageResult(result = {}, options = {}) {
     );
   }
 
-  let hermesSessionId = "";
-  if (identity.definition.execution === "hermes") {
-    if (result.status === "completed" || result.hermesSessionId) {
-      hermesSessionId = assertSoftwareDetailHermesSessionUnused(
-        result.hermesSessionId,
-        options.usedHermesSessionIds
-      );
-    }
-  } else if (result.hermesSessionId) {
+  if (!identity.definition.hermesSessionRequired) {
     throw contractError(
-      "software_detail_unexpected_hermes_session",
-      "非 Hermes stage 不得记录 Hermes sessionId"
+      "software_detail_invalid_stage_definition",
+      "stage 必须要求独立 Hermes session"
     );
   }
+  const hermesSessionId = assertSoftwareDetailHermesSessionUnused(
+    result.hermesSessionId,
+    options.usedHermesSessionIds
+  );
 
   const isFinalStage = identity.definition.order === 900;
   if (
     result.status === "completed" &&
-    Boolean(result.matlabSessionClosed) !== isFinalStage
+    result.matlabSessionClosed !== isFinalStage
   ) {
     throw contractError(
       "software_detail_matlab_session_cleanup_invalid",
@@ -379,16 +395,17 @@ export function startSoftwareDetailStage(job = {}, request = {}) {
     );
   }
 
-  const requestedMatlabSessionId = normalizeSessionId(
-    request.matlabSessionId,
-    "matlabSessionId"
-  );
-  if (nextIndex === 0 && !next.matlabSessionId) {
-    next.matlabSessionId = requestedMatlabSessionId;
-  } else if (
-    !next.matlabSessionId ||
-    next.matlabSessionCleaned ||
-    requestedMatlabSessionId !== next.matlabSessionId
+  const isInitializeStage = nextIndex === 0;
+  const requestedMatlabSessionId = isInitializeStage
+    ? normalizeOptionalSessionId(request.matlabSessionId, "matlabSessionId")
+    : normalizeSessionId(request.matlabSessionId, "matlabSessionId");
+  if (
+    (isInitializeStage &&
+      (next.matlabSessionId || next.matlabSessionCleaned || requestedMatlabSessionId)) ||
+    (!isInitializeStage &&
+      (!next.matlabSessionId ||
+        next.matlabSessionCleaned ||
+        requestedMatlabSessionId !== next.matlabSessionId))
   ) {
     throw contractError(
       "software_detail_matlab_session_mismatch",
@@ -403,10 +420,14 @@ export function startSoftwareDetailStage(job = {}, request = {}) {
       stageId: stage.id,
       attempt: stage.attempt + 1,
       status: "running",
-      matlabSessionId: next.matlabSessionId,
+      matlabSessionId: requestedMatlabSessionId,
       artifacts: request.artifacts
     },
-    { expectedMatlabSessionId: next.matlabSessionId }
+    {
+      expectedMatlabSessionId: isInitializeStage
+        ? undefined
+        : next.matlabSessionId
+    }
   );
   stage.status = "running";
   stage.attempt = input.attempt;
@@ -442,15 +463,16 @@ export function finishSoftwareDetailStage(job = {}, rawResult = {}) {
     );
   }
   const result = validateSoftwareDetailStageResult(rawResult, {
-    expectedMatlabSessionId: job.matlabSessionId,
+    expectedMatlabSessionId: stageIndex === 0 ? undefined : job.matlabSessionId,
     usedHermesSessionIds: job.hermesSessionIds
   });
   const next = structuredClone(job);
   const stage = next.stages[stageIndex];
   stage.status = result.status;
   stage.result = result;
-  if (result.hermesSessionId) {
-    next.hermesSessionIds.push(result.hermesSessionId);
+  next.hermesSessionIds.push(result.hermesSessionId);
+  if (stageIndex === 0 && result.status === "completed") {
+    next.matlabSessionId = result.matlabSessionId;
   }
   if (result.status === "failed") {
     next.status = "failed";
@@ -487,16 +509,19 @@ export function prepareSoftwareDetailJobForResume(job = {}) {
   if (!resumePoint.nextStageId) {
     return Object.freeze({ job: structuredClone(job), resumePoint });
   }
-  if (!job.matlabSessionId || job.matlabSessionCleaned) {
+  const resumeIndex = job.stages.findIndex(
+    (stage) => stage.id === resumePoint.nextStageId
+  );
+  if (
+    resumeIndex > 0 &&
+    (!job.matlabSessionId || job.matlabSessionCleaned)
+  ) {
     throw contractError(
       "software_detail_matlab_session_unavailable",
       "恢复前 task-owned MATLAB session 必须仍可复用"
     );
   }
   const next = structuredClone(job);
-  const resumeIndex = next.stages.findIndex(
-    (stage) => stage.id === resumePoint.nextStageId
-  );
   for (let index = resumeIndex; index < next.stages.length; index += 1) {
     const stage = next.stages[index];
     stage.status = "pending";

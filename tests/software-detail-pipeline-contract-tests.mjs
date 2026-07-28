@@ -44,7 +44,12 @@ function artifactsFor(specifications, prefix) {
 function start(job, definition, overrides = {}) {
   return startSoftwareDetailStage(job, {
     stageId: definition.id,
-    matlabSessionId: overrides.matlabSessionId || matlabSessionId,
+    matlabSessionId:
+      "matlabSessionId" in overrides
+        ? overrides.matlabSessionId
+        : definition.order === 100
+          ? ""
+          : matlabSessionId,
     artifacts: overrides.artifacts || artifactsFor(definition.inputs, "inputs")
   });
 }
@@ -57,11 +62,12 @@ function completedResult(job, definition, overrides = {}) {
     stageId: definition.id,
     attempt: record.attempt,
     status: "completed",
-    matlabSessionId: overrides.matlabSessionId || matlabSessionId,
+    matlabSessionId:
+      "matlabSessionId" in overrides
+        ? overrides.matlabSessionId
+        : matlabSessionId,
     matlabSessionClosed: definition.order === 900,
-    hermesSessionId:
-      overrides.hermesSessionId ||
-      (definition.execution === "hermes" ? `hermes-${definition.order}` : ""),
+    hermesSessionId: overrides.hermesSessionId || `hermes-${definition.order}`,
     artifacts:
       overrides.artifacts || artifactsFor(definition.outputs, "artifacts")
   };
@@ -84,6 +90,20 @@ assert.deepEqual(
   stages.map((stage) => stage.skillName),
   expectedStageIds
 );
+assert.deepEqual(
+  stages.map((stage) => stage.runtimeKind),
+  [
+    "host",
+    "reasoning",
+    "matlab",
+    "host",
+    "reasoning",
+    "reasoning",
+    "reasoning",
+    "reasoning",
+    "docx-render"
+  ]
+);
 assert.deepEqual(SOFTWARE_DETAIL_JOB_STATUSES, [
   "queued",
   "running",
@@ -100,6 +120,8 @@ assert.deepEqual(SOFTWARE_DETAIL_STAGE_STATUSES, [
 for (const stage of stages) {
   assert.equal(getSoftwareDetailStage(stage.id), stage);
   assert.ok(stage.skillName);
+  assert.equal(stage.hermesSessionRequired, true);
+  assert.equal("execution" in stage, false);
   assert.ok(stage.responsibility);
   assert.ok(stage.inputs.length > 0);
   assert.ok(stage.outputs.length > 0);
@@ -113,18 +135,39 @@ for (const stage of stages) {
   );
 }
 
+assert.deepEqual(
+  stages.map((stage) => stage.outputs.map((artifact) => artifact.role)),
+  [
+    ["job-input-manifest", "job-workspace"],
+    ["model-index", "hierarchy-manifest", "analysis-queue"],
+    ["evidence-shards"],
+    ["output-ledger", "coverage-report"],
+    ["boundary-projection", "behavior-groups", "narrative-plan"],
+    ["architecture-draft"],
+    ["module-draft"],
+    ["content-check-report", "checked-content"],
+    ["docx", "manifest"]
+  ]
+);
+
 {
   let job = createSoftwareDetailPipelineJob({ jobId: "job-full-flow" });
   assert.equal(job.status, "queued");
   assert.equal(job.matlabSessionId, "");
   assert.equal(job.matlabSessionCleaned, false);
 
-  for (const definition of stages) {
+  for (const [index, definition] of stages.entries()) {
     const started = start(job, definition);
     job = started.job;
     assert.equal(job.status, "running");
-    assert.equal(job.matlabSessionId, matlabSessionId);
-    assert.equal(started.input.matlabSessionId, matlabSessionId);
+    assert.equal(
+      started.input.matlabSessionId,
+      index === 0 ? "" : matlabSessionId
+    );
+    assert.equal(
+      job.matlabSessionId,
+      index === 0 ? "" : matlabSessionId
+    );
     assert.equal(
       job.stages.find((stage) => stage.id === definition.id).status,
       "running"
@@ -135,9 +178,20 @@ for (const stage of stages) {
       completedResult(job, definition)
     );
     job = finished.job;
+    assert.equal(finished.result.matlabSessionId, matlabSessionId);
     assert.equal(
-      job.stages.find((stage) => stage.id === definition.id).status,
-      "completed"
+      finished.result.matlabSessionClosed,
+      definition.order === 900
+    );
+    assert.equal(finished.result.hermesSessionId, `hermes-${definition.order}`);
+    assert.equal(job.matlabSessionId, matlabSessionId);
+    const completedStage = job.stages.find(
+      (stage) => stage.id === definition.id
+    );
+    assert.equal(completedStage.status, "completed");
+    assert.equal(
+      completedStage.result.hermesSessionId,
+      `hermes-${definition.order}`
     );
   }
 
@@ -145,12 +199,17 @@ for (const stage of stages) {
   assert.equal(job.matlabSessionId, matlabSessionId);
   assert.equal(job.matlabSessionCleaned, true);
   assert.deepEqual(job.hermesSessionIds, [
+    "hermes-100",
     "hermes-200",
+    "hermes-300",
+    "hermes-400",
     "hermes-500",
     "hermes-600",
     "hermes-700",
-    "hermes-800"
+    "hermes-800",
+    "hermes-900"
   ]);
+  assert.equal(new Set(job.hermesSessionIds).size, 9);
   assert.deepEqual(getSoftwareDetailResumePoint(job), {
     lastCompletedStageId: "software-detail-stage-09-docx-finalize",
     nextStageId: "",
@@ -258,19 +317,28 @@ for (const stage of stages) {
 {
   const job = createSoftwareDetailPipelineJob({ jobId: "job-failed-resume" });
   const started = start(job, stages[0]);
+  assert.equal(started.input.matlabSessionId, "");
   const failed = finishSoftwareDetailStage(started.job, {
     schema: SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA,
     jobId: started.job.jobId,
     stageId: stages[0].id,
     attempt: started.input.attempt,
     status: "failed",
-    matlabSessionId,
+    matlabSessionId: "",
     matlabSessionClosed: false,
-    hermesSessionId: "",
+    hermesSessionId: "hermes-stage-1-failed-attempt",
     artifacts: []
   }).job;
   assert.equal(failed.status, "failed");
+  assert.equal(failed.matlabSessionId, "");
   assert.equal(failed.stages[0].status, "failed");
+  assert.equal(
+    failed.stages[0].result.hermesSessionId,
+    "hermes-stage-1-failed-attempt"
+  );
+  assert.deepEqual(failed.hermesSessionIds, [
+    "hermes-stage-1-failed-attempt"
+  ]);
   assert.deepEqual(getSoftwareDetailResumePoint(failed), {
     lastCompletedStageId: "",
     nextStageId: "software-detail-stage-01-initialize",
@@ -279,28 +347,123 @@ for (const stage of stages) {
   const prepared = prepareSoftwareDetailJobForResume(failed);
   const restarted = start(prepared.job, stages[0]);
   assert.equal(restarted.input.attempt, 2);
-  assert.equal(restarted.input.matlabSessionId, matlabSessionId);
+  assert.equal(restarted.input.matlabSessionId, "");
+  assert.throws(
+    () =>
+      finishSoftwareDetailStage(
+        restarted.job,
+        completedResult(restarted.job, stages[0], {
+          hermesSessionId: "hermes-stage-1-failed-attempt"
+        })
+      ),
+    (error) => error.code === "software_detail_hermes_session_reused"
+  );
+  const recovered = finishSoftwareDetailStage(
+    restarted.job,
+    completedResult(restarted.job, stages[0], {
+      hermesSessionId: "hermes-stage-1-retry"
+    })
+  ).job;
+  assert.equal(recovered.matlabSessionId, matlabSessionId);
+  assert.deepEqual(recovered.hermesSessionIds, [
+    "hermes-stage-1-failed-attempt",
+    "hermes-stage-1-retry"
+  ]);
 }
 
 {
-  const definition = stages[4];
+  for (const definition of stages) {
+    for (const status of ["completed", "failed"]) {
+      assert.throws(
+        () =>
+          validateSoftwareDetailStageResult(
+            {
+              schema: SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA,
+              jobId: `job-missing-hermes-${definition.order}-${status}`,
+              stageId: definition.id,
+              attempt: 1,
+              status,
+              matlabSessionId:
+                definition.order === 100 && status === "failed"
+                  ? ""
+                  : matlabSessionId,
+              matlabSessionClosed:
+                status === "completed" && definition.order === 900,
+              hermesSessionId: "",
+              artifacts:
+                status === "completed"
+                  ? artifactsFor(definition.outputs, "artifacts")
+                  : []
+            },
+            {
+              expectedMatlabSessionId:
+                definition.order === 100 ? undefined : matlabSessionId,
+              usedHermesSessionIds: []
+            }
+          ),
+        /hermesSessionId/
+      );
+    }
+  }
+}
+
+{
+  const job = createSoftwareDetailPipelineJob({
+    jobId: "job-stage-1-must-create-matlab"
+  });
+  const started = start(job, stages[0]);
   assert.throws(
     () =>
-      validateSoftwareDetailStageResult(
-        {
-          schema: SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA,
-          jobId: "job-session-validation",
-          stageId: definition.id,
-          attempt: 1,
-          status: "completed",
-          matlabSessionId,
-          matlabSessionClosed: false,
-          hermesSessionId: "",
-          artifacts: artifactsFor(definition.outputs, "artifacts")
-        },
-        { expectedMatlabSessionId: matlabSessionId, usedHermesSessionIds: [] }
+      finishSoftwareDetailStage(
+        started.job,
+        completedResult(started.job, stages[0], {
+          matlabSessionId: ""
+        })
       ),
-    /hermesSessionId/
+    /matlabSessionId/
+  );
+}
+
+{
+  for (const definition of stages.slice(1)) {
+    assert.throws(
+      () =>
+        validateSoftwareDetailStageResult(
+          {
+            schema: SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA,
+            jobId: `job-missing-matlab-${definition.order}`,
+            stageId: definition.id,
+            attempt: 1,
+            status: "completed",
+            matlabSessionId: "",
+            matlabSessionClosed: definition.order === 900,
+            hermesSessionId: `hermes-missing-matlab-${definition.order}`,
+            artifacts: artifactsFor(definition.outputs, "artifacts")
+          },
+          {
+            expectedMatlabSessionId: matlabSessionId,
+            usedHermesSessionIds: []
+          }
+        ),
+      /matlabSessionId/
+    );
+  }
+}
+
+{
+  let job = createSoftwareDetailPipelineJob({
+    jobId: "job-resume-requires-matlab"
+  });
+  job = complete(job, stages[0]);
+  job = complete(job, stages[1]);
+  const missingMatlabSession = {
+    ...job,
+    status: "failed",
+    matlabSessionId: ""
+  };
+  assert.throws(
+    () => prepareSoftwareDetailJobForResume(missingMatlabSession),
+    (error) => error.code === "software_detail_matlab_session_unavailable"
   );
 }
 
@@ -317,7 +480,7 @@ for (const stage of stages) {
           status: "completed",
           matlabSessionId,
           matlabSessionClosed: false,
-          hermesSessionId: "",
+          hermesSessionId: "hermes-final-cleanup",
           artifacts: artifactsFor(finalDefinition.outputs, "artifacts")
         },
         { expectedMatlabSessionId: matlabSessionId, usedHermesSessionIds: [] }
