@@ -6,8 +6,9 @@ import path from "node:path";
 import os from "node:os";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { config } from "../src/config.js";
-import { createApp } from "../src/app.js";
+import { createApp as createProductApp } from "../src/app.js";
 import { CExtractor } from "../src/services/c-extractor.js";
 import { ValidationService } from "../src/services/validation-service.js";
 import { LlmService, buildReplayModelInput } from "../src/services/llm-service.js";
@@ -28,7 +29,10 @@ import { SkillDatabaseService } from "../src/services/skill-database-service.js"
 import { SkillWorkOrderService } from "../src/services/skill-work-order-service.js";
 import { ReplayLabService } from "../src/services/replay-lab-service.js";
 import { FeedbackTicketService } from "../src/services/feedback-ticket-service.js";
-import { createAggregateLimitedUploadStorage, createHermesApp } from "../src/hermes-app.js";
+import {
+  createAggregateLimitedUploadStorage,
+  createHermesApp as createProductHermesApp
+} from "../src/hermes-app.js";
 import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
 import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
@@ -50,6 +54,8 @@ import { buildZipArchive } from "./zip-fixture.js";
 const execFileAsync = promisify(execFile);
 const TEST_TEMP_REMOVE_RETRY_DELAY_MS = 100;
 const TEST_TEMP_REMOVE_MAX_RETRIES = 10;
+const TEST_REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const activeTempConfigRoots = [];
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -70,7 +76,7 @@ async function withTempConfig(run) {
 
   Object.assign(config, {
     rootDir: tempDir,
-    publicDir: path.join(tempDir, "public"),
+    publicDir: path.join(TEST_REPOSITORY_ROOT, "public"),
     legacySkillDir: path.join(tempDir, "skills"),
     activeSkillDir: path.join(tempDir, "skills", "active"),
     skillBundleDir: path.join(tempDir, "skills", "bundles"),
@@ -173,12 +179,14 @@ async function withTempConfig(run) {
   config.openai.apiKey = "";
   config.openai.baseURL = undefined;
   config.openai.model = "gpt-4.1-mini";
+  activeTempConfigRoots.push(tempDir);
 
   try {
     await seedFixtureFiles(tempDir);
     await ensureStorage();
     return await run(tempDir);
   } finally {
+    const activeRoot = activeTempConfigRoots.pop();
     SkillDatabaseService.closeAll();
     Object.assign(config, originalConfig);
     config.openai.apiKey = originalConfig.openai.apiKey;
@@ -190,7 +198,107 @@ async function withTempConfig(run) {
       maxRetries: TEST_TEMP_REMOVE_MAX_RETRIES,
       retryDelay: TEST_TEMP_REMOVE_RETRY_DELAY_MS
     });
+    assert.equal(activeRoot, tempDir, "Temporary test config scopes must close in stack order");
   }
+}
+
+function isPathInside(rootDir, candidate) {
+  if (!candidate) return true;
+  const relativePath = path.relative(path.resolve(rootDir), path.resolve(candidate));
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+function assertIsolatedTestRuntime(options = {}) {
+  const tempDir = activeTempConfigRoots.at(-1);
+  assert.ok(tempDir, "Product app tests must run inside withTempConfig()");
+
+  const isolatedPaths = {
+    rootDir: config.rootDir,
+    legacySkillDir: config.legacySkillDir,
+    activeSkillDir: config.activeSkillDir,
+    skillBundleDir: config.skillBundleDir,
+    generationTaskArtifactDir: config.generationTaskArtifactDir,
+    replayTaskArtifactDir: config.replayTaskArtifactDir,
+    unitTestCaseTaskStoreDir: config.unitTestCase?.taskStoreDir,
+    unitTestCaseUploadTempDir: config.unitTestCase?.uploadTempDir,
+    unitTestCaseProjectRegistryPath: config.unitTestCase?.projectRegistryPath,
+    unitTestCaseProjectAddonRoot: config.unitTestCase?.projectAddonRoot,
+    softwareModuleDescriptionTaskStoreDir: config.softwareModuleDescription?.taskStoreDir,
+    softwareModuleDescriptionUploadTempDir: config.softwareModuleDescription?.uploadTempDir,
+    dataDir: config.dataDir,
+    skillDatabasePath: config.skillDatabasePath,
+    projectStoreDir: config.projectStoreDir,
+    uploadDir: config.uploadDir,
+    llmProfileStorePath: config.llmProfileStorePath,
+    skillRefinementDir: config.skillRefinementDir,
+    skillRuleDir: config.skillRuleDir,
+    skillRuleChangeLogPath: config.skillRuleChangeLogPath,
+    rejectionStoreDir: config.rejectionStoreDir,
+    replayTaskStoreDir: config.replayTaskStoreDir,
+    skillWorkOrderStoreDir: config.skillWorkOrderStoreDir,
+    feedbackTicketStoreDir: config.feedbackTicketStoreDir,
+    feedbackTicketUploadDir: config.feedbackTicketUploadDir,
+    tcsdPipelineJobStoreDir: config.tcsdPipeline?.jobStoreDir,
+    hermesHomeDir: config.hermes?.homeDir,
+    hermesWorkdir: config.hermes?.workdir
+  };
+
+  for (const [label, candidate] of Object.entries(isolatedPaths)) {
+    assert.ok(
+      isPathInside(tempDir, candidate),
+      `${label} must remain inside temporary test runtime ${tempDir}; received ${candidate}`
+    );
+  }
+
+  assert.ok(
+    (config.unitTestCase?.workerProfiles || []).every(
+      (profile) =>
+        profile.hermesBaseURL === "http://127.0.0.1:0" &&
+        profile.matlabBaseURL === "http://127.0.0.1:0" &&
+        !profile.hermesAuthToken &&
+        !profile.matlabAuthToken
+    ),
+    "Test Worker profiles must use credential-free loopback transports"
+  );
+
+  if (options.transportRole === "platform") {
+    assert.equal(config.hermes?.transport, "api");
+    assert.equal(config.hermes?.baseURL, "http://127.0.0.1:0");
+  }
+
+  if (options.transportRole === "hermes" && config.hermes?.transport === "cli") {
+    assert.equal(
+      config.hermes?.command,
+      process.execPath,
+      "Hermes CLI tests must execute a controlled Node fixture"
+    );
+    assert.ok(
+      config.hermes?.commandArgsPrefix?.length > 0 &&
+        isPathInside(tempDir, config.hermes.commandArgsPrefix[0]),
+      "Hermes CLI tests must load their command fixture from the temporary runtime"
+    );
+  }
+}
+
+async function withIsolatedTestRuntime(run) {
+  if (activeTempConfigRoots.length) {
+    assertIsolatedTestRuntime();
+    return run();
+  }
+  return withTempConfig(async () => {
+    assertIsolatedTestRuntime();
+    return run();
+  });
+}
+
+async function createTestApp() {
+  assertIsolatedTestRuntime({ transportRole: "platform" });
+  return createProductApp();
+}
+
+async function createTestHermesApp() {
+  assertIsolatedTestRuntime({ transportRole: "hermes" });
+  return createProductHermesApp();
 }
 
 async function seedFixtureFiles(tempDir) {
@@ -418,25 +526,27 @@ async function listenOnFetchSafePort(server, options = {}) {
 }
 
 async function withTestServer(run) {
-  const app = await createApp();
-  const server = http.createServer(app);
-  const { port } = await listenOnFetchSafePort(server);
-  const baseUrl = `http://127.0.0.1:${port}`;
+  return withIsolatedTestRuntime(async () => {
+    const app = await createTestApp();
+    const server = http.createServer(app);
+    const { port } = await listenOnFetchSafePort(server);
+    const baseUrl = `http://127.0.0.1:${port}`;
 
-  try {
-    return await run({ baseUrl });
-  } finally {
-    clearInterval(app.locals.tcsdReconcileTimer);
-    await new Promise((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
+    try {
+      return await run({ baseUrl });
+    } finally {
+      clearInterval(app.locals.tcsdReconcileTimer);
+      await new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
       });
-    });
-  }
+    }
+  });
 }
 
 async function waitForApiTaskTerminal(taskUrl, options = {}) {
@@ -472,24 +582,26 @@ async function createMockUploadFile(tempDir, originalname, content = "fixture") 
 }
 
 async function withHermesServer(run) {
-  const app = await createHermesApp();
-  const server = http.createServer(app);
-  const { port } = await listenOnFetchSafePort(server);
-  const baseUrl = `http://127.0.0.1:${port}`;
+  return withIsolatedTestRuntime(async () => {
+    const app = await createTestHermesApp();
+    const server = http.createServer(app);
+    const { port } = await listenOnFetchSafePort(server);
+    const baseUrl = `http://127.0.0.1:${port}`;
 
-  try {
-    return await run({ baseUrl });
-  } finally {
-    await new Promise((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
+    try {
+      return await run({ baseUrl });
+    } finally {
+      await new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
       });
-    });
-  }
+    }
+  });
 }
 
 async function seedWikiFixture(rootDir, overrides = {}) {
@@ -4997,7 +5109,8 @@ const tests = [
           updatedAt: staleTime
         });
 
-        await createApp();
+        const recoveredApp = await createTestApp();
+        clearInterval(recoveredApp.locals.tcsdReconcileTimer);
 
         const refreshedTask = await projectService.getGenerationTask(
           project.id,
