@@ -15,7 +15,7 @@ Before taking any stage action, read all rules from `../software-detail-runtime/
 
 - `../software-detail-runtime/references/model-evidence.md`, including its bounded output-cone batch contract and required evidence fields.
 - `../software-detail-runtime/scripts/collect_module_doc_evidence.m` when a bounded compact snapshot is useful for the current queue item.
-- `../software-detail-runtime/scripts/satk_eval.py` only when the supplied environment uses that MCP bridge to the existing task-owned MATLAB session.
+- `../software-detail-runtime/scripts/satk_eval.py` only through an execution adapter explicitly bound to `matlab-session-lease` and the existing Worker/native MATLAB Gateway session.
 
 ## Inputs
 
@@ -28,7 +28,7 @@ Require a `software-detail-minimal-stage-input/v1` manifest whose `stageId` is e
 - `hierarchy-manifest` from `software-detail-stage-02-model-plan`.
 - `analysis-queue` from `software-detail-stage-02-model-plan`.
 
-The invocation must use a fresh Hermes session for this stage attempt while reusing the exact live MATLAB session identified by `matlab-session-lease`. Do not run workspace setup again, reload the model, start another MATLAB process, or close the session.
+The invocation must use a fresh Hermes session for this stage attempt while reusing the exact live MATLAB session identified by `matlab-session-lease`. It must not start a new MATLAB session. If `satk_eval.py` cannot bind to the leased existing Gateway session, use the Worker-provided Gateway call path instead. Do not run workspace setup again, reload the model, start another MATLAB process, or close the leased session.
 
 ## Procedure
 

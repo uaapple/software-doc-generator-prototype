@@ -346,15 +346,24 @@ assert.deepEqual(
 const stage1Skill = readText(
   "skills/hermes/software-detail-stage-01-initialize/SKILL.md"
 );
-assert.ok(stage1Skill.includes("Start one task-owned MATLAB process/session"));
+assert.ok(stage1Skill.includes("create one task-owned MATLAB process/session"));
 assert.ok(stage1Skill.includes("load_system"));
 assert.ok(stage1Skill.includes("Leave the MATLAB session open"));
+assert.ok(stage1Skill.includes("Worker or native MATLAB Gateway"));
+assert.ok(stage1Skill.includes("matlab-session-lease"));
+assert.ok(stage1Skill.includes("remains alive after the MCP server exits"));
+assert.ok(stage1Skill.includes("reconnect by the lease"));
 
 for (const stageId of expectedStageIds.slice(1)) {
   const skill = readText(`skills/hermes/${stageId}/SKILL.md`);
   assert.ok(skill.includes("reusing the exact"));
   assert.ok(skill.includes("matlab-session-lease"));
   assert.ok(skill.includes("Leave the task-owned MATLAB session open"));
+  assert.ok(skill.includes("explicitly bound to `matlab-session-lease`"));
+  assert.ok(skill.includes("must not start a new MATLAB session"));
+  assert.ok(skill.includes("Worker-provided Gateway call path"));
+  assert.equal(skill.includes("SATK_MATLAB_SESSION_MODE=new"), false);
+  assert.equal(/\bdefault\b[^\n]{0,80}\bnew\b/i.test(skill), false);
 }
 
 console.log(

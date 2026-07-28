@@ -16,7 +16,7 @@ Before taking any stage action, read all rules from `../software-detail-runtime/
 - `../software-detail-runtime/references/model-evidence.md` for the index-only scan and bounded analysis-queue contract.
 - `../software-detail-runtime/references/module-boundary.md` before selecting document units or producing interface allowlists.
 - `../software-detail-runtime/scripts/collect_module_doc_evidence.m` only as an optional compact index helper in the already-open MATLAB session.
-- `../software-detail-runtime/scripts/satk_eval.py` only when the supplied environment uses that MCP bridge to the existing task-owned MATLAB session.
+- `../software-detail-runtime/scripts/satk_eval.py` only through an execution adapter explicitly bound to `matlab-session-lease` and the existing Worker/native MATLAB Gateway session.
 
 ## Inputs
 
@@ -26,7 +26,7 @@ Require a `software-detail-minimal-stage-input/v1` manifest whose `stageId` is e
 - `workspace-manifest` from `software-detail-stage-01-initialize`.
 - `matlab-session-lease` from `software-detail-stage-01-initialize`.
 
-The invocation must use a fresh Hermes session for this stage attempt while reusing the exact MATLAB session identified by `matlab-session-lease`. Do not initialize, reload, close, or replace that MATLAB session.
+The invocation must use a fresh Hermes session for this stage attempt while reusing the exact MATLAB session identified by `matlab-session-lease`. It must not start a new MATLAB session. If `satk_eval.py` cannot bind to the leased existing Gateway session, use the Worker-provided Gateway call path instead. Do not initialize, reload, close, or replace the leased MATLAB session.
 
 ## Procedure
 
