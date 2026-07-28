@@ -8,6 +8,10 @@ import {
   evaluateTrivyPolicy,
   summarizeTrivyReport
 } from "../scripts/container-scan-policy.mjs";
+import {
+  calculateImageRevision,
+  imageInputs
+} from "../scripts/container-image-revisions.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(rootDir, relativePath), "utf8");
@@ -55,6 +59,23 @@ assert.doesNotMatch(
 assert.match(releaseBuilder, /"archive", "--format=tar"/);
 assert.match(releaseBuilder, /requireReleaseScans/);
 assert.match(releaseBuilder, /\["syft", "trivy"\]/);
+assert.match(releaseBuilder, /deploymentToolRevision/);
+assert.match(releaseBuilder, /imageRevision/);
+assert.match(releaseBuilder, /registryReference/);
+assert.doesNotMatch(releaseBuilder, /BUILD_CREATED/);
+assert.doesNotMatch(read("docker/platform.Containerfile"), /BUILD_CREATED|image\.created/);
+assert.doesNotMatch(read("containers/worker/Containerfile"), /BUILD_CREATED|image\.created/);
+assert.ok(
+  read("docker/platform.Containerfile").indexOf("ARG IMAGE_REVISION") >
+    read("docker/platform.Containerfile").indexOf("COPY --from=production-dependencies"),
+  "platform image metadata must follow stable dependency layers"
+);
+for (const inputs of Object.values(imageInputs)) {
+  assert.ok(!inputs.some((entry) => /^(?:compose|docs\/|\.env|scripts\/container-production)/.test(entry)));
+}
+for (const name of Object.keys(imageInputs)) {
+  assert.match(calculateImageRevision(name), /^sha256:[a-f0-9]{64}$/);
+}
 const scanScript = read("scripts/container-scan.mjs");
 assert.match(scanScript, /container-license-policy\.json/);
 assert.match(scanScript, /vuln,license,secret/);

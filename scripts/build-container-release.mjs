@@ -7,15 +7,35 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { calculateImageRevision } from "./container-image-revisions.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.join(rootDir, "release-dist", "container");
-const sourceCommit = run("git", ["rev-parse", "HEAD"], { capture: true });
-const shortCommit = sourceCommit.slice(0, 12);
-const buildCreated = new Date().toISOString();
-const version = process.env.SDG_CONTAINER_RELEASE_VERSION || `git-${shortCommit}`;
-const platformTag = `sdg-platform:${version}`;
-const workerTag = `sdg-hermes-worker:${version}`;
+const deploymentToolRevision = run("git", ["rev-parse", "HEAD"], { capture: true });
+const shortDeploymentRevision = deploymentToolRevision.slice(0, 12);
+const createOfflineArchives = process.argv.includes("--offline");
+const pushToRegistry = process.argv.includes("--push");
+if (!createOfflineArchives && !pushToRegistry) {
+  throw new Error("Specify at least one release mode: --offline or --push.");
+}
+const registryNamespace = String(
+  process.env.SDG_CONTAINER_REGISTRY_NAMESPACE || "ghcr.io/uaapple"
+).replace(/\/+$/, "");
+const imageDefinitions = {
+  platform: {
+    containerfile: "docker/platform.Containerfile",
+    repository: `${registryNamespace}/software-doc-generator-platform`
+  },
+  worker: {
+    containerfile: "containers/worker/Containerfile",
+    repository: `${registryNamespace}/software-doc-generator-worker`
+  }
+};
+for (const [name, definition] of Object.entries(imageDefinitions)) {
+  definition.imageRevision = calculateImageRevision(name, { cwd: rootDir });
+  definition.version = `img-${definition.imageRevision.slice(7, 19)}`;
+  definition.tag = `${definition.repository}:${definition.version}`;
+}
 const buildContextRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-container-release-"));
 const buildContextArchive = path.join(buildContextRoot, "source.tar");
 const buildContext = path.join(buildContextRoot, "source");
@@ -27,7 +47,7 @@ const trackedChanges = run(
 );
 if (trackedChanges) {
   throw new Error(
-    "Container release builds require a clean tracked worktree so image contents match SOURCE_COMMIT."
+    "Container release builds require a clean tracked worktree so image contents match their image revisions."
   );
 }
 
@@ -43,58 +63,73 @@ try {
   run("git", ["archive", "--format=tar", "--output", buildContextArchive, "HEAD"]);
   run("tar", ["-xf", buildContextArchive, "-C", buildContext]);
 
-  buildImage({
-    tag: platformTag,
-    containerfile: "docker/platform.Containerfile"
-  });
-  buildImage({
-    tag: workerTag,
-    containerfile: "containers/worker/Containerfile"
-  });
+  buildImage(imageDefinitions.platform);
+  buildImage(imageDefinitions.worker);
 
   run(process.execPath, ["scripts/container-scan.mjs"], {
     env: {
       ...process.env,
-      SDG_PLATFORM_IMAGE: platformTag,
-      SDG_WORKER_IMAGE: workerTag
+      SDG_PLATFORM_IMAGE: imageDefinitions.platform.tag,
+      SDG_WORKER_IMAGE: imageDefinitions.worker.tag
     }
   });
   requireReleaseScans();
 
   fs.mkdirSync(outputDir, { recursive: true });
   const images = {};
-  for (const [name, tag] of [["platform", platformTag], ["worker", workerTag]]) {
+  for (const [name, definition] of Object.entries(imageDefinitions)) {
+    const { tag, imageRevision, repository, version } = definition;
     const inspected = JSON.parse(
       run("docker", ["image", "inspect", tag, "--format", "{{json .}}"], { capture: true })
     );
     if (inspected.Os !== "linux" || inspected.Architecture !== "amd64") {
       throw new Error(`${tag} is not linux/amd64.`);
     }
-    if (inspected.Config?.Labels?.["org.opencontainers.image.revision"] !== sourceCommit) {
-      throw new Error(`${tag} does not record the exact source commit.`);
+    if (inspected.Config?.Labels?.["org.opencontainers.image.revision"] !== imageRevision) {
+      throw new Error(`${tag} does not record its exact image input revision.`);
     }
-    const archive = path.join(outputDir, `${name}-${shortCommit}-linux-amd64.tar`);
-    run("docker", ["save", "--output", archive, tag]);
     images[name] = {
       tag,
+      repository,
+      version,
+      imageRevision,
       imageId: inspected.Id,
-      archive: path.basename(archive),
-      sha256: await sha256File(archive),
-      sizeBytes: fs.statSync(archive).size,
       os: inspected.Os,
       architecture: inspected.Architecture
     };
+    if (pushToRegistry) {
+      run("docker", ["push", tag]);
+      const digest = inspectRegistryDigest(tag);
+      images[name].registryDigest = digest;
+      images[name].registryReference = `${repository}@${digest}`;
+    }
+    if (createOfflineArchives) {
+      const archive = path.join(
+        outputDir,
+        `${name}-${imageRevision.slice(7, 19)}-linux-amd64.tar`
+      );
+      run("docker", ["save", "--output", archive, tag]);
+      images[name].archive = path.basename(archive);
+      images[name].sha256 = await sha256File(archive);
+      images[name].sizeBytes = fs.statSync(archive).size;
+    }
   }
 
   const manifest = {
-    schema: "sdg-container-offline-release/v1",
+    schema: "sdg-container-release/v2",
     generatedAt: new Date().toISOString(),
-    sourceCommit,
-    version,
+    deploymentToolRevision,
+    distribution: {
+      registryPreferred: pushToRegistry,
+      offlineArchivesIncluded: createOfflineArchives
+    },
     images,
     scans: await collectScanEvidence()
   };
-  const manifestPath = path.join(outputDir, `offline-release-${shortCommit}.json`);
+  const manifestPath = path.join(
+    outputDir,
+    `container-release-${shortDeploymentRevision}.json`
+  );
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
   console.log(manifestPath);
 } finally {
@@ -121,7 +156,7 @@ async function collectScanEvidence() {
   };
 }
 
-function buildImage({ tag, containerfile }) {
+function buildImage({ tag, containerfile, imageRevision, version }) {
   run("docker", [
     "buildx",
     "build",
@@ -131,15 +166,24 @@ function buildImage({ tag, containerfile }) {
     "--file",
     containerfile,
     "--build-arg",
-    `BUILD_CREATED=${buildCreated}`,
-    "--build-arg",
-    `SOURCE_COMMIT=${sourceCommit}`,
+    `IMAGE_REVISION=${imageRevision}`,
     "--build-arg",
     `IMAGE_VERSION=${version}`,
     "--tag",
     tag,
     buildContext
   ], { cwd: buildContext });
+}
+
+function inspectRegistryDigest(tag) {
+  const output = run(
+    "docker",
+    ["buildx", "imagetools", "inspect", tag],
+    { capture: true }
+  );
+  const digest = output.match(/^Digest:\s*(sha256:[a-f0-9]{64})$/mi)?.[1];
+  if (!digest) throw new Error(`Unable to resolve immutable registry digest for ${tag}.`);
+  return digest;
 }
 
 function run(command, args, options = {}) {

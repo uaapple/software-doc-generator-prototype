@@ -13,32 +13,70 @@ Docker Desktop 商用许可、企业软件准入、虚拟化能力和防火墙�
 负责人先行确认。任一 Windows 机器不能启动 Linux containers 时，不得把它
 切换到本部署方式。
 
-## 制品
+## 制品与版本
 
-在干净、已验收的开发提交上运行：
+日常发布优先推送私有 GHCR：
+
+```bash
+npm run container:release:publish
+```
+
+首次部署或离线回退需要完整 tar 时才运行：
 
 ```bash
 npm run container:release:build
 ```
 
-构建器执行容器静态门禁，按 `linux/amd64` 构建两个镜像，为镜像写入精确
-`org.opencontainers.image.revision`，并生成：
+镜像版本与部署工具版本相互独立：
+
+- `imageRevision` 是镜像实际输入文件的 Git blob/tree 清单哈希。Compose、生产
+  preflight、env 示例、测试或文档变化不会改变它，也不会要求重建镜像。
+- `deploymentToolRevision` 是生成 release manifest 时的精确 Git 提交，标识本次
+  使用的 Compose、preflight 和部署说明。
+- `org.opencontainers.image.revision` 写入 `imageRevision`。镜像不写入动态构建
+  时间，避免仅因构建时间或部署脚本提交变化而生成新 image config/layer。
+
+默认 GHCR 仓库为：
+
+```text
+ghcr.io/uaapple/software-doc-generator-platform
+ghcr.io/uaapple/software-doc-generator-worker
+```
+
+构建器按 `linux/amd64` 构建并扫描两个镜像。GHCR 发布 manifest 记录 tag、
+`imageRevision`、精确 registry digest 和 `repository@sha256:...` 引用。生产端
+只允许 pull manifest 中的 digest 引用，禁止 `latest`。
+
+首次离线构建额外生成：
 
 ```text
 release-dist/container/
-├─ platform-<git-sha>-linux-amd64.tar
-├─ worker-<git-sha>-linux-amd64.tar
-└─ offline-release-<git-sha>.json
+├─ platform-<image-revision>-linux-amd64.tar
+├─ worker-<image-revision>-linux-amd64.tar
+└─ container-release-<deployment-tool-revision>.json
 ```
 
-manifest 记录源码提交、镜像 ID、tar SHA-256、大小和架构。正式传输还必须附带
-SBOM、许可证和漏洞扫描结果。构建器从精确 `git archive HEAD` 创建 Docker
-context，未跟踪文件不会进入镜像；Syft 和 Trivy 必须对两个镜像都成功，否则
-不会生成正式 manifest。`release-dist/**` 是构建产物，不进入 Git。
+manifest 还记录镜像 ID、tar SHA-256、大小、架构及扫描证据。构建器从精确
+`git archive HEAD` 创建 Docker context，未跟踪文件不会进入镜像；Syft 和
+Trivy 必须对两个镜像都成功，否则不会生成正式 manifest。HIGH/CRITICAL 漏洞
+和未知许可证只记录告警；secret finding 和明确禁用许可证仍然硬失败。
+`release-dist/**` 是构建产物，不进入 Git。
 
-每台 Windows 只需要 Worker tar；Linux VM 只需要 Platform tar。传输前后必须
-重新计算 SHA-256，并与 manifest 完全匹配。`docker load` 后使用 manifest 中
-的不可变 `imageId` 配置生产 env，不能使用 `latest` 或其他可变 tag。
+GHCR 会复用已存在的 OCI layers，因此后续 push/pull 只传缺失 layer。两个
+Containerfile 均先安装固定 OS、npm/Python/Hermes 依赖，再复制源码和 skills；
+源码小改不会重新上传稳定依赖层。
+
+GHCR package 必须保持 private。发布账号使用不输出、不提交的 classic PAT
+`write:packages` 登录；生产端每台机器仅使用 classic PAT `read:packages`：
+
+```text
+<token 通过安全输入> | docker login ghcr.io -u <批准账号> --password-stdin
+docker pull ghcr.io/uaapple/<image>@sha256:<manifest 中的精确 digest>
+```
+
+GHCR 不可达时才使用离线 tar。每台 Windows 只需要 Worker tar；Linux VM 只
+需要 Platform tar。传输前后必须重新计算 SHA-256 并与 manifest 完全匹配。
+`docker load` 后使用 manifest 中的不可变 `imageId` 配置生产 env。
 
 ## Windows Docker Desktop Worker
 

@@ -29,6 +29,10 @@ assert.match(
 assert.match(containerfile, /USER 10001:10001/);
 assert.match(containerfile, /HEALTHCHECK/);
 assert.doesNotMatch(containerfile, /^\s*VOLUME\s+/m);
+assert.ok(
+  containerfile.indexOf("ARG IMAGE_REVISION") > containerfile.indexOf("python -m pip freeze"),
+  "image metadata must follow stable Python and Hermes dependency layers"
+);
 assert.match(containerfile, /COPY containers\/worker\/configure-hermes\.py/);
 assert.match(
   containerfile,

@@ -31,6 +31,10 @@ secret finding 或 `deploy/container-license-policy.json` 明确禁止的许可�
 fail-closed。未知许可证分类只记录在原始 Trivy 报告中，不等同于禁用许可证。
 Linux Platform 容器同时运行平台与 Wiki；生产 Compose 分别发布原端口 `3000`
 和 `3001`，停止旧 systemd 平台/Wiki 服务后必须验证两者。
+容器日常分发优先使用私有 GHCR 的精确 digest；完整 docker-save tar 仅用于
+首次部署或 GHCR 不可达时的离线回退。release manifest 分别记录镜像输入哈希
+`imageRevision` 与 Compose/preflight 所在提交 `deploymentToolRevision`，
+仅部署工具变化不触发镜像重建。
 
 ### Hermes Agent 0.18.2 推理配置边界
 

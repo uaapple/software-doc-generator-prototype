@@ -28,18 +28,6 @@ FROM ${PYTHON_BASE_IMAGE} AS runtime
 ARG HERMES_AGENT_VERSION="0.18.2"
 ARG HERMES_AGENT_WHEEL_URL="https://files.pythonhosted.org/packages/0c/4c/91652c61450763bfe165c65b83026503de0ac9ddad2c11ee522490bf4c2d/hermes_agent-0.18.2-py3-none-any.whl"
 ARG HERMES_AGENT_WHEEL_SHA256="8f02155cfc84b28bd98551cd18dffec0efa9ec070dd08f90f1a850f1c779492f"
-ARG BUILD_CREATED=unknown
-ARG SOURCE_COMMIT=unknown
-ARG IMAGE_VERSION=0.1.0-container
-
-LABEL org.opencontainers.image.title="Software Document Generator Hermes Worker" \
-      org.opencontainers.image.created="${BUILD_CREATED}" \
-      org.opencontainers.image.revision="${SOURCE_COMMIT}" \
-      org.opencontainers.image.version="${IMAGE_VERSION}" \
-      org.opencontainers.image.vendor="ITK Engineering" \
-      org.opencontainers.image.base.name="python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317" \
-      io.software-doc-generator.node.base="node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752" \
-      io.software-doc-generator.hermes.version="${HERMES_AGENT_VERSION}"
 
 ENV APP_RUNTIME_ROLE="hermes-agent" \
     NODE_ENV="production" \
@@ -137,6 +125,17 @@ RUN mkdir -p \
       /var/lib/sdg/project-addons \
       /var/lib/sdg/tmp && \
     chown -R 10001:10001 /var/lib/sdg /opt/sdg/app
+
+ARG IMAGE_REVISION=unknown
+ARG IMAGE_VERSION=0.1.0-container
+LABEL org.opencontainers.image.title="Software Document Generator Hermes Worker" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.source="https://github.com/uaapple/software-doc-generator-prototype" \
+      org.opencontainers.image.vendor="ITK Engineering" \
+      org.opencontainers.image.base.name="python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317" \
+      io.software-doc-generator.node.base="node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752" \
+      io.software-doc-generator.hermes.version="${HERMES_AGENT_VERSION}"
 
 USER 10001:10001
 EXPOSE 3101

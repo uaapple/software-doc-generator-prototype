@@ -15,17 +15,6 @@ RUN npm ci --omit=dev --ignore-scripts \
 
 FROM --platform=${RUNTIME_PLATFORM} ${NODE_BASE_IMAGE} AS runtime
 
-ARG BUILD_CREATED=unknown
-ARG SOURCE_COMMIT=unknown
-ARG IMAGE_VERSION=0.1.0-container
-
-LABEL org.opencontainers.image.title="Software Document Generator Platform" \
-      org.opencontainers.image.description="Frontend, backend, Wiki, scheduling, and Worker routing" \
-      org.opencontainers.image.created="${BUILD_CREATED}" \
-      org.opencontainers.image.revision="${SOURCE_COMMIT}" \
-      org.opencontainers.image.version="${IMAGE_VERSION}" \
-      org.opencontainers.image.source="software-doc-generator"
-
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
@@ -129,6 +118,14 @@ RUN mkdir -p \
       /var/lib/sdg/project-addons \
       /var/lib/sdg/home \
     && chown -R node:node /var/lib/sdg
+
+ARG IMAGE_REVISION=unknown
+ARG IMAGE_VERSION=0.1.0-container
+LABEL org.opencontainers.image.title="Software Document Generator Platform" \
+      org.opencontainers.image.description="Frontend, backend, Wiki, scheduling, and Worker routing" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.source="https://github.com/uaapple/software-doc-generator-prototype"
 
 USER node
 

@@ -117,8 +117,9 @@ shared:
   - scripts/check-container-boundaries.mjs
   - scripts/check-container-secrets.mjs
   - scripts/container-release-manifest.mjs
-    - scripts/container-scan.mjs
-    - scripts/container-scan-policy.mjs
+  - scripts/container-scan.mjs
+  - scripts/container-scan-policy.mjs
+  - scripts/container-image-revisions.mjs
   - scripts/build-container-release.mjs
   - scripts/container-production.mjs
   - src/config.js
