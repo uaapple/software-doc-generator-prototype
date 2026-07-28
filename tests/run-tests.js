@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import os from "node:os";
@@ -55,7 +55,12 @@ const execFileAsync = promisify(execFile);
 const TEST_TEMP_REMOVE_RETRY_DELAY_MS = 100;
 const TEST_TEMP_REMOVE_MAX_RETRIES = 10;
 const TEST_REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const TEST_RUNTIME_ISOLATION_MARKER = "sdg-isolated-test-runtime/v1";
+const TEST_RUNTIME_ISOLATION_ENV = "SDG_TEST_RUNTIME_ISOLATION";
+const TEST_RUNTIME_ROOT_ENV = "SDG_TEST_RUNTIME_ROOT";
 const activeTempConfigRoots = [];
+
+assertIsolatedRunnerEnvironment();
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -64,6 +69,39 @@ class FakeModuleSkillBootstrapLlmService {
 
   async synthesizeKnowledge() {
     return this.result;
+  }
+}
+
+function assertIsolatedRunnerEnvironment() {
+  assert.equal(
+    process.env[TEST_RUNTIME_ISOLATION_ENV],
+    TEST_RUNTIME_ISOLATION_MARKER,
+    "tests/run-tests.js must be started through tests/run-test-suite-isolated.mjs"
+  );
+
+  const runtimeRootValue = String(process.env[TEST_RUNTIME_ROOT_ENV] || "").trim();
+  assert.ok(runtimeRootValue, `${TEST_RUNTIME_ROOT_ENV} must identify the temporary test runtime`);
+  const temporaryRoot = realpathSync(os.tmpdir());
+  const runtimeRoot = realpathSync(runtimeRootValue);
+  const relativeRuntimePath = path.relative(temporaryRoot, runtimeRoot);
+  assert.ok(
+    relativeRuntimePath &&
+      !relativeRuntimePath.startsWith("..") &&
+      !path.isAbsolute(relativeRuntimePath),
+    `${TEST_RUNTIME_ROOT_ENV} must be a child of the operating-system temporary directory`
+  );
+
+  for (const envKey of ["APP_DATA_DIR", "APP_SKILLS_DIR", "HERMES_HOME"]) {
+    const configuredPath = String(process.env[envKey] || "").trim();
+    assert.ok(configuredPath, `${envKey} must be set by the isolated test runner`);
+    const resolvedPath = realpathSync(configuredPath);
+    const relativePath = path.relative(runtimeRoot, resolvedPath);
+    assert.ok(
+      relativePath &&
+        !relativePath.startsWith("..") &&
+        !path.isAbsolute(relativePath),
+      `${envKey} must be a child of ${TEST_RUNTIME_ROOT_ENV}`
+    );
   }
 }
 

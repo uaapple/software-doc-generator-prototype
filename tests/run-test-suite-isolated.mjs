@@ -7,6 +7,35 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const TEST_RUNTIME_ISOLATION_MARKER = "sdg-isolated-test-runtime/v1";
+const TEST_RUNTIME_ISOLATION_ENV = "SDG_TEST_RUNTIME_ISOLATION";
+const TEST_RUNTIME_ROOT_ENV = "SDG_TEST_RUNTIME_ROOT";
+const SAFE_PARENT_ENV_KEYS = new Set([
+  "CI",
+  "COLORTERM",
+  "COMSPEC",
+  "HOME",
+  "LANG",
+  "LANGUAGE",
+  "LOGNAME",
+  "NO_COLOR",
+  "NUMBER_OF_PROCESSORS",
+  "OS",
+  "PATH",
+  "PATHEXT",
+  "PROCESSOR_ARCHITECTURE",
+  "SHELL",
+  "SYSTEMROOT",
+  "TCSD_PIPELINE_PYTHON",
+  "TEMP",
+  "TERM",
+  "TMP",
+  "TMPDIR",
+  "TZ",
+  "USER",
+  "USERPROFILE",
+  "WINDIR"
+]);
 const fixturePaths = [
   "data/skill-rules/bundle-base.json",
   "data/skills.sqlite"
@@ -62,6 +91,7 @@ let fixtureFailure = null;
 try {
   await prepareIsolatedRuntime(runtimeRoot);
   const isolatedEnvironment = buildIsolatedEnvironment(runtimeRoot);
+  assertEnvironmentIsolation(runtimeRoot, isolatedEnvironment);
   const selectedSuites = selectedSuite
     ? suites.filter((suite) => suite.id === selectedSuite)
     : suites;
@@ -155,12 +185,14 @@ async function copyTrackedSkills(targetRoot) {
   }
 }
 
-function buildIsolatedEnvironment(targetRoot) {
+function buildIsolatedEnvironment(targetRoot, sourceEnvironment = process.env) {
   const environment = {
-    ...process.env,
+    ...filterParentEnvironment(sourceEnvironment),
     NODE_ENV: "test",
     APP_ENV: "test",
     APP_RUNTIME_ROLE: "platform",
+    [TEST_RUNTIME_ISOLATION_ENV]: TEST_RUNTIME_ISOLATION_MARKER,
+    [TEST_RUNTIME_ROOT_ENV]: targetRoot,
     APP_DATA_DIR: path.join(targetRoot, "data"),
     APP_SKILLS_DIR: path.join(targetRoot, "skills"),
     HERMES_HOME: path.join(targetRoot, "hermes-home"),
@@ -198,6 +230,53 @@ function buildIsolatedEnvironment(targetRoot) {
     ZHIPU_API_KEY: ""
   };
   return environment;
+}
+
+function filterParentEnvironment(sourceEnvironment) {
+  const filtered = {};
+  for (const [key, value] of Object.entries(sourceEnvironment || {})) {
+    if (value === undefined || isSensitiveEnvironmentKey(key)) continue;
+    const normalizedKey = key.toUpperCase();
+    if (SAFE_PARENT_ENV_KEYS.has(normalizedKey) || normalizedKey.startsWith("LC_")) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
+function isSensitiveEnvironmentKey(key) {
+  const normalizedKey = String(key || "").toUpperCase();
+  return (
+    /(TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|PRIVATE[_-]?KEY|CREDENTIAL|AUTH)/.test(normalizedKey) ||
+    /(^|[_-])PAT($|[_-])/.test(normalizedKey)
+  );
+}
+
+function assertEnvironmentIsolation(targetRoot, environment) {
+  const probe = buildIsolatedEnvironment(targetRoot, {
+    PATH: environment.PATH || "",
+    LANG: environment.LANG || "",
+    TCSD_PIPELINE_PYTHON: environment.TCSD_PIPELINE_PYTHON || "",
+    EXAMPLE_SECRET_TOKEN: "must-not-reach-test-child"
+  });
+  if (Object.hasOwn(probe, "EXAMPLE_SECRET_TOKEN")) {
+    throw new Error("Sensitive environment filtering allowed EXAMPLE_SECRET_TOKEN into a test child.");
+  }
+
+  const nonEmptySensitiveKeys = Object.entries(environment)
+    .filter(([key, value]) => isSensitiveEnvironmentKey(key) && value !== "")
+    .map(([key]) => key);
+  if (nonEmptySensitiveKeys.length) {
+    throw new Error(
+      `Isolated test child has non-empty sensitive environment keys: ${nonEmptySensitiveKeys.join(", ")}`
+    );
+  }
+  if (
+    environment[TEST_RUNTIME_ISOLATION_ENV] !== TEST_RUNTIME_ISOLATION_MARKER ||
+    path.resolve(environment[TEST_RUNTIME_ROOT_ENV] || "") !== path.resolve(targetRoot)
+  ) {
+    throw new Error("Isolated test child marker or runtime root is invalid.");
+  }
 }
 
 async function captureProtectedFiles(options = {}) {
