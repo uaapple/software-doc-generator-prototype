@@ -71,6 +71,16 @@ const suites = [
     args: ["tests/matlab-gateway-lease-tests.mjs"]
   },
   {
+    id: "software-detail-platform",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/software-detail-platform-pipeline-tests.mjs"]
+  },
+  {
+    id: "software-detail-ui",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/software-detail-pipeline-ui-tests.mjs"]
+  },
+  {
     id: "software-detail-worker-components",
     command: process.execPath,
     args: ["--disable-warning=ExperimentalWarning", "tests/software-detail-worker-components-tests.mjs"]

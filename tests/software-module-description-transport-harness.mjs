@@ -286,7 +286,7 @@ export async function runSoftwareModuleDescriptionTransportScenario() {
       hermesAgentClient: platformClient
     });
     const legacy = await createLegacyReadOnlyBaseline(taskStoreDir);
-    const createdTask = await service.createTask(
+    let createdTask = await service.createTask(
       {
         modelSlx: [
           {
@@ -310,6 +310,17 @@ export async function runSoftwareModuleDescriptionTransportScenario() {
         unitTestProjectId: "01",
         workerId: "transport-regression-worker"
       }
+    );
+    // 此回归夹具只验证流水线出现前的 execute-upload 兼容路径。
+    // 九阶段接口流程已有平台和 Worker 测试，下一轮再补双端端到端夹具。
+    const legacyExecutionTask = await service.readTask(createdTask.id);
+    delete legacyExecutionTask.pipeline;
+    await service.saveTask(legacyExecutionTask);
+    createdTask = await service.getTask(createdTask.id);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(createdTask, "pipeline"),
+      false,
+      "旧 execute-upload 回归任务不得进入九阶段路径"
     );
     platformWorkspaceDir = createdTask.workspace.directory;
 

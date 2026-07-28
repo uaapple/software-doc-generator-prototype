@@ -11300,6 +11300,10 @@ const tests = [
         assert.equal(payload.inputArtifact.skillName, "simulink-module-description-generator");
         assert.equal(payload.inputArtifact.expectedOutputPattern, "outputs/*.docx");
 
+        // 此用例继续验证流水线字段出现前，已存量任务的 executeStep 兼容契约。
+        const legacyTask = await service.readTask(task.id);
+        delete legacyTask.pipeline;
+        await service.saveTask(legacyTask);
         const completed = await service.runTask(task.id);
         assert.equal(seenPayloads.length, 1);
         assert.equal(completed.status, "completed");
@@ -11359,6 +11363,9 @@ const tests = [
           { projectId: "01" }
         );
 
+        const legacyTask = await service.readTask(task.id);
+        delete legacyTask.pipeline;
+        await service.saveTask(legacyTask);
         await assert.rejects(() => service.runTask(task.id), /未在 workspace\/outputs 下找到 \.docx/);
         const stored = await service.readTask(task.id);
         assert.equal(stored.status, "failed");
