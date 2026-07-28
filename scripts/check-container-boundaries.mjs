@@ -92,13 +92,13 @@ const nativeGatewayConfig = JSON.parse(
   read("deploy/native-matlab-gateway-companion.json") || "{}"
 );
 if (
-  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v4" ||
-  nativeGatewayConfig.companionVersion !== 4 ||
+  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v5" ||
+  nativeGatewayConfig.companionVersion !== 5 ||
   nativeGatewayConfig.serviceName !== "SoftwareDocMatlabWorker" ||
   !Array.isArray(nativeGatewayConfig.managedFiles) ||
   nativeGatewayConfig.managedFiles.length !== 6 ||
   !Array.isArray(nativeGatewayConfig.validationFiles) ||
-  nativeGatewayConfig.validationFiles.length !== 1
+  nativeGatewayConfig.validationFiles.length !== 2
 ) {
   failures.push("native MATLAB Gateway companion config is incomplete");
 } else {
@@ -120,6 +120,7 @@ if (
     }
   }
   const validation = nativeGatewayConfig.validationFiles[0];
+  const envExample = nativeGatewayConfig.validationFiles[1];
   if (
     validation.source !== "tests/native-gateway-companion-ps51.Tests.ps1" ||
     validation.packagePath !== "test-native-matlab-gateway-companion-ps51.ps1" ||
@@ -127,6 +128,14 @@ if (
     validation.readOnly !== true
   ) {
     failures.push("native Gateway companion validation asset boundary is invalid");
+  }
+  if (
+    envExample.source !== ".env.windows-docker-desktop.example" ||
+    envExample.packagePath !== ".env.windows-docker-desktop.example" ||
+    envExample.runtime !== "env-example" ||
+    envExample.readOnly !== true
+  ) {
+    failures.push("native Gateway companion env example boundary is invalid");
   }
 }
 

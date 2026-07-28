@@ -1,8 +1,9 @@
-# Windows 原生 MATLAB Gateway companion v4 部署 Agent 提示词
+# Windows 原生 MATLAB Gateway companion v5 部署 Agent 提示词
 
-你正在 WX11P 上验证并部署正式 companion v4。只允许使用发布者给出的 v4
+你正在 WX11P 上验证并部署正式 companion v5。只允许使用发布者给出的 v5
 annotated tag、peeled commit、GitHub Release URL 和四项资产 SHA-256；禁止
-继续使用 v1/v2/v3、现场 `ps51`/`enhanced` 副本或任何手工修改脚本。
+继续使用 v1/v2/v3/v4、现场 `ps51`/`enhanced` 副本或任何手工修改脚本。
+必须下载到全新的临时目录，不得复用 v4 解压目录。
 
 冻结边界：
 
@@ -35,24 +36,24 @@ API key、路径中的用户名或日志中的环境值。
      `SATK_GATEWAY_MAPPING_ID` 各恰好一个非空值，只报告
      `present=true/false`。不要输出路径值。
 
-2. 下载 v4 Release 的 ZIP、manifest、scan、release JSON 到新临时目录，逐项
+2. 下载 v5 Release 的 ZIP、manifest、scan、release JSON 到新临时目录，逐项
    核对发布者提供的外部 SHA-256。解压到新目录，不覆盖生产 app。
 
 3. 核对 release/manifest：
 
-   - `companionVersion=4`；
+   - `companionVersion=5`；
    - source/deployment revision 等于发布者给出的 peeled commit；
    - 6 个 managed Gateway files、1 个 deployment tool、1 个 read-only
      `powershell.exe-5.1` validation file；
    - ZIP 内每项 size/SHA-256 与 manifest 一致；
    - `rootfsInputsChanged=false`，两个 imageRevision 与冻结值一致。
 
-4. 从解压后的 v4 ZIP 运行受 hash 保护的 PS5.1 测试：
+4. 从解压后的 v5 ZIP 运行受 hash 保护的 PS5.1 测试：
 
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass `
      -File .\test-native-matlab-gateway-companion-ps51.ps1 `
-     -RepositoryRoot <v4解压目录>
+     -RepositoryRoot <v5解压目录>
    ```
 
    必须看到 `Native Gateway Windows PowerShell 5.1 tests passed.`；失败立即
@@ -63,7 +64,7 @@ API key、路径中的用户名或日志中的环境值。
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass `
      -File .\deploy-native-matlab-gateway.ps1 `
-     -CompanionRoot <v4解压目录> `
+     -CompanionRoot <v5解压目录> `
      -InstallDir C:\SoftwareDocWorker `
      -ContainerEnvFile <未跟踪容器env绝对路径> `
      -ValidateOnly
@@ -80,7 +81,7 @@ API key、路径中的用户名或日志中的环境值。
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass `
      -File .\deploy-native-matlab-gateway.ps1 `
-     -CompanionRoot <v4解压目录> `
+     -CompanionRoot <v5解压目录> `
      -InstallDir C:\SoftwareDocWorker `
      -ContainerEnvFile <未跟踪容器env绝对路径>
    ```
