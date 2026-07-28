@@ -1,0 +1,4 @@
+interface:
+  display_name: "Simulink 模块功能描述 · 阶段 6 架构草稿"
+  short_description: "依据模型证据生成总体功能、结构、架构与接口草稿"
+  default_prompt: "Use $software-detail-stage-06-architecture-draft to draft the model purpose, overall structure, architecture, and interfaces."
