@@ -572,9 +572,10 @@ async function withTestServer(run) {
     const baseUrl = `http://127.0.0.1:${port}`;
 
     try {
-      return await run({ baseUrl });
+      return await run({ baseUrl, app });
     } finally {
       clearInterval(app.locals.tcsdReconcileTimer);
+      clearInterval(app.locals.softwareDetailReconcileTimer);
       await new Promise((resolve, reject) => {
         server.close((error) => {
           if (error) {
@@ -5158,6 +5159,7 @@ const tests = [
 
         const recoveredApp = await createTestApp();
         clearInterval(recoveredApp.locals.tcsdReconcileTimer);
+        clearInterval(recoveredApp.locals.softwareDetailReconcileTimer);
 
         const refreshedTask = await projectService.getGenerationTask(
           project.id,
@@ -11042,6 +11044,20 @@ const tests = [
 
           const deletedDetailResponse = await fetch(`${baseUrl}/api/unit-test-case-generation/tasks/${validBody.task.id}`);
           assert.equal(deletedDetailResponse.status, 404);
+        });
+      });
+    }
+  },
+  {
+    name: "Software detail reconcile timer keeps the existing task list route available",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl, app }) => {
+          assert.ok(app.locals.softwareDetailReconcileTimer);
+          const response = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`);
+          assert.equal(response.status, 200);
+          const body = await response.json();
+          assert.ok(Array.isArray(body.tasks));
         });
       });
     }
