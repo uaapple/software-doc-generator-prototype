@@ -133,6 +133,7 @@ assert.match(workerService, /DEEPSEEK_BASE_URL:/);
 assert.match(workerService, /GLM_API_KEY:/);
 assert.match(workerService, /GLM_BASE_URL:/);
 assert.doesNotMatch(platformService, /DEEPSEEK_API_KEY|DEEPSEEK_BASE_URL|GLM_API_KEY|GLM_BASE_URL/);
+assert.doesNotMatch(platformService, /HERMES_INFERENCE_PROVIDER|HERMES_INFERENCE_MODEL/);
 
 const envExample = read(".env.container.example");
 assert.doesNotMatch(envExample, /(?:API_KEY|AUTH_TOKEN|PASSWORD|SECRET)[ \t]*=[ \t]*\S+/);

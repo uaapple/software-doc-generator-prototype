@@ -63,6 +63,7 @@ linux:
 
 windows:
   - containers/worker/Containerfile
+  - containers/worker/configure-hermes.py
   - requirements/container-worker.txt
   - scripts/prepare-worker-source.mjs
   - requirements/tcsd-runtime.txt

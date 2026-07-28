@@ -37,6 +37,16 @@ model、`GLM_API_KEY` 与 `GLM_BASE_URL`。
 `DEEPSEEK_API_KEY`、`GLM_API_KEY`、`ZAI_API_KEY` 或 `Z_AI_API_KEY`；
 平台与 Worker 之间只共享独立的 `HERMES_AGENT_TOKEN`。
 
+Hermes Agent 0.18.2 的 `hermes chat -q` 路径不会可靠采用环境变量或命令行
+`--provider/-m`；oneshot/TUI 冒烟因此不能代表十二阶段 chat 路径。Worker
+入口必须在 Hermes Server 监听前，将 `HERMES_INFERENCE_PROVIDER` 与
+`HERMES_INFERENCE_MODEL` 原子、幂等地写入当前 `HERMES_HOME` 的默认及实际
+使用的命名 profile 配置，仅托管 `model.provider`、`model.default` 两个键。
+缺少 provider/model 时入口 fail-closed，API key、base URL 以及其他 secret
+只能来自环境变量，不能写进 `config.yaml`。运行态验收必须检查真实
+`hermes chat -q` 的 provider/model，而不能用 `hermes --safe-mode -z`
+或显式 flags 冒烟替代。
+
 ## 关键提交
 
 与新拆分流程相关的提交：

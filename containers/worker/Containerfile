@@ -104,6 +104,7 @@ COPY --from=source-selection /selected/public ./public
 COPY --from=source-selection /selected/source-manifest.json ./container-source-manifest.json
 COPY package.json package-lock.json ./
 COPY templates/*.json ./templates/
+COPY containers/worker/configure-hermes.py ./containers/worker/configure-hermes.py
 
 # The authoritative TCSD runtime is copied file-class by file-class. Project
 # MAT/SLDD/SLX/Addons are supplied through the host-approved project addon store.
@@ -136,5 +137,5 @@ USER 10001:10001
 EXPOSE 3101
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:3101/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/sdg/venv/bin/python", "/opt/sdg/app/containers/worker/configure-hermes.py"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "src/hermes-server.js"]

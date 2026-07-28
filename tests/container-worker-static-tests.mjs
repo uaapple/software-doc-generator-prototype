@@ -29,6 +29,11 @@ assert.match(
 assert.match(containerfile, /USER 10001:10001/);
 assert.match(containerfile, /HEALTHCHECK/);
 assert.doesNotMatch(containerfile, /^\s*VOLUME\s+/m);
+assert.match(containerfile, /COPY containers\/worker\/configure-hermes\.py/);
+assert.match(
+  containerfile,
+  /ENTRYPOINT \["\/usr\/bin\/tini", "--", "\/opt\/sdg\/venv\/bin\/python", "\/opt\/sdg\/app\/containers\/worker\/configure-hermes\.py"\]/
+);
 
 const output = await fs.mkdtemp(path.join(os.tmpdir(), "worker-source-selection-"));
 try {
