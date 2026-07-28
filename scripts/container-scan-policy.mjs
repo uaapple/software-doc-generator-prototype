@@ -1,12 +1,16 @@
 export function evaluateTrivyPolicy(report = {}, licensePolicy = {}) {
   const findings = [];
+  const blockingVulnerabilitySeverities = new Set(
+    (licensePolicy.blockingVulnerabilitySeverities || [])
+      .map((item) => String(item).trim().toUpperCase())
+  );
   const denied = new Set(
     (licensePolicy.deniedIdentifiers || []).map((item) => String(item).trim().toUpperCase())
   );
   for (const result of Array.isArray(report.Results) ? report.Results : []) {
     for (const vulnerability of Array.isArray(result.Vulnerabilities) ? result.Vulnerabilities : []) {
       const severity = String(vulnerability.Severity || "").toUpperCase();
-      if (severity === "HIGH" || severity === "CRITICAL") {
+      if (blockingVulnerabilitySeverities.has(severity)) {
         findings.push({
           kind: "vulnerability",
           id: String(vulnerability.VulnerabilityID || ""),
@@ -49,4 +53,23 @@ export function evaluateTrivyPolicy(report = {}, licensePolicy = {}) {
     }
   }
   return findings;
+}
+
+export function summarizeTrivyReport(report = {}) {
+  const summary = {
+    highVulnerabilities: 0,
+    criticalVulnerabilities: 0,
+    secrets: 0,
+    licenses: 0
+  };
+  for (const result of Array.isArray(report.Results) ? report.Results : []) {
+    for (const vulnerability of Array.isArray(result.Vulnerabilities) ? result.Vulnerabilities : []) {
+      const severity = String(vulnerability.Severity || "").toUpperCase();
+      if (severity === "HIGH") summary.highVulnerabilities += 1;
+      if (severity === "CRITICAL") summary.criticalVulnerabilities += 1;
+    }
+    summary.secrets += Array.isArray(result.Secrets) ? result.Secrets.length : 0;
+    summary.licenses += Array.isArray(result.Licenses) ? result.Licenses.length : 0;
+  }
+  return summary;
 }

@@ -25,7 +25,10 @@ Mac all-in-one `compose.yaml + compose.mac.yaml`。
 
 旧 ZIP/源码包和原生服务在灰度验收完成前继续保留为回滚路径。OCI 交付必须
 携带源码 SHA、基础镜像引用、运行时版本、技能 hash、应用镜像 digest、SBOM、
-依赖许可证结果和漏洞扫描结果；不能把本地可变 tag 当成发布证据。
+依赖许可证结果和漏洞扫描结果；不能把本地可变 tag 当成发布证据。容器发布扫描将
+HIGH/CRITICAL 漏洞作为 manifest 中的审计告警记录，不作为功能部署阻塞项；任何
+secret finding 或 `deploy/container-license-policy.json` 明确禁止的许可证仍然
+fail-closed。未知许可证分类只记录在原始 Trivy 报告中，不等同于禁用许可证。
 
 ### Hermes Agent 0.18.2 推理配置边界
 

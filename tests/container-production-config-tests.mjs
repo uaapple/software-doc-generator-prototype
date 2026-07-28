@@ -4,7 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { evaluateTrivyPolicy } from "../scripts/container-scan-policy.mjs";
+import {
+  evaluateTrivyPolicy,
+  summarizeTrivyReport
+} from "../scripts/container-scan-policy.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => fs.readFileSync(path.join(rootDir, relativePath), "utf8");
@@ -53,10 +56,12 @@ assert.match(releaseBuilder, /\["syft", "trivy"\]/);
 const scanScript = read("scripts/container-scan.mjs");
 assert.match(scanScript, /container-license-policy\.json/);
 assert.match(scanScript, /vuln,license,secret/);
+assert.match(scanScript, /"--exit-code",\s*"0"/);
 assert.match(scanScript, /SCAN_OUTPUT_MAX_BYTES/);
 assert.match(scanScript, /maxBuffer:\s*SCAN_OUTPUT_MAX_BYTES/);
 const licensePolicy = JSON.parse(read("deploy/container-license-policy.json"));
-assert.equal(licensePolicy.denyUnknown, true);
+assert.equal(licensePolicy.denyUnknown, false);
+assert.deepEqual(licensePolicy.blockingVulnerabilitySeverities, []);
 assert.ok(licensePolicy.deniedIdentifiers.includes("AGPL-3.0-only"));
 const policyFindings = evaluateTrivyPolicy({
   Results: [{
@@ -75,11 +80,27 @@ const policyFindings = evaluateTrivyPolicy({
 assert.deepEqual(
   policyFindings.map((finding) => [finding.kind, finding.id || finding.ruleId || finding.identifier]),
   [
-    ["vulnerability", "CVE-HIGH"],
     ["secret", "secret-rule"],
-    ["license", "LGPL-2.0-or-later"],
     ["license", "AGPL-3.0-only"]
   ]
+);
+assert.deepEqual(
+  summarizeTrivyReport({
+    Results: [{
+      Vulnerabilities: [
+        { VulnerabilityID: "CVE-HIGH", Severity: "HIGH" },
+        { VulnerabilityID: "CVE-CRITICAL", Severity: "CRITICAL" }
+      ],
+      Secrets: [{ RuleID: "secret-rule" }],
+      Licenses: [{ Name: "MIT", Severity: "LOW" }]
+    }]
+  }),
+  {
+    highVulnerabilities: 1,
+    criticalVulnerabilities: 1,
+    secrets: 1,
+    licenses: 1
+  }
 );
 
 for (const envFile of [

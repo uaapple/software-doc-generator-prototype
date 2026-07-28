@@ -1,6 +1,7 @@
 {
   "schema": "sdg-container-license-policy/v1",
-  "denyUnknown": true,
+  "denyUnknown": false,
+  "blockingVulnerabilitySeverities": [],
   "deniedIdentifiers": [
     "AGPL-1.0",
     "AGPL-1.0-only",

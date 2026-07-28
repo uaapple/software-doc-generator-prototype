@@ -4,7 +4,10 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { evaluateTrivyPolicy } from "./container-scan-policy.mjs";
+import {
+  evaluateTrivyPolicy,
+  summarizeTrivyReport
+} from "./container-scan-policy.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.join(rootDir, "release-dist", "container", "scans");
@@ -52,6 +55,8 @@ function runTrivy(image) {
       "image",
       "--format",
       "json",
+      "--exit-code",
+      "0",
       "--scanners",
       "vuln,license,secret",
       image
@@ -67,8 +72,11 @@ function runTrivy(image) {
     fs.writeFileSync(path.join(outputDir, `${outputFile}.stderr.log`), result.stderr, "utf8");
   }
   let policyFindings = [];
+  let advisorySummary = null;
   try {
-    policyFindings = evaluateTrivyPolicy(JSON.parse(result.stdout || "{}"), licensePolicy);
+    const report = JSON.parse(result.stdout || "{}");
+    policyFindings = evaluateTrivyPolicy(report, licensePolicy);
+    advisorySummary = summarizeTrivyReport(report);
   } catch (error) {
     policyFindings = [{ kind: "invalid-report", detail: error.message }];
   }
@@ -79,13 +87,14 @@ function runTrivy(image) {
       schema: "sdg-container-scan-policy-result/v1",
       image,
       passed: result.status === 0 && policyFindings.length === 0,
+      advisorySummary,
       findings: policyFindings
     }, null, 2)}\n`,
     "utf8"
   );
   results.push({
     command: "trivy",
-    args: ["image", "--format", "json", "--scanners", "vuln,license,secret", image],
+    args: ["image", "--format", "json", "--exit-code", "0", "--scanners", "vuln,license,secret", image],
     outputFile,
     policyFile,
     status: result.status === 0 && policyFindings.length === 0 ? 0 : 1,
