@@ -56,8 +56,9 @@ content, DOCX, or final artifact manifest, and do not execute another stage.
 
 ## Procedure
 
-1. Validate that all inputs belong to the same job and attempt and that their
-   document units, direct boundary inputs/outputs, and coverage references agree.
+1. Validate that all inputs belong to the same job, preserve each input's originating
+   stage and attempt for traceability, and confirm that their document units, direct
+   boundary inputs/outputs, and coverage references agree.
 2. Draft model-level `功能描述` from model-authored annotation or DocBlock purpose
    evidence carried by the declared inputs when available. If author-provided purpose
    is absent, write a concise model-level summary inferred only from available

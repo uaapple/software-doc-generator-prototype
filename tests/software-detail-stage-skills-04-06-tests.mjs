@@ -171,6 +171,9 @@ for (const expectation of expectations) {
     )
   );
   assert.doesNotMatch(skillSource, /TODO|\[TODO/);
+  assert.doesNotMatch(skillSource, /same job and attempt/i);
+  assert.match(skillSource, /belong to the same job/);
+  assert.match(skillSource, /originating\s+stage and attempt for traceability/);
   assert.match(skillSource, /Execute only Stage [456]\./);
   assert.match(skillSource, /Use a new Hermes session for this stage attempt/);
   assert.match(skillSource, /never reuse a[\s\S]*failed attempt/);

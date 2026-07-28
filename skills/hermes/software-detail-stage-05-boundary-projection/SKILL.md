@@ -58,9 +58,9 @@ body text, or DOCX, and do not execute another stage.
 
 ## Procedure
 
-1. Validate that all inputs belong to the same job and attempt and that the ledger
-   rows and coverage entries refer only to supplied evidence shards and document
-   units.
+1. Validate that all inputs belong to the same job, preserve each input's originating
+   stage and attempt for traceability, and confirm that ledger rows and coverage
+   entries refer only to supplied evidence shards and document units.
 2. Apply the allowlist independently for each `document_unit`. A cross-A signal is
    usable only when it is a direct port of the current unit; when connected port
    names differ, use the current unit's direct Inport name for its projection.

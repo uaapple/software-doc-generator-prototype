@@ -58,9 +58,10 @@ prose, generate DOCX, or execute another stage.
 
 ## Procedure
 
-1. Validate that the inputs belong to the same job and attempt, that the MATLAB lease
-   names the existing task-owned session, and that every completed shard is tied to
-   an analysis-queue item and its parent `document_unit`.
+1. Validate that the inputs belong to the same job, preserve each input's originating
+   stage and attempt for traceability, confirm that the MATLAB lease names the
+   existing task-owned session, and tie every completed shard to an analysis-queue
+   item and its parent `document_unit`.
 2. Aggregate shard fragments by parent `document_unit`. Treat a document unit as the
    aggregation boundary, not as a new whole-subsystem deep-read batch. Preserve
    unresolved evidence limitations instead of filling them with guesses.
