@@ -18,10 +18,10 @@
   ],
   "properties": {
     "schema": {
-      "const": "sdg-native-matlab-gateway-companion-release/v3"
+      "const": "sdg-native-matlab-gateway-companion-release/v4"
     },
     "companionVersion": {
-      "const": 3
+      "const": 4
     },
     "sourceRevision": {
       "type": "string",
