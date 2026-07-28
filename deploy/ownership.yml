@@ -151,6 +151,7 @@ shared:
   - skills/**
   - docs/**
 dev-only:
+  - .github/workflows/**
   - compose.mac.yaml
   - scripts/check-platform-container.mjs
   - tests/container-config-tests.mjs

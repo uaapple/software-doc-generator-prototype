@@ -75,10 +75,18 @@ node scripts/build-native-matlab-gateway-companion.mjs
 Platform/Worker rootfs 输入仍等于冻结 imageRevision。生产继续复用既有 GHCR
 `repository@sha256:...`，不得因为 companion 更新重新上传相同镜像。
 
-companion v2 是 Windows PowerShell 5.1 兼容发布：本地 evaluate token 使用
+companion v3 是 Windows PowerShell 5.1 兼容发布：本地 evaluate token 使用
 `RandomNumberGenerator.Create()`/`GetBytes()`；现有 env 通过同目录临时文件和
 带非空 backup path 的 `File.Replace` 原子替换，不存在的目标使用同卷原子
 创建。`ValidateOnly` 在停服务前执行这些 .NET 能力探针，但不修改 env。
+v3 ZIP 还包含独立、只读且由 manifest size/SHA-256 保护的
+`test-native-matlab-gateway-companion-ps51.ps1`。该测试不 dot-source 部署
+脚本顶层逻辑，只解析所需函数、在脚本作用域导入并逐个检查可见性。
+
+新 companion tag/Release 只能在 GitHub Actions 的 Windows runner 使用
+`powershell.exe` 5.1 跑完该行为测试后创建。生产验证顺序固定为：核对 v3
+资产 → 从 ZIP 运行受保护的 PS5.1 测试 → `-ValidateOnly` → 报告并等待独立
+真实部署授权。
 
 GHCR 会复用已存在的 OCI layers，因此后续 push/pull 只传缺失 layer。两个
 Containerfile 均先安装固定 OS、npm/Python/Hermes 依赖，再复制源码和 skills；

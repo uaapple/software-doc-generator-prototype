@@ -54,7 +54,7 @@ companion 只管理 manifest 声明的 Gateway 文件与两个 env 中的 Gatewa
 用户输入输出或 MATLAB 产物。`MATLAB_GATEWAY_EVALUATE_TOKEN` 必须本地随机
 生成或安全接收，并与批准的 `MATLAB_GATEWAY_TOKEN` 保持独立。
 
-Windows companion v2 修复 PowerShell 5.1/.NET Framework 边界：CSPRNG 使用
+Windows companion v3 修复 PowerShell 5.1/.NET Framework 边界：CSPRNG 使用
 `RandomNumberGenerator.Create()`/`GetBytes()` 并可靠释放；存在的 env 使用
 同目录临时文件、继承 ACL 和非空 backup path 的 `File.Replace`，不存在目标
 走单独的同卷原子创建路径。两个 env 已有同一个 evaluate token 时，v2 将其
@@ -68,6 +68,18 @@ version/capabilities/evaluate probe，回滚恢复旧 Gateway 时使用相同有
 `ValidateOnly` 在停服务前验证 PS5.1 CSPRNG、带非空 backup 的 replace 和
 不存在目标的原子创建能力，且不修改 env。现场临时 `ps51`/`enhanced` 脚本不
 属于 companion release，禁止继续使用。
+
+v3 companion manifest 将 6 个受管 Gateway payload、1 个 deployment tool
+和 1 个只读 PS5.1 validation script 分为三个独立清单。validation script
+同时受 ZIP、manifest size/SHA-256 和 scan 保护，支持从仓库或解压目录运行；
+它只解析部署脚本中列出的函数并在测试脚本作用域导入，不能 dot-source 部署
+脚本顶层。测试启动后先逐个通过 `Get-Command -CommandType Function` 验证
+函数可见性。
+
+`.github/workflows/native-gateway-companion-ps51.yml` 在 Windows runner 上
+明确调用 `powershell.exe` 5.1。只有对应 source revision 的远端 job 成功后
+才能创建 annotated tag/Release。生产端先从 v3 ZIP 运行同一受保护测试，再
+执行 v3 `-ValidateOnly`；本轮验证不得去掉该开关或真实部署。
 
 ### Hermes Agent 0.18.2 推理配置边界
 

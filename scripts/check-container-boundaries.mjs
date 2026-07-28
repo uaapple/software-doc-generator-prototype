@@ -92,11 +92,13 @@ const nativeGatewayConfig = JSON.parse(
   read("deploy/native-matlab-gateway-companion.json") || "{}"
 );
 if (
-  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v2" ||
-  nativeGatewayConfig.companionVersion !== 2 ||
+  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v3" ||
+  nativeGatewayConfig.companionVersion !== 3 ||
   nativeGatewayConfig.serviceName !== "SoftwareDocMatlabWorker" ||
   !Array.isArray(nativeGatewayConfig.managedFiles) ||
-  nativeGatewayConfig.managedFiles.length !== 6
+  nativeGatewayConfig.managedFiles.length !== 6 ||
+  !Array.isArray(nativeGatewayConfig.validationFiles) ||
+  nativeGatewayConfig.validationFiles.length !== 1
 ) {
   failures.push("native MATLAB Gateway companion config is incomplete");
 } else {
@@ -116,6 +118,15 @@ if (
         failures.push(`native Gateway ${label} is not release-safe: ${candidate}`);
       }
     }
+  }
+  const validation = nativeGatewayConfig.validationFiles[0];
+  if (
+    validation.source !== "tests/native-gateway-companion-ps51.Tests.ps1" ||
+    validation.packagePath !== "test-native-matlab-gateway-companion-ps51.ps1" ||
+    validation.runtime !== "powershell.exe-5.1" ||
+    validation.readOnly !== true
+  ) {
+    failures.push("native Gateway companion validation asset boundary is invalid");
   }
 }
 
