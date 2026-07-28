@@ -1,0 +1,43 @@
+name: Native Gateway companion Windows PowerShell 5.1
+
+on:
+  push:
+    branches:
+      - codex/containerized-mac-runtime
+    paths:
+      - .github/workflows/native-gateway-companion-ps51.yml
+      - scripts/deploy-native-matlab-gateway.ps1
+      - tests/native-gateway-companion-ps51.Tests.ps1
+      - tests/native-gateway-companion-tests.mjs
+      - scripts/build-native-matlab-gateway-companion.mjs
+      - deploy/native-matlab-gateway-companion.json
+      - deploy/schemas/native-matlab-gateway-companion.schema.json
+      - deploy/schemas/native-matlab-gateway-companion-release.schema.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  powershell-51:
+    name: powershell.exe 5.1 behavior tests
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@v4
+
+      - name: Run companion tests with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $desktopVersion = & powershell.exe -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+          if (-not $desktopVersion.StartsWith("5.1.")) {
+            throw "Expected Windows PowerShell 5.1, got $desktopVersion"
+          }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -File ".\tests\native-gateway-companion-ps51.Tests.ps1" `
+            -RepositoryRoot $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows PowerShell 5.1 companion behavior tests failed."
+          }

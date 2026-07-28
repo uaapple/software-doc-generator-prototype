@@ -19,6 +19,7 @@ const releaseSchema = JSON.parse(
 );
 const deployScript = read("scripts/deploy-native-matlab-gateway.ps1");
 const ps51Tests = read("tests/native-gateway-companion-ps51.Tests.ps1");
+const ps51Workflow = read(".github/workflows/native-gateway-companion-ps51.yml");
 const builder = read("scripts/build-native-matlab-gateway-companion.mjs");
 const wrapper = read("native-gateway/windows-matlab-worker-server.mjs");
 for (const targetFile of [
@@ -49,8 +50,15 @@ assert.match(legacySource, /if\s*\(!authToken\)\s*\{\s*return next\(\)/);
 assert.ok(!legacySource.includes("MATLAB_GATEWAY_EVALUATE_TOKEN"));
 
 assert.equal(config.serviceName, "SoftwareDocMatlabWorker");
-assert.equal(config.companionVersion, 2);
+assert.equal(config.companionVersion, 3);
 assert.equal(config.managedFiles.length, 6);
+assert.equal(config.validationFiles.length, 1);
+assert.deepEqual(config.validationFiles[0], {
+  source: "tests/native-gateway-companion-ps51.Tests.ps1",
+  packagePath: "test-native-matlab-gateway-companion-ps51.ps1",
+  runtime: "powershell.exe-5.1",
+  readOnly: true
+});
 assert.equal(calculateImageRevision("platform"), config.expectedImageRevisions.platform);
 assert.equal(calculateImageRevision("worker"), config.expectedImageRevisions.worker);
 for (const inputs of Object.values(imageInputs)) {
@@ -59,8 +67,8 @@ for (const inputs of Object.values(imageInputs)) {
   assert.ok(!inputs.some((entry) => entry === "scripts/build-native-matlab-gateway-companion.mjs"));
 }
 
-assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v2");
-assert.equal(schema.properties.companionVersion.const, 2);
+assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v3");
+assert.equal(schema.properties.companionVersion.const, 3);
 assert.equal(schema.properties.serviceName.const, "SoftwareDocMatlabWorker");
 for (const field of [
   "sourceRevision",
@@ -70,15 +78,20 @@ for (const field of [
   "runtimeDependencies",
   "files",
   "toolFiles",
+  "validationFiles",
   "scan"
 ]) {
   assert.ok(schema.required.includes(field));
 }
 assert.equal(
   releaseSchema.properties.schema.const,
-  "sdg-native-matlab-gateway-companion-release/v2"
+  "sdg-native-matlab-gateway-companion-release/v3"
 );
-assert.equal(releaseSchema.properties.companionVersion.const, 2);
+assert.equal(releaseSchema.properties.companionVersion.const, 3);
+assert.ok(releaseSchema.required.includes("contents"));
+assert.equal(releaseSchema.properties.contents.properties.managedGatewayFileCount.const, 6);
+assert.equal(releaseSchema.properties.contents.properties.deploymentToolFileCount.const, 1);
+assert.equal(releaseSchema.properties.contents.properties.validationFileCount.const, 1);
 
 assert.match(wrapper, /software-doc-worker\.env/);
 assert.match(wrapper, /await import\("\.\/matlab-worker-server-runtime\.js"\)/);
@@ -111,6 +124,8 @@ assert.match(deployScript, /HealthTimeoutSeconds = 30/);
 assert.match(deployScript, /\$service\.Status -eq "Stopped"/);
 assert.match(deployScript, /Test-TcpPort/);
 assert.match(deployScript, /duplicate MATLAB_GATEWAY_EVALUATE_TOKEN keys/);
+assert.match(deployScript, /\$Manifest\.validationFiles/);
+assert.match(deployScript, /powershell\.exe-5\.1/);
 assert.match(deployScript, /MATLAB_GATEWAY_EVALUATE_TOKEN/);
 assert.match(deployScript, /MATLAB_GATEWAY_TOKEN/);
 assert.match(deployScript, /Invoke-GatewayReadiness/);
@@ -134,8 +149,10 @@ assert.match(builder, /dependencyChanges:\s*false/);
 assert.match(builder, /zip/);
 assert.doesNotMatch(builder, /docker/);
 assert.doesNotMatch(builder, /buildImage|buildx|docker push/);
-assert.match(builder, /native-matlab-gateway-companion-v2-/);
+assert.match(builder, /native-matlab-gateway-companion-v3-/);
 assert.match(builder, /companionVersion:\s*config\.companionVersion/);
+assert.match(builder, /validationFiles/);
+assert.match(builder, /validationFileCount:\s*validationFiles\.length/);
 
 for (const requiredCase of [
   "PS5.1 CSPRNG path",
@@ -150,6 +167,16 @@ for (const requiredCase of [
 }
 assert.match(ps51Tests, /Get-EnvKeyCount.*MATLAB_GATEWAY_EVALUATE_TOKEN/s);
 assert.match(ps51Tests, /ToBase64String\(\$restoredBytes\).*ToBase64String\(\$originalBytes\)/s);
+assert.match(ps51Tests, /return \[ScriptBlock\]::Create/);
+assert.match(ps51Tests, /^\.\s+\$functionImport$/m);
+assert.match(ps51Tests, /Get-Command -Name \$functionName -CommandType Function/);
+assert.match(ps51Tests, /not visible in script scope/);
+assert.doesNotMatch(ps51Tests, /Invoke-Expression \$definition\.Extent\.Text/);
+
+assert.match(ps51Workflow, /runs-on:\s*windows-2022/);
+assert.match(ps51Workflow, /powershell\.exe -NoProfile -Command/);
+assert.match(ps51Workflow, /StartsWith\("5\.1\."\)/);
+assert.match(ps51Workflow, /test-native-matlab-gateway-companion-ps51|native-gateway-companion-ps51\.Tests/);
 
 const productionDeploy = read("scripts/container-production.mjs");
 assert.match(productionDeploy, /evaluate_matlab_code/);

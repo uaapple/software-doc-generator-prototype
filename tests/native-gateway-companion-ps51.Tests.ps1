@@ -3,13 +3,21 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$scriptPath = Join-Path $RepositoryRoot "scripts\deploy-native-matlab-gateway.ps1"
+$repositoryScriptPath = Join-Path $RepositoryRoot "scripts\deploy-native-matlab-gateway.ps1"
+$packageScriptPath = Join-Path $RepositoryRoot "deploy-native-matlab-gateway.ps1"
+$scriptPath = if (Test-Path -LiteralPath $repositoryScriptPath -PathType Leaf) {
+  $repositoryScriptPath
+} elseif (Test-Path -LiteralPath $packageScriptPath -PathType Leaf) {
+  $packageScriptPath
+} else {
+  throw "PS5.1 test preflight failed: the protected deployment script was not found."
+}
 
 function Assert-True([bool]$Condition, [string]$Message) {
   if (-not $Condition) { throw $Message }
 }
 
-function Import-Functions([string[]]$Names) {
+function Get-FunctionImportScriptBlock([string[]]$Names) {
   $tokens = $null
   $errors = $null
   $ast = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -18,6 +26,7 @@ function Import-Functions([string[]]$Names) {
     [ref]$errors
   )
   Assert-True ($errors.Count -eq 0) "PowerShell parser rejected the deployment script."
+  $definitions = New-Object System.Collections.Generic.List[string]
   foreach ($name in $Names) {
     $definition = $ast.FindAll({
       param($node)
@@ -25,11 +34,12 @@ function Import-Functions([string[]]$Names) {
         $node.Name -eq $name
     }, $true) | Select-Object -First 1
     Assert-True ($null -ne $definition) "Missing function under test: $name"
-    Invoke-Expression $definition.Extent.Text
+    $definitions.Add($definition.Extent.Text)
   }
+  return [ScriptBlock]::Create(($definitions -join "`r`n`r`n"))
 }
 
-Import-Functions @(
+$requiredFunctions = @(
   "Get-Sha256",
   "Assert-AtomicReplacementTarget",
   "Invoke-AtomicFileReplace",
@@ -40,6 +50,15 @@ Import-Functions @(
   "Test-TcpPort",
   "Wait-GatewayHealth"
 )
+$functionImport = Get-FunctionImportScriptBlock $requiredFunctions
+. $functionImport
+
+foreach ($functionName in $requiredFunctions) {
+  $command = Get-Command -Name $functionName -CommandType Function -ErrorAction SilentlyContinue
+  Assert-True ($null -ne $command) (
+    "PS5.1 test import preflight failed: function '$functionName' is not visible in script scope."
+  )
+}
 
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
   "sdg-native-gateway-ps51-tests-{0}" -f ([Guid]::NewGuid().ToString("N"))
@@ -56,16 +75,16 @@ try {
 
   # Equal pre-existing evaluate tokens are a supported resumable production baseline.
   $existingPlan = Resolve-TokenPlan @{
-    MATLAB_GATEWAY_TOKEN = "approved-gateway-placeholder"
-    MATLAB_GATEWAY_EVALUATE_TOKEN = "same-evaluate-placeholder"
+    MATLAB_GATEWAY_TOKEN = "gw-test"
+    MATLAB_GATEWAY_EVALUATE_TOKEN = "eval-test"
   } @{
-    MATLAB_GATEWAY_TOKEN = "approved-gateway-placeholder"
-    MATLAB_GATEWAY_EVALUATE_TOKEN = "same-evaluate-placeholder"
+    MATLAB_GATEWAY_TOKEN = "gw-test"
+    MATLAB_GATEWAY_EVALUATE_TOKEN = "eval-test"
   } $true
   Assert-True (-not $existingPlan.requiresEvaluateTokenGeneration) (
     "Equal existing evaluate tokens unexpectedly requested regeneration."
   )
-  Assert-True ($existingPlan.evaluateToken -eq "same-evaluate-placeholder") (
+  Assert-True ($existingPlan.evaluateToken -eq "eval-test") (
     "Equal existing evaluate token was not preserved."
   )
 
