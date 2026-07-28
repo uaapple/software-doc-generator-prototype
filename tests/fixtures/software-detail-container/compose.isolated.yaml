@@ -1,0 +1,182 @@
+name: ${SDD_SYNTHETIC_PROJECT_NAME:-sdg-software-detail-synthetic}
+
+services:
+  permissions-init:
+    image: ${SDD_SYNTHETIC_NODE_IMAGE:-node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752}
+    user: "0:0"
+    read_only: true
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -eu
+      - -c
+    command:
+      - |
+        chmod 0777 /state/data /state/logs/platform /state/logs/worker
+        chown 10001:10001 /state/worker-hermes
+        chown 1000:1000 /state/platform-skills /state/platform-home
+    volumes:
+      - type: bind
+        source: ${SDD_SYNTHETIC_DATA_DIR:?set SDD_SYNTHETIC_DATA_DIR}
+        target: /state/data
+      - type: bind
+        source: ${SDD_SYNTHETIC_PLATFORM_LOG_DIR:?set SDD_SYNTHETIC_PLATFORM_LOG_DIR}
+        target: /state/logs/platform
+      - type: bind
+        source: ${SDD_SYNTHETIC_WORKER_LOG_DIR:?set SDD_SYNTHETIC_WORKER_LOG_DIR}
+        target: /state/logs/worker
+      - type: volume
+        source: worker-hermes
+        target: /state/worker-hermes
+      - type: volume
+        source: platform-skills
+        target: /state/platform-skills
+      - type: volume
+        source: platform-home
+        target: /state/platform-home
+
+  worker:
+    image: ${SDD_SYNTHETIC_WORKER_IMAGE:-sdg-software-detail-worker:synthetic-local}
+    build:
+      context: ../../..
+      dockerfile: containers/worker/Containerfile
+      args:
+        NODE_BASE_IMAGE: ${SDD_SYNTHETIC_NODE_IMAGE:-node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752}
+        PYTHON_BASE_IMAGE: ${SDD_SYNTHETIC_PYTHON_IMAGE:-python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317}
+    depends_on:
+      permissions-init:
+        condition: service_completed_successfully
+    init: true
+    restart: "no"
+    read_only: true
+    environment:
+      APP_ENV: test
+      APP_RUNTIME_ROLE: hermes-agent
+      APP_DATA_DIR: /var/lib/sdg/data
+      HERMES_HOST: 0.0.0.0
+      HERMES_PORT: "3101"
+      HERMES_BASE_URL: http://worker:3101
+      HERMES_HOME: /var/lib/sdg/hermes-home
+      HERMES_STATE_DB_PATH: /var/lib/sdg/hermes-home/state.db
+      HERMES_UPLOAD_TMPDIR: /var/lib/sdg/data/uploads
+      HERMES_AUTH_TOKEN: software-detail-synthetic-worker-token
+      HERMES_TASK_CONCURRENCY: "1"
+      SOFTWARE_DETAIL_STAGE_HERMES_SKILLS_DIR: /var/lib/sdg/hermes-home/skills
+      SOFTWARE_DETAIL_STAGE_HERMES_PROFILE: synthetic-container
+      SOFTWARE_DETAIL_SYNTHETIC_PYTHON: /opt/sdg/venv/bin/python
+      TCSD_PIPELINE_PYTHON: /opt/sdg/venv/bin/python
+      UNIT_TEST_CASE_PROJECT_ADDON_ROOT: /var/lib/sdg/project-addons
+      UNIT_TEST_CASE_DEFAULT_PROJECTS: 01_合成项目
+      MATLAB_MCP_BASE_URL: http://host.docker.internal:${SDD_SYNTHETIC_GATEWAY_PORT:?set SDD_SYNTHETIC_GATEWAY_PORT}
+      MATLAB_GATEWAY_BASE_URL: http://host.docker.internal:${SDD_SYNTHETIC_GATEWAY_PORT:?set SDD_SYNTHETIC_GATEWAY_PORT}
+      SATK_GATEWAY_URL: http://host.docker.internal:${SDD_SYNTHETIC_GATEWAY_PORT:?set SDD_SYNTHETIC_GATEWAY_PORT}
+      MATLAB_GATEWAY_TOKEN: software-detail-synthetic-gateway-token
+      MATLAB_MCP_AUTH_TOKEN: software-detail-synthetic-gateway-token
+      MATLAB_GATEWAY_EVALUATE_TOKEN: software-detail-synthetic-evaluate-token
+      SATK_GATEWAY_MAPPING_ID: worker-data
+      MATLAB_GATEWAY_CONTAINER_ROOT: /var/lib/sdg/data
+      MATLAB_MCP_TIMEOUT_MS: "30000"
+      TMPDIR: /var/lib/sdg/tmp
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 127.0.0.1:${SDD_SYNTHETIC_WORKER_PORT:?set SDD_SYNTHETIC_WORKER_PORT}:3101
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+      - /var/lib/sdg/tmp:rw,nosuid,size=128m
+    volumes:
+      - type: bind
+        source: ${SDD_SYNTHETIC_DATA_DIR:?set SDD_SYNTHETIC_DATA_DIR}
+        target: /var/lib/sdg/data
+      - type: bind
+        source: ${SDD_SYNTHETIC_ADDON_DIR:?set SDD_SYNTHETIC_ADDON_DIR}
+        target: /var/lib/sdg/project-addons
+        read_only: true
+      - type: bind
+        source: ${SDD_SYNTHETIC_WORKER_LOG_DIR:?set SDD_SYNTHETIC_WORKER_LOG_DIR}
+        target: /var/lib/sdg/logs
+      - type: volume
+        source: worker-hermes
+        target: /var/lib/sdg/hermes-home
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3101/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
+
+  platform:
+    image: ${SDD_SYNTHETIC_PLATFORM_IMAGE:-sdg-software-detail-platform:synthetic-local}
+    build:
+      context: ../../..
+      dockerfile: docker/platform.Containerfile
+      args:
+        NODE_BASE_IMAGE: ${SDD_SYNTHETIC_NODE_IMAGE:-node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752}
+    depends_on:
+      permissions-init:
+        condition: service_completed_successfully
+      worker:
+        condition: service_healthy
+    init: true
+    restart: "no"
+    read_only: true
+    environment:
+      APP_ENV: test
+      APP_RUNTIME_ROLE: platform
+      APP_DATA_DIR: /var/lib/sdg/data
+      APP_SKILLS_DIR: /var/lib/sdg/skills
+      HOME: /var/lib/sdg/home
+      HOST: 0.0.0.0
+      PORT: "3000"
+      HERMES_TRANSPORT: api
+      HERMES_BASE_URL: http://worker:3101
+      HERMES_API_MODE: upload
+      HERMES_AUTH_TOKEN: software-detail-synthetic-worker-token
+      UNIT_TEST_DEFAULT_WORKER_ID: synthetic-worker
+      UNIT_TEST_CASE_DEFAULT_PROJECTS: 01_合成项目
+      UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS: "60000"
+      UNIT_TEST_CASE_RECONCILE_INTERVAL_MS: "200"
+      UNIT_TEST_WORKER_PROFILES_JSON: >-
+        {"workers":[{"id":"synthetic-worker","label":"软件详设容器合成 Worker","hermesTransport":"api","hermesBaseURL":"http://worker:3101","hermesApiMode":"upload","hermesAuthToken":"software-detail-synthetic-worker-token","matlabBaseURL":"http://host.docker.internal:${SDD_SYNTHETIC_GATEWAY_PORT}","matlabHttpMode":"gateway","matlabAuthToken":"software-detail-synthetic-gateway-token"}]}
+      MATLAB_MCP_BASE_URL: http://host.docker.internal:${SDD_SYNTHETIC_GATEWAY_PORT:?set SDD_SYNTHETIC_GATEWAY_PORT}
+      MATLAB_MCP_AUTH_TOKEN: software-detail-synthetic-gateway-token
+      SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT: ""
+      TMPDIR: /tmp
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 127.0.0.1:${SDD_SYNTHETIC_PLATFORM_PORT:?set SDD_SYNTHETIC_PLATFORM_PORT}:3000
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+    volumes:
+      - type: bind
+        source: ${SDD_SYNTHETIC_DATA_DIR:?set SDD_SYNTHETIC_DATA_DIR}
+        target: /var/lib/sdg/data
+      - type: bind
+        source: ${SDD_SYNTHETIC_PLATFORM_LOG_DIR:?set SDD_SYNTHETIC_PLATFORM_LOG_DIR}
+        target: /var/log/sdg
+      - type: volume
+        source: platform-skills
+        target: /var/lib/sdg/skills
+      - type: volume
+        source: platform-home
+        target: /var/lib/sdg/home
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 2s
+
+volumes:
+  worker-hermes:
+  platform-skills:
+  platform-home:

@@ -27,6 +27,8 @@
     "test:software-detail-worker": "node --disable-warning=ExperimentalWarning tests/software-detail-worker-components-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-detail-worker-pipeline-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-detail-worker-api-tests.mjs",
     "test:software-detail-transport": "node --disable-warning=ExperimentalWarning tests/software-detail-pipeline-transport-client-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-module-description-transport-regression.mjs",
     "test:software-detail-full-http": "node --disable-warning=ExperimentalWarning tests/software-detail-full-http-flow-tests.mjs",
+    "test:software-detail-container-flow": "node --disable-warning=ExperimentalWarning tests/software-detail-container-flow-tests.mjs",
+    "test:software-detail-container-flow:static": "node --disable-warning=ExperimentalWarning tests/software-detail-container-flow-static-tests.mjs",
     "test:linux-release-rollback": "sh tests/rollback-linux-release-tests.sh",
     "test:release-rollback-packages": "node tests/release-rollback-package-tests.mjs",
     "check:wiki": "node scripts/check-wiki.mjs",
