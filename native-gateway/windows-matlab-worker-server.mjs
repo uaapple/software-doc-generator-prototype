@@ -191,7 +191,14 @@ function normalizeWindowsPath(value) {
 }
 
 function canonicalWindowsPath(value) {
-  return path.win32.resolve(String(value || "").trim());
+  const candidate = String(value || "").trim();
+  if (!isFullyQualifiedWindowsPath(candidate)) {
+    throw configurationError(
+      "HOST_ROOT_ABSOLUTE_REQUIRED",
+      "The Gateway host root must be an absolute Windows path."
+    );
+  }
+  return path.win32.resolve(candidate);
 }
 
 function isFullyQualifiedWindowsPath(value) {
