@@ -1,0 +1,107 @@
+{
+  "schema": "software-detail-runtime-source-manifest/v1",
+  "version": "1.0.0",
+  "authoritativeSource": {
+    "commit": "ce5d3c2c08788fa8ab9013f18bd985f7355df0b6",
+    "root": "skills/hermes/simulink-module-description-generator",
+    "wave0MapPath": "docs/software-detail-skill-stage-map.json"
+  },
+  "contractSource": {
+    "path": "SKILL.md",
+    "blobSha1": "8e99cda6da9b54153b73476f884b463ebe8b1bc4",
+    "contentSha256": "f9b9fb108ad5bee97597f9dc01a59cf37a6f85f0afd619b21b78df291f8d1dae",
+    "copiedIntoRuntime": false,
+    "purpose": "Wave0 clause and entry-contract source"
+  },
+  "sharedRuleSet": {
+    "runtimePath": "shared/software-detail-shared-rules.json",
+    "wave0FutureRuntimePath": "shared/software-detail-shared-rules.json",
+    "requiredConsumerStageCount": 9
+  },
+  "discoveryTransformationEvidence": {
+    "sourceRuntimePath": "agents/openai.yaml",
+    "sourceBlobSha1": "462f4e3e6d501a6a7f277ccf77a961a7f3046f3e",
+    "sourceContentSha256": "e7c16cecdb859f7c7bc960bd08fbae3aa801193f6d5ba7325b2b2215794c00fc",
+    "wave0JsonPointer": "/pipelineEntryTransformation",
+    "requiredStageCount": 9,
+    "materializedStageMetadataPaths": [
+      "skills/hermes/software-detail-stage-01-initialize/agents/openai.yaml",
+      "skills/hermes/software-detail-stage-02-model-plan/agents/openai.yaml",
+      "skills/hermes/software-detail-stage-03-evidence-extract/agents/openai.yaml"
+    ]
+  },
+  "resources": [
+    {
+      "path": "agents/openai.yaml",
+      "type": "metadata",
+      "blobSha1": "462f4e3e6d501a6a7f277ccf77a961a7f3046f3e",
+      "contentSha256": "e7c16cecdb859f7c7bc960bd08fbae3aa801193f6d5ba7325b2b2215794c00fc"
+    },
+    {
+      "path": "references/a07-granularity-pattern.md",
+      "type": "reference",
+      "blobSha1": "7c8fbef7afb1d49d602038972df583cac9ecafa9",
+      "contentSha256": "8ab278c50cc144853abd20274a25cd030ab5680f7dd653f46837c8bdecef450c"
+    },
+    {
+      "path": "references/model-evidence.md",
+      "type": "reference",
+      "blobSha1": "543583b153da16c909f5986bf83f7d952d50680a",
+      "contentSha256": "eaaf1a39c549cc1d7fc755dd17240bae0c2c7855e2d7d1214e8bd95ad487322b"
+    },
+    {
+      "path": "references/module-boundary.md",
+      "type": "reference",
+      "blobSha1": "d1304455d45cf42d801bcfe7d5248c7ea6d5b523",
+      "contentSha256": "33f154c9a9790a24f3964df59f4be241cf7de0e87f028e581936a03a062bb109"
+    },
+    {
+      "path": "references/template-filling.md",
+      "type": "reference",
+      "blobSha1": "03d5283e117a58e73dc7c3d5edd8c3ae7e1ab06a",
+      "contentSha256": "0017aa3c0bafb69fd8ec25da38944a0c4d2c57a811781fd0e0c94d524a04ac52"
+    },
+    {
+      "path": "references/writing-rules.md",
+      "type": "reference",
+      "blobSha1": "ce984b449364f5e9064085a45e76102e81bd3fc9",
+      "contentSha256": "04c28ce195b7da5da7c6cade06db9674c4e0945685614dc8d3acd4b7b0360ad4"
+    },
+    {
+      "path": "scripts/collect_module_doc_evidence.m",
+      "type": "script",
+      "blobSha1": "0287d44fea396036b0db979c736344ddd8fe97ab",
+      "contentSha256": "9a7edbd4d5f5a4869518668e1bbed3adb8801f12d847491212d4992377424724"
+    },
+    {
+      "path": "scripts/docx_list_format.py",
+      "type": "script",
+      "blobSha1": "8c206d6a6dd90cdbd05b259dc852bd32bc363e62",
+      "contentSha256": "debb52338fe63b21e535260301154d74d0595630031d5c959cf8f2403888ff66"
+    },
+    {
+      "path": "scripts/satk_eval.py",
+      "type": "script",
+      "blobSha1": "f3ea0c6a6fd6506ff65352c498433375b496ad22",
+      "contentSha256": "336f74fafe3e828879d1b6e59dd88ee0158d2e8540be51bd66fe4f010ab7fefb"
+    },
+    {
+      "path": "scripts/setup_module_doc_support.m",
+      "type": "script",
+      "blobSha1": "9b02706e9b9159412aa9a7163a04aad435d908d7",
+      "contentSha256": "567b94ffb6786ffdab42bedd6d70995fa2b530892eeaf63ec5f3e4e857f8b518"
+    },
+    {
+      "path": "scripts/validate_narrative_boundary.py",
+      "type": "script",
+      "blobSha1": "386c14fe404e5f77161c892e547d47a965064612",
+      "contentSha256": "08a8014e80c91ee0945eef9a283afde954e03098c524fe9824460a5cf757ed74"
+    },
+    {
+      "path": "assets/templates/Template_Software_Detailed_Design.docx",
+      "type": "template",
+      "blobSha1": "1a47686e7453b59b57ac3a4b0b819328eee6e961",
+      "contentSha256": "5a28381e67cd009032324f6f645aa0d7966c8f945922857cf751b7c3d7adcbb7"
+    }
+  ]
+}
