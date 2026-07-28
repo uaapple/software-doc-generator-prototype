@@ -145,7 +145,7 @@ assert.deepEqual(
     ["boundary-projection", "behavior-groups", "narrative-plan"],
     ["architecture-draft"],
     ["module-draft"],
-    ["content-check-report", "checked-content"],
+    ["checked-content", "content-check-report"],
     ["detail-design-docx", "artifact-manifest"]
   ]
 );

@@ -155,8 +155,8 @@ const definitions = [
       input("module-draft", "software-detail-stage-07-module-draft")
     ],
     outputs: [
-      output("content-check-report"),
-      output("checked-content")
+      output("checked-content"),
+      output("content-check-report")
     ]
   },
   {
