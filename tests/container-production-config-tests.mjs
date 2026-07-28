@@ -23,7 +23,12 @@ for (const required of [
   ".env.windows-docker-desktop.example",
   ".env.linux-container-prod.example",
   "scripts/container-production.mjs",
-  "scripts/build-container-release.mjs"
+  "scripts/build-container-release.mjs",
+  "scripts/build-native-matlab-gateway-companion.mjs",
+  "scripts/deploy-native-matlab-gateway.ps1",
+  "deploy/native-matlab-gateway-companion.json",
+  "deploy/schemas/native-matlab-gateway-companion.schema.json",
+  "deploy/schemas/native-matlab-gateway-companion-release.schema.json"
 ]) {
   assert.ok(fs.existsSync(path.join(rootDir, required)), `${required} must exist`);
 }
@@ -65,6 +70,11 @@ assert.match(releaseBuilder, /registryReference/);
 assert.doesNotMatch(releaseBuilder, /BUILD_CREATED/);
 assert.doesNotMatch(read("docker/platform.Containerfile"), /BUILD_CREATED|image\.created/);
 assert.doesNotMatch(read("containers/worker/Containerfile"), /BUILD_CREATED|image\.created/);
+assert.doesNotMatch(
+  read("scripts/build-native-matlab-gateway-companion.mjs"),
+  /docker|buildx|buildImage/,
+  "Native Gateway companion release must not rebuild container images"
+);
 assert.ok(
   read("docker/platform.Containerfile").indexOf("ARG IMAGE_REVISION") >
     read("docker/platform.Containerfile").indexOf("COPY --from=production-dependencies"),
