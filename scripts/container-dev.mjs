@@ -29,6 +29,18 @@ const requiredSecrets = [
   "MATLAB_GATEWAY_TOKEN",
   "MATLAB_GATEWAY_EVALUATE_TOKEN"
 ];
+const hermesProviderRequirements = {
+  deepseek: {
+    model: ["HERMES_INFERENCE_MODEL"],
+    credential: ["DEEPSEEK_API_KEY"],
+    baseUrl: ["DEEPSEEK_BASE_URL"]
+  },
+  zai: {
+    model: ["HERMES_INFERENCE_MODEL", "ZHIPU_MODEL"],
+    credential: ["GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY", "ZHIPU_API_KEY"],
+    baseUrl: ["GLM_BASE_URL", "ZHIPU_BASE_URL"]
+  }
+};
 
 function readEnvFile(filePath) {
   const values = {};
@@ -70,10 +82,34 @@ function validateRequiredSecrets() {
   const missing = requiredSecrets.filter(
     (key) => !String(process.env[key] || envValues[key] || "").trim()
   );
+  const provider = getConfigValue("HERMES_INFERENCE_PROVIDER").toLowerCase();
+  if (!provider) {
+    missing.push("HERMES_INFERENCE_PROVIDER");
+  } else {
+    const requirements = hermesProviderRequirements[provider];
+    if (!requirements) {
+      throw new Error(
+        `Container preflight has no credential mapping for HERMES_INFERENCE_PROVIDER=${provider}.`
+      );
+    }
+    requireOneOf(missing, requirements.model);
+    requireOneOf(missing, requirements.credential);
+    requireOneOf(missing, requirements.baseUrl);
+  }
   if (missing.length) {
     throw new Error(
       `Container preflight requires non-empty ${missing.join(", ")} in ${path.basename(envPath)}.`
     );
+  }
+}
+
+function getConfigValue(key) {
+  return String(process.env[key] || envValues[key] || "").trim();
+}
+
+function requireOneOf(missing, keys) {
+  if (!keys.some((key) => getConfigValue(key))) {
+    missing.push(keys.join(" or "));
   }
 }
 

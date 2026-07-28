@@ -38,7 +38,11 @@ assert.doesNotMatch(compose, /MATLAB_ROOT|SATK_MATLAB_ROOT/);
 const platformService = compose.match(
   /^  platform:\n([\s\S]*?)(?=^  [A-Za-z0-9_-]+:\n|^volumes:\n)/m
 )?.[0] || "";
+const workerService = compose.match(
+  /^  worker:\n([\s\S]*?)(?=^  [A-Za-z0-9_-]+:\n|^volumes:\n)/m
+)?.[0] || "";
 assert.ok(platformService, "compose must define the platform service");
+assert.ok(workerService, "compose must define the worker service");
 assert.match(
   platformService,
   /<<:\s*\*runtime-defaults/,
@@ -122,9 +126,19 @@ assert.doesNotMatch(
 assert.match(containerDevScript, /verifyWritableMounts/);
 assert.match(containerDevScript, /verifyWorkerGatewayReachability/);
 assert.match(containerDevScript, /"config", "--quiet"/);
+assert.match(workerService, /HERMES_INFERENCE_PROVIDER:/);
+assert.match(workerService, /HERMES_INFERENCE_MODEL:/);
+assert.match(workerService, /DEEPSEEK_API_KEY:/);
+assert.match(workerService, /DEEPSEEK_BASE_URL:/);
+assert.match(workerService, /GLM_API_KEY:/);
+assert.match(workerService, /GLM_BASE_URL:/);
+assert.doesNotMatch(platformService, /DEEPSEEK_API_KEY|DEEPSEEK_BASE_URL|GLM_API_KEY|GLM_BASE_URL/);
 
 const envExample = read(".env.container.example");
 assert.doesNotMatch(envExample, /(?:API_KEY|AUTH_TOKEN|PASSWORD|SECRET)[ \t]*=[ \t]*\S+/);
+assert.match(envExample, /^HERMES_INFERENCE_PROVIDER=deepseek$/m);
+assert.match(envExample, /^HERMES_INFERENCE_MODEL=deepseek-v4-pro$/m);
+assert.match(envExample, /^DEEPSEEK_BASE_URL=https:\/\/api\.deepseek\.com$/m);
 
 const boundaryCheck = spawnSync(process.execPath, ["scripts/check-container-boundaries.mjs"], {
   cwd: rootDir,
@@ -158,10 +172,68 @@ const emptyPreflight = spawnSync(process.execPath, ["scripts/container-dev.mjs",
 assert.notEqual(emptyPreflight.status, 0);
 assert.match(emptyPreflight.stderr, /HERMES_AGENT_TOKEN/);
 assert.match(emptyPreflight.stderr, /MATLAB_GATEWAY_TOKEN/);
+assert.match(emptyPreflight.stderr, /DEEPSEEK_API_KEY/);
 
+testProviderPreflightFailsClosed();
+testHermesProviderComposeMapping();
 testQuietConfigDoesNotExposeSecrets();
 
 console.log("Container configuration tests passed.");
+
+function testProviderPreflightFailsClosed() {
+  assertPreflightFailure(
+    [
+      "HERMES_INFERENCE_PROVIDER=deepseek",
+      "HERMES_INFERENCE_MODEL=deepseek-v4-pro",
+      "DEEPSEEK_BASE_URL=https://api.deepseek.com"
+    ],
+    /DEEPSEEK_API_KEY/
+  );
+  assertPreflightFailure(
+    [
+      "HERMES_INFERENCE_PROVIDER=deepseek",
+      "DEEPSEEK_API_KEY=deepseek-test-placeholder",
+      "DEEPSEEK_BASE_URL=https://api.deepseek.com"
+    ],
+    /HERMES_INFERENCE_MODEL/
+  );
+  assertPreflightFailure(
+    [
+      "HERMES_INFERENCE_PROVIDER=zai",
+      "HERMES_INFERENCE_MODEL=glm-compatibility-model",
+      "ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4"
+    ],
+    /GLM_API_KEY or ZAI_API_KEY or Z_AI_API_KEY or ZHIPU_API_KEY/
+  );
+}
+
+function assertPreflightFailure(providerLines, expectedError) {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-provider-preflight-"));
+  const envFile = path.join(temporaryDirectory, "container.env");
+  try {
+    fs.writeFileSync(
+      envFile,
+      [
+        ...providerLines,
+        "HERMES_AGENT_TOKEN=hermes-test-placeholder",
+        "MATLAB_GATEWAY_TOKEN=gateway-test-placeholder",
+        "MATLAB_GATEWAY_EVALUATE_TOKEN=evaluate-test-placeholder"
+      ].join("\n"),
+      "utf8"
+    );
+    const childEnv = withoutHermesProviderEnvironment(process.env);
+    childEnv.SDG_CONTAINER_ENV_FILE = envFile;
+    const result = spawnSync(process.execPath, ["scripts/container-dev.mjs", "config"], {
+      cwd: rootDir,
+      encoding: "utf8",
+      env: childEnv
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, expectedError);
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
 
 function testQuietConfigDoesNotExposeSecrets() {
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-container-config-"));
@@ -172,6 +244,7 @@ function testQuietConfigDoesNotExposeSecrets() {
   const sentinels = [
     "openai-secret-sentinel",
     "zhipu-secret-sentinel",
+    "deepseek-secret-sentinel",
     "hermes-secret-sentinel",
     "gateway-secret-sentinel",
     "evaluate-secret-sentinel"
@@ -188,9 +261,13 @@ function testQuietConfigDoesNotExposeSecrets() {
       [
         `OPENAI_API_KEY=${sentinels[0]}`,
         `ZHIPU_API_KEY=${sentinels[1]}`,
-        `HERMES_AGENT_TOKEN=${sentinels[2]}`,
-        `MATLAB_GATEWAY_TOKEN=${sentinels[3]}`,
-        `MATLAB_GATEWAY_EVALUATE_TOKEN=${sentinels[4]}`,
+        "HERMES_INFERENCE_PROVIDER=deepseek",
+        "HERMES_INFERENCE_MODEL=deepseek-v4-pro",
+        `DEEPSEEK_API_KEY=${sentinels[2]}`,
+        "DEEPSEEK_BASE_URL=https://api.deepseek.com",
+        `HERMES_AGENT_TOKEN=${sentinels[3]}`,
+        `MATLAB_GATEWAY_TOKEN=${sentinels[4]}`,
+        `MATLAB_GATEWAY_EVALUATE_TOKEN=${sentinels[5]}`,
         `SDG_CONTAINER_DATA_DIR=${path.join(temporaryDirectory, "data")}`,
         `SDG_PROJECT_ADDONS_DIR=${path.join(temporaryDirectory, "addons")}`,
         `SDG_PLATFORM_LOG_DIR=${path.join(temporaryDirectory, "platform-logs")}`,
@@ -254,4 +331,103 @@ function testQuietConfigDoesNotExposeSecrets() {
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
+}
+
+function testHermesProviderComposeMapping() {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-provider-config-"));
+  try {
+    const deepseek = renderComposeConfig(
+      temporaryDirectory,
+      "deepseek.env",
+      [
+        "HERMES_INFERENCE_PROVIDER=deepseek",
+        "HERMES_INFERENCE_MODEL=deepseek-v4-pro",
+        "DEEPSEEK_API_KEY=deepseek-test-placeholder",
+        "DEEPSEEK_BASE_URL=https://api.deepseek.com"
+      ]
+    );
+    assert.equal(deepseek.services.worker.environment.HERMES_INFERENCE_PROVIDER, "deepseek");
+    assert.equal(deepseek.services.worker.environment.HERMES_INFERENCE_MODEL, "deepseek-v4-pro");
+    assert.equal(deepseek.services.worker.environment.DEEPSEEK_API_KEY, "deepseek-test-placeholder");
+    assert.equal(
+      deepseek.services.worker.environment.DEEPSEEK_BASE_URL,
+      "https://api.deepseek.com"
+    );
+    assert.ok(!Object.hasOwn(deepseek.services.platform.environment, "DEEPSEEK_API_KEY"));
+    assert.ok(!Object.hasOwn(deepseek.services.platform.environment, "GLM_API_KEY"));
+
+    const zai = renderComposeConfig(
+      temporaryDirectory,
+      "zai.env",
+      [
+        "HERMES_INFERENCE_PROVIDER=zai",
+        "HERMES_INFERENCE_MODEL=",
+        "ZHIPU_MODEL=glm-compatibility-model",
+        "ZHIPU_API_KEY=zai-test-placeholder",
+        "ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4"
+      ]
+    );
+    assert.equal(zai.services.worker.environment.HERMES_INFERENCE_PROVIDER, "zai");
+    assert.equal(zai.services.worker.environment.HERMES_INFERENCE_MODEL, "glm-compatibility-model");
+    assert.equal(zai.services.worker.environment.GLM_API_KEY, "zai-test-placeholder");
+    assert.equal(
+      zai.services.worker.environment.GLM_BASE_URL,
+      "https://open.bigmodel.cn/api/paas/v4"
+    );
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+function renderComposeConfig(temporaryDirectory, fileName, providerLines) {
+  const envFile = path.join(temporaryDirectory, fileName);
+  fs.writeFileSync(
+    envFile,
+    [
+      ...providerLines,
+      "HERMES_AGENT_TOKEN=hermes-test-placeholder",
+      "MATLAB_GATEWAY_TOKEN=gateway-test-placeholder",
+      "MATLAB_GATEWAY_EVALUATE_TOKEN=evaluate-test-placeholder"
+    ].join("\n"),
+    "utf8"
+  );
+  const childEnv = withoutHermesProviderEnvironment(process.env);
+  const result = spawnSync(
+    "docker",
+    [
+      "compose",
+      "--env-file",
+      envFile,
+      "--file",
+      path.join(rootDir, "compose.yaml"),
+      "--file",
+      path.join(rootDir, "compose.mac.yaml"),
+      "config",
+      "--format",
+      "json"
+    ],
+    { cwd: rootDir, encoding: "utf8", env: childEnv }
+  );
+  assert.equal(result.status, 0, "docker compose config must render the provider mapping");
+  return JSON.parse(result.stdout);
+}
+
+function withoutHermesProviderEnvironment(source) {
+  const childEnv = { ...source };
+  for (const key of [
+    "HERMES_INFERENCE_PROVIDER",
+    "HERMES_INFERENCE_MODEL",
+    "DEEPSEEK_API_KEY",
+    "DEEPSEEK_BASE_URL",
+    "GLM_API_KEY",
+    "GLM_BASE_URL",
+    "ZAI_API_KEY",
+    "Z_AI_API_KEY",
+    "ZHIPU_API_KEY",
+    "ZHIPU_MODEL",
+    "ZHIPU_BASE_URL"
+  ]) {
+    delete childEnv[key];
+  }
+  return childEnv;
 }

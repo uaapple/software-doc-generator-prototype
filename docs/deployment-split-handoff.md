@@ -21,6 +21,22 @@ addon、日志、secrets、模型/MAT/SLX 和 MATLAB 许可证始终位于镜像
 携带源码 SHA、基础镜像引用、运行时版本、技能 hash、应用镜像 digest、SBOM、
 依赖许可证结果和漏洞扫描结果；不能把本地可变 tag 当成发布证据。
 
+### Hermes Agent 0.18.2 推理配置边界
+
+Hermes Agent 0.18.2 不会自动把应用层 `ZHIPU_*` 配置解释成 Hermes CLI 的
+provider 选择。Mac 与 Windows Worker 使用同一 worker 镜像时，Compose 必须
+显式传入 `HERMES_INFERENCE_PROVIDER` 与 `HERMES_INFERENCE_MODEL`，再按
+provider 注入其原生变量。当前 Mac 主路径为 `deepseek`，使用
+`deepseek-v4-pro`、`DEEPSEEK_API_KEY` 与
+`DEEPSEEK_BASE_URL=https://api.deepseek.com`；兼容的 `zai` 路径把现有
+`ZHIPU_MODEL`、`ZHIPU_API_KEY`、`ZHIPU_BASE_URL` 映射为 Hermes 识别的
+model、`GLM_API_KEY` 与 `GLM_BASE_URL`。
+
+这些 provider 凭据只能在运行时注入 Worker，不得进入镜像层、Git、
+`config.yaml` 或日志。Linux platform 不运行 Hermes CLI，因此不得获得
+`DEEPSEEK_API_KEY`、`GLM_API_KEY`、`ZAI_API_KEY` 或 `Z_AI_API_KEY`；
+平台与 Worker 之间只共享独立的 `HERMES_AGENT_TOKEN`。
+
 ## 关键提交
 
 与新拆分流程相关的提交：
