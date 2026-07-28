@@ -6,6 +6,133 @@
     <title>软件详设生成</title>
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/feedback-widget.css" />
+    <style>
+      body[data-page-kind="software-module-description-generation"] .module-description-pipeline {
+        display: grid;
+        gap: 14px;
+        padding: 16px;
+        border-color: rgba(19, 81, 151, 0.28);
+        background: #f7fbff;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-pipeline-head,
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-title {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-pipeline-head p,
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-meta,
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-error {
+        margin: 4px 0 0;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-pipeline-head p,
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-meta {
+        color: var(--ink-soft);
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-pipeline-head > span,
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-title > span {
+        flex: 0 0 auto;
+        padding: 4px 9px;
+        border-radius: 999px;
+        color: var(--ink-soft);
+        font-size: 12px;
+        font-weight: 700;
+        background: #e7eef6;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-list {
+        display: grid;
+        gap: 9px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 10px;
+        padding: 11px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-index {
+        color: var(--ink-soft);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-content {
+        min-width: 0;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage.is-running {
+        border-color: rgba(19, 81, 151, 0.65);
+        background: #eef7ff;
+        box-shadow: inset 4px 0 0 var(--brand);
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-running .module-description-stage-title > span {
+        color: var(--warning);
+        background: var(--warning-soft);
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-completed .module-description-stage-title > span {
+        color: var(--success);
+        background: var(--success-soft);
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-failed {
+        border-color: rgba(181, 72, 67, 0.35);
+        background: var(--danger-soft);
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-failed .module-description-stage-title > span,
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-error {
+        color: var(--danger);
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-technical {
+        margin-top: 6px;
+        color: var(--ink-soft);
+        font-size: 12px;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-technical summary {
+        width: fit-content;
+        cursor: pointer;
+      }
+
+      body[data-page-kind="software-module-description-generation"] .module-description-stage-technical code {
+        display: block;
+        margin-top: 5px;
+        overflow-wrap: anywhere;
+      }
+
+      @media (max-width: 520px) {
+        body[data-page-kind="software-module-description-generation"] .module-description-pipeline-head,
+        body[data-page-kind="software-module-description-generation"] .module-description-stage-title {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        body[data-page-kind="software-module-description-generation"] .module-description-pipeline-head > span,
+        body[data-page-kind="software-module-description-generation"] .module-description-stage-title > span {
+          width: fit-content;
+        }
+
+        body[data-page-kind="software-module-description-generation"] .module-description-stage {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
   </head>
   <body data-page-kind="software-module-description-generation">
     <main class="layout">
@@ -77,7 +204,7 @@
           <label class="module-description-worker-field">
             <span>Worker</span>
             <select id="module-description-worker-select" name="workerId" required>
-              <option value="">Loading workers...</option>
+              <option value="">正在加载 Worker...</option>
             </select>
             <p id="module-description-worker-status" class="status" hidden></p>
           </label>

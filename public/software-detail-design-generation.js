@@ -40,6 +40,28 @@ const STATUS_LABELS = {
   failed: "失败"
 };
 
+const STAGE_STATUS_LABELS = Object.freeze({
+  pending: "等待中",
+  queued: "等待中",
+  running: "运行中",
+  completed: "已完成",
+  failed: "失败"
+});
+
+const STAGE_TITLE_FALLBACKS = Object.freeze({
+  "software-detail-stage-01-initialize": "初始化输入与任务工作区",
+  "software-detail-stage-02-model-plan": "建立模型索引与分析计划",
+  "software-detail-stage-03-evidence-extract": "提取模型证据",
+  "software-detail-stage-04-output-ledger": "整理输出台账与覆盖情况",
+  "software-detail-stage-05-boundary-projection": "投影文档边界与行为分组",
+  "software-detail-stage-06-architecture-draft": "编写架构与接口内容",
+  "software-detail-stage-07-module-draft": "编写模块详细内容",
+  "software-detail-stage-08-content-check": "检查并修订内容",
+  "software-detail-stage-09-docx-finalize": "生成并整理详细设计文档"
+});
+
+const CHINESE_STAGE_ORDINALS = Object.freeze(["一", "二", "三", "四", "五", "六", "七", "八", "九"]);
+
 function escapeHtml(value = "") {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -66,6 +88,106 @@ function formatBytes(value = 0) {
 
 function isActiveStatus(status = "") {
   return status === "queued" || status === "running";
+}
+
+function stageErrorMessage(error = null) {
+  if (typeof error === "string") {
+    return error.trim();
+  }
+  if (!error || typeof error !== "object") {
+    return "";
+  }
+  return String(error.safeMessage || error.message || error.errorMessage || "").trim();
+}
+
+function renderSoftwareDetailPipeline(task = {}) {
+  const stages = Array.isArray(task.pipeline?.stages)
+    ? task.pipeline.stages
+        .filter((stage) => stage && typeof stage === "object")
+        .slice()
+        .sort((left, right) => Number(left.order || 0) - Number(right.order || 0))
+    : [];
+  if (!stages.length) {
+    return "";
+  }
+
+  const completedCount = stages.filter((stage) => stage.status === "completed").length;
+  const runningStage = stages.find((stage) => stage.status === "running");
+  const failedStage = stages.find((stage) => stage.status === "failed");
+  const activeStage = runningStage || failedStage;
+  const activeLabel = activeStage
+    ? activeStage.title || STAGE_TITLE_FALLBACKS[activeStage.id] || "当前阶段"
+    : completedCount === stages.length
+      ? "全部阶段已完成"
+      : "等待下一阶段";
+
+  return `
+    <section class="module-description-section module-description-pipeline" aria-labelledby="module-description-pipeline-title">
+      <div class="module-description-pipeline-head">
+        <div>
+          <h3 id="module-description-pipeline-title">九阶段生成进度</h3>
+          <p>已完成 ${completedCount}/${stages.length} · ${escapeHtml(activeLabel)}</p>
+        </div>
+        <span>${escapeHtml(STAGE_STATUS_LABELS[task.pipeline?.status] || STATUS_LABELS[task.pipeline?.status] || "状态未知")}</span>
+      </div>
+      <ol class="module-description-stage-list">
+        ${stages
+          .map((stage, index) => {
+            const status = STAGE_STATUS_LABELS[stage.status] || "状态未知";
+            const title = stage.title || STAGE_TITLE_FALLBACKS[stage.id] || `阶段 ${index + 1}`;
+            const ordinal = CHINESE_STAGE_ORDINALS[index] || String(index + 1);
+            const attempt = Number(stage.attempt || 0);
+            const startedAt = formatTime(stage.startedAt);
+            const endedAt = formatTime(stage.endedAt);
+            const errorMessage = stageErrorMessage(stage.error);
+            const timeParts = [
+              startedAt ? `开始：${startedAt}` : "",
+              endedAt ? `结束：${endedAt}` : ""
+            ].filter(Boolean);
+            const classNames = [
+              "module-description-stage",
+              `module-description-stage-${String(stage.status || "pending").replace(/[^a-z-]/g, "")}`,
+              stage.status === "running" ? "is-running" : ""
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return `
+              <li class="${classNames}"${stage.status === "running" ? ' aria-current="step"' : ""}>
+                <span class="module-description-stage-index">第${ordinal}阶段</span>
+                <div class="module-description-stage-content">
+                  <div class="module-description-stage-title">
+                    <strong>${escapeHtml(title)}</strong>
+                    <span>${escapeHtml(status)}</span>
+                  </div>
+                  ${
+                    attempt > 0 || timeParts.length
+                      ? `<p class="module-description-stage-meta">${[
+                          attempt > 0 ? `第 ${attempt} 次执行` : "",
+                          ...timeParts
+                        ]
+                          .filter(Boolean)
+                          .map(escapeHtml)
+                          .join(" · ")}</p>`
+                      : ""
+                  }
+                  ${
+                    errorMessage
+                      ? `<p class="module-description-stage-error" role="alert">${escapeHtml(errorMessage)}</p>`
+                      : ""
+                  }
+                  ${
+                    stage.skillName
+                      ? `<details class="module-description-stage-technical"><summary>查看技能名称</summary><code>${escapeHtml(stage.skillName)}</code></details>`
+                      : ""
+                  }
+                </div>
+              </li>
+            `;
+          })
+          .join("")}
+      </ol>
+    </section>
+  `;
 }
 
 function setStatus(message = "", tone = "") {
@@ -496,6 +618,7 @@ function renderTaskList() {
       const taskName = task.inputs?.modelSlx?.originalName || "Simulink 模型";
       const projectLabel = normalizeTaskProject(task.unitTestProject).label;
       const deleting = state.deletingTaskIds.has(task.id);
+      const running = task.status === "running";
       return `
         <div class="module-description-task-card${selected}" data-task-card-id="${escapeHtml(task.id)}">
           <button class="module-description-task-card-main" type="button" data-task-id="${escapeHtml(task.id)}">
@@ -511,9 +634,9 @@ function renderTaskList() {
             class="module-description-task-delete"
             type="button"
             data-delete-task-id="${escapeHtml(task.id)}"
-            aria-label="删除任务 ${escapeHtml(taskName)}"
-            title="删除任务"
-            ${deleting ? "disabled" : ""}
+            aria-label="${running ? "任务运行中，暂不可删除" : `删除任务 ${escapeHtml(taskName)}`}"
+            title="${running ? "任务运行中，暂不可删除" : "删除任务"}"
+            ${deleting || running ? "disabled" : ""}
           >×</button>
         </div>
       `;
@@ -527,7 +650,7 @@ async function deleteTask(taskId = "") {
   }
   const task = state.tasks.find((item) => item.id === taskId);
   const taskName = task?.inputs?.modelSlx?.originalName || "这条生成任务";
-  const confirmed = window.confirm(`确认删除 ${taskName}？\n这会清除该任务上传文件、workspace 和生成产物。`);
+  const confirmed = window.confirm(`确认删除 ${taskName}？\n这会清除该任务上传文件、任务工作区和生成产物。`);
   if (!confirmed) {
     return;
   }
@@ -571,7 +694,7 @@ function renderTaskDetail(task) {
   }
   const projectLabel = normalizeTaskProject(task.unitTestProject).label;
   const workerLabel = normalizeTaskWorker(task.workerProfile).label;
-  const initScriptLabel = task.inputs?.modelInitScript?.originalName || "使用项目 addon 初始化";
+  const initScriptLabel = task.inputs?.modelInitScript?.originalName || "使用项目附加初始化内容";
   elements.detailSubtitle.textContent = [
     task.inputs?.modelSlx?.originalName || "Simulink 模型",
     projectLabel,
@@ -649,6 +772,7 @@ function renderTaskDetail(task) {
       </div>
     `
     : "";
+  const pipelineHtml = renderSoftwareDetailPipeline(task);
 
   elements.taskDetail.innerHTML = `
     <div class="module-description-summary">
@@ -659,6 +783,7 @@ function renderTaskDetail(task) {
       </div>
     </div>
     ${artifactHtml}
+    ${pipelineHtml}
     <div class="module-description-detail-grid">
       <div class="module-description-section">
         <h3>输入文件</h3>
@@ -673,10 +798,10 @@ function renderTaskDetail(task) {
         </dl>
       </div>
       <div class="module-description-section">
-        <h3>Hermes Step</h3>
+        <h3>Hermes 执行信息</h3>
         <dl class="module-description-meta-list">
-          <div><dt>Step</dt><dd>${escapeHtml(task.hermes?.stepType || "simulink_module_description_generate")}</dd></div>
-          <div><dt>Skill</dt><dd>${escapeHtml(task.hermes?.skillName || "simulink-module-description-generator")}</dd></div>
+          <div><dt>执行类型</dt><dd>${escapeHtml(task.hermes?.stepType || "simulink_module_description_generate")}</dd></div>
+          <div><dt>技能</dt><dd>${escapeHtml(task.hermes?.skillName || "simulink-module-description-generator")}</dd></div>
           <div><dt>输出</dt><dd>${escapeHtml(task.hermes?.expectedOutputPattern || "outputs/*.docx")}</dd></div>
         </dl>
       </div>
@@ -710,50 +835,58 @@ function stopPolling() {
   }
 }
 
-elements.form?.addEventListener("submit", submitTask);
-elements.addProjectButton?.addEventListener("click", addProject);
-elements.deleteProjectButton?.addEventListener("click", deleteProject);
-elements.taskProjectFilter?.addEventListener("change", async () => {
-  state.taskProjectFilterId = elements.taskProjectFilter.value || "";
-  updateUrlProjectFilter(state.taskProjectFilterId);
+async function initializePage() {
+  elements.form?.addEventListener("submit", submitTask);
+  elements.addProjectButton?.addEventListener("click", addProject);
+  elements.deleteProjectButton?.addEventListener("click", deleteProject);
+  elements.taskProjectFilter?.addEventListener("change", async () => {
+    state.taskProjectFilterId = elements.taskProjectFilter.value || "";
+    updateUrlProjectFilter(state.taskProjectFilterId);
+    try {
+      await loadTasks();
+      await loadSelectedTask();
+    } catch (error) {
+      elements.taskList.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "任务列表加载失败。")}</div>`;
+      renderTaskDetail(null);
+    }
+  });
+  elements.taskList?.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest("[data-delete-task-id]");
+    if (deleteButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      void deleteTask(deleteButton.dataset.deleteTaskId || "");
+      return;
+    }
+    const button = event.target.closest("[data-task-id]");
+    if (!button) return;
+    state.selectedTaskId = button.dataset.taskId || "";
+    updateUrlTaskId(state.selectedTaskId);
+    void loadSelectedTask();
+  });
+
+  await loadWorkers();
+
+  try {
+    await loadProjects();
+  } catch (_error) {
+    syncProjectControls();
+  }
+
   try {
     await loadTasks();
     await loadSelectedTask();
+    if (state.tasks.some((task) => isActiveStatus(task.status))) {
+      startPolling();
+    }
   } catch (error) {
     elements.taskList.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "任务列表加载失败。")}</div>`;
     renderTaskDetail(null);
   }
-});
-elements.taskList?.addEventListener("click", (event) => {
-  const deleteButton = event.target.closest("[data-delete-task-id]");
-  if (deleteButton) {
-    event.preventDefault();
-    event.stopPropagation();
-    void deleteTask(deleteButton.dataset.deleteTaskId || "");
-    return;
-  }
-  const button = event.target.closest("[data-task-id]");
-  if (!button) return;
-  state.selectedTaskId = button.dataset.taskId || "";
-  updateUrlTaskId(state.selectedTaskId);
-  void loadSelectedTask();
-});
-
-await loadWorkers();
-
-try {
-  await loadProjects();
-} catch (_error) {
-  syncProjectControls();
 }
 
-try {
-  await loadTasks();
-  await loadSelectedTask();
-  if (state.tasks.some((task) => isActiveStatus(task.status))) {
-    startPolling();
-  }
-} catch (error) {
-  elements.taskList.innerHTML = `<div class="empty-state">${escapeHtml(error.message || "任务列表加载失败。")}</div>`;
-  renderTaskDetail(null);
+if (!globalThis.__SOFTWARE_DETAIL_UI_TEST__) {
+  await initializePage();
 }
+
+export { renderSoftwareDetailPipeline, STAGE_STATUS_LABELS, STAGE_TITLE_FALLBACKS };
