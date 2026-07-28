@@ -219,6 +219,11 @@ checkpoint 记录技能名/版本/SKILL.md hash/bundle hash、runtime hash、Her
 
 阶段 2 使用真实执行 Canary，而非可执行文件存在性检查：导入 PyYAML/openpyxl、在 workspace 创建/读取/删除随机 sentinel、通过 SATK/MCP 让 MATLAB 返回随机 nonce、检查 Simulink license/load/version，并要求 MATLAB 写出同 nonce sentinel。direct MCP server 按固定跨平台顺序发现：显式 `SATK_MCP_SERVER`、官方 `~/.matlab/agentic-toolkits/bin/matlab-mcp-server(.exe)`、旧 `matlab-mcp-core-server(.exe)`、发布仓库 `tools` fallback；direct 环境证据保存实际路径、发现来源、文件大小和 SHA-256，宿主重新读取并校验 hash。Gateway discovery 不得伪造 Worker 容器内不存在的 executable path；它保存经过认证的 Gateway `/health` 与 `/version` schema/版本证据及规范化 SHA-256，host validator 使用配置的 Gateway URL/token 重新请求当前 health/version，重算 hash、核对服务和版本字段，并拒绝混入 path/size/executable hash 的 Gateway 证据。MATLAB nonce sentinel 仍证明该 Gateway 实际完成了 canary 执行。MCP 返回空而 sentinel 不存在属于执行通道故障。`TCSD_PIPELINE_ENV_CANARY_FIXTURE` 只供 `tests/tcsd-runtime` 的 dev-only 单元测试使用，Windows 生产不得设置。
 
+Gateway 网络恢复边界固定为：仅 `GET`、`PUT`、`DELETE` 遇到网络类
+`URLError` 时按 100ms、250ms 退避，最多形成三次总尝试；host validator
+读取 health/version 使用相同策略。`POST` job/cancel 不自动重试，HTTP
+4xx/5xx 也不重试，防止重复 job、cancel 或掩盖确定性服务错误。
+
 第 7 阶段的静态 workbook/obligation 匹配仅是规划诊断，使用不可变的 `*_planning_obligations_snapshot.json` 生成 `tcsd-planning-mapping-assessment/v1`。该 assessment 只允许 `satisfied` 或非阻断的 `advisory`，不能声明实测覆盖率；阶段 checkpoint 与宿主 execution manifest 均把它标记为 `authority=planning`，并明确由第 9 阶段的 `measured-simulink-coverage` 取代。最终 Condition/Decision/MC/DC、80% 判断和未解决项只采信宿主解析的真实覆盖率报告，不保留未解释的 `failed` 静态质量报告。
 
 只有候选 result、产物或 checkpoint 的确定性校验失败才允许自动修复一次。修复必须启动第十三个新 session，并携带上一尝试的宿主验证报告；第二次仍失败即终止。输入、环境、MATLAB/SATK、Hermes 不可用、遥测缺失、session 复用和超时等硬错误直接失败，不重试。阶段 10 内部仍只允许一次 Coverage IR 用例修正；宿主验证修复不会放宽此限制。

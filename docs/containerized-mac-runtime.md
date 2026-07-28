@@ -64,6 +64,12 @@ SHA-256。host semantic validator 会核对 schema、服务标识、版本字段
 hash，并使用配置的 URL/token 重新请求当前 `/health` 与 `/version` 比对，
 拒绝 Gateway 证据中夹带的本地 path、size 或 executable hash。
 
+为容忍 Docker Desktop 的 `host.docker.internal` 瞬时路由中断，TCSD Gateway
+客户端只对幂等 `GET`、`PUT`、`DELETE` 的网络类 `URLError` 最多重试两次，
+退避固定为 100ms、250ms。`POST` job/cancel 永不自动重试，避免重复提交；
+HTTP 4xx/5xx 也不重试。host validator 的只读 health/version 复核使用相同
+的有界策略。
+
 ```bash
 npm run matlab:gateway:check
 npm run matlab:gateway:start

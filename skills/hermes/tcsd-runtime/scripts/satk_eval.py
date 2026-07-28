@@ -104,32 +104,41 @@ def gateway_request(
     payload: dict | None = None,
     environ=None,
     timeout_s: float = 30.0,
+    retry_delays: tuple[float, ...] = (0.1, 0.25),
+    sleep=time.sleep,
 ) -> dict:
     base_url = gateway_url(environ)
     if not base_url:
         raise RuntimeError("SATK_GATEWAY_URL is not configured")
+    normalized_method = str(method or "").upper()
+    retryable = normalized_method in {"GET", "PUT", "DELETE"}
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib.request.Request(
-        f"{base_url}{route}",
-        data=body,
-        headers=gateway_headers(environ),
-        method=method,
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_s) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        response_text = exc.read().decode("utf-8", errors="replace")
+    for attempt in range(len(retry_delays) + 1):
+        request = urllib.request.Request(
+            f"{base_url}{route}",
+            data=body,
+            headers=gateway_headers(environ),
+            method=normalized_method,
+        )
         try:
-            response = json.loads(response_text)
-            message = response.get("error", {}).get("message") or response_text
-            code = response.get("error", {}).get("code") or f"HTTP_{exc.code}"
-        except json.JSONDecodeError:
-            message = response_text or str(exc)
-            code = f"HTTP_{exc.code}"
-        raise RuntimeError(f"MATLAB Gateway {code}: {message}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"MATLAB Gateway is unavailable: {exc.reason}") from exc
+            with urllib.request.urlopen(request, timeout=timeout_s) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            response_text = exc.read().decode("utf-8", errors="replace")
+            try:
+                response = json.loads(response_text)
+                message = response.get("error", {}).get("message") or response_text
+                code = response.get("error", {}).get("code") or f"HTTP_{exc.code}"
+            except json.JSONDecodeError:
+                message = response_text or str(exc)
+                code = f"HTTP_{exc.code}"
+            raise RuntimeError(f"MATLAB Gateway {code}: {message}") from exc
+        except urllib.error.URLError as exc:
+            if retryable and attempt < len(retry_delays):
+                sleep(max(0.0, float(retry_delays[attempt])))
+                continue
+            raise RuntimeError(f"MATLAB Gateway is unavailable: {exc.reason}") from exc
+    raise RuntimeError("MATLAB Gateway retry loop ended unexpectedly")
 
 
 def server_info(**kwargs) -> dict[str, object]:

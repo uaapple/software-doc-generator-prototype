@@ -1,5 +1,6 @@
 import importlib.util
 import hashlib
+import io
 import json
 import os
 import tempfile
@@ -32,6 +33,20 @@ assert HOST_VALIDATOR_SPEC.loader
 HOST_VALIDATOR_SPEC.loader.exec_module(HOST_VALIDATOR)
 
 
+class JsonResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
+
+
 class SatkGatewayTests(unittest.TestCase):
     def test_gateway_evaluate_headers_use_separate_scoped_token(self):
         headers = SATK.gateway_headers(
@@ -59,7 +74,134 @@ class SatkGatewayTests(unittest.TestCase):
                     RuntimeError,
                     "MATLAB Gateway is unavailable",
                 ):
-                    SATK.gateway_request("GET", "/health")
+                    SATK.gateway_request("GET", "/health", retry_delays=())
+
+    def test_idempotent_gateway_methods_retry_transient_url_error_then_succeed(self):
+        response = {"ok": True}
+        for method in ("GET", "PUT", "DELETE"):
+            with self.subTest(method=method):
+                sleep = mock.Mock()
+                with mock.patch.dict(
+                    os.environ,
+                    {"SATK_GATEWAY_URL": "http://host.docker.internal:5100"},
+                    clear=True,
+                ):
+                    with mock.patch.object(
+                        SATK.urllib.request,
+                        "urlopen",
+                        side_effect=[
+                            urllib.error.URLError("route unavailable"),
+                            JsonResponse(response),
+                        ],
+                    ) as urlopen:
+                        self.assertEqual(
+                            SATK.gateway_request(
+                                method,
+                                "/fixture",
+                                retry_delays=(0.01, 0.02),
+                                sleep=sleep,
+                            ),
+                            response,
+                        )
+                self.assertEqual(urlopen.call_count, 2)
+                sleep.assert_called_once_with(0.01)
+
+    def test_idempotent_gateway_request_exhausts_bounded_retries(self):
+        sleep = mock.Mock()
+        with mock.patch.dict(
+            os.environ,
+            {"SATK_GATEWAY_URL": "http://host.docker.internal:5100"},
+            clear=True,
+        ):
+            with mock.patch.object(
+                SATK.urllib.request,
+                "urlopen",
+                side_effect=urllib.error.URLError("route unavailable"),
+            ) as urlopen:
+                with self.assertRaisesRegex(RuntimeError, "Gateway is unavailable"):
+                    SATK.gateway_request(
+                        "DELETE",
+                        "/api/workspaces/fixture",
+                        retry_delays=(0.01, 0.02),
+                        sleep=sleep,
+                    )
+        self.assertEqual(urlopen.call_count, 3)
+        self.assertEqual(sleep.call_args_list, [mock.call(0.01), mock.call(0.02)])
+
+    def test_post_gateway_request_does_not_retry_url_error(self):
+        sleep = mock.Mock()
+        with mock.patch.dict(
+            os.environ,
+            {"SATK_GATEWAY_URL": "http://host.docker.internal:5100"},
+            clear=True,
+        ):
+            with mock.patch.object(
+                SATK.urllib.request,
+                "urlopen",
+                side_effect=urllib.error.URLError("route unavailable"),
+            ) as urlopen:
+                with self.assertRaisesRegex(RuntimeError, "Gateway is unavailable"):
+                    SATK.gateway_request(
+                        "POST",
+                        "/api/jobs/fixture",
+                        payload={"workspaceId": "fixture"},
+                        retry_delays=(0.01, 0.02),
+                        sleep=sleep,
+                    )
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_gateway_http_error_does_not_retry(self):
+        error = urllib.error.HTTPError(
+            "http://host.docker.internal:5100/health",
+            503,
+            "Service Unavailable",
+            {},
+            io.BytesIO(b'{"error":{"code":"NOT_READY","message":"not ready"}}'),
+        )
+        sleep = mock.Mock()
+        with mock.patch.dict(
+            os.environ,
+            {"SATK_GATEWAY_URL": "http://host.docker.internal:5100"},
+            clear=True,
+        ):
+            with mock.patch.object(
+                SATK.urllib.request,
+                "urlopen",
+                side_effect=error,
+            ) as urlopen:
+                with self.assertRaisesRegex(RuntimeError, "NOT_READY"):
+                    SATK.gateway_request(
+                        "GET",
+                        "/health",
+                        retry_delays=(0.01, 0.02),
+                        sleep=sleep,
+                    )
+        self.assertEqual(urlopen.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_host_validator_health_fetch_retries_transient_url_error(self):
+        sleep = mock.Mock()
+        with mock.patch.object(
+            HOST_VALIDATOR.urllib.request,
+            "urlopen",
+            side_effect=[
+                urllib.error.URLError("route unavailable"),
+                JsonResponse({"ok": True}),
+            ],
+        ) as urlopen:
+            self.assertEqual(
+                HOST_VALIDATOR.fetch_gateway_evidence(
+                    "/health",
+                    "http://host.docker.internal:5100",
+                    "fixture-token",
+                    retry_delays=(0.01,),
+                    sleep=sleep,
+                ),
+                {"ok": True},
+            )
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(0.01)
 
     def test_gateway_server_info_uses_authenticated_remote_evidence_without_local_path(self):
         health = {

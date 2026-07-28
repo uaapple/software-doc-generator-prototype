@@ -10,8 +10,10 @@ import math
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any
+import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
@@ -135,17 +137,33 @@ def canonical(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def fetch_gateway_evidence(route: str, gateway_url: str, token: str) -> dict[str, Any]:
-    request = urllib.request.Request(
-        f"{gateway_url}{route}",
-        headers={"Authorization": f"Bearer {token}"},
-        method="GET",
-    )
-    with urllib.request.urlopen(request, timeout=10.0) as response:
-        value = json.loads(response.read().decode("utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError("gateway evidence response must be an object")
-    return value
+def fetch_gateway_evidence(
+    route: str,
+    gateway_url: str,
+    token: str,
+    *,
+    retry_delays: tuple[float, ...] = (0.1, 0.25),
+    sleep=time.sleep,
+) -> dict[str, Any]:
+    for attempt in range(len(retry_delays) + 1):
+        request = urllib.request.Request(
+            f"{gateway_url}{route}",
+            headers={"Authorization": f"Bearer {token}"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10.0) as response:
+                value = json.loads(response.read().decode("utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError("gateway evidence response must be an object")
+            return value
+        except urllib.error.HTTPError:
+            raise
+        except urllib.error.URLError:
+            if attempt >= len(retry_delays):
+                raise
+            sleep(max(0.0, float(retry_delays[attempt])))
+    raise RuntimeError("gateway evidence retry loop ended unexpectedly")
 
 
 def gateway_evidence_payload(
