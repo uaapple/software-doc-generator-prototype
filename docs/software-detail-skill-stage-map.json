@@ -1,0 +1,619 @@
+{
+  "schema": "software-detail-skill-stage-map/v1",
+  "version": "2026-07-29",
+  "source": {
+    "commit": "ce5d3c2c08788fa8ab9013f18bd985f7355df0b6",
+    "releaseRef": "origin/release/windows-prod",
+    "root": "skills/hermes/simulink-module-description-generator",
+    "skillPath": "skills/hermes/simulink-module-description-generator/SKILL.md",
+    "skillBlobSha1": "8e99cda6da9b54153b73476f884b463ebe8b1bc4",
+    "skillContentSha256": "f9b9fb108ad5bee97597f9dc01a59cf37a6f85f0afd619b21b78df291f8d1dae",
+    "defaultRuleTextSha256": "6ae4a1a783fd98a2eeff541139b1fa841c08ed159879e652ba884028b32a0d18",
+    "workflowRuleTextSha256": "eb9387f295d040fd45a1e4a6d5cb0b63177a2080bcf052717d06b213ccd6a17b",
+    "outputRuleTextSha256": "0715c672e88d70f40127b01e330b16c30b41b113724e75ef5594850b897c36dd"
+  },
+  "sessionPolicy": {
+    "matlab": {
+      "scope": "job",
+      "processesPerJob": 1,
+      "reuseOneTaskOwnedSession": true,
+      "startAtStageId": "software-detail-stage-01-initialize",
+      "keepThroughStageId": "software-detail-stage-09-docx-finalize",
+      "reuseStageIds": [
+        "software-detail-stage-01-initialize",
+        "software-detail-stage-02-model-plan",
+        "software-detail-stage-03-evidence-extract",
+        "software-detail-stage-04-output-ledger",
+        "software-detail-stage-05-boundary-projection",
+        "software-detail-stage-06-architecture-draft",
+        "software-detail-stage-07-module-draft",
+        "software-detail-stage-08-content-check",
+        "software-detail-stage-09-docx-finalize"
+      ],
+      "concurrentJobsMayShareSession": false,
+      "closeOnlyTaskOwnedState": true
+    },
+    "hermes": {
+      "scope": "stage-attempt",
+      "newSessionForEveryStage": true,
+      "crossStageReuseAllowed": false,
+      "failedAttemptSessionReuseAllowed": false
+    }
+  },
+  "stages": [
+    {
+      "stageId": "software-detail-stage-01-initialize",
+      "order": 100,
+      "skillName": "software-detail-stage-01-initialize",
+      "skillVersion": "1.0.0",
+      "responsibility": "Validate input and task workspace, initialize selected addon/init scripts, start the task-owned MATLAB session, and load the model.",
+      "hermesSession": "new"
+    },
+    {
+      "stageId": "software-detail-stage-02-model-plan",
+      "order": 200,
+      "skillName": "software-detail-stage-02-model-plan",
+      "skillVersion": "1.0.0",
+      "responsibility": "Run an index-only model scan and produce documentUnits, analysisUnits, parent relationships, direct boundary allowlists, and the analysis queue.",
+      "hermesSession": "new"
+    },
+    {
+      "stageId": "software-detail-stage-03-evidence-extract",
+      "order": 300,
+      "skillName": "software-detail-stage-03-evidence-extract",
+      "skillVersion": "1.0.0",
+      "responsibility": "Deep-read each analysis unit for ports, structure, parameters, lookup, delay, state, and output-near logic, producing evidence shards.",
+      "hermesSession": "new"
+    },
+    {
+      "stageId": "software-detail-stage-04-output-ledger",
+      "order": 400,
+      "skillName": "software-detail-stage-04-output-ledger",
+      "skillVersion": "1.0.0",
+      "responsibility": "Aggregate evidence per document unit, trace backward from direct outputs, and produce the private output-first ledger and coverage.",
+      "hermesSession": "new"
+    },
+    {
+      "stageId": "software-detail-stage-05-boundary-projection",
+      "order": 500,
+      "skillName": "software-detail-stage-05-boundary-projection",
+      "skillVersion": "1.0.0",
+      "responsibility": "Project internal evidence onto direct boundary inputs and outputs and produce behavior groups and the narrative compression plan.",
+      "hermesSession": "new"
+    },
+    {
+      "stageId": "software-detail-stage-06-architecture-draft",
+      "order": 600,
+      "skillName": "software-detail-stage-06-architecture-draft",
+      "skillVersion": "1.0.0",
+      "responsibility": "Draft model purpose, overall structure, architecture, and interfaces.",
+      "hermesSession": "new"
+    },
+    {
+      "stageId": "software-detail-stage-07-module-draft",
+      "order": 700,
+      "skillName": "software-detail-stage-07-module-draft",
+      "skillVersion": "1.0.0",
+      "responsibility": "Draft each document unit's function description and implementation behavior while leaving design-basis bodies blank by default.",
+      "hermesSession": "new"
+    },
+    {
+      "stageId": "software-detail-stage-08-content-check",
+      "order": 800,
+      "skillName": "software-detail-stage-08-content-check",
+      "skillVersion": "1.0.0",
+      "responsibility": "Run and repair hierarchy, boundary, density, output-coverage, internal-identifier, traceability, and writing checks.",
+      "hermesSession": "new"
+    },
+    {
+      "stageId": "software-detail-stage-09-docx-finalize",
+      "order": 900,
+      "skillName": "software-detail-stage-09-docx-finalize",
+      "skillVersion": "1.0.0",
+      "responsibility": "Fill the original DOCX template, normalize native Word lists, rerun final text/boundary/coverage/evidence checks, and clean task MATLAB state.",
+      "hermesSession": "new"
+    }
+  ],
+  "defaultRules": [
+    {
+      "id": "SDD-DEF-001",
+      "ordinal": 1,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Treat the Simulink model as the source of truth. Do not base content on prior generated documents or example documents unless the user explicitly requests that comparison."
+    },
+    {
+      "id": "SDD-DEF-002",
+      "ordinal": 2,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Quality is the first priority. The target for every selected functional module is condition/action implementation prose with explicit set, reset, selection, hold, restore, fallback, lookup, delay, or output-assignment behavior when those constructs exist. Do not narrow evidence scope, skip modules, or emit port-summary prose to save time."
+    },
+    {
+      "id": "SDD-DEF-003",
+      "ordinal": 3,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Use one task-owned MATLAB process/session as the default evidence path. For front-end, unattended, or production document-generation tasks, start a task-owned new MATLAB process, such as one `matlab -batch` job or MCP/SATK `new` session, rather than trying to attach to a user-open MATLAB first. Load and initialize MATLAB once per generation task, keep the model open while collecting evidence and drafting, and close only task-owned model state at the end."
+    },
+    {
+      "id": "SDD-DEF-004",
+      "ordinal": 4,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-03-evidence-extract"],
+      "text": "Static `.slx` XML inspection may supplement MCP/SATK evidence only after targeted MCP/SATK reads fail for a concrete item; it must not replace the MATLAB/SATK evidence path."
+    },
+    {
+      "id": "SDD-DEF-005",
+      "ordinal": 5,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan"],
+      "text": "When SATK exposes a fast model scanning utility such as `model_scan`, use it as an optional front-end index for hierarchy, ports, annotations, and candidate module selection. Do not treat scan output as a substitute for targeted MATLAB/MCP/SATK evidence on selected modules."
+    },
+    {
+      "id": "SDD-DEF-006",
+      "ordinal": 6,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan", "software-detail-stage-03-evidence-extract", "software-detail-stage-07-module-draft"],
+      "text": "For models with multiple functional subsystems, use a split-read workflow by default: first build a lightweight whole-model index, then read and draft each selected subsystem one by one. The whole-model phase is index-only; do not run a heavy all-model output-cone or full-internals collector before the per-subsystem queue. A single whole-model scan or top-level port summary must not replace per-subsystem deep evidence."
+    },
+    {
+      "id": "SDD-DEF-007",
+      "ordinal": 7,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan", "software-detail-stage-03-evidence-extract", "software-detail-stage-04-output-ledger"],
+      "text": "Treat a `document_unit` as the evidence aggregation and narrative boundary, not as the default deep-read batch. For a non-trivial document unit, never enable a helper's whole-subsystem `IncludeOutputCones=true` mode or equivalent single-call expansion across all of its Outports. Process descendant `analysis_unit`s individually by default; when one remains large, split it again by direct Outport or shared-source output group, and merge the resulting ledger fragments into the parent."
+    },
+    {
+      "id": "SDD-DEF-008",
+      "ordinal": 8,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan"],
+      "text": "Separate document hierarchy from analysis depth. Use `document_unit` for final `3.x` sections and `analysis_unit` for child subsystems read only to understand the parent. Deep-reading B/C children must not promote them into document modules."
+    },
+    {
+      "id": "SDD-DEF-009",
+      "ordinal": 9,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan"],
+      "text": "When the model uses `A\\d+_`/`B\\d+_`/`C\\d+_` naming, default to functional A-level subsystems as `document_unit`; treat B/C descendants as `analysis_unit`. Promote a B/C subsystem only when the user explicitly requests that level or model evidence proves its A parent is pure routing, documentation, or configuration."
+    },
+    {
+      "id": "SDD-DEF-010",
+      "ordinal": 10,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Treat each `document_unit`'s direct Inports and Outports as the default narrative boundary. Trace internal signals, states, parameters, tables, and child outputs as private evidence, but do not print identifiers that are invisible at the document-unit boundary."
+    },
+    {
+      "id": "SDD-DEF-011",
+      "ordinal": 11,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Apply the boundary allowlist per document unit, not as exclusive global signal ownership. A signal may legitimately be an A02 direct output and an A01 direct input; it may appear in A01 prose when it is listed in A01 `allowedInputs`. If the connected A02 Outport and A01 Inport use different names, use the A01-side direct Inport name inside the A01 section."
+    },
+    {
+      "id": "SDD-DEF-012",
+      "ordinal": 12,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-04-output-ledger", "software-detail-stage-05-boundary-projection", "software-detail-stage-07-module-draft"],
+      "text": "Keep evidence coverage and narrative coverage separate. The private output-first ledger may be exhaustive; final prose must project internal behavior onto direct document-unit inputs and outputs. Every internal row must map to a boundary-output behavior group, but internal identifiers are never `must_mention` by default."
+    },
+    {
+      "id": "SDD-DEF-013",
+      "ordinal": 13,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-04-output-ledger"],
+      "text": "Treat the private ledger as a model-fact ledger, not a prose draft. Store exact identifiers, comparison operators, operands, edges, actions, selected values/sources, affected outputs, priorities, and fallbacks. Do not store inferred Chinese business meanings or free-form summary sentences as substitutes for those facts."
+    },
+    {
+      "id": "SDD-DEF-014",
+      "ordinal": 14,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft", "software-detail-stage-08-content-check"],
+      "text": "Target the behavior-density pattern defined in `references/a07-granularity-pattern.md`: normally 4-8 behavior groups per module, 2-5 level-one sub-points per group, and about 12-30 sub-points total. \"A07-style\" names a prose pattern only; it never selects a Simulink hierarchy level."
+    },
+    {
+      "id": "SDD-DEF-015",
+      "ordinal": 15,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Do not hand-author a static module summary list as the source of the final document. Each module section must be derived from that module's behavior ledger. If a selected module lacks a behavior ledger with explicit `set`, `reset`, `select`, `hold`, `update`, `restore`, or `fallback` fields as applicable, keep collecting evidence for that module instead of drafting a compressed summary."
+    },
+    {
+      "id": "SDD-DEF-016",
+      "ordinal": 16,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-01-initialize"],
+      "text": "Assume the UI/platform has copied selected addon files into the task workspace. Add and initialize those workspace addon/project files before loading the model; do not read unrelated external addon roots."
+    },
+    {
+      "id": "SDD-DEF-017",
+      "ordinal": 17,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-01-initialize"],
+      "text": "Before running auto-generated addon/init/data scripts such as `*_dd.m`, sanitize the task-workspace copy by removing standalone `clear`/`clearvars` commands. These commands can erase session variables and break task-scoped MATLAB session reuse."
+    },
+    {
+      "id": "SDD-DEF-018",
+      "ordinal": 18,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Preserve exact identifiers in private evidence. In final prose, use only identifiers on the document-unit allowlist: direct Inports, direct Outports, and identifiers the user explicitly approves for publication."
+    },
+    {
+      "id": "SDD-DEF-019",
+      "ordinal": 19,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Generate module-level descriptions, not a block-by-block SATK dump."
+    },
+    {
+      "id": "SDD-DEF-020",
+      "ordinal": 20,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Keep final documents focused on functional design. Do not output evidence-collection or model-configuration metadata such as MATLAB/SATK load status, update success, solver, target file, or model version unless the user explicitly asks for that audit information."
+    },
+    {
+      "id": "SDD-DEF-021",
+      "ordinal": 21,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-09-docx-finalize"],
+      "text": "Preserve the template's `设计依据` headings but leave their body content blank by default, even when requirement IDs or design basis text appear in annotations or DocBlocks. Use those IDs as internal evidence only unless the user explicitly asks to include design bases."
+    },
+    {
+      "id": "SDD-DEF-022",
+      "ordinal": 22,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-09-docx-finalize"],
+      "text": "Use the bundled DOCX template at `assets/templates/Template_Software_Detailed_Design.docx` for the final document unless the user only asks for Markdown preview."
+    },
+    {
+      "id": "SDD-DEF-023",
+      "ordinal": 23,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-09-docx-finalize"],
+      "text": "When the user requests only DOCX formatting, title, list, TOC, or page-layout changes and a checked Markdown draft, hierarchy manifest, ledger, or DOCX already exists, reuse those task artifacts. Do not restart MATLAB or recollect model evidence unless the formatting pass exposes missing or inconsistent content."
+    },
+    {
+      "id": "SDD-DEF-024",
+      "ordinal": 24,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-09-docx-finalize"],
+      "text": "Generate `实现方式` sub-points as deterministic native Word lists. Do not depend on a template-provided `List Bullet` style and do not use a literal `• ` paragraph as fallback."
+    }
+  ],
+  "workflowRules": [
+    {
+      "id": "SDD-WF-001",
+      "ordinal": 1,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-01-initialize"],
+      "text": "Locate the model, task workspace, and any UI-selected addon/project files."
+    },
+    {
+      "id": "SDD-WF-002",
+      "ordinal": 2,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-01-initialize"],
+      "text": "Start one task-owned MATLAB process/session for the generation task. For front-end, unattended, or production tasks, prefer `matlab -batch` or MCP/SATK `SATK_MATLAB_SESSION_MODE=new`; use `existing`/attach only when the user explicitly says a MATLAB session is already open or the platform provides an active session. Run `scripts/setup_module_doc_support.m` in that same MATLAB process before model load or SATK reads, add the selected workspace addon/project files once, sanitize and run initialization scripts once, and `load_system` the target model once. Do not repeatedly start `matlab -batch`, reopen/close MATLAB, or create a fresh MATLAB process for module-level reads. If `scripts/satk_eval.py` is used as a bridge, keep its default `SATK_MATLAB_SESSION_MODE=new`; do not spend time diagnosing an attach failure when no existing MATLAB session is expected."
+    },
+    {
+      "id": "SDD-WF-003",
+      "ordinal": 3,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan"],
+      "text": "If available, run a fast model scan in the task-owned MATLAB process/session to build a compact index of top-level ports, immediate child subsystems, annotations/DocBlocks, major block categories, and obvious non-functional structures. For multi-subsystem models, keep this scan index-only: do not traverse every selected subsystem's output cone, full internals, or deep dependencies during the global phase."
+    },
+    {
+      "id": "SDD-WF-004",
+      "ordinal": 4,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan"],
+      "text": "Build a hierarchy manifest before deep reading. Record `documentUnits`, `analysisUnits`, each analysis unit's `parentDocumentUnit`, and each document unit's direct `allowedInputs` and `allowedOutputs`. Never select final document modules with one name regex. Follow `references/module-boundary.md`."
+    },
+    {
+      "id": "SDD-WF-005",
+      "ordinal": 5,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan"],
+      "text": "Select meaningful `document_unit` modules. Resolve the functional root past same-name wrappers or scheduler shells. Prefer functional A-level subsystems when an A/B/C naming scheme exists. Exclude model-info, function-definition-only, pure documentation, pure routing, display, and configuration structures. Record evidence before promoting any B/C child over an A parent."
+    },
+    {
+      "id": "SDD-WF-006",
+      "ordinal": 6,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-02-model-plan", "software-detail-stage-03-evidence-extract"],
+      "text": "Create an `analysis_unit` queue from the descendants needed to understand each document unit. Process each child individually in the same MATLAB process/session by default. Use a small batch only when the children are simple and demonstrably bounded. If an analysis unit is still large, create sub-batches by direct Outport or shared-source output group. Persist each completed ledger fragment before starting the next batch, aggregate all fragments into the parent document unit, and never draft a `3.x` section for an analysis unit."
+    },
+    {
+      "id": "SDD-WF-007",
+      "ordinal": 7,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-03-evidence-extract"],
+      "text": "Read every document unit and required analysis unit with MCP/SATK/MATLAB APIs from the same task-owned MATLAB process/session: overview, hierarchy, ports, annotations, DocBlocks, masks, library links, subsystem internals, parameters, lookup tables, delays, Stateflow charts, data dictionaries, and output-near cones. Apply the bounded output-cone contract in `references/model-evidence.md`; \"output-first\" means queueing from outputs, not expanding every output cone of a complex document unit in one call."
+    },
+    {
+      "id": "SDD-WF-008",
+      "ordinal": 8,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-04-output-ledger"],
+      "text": "For each document unit, create a private output coverage ledger before drafting. Start from its direct Outports and trace backward through analysis units. Include internal lines and state signals needed to understand output shaping, but add `visibility=document_boundary|internal_evidence` to every row. Mark `must_mention=yes` only for direct document-unit Inports/Outports that the narrative must name; internal rows, including behaviorally unique `material_state` rows, always use `must_mention=no` and map to an affected boundary output."
+    },
+    {
+      "id": "SDD-WF-009",
+      "ordinal": 9,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-04-output-ledger"],
+      "text": "For each ledger item, trace backward through its cone to identify source signals, final selections, feedback, delay/memory, latches, edge detectors, and special-mode gates. Keep exact internal facts privately and map each one to a direct document-unit output."
+    },
+    {
+      "id": "SDD-WF-010",
+      "ordinal": 10,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-05-boundary-projection"],
+      "text": "Build a private narrative compression plan grouped by direct document-unit outputs. Record `boundary_inputs`, `boundary_outputs`, `internal_evidence_rows`, `condition_actions`, and `covered_ledger_items`. Do not use an internal signal as a group title."
+    },
+    {
+      "id": "SDD-WF-011",
+      "ordinal": 11,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-05-boundary-projection"],
+      "text": "Project the behavior groups onto the current document unit's boundary. Express conditions with that unit's direct inputs and actions with that unit's direct outputs. Allow a cross-A signal when it is a direct port of the current unit, even if the same signal is also another A unit's output. If a condition cannot be traced to a current-unit boundary input, keep it private and describe only the supported boundary behavior without inventing a label, threshold, or identifier. Do not expose internal signals, child ports, state names, calibration names, or table names unless the user explicitly approves them."
+    },
+    {
+      "id": "SDD-WF-012",
+      "ordinal": 12,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-06-architecture-draft", "software-detail-stage-07-module-draft"],
+      "text": "Extract top-level purpose text from model annotations/DocBlocks and document-unit purpose text from subsystem annotations/DocBlocks when present."
+    },
+    {
+      "id": "SDD-WF-013",
+      "ordinal": 13,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-06-architecture-draft", "software-detail-stage-07-module-draft"],
+      "text": "Draft the document:\n- `功能描述`: the model or module function expressed from model-authored descriptions.\n- `模型总体结构`: functional architecture only: execution entry/period when model-authored, major inputs/outputs, meaningful subsystem relationship, and data flow. Exclude model tooling/configuration audit details.\n- `软件模块功能描述`: one section per `document_unit`, never one section per analysis child by default."
+    },
+    {
+      "id": "SDD-WF-014",
+      "ordinal": 14,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "For each document unit, write `功能描述` and `实现方式`. Keep `设计依据` blank unless explicitly requested. Name direct boundary outputs and the direct boundary inputs needed to explain them. Cover internal rows through their affected boundary-output group without printing internal names."
+    },
+    {
+      "id": "SDD-WF-015",
+      "ordinal": 15,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Convert evidence into behavior before writing final prose. Do not paste ledger rows, child subsystem names, internal signals, block counts, direct-source lists, block-instance names, routing mechanisms, or anonymous inferred labels."
+    },
+    {
+      "id": "SDD-WF-016",
+      "ordinal": 16,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-08-content-check"],
+      "text": "Run the self-check from `references/writing-rules.md`, hierarchy/boundary checks from `references/module-boundary.md`, and the density gate from `references/a07-granularity-pattern.md`. Fail if a Heading 2 does not match `documentUnits`, any internal row is unmapped, any internal identifier appears in prose, or any required boundary output is absent."
+    },
+    {
+      "id": "SDD-WF-017",
+      "ordinal": 17,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-08-content-check"],
+      "text": "Run `scripts/validate_narrative_boundary.py` on the Markdown/source draft with the hierarchy manifest. Fix every leaked identifier before DOCX generation."
+    },
+    {
+      "id": "SDD-WF-018",
+      "ordinal": 18,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-09-docx-finalize"],
+      "text": "Create DOCX from the template, preserving styles and heading structure. Run `scripts/docx_list_format.py` on the generated DOCX so every `实现方式` sub-point uses native level-zero numbering with deterministic indentation and spacing. Provide Markdown only when requested or as a review preview."
+    },
+    {
+      "id": "SDD-WF-019",
+      "ordinal": 19,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-09-docx-finalize"],
+      "text": "Run `scripts/docx_list_format.py --check-only` on the final DOCX, then extract its text and rerun the boundary validator plus output and density checks. Use non-visual DOCX/package checks by default; do not run page rendering unless the user explicitly asks for visual review."
+    },
+    {
+      "id": "SDD-WF-020",
+      "ordinal": 20,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-08-content-check"],
+      "text": "Validate that every implementation claim has traceable private evidence, every internal row maps to a boundary-output narrative group, and no required document unit or boundary output is missing."
+    },
+    {
+      "id": "SDD-WF-021",
+      "ordinal": 21,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-09-docx-finalize"],
+      "text": "Clean MATLAB task state before finishing when safe: close only models opened for this task, remove task-specific paths if they were added, and avoid broad cleanup such as `bdclose all` when other sessions/models may be user-owned."
+    }
+  ],
+  "outputRules": [
+    {
+      "id": "SDD-OUT-001",
+      "ordinal": 1,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Use Chinese for narrative text unless the user asks otherwise."
+    },
+    {
+      "id": "SDD-OUT-002",
+      "ordinal": 2,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Keep allowed boundary signal names untranslated. Do not print internal identifiers or invent Chinese expansions for them."
+    },
+    {
+      "id": "SDD-OUT-003",
+      "ordinal": 3,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "In `实现方式`, use Chinese only for actions and logical relationships by default. Use Chinese mode, state, condition, or value meanings only when the model explicitly authors that label and the private ledger records its source."
+    },
+    {
+      "id": "SDD-OUT-004",
+      "ordinal": 4,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Prefer compact natural-language pseudo-code: describe condition groups, thresholds, selections, delays, tables, latches, and output assignment in ordered prose."
+    },
+    {
+      "id": "SDD-OUT-005",
+      "ordinal": 5,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Organize prose by direct document-unit outputs, not by every ledger row or internal signal. Keep internal states in private evidence even when their behavior is unique."
+    },
+    {
+      "id": "SDD-OUT-006",
+      "ordinal": 6,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Avoid internal block instance names in final prose. For example, prefer \"取最大值\", \"按标定延时\", \"以下任一条件满足\", or \"查表输出\" over listing `Switch2`, `Unit Delay1`, `AND1`, or `Prelookup3`. If a block name is the only available traceability handle, keep it in private evidence, not in polished `实现方式`."
+    },
+    {
+      "id": "SDD-OUT-007",
+      "ordinal": 7,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Do not satisfy `实现方式` with evidence inventory. Forbidden final prose patterns include block-type counts, \"模块输出按直接来源分组形成\", \"`RSLatch` 形成 `<signal>`\", \"`Signal Copy` 形成 `<signal>`\", and generic categories such as \"保存类输出/手动计算类输出/自动计算类输出\" when they are not followed by exact branch conditions."
+    },
+    {
+      "id": "SDD-OUT-008",
+      "ordinal": 8,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Mention raw, remembered, and final signals only when they are direct outputs of the document unit. If they are internal, describe their effect on a boundary output without naming them."
+    },
+    {
+      "id": "SDD-OUT-009",
+      "ordinal": 9,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Keep auxiliary state-holding signals such as `*Rem*`, `*Old*`, `*Pre*`, `*Save*`, and `*EEW*` private unless they are direct document-unit ports or the user explicitly approves publication."
+    },
+    {
+      "id": "SDD-OUT-010",
+      "ordinal": 10,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-03-evidence-extract", "software-detail-stage-04-output-ledger", "software-detail-stage-07-module-draft"],
+      "text": "Treat output-near logic as functional until proven otherwise. A Switch/Multiport Switch plus feedback, Unit Delay/Memory/Delay, edge detection, latch, or special-mode input near an Outport is output shaping/hold/restore behavior, not disposable final wiring."
+    },
+    {
+      "id": "SDD-OUT-011",
+      "ordinal": 11,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-07-module-draft"],
+      "text": "Do not end a module description at an intermediate calculation signal when downstream output logic produces a final output, `Rem`/restore output, or held value. Summarize the downstream behavior compactly and name the affected output."
+    },
+    {
+      "id": "SDD-OUT-012",
+      "ordinal": 12,
+      "scope": "stage",
+      "stageIds": ["software-detail-stage-08-content-check", "software-detail-stage-09-docx-finalize"],
+      "text": "Before finalizing, remove toolchain/load/update metadata from narrative sections, leave every `设计依据` body blank by default, and reduce final routing or output plumbing to behavior-level wording."
+    },
+    {
+      "id": "SDD-OUT-013",
+      "ordinal": 13,
+      "scope": "shared",
+      "stageIds": [],
+      "text": "Do not infer requirements, design bases, calibration intent, or business meaning beyond the model evidence."
+    }
+  ],
+  "resources": [
+    {
+      "path": "references/a07-granularity-pattern.md",
+      "type": "reference",
+      "blobSha1": "7c8fbef7afb1d49d602038972df583cac9ecafa9",
+      "contentSha256": "8ab278c50cc144853abd20274a25cd030ab5680f7dd653f46837c8bdecef450c",
+      "ownerStageId": "software-detail-stage-07-module-draft",
+      "useStageIds": ["software-detail-stage-07-module-draft", "software-detail-stage-08-content-check", "software-detail-stage-09-docx-finalize"]
+    },
+    {
+      "path": "references/model-evidence.md",
+      "type": "reference",
+      "blobSha1": "543583b153da16c909f5986bf83f7d952d50680a",
+      "contentSha256": "eaaf1a39c549cc1d7fc755dd17240bae0c2c7855e2d7d1214e8bd95ad487322b",
+      "ownerStageId": "software-detail-stage-03-evidence-extract",
+      "useStageIds": ["software-detail-stage-01-initialize", "software-detail-stage-02-model-plan", "software-detail-stage-03-evidence-extract", "software-detail-stage-04-output-ledger", "software-detail-stage-08-content-check"]
+    },
+    {
+      "path": "references/module-boundary.md",
+      "type": "reference",
+      "blobSha1": "d1304455d45cf42d801bcfe7d5248c7ea6d5b523",
+      "contentSha256": "33f154c9a9790a24f3964df59f4be241cf7de0e87f028e581936a03a062bb109",
+      "ownerStageId": "software-detail-stage-02-model-plan",
+      "useStageIds": ["software-detail-stage-02-model-plan", "software-detail-stage-04-output-ledger", "software-detail-stage-05-boundary-projection", "software-detail-stage-07-module-draft", "software-detail-stage-08-content-check"]
+    },
+    {
+      "path": "references/template-filling.md",
+      "type": "reference",
+      "blobSha1": "03d5283e117a58e73dc7c3d5edd8c3ae7e1ab06a",
+      "contentSha256": "0017aa3c0bafb69fd8ec25da38944a0c4d2c57a811781fd0e0c94d524a04ac52",
+      "ownerStageId": "software-detail-stage-09-docx-finalize",
+      "useStageIds": ["software-detail-stage-06-architecture-draft", "software-detail-stage-07-module-draft", "software-detail-stage-08-content-check", "software-detail-stage-09-docx-finalize"]
+    },
+    {
+      "path": "references/writing-rules.md",
+      "type": "reference",
+      "blobSha1": "ce984b449364f5e9064085a45e76102e81bd3fc9",
+      "contentSha256": "04c28ce195b7da5da7c6cade06db9674c4e0945685614dc8d3acd4b7b0360ad4",
+      "ownerStageId": "software-detail-stage-08-content-check",
+      "useStageIds": ["software-detail-stage-07-module-draft", "software-detail-stage-08-content-check", "software-detail-stage-09-docx-finalize"]
+    },
+    {
+      "path": "scripts/collect_module_doc_evidence.m",
+      "type": "script",
+      "blobSha1": "0287d44fea396036b0db979c736344ddd8fe97ab",
+      "contentSha256": "9a7edbd4d5f5a4869518668e1bbed3adb8801f12d847491212d4992377424724",
+      "ownerStageId": "software-detail-stage-03-evidence-extract",
+      "useStageIds": ["software-detail-stage-02-model-plan", "software-detail-stage-03-evidence-extract"]
+    },
+    {
+      "path": "scripts/docx_list_format.py",
+      "type": "script",
+      "blobSha1": "8c206d6a6dd90cdbd05b259dc852bd32bc363e62",
+      "contentSha256": "debb52338fe63b21e535260301154d74d0595630031d5c959cf8f2403888ff66",
+      "ownerStageId": "software-detail-stage-09-docx-finalize",
+      "useStageIds": ["software-detail-stage-09-docx-finalize"]
+    },
+    {
+      "path": "scripts/satk_eval.py",
+      "type": "script",
+      "blobSha1": "f3ea0c6a6fd6506ff65352c498433375b496ad22",
+      "contentSha256": "336f74fafe3e828879d1b6e59dd88ee0158d2e8540be51bd66fe4f010ab7fefb",
+      "ownerStageId": "software-detail-stage-03-evidence-extract",
+      "useStageIds": ["software-detail-stage-01-initialize", "software-detail-stage-02-model-plan", "software-detail-stage-03-evidence-extract"]
+    },
+    {
+      "path": "scripts/setup_module_doc_support.m",
+      "type": "script",
+      "blobSha1": "9b02706e9b9159412aa9a7163a04aad435d908d7",
+      "contentSha256": "567b94ffb6786ffdab42bedd6d70995fa2b530892eeaf63ec5f3e4e857f8b518",
+      "ownerStageId": "software-detail-stage-01-initialize",
+      "useStageIds": ["software-detail-stage-01-initialize"]
+    },
+    {
+      "path": "scripts/validate_narrative_boundary.py",
+      "type": "script",
+      "blobSha1": "386c14fe404e5f77161c892e547d47a965064612",
+      "contentSha256": "08a8014e80c91ee0945eef9a283afde954e03098c524fe9824460a5cf757ed74",
+      "ownerStageId": "software-detail-stage-08-content-check",
+      "useStageIds": ["software-detail-stage-08-content-check", "software-detail-stage-09-docx-finalize"]
+    },
+    {
+      "path": "assets/templates/Template_Software_Detailed_Design.docx",
+      "type": "template",
+      "blobSha1": "1a47686e7453b59b57ac3a4b0b819328eee6e961",
+      "contentSha256": "5a28381e67cd009032324f6f645aa0d7966c8f945922857cf751b7c3d7adcbb7",
+      "ownerStageId": "software-detail-stage-09-docx-finalize",
+      "useStageIds": ["software-detail-stage-09-docx-finalize"]
+    }
+  ]
+}
