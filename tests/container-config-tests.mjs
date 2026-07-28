@@ -13,7 +13,12 @@ for (const required of [
   ".env.container.example",
   "compose.yaml",
   "compose.mac.yaml",
+  "compose.windows-docker-desktop.yaml",
+  "compose.linux-prod.yaml",
+  ".env.windows-docker-desktop.example",
+  ".env.linux-container-prod.example",
   "scripts/container-dev.mjs",
+  "scripts/container-production.mjs",
   "scripts/start-matlab-gateway.mjs",
   "scripts/check-container-secrets.mjs",
   "scripts/container-release-manifest.mjs",
@@ -84,6 +89,9 @@ assert.match(
 assert.match(matlabWorkerServer, /MATLAB_WORKER_HOST\s*\|\|\s*"127\.0\.0\.1"/);
 assert.match(matlabWorkerServer, /requireAuthToken:\s*process\.env\.NODE_ENV\s*!==\s*"test"/);
 assert.match(gatewayLauncher, /\/Applications\/MATLAB_R2026a\.app/);
+assert.match(gatewayLauncher, /C:\\\\Program Files\\\\MATLAB\\\\R2025b/);
+assert.match(gatewayLauncher, /values\.MATLAB_WORKER_HOST/);
+assert.match(gatewayLauncher, /values\.MATLAB_WORKER_PORT/);
 assert.match(gatewayLauncher, /MATLAB_ROOT:\s*matlabRoot/);
 assert.match(gatewayLauncher, /SATK_MATLAB_ROOT:\s*matlabRoot/);
 assert.match(gatewayLauncher, /SATK_MATLAB_SESSION_MODE:\s*"new"/);
@@ -134,6 +142,13 @@ assert.match(workerService, /GLM_API_KEY:/);
 assert.match(workerService, /GLM_BASE_URL:/);
 assert.doesNotMatch(platformService, /DEEPSEEK_API_KEY|DEEPSEEK_BASE_URL|GLM_API_KEY|GLM_BASE_URL/);
 assert.doesNotMatch(platformService, /HERMES_INFERENCE_PROVIDER|HERMES_INFERENCE_MODEL/);
+
+const hermesApp = read("src/hermes-app.js");
+const hermesClient = read("src/services/hermes-agent-client.js");
+assert.match(hermesApp, /\/internal\/tcsd-pipeline\/jobs-upload/);
+assert.match(hermesApp, /attachUnitTestCaseOutputFiles/);
+assert.match(hermesClient, /materializeTcsdPipelineArtifacts/);
+assert.match(hermesClient, /\/internal\/tcsd-pipeline\/jobs-upload/);
 
 const envExample = read(".env.container.example");
 assert.doesNotMatch(envExample, /(?:API_KEY|AUTH_TOKEN|PASSWORD|SECRET)[ \t]*=[ \t]*\S+/);

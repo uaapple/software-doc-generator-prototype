@@ -17,7 +17,7 @@ FROM --platform=${RUNTIME_PLATFORM} ${NODE_BASE_IMAGE} AS runtime
 
 ARG BUILD_CREATED=unknown
 ARG SOURCE_COMMIT=unknown
-ARG IMAGE_VERSION=0.1.0-container-dev
+ARG IMAGE_VERSION=0.1.0-container
 
 LABEL org.opencontainers.image.title="Software Document Generator Platform" \
       org.opencontainers.image.description="Frontend, backend, Wiki, scheduling, and Worker routing" \

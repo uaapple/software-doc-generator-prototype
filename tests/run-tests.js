@@ -11157,6 +11157,7 @@ const tests = [
     name: "UnitTestCaseGenerationService completes tasks with outputs xlsx and rejects artifact traversal",
     run: async () => {
       await withTempConfig(async (tempDir) => {
+        let cleanupJobId = "";
         const service = new UnitTestCaseGenerationService({
           hermesAgentClient: {
             job: null,
@@ -11219,6 +11220,9 @@ const tests = [
             },
             async getTcsdPipelineJob() {
               return this.job;
+            },
+            async cleanupTcsdPipelineUpload(jobId) {
+              cleanupJobId = jobId;
             }
           }
         });
@@ -11247,6 +11251,7 @@ const tests = [
         assert.equal(completed.artifacts[0].fileName, "Demo_Test0001_tcsd.xlsx");
         assert.equal(completed.artifacts[0].description, "最终 TCSD 单元测试用例 Excel");
         assert.equal(completed.artifacts[0].expectedValueCount, 1);
+        assert.equal(cleanupJobId, "mock-completed-job");
         const artifact = await service.getArtifact(task.id, completed.artifacts[0].id);
         assert.equal(path.basename(artifact.absolutePath), "Demo_Test0001_tcsd.xlsx");
 

@@ -16,11 +16,13 @@ import { SlxModelAnalysisService } from "./services/slx-model-analysis-service.j
 import { ModelRequirementViewService } from "./services/model-requirement-view-service.js";
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
 import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js";
-import { TCSD_ERROR_CODES } from "./services/tcsd-pipeline-contract.js";
+import { TCSD_ERROR_CODES, isTerminalJobStatus } from "./services/tcsd-pipeline-contract.js";
 import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.js";
 import { TcsdHermesSkillRegistry } from "./services/tcsd-hermes-skill-registry.js";
 
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
+const MAX_MULTIPART_FILE_COUNT = 2048;
+const MAX_MULTIPART_TOTAL_BYTES = 1024 * 1024 * 1024;
 
 function createHttpError(message, statusCode = 400, code = "hermes_request_invalid") {
   const error = new Error(message);
@@ -83,6 +85,12 @@ function getHermesUploadTempDir() {
   return config.hermes.uploadTempDir || path.join(config.rootDir || process.cwd(), "tmp", "hermes-agent-uploads");
 }
 
+function isManagedUploadSession(sessionDir = "", uploadRoot = getHermesUploadTempDir()) {
+  const root = path.resolve(uploadRoot);
+  const candidate = path.resolve(String(sessionDir || ""));
+  return candidate !== root && path.dirname(candidate) === root && path.basename(candidate).startsWith("step-");
+}
+
 function comparePathText(value = "") {
   return String(value || "").replace(/\\/g, "/").replace(/\/+$/, "");
 }
@@ -141,6 +149,11 @@ async function prepareMultipartStepPayload(req) {
   const payload = parseJsonField(req.body?.payload || "{}", {});
   const uploadManifest = parseJsonField(req.body?.uploadManifest || "{}", { roots: [], files: [] });
   const uploadedFiles = new Map((Array.isArray(req.files) ? req.files : []).map((file) => [file.fieldname, file]));
+  const totalBytes = (Array.isArray(req.files) ? req.files : [])
+    .reduce((total, file) => total + Number(file.size || 0), 0);
+  if (totalBytes > Number(config.hermes.maxUploadTotalBytes || MAX_MULTIPART_TOTAL_BYTES)) {
+    throw createHttpError("Multipart upload exceeds the aggregate size limit", 413, "hermes_upload_total_too_large");
+  }
   const sessionDir = path.join(getHermesUploadTempDir(), `step-${Date.now()}-${randomUUID()}`);
   await fs.mkdir(sessionDir, { recursive: true });
 
@@ -1153,7 +1166,10 @@ export async function createHermesApp() {
   const upload = multer({
     dest: uploadTempDir,
     limits: {
-      fileSize: Number(config.hermes.maxUploadBytes || 250 * 1024 * 1024)
+      fileSize: Number(config.hermes.maxUploadBytes || 250 * 1024 * 1024),
+      files: Number(config.hermes.maxUploadFileCount || MAX_MULTIPART_FILE_COUNT),
+      fields: 2,
+      parts: Number(config.hermes.maxUploadFileCount || MAX_MULTIPART_FILE_COUNT) + 2
     }
   });
   const tcsdStageExecutor = new TcsdHermesStageExecutor();
@@ -1170,6 +1186,7 @@ export async function createHermesApp() {
     executor: (stageIndex, input, job, options) => tcsdStageExecutor.execute(stageIndex, input, job, options),
     checkpointValidator: (checkpoint, context, job) => tcsdStageExecutor.validateCheckpoint(checkpoint, context, job)
   });
+  await tcsdJobs.expireStaleJobs(Date.now() - 7 * 24 * 60 * 60 * 1000);
   await tcsdJobs.recoverAll();
 
   app.use(express.json({ limit: "8mb" }));
@@ -1184,20 +1201,125 @@ export async function createHermesApp() {
     });
   });
 
+  const startTcsdPipelineJob = async (payload = {}, options = {}) => {
+    const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
+    const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
+    const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
+    return tcsdJobs.start({
+      taskId: payload.taskId,
+      idempotencyKey: payload.idempotencyKey || payload.taskId,
+      ...inputArtifact,
+      uploadSessionDir: String(options.uploadSessionDir || ""),
+      projectAddonCopy: addonCopy
+    });
+  };
+
+  const cleanupTerminalTcsdUpload = async (job) => {
+    const sessionDir = String(job?.input?.uploadSessionDir || "");
+    if (!sessionDir || !isTerminalJobStatus(job?.status) || !isManagedUploadSession(sessionDir, uploadTempDir)) {
+      return false;
+    }
+    await fs.rm(sessionDir, { recursive: true, force: true });
+    job.input.uploadSessionDir = "";
+    job.uploadCleanedAt = now();
+    await tcsdJobs.save(job);
+    return true;
+  };
+
+  const sweepTerminalTcsdUploads = async () => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    await tcsdJobs.expireStaleJobs(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const jobs = await tcsdJobs.list();
+    const referencedSessions = new Set(
+      jobs
+        .map((job) => String(job?.input?.uploadSessionDir || ""))
+        .filter((sessionDir) => isManagedUploadSession(sessionDir, uploadTempDir))
+        .map((sessionDir) => path.resolve(sessionDir))
+    );
+    for (const job of jobs) {
+      const updatedAt = Date.parse(job?.updatedAt || job?.createdAt || "") || 0;
+      if (isTerminalJobStatus(job?.status) && updatedAt <= cutoff) {
+        await cleanupTerminalTcsdUpload(job).catch(() => {});
+      }
+    }
+    for (const entry of await fs.readdir(uploadTempDir, { withFileTypes: true }).catch(() => [])) {
+      if (!entry.isDirectory() || !entry.name.startsWith("step-")) continue;
+      const sessionDir = path.join(uploadTempDir, entry.name);
+      if (referencedSessions.has(path.resolve(sessionDir))) continue;
+      const stat = await fs.stat(sessionDir).catch(() => null);
+      if (stat && stat.mtimeMs <= cutoff) {
+        await fs.rm(sessionDir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  };
+  await sweepTerminalTcsdUploads();
+  const uploadSweepTimer = setInterval(() => {
+    sweepTerminalTcsdUploads().catch(() => {});
+  }, 60 * 60 * 1000);
+  uploadSweepTimer.unref();
+
   app.post("/internal/tcsd-pipeline/jobs", requireHermesAuth, async (req, res, next) => {
     try {
       const payload = req.body || {};
-      const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
-      const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
-      const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
-      const job = await tcsdJobs.start({ taskId: payload.taskId, idempotencyKey: payload.idempotencyKey || payload.taskId, ...inputArtifact, projectAddonCopy: addonCopy });
+      const job = await startTcsdPipelineJob(payload);
       res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema });
     } catch (error) { next(error); }
   });
-  app.get("/internal/tcsd-pipeline/jobs/:jobId", requireHermesAuth, async (req, res) => {
-    const job = await tcsdJobs.get(req.params.jobId);
-    if (!job) return res.status(404).json({ error: "TCSD 作业不存在。", code: TCSD_ERROR_CODES.jobNotFound });
-    return res.json(job);
+
+  app.post(
+    "/internal/tcsd-pipeline/jobs-upload",
+    requireHermesAuth,
+    upload.any(),
+    async (req, res, next) => {
+      let cleanupDir = "";
+      let retained = false;
+      try {
+        const prepared = await prepareMultipartStepPayload(req);
+        cleanupDir = prepared.cleanupDir;
+        const job = await startTcsdPipelineJob(prepared.payload, { uploadSessionDir: cleanupDir });
+        retained = path.resolve(job.input?.workspaceDir || "") === path.resolve(
+          prepared.payload?.inputArtifact?.workspaceDir || ""
+        );
+        res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema });
+      } catch (error) {
+        next(error);
+      } finally {
+        if (cleanupDir && !retained) {
+          await fs.rm(cleanupDir, { recursive: true, force: true }).catch(() => {});
+        }
+        for (const file of Array.isArray(req.files) ? req.files : []) {
+          await fs.rm(file.path, { force: true }).catch(() => {});
+        }
+      }
+    }
+  );
+
+  app.get("/internal/tcsd-pipeline/jobs/:jobId", requireHermesAuth, async (req, res, next) => {
+    try {
+      const job = await tcsdJobs.get(req.params.jobId);
+      if (!job) return res.status(404).json({ error: "TCSD 作业不存在。", code: TCSD_ERROR_CODES.jobNotFound });
+      const transferred = await attachUnitTestCaseOutputFiles(
+        { outputFiles: job.artifacts || [] },
+        job.input || {}
+      );
+      return res.json({ ...job, artifacts: transferred.outputFiles || [] });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.delete("/internal/tcsd-pipeline/jobs/:jobId/upload-session", requireHermesAuth, async (req, res, next) => {
+    try {
+      const job = await tcsdJobs.get(req.params.jobId);
+      if (!job) return res.status(404).json({ error: "TCSD 作业不存在。", code: TCSD_ERROR_CODES.jobNotFound });
+      if (!isTerminalJobStatus(job.status)) {
+        return res.status(409).json({ error: "TCSD 作业尚未结束，不能清理上传工作区。", code: "tcsd_job_not_terminal" });
+      }
+      const cleaned = await cleanupTerminalTcsdUpload(job);
+      return res.json({ ok: true, cleaned, jobId: job.jobId });
+    } catch (error) {
+      return next(error);
+    }
   });
 
   const executeStepRequest = async (req, res, next) => {

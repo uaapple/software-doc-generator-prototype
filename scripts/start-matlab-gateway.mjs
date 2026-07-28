@@ -27,7 +27,7 @@ for (const key of ["MATLAB_GATEWAY_TOKEN", "MATLAB_GATEWAY_EVALUATE_TOKEN"]) {
 const matlabRoot = path.resolve(
   process.env.MATLAB_ROOT ||
   values.MATLAB_ROOT ||
-  "/Applications/MATLAB_R2026a.app"
+  defaultMatlabRoot()
 );
 if (!fs.existsSync(matlabRoot)) {
   throw new Error(`Configured MATLAB_ROOT does not exist: ${matlabRoot}`);
@@ -96,7 +96,14 @@ const childEnv = {
     process.env.MATLAB_MCP_SERVER_ARGS_JSON ||
     values.MATLAB_MCP_SERVER_ARGS_JSON ||
     "",
-  MATLAB_WORKER_HOST: process.env.MATLAB_WORKER_HOST || "127.0.0.1",
+  MATLAB_WORKER_HOST:
+    process.env.MATLAB_WORKER_HOST ||
+    values.MATLAB_WORKER_HOST ||
+    "127.0.0.1",
+  MATLAB_WORKER_PORT:
+    process.env.MATLAB_WORKER_PORT ||
+    values.MATLAB_WORKER_PORT ||
+    "5100",
   MATLAB_ROOT: matlabRoot,
   SATK_MATLAB_ROOT: matlabRoot,
   SATK_MATLAB_SESSION_MODE: "new"
@@ -150,4 +157,11 @@ function defaultMcpTempDirectory() {
     return "/tmp/sdg-mcp";
   }
   return candidate;
+}
+
+function defaultMatlabRoot() {
+  if (process.platform === "win32") {
+    return "C:\\Program Files\\MATLAB\\R2025b";
+  }
+  return "/Applications/MATLAB_R2026a.app";
 }

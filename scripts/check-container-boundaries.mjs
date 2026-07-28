@@ -61,6 +61,33 @@ requirePattern(compose, /read_only:\s*true/g, "compose services must use a read-
 requirePattern(compose, /no-new-privileges:true/g, "compose services must enable no-new-privileges");
 forbidPattern(compose, /MATLAB_ROOT|SATK_MATLAB_ROOT|SIMULINK_AGENTIC_TOOLKIT_ROOT/, "containers must not configure host MATLAB/SATK roots");
 
+for (const productionComposePath of [
+  "compose.windows-docker-desktop.yaml",
+  "compose.linux-prod.yaml"
+]) {
+  const productionCompose = read(productionComposePath);
+  requirePattern(
+    productionCompose,
+    /platform:\s*linux\/amd64/g,
+    `${productionComposePath} must select linux/amd64`
+  );
+  requirePattern(
+    productionCompose,
+    /read_only:\s*true/g,
+    `${productionComposePath} must use a read-only root filesystem`
+  );
+  requirePattern(
+    productionCompose,
+    /no-new-privileges:true/g,
+    `${productionComposePath} must enable no-new-privileges`
+  );
+  forbidPattern(
+    productionCompose,
+    /^\s+build:/m,
+    `${productionComposePath} must use prebuilt immutable images`
+  );
+}
+
 if (failures.length) {
   for (const failure of failures) console.error(`FAIL: ${failure}`);
   process.exitCode = 1;

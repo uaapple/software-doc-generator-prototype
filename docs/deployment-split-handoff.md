@@ -12,10 +12,16 @@ Mac 开发侧新增 `sdg-platform` 与 `sdg-hermes-worker` 两个 `linux/amd64`
 镜像，统一入口与安全边界见 `docs/containerized-mac-runtime.md`。MATLAB、
 Simulink、SATK 和 MCP 仍由宿主原生 Gateway 提供，不进入镜像。
 
-这次变化不直接切换任何生产流量。未来 Linux 生产只部署经过 amd64 验证的
-platform digest；Windows Worker 使用同一 worker image digest，并通过 WSL2/
-Docker Desktop 访问 Windows 宿主 Gateway。生产持久数据、Hermes Home、项目
-addon、日志、secrets、模型/MAT/SLX 和 MATLAB 许可证始终位于镜像外。
+这次变化不直接切换任何生产流量。当前批准的首轮生产基线为 Docker Desktop：
+Linux 生产只部署经过 amd64 验证的 platform image ID；Windows Worker 使用同一
+worker image ID，通过 Docker Desktop 的 Linux containers 后端和
+`host.docker.internal` 访问 Windows 原生 Gateway。独立 WSL Docker Engine CE
+适配不在本轮范围。生产持久数据、Hermes Home、项目 addon、日志、secrets、
+模型/MAT/SLX 和 MATLAB 许可证始终位于镜像外。
+
+生产 Compose、离线镜像 tar、Windows/Linux env、灰度、真实 TCSD 验收与回滚
+统一见 `docs/docker-desktop-production-deployment.md`。生产端不得直接运行
+Mac all-in-one `compose.yaml + compose.mac.yaml`。
 
 旧 ZIP/源码包和原生服务在灰度验收完成前继续保留为回滚路径。OCI 交付必须
 携带源码 SHA、基础镜像引用、运行时版本、技能 hash、应用镜像 digest、SBOM、

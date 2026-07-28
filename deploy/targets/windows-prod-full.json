@@ -7,6 +7,10 @@
   "includePaths": [
     ".env.defaults",
     ".env.windows-prod.example",
+    ".env.windows-docker-desktop.example",
+    "compose.windows-docker-desktop.yaml",
+    "containers",
+    "deploy/container-license-policy.json",
     "README.md",
     "package.json",
     "package-lock.json",
@@ -15,7 +19,7 @@
     "wiki",
     "skills",
     "scripts",
-    "requirements/tcsd-runtime.txt",
+    "requirements",
     "tools",
     "templates",
     "docs"

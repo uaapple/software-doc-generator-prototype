@@ -4,6 +4,10 @@
 MATLAB R2026a、Simulink、SATK 和 MCP 保留在 macOS 宿主。它不会替换现有
 原生启动脚本，删除容器不会影响原生回滚路径。
 
+Windows Docker Desktop Worker 与 Linux VM Platform 的生产部署不是直接复用
+本开发 Compose；生产入口、不可变镜像和灰度/回滚要求见
+`docs/docker-desktop-production-deployment.md`。
+
 ## 运行边界
 
 - `sdg-platform`：前端、后端、Wiki、调度和 Worker 路由。

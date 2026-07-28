@@ -66,6 +66,33 @@ export class TcsdPipelineJobService {
     return items.filter(Boolean);
   }
 
+  async expireStaleJobs(cutoffMs = 0) {
+    const expired = [];
+    for (const job of await this.list()) {
+      const updatedAt = Date.parse(job.updatedAt || job.createdAt || "") || 0;
+      if (
+        isTerminalJobStatus(job.status) ||
+        this.running.has(job.jobId) ||
+        updatedAt > Number(cutoffMs || 0)
+      ) {
+        continue;
+      }
+      const message = "TCSD 作业租约已过期，Worker 已停止保留上传工作区。";
+      const current = job.stages?.find((stage) => ["正在执行", "等待执行"].includes(stage.status));
+      if (current) {
+        current.status = "失败";
+        current.endedAt = now();
+        current.summary = message;
+        current.error = { code: "tcsd_job_lease_expired", message, details: null };
+      }
+      job.status = "失败";
+      job.error = { code: "tcsd_job_lease_expired", message, details: null };
+      await this.save(job);
+      expired.push(job.jobId);
+    }
+    return expired;
+  }
+
   async start(input = {}) {
     const idempotencyKey = String(input.idempotencyKey || input.taskId || "");
     if (!idempotencyKey) {

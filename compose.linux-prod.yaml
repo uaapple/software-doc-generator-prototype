@@ -1,0 +1,116 @@
+name: software-doc-generator-linux-platform
+
+x-platform-runtime: &platform-runtime
+  platform: linux/amd64
+  init: true
+  restart: unless-stopped
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 30s
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=256m
+
+services:
+  permissions-init:
+    platform: linux/amd64
+    image: ${SDG_PLATFORM_IMAGE:?SDG_PLATFORM_IMAGE must be an immutable reference}
+    pull_policy: never
+    user: "0:0"
+    read_only: true
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    entrypoint:
+      - /bin/sh
+      - -eu
+      - -c
+    command:
+      - |
+        for directory in /state/data /state/logs /state/platform-skills /state/platform-home; do
+          chgrp 20000 "$$directory"
+          chmod 2770 "$$directory"
+        done
+    volumes:
+      - type: bind
+        source: ${SDG_CONTAINER_DATA_DIR:?SDG_CONTAINER_DATA_DIR must be set}
+        target: /state/data
+      - type: bind
+        source: ${SDG_PLATFORM_LOG_DIR:?SDG_PLATFORM_LOG_DIR must be set}
+        target: /state/logs
+      - type: volume
+        source: platform-skills
+        target: /state/platform-skills
+      - type: volume
+        source: platform-home
+        target: /state/platform-home
+
+  platform:
+    <<: *platform-runtime
+    image: ${SDG_PLATFORM_IMAGE:?SDG_PLATFORM_IMAGE must be an immutable reference}
+    pull_policy: never
+    group_add:
+      - "20000"
+    environment:
+      APP_ENV: production
+      APP_RUNTIME_ROLE: platform
+      HOST: 0.0.0.0
+      PORT: 3000
+      APP_DATA_DIR: /var/lib/sdg/data
+      APP_SKILLS_DIR: /var/lib/sdg/skills
+      HERMES_TRANSPORT: api
+      HERMES_API_MODE: upload
+      HERMES_BASE_URL: ${HERMES_BASE_URL:?HERMES_BASE_URL must be set}
+      HERMES_AUTH_TOKEN: ${HERMES_AGENT_TOKEN:?HERMES_AGENT_TOKEN must be set}
+      HERMES_TASK_CONCURRENCY: "1"
+      HERMES_SERVER_REQUEST_TIMEOUT_MS: "0"
+      UNIT_TEST_DEFAULT_WORKER_ID: ${UNIT_TEST_DEFAULT_WORKER_ID:?UNIT_TEST_DEFAULT_WORKER_ID must be set}
+      UNIT_TEST_WORKER_PROFILES_JSON: ${UNIT_TEST_WORKER_PROFILES_JSON:?UNIT_TEST_WORKER_PROFILES_JSON must be set}
+      UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT: /var/lib/sdg/data/unit-test-case-generation/tasks
+      SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT: /var/lib/sdg/data/software-module-description-generation/tasks
+      UNIT_TEST_CASE_PROJECT_ADMIN_CODE: ${UNIT_TEST_CASE_PROJECT_ADMIN_CODE:-114301}
+      UNIT_TEST_CASE_DEFAULT_PROJECTS: ${UNIT_TEST_CASE_DEFAULT_PROJECTS:-01_楚能,02_TMS}
+      MATLAB_MCP_TRANSPORT: http
+      MATLAB_MCP_BASE_URL: ${MATLAB_MCP_BASE_URL:?MATLAB_MCP_BASE_URL must be set}
+      MATLAB_MCP_HTTP_MODE: gateway
+      MATLAB_MCP_AUTH_TOKEN: ${MATLAB_GATEWAY_TOKEN:?MATLAB_GATEWAY_TOKEN must be set}
+      MATLAB_MCP_TIMEOUT_MS: ${MATLAB_MCP_TIMEOUT_MS:-300000}
+      TMPDIR: /tmp
+    volumes:
+      - type: bind
+        source: ${SDG_CONTAINER_DATA_DIR:?SDG_CONTAINER_DATA_DIR must be set}
+        target: /var/lib/sdg/data
+      - type: volume
+        source: platform-skills
+        target: /var/lib/sdg/skills
+      - type: volume
+        source: platform-home
+        target: /var/lib/sdg/home
+      - type: bind
+        source: ${SDG_PLATFORM_LOG_DIR:?SDG_PLATFORM_LOG_DIR must be set}
+        target: /var/log/sdg
+    ports:
+      - ${SDG_PLATFORM_BIND_IP:?SDG_PLATFORM_BIND_IP must be an approved host address}:${SDG_PLATFORM_PORT:-3000}:3000
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  platform-skills:
+    name: ${SDG_PLATFORM_SKILLS_VOLUME_NAME:-sdg-platform-skills-prod}
+  platform-home:
+    name: ${SDG_PLATFORM_HOME_VOLUME_NAME:-sdg-platform-home-prod}

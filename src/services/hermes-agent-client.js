@@ -15,6 +15,7 @@ const CLI_SKILL_CONTENT_MAX_LENGTH = 1200;
 const CLI_PATH_MAX_LENGTH = 260;
 const HERMES_USAGE_QUERY_RETRIES = 5;
 const HERMES_USAGE_QUERY_RETRY_DELAY_MS = 250;
+const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
 
 function trimTrailingSlash(value = "") {
   return String(value || "").replace(/\/+$/, "");
@@ -2195,6 +2196,50 @@ async function materializeTransferredOutputFiles(artifact = {}, payload = {}) {
   }
 }
 
+async function materializeTcsdPipelineArtifacts(job = {}, workspaceDir = "") {
+  const localWorkspace = path.resolve(String(workspaceDir || ""));
+  if (!localWorkspace) return job;
+  const artifacts = [];
+  for (const item of Array.isArray(job?.artifacts) ? job.artifacts : []) {
+    if (!item || typeof item !== "object") {
+      artifacts.push(item);
+      continue;
+    }
+    const { contentBase64, encoding, ...metadata } = item;
+    const relativePath = normalizeTransferredOutputPath(
+      item.relativePath || item.path || item.filePath,
+      ".xlsx"
+    );
+    if (!relativePath || encoding !== "base64" || !contentBase64) {
+      artifacts.push(metadata);
+      continue;
+    }
+    if (String(contentBase64).length > Math.ceil(MAX_TRANSFERRED_TCSD_OUTPUT_BYTES * 4 / 3) + 8) {
+      throw Object.assign(new Error("TCSD Worker 返回的 workbook 超过传输上限。"), {
+        code: "tcsd_artifact_too_large"
+      });
+    }
+    const content = Buffer.from(String(contentBase64), "base64");
+    if (content.length > MAX_TRANSFERRED_TCSD_OUTPUT_BYTES) {
+      throw Object.assign(new Error("TCSD Worker 返回的 workbook 超过传输上限。"), {
+        code: "tcsd_artifact_too_large"
+      });
+    }
+    const absolutePath = path.resolve(localWorkspace, ...relativePath.split("/"));
+    if (!absolutePath.startsWith(`${localWorkspace}${path.sep}`)) {
+      throw Object.assign(new Error("TCSD Worker 返回了非法 workbook 路径。"), {
+        code: "tcsd_artifact_path_forbidden"
+      });
+    }
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(temporaryPath, content);
+    await fs.rename(temporaryPath, absolutePath);
+    artifacts.push({ ...metadata, relativePath });
+  }
+  return { ...job, artifacts };
+}
+
 function buildProfiledCliArgs(profile = "", args = []) {
   const profileName = String(profile || "").trim();
   if (!profileName || profileName === "default") {
@@ -2993,12 +3038,31 @@ export class HermesAgentClient {
   async startTcsdPipelineJob(payload = {}) {
     let response;
     try {
-      response = await postJsonWithTimeout(
-        `${this.baseURL}/internal/tcsd-pipeline/jobs`,
-        payload,
-        this.timeoutMs,
-        this._authHeaders()
-      );
+      if (isMultipartApiMode(this.apiMode)) {
+        const uploadManifest = await collectUploadFilesForAllowedPaths(payload.allowedPaths || []);
+        if (!uploadManifest.files.length) {
+          throw Object.assign(new Error("TCSD job upload has no readable workspace files."), {
+            code: "tcsd_upload_empty"
+          });
+        }
+        response = await postMultipartWithTimeout(
+          `${this.baseURL}/internal/tcsd-pipeline/jobs-upload`,
+          {
+            payload: JSON.stringify(payload),
+            uploadManifest: JSON.stringify(uploadManifest)
+          },
+          uploadManifest.files,
+          this._authHeaders(),
+          this.timeoutMs
+        );
+      } else {
+        response = await postJsonWithTimeout(
+          `${this.baseURL}/internal/tcsd-pipeline/jobs`,
+          payload,
+          this.timeoutMs,
+          this._authHeaders()
+        );
+      }
     }
     catch (cause) { const error = new Error(`TCSD Worker 不可用：${cause.message}`); error.code = "tcsd_worker_unavailable"; error.cause = cause; throw error; }
     let body = null;
@@ -3007,7 +3071,7 @@ export class HermesAgentClient {
     return body;
   }
 
-  async getTcsdPipelineJob(jobId = "") {
+  async getTcsdPipelineJob(jobId = "", options = {}) {
     const target = new URL(`${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}`);
     const transport = target.protocol === "https:" ? https : http;
     let response;
@@ -3022,6 +3086,40 @@ export class HermesAgentClient {
     }); } catch (cause) { if (cause.code === "tcsd_poll_timeout") throw cause; const error = new Error(`TCSD Worker 不可用：${cause.message}`); error.code = "tcsd_worker_unavailable"; error.cause = cause; throw error; }
     let body = null; try { body = JSON.parse(response.text); } catch (_error) { body = null; }
     if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 作业查询失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
+    return materializeTcsdPipelineArtifacts(body, options.localWorkspaceDir || "");
+  }
+
+  async cleanupTcsdPipelineUpload(jobId = "") {
+    const target = new URL(
+      `${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}/upload-session`
+    );
+    const transport = target.protocol === "https:" ? https : http;
+    const response = await new Promise((resolve, reject) => {
+      const request = transport.request(target, {
+        method: "DELETE",
+        timeout: this.timeoutMs,
+        headers: this._authHeaders()
+      }, (result) => {
+        let text = "";
+        result.setEncoding("utf8");
+        result.on("data", (chunk) => { text += chunk; });
+        result.on("end", () => resolve({
+          ok: result.statusCode >= 200 && result.statusCode < 300,
+          status: result.statusCode,
+          text
+        }));
+      });
+      request.on("timeout", () => request.destroy(new Error("TCSD Worker 清理上传工作区超时。")));
+      request.on("error", reject);
+      request.end();
+    });
+    let body = null;
+    try { body = JSON.parse(response.text); } catch (_error) { body = null; }
+    if (!response.ok) {
+      const error = new Error(body?.error || "TCSD Worker 清理上传工作区失败。");
+      error.code = body?.code || "tcsd_upload_cleanup_failed";
+      throw error;
+    }
     return body;
   }
 }
