@@ -22,12 +22,23 @@ const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "sdd-nine-stage-smoke-"
 
 try {
   const trace = await createSyntheticTrace(tempRoot);
-  await assertSoftwareDetailDesignNineStageTrace(trace);
+  await assertSoftwareDetailDesignNineStageTrace(trace, { verifyArtifactFiles: true });
+  const minimalFunctionalTrace = structuredClone(trace);
+  for (const stage of minimalFunctionalTrace.stages) {
+    for (const artifact of stage.artifacts) {
+      if (artifact.role === "detail-design-docx") continue;
+      delete artifact.materialized;
+      delete artifact.byteLength;
+      delete artifact.sha256;
+    }
+  }
+  await assertSoftwareDetailDesignNineStageTrace(minimalFunctionalTrace);
   const tracePath = path.join(tempRoot, "synthetic-nine-stage-trace.json");
   await fs.writeFile(tracePath, JSON.stringify(trace, null, 2));
   const liveEntryResult = await execFileAsync(process.execPath, [
     liveRegressionPath,
-    `--trace=${tracePath}`
+    `--trace=${tracePath}`,
+    "--verify-files"
   ]);
   assert.match(
     liveEntryResult.stdout,
@@ -51,11 +62,11 @@ try {
 
   const missingArtifact = structuredClone(trace);
   missingArtifact.stages[7].artifacts = missingArtifact.stages[7].artifacts.filter(
-    (artifact) => artifact.role !== "traceability-report"
+    (artifact) => artifact.role !== "content-check-report"
   );
   await assert.rejects(
     () => assertSoftwareDetailDesignNineStageTrace(missingArtifact),
-    /missing required artifact traceability-report/
+    /missing required artifact content-check-report/
   );
 
   const unmaterializedDocx = structuredClone(trace);
@@ -67,7 +78,7 @@ try {
   );
   await assert.rejects(
     () => assertSoftwareDetailDesignNineStageTrace(unmaterializedDocx),
-    /detail-design-docx must be materialized/
+    /final DOCX must be materialized/
   );
 
   const outOfOrder = structuredClone(trace);

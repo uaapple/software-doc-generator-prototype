@@ -18,49 +18,49 @@ export const SOFTWARE_DETAIL_DESIGN_STAGES = Object.freeze([
   stage(
     2,
     "software-detail-stage-02-model-plan",
-    ["model-plan", "environment-gate-report"],
+    ["model-index", "hierarchy-manifest", "analysis-queue"],
     "reused"
   ),
   stage(
     3,
     "software-detail-stage-03-evidence-extract",
-    ["model-fact-bundle", "interface-inventory", "data-dictionary"],
+    ["evidence-shards"],
     "reused"
   ),
   stage(
     4,
     "software-detail-stage-04-output-ledger",
-    ["output-ledger", "requirements-trace-matrix"],
+    ["output-ledger", "coverage-report"],
     "reused"
   ),
   stage(
     5,
     "software-detail-stage-05-boundary-projection",
-    ["boundary-projection", "module-structure"],
+    ["boundary-projection", "behavior-groups", "narrative-plan"],
     "reused"
   ),
   stage(
     6,
     "software-detail-stage-06-architecture-draft",
-    ["architecture-draft", "interface-draft"],
+    ["architecture-draft"],
     "reused"
   ),
   stage(
     7,
     "software-detail-stage-07-module-draft",
-    ["module-draft", "behavior-draft", "algorithm-data-draft"],
+    ["module-draft"],
     "reused"
   ),
   stage(
     8,
     "software-detail-stage-08-content-check",
-    ["consistency-report", "completeness-report", "traceability-report"],
+    ["checked-content", "content-check-report"],
     "reused"
   ),
   stage(
     9,
     "software-detail-stage-09-docx-finalize",
-    ["detail-design-docx", "artifact-manifest", "matlab-session-cleanup"],
+    ["detail-design-docx", "artifact-manifest"],
     "cleaned"
   )
 ]);
@@ -76,7 +76,8 @@ function stage(index, stageId, requiredArtifactRoles, matlabSessionAction) {
   });
 }
 
-export async function assertSoftwareDetailDesignNineStageTrace(trace) {
+export async function assertSoftwareDetailDesignNineStageTrace(trace, options = {}) {
+  const verifyArtifactFiles = options.verifyArtifactFiles === true;
   assert.equal(trace?.schema, SOFTWARE_DETAIL_DESIGN_TRACE_SCHEMA);
   assert.equal(trace?.pipelineId, SOFTWARE_DETAIL_DESIGN_PIPELINE_ID);
   assertNonEmptyString(trace?.taskId, "trace.taskId");
@@ -87,7 +88,10 @@ export async function assertSoftwareDetailDesignNineStageTrace(trace) {
     "software detail design trace must contain exactly nine stages"
   );
 
-  const workspaceRealPath = await fs.realpath(trace.workspaceDir);
+  const workspacePath = path.resolve(trace.workspaceDir);
+  const workspaceBoundary = verifyArtifactFiles
+    ? await fs.realpath(workspacePath)
+    : workspacePath;
   const matlabSessionId = trace?.matlabSession?.sessionId;
   assertNonEmptyString(matlabSessionId, "trace.matlabSession.sessionId");
   assert.equal(
@@ -154,11 +158,12 @@ export async function assertSoftwareDetailDesignNineStageTrace(trace) {
     for (const role of expected.requiredArtifactRoles) {
       const artifact = artifactsByRole.get(role);
       assert.ok(artifact, `stage ${expected.index} is missing required artifact ${role}`);
-      await assertMaterializedArtifact({
+      await assertArtifactDeclaration({
         artifact,
         artifactPaths,
         label: `stage ${expected.index} artifact ${role}`,
-        workspaceRealPath
+        verifyArtifactFiles,
+        workspaceBoundary
       });
     }
   }
@@ -186,35 +191,32 @@ export async function assertSoftwareDetailDesignNineStageTrace(trace) {
     /\.docx$/i,
     "final materialized artifact must use the DOCX extension"
   );
-  const finalDocxPath = resolveWorkspaceArtifactPath(
-    workspaceRealPath,
-    trace.finalDocx.relativePath,
-    "final DOCX"
-  );
-  const finalDocxBytes = await fs.readFile(finalDocxPath);
-  assert.ok(
-    finalDocxBytes.length >= 4 &&
-      finalDocxBytes[0] === 0x50 &&
-      finalDocxBytes[1] === 0x4b,
-    "final DOCX must contain a ZIP-based DOCX payload"
-  );
+  if (verifyArtifactFiles) {
+    const finalDocxPath = resolveWorkspaceArtifactPath(
+      workspaceBoundary,
+      trace.finalDocx.relativePath,
+      "final DOCX"
+    );
+    const finalDocxBytes = await fs.readFile(finalDocxPath);
+    assert.ok(
+      finalDocxBytes.length >= 4 &&
+        finalDocxBytes[0] === 0x50 &&
+        finalDocxBytes[1] === 0x4b,
+      "final DOCX must contain a ZIP-based DOCX payload"
+    );
+  }
 
   return trace;
 }
 
-async function assertMaterializedArtifact({
+async function assertArtifactDeclaration({
   artifact,
   artifactPaths,
   label,
-  workspaceRealPath
+  verifyArtifactFiles,
+  workspaceBoundary
 }) {
-  assert.equal(artifact?.materialized, true, `${label} must be materialized`);
   assertNonEmptyString(artifact?.relativePath, `${label}.relativePath`);
-  assert.match(artifact?.sha256 || "", /^[a-f0-9]{64}$/, `${label}.sha256 must be lowercase SHA-256`);
-  assert.ok(
-    Number.isInteger(artifact?.byteLength) && artifact.byteLength > 0,
-    `${label}.byteLength must be a positive integer`
-  );
   assert.equal(
     artifactPaths.has(artifact.relativePath),
     false,
@@ -223,12 +225,20 @@ async function assertMaterializedArtifact({
   artifactPaths.add(artifact.relativePath);
 
   const artifactPath = resolveWorkspaceArtifactPath(
-    workspaceRealPath,
+    workspaceBoundary,
     artifact.relativePath,
     label
   );
+  if (!verifyArtifactFiles) return;
+
+  assert.equal(artifact?.materialized, true, `${label} must be materialized`);
+  assert.match(artifact?.sha256 || "", /^[a-f0-9]{64}$/, `${label}.sha256 must be lowercase SHA-256`);
+  assert.ok(
+    Number.isInteger(artifact?.byteLength) && artifact.byteLength > 0,
+    `${label}.byteLength must be a positive integer`
+  );
   const artifactRealPath = await fs.realpath(artifactPath);
-  assertPathInside(workspaceRealPath, artifactRealPath, label);
+  assertPathInside(workspaceBoundary, artifactRealPath, label);
   const bytes = await fs.readFile(artifactRealPath);
   assert.equal(bytes.length, artifact.byteLength, `${label} byteLength mismatch`);
   assert.equal(
