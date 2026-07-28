@@ -35,15 +35,18 @@ function walkFiles(root, relative = "") {
 }
 
 function parseFrontmatter(text) {
-  const match = text.match(/^---\n([\s\S]*?)\n---\n/);
-  assert.ok(match, "SKILL.md must start with YAML frontmatter");
-  const result = {};
-  for (const line of match[1].split("\n")) {
-    const field = line.match(/^([a-z_]+):\s*(.+)$/);
-    assert.ok(field, `unexpected frontmatter line: ${line}`);
-    result[field[1]] = field[2];
-  }
-  return result;
+  const match = text.match(
+    /^---\nname: ([^\n]+)\nmetadata:\n  version: "([^"]+)"\ndescription: ([^\n]+)\n---\n/
+  );
+  assert.ok(
+    match,
+    "SKILL.md must start with name, metadata.version, and description frontmatter"
+  );
+  return {
+    name: match[1],
+    metadata: { version: match[2] },
+    description: match[3]
+  };
 }
 
 function parseStageContract(text) {
@@ -110,8 +113,9 @@ for (const stageId of stageIds) {
     "utf8"
   );
   const frontmatter = parseFrontmatter(skillText);
-  assert.deepEqual(Object.keys(frontmatter), ["name", "description"]);
+  assert.deepEqual(Object.keys(frontmatter), ["name", "metadata", "description"]);
   assert.equal(frontmatter.name, stageId);
+  assert.equal(frontmatter.metadata.version, mappedStage.skillVersion);
   assert.match(frontmatter.description, /fresh Hermes session/);
 
   const contract = parseStageContract(skillText);

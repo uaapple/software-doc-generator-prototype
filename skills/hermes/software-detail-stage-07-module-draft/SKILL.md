@@ -1,11 +1,11 @@
 ---
 name: software-detail-stage-07-module-draft
+metadata:
+  version: "1.0.0"
 description: Draft the module-function sections for software-detail pipeline stage 7 from pinned architecture, ledger, boundary, behavior-group, and narrative-plan artifacts. Use only when the pipeline explicitly invokes stage 7 in a fresh Hermes session.
 ---
 
 # Draft Software-Detail Modules
-
-Version: `1.0.0`
 
 Execute only `software-detail-stage-07-module-draft`. Do not invoke another stage, recollect model evidence, render DOCX, or reuse a Hermes session from another stage or failed attempt.
 

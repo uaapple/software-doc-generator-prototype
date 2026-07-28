@@ -1,11 +1,11 @@
 ---
 name: software-detail-stage-08-content-check
+metadata:
+  version: "1.0.0"
 description: Validate and repair software-detail pipeline content in stage 8 for hierarchy, boundary, density, coverage, evidence traceability, identifiers, and writing rules. Use only when the pipeline explicitly invokes stage 8 in a fresh Hermes session.
 ---
 
 # Check Software-Detail Content
-
-Version: `1.0.0`
 
 Execute only `software-detail-stage-08-content-check`. Do not invoke another stage, recollect model evidence, render DOCX, or reuse a Hermes session from another stage or failed attempt.
 

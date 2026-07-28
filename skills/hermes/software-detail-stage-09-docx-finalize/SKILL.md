@@ -1,11 +1,11 @@
 ---
 name: software-detail-stage-09-docx-finalize
+metadata:
+  version: "1.0.0"
 description: Fill, normalize, validate, and package the final software-detail DOCX in pipeline stage 9, then clean only task-owned MATLAB state. Use only when the pipeline explicitly invokes stage 9 in a fresh Hermes session.
 ---
 
 # Finalize Software-Detail DOCX
-
-Version: `1.0.0`
 
 Execute only `software-detail-stage-09-docx-finalize`. Do not invoke another stage, recollect model evidence by default, or reuse a Hermes session from another stage or failed attempt.
 
