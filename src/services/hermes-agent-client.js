@@ -2407,7 +2407,7 @@ function decodeSoftwareDetailArtifact(item = {}) {
   };
 }
 
-async function materializeSoftwareDetailDocx(item = {}, workspaceDir = "") {
+function validateSoftwareDetailDocxArtifact(item = {}, workspaceDir = "") {
   const workspaceValue = String(workspaceDir || "").trim();
   if (!workspaceValue) {
     throw softwareDetailTransferError(
@@ -2435,10 +2435,30 @@ async function materializeSoftwareDetailDocx(item = {}, workspaceDir = "") {
   }
 
   const decoded = decodeSoftwareDetailArtifact(item);
-  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  const {
+    contentBase64: _contentBase64,
+    base64: _base64,
+    ...metadata
+  } = item;
+  return {
+    localWorkspace,
+    absolutePath,
+    content: decoded.content,
+    metadata: {
+      ...metadata,
+      relativePath,
+      encoding: "base64",
+      size: decoded.size,
+      sha256: decoded.sha256
+    }
+  };
+}
+
+async function validateSoftwareDetailDocxDestination(prepared = {}) {
+  await fs.mkdir(path.dirname(prepared.absolutePath), { recursive: true });
   const [realWorkspace, realParent] = await Promise.all([
-    fs.realpath(localWorkspace),
-    fs.realpath(path.dirname(absolutePath))
+    fs.realpath(prepared.localWorkspace),
+    fs.realpath(path.dirname(prepared.absolutePath))
   ]);
   if (
     realParent !== realWorkspace &&
@@ -2449,11 +2469,15 @@ async function materializeSoftwareDetailDocx(item = {}, workspaceDir = "") {
       "software_detail_artifact_path_forbidden"
     );
   }
+  return prepared;
+}
 
-  const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+async function writeSoftwareDetailDocx(prepared = {}) {
+  const temporaryPath =
+    `${prepared.absolutePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   try {
-    await fs.writeFile(temporaryPath, decoded.content, { flag: "wx" });
-    await fs.rename(temporaryPath, absolutePath);
+    await fs.writeFile(temporaryPath, prepared.content, { flag: "wx" });
+    await fs.rename(temporaryPath, prepared.absolutePath);
   } catch (cause) {
     await fs.rm(temporaryPath, { force: true }).catch(() => {});
     const error = softwareDetailTransferError(
@@ -2463,19 +2487,14 @@ async function materializeSoftwareDetailDocx(item = {}, workspaceDir = "") {
     error.cause = cause;
     throw error;
   }
+  return prepared.metadata;
+}
 
-  const {
-    contentBase64: _contentBase64,
-    base64: _base64,
-    ...metadata
-  } = item;
-  return {
-    ...metadata,
-    relativePath,
-    encoding: "base64",
-    size: decoded.size,
-    sha256: decoded.sha256
-  };
+async function materializeSoftwareDetailDocx(item = {}, workspaceDir = "") {
+  const prepared = await validateSoftwareDetailDocxDestination(
+    validateSoftwareDetailDocxArtifact(item, workspaceDir)
+  );
+  return writeSoftwareDetailDocx(prepared);
 }
 
 async function materializeTransferredOutputFiles(artifact = {}, payload = {}) {
@@ -2519,8 +2538,6 @@ async function materializeSoftwareDetailPipelineArtifacts(job = {}, workspaceDir
     );
   }
 
-  const artifacts = [];
-  let docxCount = 0;
   if (
     Object.prototype.hasOwnProperty.call(job, "artifacts") &&
     !Array.isArray(job.artifacts)
@@ -2530,41 +2547,63 @@ async function materializeSoftwareDetailPipelineArtifacts(job = {}, workspaceDir
       "software_detail_artifact_metadata_invalid"
     );
   }
-  for (const item of Array.isArray(job.artifacts) ? job.artifacts : []) {
+  const rawArtifacts = Array.isArray(job.artifacts) ? job.artifacts : [];
+  for (const item of rawArtifacts) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw softwareDetailTransferError(
         "Software detail Worker 返回了非法 artifact 元数据。",
         "software_detail_artifact_metadata_invalid"
       );
     }
+  }
+
+  const docxItems = rawArtifacts.filter(
+    (item) => String(item.role || "") === SOFTWARE_DETAIL_DOCX_ROLE
+  );
+  if (docxItems.length > 1) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了重复的最终 DOCX。",
+      "software_detail_artifact_duplicate"
+    );
+  }
+  if (job.status === "completed" && docxItems.length !== 1) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 已完成，但未返回最终 DOCX。",
+      "software_detail_artifact_missing"
+    );
+  }
+
+  const artifactPlans = rawArtifacts.map((item) => {
     const {
       contentBase64: _contentBase64,
       base64: _base64,
       ...metadata
     } = item;
     if (String(item.role || "") !== SOFTWARE_DETAIL_DOCX_ROLE) {
-      artifacts.push(metadata);
-      continue;
+      return { kind: "metadata", metadata };
     }
-    // The transport envelope enriches the Wave0 role/path artifact contract.
-    // Persist only verified metadata after the bytes have been materialized.
-    docxCount += 1;
-    if (docxCount > 1) {
-      throw softwareDetailTransferError(
-        "Software detail Worker 返回了重复的最终 DOCX。",
-        "software_detail_artifact_duplicate"
-      );
-    }
-    artifacts.push(await materializeSoftwareDetailDocx(item, workspaceDir));
-  }
+    return { kind: "docx", item };
+  });
 
-  if (job.status === "completed" && docxCount !== 1) {
-    throw softwareDetailTransferError(
-      "Software detail Worker 已完成，但未返回最终 DOCX。",
-      "software_detail_artifact_missing"
+  const docxPlan = artifactPlans.find((plan) => plan.kind === "docx") || null;
+  if (docxPlan) {
+    docxPlan.prepared = validateSoftwareDetailDocxArtifact(
+      docxPlan.item,
+      workspaceDir
     );
   }
-  return { ...job, artifacts };
+  if (job.status === "completed" && docxPlan) {
+    docxPlan.metadata = await writeSoftwareDetailDocx(
+      await validateSoftwareDetailDocxDestination(docxPlan.prepared)
+    );
+  } else if (docxPlan) {
+    docxPlan.metadata = docxPlan.prepared.metadata;
+  }
+
+  return {
+    ...job,
+    artifacts: artifactPlans.map((plan) => plan.metadata)
+  };
 }
 
 async function materializeTcsdPipelineArtifacts(job = {}, workspaceDir = "") {

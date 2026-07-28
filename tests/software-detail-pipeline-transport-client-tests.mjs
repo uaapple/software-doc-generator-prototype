@@ -327,6 +327,60 @@ async function testJsonStartAndRunningPoll() {
   }
 }
 
+async function testNonCompletedJobsNeverMaterializeDocx() {
+  const workspace = await fs.mkdtemp(
+    path.join(os.tmpdir(), "software-detail-client-non-completed-")
+  );
+  const statuses = ["queued", "running", "failed"];
+  const server = http.createServer(async (req, res) => {
+    await readRequest(req);
+    const jobId = decodeURIComponent(
+      String(req.url || "").split("/").filter(Boolean).at(-1) || ""
+    );
+    const status = statuses.find((candidate) => jobId === `job-${candidate}`);
+    sendJson(res, 200, {
+      schema: "software-detail-minimal-job/v1",
+      jobId,
+      status,
+      stages: [],
+      artifacts: [transferredDocx()]
+    });
+  });
+
+  try {
+    const address = await listen(server);
+    const client = new HermesAgentClient({
+      transport: "api",
+      apiMode: "json",
+      baseURL: `http://127.0.0.1:${address.port}`,
+      timeoutMs: 5000
+    });
+    for (const status of statuses) {
+      const localWorkspace = path.join(workspace, status);
+      await fs.mkdir(localWorkspace, { recursive: true });
+      const job = await client.getSoftwareDetailPipelineJob(`job-${status}`, {
+        localWorkspaceDir: localWorkspace
+      });
+      assert.equal(job.status, status);
+      assert.equal(job.artifacts.length, 1);
+      assert.equal(job.artifacts[0].contentBase64, undefined);
+      const finalPath = path.join(
+        localWorkspace,
+        ...DOCX_RELATIVE_PATH.split("/")
+      );
+      assert.equal(await fs.stat(finalPath).catch(() => null), null);
+      assert.equal(
+        await fs.stat(path.dirname(finalPath)).catch(() => null),
+        null,
+        `${status} must not create the final output directory`
+      );
+    }
+  } finally {
+    await close(server);
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+}
+
 async function testFailClosedArtifactValidation() {
   const fixtures = new Map([
     [
@@ -398,6 +452,30 @@ async function testFailClosedArtifactValidation() {
         artifact: null,
         code: "software_detail_artifact_missing"
       }
+    ],
+    [
+      "artifacts-not-array",
+      {
+        artifacts: transferredDocx(),
+        code: "software_detail_artifact_metadata_invalid"
+      }
+    ],
+    [
+      "duplicate-docx",
+      {
+        artifacts: [
+          transferredDocx(),
+          transferredDocx({ fileName: "重复软件模块详细设计.docx" })
+        ],
+        code: "software_detail_artifact_duplicate"
+      }
+    ],
+    [
+      "invalid-after-docx",
+      {
+        artifacts: [transferredDocx(), null],
+        code: "software_detail_artifact_metadata_invalid"
+      }
     ]
   ]);
 
@@ -419,7 +497,11 @@ async function testFailClosedArtifactValidation() {
       return;
     }
     const fixture = fixtures.get(jobId);
-    sendJson(res, 200, completedJob(jobId, fixture?.artifact ?? null));
+    const job = completedJob(jobId, fixture?.artifact ?? null);
+    if (fixture?.artifacts) {
+      job.artifacts = fixture.artifacts;
+    }
+    sendJson(res, 200, job);
   });
 
   const workspace = await fs.mkdtemp(
@@ -434,12 +516,21 @@ async function testFailClosedArtifactValidation() {
       timeoutMs: 5000
     });
     for (const [jobId, fixture] of fixtures) {
+      const localWorkspace = path.join(workspace, jobId);
+      await fs.mkdir(localWorkspace, { recursive: true });
       await assertRejectsCode(
         () =>
           client.getSoftwareDetailPipelineJob(jobId, {
-            localWorkspaceDir: workspace
+            localWorkspaceDir: localWorkspace
           }),
         fixture.code
+      );
+      assert.equal(
+        await fs
+          .stat(path.join(localWorkspace, ...DOCX_RELATIVE_PATH.split("/")))
+          .catch(() => null),
+        null,
+        `${jobId} must not leave a final DOCX`
       );
     }
     await assertRejectsCode(
@@ -560,6 +651,7 @@ async function testMultipartStartRejectsEmptyWorkspace() {
 
 await testMultipartLifecycleAndAtomicMaterialization();
 await testJsonStartAndRunningPoll();
+await testNonCompletedJobsNeverMaterializeDocx();
 await testFailClosedArtifactValidation();
 await testLegacyStepUsesStrictAtomicDocxTransfer();
 await testMultipartStartRejectsEmptyWorkspace();
