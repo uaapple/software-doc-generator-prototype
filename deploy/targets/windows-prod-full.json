@@ -39,5 +39,5 @@
     "scripts/install-tcsd-hermes-skills.mjs",
     "scripts/install-tcsd-hermes-skills.ps1"
   ],
-  "runtimeDataPolicy": "APP_DATA_DIR and APP_SKILLS_DIR are external to the release package; TCSD jobs, Hermes sessions, stage inputs/results, validation reports, checkpoints, logs, coverage and generated workbooks remain runtime data."
+  "runtimeDataPolicy": "APP_DATA_DIR and APP_SKILLS_DIR are external to the release package; TCSD and software-detail jobs, Hermes sessions, stage inputs/results, validation reports, checkpoints, logs, coverage and generated documents remain runtime data."
 }

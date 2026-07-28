@@ -51,7 +51,17 @@ export const imageInputs = {
     "skills/hermes/tcsd-stage-09-collect-coverage",
     "skills/hermes/tcsd-stage-10-repair-coverage",
     "skills/hermes/tcsd-stage-11-final-validation",
-    "skills/hermes/tcsd-stage-12-package-cleanup"
+    "skills/hermes/tcsd-stage-12-package-cleanup",
+    "skills/hermes/software-detail-runtime",
+    "skills/hermes/software-detail-stage-01-initialize",
+    "skills/hermes/software-detail-stage-02-model-plan",
+    "skills/hermes/software-detail-stage-03-evidence-extract",
+    "skills/hermes/software-detail-stage-04-output-ledger",
+    "skills/hermes/software-detail-stage-05-boundary-projection",
+    "skills/hermes/software-detail-stage-06-architecture-draft",
+    "skills/hermes/software-detail-stage-07-module-draft",
+    "skills/hermes/software-detail-stage-08-content-check",
+    "skills/hermes/software-detail-stage-09-docx-finalize"
   ]
 };
 

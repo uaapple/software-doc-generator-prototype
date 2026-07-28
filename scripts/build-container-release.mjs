@@ -56,6 +56,11 @@ try {
   run(process.execPath, ["tests/container-production-config-tests.mjs"]);
   run(process.execPath, ["tests/tcsd-remote-transfer-tests.mjs"]);
   run(process.execPath, ["tests/container-worker-static-tests.mjs"]);
+  run(process.execPath, ["tests/software-detail-worker-components-tests.mjs"]);
+  run(process.execPath, ["tests/software-detail-worker-pipeline-tests.mjs"]);
+  run(process.execPath, ["tests/software-detail-worker-api-tests.mjs"]);
+  run(process.execPath, ["tests/software-detail-pipeline-transport-client-tests.mjs"]);
+  run(process.execPath, ["tests/software-module-description-transport-regression.mjs"]);
   run(process.execPath, ["scripts/check-container-boundaries.mjs"]);
   run(process.execPath, ["scripts/check-container-secrets.mjs"]);
 
