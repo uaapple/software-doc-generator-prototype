@@ -51,6 +51,13 @@ try {
   });
   assertFailure(conflict, "MATLAB_GATEWAY_HOST_ROOT_CONFLICT");
 
+  const equivalentSlashStyles = runWrapper({
+    ...baseValues,
+    SDG_CONTAINER_DATA_DIR: "C:/approved/data",
+    MATLAB_GATEWAY_HOST_ROOT: "C:\\approved\\data"
+  });
+  assertFailure(equivalentSlashStyles, "HOST_ROOT_DIRECTORY_REQUIRED");
+
   const containerRootConflict = runWrapper({
     ...baseValues,
     SDG_CONTAINER_DATA_DIR: "C:\\approved\\data",
@@ -97,7 +104,8 @@ try {
 
     const success = runWrapper({
       ...baseValues,
-      SDG_CONTAINER_DATA_DIR: dataRoot,
+      SDG_CONTAINER_DATA_DIR: dataRoot.replaceAll("\\", "/"),
+      MATLAB_GATEWAY_HOST_ROOT: dataRoot,
       MATLAB_GATEWAY_STATE_DIR: stateRoot,
       MATLAB_ROOT: matlabRoot,
       MATLAB_MCP_TMPDIR: tempRoot,

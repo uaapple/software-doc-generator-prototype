@@ -51,13 +51,19 @@ assert.match(legacySource, /if\s*\(!authToken\)\s*\{\s*return next\(\)/);
 assert.ok(!legacySource.includes("MATLAB_GATEWAY_EVALUATE_TOKEN"));
 
 assert.equal(config.serviceName, "SoftwareDocMatlabWorker");
-assert.equal(config.companionVersion, 4);
+assert.equal(config.companionVersion, 5);
 assert.equal(config.managedFiles.length, 6);
-assert.equal(config.validationFiles.length, 1);
+assert.equal(config.validationFiles.length, 2);
 assert.deepEqual(config.validationFiles[0], {
   source: "tests/native-gateway-companion-ps51.Tests.ps1",
   packagePath: "test-native-matlab-gateway-companion-ps51.ps1",
   runtime: "powershell.exe-5.1",
+  readOnly: true
+});
+assert.deepEqual(config.validationFiles[1], {
+  source: ".env.windows-docker-desktop.example",
+  packagePath: ".env.windows-docker-desktop.example",
+  runtime: "env-example",
   readOnly: true
 });
 assert.equal(calculateImageRevision("platform"), config.expectedImageRevisions.platform);
@@ -68,8 +74,8 @@ for (const inputs of Object.values(imageInputs)) {
   assert.ok(!inputs.some((entry) => entry === "scripts/build-native-matlab-gateway-companion.mjs"));
 }
 
-assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v4");
-assert.equal(schema.properties.companionVersion.const, 4);
+assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v5");
+assert.equal(schema.properties.companionVersion.const, 5);
 assert.equal(schema.properties.serviceName.const, "SoftwareDocMatlabWorker");
 for (const field of [
   "sourceRevision",
@@ -86,13 +92,13 @@ for (const field of [
 }
 assert.equal(
   releaseSchema.properties.schema.const,
-  "sdg-native-matlab-gateway-companion-release/v4"
+  "sdg-native-matlab-gateway-companion-release/v5"
 );
-assert.equal(releaseSchema.properties.companionVersion.const, 4);
+assert.equal(releaseSchema.properties.companionVersion.const, 5);
 assert.ok(releaseSchema.required.includes("contents"));
 assert.equal(releaseSchema.properties.contents.properties.managedGatewayFileCount.const, 6);
 assert.equal(releaseSchema.properties.contents.properties.deploymentToolFileCount.const, 1);
-assert.equal(releaseSchema.properties.contents.properties.validationFileCount.const, 1);
+assert.equal(releaseSchema.properties.contents.properties.validationFileCount.const, 2);
 
 assert.match(wrapper, /software-doc-worker\.env/);
 assert.match(wrapper, /await import\("\.\/matlab-worker-server-runtime\.js"\)/);
@@ -133,6 +139,7 @@ assert.match(deployScript, /Invoke-GatewayReadiness/);
 assert.match(deployScript, /Get-GatewayProtocolAudit/);
 assert.match(deployScript, /legacy-analyze-slx/);
 assert.match(deployScript, /Resolve-NativeGatewayConfiguration/);
+assert.match(deployScript, /\^\[A-Za-z\]:\[\\\\\/\]/);
 assert.match(deployScript, /\["SDG_CONTAINER_DATA_DIR"\]/);
 assert.match(deployScript, /\["MATLAB_GATEWAY_STATE_DIR"\]/);
 assert.match(deployScript, /\/var\/lib\/sdg\/data/);
@@ -158,7 +165,7 @@ assert.match(builder, /dependencyChanges:\s*false/);
 assert.match(builder, /zip/);
 assert.doesNotMatch(builder, /docker/);
 assert.doesNotMatch(builder, /buildImage|buildx|docker push/);
-assert.match(builder, /native-matlab-gateway-companion-v4-/);
+assert.match(builder, /native-matlab-gateway-companion-v5-/);
 assert.match(builder, /companionVersion:\s*config\.companionVersion/);
 assert.match(builder, /validationFiles/);
 assert.match(builder, /validationFileCount:\s*validationFiles\.length/);
@@ -170,6 +177,8 @@ for (const requiredCase of [
   "restore the original bytes exactly",
   "deployment failure restores managed files",
   "Container env is the single source",
+  "formal env example's C:/ path",
+  "Forward- and backslash spellings",
   "delayed port",
   "early service exit",
   "timeout exhaustion"
@@ -193,6 +202,8 @@ assert.match(ps51Workflow, /native-gateway-companion-tests\.mjs/);
 assert.match(wrapperRegression, /SDG_CONTAINER_DATA_DIR_REQUIRED/);
 assert.match(wrapperRegression, /HOST_ROOT_ABSOLUTE_REQUIRED/);
 assert.match(wrapperRegression, /MATLAB_GATEWAY_HOST_ROOT_CONFLICT/);
+assert.match(wrapperRegression, /C:\/approved\/data/);
+assert.match(wrapperRegression, /replaceAll\("\\\\", "\/"\)/);
 assert.match(wrapperRegression, /HOST_ROOT_DIRECTORY_REQUIRED/);
 assert.match(wrapperRegression, /configuration preflight passed/);
 assert.match(wrapperRegression, /SOFTWARE_DOC_WORKER_ENV_FILE/);

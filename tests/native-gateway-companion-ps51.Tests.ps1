@@ -70,6 +70,23 @@ foreach ($functionName in $requiredFunctions) {
   )
 }
 
+$envExamplePath = Join-Path $RepositoryRoot ".env.windows-docker-desktop.example"
+Assert-True (
+  Test-Path -LiteralPath $envExamplePath -PathType Leaf
+) "PS5.1 test preflight failed: the protected Windows env example was not found."
+$exampleDataLine = Get-Content -LiteralPath $envExamplePath |
+  Where-Object { $_ -match "^SDG_CONTAINER_DATA_DIR=" } |
+  Select-Object -First 1
+Assert-True ([bool]$exampleDataLine) (
+  "PS5.1 test preflight failed: SDG_CONTAINER_DATA_DIR is missing from the Windows env example."
+)
+$exampleDataRoot = ([string]$exampleDataLine).Substring(
+  ([string]$exampleDataLine).IndexOf("=") + 1
+)
+Assert-True ($exampleDataRoot -match "^[A-Za-z]:/") (
+  "PS5.1 test preflight failed: the formal Windows env example is not using forward slashes."
+)
+
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
   "sdg-native-gateway-ps51-tests-{0}" -f ([Guid]::NewGuid().ToString("N"))
 )
@@ -167,8 +184,9 @@ try {
     MATLAB_MCP_TMPDIR = $mcpTemp
     SIMULINK_AGENTIC_TOOLKIT_ROOT = $toolkitRoot
   }
+  $dataRootForwardSlash = $dataRoot.Replace("\", "/")
   $containerConfiguration = @{
-    SDG_CONTAINER_DATA_DIR = $dataRoot
+    SDG_CONTAINER_DATA_DIR = $dataRootForwardSlash
     MATLAB_GATEWAY_STATE_DIR = $stateRoot
     MATLAB_GATEWAY_CONTAINER_ROOT = "/var/lib/sdg/data"
     SATK_GATEWAY_MAPPING_ID = "worker-data"
@@ -185,6 +203,66 @@ try {
   Assert-True (
     $gatewayPlan.nativeUpdates.SATK_MATLAB_SESSION_MODE -eq "new"
   ) "Windows MATLAB session mode did not default to new."
+
+  # The formal env example's C:/ path reaches the full configuration resolver.
+  $originalDirectoryWritable = ${function:Assert-DirectoryWritable}
+  function Assert-DirectoryWritable(
+    [string]$PathValue,
+    [string]$Label,
+    [string]$CategoryPrefix
+  ) {
+    if ($CategoryPrefix -eq "HOST_ROOT") { return }
+    & $originalDirectoryWritable $PathValue $Label $CategoryPrefix
+  }
+  try {
+    $formalContainerConfiguration = $containerConfiguration.Clone()
+    $formalContainerConfiguration["SDG_CONTAINER_DATA_DIR"] = $exampleDataRoot
+    $formalPlan = Resolve-NativeGatewayConfiguration (
+      $nativeConfiguration
+    ) $formalContainerConfiguration
+    Assert-True (
+      $formalPlan.hostRoot -eq [System.IO.Path]::GetFullPath($exampleDataRoot)
+    ) "Formal forward-slash env path was not canonicalized by the configuration resolver."
+  } finally {
+    Set-Item -Path Function:Assert-DirectoryWritable -Value $originalDirectoryWritable
+  }
+
+  # Forward- and backslash spellings of the same absolute path are equivalent.
+  $canonicalExampleRoot = [System.IO.Path]::GetFullPath($exampleDataRoot)
+  Assert-EquivalentWindowsPath (
+    $exampleDataRoot
+  ) $canonicalExampleRoot "Gateway host root" "HOST_ROOT"
+  $uncPath = Resolve-AbsoluteWindowsPath (
+    "\\server\share\data"
+  ) "UNC test path" "PATH"
+  Assert-True ($uncPath -match "^\\\\server\\share\\data") (
+    "A fully qualified UNC child path was not preserved."
+  )
+
+  foreach ($rejectedPath in @(
+    @{ value = ""; category = "PATH_ABSOLUTE_REQUIRED" },
+    @{ value = "relative\data"; category = "PATH_ABSOLUTE_REQUIRED" },
+    @{ value = "C:relative\data"; category = "PATH_ABSOLUTE_REQUIRED" },
+    @{ value = "\root-relative"; category = "PATH_ABSOLUTE_REQUIRED" },
+    @{ value = "/root-relative"; category = "PATH_ABSOLUTE_REQUIRED" },
+    @{ value = "/tmp/sdg-data"; category = "PATH_ABSOLUTE_REQUIRED" },
+    @{ value = "//server/share/data"; category = "PATH_ABSOLUTE_REQUIRED" },
+    @{ value = "C:\"; category = "PATH_ROOT_FORBIDDEN" },
+    @{ value = "C:/"; category = "PATH_ROOT_FORBIDDEN" },
+    @{ value = "\\server\share\"; category = "PATH_ROOT_FORBIDDEN" }
+  )) {
+    $rejected = $false
+    try {
+      Resolve-AbsoluteWindowsPath (
+        [string]$rejectedPath.value
+      ) "test path" "PATH" | Out-Null
+    } catch {
+      $rejected = $_.Exception.Message -match (
+        "\[{0}\]" -f [regex]::Escape([string]$rejectedPath.category)
+      )
+    }
+    Assert-True $rejected "Unsafe or non-absolute Windows path was not rejected."
+  }
 
   $relativeRejected = $false
   try {
