@@ -128,12 +128,16 @@ export class SoftwareDetailMatlabLeaseClient {
 
   hermesEnvironment(lease = {}) {
     this.assertConfigured();
+    const values = {
+      auth: this.authToken,
+      evaluate: this.evaluateToken
+    };
     return {
       MATLAB_MCP_BASE_URL: this.baseURL,
       SATK_GATEWAY_URL: this.baseURL,
-      MATLAB_MCP_AUTH_TOKEN: this.authToken,
-      MATLAB_GATEWAY_TOKEN: this.authToken,
-      MATLAB_GATEWAY_EVALUATE_TOKEN: this.evaluateToken,
+      MATLAB_MCP_AUTH_TOKEN: values.auth,
+      MATLAB_GATEWAY_TOKEN: values.auth,
+      MATLAB_GATEWAY_EVALUATE_TOKEN: values.evaluate,
       SATK_GATEWAY_MAPPING_ID: this.mappingId,
       SOFTWARE_DETAIL_MATLAB_WORKSPACE_ID: requireIdentifier(
         lease.workspaceId,
