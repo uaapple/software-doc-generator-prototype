@@ -106,6 +106,11 @@ const suites = [
     args: ["--disable-warning=ExperimentalWarning", "tests/software-module-description-transport-regression.mjs"]
   },
   {
+    id: "software-detail-full-http",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/software-detail-full-http-flow-tests.mjs"]
+  },
+  {
     id: "release-package",
     command: process.execPath,
     args: ["tests/release-rollback-package-tests.mjs"]
