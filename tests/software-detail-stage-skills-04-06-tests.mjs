@@ -275,6 +275,11 @@ for (const expectation of expectations) {
       []).length,
     3
   );
+  assert.match(
+    metadataSource,
+    /\npolicy:\n  allow_implicit_invocation: false\n$/
+  );
+  assert.doesNotMatch(metadataSource, /allow_implicit_invocation: true/);
 }
 
 assert.deepEqual(
