@@ -239,6 +239,41 @@ export const config = {
     stageMaxTurns: Number(process.env.TCSD_STAGE_HERMES_MAX_TURNS || 200),
     stageTimeoutMs: Number(process.env.TCSD_STAGE_HERMES_TIMEOUT_MS || 3600000)
   },
+  softwareDetailPipeline: {
+    jobStoreDir: path.join(dataDir, "software-detail-pipeline-jobs"),
+    hermesProfile:
+      String(
+        process.env.SOFTWARE_DETAIL_STAGE_HERMES_PROFILE ||
+          hermesProfile ||
+          ""
+      ).trim() || "default",
+    stageMaxTurns: Number(
+      process.env.SOFTWARE_DETAIL_STAGE_HERMES_MAX_TURNS || 200
+    ),
+    stageTimeoutMs: Number(
+      process.env.SOFTWARE_DETAIL_STAGE_HERMES_TIMEOUT_MS || 3600000
+    ),
+    gatewayBaseURL:
+      process.env.MATLAB_GATEWAY_BASE_URL ||
+      process.env.SATK_GATEWAY_URL ||
+      process.env.MATLAB_MCP_BASE_URL ||
+      "http://127.0.0.1:5100",
+    gatewayAuthToken:
+      process.env.MATLAB_GATEWAY_TOKEN ||
+      process.env.MATLAB_MCP_AUTH_TOKEN ||
+      "",
+    gatewayEvaluateToken:
+      process.env.MATLAB_GATEWAY_EVALUATE_TOKEN || "",
+    gatewayMappingId:
+      process.env.SATK_GATEWAY_MAPPING_ID ||
+      process.env.MATLAB_GATEWAY_MAPPING_ID ||
+      "worker-data",
+    gatewayTimeoutMs: Number(
+      process.env.MATLAB_GATEWAY_REQUEST_TIMEOUT_MS ||
+        process.env.MATLAB_MCP_TIMEOUT_MS ||
+        300000
+    )
+  },
   softwareModuleDescription: {
     taskStoreDir: path.join(dataDir, "software-module-description-generation", "tasks"),
     uploadTempDir: path.join(dataDir, "software-module-description-generation", "_incoming"),
