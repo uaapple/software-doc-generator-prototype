@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -16,6 +17,12 @@ const CLI_PATH_MAX_LENGTH = 260;
 const HERMES_USAGE_QUERY_RETRIES = 5;
 const HERMES_USAGE_QUERY_RETRY_DELAY_MS = 250;
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
+const MAX_TRANSFERRED_SOFTWARE_DETAIL_OUTPUT_BYTES = 50 * 1024 * 1024;
+const SOFTWARE_DETAIL_DOCX_ROLE = "detail-design-docx";
+const SOFTWARE_DETAIL_JOB_SCHEMA = "software-detail-minimal-job/v1";
+const SOFTWARE_DETAIL_JOB_STATUSES = new Set(["queued", "running", "completed", "failed"]);
+const STRICT_BASE64_PATTERN =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function trimTrailingSlash(value = "") {
   return String(value || "").replace(/\/+$/, "");
@@ -1918,9 +1925,19 @@ function normalizeCliArtifact(stepType, parsed = {}, payload = {}) {
                 item.mimeType || "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               ).trim(),
               description: String(item.description || "").trim(),
-              contentBase64: String(item.contentBase64 || item.base64 || "").trim(),
+              ...(
+                Object.prototype.hasOwnProperty.call(item, "contentBase64") ||
+                Object.prototype.hasOwnProperty.call(item, "base64")
+                  ? {
+                      contentBase64: String(
+                        item.contentBase64 ?? item.base64 ?? ""
+                      ).trim()
+                    }
+                  : {}
+              ),
               encoding: String(item.encoding || "").trim(),
-              size: Number(item.size || 0) || 0
+              size: Number(item.size || 0) || 0,
+              sha256: String(item.sha256 || "").trim().toLowerCase()
             };
           })
           .filter((item) => item && (item.relativePath || item.absolutePath))
@@ -2146,6 +2163,53 @@ async function postMultipartWithTimeout(url, fields = {}, files = [], headers = 
   });
 }
 
+async function requestTextWithTimeout(
+  url,
+  {
+    method = "GET",
+    headers = {},
+    timeoutMs = 30000,
+    timeoutMessage = "Hermes request timed out",
+    timeoutCode = "hermes_timeout"
+  } = {}
+) {
+  const target = new URL(url);
+  const transport = target.protocol === "https:" ? https : http;
+  return new Promise((resolve, reject) => {
+    const request = transport.request(
+      target,
+      {
+        method,
+        timeout: timeoutMs,
+        headers
+      },
+      (response) => {
+        let text = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          text += chunk;
+        });
+        response.on("end", () => {
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            status: response.statusCode,
+            text
+          });
+        });
+      }
+    );
+    request.on("timeout", () => {
+      request.destroy(
+        Object.assign(new Error(timeoutMessage), {
+          code: timeoutCode
+        })
+      );
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
+
 function isConnectionError(error) {
   return ["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EAI_AGAIN"].includes(String(error?.code || ""));
 }
@@ -2169,31 +2233,338 @@ function normalizeTransferredOutputPath(value = "", expectedExtension = ".xlsx")
   return parts.join("/");
 }
 
+function softwareDetailTransferError(message = "", code = "", details = null) {
+  const error = new Error(message);
+  error.code = code;
+  error.details = details;
+  return error;
+}
+
+function parseSoftwareDetailResponse(
+  response = {},
+  {
+    failureMessage = "Software detail Worker 请求失败。",
+    failureCode = "software_detail_request_failed"
+  } = {}
+) {
+  let body = null;
+  try {
+    body = JSON.parse(String(response.text || ""));
+  } catch (_error) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了无法解析的 JSON。",
+      "software_detail_invalid_response"
+    );
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了非法 JSON 对象。",
+      "software_detail_invalid_response"
+    );
+  }
+  if (!response.ok) {
+    const workerCode = String(body.code || "").trim();
+    throw softwareDetailTransferError(
+      body.error || failureMessage,
+      workerCode.startsWith("software_detail_") ? workerCode : failureCode,
+      body.details || (workerCode ? { workerCode } : null)
+    );
+  }
+  return body;
+}
+
+function wrapSoftwareDetailNetworkError(cause, operation = "请求") {
+  if (String(cause?.code || "").startsWith("software_detail_")) {
+    return cause;
+  }
+  if (cause?.name === "AbortError") {
+    return softwareDetailTransferError(
+      `Software detail Worker ${operation}超时。`,
+      "software_detail_request_timeout"
+    );
+  }
+  const error = softwareDetailTransferError(
+    `Software detail Worker 不可用：${cause?.message || "连接失败"}`,
+    "software_detail_worker_unavailable"
+  );
+  error.cause = cause;
+  return error;
+}
+
+function decodeSoftwareDetailArtifact(item = {}) {
+  if (!Object.prototype.hasOwnProperty.call(item, "contentBase64")) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 仅返回了 DOCX 元数据，缺少传输内容。",
+      "software_detail_artifact_payload_missing"
+    );
+  }
+  if (typeof item.contentBase64 !== "string") {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX base64 类型非法。",
+      "software_detail_artifact_base64_invalid"
+    );
+  }
+  if (item.contentBase64.length === 0) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了空 DOCX。",
+      "software_detail_artifact_empty"
+    );
+  }
+  if (String(item.encoding || "") !== "base64") {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX encoding 必须为 base64。",
+      "software_detail_artifact_encoding_invalid"
+    );
+  }
+
+  const declaredSize = item.size;
+  if (
+    typeof declaredSize !== "number" ||
+    !Number.isSafeInteger(declaredSize) ||
+    declaredSize <= 0
+  ) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX size 非法。",
+      "software_detail_artifact_size_invalid"
+    );
+  }
+  if (declaredSize > MAX_TRANSFERRED_SOFTWARE_DETAIL_OUTPUT_BYTES) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX 超过传输上限。",
+      "software_detail_artifact_too_large"
+    );
+  }
+
+  const encoded = item.contentBase64;
+  if (
+    encoded.length > Math.ceil(MAX_TRANSFERRED_SOFTWARE_DETAIL_OUTPUT_BYTES * 4 / 3) + 8
+  ) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX 超过传输上限。",
+      "software_detail_artifact_too_large"
+    );
+  }
+  if (encoded.length % 4 !== 0 || !STRICT_BASE64_PATTERN.test(encoded)) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了损坏的 DOCX base64。",
+      "software_detail_artifact_base64_invalid"
+    );
+  }
+
+  const content = Buffer.from(encoded, "base64");
+  if (content.toString("base64") !== encoded) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了非规范 DOCX base64。",
+      "software_detail_artifact_base64_invalid"
+    );
+  }
+  if (!content.length) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了空 DOCX。",
+      "software_detail_artifact_empty"
+    );
+  }
+  if (content.length > MAX_TRANSFERRED_SOFTWARE_DETAIL_OUTPUT_BYTES) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX 超过传输上限。",
+      "software_detail_artifact_too_large"
+    );
+  }
+  if (content.length !== declaredSize) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX size 与实际内容不一致。",
+      "software_detail_artifact_size_mismatch",
+      { declaredSize, actualSize: content.length }
+    );
+  }
+
+  if (typeof item.sha256 !== "string" || !item.sha256.trim()) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX 缺少 SHA-256。",
+      "software_detail_artifact_hash_missing"
+    );
+  }
+  const declaredSha256 = item.sha256.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(declaredSha256)) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX SHA-256 非法。",
+      "software_detail_artifact_hash_invalid"
+    );
+  }
+  const actualSha256 = createHash("sha256").update(content).digest("hex");
+  if (actualSha256 !== declaredSha256) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX SHA-256 校验失败。",
+      "software_detail_artifact_hash_mismatch",
+      { declaredSha256, actualSha256 }
+    );
+  }
+
+  return {
+    content,
+    size: declaredSize,
+    sha256: declaredSha256
+  };
+}
+
+async function materializeSoftwareDetailDocx(item = {}, workspaceDir = "") {
+  const workspaceValue = String(workspaceDir || "").trim();
+  if (!workspaceValue) {
+    throw softwareDetailTransferError(
+      "Platform 缺少软件详设 DOCX 的本地 workspace。",
+      "software_detail_artifact_workspace_missing"
+    );
+  }
+  const localWorkspace = path.resolve(workspaceValue);
+  const relativePath = normalizeTransferredOutputPath(
+    item.relativePath || item.path || item.filePath,
+    ".docx"
+  );
+  if (!relativePath) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了非法 DOCX 路径。",
+      "software_detail_artifact_path_forbidden"
+    );
+  }
+  const absolutePath = path.resolve(localWorkspace, ...relativePath.split("/"));
+  if (!absolutePath.startsWith(`${localWorkspace}${path.sep}`)) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了越界 DOCX 路径。",
+      "software_detail_artifact_path_forbidden"
+    );
+  }
+
+  const decoded = decodeSoftwareDetailArtifact(item);
+  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+  const [realWorkspace, realParent] = await Promise.all([
+    fs.realpath(localWorkspace),
+    fs.realpath(path.dirname(absolutePath))
+  ]);
+  if (
+    realParent !== realWorkspace &&
+    !realParent.startsWith(`${realWorkspace}${path.sep}`)
+  ) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 DOCX 路径逃逸本地 workspace。",
+      "software_detail_artifact_path_forbidden"
+    );
+  }
+
+  const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporaryPath, decoded.content, { flag: "wx" });
+    await fs.rename(temporaryPath, absolutePath);
+  } catch (cause) {
+    await fs.rm(temporaryPath, { force: true }).catch(() => {});
+    const error = softwareDetailTransferError(
+      "Platform 写入软件详设 DOCX 失败。",
+      "software_detail_artifact_write_failed"
+    );
+    error.cause = cause;
+    throw error;
+  }
+
+  const {
+    contentBase64: _contentBase64,
+    base64: _base64,
+    ...metadata
+  } = item;
+  return {
+    ...metadata,
+    relativePath,
+    encoding: "base64",
+    size: decoded.size,
+    sha256: decoded.sha256
+  };
+}
+
 async function materializeTransferredOutputFiles(artifact = {}, payload = {}) {
   const expectedExtension = TRANSFERRED_OUTPUT_EXTENSIONS[payload.stepType];
   if (!expectedExtension) {
     return;
   }
-  const workspaceDir = path.resolve(String(payload.inputArtifact?.workspaceDir || ""));
-  if (!workspaceDir) {
-    return;
-  }
 
   for (const item of Array.isArray(artifact.outputFiles) ? artifact.outputFiles : []) {
-    if (!item || typeof item !== "object" || !item.contentBase64) {
-      continue;
+    if (!item || typeof item !== "object") {
+      throw softwareDetailTransferError(
+        "Software detail Worker 返回的 DOCX 传输项非法。",
+        "software_detail_artifact_metadata_invalid"
+      );
     }
-    const relativePath = normalizeTransferredOutputPath(item.relativePath || item.path || item.filePath, expectedExtension);
-    if (!relativePath) {
-      continue;
-    }
-    const absolutePath = path.resolve(workspaceDir, ...relativePath.split("/"));
-    if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`)) {
-      continue;
-    }
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, Buffer.from(String(item.contentBase64 || ""), "base64"));
+    await materializeSoftwareDetailDocx(
+      item,
+      payload.inputArtifact?.workspaceDir || ""
+    );
   }
+}
+
+async function materializeSoftwareDetailPipelineArtifacts(job = {}, workspaceDir = "") {
+  if (!job || typeof job !== "object" || Array.isArray(job)) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了非法 job。",
+      "software_detail_invalid_response"
+    );
+  }
+  if (job.schema !== SOFTWARE_DETAIL_JOB_SCHEMA) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了不支持的 job schema。",
+      "software_detail_schema_unsupported",
+      { schema: String(job.schema || "") }
+    );
+  }
+  if (!SOFTWARE_DETAIL_JOB_STATUSES.has(String(job.status || ""))) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回了未知 job status。",
+      "software_detail_invalid_response"
+    );
+  }
+
+  const artifacts = [];
+  let docxCount = 0;
+  if (
+    Object.prototype.hasOwnProperty.call(job, "artifacts") &&
+    !Array.isArray(job.artifacts)
+  ) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 返回的 artifacts 必须为数组。",
+      "software_detail_artifact_metadata_invalid"
+    );
+  }
+  for (const item of Array.isArray(job.artifacts) ? job.artifacts : []) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw softwareDetailTransferError(
+        "Software detail Worker 返回了非法 artifact 元数据。",
+        "software_detail_artifact_metadata_invalid"
+      );
+    }
+    const {
+      contentBase64: _contentBase64,
+      base64: _base64,
+      ...metadata
+    } = item;
+    if (String(item.role || "") !== SOFTWARE_DETAIL_DOCX_ROLE) {
+      artifacts.push(metadata);
+      continue;
+    }
+    // The transport envelope enriches the Wave0 role/path artifact contract.
+    // Persist only verified metadata after the bytes have been materialized.
+    docxCount += 1;
+    if (docxCount > 1) {
+      throw softwareDetailTransferError(
+        "Software detail Worker 返回了重复的最终 DOCX。",
+        "software_detail_artifact_duplicate"
+      );
+    }
+    artifacts.push(await materializeSoftwareDetailDocx(item, workspaceDir));
+  }
+
+  if (job.status === "completed" && docxCount !== 1) {
+    throw softwareDetailTransferError(
+      "Software detail Worker 已完成，但未返回最终 DOCX。",
+      "software_detail_artifact_missing"
+    );
+  }
+  return { ...job, artifacts };
 }
 
 async function materializeTcsdPipelineArtifacts(job = {}, workspaceDir = "") {
@@ -3033,6 +3404,147 @@ export class HermesAgentClient {
       throw error;
     }
     return this.executeCliStep(payload, runtime);
+  }
+
+  async startSoftwareDetailPipelineJob(payload = {}) {
+    let response;
+    try {
+      if (isMultipartApiMode(this.apiMode)) {
+        const uploadManifest = await collectUploadFilesForAllowedPaths(
+          payload.allowedPaths || []
+        );
+        if (!uploadManifest.files.length) {
+          throw softwareDetailTransferError(
+            "Software detail job upload 没有可读取的 workspace 文件。",
+            "software_detail_upload_empty"
+          );
+        }
+        response = await postMultipartWithTimeout(
+          `${this.baseURL}/internal/software-detail-pipeline/jobs-upload`,
+          {
+            payload: JSON.stringify(payload),
+            uploadManifest: JSON.stringify(uploadManifest)
+          },
+          uploadManifest.files,
+          this._authHeaders(),
+          this.timeoutMs
+        );
+      } else {
+        response = await postJsonWithTimeout(
+          `${this.baseURL}/internal/software-detail-pipeline/jobs`,
+          payload,
+          this.timeoutMs,
+          this._authHeaders()
+        );
+      }
+    } catch (cause) {
+      throw wrapSoftwareDetailNetworkError(cause, "启动作业");
+    }
+
+    const body = parseSoftwareDetailResponse(response, {
+      failureMessage: "Software detail Worker 启动作业失败。",
+      failureCode: "software_detail_job_start_failed"
+    });
+    if (response.status !== 202) {
+      throw softwareDetailTransferError(
+        "Software detail Worker 启动作业未返回 HTTP 202。",
+        "software_detail_start_status_invalid",
+        { status: response.status }
+      );
+    }
+    if (!String(body.jobId || "").trim()) {
+      throw softwareDetailTransferError(
+        "Software detail Worker 启动作业响应缺少 jobId。",
+        "software_detail_invalid_response"
+      );
+    }
+    if (body.schema !== SOFTWARE_DETAIL_JOB_SCHEMA) {
+      throw softwareDetailTransferError(
+        "Software detail Worker 启动作业返回了不支持的 schema。",
+        "software_detail_schema_unsupported",
+        { schema: String(body.schema || "") }
+      );
+    }
+    if (!SOFTWARE_DETAIL_JOB_STATUSES.has(String(body.status || ""))) {
+      throw softwareDetailTransferError(
+        "Software detail Worker 启动作业返回了未知 status。",
+        "software_detail_invalid_response"
+      );
+    }
+    return body;
+  }
+
+  async getSoftwareDetailPipelineJob(jobId = "", options = {}) {
+    const normalizedJobId = String(jobId || "").trim();
+    if (!normalizedJobId) {
+      throw softwareDetailTransferError(
+        "Software detail jobId 不能为空。",
+        "software_detail_job_id_required"
+      );
+    }
+    let response;
+    try {
+      response = await requestTextWithTimeout(
+        `${this.baseURL}/internal/software-detail-pipeline/jobs/${encodeURIComponent(normalizedJobId)}`,
+        {
+          method: "GET",
+          timeoutMs: this.timeoutMs,
+          headers: this._authHeaders(),
+          timeoutMessage: "Software detail Worker 轮询超时。",
+          timeoutCode: "software_detail_poll_timeout"
+        }
+      );
+    } catch (cause) {
+      throw wrapSoftwareDetailNetworkError(cause, "轮询作业");
+    }
+
+    const body = parseSoftwareDetailResponse(response, {
+      failureMessage: "Software detail Worker 作业查询失败。",
+      failureCode: "software_detail_job_query_failed"
+    });
+    if (String(body.jobId || "").trim() !== normalizedJobId) {
+      throw softwareDetailTransferError(
+        "Software detail Worker 返回的 jobId 与请求不一致。",
+        "software_detail_job_mismatch",
+        {
+          requestedJobId: normalizedJobId,
+          returnedJobId: String(body.jobId || "").trim()
+        }
+      );
+    }
+    return materializeSoftwareDetailPipelineArtifacts(
+      body,
+      options.localWorkspaceDir || ""
+    );
+  }
+
+  async cleanupSoftwareDetailPipelineUpload(jobId = "") {
+    const normalizedJobId = String(jobId || "").trim();
+    if (!normalizedJobId) {
+      throw softwareDetailTransferError(
+        "Software detail jobId 不能为空。",
+        "software_detail_job_id_required"
+      );
+    }
+    let response;
+    try {
+      response = await requestTextWithTimeout(
+        `${this.baseURL}/internal/software-detail-pipeline/jobs/${encodeURIComponent(normalizedJobId)}/upload-session`,
+        {
+          method: "DELETE",
+          timeoutMs: this.timeoutMs,
+          headers: this._authHeaders(),
+          timeoutMessage: "Software detail Worker 清理上传工作区超时。",
+          timeoutCode: "software_detail_upload_cleanup_timeout"
+        }
+      );
+    } catch (cause) {
+      throw wrapSoftwareDetailNetworkError(cause, "清理上传工作区");
+    }
+    return parseSoftwareDetailResponse(response, {
+      failureMessage: "Software detail Worker 清理上传工作区失败。",
+      failureCode: "software_detail_upload_cleanup_failed"
+    });
   }
 
   async startTcsdPipelineJob(payload = {}) {
