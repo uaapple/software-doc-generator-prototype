@@ -41,13 +41,23 @@ function Get-FunctionImportScriptBlock([string[]]$Names) {
 
 $requiredFunctions = @(
   "Get-Sha256",
+  "Resolve-SafePath",
   "Assert-AtomicReplacementTarget",
   "Invoke-AtomicFileReplace",
   "Get-EnvKeyCount",
   "Set-EnvValuesAtomic",
+  "Throw-ConfigurationError",
+  "Resolve-AbsoluteWindowsPath",
+  "Assert-DirectoryWritable",
+  "Assert-DirectoryExists",
+  "Assert-RequiredFile",
+  "Assert-EquivalentWindowsPath",
+  "Resolve-NativeGatewayConfiguration",
   "New-LocalEvaluateToken",
   "Resolve-TokenPlan",
+  "Restore-Backup",
   "Test-TcpPort",
+  "Get-SafeGatewayStartupCategory",
   "Wait-GatewayHealth"
 )
 $functionImport = Get-FunctionImportScriptBlock $requiredFunctions
@@ -132,6 +142,163 @@ try {
     [Convert]::ToBase64String($restoredBytes) -eq [Convert]::ToBase64String($originalBytes)
   ) "Atomic replacement failure did not restore the original bytes."
 
+  # Container env is the single source for the native Gateway workspace mapping.
+  $dataRoot = Join-Path $testRoot "data"
+  $stateRoot = Join-Path $testRoot "state"
+  $matlabRoot = Join-Path $testRoot "MATLAB\R2025b"
+  $mcpTemp = Join-Path $testRoot "mcp-temp"
+  $toolkitRoot = Join-Path $testRoot "agentic-toolkits\simulink"
+  $mcpCommand = Join-Path $testRoot "matlab-mcp-server.exe"
+  foreach ($directory in @(
+    $dataRoot,
+    $stateRoot,
+    $matlabRoot,
+    $mcpTemp,
+    (Join-Path $toolkitRoot "tools")
+  )) {
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+  }
+  [System.IO.File]::WriteAllText((Join-Path $toolkitRoot "tools\tools.json"), "{}")
+  [System.IO.File]::WriteAllText($mcpCommand, "test executable placeholder")
+
+  $nativeConfiguration = @{
+    MATLAB_ROOT = $matlabRoot
+    MATLAB_MCP_SERVER_COMMAND = $mcpCommand
+    MATLAB_MCP_TMPDIR = $mcpTemp
+    SIMULINK_AGENTIC_TOOLKIT_ROOT = $toolkitRoot
+  }
+  $containerConfiguration = @{
+    SDG_CONTAINER_DATA_DIR = $dataRoot
+    MATLAB_GATEWAY_STATE_DIR = $stateRoot
+    MATLAB_GATEWAY_CONTAINER_ROOT = "/var/lib/sdg/data"
+    SATK_GATEWAY_MAPPING_ID = "worker-data"
+    MATLAB_ROOT = $matlabRoot
+  }
+  $gatewayPlan = Resolve-NativeGatewayConfiguration $nativeConfiguration $containerConfiguration
+  Assert-True ($gatewayPlan.hostRoot -eq $dataRoot) "Host root was not derived from container data."
+  Assert-True (
+    $gatewayPlan.nativeUpdates.MATLAB_GATEWAY_HOST_ROOT -eq $dataRoot
+  ) "Native host root update is missing."
+  Assert-True (
+    $gatewayPlan.nativeUpdates.MATLAB_GATEWAY_MAPPING_ID -eq "worker-data"
+  ) "Native mapping ID update is missing."
+  Assert-True (
+    $gatewayPlan.nativeUpdates.SATK_MATLAB_SESSION_MODE -eq "new"
+  ) "Windows MATLAB session mode did not default to new."
+
+  $relativeRejected = $false
+  try {
+    Resolve-NativeGatewayConfiguration $nativeConfiguration (@{
+      SDG_CONTAINER_DATA_DIR = "relative\data"
+      MATLAB_GATEWAY_STATE_DIR = $stateRoot
+      MATLAB_GATEWAY_CONTAINER_ROOT = "/var/lib/sdg/data"
+      SATK_GATEWAY_MAPPING_ID = "worker-data"
+      MATLAB_ROOT = $matlabRoot
+    }) | Out-Null
+  } catch {
+    $relativeRejected = $_.Exception.Message -match "\[HOST_ROOT_ABSOLUTE_REQUIRED\]"
+  }
+  Assert-True $relativeRejected "Relative host root was not rejected."
+
+  $missingDirectoryRejected = $false
+  try {
+    Resolve-NativeGatewayConfiguration $nativeConfiguration (@{
+      SDG_CONTAINER_DATA_DIR = (Join-Path $testRoot "missing-data")
+      MATLAB_GATEWAY_STATE_DIR = $stateRoot
+      MATLAB_GATEWAY_CONTAINER_ROOT = "/var/lib/sdg/data"
+      SATK_GATEWAY_MAPPING_ID = "worker-data"
+      MATLAB_ROOT = $matlabRoot
+    }) | Out-Null
+  } catch {
+    $missingDirectoryRejected = $_.Exception.Message -match "\[HOST_ROOT_DIRECTORY_REQUIRED\]"
+  }
+  Assert-True $missingDirectoryRejected "Missing host root directory was not rejected."
+
+  $mappingConflictRejected = $false
+  try {
+    Resolve-NativeGatewayConfiguration (@{
+      MATLAB_GATEWAY_HOST_ROOT = $stateRoot
+      MATLAB_ROOT = $matlabRoot
+      MATLAB_MCP_SERVER_COMMAND = $mcpCommand
+      MATLAB_MCP_TMPDIR = $mcpTemp
+      SIMULINK_AGENTIC_TOOLKIT_ROOT = $toolkitRoot
+    }) $containerConfiguration | Out-Null
+  } catch {
+    $mappingConflictRejected = $_.Exception.Message -match "\[HOST_ROOT_CONFLICT\]"
+  }
+  Assert-True $mappingConflictRejected "Conflicting native host root was not rejected."
+
+  $mappingIdConflictRejected = $false
+  try {
+    Resolve-NativeGatewayConfiguration (@{
+      MATLAB_ROOT = $matlabRoot
+      MATLAB_MCP_SERVER_COMMAND = $mcpCommand
+      MATLAB_MCP_TMPDIR = $mcpTemp
+      SIMULINK_AGENTIC_TOOLKIT_ROOT = $toolkitRoot
+      SATK_GATEWAY_MAPPING_ID = "other-data"
+    }) $containerConfiguration | Out-Null
+  } catch {
+    $mappingIdConflictRejected = $_.Exception.Message -match "\[MAPPING_ID_CONFLICT\]"
+  }
+  Assert-True $mappingIdConflictRejected "Conflicting native mapping ID was not rejected."
+
+  # A deployment failure restores managed files and both env files byte-for-byte.
+  $rollbackRoot = Join-Path $testRoot "rollback"
+  $rollbackAppRoot = Join-Path $rollbackRoot "app"
+  $rollbackBackupRoot = Join-Path $rollbackRoot "backup"
+  $rollbackTarget = Join-Path $rollbackAppRoot "src\managed.js"
+  $rollbackBackupFile = Join-Path $rollbackBackupRoot "files\src\managed.js"
+  $rollbackNativeEnv = Join-Path $rollbackRoot "software-doc-worker.env"
+  $rollbackContainerEnv = Join-Path $rollbackRoot "container-prod.env"
+  foreach ($directory in @(
+    (Split-Path -Parent $rollbackTarget),
+    (Split-Path -Parent $rollbackBackupFile),
+    (Join-Path $rollbackBackupRoot "env")
+  )) {
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+  }
+  $managedOriginal = [System.Text.Encoding]::UTF8.GetBytes("managed-original`r`n")
+  $nativeOriginal = [System.Text.Encoding]::UTF8.GetBytes("NATIVE=original`r`n")
+  $containerOriginal = [System.Text.Encoding]::UTF8.GetBytes("CONTAINER=original`r`n")
+  [System.IO.File]::WriteAllBytes($rollbackBackupFile, $managedOriginal)
+  [System.IO.File]::WriteAllBytes(
+    (Join-Path $rollbackBackupRoot "env\native.env"),
+    $nativeOriginal
+  )
+  [System.IO.File]::WriteAllBytes(
+    (Join-Path $rollbackBackupRoot "env\container.env"),
+    $containerOriginal
+  )
+  [System.IO.File]::WriteAllText($rollbackTarget, "managed-replacement")
+  [System.IO.File]::WriteAllText($rollbackNativeEnv, "NATIVE=replacement")
+  [System.IO.File]::WriteAllText($rollbackContainerEnv, "CONTAINER=replacement")
+  [ordered]@{
+    schema = "sdg-native-matlab-gateway-backup/v1"
+    service = @{ state = "Running" }
+    nativeEnv = $rollbackNativeEnv
+    containerEnv = $rollbackContainerEnv
+    files = @(
+      [ordered]@{
+        target = "src/managed.js"
+        existed = $true
+        sha256 = (Get-Sha256 $rollbackBackupFile)
+      }
+    )
+  } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (
+    Join-Path $rollbackBackupRoot "backup-manifest.json"
+  ) -Encoding utf8
+  $null = Restore-Backup $rollbackBackupRoot $rollbackAppRoot
+  foreach ($comparison in @(
+    @{ actual = $rollbackTarget; expected = $managedOriginal },
+    @{ actual = $rollbackNativeEnv; expected = $nativeOriginal },
+    @{ actual = $rollbackContainerEnv; expected = $containerOriginal }
+  )) {
+    Assert-True (
+      [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($comparison.actual)) -eq
+      [Convert]::ToBase64String($comparison.expected)
+    ) "Rollback did not restore original bytes."
+  }
+
   # Readiness: Running alone is insufficient; a delayed port then healthy HTTP succeeds.
   $script:portChecks = 0
   function Get-Service { return [pscustomobject]@{ Status = "Running" } }
@@ -145,13 +312,22 @@ try {
   Assert-True ($script:portChecks -eq 2) "Readiness did not wait for the delayed port."
 
   # A service that exits before binding fails immediately.
+  $InstallDir = $testRoot
+  $logsRoot = Join-Path $InstallDir "logs"
+  New-Item -ItemType Directory -Path $logsRoot -Force | Out-Null
+  [System.IO.File]::WriteAllText(
+    (Join-Path $logsRoot "SoftwareDocMatlabWorker-service-host-test.log"),
+    "Native MATLAB Gateway wrapper startup failed [HOST_ROOT_REQUIRED]."
+  )
   function Get-Service { return [pscustomobject]@{ Status = "Stopped" } }
   function Get-CimInstance { return [pscustomobject]@{ ExitCode = 1067 } }
   $earlyExit = $false
   try {
-    Wait-GatewayHealth @{} "early-exit" 5 2
+    Wait-GatewayHealth @{} "early-exit" 5 2 ([DateTime]::UtcNow)
   } catch {
-    $earlyExit = $_.Exception.Message -match "exited before"
+    $earlyExit =
+      $_.Exception.Message -match "exited before" -and
+      $_.Exception.Message -match "applicationCategory=HOST_ROOT_REQUIRED"
   }
   Assert-True $earlyExit "Readiness did not classify an early service exit."
 

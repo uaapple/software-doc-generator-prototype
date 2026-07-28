@@ -8,8 +8,12 @@ on:
       - .github/workflows/native-gateway-companion-ps51.yml
       - scripts/deploy-native-matlab-gateway.ps1
       - tests/native-gateway-companion-ps51.Tests.ps1
+      - tests/native-gateway-windows-wrapper-tests.mjs
       - tests/native-gateway-companion-tests.mjs
       - scripts/build-native-matlab-gateway-companion.mjs
+      - native-gateway/windows-matlab-worker-server.mjs
+      - src/matlab-gateway-app.js
+      - src/services/matlab-gateway-contract.js
       - deploy/native-matlab-gateway-companion.json
       - deploy/schemas/native-matlab-gateway-companion.schema.json
       - deploy/schemas/native-matlab-gateway-companion-release.schema.json
@@ -20,7 +24,7 @@ permissions:
 
 jobs:
   powershell-51:
-    name: powershell.exe 5.1 behavior tests
+    name: PowerShell 5.1 and wrapper startup contracts
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
@@ -41,3 +45,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Windows PowerShell 5.1 companion behavior tests failed."
           }
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install locked Node.js dependencies
+        shell: powershell
+        run: npm ci --ignore-scripts
+
+      - name: Reproduce legacy native env wrapper startup
+        shell: powershell
+        run: |
+          node .\tests\native-gateway-companion-tests.mjs
+          node .\tests\native-gateway-windows-wrapper-tests.mjs
