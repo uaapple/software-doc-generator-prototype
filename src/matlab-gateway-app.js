@@ -5,6 +5,7 @@ import path from "node:path";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { promises as fs } from "node:fs";
 import {
+  MATLAB_GATEWAY_LEASE_SCHEMA,
   MatlabGatewayContractError,
   createConfiguredWorkspaceMapping,
   gatewayPath,
@@ -12,6 +13,7 @@ import {
   rejectAbsolutePathFields,
   requireGatewayIdentifier,
   requireRelativeFileName,
+  validateGatewayLeaseIdentity,
   validateGatewayToolCall
 } from "./services/matlab-gateway-contract.js";
 import {
@@ -53,6 +55,8 @@ function publicJob(job) {
     workspaceId: job.workspaceId,
     operation: job.operation,
     toolName: job.toolName || "",
+    leaseId: job.leaseId || "",
+    ownerJobId: job.ownerJobId || "",
     status: job.status,
     inputAssetId: job.inputAssetId,
     artifactId: job.artifactId || "",
@@ -61,6 +65,20 @@ function publicJob(job) {
     endedAt: job.endedAt || "",
     timeoutMs: job.timeoutMs,
     error: job.error || null
+  };
+}
+
+function publicLease(lease) {
+  if (!lease) return null;
+  return {
+    schema: MATLAB_GATEWAY_LEASE_SCHEMA,
+    id: lease.leaseId,
+    leaseId: lease.leaseId,
+    workspaceId: lease.workspaceId,
+    ownerJobId: lease.ownerJobId,
+    status: lease.status,
+    createdAt: lease.createdAt,
+    closedAt: lease.closedAt || ""
   };
 }
 
@@ -101,6 +119,11 @@ export class MatlabGatewayService {
     );
     this.createClient = options.createClient || (() => createLocalMatlabClient(options));
     this.activeJobs = new Map();
+    this.activeLeases = new Map();
+  }
+
+  activeJobKey(workspaceId, jobId) {
+    return `${requireGatewayIdentifier(workspaceId, "workspaceId")}:${requireGatewayIdentifier(jobId, "jobId")}`;
   }
 
   workspaceDir(workspaceId) {
@@ -197,6 +220,131 @@ export class MatlabGatewayService {
     return metadata;
   }
 
+  findLease(workspaceId, leaseId) {
+    const requestedWorkspaceId = requireGatewayIdentifier(workspaceId, "workspaceId");
+    const id = requireGatewayIdentifier(leaseId, "leaseId");
+    const lease = this.activeLeases.get(id);
+    if (!lease) {
+      throw gatewayError("LEASE_NOT_FOUND", "MATLAB Gateway lease was not found.", 404);
+    }
+    if (lease.workspaceId !== requestedWorkspaceId) {
+      throw gatewayError(
+        "LEASE_WORKSPACE_MISMATCH",
+        "MATLAB Gateway lease belongs to another workspace.",
+        409
+      );
+    }
+    return lease;
+  }
+
+  assertLeaseOwner(lease, ownerJobId) {
+    const requestedOwnerJobId = requireGatewayIdentifier(ownerJobId, "ownerJobId");
+    if (lease.ownerJobId !== requestedOwnerJobId) {
+      throw gatewayError(
+        "LEASE_OWNER_MISMATCH",
+        "MATLAB Gateway lease belongs to another owner job.",
+        409
+      );
+    }
+    return requestedOwnerJobId;
+  }
+
+  assertRunnableLease(lease) {
+    if (lease.status === "broken") {
+      throw gatewayError(
+        "LEASE_BROKEN",
+        "MATLAB Gateway lease is broken and must be closed.",
+        409
+      );
+    }
+    if (lease.status !== "active") {
+      throw gatewayError(
+        "LEASE_CLOSED",
+        "MATLAB Gateway lease is closed.",
+        409
+      );
+    }
+    return lease;
+  }
+
+  async createLease(workspaceId, leaseId, body = {}) {
+    rejectAbsolutePathFields(body);
+    await this.getWorkspace(workspaceId);
+    const identity = validateGatewayLeaseIdentity({
+      workspaceId,
+      leaseId,
+      ownerJobId: body.ownerJobId
+    });
+    const prior = this.activeLeases.get(identity.leaseId);
+    if (prior) {
+      if (
+        prior.workspaceId !== identity.workspaceId ||
+        prior.ownerJobId !== identity.ownerJobId
+      ) {
+        throw gatewayError(
+          "LEASE_OWNERSHIP_CONFLICT",
+          "MATLAB Gateway lease already belongs to another workspace or owner job.",
+          409
+        );
+      }
+      if (prior.status === "closed") {
+        throw gatewayError(
+          "LEASE_CLOSED",
+          "A closed MATLAB Gateway lease cannot be recreated.",
+          409
+        );
+      }
+      return publicLease(prior);
+    }
+    const client = this.createClient();
+    const lease = {
+      ...identity,
+      schema: MATLAB_GATEWAY_LEASE_SCHEMA,
+      status: "active",
+      createdAt: now(),
+      closedAt: "",
+      client,
+      activeJobKeys: new Set(),
+      tail: Promise.resolve()
+    };
+    this.activeLeases.set(lease.leaseId, lease);
+    return publicLease(lease);
+  }
+
+  async getLease(workspaceId, leaseId) {
+    return publicLease(this.findLease(workspaceId, leaseId));
+  }
+
+  async closeLease(workspaceId, leaseId, ownerJobId) {
+    const lease = this.findLease(workspaceId, leaseId);
+    this.assertLeaseOwner(lease, ownerJobId);
+    if (lease.status === "closed") {
+      return publicLease(lease);
+    }
+    if (lease.activeJobKeys.size > 0) {
+      throw gatewayError(
+        "LEASE_ACTIVE",
+        "MATLAB Gateway lease has active or queued jobs.",
+        409
+      );
+    }
+    try {
+      await lease.client?.shutdown?.();
+    } catch (cause) {
+      lease.status = "broken";
+      throw gatewayError(
+        "LEASE_SHUTDOWN_FAILED",
+        "MATLAB Gateway lease client could not be closed.",
+        502,
+        { category: "lease_shutdown_failed" }
+      );
+    }
+    lease.client = null;
+    lease.status = "closed";
+    lease.closedAt = now();
+    return publicLease(lease);
+  }
+
   async putTextAsset(workspaceId, assetId, body = {}) {
     const workspace = await this.getWorkspace(workspaceId);
     rejectAbsolutePathFields({ ...body, content: undefined });
@@ -264,6 +412,24 @@ export class MatlabGatewayService {
     rejectAbsolutePathFields(body);
     const id = requireGatewayIdentifier(jobId, "jobId");
     const workspaceId = requireGatewayIdentifier(body.workspaceId, "workspaceId");
+    const leaseId = String(body.leaseId || "").trim();
+    const ownerJobId = String(body.ownerJobId || "").trim();
+    let lease = null;
+    if (leaseId) {
+      const identity = validateGatewayLeaseIdentity({
+        workspaceId,
+        leaseId,
+        ownerJobId
+      });
+      lease = this.findLease(identity.workspaceId, identity.leaseId);
+      this.assertLeaseOwner(lease, identity.ownerJobId);
+      this.assertRunnableLease(lease);
+    } else if (ownerJobId) {
+      throw gatewayError(
+        "LEASE_ID_REQUIRED",
+        "ownerJobId is accepted only with a MATLAB Gateway leaseId."
+      );
+    }
     const operation = String(body.operation || "").trim();
     if (!["evaluate_matlab_code", "analyze_slx", "call_mcp_tool"].includes(operation)) {
       throw gatewayError("OPERATION_UNSUPPORTED", `Unsupported MATLAB Gateway operation: ${operation}`);
@@ -295,7 +461,19 @@ export class MatlabGatewayService {
       }
     }
     const prior = await readJson(this.jobPath(workspaceId, id));
-    if (prior) return publicJob(prior);
+    if (prior) {
+      if (
+        String(prior.leaseId || "") !== leaseId ||
+        String(prior.ownerJobId || "") !== ownerJobId
+      ) {
+        throw gatewayError(
+          "JOB_IDEMPOTENCY_CONFLICT",
+          "MATLAB Gateway job already exists with another lease identity.",
+          409
+        );
+      }
+      return publicJob(prior);
+    }
     const timeoutMs = Math.min(
       this.maxTimeoutMs,
       Math.max(1000, Number(body.timeoutMs || this.defaultTimeoutMs) || this.defaultTimeoutMs)
@@ -309,6 +487,8 @@ export class MatlabGatewayService {
       toolName,
       toolArguments,
       modelAssetId,
+      leaseId,
+      ownerJobId,
       artifactId: "",
       status: "queued",
       timeoutMs,
@@ -318,9 +498,9 @@ export class MatlabGatewayService {
       error: null
     };
     await writeJson(this.jobPath(workspaceId, id), job);
-    this.runJob(job).catch(() => {});
-    const active = this.activeJobs.get(id);
-    if (active?.started) await active.started;
+    this.runJob(job, lease).catch(() => {});
+    const active = this.activeJobs.get(this.activeJobKey(workspaceId, id));
+    if (!lease && active?.started) await active.started;
     return this.getJob(id, workspaceId);
   }
 
@@ -334,12 +514,15 @@ export class MatlabGatewayService {
     await writeJson(this.jobPath(job.workspaceId, job.jobId), job);
   }
 
-  async runJob(job) {
-    if (this.activeJobs.has(job.jobId)) return this.activeJobs.get(job.jobId).promise;
+  async runJob(job, lease = null) {
+    const activeJobKey = this.activeJobKey(job.workspaceId, job.jobId);
+    if (this.activeJobs.has(activeJobKey)) return this.activeJobs.get(activeJobKey).promise;
     const state = {
       cancelled: false,
       timedOut: false,
       client: null,
+      lease,
+      activeJobKey,
       timer: null,
       promise: null,
       started: null,
@@ -348,26 +531,57 @@ export class MatlabGatewayService {
     state.started = new Promise((resolve) => {
       state.resolveStarted = resolve;
     });
-    state.promise = this.runJobInternal(job, state).finally(() => {
+    const execute = () => this.runJobInternal(job, state);
+    if (lease) {
+      lease.activeJobKeys.add(activeJobKey);
+      state.promise = lease.tail.catch(() => {}).then(execute);
+      lease.tail = state.promise.catch(() => {});
+    } else {
+      state.promise = execute();
+    }
+    state.promise = state.promise.finally(() => {
       state.resolveStarted?.();
       if (state.timer) clearTimeout(state.timer);
-      this.activeJobs.delete(job.jobId);
+      lease?.activeJobKeys.delete(activeJobKey);
+      this.activeJobs.delete(activeJobKey);
     });
-    this.activeJobs.set(job.jobId, state);
+    this.activeJobs.set(activeJobKey, state);
     return state.promise;
   }
 
   async runJobInternal(job, state) {
+    if (state.cancelled) {
+      state.resolveStarted?.();
+      return;
+    }
     job.status = "running";
     job.startedAt = now();
     await this.saveJob(job);
     state.resolveStarted?.();
-    const client = this.createClient();
+    const lease = state.lease;
+    if (lease && lease.status !== "active") {
+      job.status = "failed";
+      job.endedAt = now();
+      job.error = {
+        code: lease.status === "broken" ? "LEASE_BROKEN" : "LEASE_CLOSED",
+        message: lease.status === "broken"
+          ? "MATLAB Gateway lease is broken and must be closed."
+          : "MATLAB Gateway lease is closed.",
+        details: { category: "matlab_lease_unavailable" }
+      };
+      await this.saveJob(job);
+      return;
+    }
+    const client = lease?.client || this.createClient();
     state.client = client;
     const timeout = new Promise((_, reject) => {
       state.timer = setTimeout(() => {
         state.timedOut = true;
-        client.shutdown?.().catch(() => {});
+        if (lease) {
+          lease.status = "broken";
+        } else {
+          client.shutdown?.().catch(() => {});
+        }
         reject(gatewayError("JOB_TIMEOUT", `MATLAB job timed out after ${job.timeoutMs}ms.`, 504));
       }, job.timeoutMs);
     });
@@ -443,7 +657,9 @@ export class MatlabGatewayService {
       await this.saveJob(job);
     } finally {
       if (state.timer) clearTimeout(state.timer);
-      await client.shutdown?.().catch(() => {});
+      if (!lease) {
+        await client.shutdown?.().catch(() => {});
+      }
     }
   }
 
@@ -451,10 +667,14 @@ export class MatlabGatewayService {
     const job = await readJson(this.jobPath(workspaceId, jobId));
     if (!job) throw gatewayError("JOB_NOT_FOUND", "Gateway job was not found.", 404);
     if (JOB_TERMINAL.has(job.status)) return publicJob(job);
-    const active = this.activeJobs.get(job.jobId);
+    const active = this.activeJobs.get(this.activeJobKey(workspaceId, job.jobId));
     if (active) {
       active.cancelled = true;
-      await active.client?.shutdown?.().catch(() => {});
+      if (active.lease) {
+        if (active.client) active.lease.status = "broken";
+      } else {
+        await active.client?.shutdown?.().catch(() => {});
+      }
     }
     job.status = "cancelled";
     job.endedAt = now();
@@ -484,6 +704,16 @@ export class MatlabGatewayService {
 
   async cleanupWorkspace(workspaceId) {
     const workspace = await this.getWorkspace(workspaceId);
+    const workspaceLeases = [...this.activeLeases.values()].filter(
+      (lease) => lease.workspaceId === workspace.workspaceId
+    );
+    if (workspaceLeases.some((lease) => lease.status !== "closed")) {
+      throw gatewayError(
+        "WORKSPACE_LEASE_ACTIVE",
+        "Workspace leases must be closed before cleanup.",
+        409
+      );
+    }
     const jobsDir = gatewayPath(this.workspaceDir(workspace.workspaceId), "jobs");
     const jobNames = await fs.readdir(jobsDir).catch(() => []);
     for (const name of jobNames.filter((entry) => entry.endsWith(".json"))) {
@@ -493,6 +723,9 @@ export class MatlabGatewayService {
       }
     }
     await fs.rm(this.workspaceDir(workspace.workspaceId), { recursive: true, force: true });
+    for (const lease of workspaceLeases) {
+      this.activeLeases.delete(lease.leaseId);
+    }
     return { ok: true, removed: true };
   }
 }
@@ -555,6 +788,8 @@ export async function createMatlabGatewayApp(options = {}) {
       service: "matlab-gateway",
       version: GATEWAY_VERSION,
       activeJobs: service.activeJobs.size,
+      activeLeases: [...service.activeLeases.values()]
+        .filter((lease) => lease.status !== "closed").length,
       timestamp: now()
     });
   });
@@ -576,6 +811,7 @@ export async function createMatlabGatewayApp(options = {}) {
       operations: ["evaluate_matlab_code", "analyze_slx", "call_mcp_tool"],
       contracts: {
         workspaces: true,
+        leases: true,
         assets: ["matlab-code", "simulink-slx"],
         jobs: true,
         artifacts: true,
@@ -593,6 +829,36 @@ export async function createMatlabGatewayApp(options = {}) {
   app.put("/api/workspaces/:workspaceId", requireAuth, asyncRoute(async (req, res) => {
     res.status(201).json(await service.createWorkspace(req.params.workspaceId, req.body || {}));
   }));
+  app.put(
+    "/api/workspaces/:workspaceId/leases/:leaseId",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      res.status(201).json(
+        await service.createLease(req.params.workspaceId, req.params.leaseId, req.body || {})
+      );
+    })
+  );
+  app.get(
+    "/api/workspaces/:workspaceId/leases/:leaseId",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      res.json(await service.getLease(req.params.workspaceId, req.params.leaseId));
+    })
+  );
+  app.delete(
+    "/api/workspaces/:workspaceId/leases/:leaseId",
+    requireAuth,
+    asyncRoute(async (req, res) => {
+      rejectAbsolutePathFields(req.body || {});
+      res.json(
+        await service.closeLease(
+          req.params.workspaceId,
+          req.params.leaseId,
+          req.body?.ownerJobId || req.query.ownerJobId
+        )
+      );
+    })
+  );
   app.put("/api/workspaces/:workspaceId/assets/:assetId/text", requireAuth, asyncRoute(async (req, res) => {
     res.status(201).json(await service.putTextAsset(req.params.workspaceId, req.params.assetId, req.body || {}));
   }));
@@ -613,13 +879,13 @@ export async function createMatlabGatewayApp(options = {}) {
       const suppliedEvaluateToken = String(req.get("x-sdg-evaluate-token") || "");
       const caller = String(req.get("x-sdg-gateway-caller") || "");
       if (
-        caller !== "tcsd-runtime" ||
+        !["tcsd-runtime", "software-detail-runtime"].includes(caller) ||
         !evaluateToken ||
         !constantTimeEqual(suppliedEvaluateToken, evaluateToken)
       ) {
         throw gatewayError(
           "EVALUATE_NOT_AUTHORIZED",
-          "MATLAB evaluate operation is restricted to the authenticated TCSD runtime.",
+          "MATLAB evaluate operation is restricted to an authenticated pipeline runtime.",
           403
         );
       }
