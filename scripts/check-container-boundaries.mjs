@@ -92,10 +92,11 @@ const nativeGatewayConfig = JSON.parse(
   read("deploy/native-matlab-gateway-companion.json") || "{}"
 );
 if (
-  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v1" ||
+  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v2" ||
+  nativeGatewayConfig.companionVersion !== 2 ||
   nativeGatewayConfig.serviceName !== "SoftwareDocMatlabWorker" ||
   !Array.isArray(nativeGatewayConfig.managedFiles) ||
-  nativeGatewayConfig.managedFiles.length < 1
+  nativeGatewayConfig.managedFiles.length !== 6
 ) {
   failures.push("native MATLAB Gateway companion config is incomplete");
 } else {

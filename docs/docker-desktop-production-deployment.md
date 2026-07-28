@@ -75,6 +75,11 @@ node scripts/build-native-matlab-gateway-companion.mjs
 Platform/Worker rootfs 输入仍等于冻结 imageRevision。生产继续复用既有 GHCR
 `repository@sha256:...`，不得因为 companion 更新重新上传相同镜像。
 
+companion v2 是 Windows PowerShell 5.1 兼容发布：本地 evaluate token 使用
+`RandomNumberGenerator.Create()`/`GetBytes()`；现有 env 通过同目录临时文件和
+带非空 backup path 的 `File.Replace` 原子替换，不存在的目标使用同卷原子
+创建。`ValidateOnly` 在停服务前执行这些 .NET 能力探针，但不修改 env。
+
 GHCR 会复用已存在的 OCI layers，因此后续 push/pull 只传缺失 layer。两个
 Containerfile 均先安装固定 OS、npm/Python/Hermes 依赖，再复制源码和 skills；
 源码小改不会重新上传稳定依赖层。
@@ -175,8 +180,13 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 脚本复用 `software-doc-worker.env` 中现有批准的
 `MATLAB_GATEWAY_TOKEN`。若 evaluate token 尚不存在，脚本使用系统加密随机数
 生成一个值并原子写入原生与未跟踪容器 env；永不回显或写入制品。两个 env
-已有不同 token 时 fail-closed。部署完成前必须真实通过 `/version`、
+已有同一个 token 时保留原值并先备份当前字节；不同 token 或重复键时
+fail-closed。该 backup 只能恢复到执行 v2 前的现场状态，不能恢复到现场人工
+写入 token 之前。部署完成前先在 120 秒总上限内等待服务、TCP 5100 和
+`/health`，随后必须真实通过 `/version`、
 `/capabilities` 和 `evaluate_matlab_code` readiness；失败自动恢复旧 5100。
+服务状态为 Running 本身不构成 readiness。回滚后的旧 Gateway 也使用相同
+有界等待，不得立即探测端口。
 
 Gateway 通过后再执行容器命令：
 
@@ -191,6 +201,8 @@ npm run container:prod:windows:test
 可直接交给生产 Agent 的冻结流程位于
 `docs/prompts/windows-native-gateway-companion-agent.md`；不得自行省略其中的
 外部 SHA 校验、`ValidateOnly`、evaluate readiness 或回滚验证。
+现场临时的 `deploy-native-matlab-gateway-ps51.ps1` 与
+`deploy-native-matlab-gateway-ps51-enhanced.ps1` 不属于发布制品，禁止执行。
 
 `config` 不打印展开后的 Compose，避免泄露 secret。`preflight` 验证：
 

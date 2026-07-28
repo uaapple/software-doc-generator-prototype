@@ -54,6 +54,21 @@ companion 只管理 manifest 声明的 Gateway 文件与两个 env 中的 Gatewa
 用户输入输出或 MATLAB 产物。`MATLAB_GATEWAY_EVALUATE_TOKEN` 必须本地随机
 生成或安全接收，并与批准的 `MATLAB_GATEWAY_TOKEN` 保持独立。
 
+Windows companion v2 修复 PowerShell 5.1/.NET Framework 边界：CSPRNG 使用
+`RandomNumberGenerator.Create()`/`GetBytes()` 并可靠释放；存在的 env 使用
+同目录临时文件、继承 ACL 和非空 backup path 的 `File.Replace`，不存在目标
+走单独的同卷原子创建路径。两个 env 已有同一个 evaluate token 时，v2 将其
+视为合法续跑输入并先备份当前字节，不重新生成或输出；backup 仅代表 v2
+执行前状态，不能证明现场人工写 token 之前的状态。重复键或不一致值
+fail-closed。
+
+服务 Start 后必须在 120 秒总上限内联合检查服务状态、TCP 5100 和
+`/health`；Running 不等于 ready，服务提前停止立即失败。health 就绪后才执行
+version/capabilities/evaluate probe，回滚恢复旧 Gateway 时使用相同有界等待。
+`ValidateOnly` 在停服务前验证 PS5.1 CSPRNG、带非空 backup 的 replace 和
+不存在目标的原子创建能力，且不修改 env。现场临时 `ps51`/`enhanced` 脚本不
+属于 companion release，禁止继续使用。
+
 ### Hermes Agent 0.18.2 推理配置边界
 
 Hermes Agent 0.18.2 不会自动把应用层 `ZHIPU_*` 配置解释成 Hermes CLI 的

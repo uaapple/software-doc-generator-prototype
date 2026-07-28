@@ -1,8 +1,14 @@
-# Windows 原生 MATLAB Gateway companion 部署 Agent 提示词
+# Windows 原生 MATLAB Gateway companion v2 部署 Agent 提示词
 
 你正在 WX11P 上执行一次受控的 Windows 原生 MATLAB Gateway companion
 升级。不得构建或重传 Platform/Worker 镜像，不得修改生产分支，也不得读取或
 输出任何 token/API key 值。
+
+禁止继续运行现场临时修改的
+`deploy-native-matlab-gateway-ps51.ps1`、
+`deploy-native-matlab-gateway-ps51-enhanced.ps1` 或任何 `enhanced` 副本。
+它们不是正式制品。只允许使用发布者给出的 v2 ZIP 内、且 hash 已核对的
+`deploy-native-matlab-gateway.ps1`。
 
 已批准且必须保持：
 
@@ -25,15 +31,29 @@
 2. companion release JSON、manifest JSON、scan JSON；
 3.发布者给出的四个 SHA-256；
 4. 未跟踪容器 env 的绝对路径。
+5. 如 v1 失败曾生成正式 backup，提供该 backup 的绝对路径；它只能证明当次
+   backup 时的字节，不能证明人工写入 evaluate token 之前的状态。
 
 执行顺序：
 
-1. 只读记录当前 `SoftwareDocMatlabWorker` 状态、5100 health、服务 PathName、
-   原生 app revision 和当前 Worker image digest。确认旧 Gateway 只有
+1. 首先只读审计当前安全状态，不复制、不改写 env：
+
+   - `SoftwareDocMatlabWorker` 必须为 `Running`，记录服务状态与 PathName；
+   - `http://127.0.0.1:5100/health` 必须返回旧 Gateway 健康；
+   - 以 v1 正式 backup manifest 中的文件 hash/存在性为基线，确认 6 个受管
+     app 文件已恢复。没有可信 backup 时明确报告“无法证明恢复”，不得猜测；
+   - 分别读取两个 env 中名为 `MATLAB_GATEWAY_EVALUATE_TOKEN` 的键，只在内存
+     中确认每个文件恰好 1 项且两个值相同。只报告计数和 `valuesEqual=true`，
+     不得输出值、长度、前后缀或 hash；
+   - 记录当前 Worker 精确 image digest，必须仍是已批准 digest。
+
+   任一项不满足时停止，不运行 v2。当前 backup 是人工写 token 后的字节基线；
+   不得声称 v2 能恢复到 token 写入前状态。旧 Gateway 只有
    `/mcp/tools/analyze_slx` 时，不得把旧 `/health` 当作新版兼容证据。
 2. 在解压前后计算 ZIP SHA-256，并与 release JSON 和发布者给出的值比较。
    同时校验 release、manifest、scan 文件 SHA-256；任何不一致立即停止。
-3. 将 ZIP 解压到新的临时目录，不覆盖 app。先执行：
+3. 将 v2 ZIP 解压到新的临时目录，不覆盖 app。确认 asset/manifest 的
+   `companionVersion=2` 后，先执行：
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass `
@@ -44,17 +64,23 @@
      -ValidateOnly
    ```
 
-4. `ValidateOnly` 通过后，去掉 `-ValidateOnly` 执行部署。脚本只能停止
+4. `ValidateOnly` 必须先验证 Windows PowerShell 5.1/.NET Framework 的
+   CSPRNG、非空 backup `File.Replace` 与不存在目标的原子创建能力，且不能
+   修改两个 env。通过后，去掉 `-ValidateOnly` 执行部署。脚本只能停止
    `SoftwareDocMatlabWorker`，备份 manifest 声明的 Gateway 文件、两个 env 和
    服务配置，再替换受管文件。不得停止/修改 Hermes 服务、Docker、MATLAB
    安装、SATK、addon、runtime/data、Hermes Home/session、输入输出或产物。
 5. `MATLAB_GATEWAY_TOKEN` 必须复用原生 env 的现有批准值。不得把它当作
-   evaluate token。若两个 env 都没有 `MATLAB_GATEWAY_EVALUATE_TOKEN`，允许
-   脚本本地随机生成并原子写入两处；不得回显该值。两个 env 已有不同值时必须
-   停止。
-6. companion 部署脚本必须在 5100 上完成 `/version`、`/capabilities` 和真实
-   `evaluate_matlab_code` probe。失败时确认脚本已自动恢复旧文件/env 和旧
-   5100，再停止后续步骤。
+   evaluate token。两个 env 已有同一个 evaluate token 是合法的续跑输入：
+   v2 必须先备份当前字节，然后保留该值，不重新生成、不回显、不删除。若两个
+   env 都没有 `MATLAB_GATEWAY_EVALUATE_TOKEN`，允许脚本以
+   `RandomNumberGenerator.Create()` 生成新的 32-byte 随机值并原子写入两处；
+   不得回显。两个 env 值不同或任一 env 出现重复键时必须停止。
+6. 服务 Start 后不能仅以 `Service=Running` 判定成功。v2 必须在 120 秒总
+   上限内轮询服务状态、TCP 5100 与 `/health`；服务提前停止应立即失败，单次
+   health 请求不得突破总等待上限。health 就绪后才执行 `/version`、
+   `/capabilities` 和真实 `evaluate_matlab_code` probe。失败时确认脚本已
+   自动恢复 backup 中的旧文件/env，并用同样有界策略恢复旧 5100，再停止。
 7. Gateway 验证通过后，才执行容器配置与 preflight：
 
    ```powershell
