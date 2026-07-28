@@ -33,6 +33,58 @@ const evaluateToken = "software-detail-synthetic-evaluate-token";
 const workerToken = "software-detail-synthetic-worker-token";
 const expectedStages = listSoftwareDetailStages();
 
+function resolveImageMode(environment) {
+  if (environment.SDD_SYNTHETIC_USE_PREBUILT_IMAGES !== "1") {
+    return {
+      usePrebuiltImages: false,
+      platformImage: "",
+      workerImage: ""
+    };
+  }
+  const platformImage = String(
+    environment.SDD_SYNTHETIC_PLATFORM_IMAGE || ""
+  ).trim();
+  const workerImage = String(
+    environment.SDD_SYNTHETIC_WORKER_IMAGE || ""
+  ).trim();
+  assert.ok(
+    platformImage,
+    "SDD_SYNTHETIC_USE_PREBUILT_IMAGES=1 时必须显式提供 SDD_SYNTHETIC_PLATFORM_IMAGE。"
+  );
+  assert.ok(
+    workerImage,
+    "SDD_SYNTHETIC_USE_PREBUILT_IMAGES=1 时必须显式提供 SDD_SYNTHETIC_WORKER_IMAGE。"
+  );
+  return {
+    usePrebuiltImages: true,
+    platformImage,
+    workerImage
+  };
+}
+
+function composeUpArguments(imageMode) {
+  if (imageMode.usePrebuiltImages) {
+    return [
+      "up",
+      "--no-build",
+      "--detach",
+      "--wait",
+      "--wait-timeout",
+      "240",
+      "--pull",
+      "never"
+    ];
+  }
+  return [
+    "up",
+    "--build",
+    "--detach",
+    "--wait",
+    "--wait-timeout",
+    "240"
+  ];
+}
+
 function dockerEnvironment(overrides = {}) {
   const environment = {};
   for (const key of [
@@ -70,6 +122,30 @@ async function run(command, args, options = {}) {
     error.message = `${error.message}${output ? `\n${output}` : ""}`;
     throw error;
   }
+}
+
+async function verifyPrebuiltImage(image, label, environment) {
+  let result;
+  try {
+    result = await run(
+      "docker",
+      ["image", "inspect", "--format", "{{.Architecture}}", image],
+      {
+        env: environment,
+        timeoutMs: 30_000
+      }
+    );
+  } catch (cause) {
+    throw new Error(
+      `预构建${label}镜像不存在或不可读取：${image}\n${cause.message}`,
+      { cause }
+    );
+  }
+  assert.equal(
+    result.stdout.trim(),
+    "amd64",
+    `预构建${label}镜像必须是 amd64 架构：${image}`
+  );
 }
 
 function composeArgs(envFile, projectName, ...commands) {
@@ -338,6 +414,14 @@ const projectSuffix = `${process.pid}-${Math.random()
   .toString(16)
   .slice(2, 8)}`.toLowerCase();
 const projectName = `sdg-sdd-syn-${projectSuffix}`;
+const imageMode = resolveImageMode({
+  SDD_SYNTHETIC_USE_PREBUILT_IMAGES:
+    process.env.SDD_SYNTHETIC_USE_PREBUILT_IMAGES,
+  SDD_SYNTHETIC_PLATFORM_IMAGE:
+    process.env.SDD_SYNTHETIC_PLATFORM_IMAGE,
+  SDD_SYNTHETIC_WORKER_IMAGE:
+    process.env.SDD_SYNTHETIC_WORKER_IMAGE
+});
 const clientRecords = [];
 let gatewayServer;
 let gatewayService;
@@ -433,8 +517,12 @@ try {
       "tests",
       "software-detail-container-worker-server.mjs"
     ),
-    SDD_SYNTHETIC_PLATFORM_IMAGE: `sdg-software-detail-platform:${projectSuffix}`,
-    SDD_SYNTHETIC_WORKER_IMAGE: `sdg-software-detail-worker:${projectSuffix}`
+    SDD_SYNTHETIC_PLATFORM_IMAGE:
+      imageMode.platformImage ||
+      `sdg-software-detail-platform:${projectSuffix}`,
+    SDD_SYNTHETIC_WORKER_IMAGE:
+      imageMode.workerImage ||
+      `sdg-software-detail-worker:${projectSuffix}`
   });
 
   await run("docker", ["version", "--format", "{{.Server.Version}}"], {
@@ -448,6 +536,23 @@ try {
       { code: "software_detail_container_docker_unavailable" }
     );
   });
+  if (imageMode.usePrebuiltImages) {
+    await Promise.all([
+      verifyPrebuiltImage(
+        imageMode.platformImage,
+        "平台",
+        composeEnvironment
+      ),
+      verifyPrebuiltImage(
+        imageMode.workerImage,
+        "Worker",
+        composeEnvironment
+      )
+    ]);
+    console.log(
+      `INFO 使用预构建镜像：平台=${imageMode.platformImage}；Worker=${imageMode.workerImage}；本次不会构建或拉取镜像`
+    );
+  }
   await run(
     "docker",
     composeArgs(emptyEnvFile, projectName, "config", "--quiet"),
@@ -461,12 +566,7 @@ try {
     composeArgs(
       emptyEnvFile,
       projectName,
-      "up",
-      "--build",
-      "--detach",
-      "--wait",
-      "--wait-timeout",
-      "240"
+      ...composeUpArguments(imageMode)
     ),
     {
       env: composeEnvironment,

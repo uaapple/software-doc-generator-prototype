@@ -110,6 +110,64 @@ assert.match(driver, /unzip/);
 assert.match(driver, /--env-file/);
 assert.match(driver, /--project-name/);
 assert.match(driver, /down[\s\S]*--volumes[\s\S]*--remove-orphans/);
+assert.match(
+  driver,
+  /SDD_SYNTHETIC_USE_PREBUILT_IMAGES\s*!==\s*"1"[\s\S]*usePrebuiltImages:\s*false/
+);
+assert.match(
+  driver,
+  /usePrebuiltImages:\s*true[\s\S]*platformImage,[\s\S]*workerImage/
+);
+assert.match(
+  driver,
+  /"up",\s*"--build",\s*"--detach",\s*"--wait"/,
+  "默认容器合成验收必须构建当前源码镜像。"
+);
+assert.match(
+  driver,
+  /"up",\s*"--no-build",\s*"--detach",\s*"--wait",[\s\S]*"--pull",\s*"never"/,
+  "显式预构建镜像模式必须禁止构建和拉取。"
+);
+assert.match(
+  driver,
+  /\["image",\s*"inspect",\s*"--format",\s*"\{\{\.Architecture\}\}",\s*image\]/
+);
+assert.match(driver, /result\.stdout\.trim\(\),\s*"amd64"/);
+for (const requiredEnvironmentName of [
+  "SDD_SYNTHETIC_USE_PREBUILT_IMAGES",
+  "SDD_SYNTHETIC_PLATFORM_IMAGE",
+  "SDD_SYNTHETIC_WORKER_IMAGE"
+]) {
+  assert.match(
+    driver,
+    new RegExp(
+      `process\\.env\\.${requiredEnvironmentName}`
+    )
+  );
+}
+assert.deepEqual(
+  [
+    ...new Set(
+      [...driver.matchAll(/process\.env\.(SDD_SYNTHETIC_[A-Z0-9_]+)/g)]
+        .map((match) => match[1])
+    )
+  ].sort(),
+  [
+    "SDD_SYNTHETIC_PLATFORM_IMAGE",
+    "SDD_SYNTHETIC_USE_PREBUILT_IMAGES",
+    "SDD_SYNTHETIC_WORKER_IMAGE"
+  ],
+  "驱动只能从进程环境读取三个明确的预构建镜像测试参数。"
+);
+assert.match(
+  driver,
+  /SDD_SYNTHETIC_USE_PREBUILT_IMAGES=1 时必须显式提供 SDD_SYNTHETIC_PLATFORM_IMAGE/
+);
+assert.match(
+  driver,
+  /SDD_SYNTHETIC_USE_PREBUILT_IMAGES=1 时必须显式提供 SDD_SYNTHETIC_WORKER_IMAGE/
+);
+assert.doesNotMatch(driver, /dotenv|\.env\.container|SDG_CONTAINER_ENV_FILE/);
 assert.doesNotMatch(driver, /process\.env\.DEEPSEEK/);
 assert.doesNotMatch(driver, /process\.env\.OPENAI/);
 assert.doesNotMatch(driver, /compose\.linux-prod/);
