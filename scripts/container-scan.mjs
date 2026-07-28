@@ -8,6 +8,7 @@ import { evaluateTrivyPolicy } from "./container-scan-policy.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = path.join(rootDir, "release-dist", "container", "scans");
+const SCAN_OUTPUT_MAX_BYTES = 256 * 1024 * 1024;
 const images = [
   process.env.SDG_PLATFORM_IMAGE || "sdg-platform:mac-dev",
   process.env.SDG_WORKER_IMAGE || "sdg-hermes-worker:mac-dev"
@@ -20,13 +21,27 @@ const licensePolicy = JSON.parse(
 fs.mkdirSync(outputDir, { recursive: true });
 
 function available(command) {
-  return spawnSync(command, ["--version"], { encoding: "utf8", stdio: "ignore" }).status === 0;
+  return spawnSync(command, ["--version"], {
+    encoding: "utf8",
+    stdio: "ignore",
+    maxBuffer: SCAN_OUTPUT_MAX_BYTES
+  }).status === 0;
 }
 
 function run(command, args, outputFile) {
-  const result = spawnSync(command, args, { cwd: rootDir, encoding: "utf8" });
+  const result = spawnSync(command, args, {
+    cwd: rootDir,
+    encoding: "utf8",
+    maxBuffer: SCAN_OUTPUT_MAX_BYTES
+  });
   fs.writeFileSync(path.join(outputDir, outputFile), `${result.stdout || ""}${result.stderr || ""}`, "utf8");
-  results.push({ command, args, outputFile, status: result.status });
+  results.push({
+    command,
+    args,
+    outputFile,
+    status: result.status,
+    error: result.error?.message || ""
+  });
 }
 
 function runTrivy(image) {
@@ -41,7 +56,11 @@ function runTrivy(image) {
       "vuln,license,secret",
       image
     ],
-    { cwd: rootDir, encoding: "utf8" }
+    {
+      cwd: rootDir,
+      encoding: "utf8",
+      maxBuffer: SCAN_OUTPUT_MAX_BYTES
+    }
   );
   fs.writeFileSync(path.join(outputDir, outputFile), result.stdout || "", "utf8");
   if (result.stderr) {
@@ -70,7 +89,8 @@ function runTrivy(image) {
     outputFile,
     policyFile,
     status: result.status === 0 && policyFindings.length === 0 ? 0 : 1,
-    policyFindingCount: policyFindings.length
+    policyFindingCount: policyFindings.length,
+    error: result.error?.message || ""
   });
 }
 

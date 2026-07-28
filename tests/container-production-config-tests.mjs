@@ -53,6 +53,8 @@ assert.match(releaseBuilder, /\["syft", "trivy"\]/);
 const scanScript = read("scripts/container-scan.mjs");
 assert.match(scanScript, /container-license-policy\.json/);
 assert.match(scanScript, /vuln,license,secret/);
+assert.match(scanScript, /SCAN_OUTPUT_MAX_BYTES/);
+assert.match(scanScript, /maxBuffer:\s*SCAN_OUTPUT_MAX_BYTES/);
 const licensePolicy = JSON.parse(read("deploy/container-license-policy.json"));
 assert.equal(licensePolicy.denyUnknown, true);
 assert.ok(licensePolicy.deniedIdentifiers.includes("AGPL-3.0-only"));
