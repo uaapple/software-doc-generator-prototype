@@ -7,13 +7,11 @@ import {
 const expectCurrentGap = process.argv.includes("--expect-current-gap");
 const result = await runSoftwareModuleDescriptionTransportScenario();
 
-assertHarnessInvariants(result);
-
 if (expectCurrentGap) {
   assert.equal(
-    result.responseOutputFiles[0].contentBase64 || "",
-    "",
-    "current-gap evidence expects metadata-only Worker response"
+    result.runTaskError?.code,
+    "software_detail_artifact_payload_missing",
+    "the hardened Platform client must fail closed on the metadata-only Worker response"
   );
   assert.equal(
     result.platformDocxBytes,
@@ -30,17 +28,27 @@ if (expectCurrentGap) {
     false,
     "current-gap evidence expects cleanup to start before executeStepRequest response"
   );
-  assert.equal(result.runTaskError?.code, "software_module_description_output_missing");
+  assert.deepEqual(
+    result.legacy.afterBytes,
+    result.legacy.originalBytes,
+    "legacy task reads must remain byte-for-byte read-only"
+  );
+  assert.equal(result.legacy.readTask?.unitTestProject?.id, "01");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result.legacy.readTask || {}, "pipeline"),
+    false
+  );
   console.log([
     "Observed current software-module-description transport gap:",
     "- Worker cleanup invocation: started before executeStepRequest response",
-    "- real Worker response: succeeded with DOCX metadata only",
-    "- Platform materialization: missing",
+    "- Worker response still lacks transferred DOCX bytes",
+    "- hardened Platform client: rejected metadata-only artifact",
     "- Worker multipart session: cleaned",
-    "- Platform task: failed with software_module_description_output_missing",
+    "- Platform task: failed closed with software_detail_artifact_payload_missing",
     "- legacy task reads: byte-for-byte read-only"
   ].join("\n"));
 } else {
+  assertHarnessInvariants(result);
   const transferredArtifact = result.responseOutputFiles[0];
   assert.equal(
     transferredArtifact.encoding,
