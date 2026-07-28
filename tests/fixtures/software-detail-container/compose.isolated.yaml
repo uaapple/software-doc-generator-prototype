@@ -12,13 +12,16 @@ services:
       - -c
     command:
       - |
-        chmod 0777 /state/data /state/logs/platform /state/logs/worker
+        chmod 0777 /state/data/platform /state/data/worker /state/logs/platform /state/logs/worker
         chown 10001:10001 /state/worker-hermes
         chown 1000:1000 /state/platform-skills /state/platform-home
     volumes:
       - type: bind
-        source: ${SDD_SYNTHETIC_DATA_DIR:?set SDD_SYNTHETIC_DATA_DIR}
-        target: /state/data
+        source: ${SDD_SYNTHETIC_PLATFORM_DATA_DIR:?set SDD_SYNTHETIC_PLATFORM_DATA_DIR}
+        target: /state/data/platform
+      - type: bind
+        source: ${SDD_SYNTHETIC_WORKER_DATA_DIR:?set SDD_SYNTHETIC_WORKER_DATA_DIR}
+        target: /state/data/worker
       - type: bind
         source: ${SDD_SYNTHETIC_PLATFORM_LOG_DIR:?set SDD_SYNTHETIC_PLATFORM_LOG_DIR}
         target: /state/logs/platform
@@ -86,7 +89,7 @@ services:
       - /var/lib/sdg/tmp:rw,nosuid,size=128m
     volumes:
       - type: bind
-        source: ${SDD_SYNTHETIC_DATA_DIR:?set SDD_SYNTHETIC_DATA_DIR}
+        source: ${SDD_SYNTHETIC_WORKER_DATA_DIR:?set SDD_SYNTHETIC_WORKER_DATA_DIR}
         target: /var/lib/sdg/data
       - type: bind
         source: ${SDD_SYNTHETIC_ADDON_DIR:?set SDD_SYNTHETIC_ADDON_DIR}
@@ -154,7 +157,7 @@ services:
       - /tmp:rw,noexec,nosuid,size=128m
     volumes:
       - type: bind
-        source: ${SDD_SYNTHETIC_DATA_DIR:?set SDD_SYNTHETIC_DATA_DIR}
+        source: ${SDD_SYNTHETIC_PLATFORM_DATA_DIR:?set SDD_SYNTHETIC_PLATFORM_DATA_DIR}
         target: /var/lib/sdg/data
       - type: bind
         source: ${SDD_SYNTHETIC_PLATFORM_LOG_DIR:?set SDD_SYNTHETIC_PLATFORM_LOG_DIR}

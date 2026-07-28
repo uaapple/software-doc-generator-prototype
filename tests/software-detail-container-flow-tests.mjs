@@ -210,7 +210,19 @@ async function waitForWorkerCleanup(
   assert.fail(`Timed out waiting for Worker upload cleanup: ${jobId}.`);
 }
 
-function assertRealSkillSnapshot(job) {
+function mapWorkerContainerPathToHost(workerDataDir, containerPath) {
+  const containerRoot = "/var/lib/sdg/data";
+  const resolved = path.posix.resolve(String(containerPath || ""));
+  assert.ok(
+    resolved.startsWith(`${containerRoot}/`),
+    `Worker path must stay under ${containerRoot}: ${resolved}`
+  );
+  const relativePath = path.posix.relative(containerRoot, resolved);
+  assert.ok(relativePath && !relativePath.startsWith("../"));
+  return path.resolve(workerDataDir, ...relativePath.split("/"));
+}
+
+function assertImageSkillSnapshotFromSyntheticList(job) {
   assert.equal(
     job.skillRegistry?.schema,
     "software-detail-hermes-skill-registry/v1"
@@ -232,7 +244,7 @@ function assertRealSkillSnapshot(job) {
           `/software-detail/${stage.name}`
         )
     ),
-    "Nine real stage bundles must carry installed paths and content hashes."
+    "The real nine-skill image snapshot selected by the synthetic skill list must carry installed paths and content hashes."
   );
   assert.match(job.skillRegistry.runtime.bundleHash, /^[a-f0-9]{64}$/);
   assert.match(
@@ -266,7 +278,7 @@ function assertCompletedWorkerJob(job) {
   assert.equal(job.matlabSessionCleaned, true);
   assert.equal(job.input.uploadSessionDir, "");
   assert.ok(job.uploadCleanedAt);
-  assertRealSkillSnapshot(job);
+  assertImageSkillSnapshotFromSyntheticList(job);
 }
 
 async function downloadAndCheckDocx(platformBaseURL, task, targetPath) {
@@ -315,7 +327,8 @@ async function collectComposeLogs(envFile, projectName, env) {
 const root = await fs.mkdtemp(
   path.join(os.tmpdir(), "software-detail-container-synthetic-")
 );
-const dataDir = path.join(root, "data");
+const platformDataDir = path.join(root, "platform-data");
+const workerDataDir = path.join(root, "worker-data");
 const addonDir = path.join(root, "project-addons");
 const platformLogDir = path.join(root, "logs", "platform");
 const workerLogDir = path.join(root, "logs", "worker");
@@ -331,17 +344,20 @@ let gatewayService;
 let composeStarted = false;
 let composeEnvironment;
 let testError;
+let cleanupError;
 
 try {
   await Promise.all([
-    fs.mkdir(dataDir, { recursive: true }),
+    fs.mkdir(platformDataDir, { recursive: true }),
+    fs.mkdir(workerDataDir, { recursive: true }),
     fs.mkdir(path.join(addonDir, "01"), { recursive: true }),
     fs.mkdir(platformLogDir, { recursive: true }),
     fs.mkdir(workerLogDir, { recursive: true }),
     fs.mkdir(gatewayStateDir, { recursive: true })
   ]);
   await Promise.all([
-    fs.chmod(dataDir, 0o777),
+    fs.chmod(platformDataDir, 0o777),
+    fs.chmod(workerDataDir, 0o777),
     fs.chmod(platformLogDir, 0o777),
     fs.chmod(workerLogDir, 0o777),
     fs.writeFile(
@@ -351,12 +367,17 @@ try {
     ),
     fs.writeFile(emptyEnvFile, "", "utf8")
   ]);
+  assert.notEqual(
+    path.resolve(platformDataDir),
+    path.resolve(workerDataDir),
+    "平台与 Worker 必须使用不同的宿主运行数据根目录。"
+  );
 
   gatewayService = new MatlabGatewayService({
     rootDir: gatewayStateDir,
     mappingId: "worker-data",
     containerRoot: "/var/lib/sdg/data",
-    hostRoot: dataDir,
+    hostRoot: workerDataDir,
     defaultTimeoutMs: 10_000,
     maxTimeoutMs: 30_000,
     createClient: () => {
@@ -399,7 +420,8 @@ try {
 
   composeEnvironment = dockerEnvironment({
     SDD_SYNTHETIC_PROJECT_NAME: projectName,
-    SDD_SYNTHETIC_DATA_DIR: dataDir,
+    SDD_SYNTHETIC_PLATFORM_DATA_DIR: platformDataDir,
+    SDD_SYNTHETIC_WORKER_DATA_DIR: workerDataDir,
     SDD_SYNTHETIC_ADDON_DIR: addonDir,
     SDD_SYNTHETIC_PLATFORM_LOG_DIR: platformLogDir,
     SDD_SYNTHETIC_WORKER_LOG_DIR: workerLogDir,
@@ -491,6 +513,18 @@ try {
   assertCompletedWorkerJob(workerJobB);
   assert.notEqual(workerJobA.input.workspaceDir, workerJobB.input.workspaceDir);
   assert.notEqual(workerJobA.resources.leaseId, workerJobB.resources.leaseId);
+  for (const workerJob of [workerJobA, workerJobB]) {
+    const cleanedHostUploadDir = mapWorkerContainerPathToHost(
+      workerDataDir,
+      workerJob.input.workspaceDir
+    );
+    const cleanedStat = await fs.stat(cleanedHostUploadDir).catch(() => null);
+    assert.equal(
+      cleanedStat,
+      null,
+      `Worker upload session must be removed from disk: ${cleanedHostUploadDir}`
+    );
+  }
   assert.equal(
     new Set([
       ...workerJobA.hermesSessionIds,
@@ -526,10 +560,10 @@ try {
   assert.equal(new Set(leases.map((lease) => lease.ownerJobId)).size, 2);
 
   console.log(
-    "PASS software-detail synthetic container flow: two real Platform/Worker containers, public upload, nine real skill snapshots, nine isolated stage sessions per task, one Gateway lease per task, python-docx output, cleanup, and task isolation verified"
+    "PASS software-detail synthetic container flow: two Platform/Worker containers, public upload, a synthetic skill list mapped to the real nine-skill image snapshot/hash, nine synthetic session IDs per task, one Gateway lease per task, python-docx output, cleanup, and task isolation verified"
   );
   console.log(
-    "NOTE synthetic only: Hermes generation and MATLAB tool calls were deliberately replaced; real business-input acceptance remains pending"
+    "NOTE synthetic only: Hermes generation, Hermes skill-list discovery, Hermes session IDs, and MATLAB tool calls were replaced; only the real nine-skill image snapshot/hash is checked, while real Hermes discovery, real Hermes sessions, and real business-input acceptance remain pending"
   );
 } catch (error) {
   testError = error;
@@ -546,28 +580,34 @@ try {
   throw error;
 } finally {
   if (composeEnvironment) {
-    await run(
-      "docker",
-      composeArgs(
-        emptyEnvFile,
-        projectName,
-        "down",
-        "--volumes",
-        "--remove-orphans",
-        "--timeout",
-        "10"
-      ),
-      {
-        env: composeEnvironment,
-        timeoutMs: 120_000
-      }
-    ).catch((cleanupError) => {
-      if (!testError) throw cleanupError;
-    });
+    try {
+      await run(
+        "docker",
+        composeArgs(
+          emptyEnvFile,
+          projectName,
+          "down",
+          "--volumes",
+          "--remove-orphans",
+          "--timeout",
+          "10"
+        ),
+        {
+          env: composeEnvironment,
+          timeoutMs: 120_000
+        }
+      );
+    } catch (error) {
+      cleanupError = error;
+    }
   } else if (composeStarted) {
-    throw new Error("合成容器已启动但缺少清理环境。");
+    cleanupError = new Error("合成容器已启动但缺少清理环境。");
   }
-  await close(gatewayServer);
+  try {
+    await close(gatewayServer);
+  } catch (error) {
+    cleanupError ||= error;
+  }
   if (gatewayService) {
     await Promise.all(
       [...gatewayService.activeLeases.values()]
@@ -575,5 +615,12 @@ try {
         .map((lease) => lease.client.shutdown?.().catch(() => {}))
     );
   }
-  await fs.rm(root, { recursive: true, force: true });
+  try {
+    await fs.rm(root, { recursive: true, force: true });
+  } catch (error) {
+    cleanupError ||= error;
+  }
+  if (!testError && cleanupError) {
+    throw cleanupError;
+  }
 }

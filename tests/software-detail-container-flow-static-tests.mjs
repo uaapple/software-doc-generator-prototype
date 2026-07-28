@@ -48,7 +48,36 @@ for (const composeSource of [isolatedCompose, syntheticCompose]) {
   assert.doesNotMatch(composeSource, /latest/);
   assert.doesNotMatch(composeSource, /release-dist/);
 }
-assert.match(isolatedCompose, /SDD_SYNTHETIC_DATA_DIR:\?set/);
+assert.equal(
+  [...isolatedCompose.matchAll(/SDD_SYNTHETIC_PLATFORM_DATA_DIR:\?set/g)]
+    .length,
+  2
+);
+assert.equal(
+  [...isolatedCompose.matchAll(/SDD_SYNTHETIC_WORKER_DATA_DIR:\?set/g)].length,
+  2
+);
+assert.doesNotMatch(isolatedCompose, /SDD_SYNTHETIC_DATA_DIR/);
+assert.match(
+  isolatedCompose,
+  /source: \$\{SDD_SYNTHETIC_PLATFORM_DATA_DIR:[^\n]+\}\s+target: \/var\/lib\/sdg\/data/
+);
+assert.match(
+  isolatedCompose,
+  /source: \$\{SDD_SYNTHETIC_WORKER_DATA_DIR:[^\n]+\}\s+target: \/var\/lib\/sdg\/data/
+);
+assert.match(
+  isolatedCompose,
+  /source: \$\{SDD_SYNTHETIC_PLATFORM_DATA_DIR:[^\n]+\}\s+target: \/state\/data\/platform/
+);
+assert.match(
+  isolatedCompose,
+  /source: \$\{SDD_SYNTHETIC_WORKER_DATA_DIR:[^\n]+\}\s+target: \/state\/data\/worker/
+);
+assert.match(
+  isolatedCompose,
+  /chmod 0777 \/state\/data\/platform \/state\/data\/worker/
+);
 assert.match(isolatedCompose, /SDD_SYNTHETIC_ADDON_DIR:\?set/);
 assert.match(isolatedCompose, /SDD_SYNTHETIC_PLATFORM_PORT:\?set/);
 assert.match(isolatedCompose, /SDD_SYNTHETIC_WORKER_PORT:\?set/);
@@ -67,7 +96,14 @@ assert.match(
 assert.match(driver, /createMatlabGatewayApp/);
 assert.match(driver, /MatlabGatewayService/);
 assert.match(driver, /createPublicTask/);
-assert.match(driver, /assertRealSkillSnapshot/);
+assert.match(driver, /assertImageSkillSnapshotFromSyntheticList/);
+assert.match(driver, /SDD_SYNTHETIC_PLATFORM_DATA_DIR/);
+assert.match(driver, /SDD_SYNTHETIC_WORKER_DATA_DIR/);
+assert.doesNotMatch(driver, /SDD_SYNTHETIC_DATA_DIR/);
+assert.match(driver, /hostRoot:\s*workerDataDir/);
+assert.match(driver, /mapWorkerContainerPathToHost/);
+assert.match(driver, /fs\.stat\(cleanedHostUploadDir\)/);
+assert.match(driver, /cleanupError\s*=\s*error/);
 assert.match(driver, /new Set\(sessions\)\.size,\s*9/);
 assert.match(driver, /clientRecords\.length,\s*2/);
 assert.match(driver, /unzip/);
@@ -90,5 +126,5 @@ assert.equal(
 );
 
 console.log(
-  "PASS software-detail synthetic container static checks: real service/registry boundaries, isolated Compose resources, read-only test entry, explicit synthetic labels, safe cleanup, and independent commands verified"
+  "PASS software-detail synthetic container static checks: application service/registry code boundaries, isolated Platform/Worker data roots, read-only test entry, explicitly synthetic skill-list/session substitutes, safe cleanup, and independent commands verified"
 );

@@ -49,7 +49,7 @@ async function sha256File(filePath) {
     .digest("hex");
 }
 
-async function verifyRealSkillSnapshot(job, definition) {
+async function verifyImageSkillSnapshotFromSyntheticList(job, definition) {
   const registry = job.skillRegistry;
   const stage = registry?.stages?.find((item) => item.stageId === definition.id);
   if (
@@ -59,7 +59,7 @@ async function verifyRealSkillSnapshot(job, definition) {
     !stage?.installedPath ||
     !registry?.runtime?.installedPath
   ) {
-    throw Object.assign(new Error("真实九阶段技能快照不完整。"), {
+    throw Object.assign(new Error("合成技能列表对应的九技能镜像快照不完整。"), {
       code: "software_detail_synthetic_skill_snapshot_missing"
     });
   }
@@ -71,7 +71,7 @@ async function verifyRealSkillSnapshot(job, definition) {
     stageHash !== stage.bundleHash ||
     runtimeHash !== registry.runtime.bundleHash
   ) {
-    throw Object.assign(new Error("真实技能或共享运行时快照发生漂移。"), {
+    throw Object.assign(new Error("九技能镜像快照或共享运行时摘要发生漂移。"), {
       code: "software_detail_synthetic_skill_snapshot_drift"
     });
   }
@@ -133,14 +133,17 @@ class SyntheticSoftwareDetailStageExecutor {
     const workspaceDir = path.resolve(job.input.workspaceDir);
     const attempt =
       job.stages.find((stage) => stage.id === definition.id)?.attempt || 1;
-    const snapshot = await verifyRealSkillSnapshot(job, definition);
+    const snapshot = await verifyImageSkillSnapshotFromSyntheticList(
+      job,
+      definition
+    );
 
     await writeJson(context.manifestPath, {
       ...context.stageInput,
       schema: SOFTWARE_DETAIL_STAGE_INPUT_SCHEMA,
       synthetic: true,
       validationScope:
-        "仅验证容器、九阶段、真实技能快照、租约、HTTP 与 DOCX 制品链路",
+        "仅验证容器、九阶段、真实九技能镜像快照及摘要、租约、HTTP 与 DOCX 制品链路；技能列表和会话编号均为合成替身",
       skill: {
         name: snapshot.stage.name,
         version: snapshot.stage.version,
@@ -256,7 +259,7 @@ class SyntheticSoftwareDetailStageExecutor {
 }
 
 const stageExecutor = new SyntheticSoftwareDetailStageExecutor();
-const discoveredSkills = listSoftwareDetailStages()
+const syntheticSkillList = listSoftwareDetailStages()
   .map((stage) => stage.skillName)
   .join("\n");
 const skillRegistry = new SoftwareDetailHermesSkillRegistry({
@@ -264,7 +267,7 @@ const skillRegistry = new SoftwareDetailHermesSkillRegistry({
   profile: stageExecutor.profile,
   sourceRoot: path.join(config.rootDir, "skills", "hermes"),
   commandRunner: async () => ({
-    stdout: `${discoveredSkills}\n`,
+    stdout: `${syntheticSkillList}\n`,
     stderr: ""
   })
 });
