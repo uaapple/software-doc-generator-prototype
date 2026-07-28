@@ -37,7 +37,7 @@ run(process.execPath, ["scripts/check-container-secrets.mjs"]);
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-native-gateway-release-"));
 const packageRoot = path.join(temporaryRoot, "package");
 const payloadRoot = path.join(packageRoot, "payload");
-const assetPrefix = `native-matlab-gateway-companion-v2-${shortRevision}`;
+const assetPrefix = `native-matlab-gateway-companion-v3-${shortRevision}`;
 const scanName = `${assetPrefix}.scan.json`;
 const manifestName = `${assetPrefix}.manifest.json`;
 const assetName = `${assetPrefix}.zip`;
@@ -85,8 +85,33 @@ try {
     sizeBytes: toolFiles[0].sizeBytes
   });
 
+  const validationFiles = [];
+  for (const entry of config.validationFiles || []) {
+    assertSafeRelativePath(entry.source, "validation source");
+    assertSafeRelativePath(entry.packagePath, "validation package path");
+    const content = gitBuffer(["show", `${revision}:${entry.source}`]);
+    scanContent(entry.source, content);
+    const validationDestination = path.join(packageRoot, entry.packagePath);
+    fs.mkdirSync(path.dirname(validationDestination), { recursive: true });
+    fs.writeFileSync(validationDestination, content);
+    const evidence = {
+      source: entry.source,
+      packagePath: entry.packagePath,
+      sha256: sha256(content),
+      sizeBytes: content.length,
+      runtime: entry.runtime,
+      readOnly: entry.readOnly
+    };
+    validationFiles.push(evidence);
+    scanFiles.push({
+      path: evidence.source,
+      sha256: evidence.sha256,
+      sizeBytes: evidence.sizeBytes
+    });
+  }
+
   const scan = {
-    schema: "sdg-native-matlab-gateway-companion-scan/v2",
+    schema: "sdg-native-matlab-gateway-companion-scan/v3",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     status: "passed",
@@ -103,7 +128,7 @@ try {
   fs.writeFileSync(path.join(packageRoot, scanName), scanBytes);
 
   const manifest = {
-    schema: "sdg-native-matlab-gateway-companion/v2",
+    schema: "sdg-native-matlab-gateway-companion/v3",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     deploymentToolRevision: revision,
@@ -128,6 +153,7 @@ try {
     },
     files,
     toolFiles,
+    validationFiles,
     scan: {
       file: scanName,
       sha256: sha256(scanBytes),
@@ -146,7 +172,7 @@ try {
   run("zip", ["-X", "-q", "-r", assetPath, "."], { cwd: packageRoot });
 
   const release = {
-    schema: "sdg-native-matlab-gateway-companion-release/v2",
+    schema: "sdg-native-matlab-gateway-companion-release/v3",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     deploymentToolRevision: revision,
@@ -163,6 +189,11 @@ try {
       file: scanName,
       sha256: sha256(scanBytes),
       status: "passed"
+    },
+    contents: {
+      managedGatewayFileCount: files.length,
+      deploymentToolFileCount: toolFiles.length,
+      validationFileCount: validationFiles.length
     },
     imageRevisions: manifest.imageRevisions,
     containerImages: manifest.containerImages

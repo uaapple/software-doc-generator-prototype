@@ -12,15 +12,16 @@
     "asset",
     "manifest",
     "scan",
+    "contents",
     "imageRevisions",
     "containerImages"
   ],
   "properties": {
     "schema": {
-      "const": "sdg-native-matlab-gateway-companion-release/v2"
+      "const": "sdg-native-matlab-gateway-companion-release/v3"
     },
     "companionVersion": {
-      "const": 2
+      "const": 3
     },
     "sourceRevision": {
       "type": "string",
@@ -41,6 +42,20 @@
           "properties": { "status": { "const": "passed" } }
         }
       ]
+    },
+    "contents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "managedGatewayFileCount",
+        "deploymentToolFileCount",
+        "validationFileCount"
+      ],
+      "properties": {
+        "managedGatewayFileCount": { "const": 6 },
+        "deploymentToolFileCount": { "const": 1 },
+        "validationFileCount": { "const": 1 }
+      }
     },
     "imageRevisions": {
       "type": "object",

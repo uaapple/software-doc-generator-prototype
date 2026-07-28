@@ -205,8 +205,8 @@ function Assert-Manifest {
     [string]$Root
   )
   if (
-    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v2" -or
-    $Manifest.companionVersion -ne 2 -or
+    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v3" -or
+    $Manifest.companionVersion -ne 3 -or
     $Manifest.serviceName -ne $ServiceName -or
     $Manifest.sourceRevision -notmatch "^[a-f0-9]{40}$" -or
     $Manifest.sourceRevision -ne $Manifest.deploymentToolRevision -or
@@ -238,6 +238,18 @@ function Assert-Manifest {
       (Get-Item -LiteralPath $toolPath).Length -ne [long]$tool.sizeBytes
     ) {
       throw "Companion deployment tool is missing or has the wrong evidence."
+    }
+  }
+  foreach ($validation in $Manifest.validationFiles) {
+    $validationPath = Resolve-SafePath (Join-Path $Root ([string]$validation.packagePath))
+    if (
+      [string]$validation.runtime -ne "powershell.exe-5.1" -or
+      $validation.readOnly -ne $true -or
+      -not (Test-Path -LiteralPath $validationPath -PathType Leaf) -or
+      (Get-Sha256 $validationPath) -ne [string]$validation.sha256 -or
+      (Get-Item -LiteralPath $validationPath).Length -ne [long]$validation.sizeBytes
+    ) {
+      throw "Companion validation script is missing or has the wrong evidence."
     }
   }
   $scanPath = Join-Path $Root ([string]$Manifest.scan.file)
