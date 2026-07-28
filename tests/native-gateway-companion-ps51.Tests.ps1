@@ -261,7 +261,10 @@ try {
         "\[{0}\]" -f [regex]::Escape([string]$rejectedPath.category)
       )
     }
-    Assert-True $rejected "Unsafe or non-absolute Windows path was not rejected."
+    Assert-True $rejected (
+      "Unsafe Windows path case was not rejected as category {0}." -f
+      [string]$rejectedPath.category
+    )
   }
 
   $relativeRejected = $false

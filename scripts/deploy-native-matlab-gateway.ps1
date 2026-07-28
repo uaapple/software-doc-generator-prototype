@@ -68,7 +68,10 @@ function Resolve-AbsoluteWindowsPath(
     Throw-ConfigurationError "${CategoryPrefix}_ABSOLUTE_REQUIRED" "$Label must be an absolute Windows path."
   }
   $resolved = [System.IO.Path]::GetFullPath($candidate)
-  if ($resolved -eq [System.IO.Path]::GetPathRoot($resolved)) {
+  $root = [System.IO.Path]::GetPathRoot($resolved)
+  $resolvedIdentity = $resolved.TrimEnd([char[]]"\/")
+  $rootIdentity = $root.TrimEnd([char[]]"\/")
+  if ($resolvedIdentity.Equals($rootIdentity, [StringComparison]::OrdinalIgnoreCase)) {
     Throw-ConfigurationError "${CategoryPrefix}_ROOT_FORBIDDEN" "$Label cannot target a drive root."
   }
   return $resolved
