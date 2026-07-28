@@ -39,10 +39,12 @@ chmod 600 .env.container
 它固定使用 `127.0.0.1:5100`、`SATK_MATLAB_SESSION_MODE=new`，默认 MATLAB
 根目录为 `/Applications/MATLAB_R2026a.app`，并在启动前检查该目录存在。
 `MATLAB_GATEWAY_STATE_DIR` 默认为仓库内
-`.local/container/matlab-gateway-state`，权限会收紧为 `0700`，不会落到 `/tmp`。
-MCP 临时目录与日志目录默认分别位于该状态目录下的 `mcp-temp`、`mcp-logs`，
-权限同样为 `0700`；Mac MCP 参数显式携带 `--log-folder`。Windows 不注入
-Mac 日志路径或参数。
+`.local/container/matlab-gateway-state`，权限会收紧为 `0700`。MCP temp/socket
+目录不再放入该长仓库路径：macOS 默认使用 `os.tmpdir()/sdg-mcp`，路径超过
+80 bytes 时回退到短路径 `/tmp/sdg-mcp`；目录权限为 `0700`。MCP 日志仍位于
+state 目录下的 `mcp-logs`，Mac MCP 参数显式携带 `--log-folder`。Windows
+不注入 Mac 日志路径或参数。只有确有需要时才显式设置
+`MATLAB_MCP_TMPDIR` 覆盖短路径默认值。
 
 Mac 启动器默认设置 `MATLAB_GATEWAY_MCP_PREFLIGHT=1`。Gateway 在监听 5100
 之前必须完成真实 MCP `initialize` 与一个最小 `evaluate_matlab_code`；失败
@@ -50,6 +52,9 @@ Mac 启动器默认设置 `MATLAB_GATEWAY_MCP_PREFLIGHT=1`。Gateway 在监听 5
 `npm run matlab:gateway:check` 也执行同一真实 preflight，而不再只检查 binary
 或 MATLAB 目录是否存在。MCP stderr 只保留有界、脱敏尾部，任务错误仅暴露
 诊断类别与安全摘要，不包含 token、API key 或宿主用户绝对路径。
+preflight 默认最多运行 120 秒，可通过
+`MATLAB_GATEWAY_MCP_PREFLIGHT_TIMEOUT_MS` 收紧；超时会终止 MCP child，并以
+`mcp_preflight_timeout` 类别退出，不会继续监听端口。
 
 Stage 2 的 `environment.json` 按实际 discovery 模式保存不同证据。direct
 stdio 模式继续记录宿主可见的 MCP executable path、size 与 SHA-256，并由

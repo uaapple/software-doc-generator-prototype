@@ -91,6 +91,14 @@ export class MatlabGatewayService {
       this.maxTimeoutMs,
       Math.max(1000, Number(options.defaultTimeoutMs || process.env.MATLAB_MCP_TIMEOUT_MS || 10 * 60 * 1000))
     );
+    this.preflightTimeoutMs = Math.max(
+      50,
+      Number(
+        options.preflightTimeoutMs ||
+        process.env.MATLAB_GATEWAY_MCP_PREFLIGHT_TIMEOUT_MS ||
+        120000
+      )
+    );
     this.createClient = options.createClient || (() => createLocalMatlabClient(options));
     this.activeJobs = new Map();
   }
@@ -125,10 +133,24 @@ export class MatlabGatewayService {
 
   async preflight() {
     const client = this.createClient();
+    let timeout;
     try {
-      const result = await client.callTool("evaluate_matlab_code", {
-        code: "value = 1 + 1; disp(value);"
-      });
+      const result = await Promise.race([
+        client.callTool("evaluate_matlab_code", {
+          code: "value = 1 + 1; disp(value);"
+        }),
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => {
+            reject(
+              new MatlabMcpError(
+                "MCP_PREFLIGHT_TIMEOUT",
+                "MATLAB MCP initialize/evaluate preflight timed out.",
+                { category: "mcp_preflight_timeout" }
+              )
+            );
+          }, this.preflightTimeoutMs);
+        })
+      ]);
       assertSuccessfulMcpToolResult(result, "evaluate_matlab_code");
       return { ok: true, category: "mcp_initialize_and_evaluate" };
     } catch (error) {
@@ -142,6 +164,7 @@ export class MatlabGatewayService {
         }
       );
     } finally {
+      clearTimeout(timeout);
       await client.shutdown?.().catch(() => {});
     }
   }

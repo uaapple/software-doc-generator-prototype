@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -50,7 +51,7 @@ fs.chmodSync(stateRoot, 0o700);
 const mcpTempRoot = resolveLocalDirectory(
   process.env.MATLAB_MCP_TMPDIR ||
     values.MATLAB_MCP_TMPDIR ||
-    path.join(stateRoot, "mcp-temp"),
+    defaultMcpTempDirectory(),
   "MATLAB_MCP_TMPDIR"
 );
 const mcpLogRoot = resolveLocalDirectory(
@@ -81,6 +82,10 @@ const childEnv = {
       : process.env.MATLAB_GATEWAY_MCP_PREFLIGHT ||
         values.MATLAB_GATEWAY_MCP_PREFLIGHT ||
         "1",
+  MATLAB_GATEWAY_MCP_PREFLIGHT_TIMEOUT_MS:
+    process.env.MATLAB_GATEWAY_MCP_PREFLIGHT_TIMEOUT_MS ||
+    values.MATLAB_GATEWAY_MCP_PREFLIGHT_TIMEOUT_MS ||
+    "120000",
   MATLAB_MCP_TMPDIR: mcpTempRoot,
   MATLAB_MCP_LOG_FOLDER: mcpLogRoot,
   MATLAB_MCP_SERVER_COMMAND:
@@ -137,4 +142,12 @@ function resolveLocalDirectory(value, label) {
     throw new Error(`${label} cannot target a filesystem root.`);
   }
   return resolved;
+}
+
+function defaultMcpTempDirectory() {
+  const candidate = path.join(os.tmpdir(), "sdg-mcp");
+  if (process.platform === "darwin" && Buffer.byteLength(candidate, "utf8") > 80) {
+    return "/tmp/sdg-mcp";
+  }
+  return candidate;
 }

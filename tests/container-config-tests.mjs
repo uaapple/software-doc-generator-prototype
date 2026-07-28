@@ -243,6 +243,8 @@ function testQuietConfigDoesNotExposeSecrets() {
   const envFile = path.join(temporaryDirectory, "container.env");
   const matlabRoot = path.join(temporaryDirectory, "MATLAB_R2026a.app");
   const fakeMcpServer = path.join(temporaryDirectory, "fake-matlab-mcp.mjs");
+  const fakeMcpEnvironment = path.join(temporaryDirectory, "fake-mcp-environment.json");
+  const launcherTmpRoot = fs.mkdtempSync("/tmp/sdg-launcher-test-");
   const sentinels = [
     "openai-secret-sentinel",
     "zhipu-secret-sentinel",
@@ -256,7 +258,9 @@ function testQuietConfigDoesNotExposeSecrets() {
     fs.writeFileSync(
       fakeMcpServer,
       [
+        "import fs from 'node:fs';",
         "import readline from 'node:readline';",
+        "fs.writeFileSync(process.env.FAKE_MCP_ENV_FILE, JSON.stringify({ TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP }));",
         "readline.createInterface({ input: process.stdin }).on('line', (line) => {",
         "  const message = JSON.parse(line);",
         "  if (message.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { capabilities: {} } }) + '\\n');",
@@ -316,8 +320,11 @@ function testQuietConfigDoesNotExposeSecrets() {
           SDG_CONTAINER_ENV_FILE: envFile,
           MATLAB_ROOT: matlabRoot,
           SATK_MATLAB_ROOT: path.join(temporaryDirectory, "must-not-be-used"),
+          TMPDIR: launcherTmpRoot,
+          MATLAB_MCP_TMPDIR: "",
           MATLAB_MCP_SERVER_COMMAND: process.execPath,
-          MATLAB_MCP_SERVER_ARGS_JSON: JSON.stringify([fakeMcpServer])
+          MATLAB_MCP_SERVER_ARGS_JSON: JSON.stringify([fakeMcpServer]),
+          FAKE_MCP_ENV_FILE: fakeMcpEnvironment
         }
       }
     );
@@ -328,6 +335,15 @@ function testQuietConfigDoesNotExposeSecrets() {
       fs.statSync(path.join(temporaryDirectory, "gateway-state")).mode & 0o777,
       0o700
     );
+    const mcpEnvironment = JSON.parse(fs.readFileSync(fakeMcpEnvironment, "utf8"));
+    const expectedMcpTemp = path.join(launcherTmpRoot, "sdg-mcp");
+    assert.equal(mcpEnvironment.TMPDIR, expectedMcpTemp);
+    assert.equal(mcpEnvironment.TMP, expectedMcpTemp);
+    assert.equal(mcpEnvironment.TEMP, expectedMcpTemp);
+    assert.ok(Buffer.byteLength(expectedMcpTemp, "utf8") <= 80);
+    assert.ok(!expectedMcpTemp.startsWith(rootDir));
+    assert.ok(!expectedMcpTemp.includes("matlab-gateway-state"));
+    assert.equal(fs.statSync(expectedMcpTemp).mode & 0o777, 0o700);
 
     const missingMatlabRoot = spawnSync(
       process.execPath,
@@ -346,6 +362,7 @@ function testQuietConfigDoesNotExposeSecrets() {
     assert.match(missingMatlabRoot.stderr, /Configured MATLAB_ROOT does not exist/);
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+    fs.rmSync(launcherTmpRoot, { recursive: true, force: true });
   }
 }
 

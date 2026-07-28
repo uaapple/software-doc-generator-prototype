@@ -317,6 +317,32 @@ test("Gateway MCP preflight performs initialize and evaluate before serving", as
   }
 });
 
+test("Gateway MCP preflight times out with a bounded actionable failure", async () => {
+  let shutdownCalled = false;
+  const service = new MatlabGatewayService({
+    rootDir: path.join(os.tmpdir(), "matlab-mcp-bounded-preflight-state"),
+    hostRoot: path.join(os.tmpdir(), "matlab-mcp-bounded-preflight-host"),
+    preflightTimeoutMs: 50,
+    createClient: () => ({
+      async callTool() {
+        return new Promise(() => {});
+      },
+      async shutdown() {
+        shutdownCalled = true;
+      }
+    })
+  });
+  const startedAt = Date.now();
+  await assert.rejects(
+    () => service.preflight(),
+    (error) =>
+      error.code === "MCP_PREFLIGHT_TIMEOUT" &&
+      error.details?.category === "mcp_preflight_timeout"
+  );
+  assert.ok(Date.now() - startedAt < 1000);
+  assert.equal(shutdownCalled, true);
+});
+
 test("Gateway preflight-only startup fails with a redacted actionable diagnostic", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "matlab-mcp-startup-failure-"));
   const fakeServer = await writeFakeMcpServer(root);

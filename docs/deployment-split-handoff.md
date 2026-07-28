@@ -272,7 +272,11 @@ Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent si
 
 Mac 宿主 Gateway 还必须在监听端口前通过真实 MCP `initialize` 加最小
 `evaluate_matlab_code` preflight，并为 MCP 使用状态目录内权限为 `0700` 的
-专用 temp/log 目录及显式 `--log-folder`。该 Darwin 参数和路径不得进入
+专用 log 目录及显式 `--log-folder`。macOS MCP temp/socket 默认改用有界的
+`os.tmpdir()/sdg-mcp`（超过 80 bytes 时使用 `/tmp/sdg-mcp`），权限为 `0700`，
+避免仓库长路径触发 MATLAB `File name too long`。preflight 受
+`MATLAB_GATEWAY_MCP_PREFLIGHT_TIMEOUT_MS` 硬超时约束，失败必须在监听前退出
+并给出脱敏类别。该 Darwin 参数和路径不得进入
 Windows release；Windows 继续使用自己的 MCP 参数。MCP 子进程错误只允许
 传播固定大小的脱敏 stderr 尾部和结构化类别，不能传播 token、环境值、用户
 绝对路径或隐藏推理。MCP tool 的 `isError`、structured error，以及明确失败
