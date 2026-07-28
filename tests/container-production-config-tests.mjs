@@ -73,6 +73,14 @@ assert.ok(
 for (const inputs of Object.values(imageInputs)) {
   assert.ok(!inputs.some((entry) => /^(?:compose|docs\/|\.env|scripts\/container-production)/.test(entry)));
 }
+assert.ok(imageInputs.worker.includes("skills/hermes/software-detail-runtime"));
+for (let stageNumber = 1; stageNumber <= 9; stageNumber += 1) {
+  const prefix = `skills/hermes/software-detail-stage-${String(stageNumber).padStart(2, "0")}-`;
+  assert.ok(
+    imageInputs.worker.some((entry) => entry.startsWith(prefix)),
+    `Worker image inputs must include software-detail stage ${stageNumber}.`
+  );
+}
 for (const name of Object.keys(imageInputs)) {
   assert.match(calculateImageRevision(name), /^sha256:[a-f0-9]{64}$/);
 }

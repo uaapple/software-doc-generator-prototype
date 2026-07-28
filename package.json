@@ -22,6 +22,8 @@
     "classify:changes": "node scripts/classify-changes.mjs",
     "test": "node tests/run-test-suite-isolated.mjs",
     "test:software-detail-stage-skills": "node --disable-warning=ExperimentalWarning tests/software-detail-stage-skills-01-03-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-detail-stage-skills-04-06-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-detail-stage-skills-07-09-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-detail-stage-skills-cross-tests.mjs",
+    "test:software-detail-worker": "node --disable-warning=ExperimentalWarning tests/software-detail-worker-components-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-detail-worker-pipeline-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-detail-worker-api-tests.mjs",
+    "test:software-detail-transport": "node --disable-warning=ExperimentalWarning tests/software-detail-pipeline-transport-client-tests.mjs && node --disable-warning=ExperimentalWarning tests/software-module-description-transport-regression.mjs",
     "test:linux-release-rollback": "sh tests/rollback-linux-release-tests.sh",
     "test:release-rollback-packages": "node tests/release-rollback-package-tests.mjs",
     "check:wiki": "node scripts/check-wiki.mjs",

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promises as fs, realpathSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -3418,6 +3419,9 @@ const tests = [
                     relativePath: outputRelativePath,
                     kind: "software_module_description_docx",
                     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    encoding: "base64",
+                    size: outputBytes.length,
+                    sha256: createHash("sha256").update(outputBytes).digest("hex"),
                     contentBase64: outputBytes.toString("base64")
                   }
                 ]
@@ -10071,6 +10075,14 @@ const tests = [
         path.join(config.rootDir, "deploy", "targets", "linux-prod.json"),
         "utf8"
       ));
+      const windowsFullTarget = JSON.parse(await fs.readFile(
+        path.join(config.rootDir, "deploy", "targets", "windows-prod-full.json"),
+        "utf8"
+      ));
+      const windowsSourceTarget = JSON.parse(await fs.readFile(
+        path.join(config.rootDir, "deploy", "targets", "windows-prod-source.json"),
+        "utf8"
+      ));
 
       assert.ok(startShell.includes("src/hermes-server.js"));
       assert.ok(startShell.includes("hermes-agent.pid"));
@@ -10096,6 +10108,12 @@ const tests = [
       assert.ok(!windowsProductionEnv.includes("/Applications/MATLAB_R2026a.app"));
       assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-runtime"));
       assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-stage-*"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/software-detail-runtime"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/software-detail-stage-*"));
+      for (const windowsTarget of [windowsFullTarget, windowsSourceTarget]) {
+        assert.ok(windowsTarget.includePaths.includes("skills"));
+        assert.ok(windowsTarget.includePaths.includes("src"));
+      }
       assert.ok(stopWindows.includes("hermes-agent.pid"));
       assert.ok(restartWindows.includes("HermesPort"));
       assert.ok(startCommand.includes("%*"));

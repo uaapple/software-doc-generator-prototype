@@ -34,6 +34,15 @@ assert.ok(
   "image metadata must follow stable Python and Hermes dependency layers"
 );
 assert.match(containerfile, /COPY containers\/worker\/configure-hermes\.py/);
+assert.match(containerfile, /COPY skills\/hermes\/software-detail-runtime\//);
+for (let stageNumber = 1; stageNumber <= 9; stageNumber += 1) {
+  assert.match(
+    containerfile,
+    new RegExp(
+      `COPY skills/hermes/software-detail-stage-${String(stageNumber).padStart(2, "0")}-`
+    )
+  );
+}
 assert.match(
   containerfile,
   /ENTRYPOINT \["\/usr\/bin\/tini", "--", "\/opt\/sdg\/venv\/bin\/python", "\/opt\/sdg\/app\/containers\/worker\/configure-hermes\.py"\]/
@@ -62,6 +71,17 @@ try {
   assert.ok(manifest.files.includes("src/hermes-server.js"));
   assert.ok(manifest.files.includes("src/hermes-app.js"));
   assert.ok(manifest.files.includes("src/config.js"));
+  for (const serviceFile of [
+    "src/services/software-detail-hermes-skill-registry.js",
+    "src/services/software-detail-hermes-stage-executor.js",
+    "src/services/software-detail-matlab-lease-client.js",
+    "src/services/software-detail-pipeline-job-service.js"
+  ]) {
+    assert.ok(
+      manifest.files.includes(serviceFile),
+      `${serviceFile} must be present in the selected Worker source closure`
+    );
+  }
   assert.ok(!manifest.files.includes("src/server.js"));
   assert.ok(!manifest.files.some((file) => file.startsWith("src/wiki/")));
   assert.ok(!manifest.files.some((file) => file.includes("matlab-worker-server")));

@@ -71,6 +71,31 @@ const suites = [
     args: ["tests/matlab-gateway-lease-tests.mjs"]
   },
   {
+    id: "software-detail-worker-components",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/software-detail-worker-components-tests.mjs"]
+  },
+  {
+    id: "software-detail-worker-pipeline",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/software-detail-worker-pipeline-tests.mjs"]
+  },
+  {
+    id: "software-detail-worker-api",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/software-detail-worker-api-tests.mjs"]
+  },
+  {
+    id: "software-detail-transport-client",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/software-detail-pipeline-transport-client-tests.mjs"]
+  },
+  {
+    id: "software-detail-transport-regression",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/software-module-description-transport-regression.mjs"]
+  },
+  {
     id: "release-package",
     command: process.execPath,
     args: ["tests/release-rollback-package-tests.mjs"]
