@@ -75,18 +75,29 @@ node scripts/build-native-matlab-gateway-companion.mjs
 Platform/Worker rootfs 输入仍等于冻结 imageRevision。生产继续复用既有 GHCR
 `repository@sha256:...`，不得因为 companion 更新重新上传相同镜像。
 
-companion v3 是 Windows PowerShell 5.1 兼容发布：本地 evaluate token 使用
+companion v4 是 Windows PowerShell 5.1 兼容发布：本地 evaluate token 使用
 `RandomNumberGenerator.Create()`/`GetBytes()`；现有 env 通过同目录临时文件和
 带非空 backup path 的 `File.Replace` 原子替换，不存在的目标使用同卷原子
 创建。`ValidateOnly` 在停服务前执行这些 .NET 能力探针，但不修改 env。
-v3 ZIP 还包含独立、只读且由 manifest size/SHA-256 保护的
+v4 ZIP 还包含独立、只读且由 manifest size/SHA-256 保护的
 `test-native-matlab-gateway-companion-ps51.ps1`。该测试不 dot-source 部署
 脚本顶层逻辑，只解析所需函数、在脚本作用域导入并逐个检查可见性。
 
 新 companion tag/Release 只能在 GitHub Actions 的 Windows runner 使用
-`powershell.exe` 5.1 跑完该行为测试后创建。生产验证顺序固定为：核对 v3
-资产 → 从 ZIP 运行受保护的 PS5.1 测试 → `-ValidateOnly` → 报告并等待独立
-真实部署授权。
+`powershell.exe` 5.1 跑完该行为测试和 Windows wrapper 启动合同后创建。
+v4 在停服务前从未跟踪容器 env 的 `SDG_CONTAINER_DATA_DIR`、
+`MATLAB_GATEWAY_STATE_DIR`、`MATLAB_GATEWAY_CONTAINER_ROOT` 和
+`SATK_GATEWAY_MAPPING_ID` 派生原生 Gateway 映射；host/state 必须是存在、
+可写、非盘符根的绝对 Windows 路径，container root 和 mapping ID 必须分别
+等于 `/var/lib/sdg/data` 与 `worker-data`。原生 env 已有等价键时必须一致，
+冲突 fail-closed。`MATLAB_ROOT`、MCP command/tmp 必须在停服务前验证；
+Windows session mode 缺省并固定为 `new`；`MATLAB_MCP_LOG_FOLDER` 在 Windows
+仍为可选项，但一旦配置也必须是存在且可写的绝对路径。
+
+生产顺序固定为：核对 v4 资产 → 从 ZIP 运行受保护的 PS5.1 测试 →
+`-ValidateOnly` → 管理员 PowerShell 正式执行 → 验证 `/health`、`/version`、
+`/capabilities`、`worker-data` mapping 和真实 evaluate readiness。任一步
+失败由脚本恢复部署前的 6 个受管文件、两个 env 原字节及旧 5100 服务。
 
 GHCR 会复用已存在的 OCI layers，因此后续 push/pull 只传缺失 layer。两个
 Containerfile 均先安装固定 OS、npm/Python/Hermes 依赖，再复制源码和 skills；

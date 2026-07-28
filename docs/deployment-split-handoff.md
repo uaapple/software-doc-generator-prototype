@@ -49,16 +49,17 @@ Windows 正式顺序固定为：只读审计旧服务 → companion `-ValidateOn
 备份并升级/真实 evaluate 验证 `SoftwareDocMatlabWorker` 5100 → Worker
 container config/preflight → 复用既有 Worker digest、只切 Hermes 3101 →
 容器内真实 evaluate readiness → Windows 黑盒验收 → 最后部署 Linux。
-companion 只管理 manifest 声明的 Gateway 文件与两个 env 中的 Gateway token
-键，不修改 MATLAB R2025b、SATK、runtime/data、addon、Hermes Home/session、
-用户输入输出或 MATLAB 产物。`MATLAB_GATEWAY_EVALUATE_TOKEN` 必须本地随机
-生成或安全接收，并与批准的 `MATLAB_GATEWAY_TOKEN` 保持独立。
+companion 只管理 manifest 声明的 Gateway 文件、两个 env 中的 Gateway token
+键，以及原生 env 中从容器配置确定性派生的映射/MCP 启动键；不修改 MATLAB
+R2025b、SATK、runtime/data、addon、Hermes Home/session、用户输入输出或
+MATLAB 产物。`MATLAB_GATEWAY_EVALUATE_TOKEN` 必须本地随机生成或安全接收，
+并与批准的 `MATLAB_GATEWAY_TOKEN` 保持独立。
 
-Windows companion v3 修复 PowerShell 5.1/.NET Framework 边界：CSPRNG 使用
+Windows companion v4 保留 PowerShell 5.1/.NET Framework 边界：CSPRNG 使用
 `RandomNumberGenerator.Create()`/`GetBytes()` 并可靠释放；存在的 env 使用
 同目录临时文件、继承 ACL 和非空 backup path 的 `File.Replace`，不存在目标
-走单独的同卷原子创建路径。两个 env 已有同一个 evaluate token 时，v2 将其
-视为合法续跑输入并先备份当前字节，不重新生成或输出；backup 仅代表 v2
+走单独的同卷原子创建路径。两个 env 已有同一个 evaluate token 时，v4 将其
+视为合法续跑输入并先备份当前字节，不重新生成或输出；backup 仅代表 v4
 执行前状态，不能证明现场人工写 token 之前的状态。重复键或不一致值
 fail-closed。
 
@@ -69,7 +70,21 @@ version/capabilities/evaluate probe，回滚恢复旧 Gateway 时使用相同有
 不存在目标的原子创建能力，且不修改 env。现场临时 `ps51`/`enhanced` 脚本不
 属于 companion release，禁止继续使用。
 
-v3 companion manifest 将 6 个受管 Gateway payload、1 个 deployment tool
+v4 同时修复旧原生 env 没有 workspace mapping 的启动缺口。部署工具从未跟踪
+container env 读取 `SDG_CONTAINER_DATA_DIR` 作为唯一 host-root 来源，同步
+state/container-root/mapping-id 到原生 env；显式旧值只有在等价时才接受。
+`ValidateOnly` 在停服务前验证 host/state/tmp 可写、MATLAB/toolkit 目录和 MCP
+command/tools 文件存在、container root 固定 `/var/lib/sdg/data`、mapping ID
+固定 `worker-data`，并将 Windows session mode 缺省为 `new`。MCP log folder
+不属于 Windows 启动必需项；若 legacy native env 已配置则一并验证。
+
+Windows wrapper 也执行同一 fail-closed 边界，在导入监听服务前建立
+`createConfiguredWorkspaceMapping`。启动失败只向服务日志写固定安全类别；
+部署 readiness 不能把 Win32 exit code 0 当作应用成功，会从本轮日志提取该
+类别。Windows CI 另以生产等价最小 env 启动 wrapper 配置入口，覆盖缺目录、
+相对路径和映射冲突。
+
+v4 companion manifest 将 6 个受管 Gateway payload、1 个 deployment tool
 和 1 个只读 PS5.1 validation script 分为三个独立清单。validation script
 同时受 ZIP、manifest size/SHA-256 和 scan 保护，支持从仓库或解压目录运行；
 它只解析部署脚本中列出的函数并在测试脚本作用域导入，不能 dot-source 部署
@@ -78,8 +93,10 @@ v3 companion manifest 将 6 个受管 Gateway payload、1 个 deployment tool
 
 `.github/workflows/native-gateway-companion-ps51.yml` 在 Windows runner 上
 明确调用 `powershell.exe` 5.1。只有对应 source revision 的远端 job 成功后
-才能创建 annotated tag/Release。生产端先从 v3 ZIP 运行同一受保护测试，再
-执行 v3 `-ValidateOnly`；本轮验证不得去掉该开关或真实部署。
+才能创建 annotated tag/Release。生产端先从 v4 ZIP 运行同一受保护测试，再
+执行 v4 `-ValidateOnly`；通过后才可用同一受 hash 保护脚本正式升级。失败
+自动恢复部署前原字节与旧 5100；成功必须验证 health/version/mapping/evaluate
+后才可继续 Worker 容器部署。
 
 ### Hermes Agent 0.18.2 推理配置边界
 
