@@ -4,6 +4,7 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ContainerEnvFile,
   [switch]$ValidateOnly,
+  [switch]$ProvisionDirectories,
   [switch]$Rollback,
   [string]$BackupDir
 )
@@ -13,6 +14,13 @@ $ServiceName = "SoftwareDocMatlabWorker"
 $ExpectedProvider = "deepseek"
 $ExpectedModel = "deepseek-v4-pro"
 $ExpectedBaseUrl = "https://api.deepseek.com"
+$modeCount = 0
+foreach ($mode in @($ValidateOnly, $ProvisionDirectories, $Rollback)) {
+  if ($mode) { $modeCount += 1 }
+}
+if ($modeCount -gt 1) {
+  throw "[MODE_CONFLICT] -ValidateOnly, -ProvisionDirectories and -Rollback are mutually exclusive."
+}
 
 function Get-Sha256([string]$PathValue) {
   return (Get-FileHash -LiteralPath $PathValue -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -133,6 +141,112 @@ function Assert-EquivalentWindowsPath(
   if (-not $left.Equals($right, [StringComparison]::OrdinalIgnoreCase)) {
     Throw-ConfigurationError "${Category}_CONFLICT" "$Label conflicts with its approved source setting."
   }
+}
+
+function Resolve-ApprovedProvisionPath(
+  [string]$Value,
+  [string]$CategoryPrefix
+) {
+  if ([string]$Value -match "^\\\\") {
+    Throw-ConfigurationError "${CategoryPrefix}_UNC_FORBIDDEN" "Provisioning does not accept UNC paths."
+  }
+  $resolved = Resolve-AbsoluteWindowsPath $Value "Approved production directory" $CategoryPrefix
+  $approvedRoot = [System.IO.Path]::GetFullPath("C:\ProgramData\SoftwareDocGenerator")
+  $approvedPrefix = $approvedRoot.TrimEnd([char[]]"\/") + "\"
+  if (-not $resolved.StartsWith($approvedPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    Throw-ConfigurationError "${CategoryPrefix}_OUTSIDE_APPROVED_ROOT" (
+      "Provisioning path must be inside the approved SoftwareDocGenerator root."
+    )
+  }
+  $relative = $resolved.Substring($approvedPrefix.Length)
+  $cursor = $approvedRoot
+  foreach ($component in $relative.Split([char[]]"\/", [StringSplitOptions]::RemoveEmptyEntries)) {
+    $cursor = Join-Path $cursor $component
+    if (Test-Path -LiteralPath $cursor) {
+      $item = Get-Item -LiteralPath $cursor -Force
+      if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Throw-ConfigurationError "${CategoryPrefix}_REPARSE_FORBIDDEN" (
+          "Provisioning path cannot contain a reparse point."
+        )
+      }
+      if (-not $item.PSIsContainer) {
+        Throw-ConfigurationError "${CategoryPrefix}_FILE_CONFLICT" (
+          "Provisioning path conflicts with an existing file."
+        )
+      }
+    }
+  }
+  return $resolved
+}
+
+function Initialize-ApprovedRoot {
+  $programData = [System.IO.Path]::GetFullPath("C:\ProgramData")
+  $approvedRoot = Join-Path $programData "SoftwareDocGenerator"
+  if (-not (Test-Path -LiteralPath $programData -PathType Container)) {
+    Throw-ConfigurationError "PROGRAM_DATA_REQUIRED" "The Windows ProgramData directory is missing."
+  }
+  $programDataItem = Get-Item -LiteralPath $programData -Force
+  if (($programDataItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    Throw-ConfigurationError "PROGRAM_DATA_REPARSE_FORBIDDEN" "ProgramData cannot be a reparse point."
+  }
+  if (Test-Path -LiteralPath $approvedRoot) {
+    $approvedItem = Get-Item -LiteralPath $approvedRoot -Force
+    if (-not $approvedItem.PSIsContainer) {
+      Throw-ConfigurationError "APPROVED_ROOT_FILE_CONFLICT" (
+        "The approved SoftwareDocGenerator root conflicts with an existing file."
+      )
+    }
+    if (($approvedItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+      Throw-ConfigurationError "APPROVED_ROOT_REPARSE_FORBIDDEN" (
+        "The approved SoftwareDocGenerator root cannot be a reparse point."
+      )
+    }
+  } else {
+    try {
+      New-Item -ItemType Directory -Path $approvedRoot -ErrorAction Stop | Out-Null
+    } catch {
+      Throw-ConfigurationError "APPROVED_ROOT_CREATE_FAILED" (
+        "The approved SoftwareDocGenerator root could not be initialized."
+      )
+    }
+  }
+}
+
+function Initialize-ApprovedDirectory(
+  [string]$PathValue,
+  [string]$CategoryPrefix
+) {
+  if (-not (Test-Path -LiteralPath $PathValue)) {
+    try {
+      New-Item -ItemType Directory -Path $PathValue -Force -ErrorAction Stop | Out-Null
+    } catch {
+      Throw-ConfigurationError "${CategoryPrefix}_CREATE_FAILED" (
+        "Approved directory initialization failed."
+      )
+    }
+  }
+  $item = Get-Item -LiteralPath $PathValue -Force
+  if (
+    -not $item.PSIsContainer -or
+    ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+  ) {
+    Throw-ConfigurationError "${CategoryPrefix}_INITIALIZATION_INVALID" (
+      "Approved directory initialization produced an invalid target."
+    )
+  }
+  Assert-DirectoryWritable $PathValue "Approved production directory" $CategoryPrefix
+}
+
+function Invoke-ProvisionDirectories([hashtable]$ContainerValues) {
+  $dataRoot = Resolve-ApprovedProvisionPath (
+    [string]$ContainerValues["SDG_CONTAINER_DATA_DIR"]
+  ) "HOST_ROOT"
+  $stateRoot = Resolve-ApprovedProvisionPath (
+    [string]$ContainerValues["MATLAB_GATEWAY_STATE_DIR"]
+  ) "STATE_DIR"
+  Initialize-ApprovedRoot
+  Initialize-ApprovedDirectory $dataRoot "HOST_ROOT"
+  Initialize-ApprovedDirectory $stateRoot "STATE_DIR"
 }
 
 function Resolve-NativeGatewayConfiguration(
@@ -430,8 +544,8 @@ function Assert-Manifest {
     [string]$Root
   )
   if (
-    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v5" -or
-    $Manifest.companionVersion -ne 5 -or
+    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v6" -or
+    $Manifest.companionVersion -ne 6 -or
     $Manifest.serviceName -ne $ServiceName -or
     $Manifest.sourceRevision -notmatch "^[a-f0-9]{40}$" -or
     $Manifest.sourceRevision -ne $Manifest.deploymentToolRevision -or
@@ -852,24 +966,35 @@ $manifestPath = Get-ChildItem -LiteralPath $CompanionRoot -Filter "*.manifest.js
 if (-not $manifestPath) { throw "Companion manifest was not found." }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 
-if (-not (Test-Path -LiteralPath $AppRoot -PathType Container)) { throw "Worker app directory is missing." }
-if (-not (Test-Path -LiteralPath $NativeEnvFile -PathType Leaf)) { throw "Native Worker env file is missing." }
 if (-not (Test-Path -LiteralPath $ContainerEnvFile -PathType Leaf)) { throw "Untracked container env file is missing." }
 Assert-Manifest $manifest $CompanionRoot
 Assert-WindowsPowerShellCompatibility
+$containerValues = Read-EnvFile $ContainerEnvFile
+
+if ($ProvisionDirectories) {
+  try {
+    Invoke-ProvisionDirectories $containerValues
+  } catch {
+    if ($_.Exception.Message -match "^\[[A-Z0-9_]+\]") { throw }
+    Throw-ConfigurationError "DIRECTORY_PROVISION_FAILED" (
+      "Approved directory initialization failed."
+    )
+  }
+  Write-Host "dataDirectoryReady=true"
+  Write-Host "stateDirectoryReady=true"
+  Write-Host "Approved directory initialization passed." -ForegroundColor Green
+  exit 0
+}
+
+if (-not (Test-Path -LiteralPath $AppRoot -PathType Container)) { throw "Worker app directory is missing." }
+if (-not (Test-Path -LiteralPath $NativeEnvFile -PathType Leaf)) { throw "Native Worker env file is missing." }
 $serviceSnapshot = Get-ServiceSnapshot
 $nativeValues = Read-EnvFile $NativeEnvFile
-$containerValues = Read-EnvFile $ContainerEnvFile
 Assert-TokenKeyMultiplicity $NativeEnvFile $ContainerEnvFile
 
 if ($Rollback) {
   if (-not $BackupDir) { throw "-Rollback requires -BackupDir." }
   $BackupDir = Resolve-SafePath $BackupDir
-  if ($ValidateOnly) {
-    $null = Get-Content -LiteralPath (Join-Path $BackupDir "backup-manifest.json") -Raw | ConvertFrom-Json
-    Write-Host "Native MATLAB Gateway rollback validation passed." -ForegroundColor Green
-    exit 0
-  }
   Stop-GatewayService
   $backup = Restore-Backup $BackupDir $AppRoot
   if ($backup.service.state -eq "Running") {

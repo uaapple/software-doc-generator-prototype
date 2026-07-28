@@ -10,6 +10,9 @@ on:
       - tests/native-gateway-companion-ps51.Tests.ps1
       - tests/native-gateway-windows-wrapper-tests.mjs
       - tests/native-gateway-companion-tests.mjs
+      - tests/windows-production-directories-tests.mjs
+      - scripts/windows-production-directories.mjs
+      - scripts/container-production.mjs
       - .env.windows-docker-desktop.example
       - scripts/build-native-matlab-gateway-companion.mjs
       - native-gateway/windows-matlab-worker-server.mjs
@@ -64,3 +67,4 @@ jobs:
         run: |
           node .\tests\native-gateway-companion-tests.mjs
           node .\tests\native-gateway-windows-wrapper-tests.mjs
+          node .\tests\windows-production-directories-tests.mjs

@@ -51,7 +51,7 @@ assert.match(legacySource, /if\s*\(!authToken\)\s*\{\s*return next\(\)/);
 assert.ok(!legacySource.includes("MATLAB_GATEWAY_EVALUATE_TOKEN"));
 
 assert.equal(config.serviceName, "SoftwareDocMatlabWorker");
-assert.equal(config.companionVersion, 5);
+assert.equal(config.companionVersion, 6);
 assert.equal(config.managedFiles.length, 6);
 assert.equal(config.validationFiles.length, 2);
 assert.deepEqual(config.validationFiles[0], {
@@ -74,8 +74,8 @@ for (const inputs of Object.values(imageInputs)) {
   assert.ok(!inputs.some((entry) => entry === "scripts/build-native-matlab-gateway-companion.mjs"));
 }
 
-assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v5");
-assert.equal(schema.properties.companionVersion.const, 5);
+assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v6");
+assert.equal(schema.properties.companionVersion.const, 6);
 assert.equal(schema.properties.serviceName.const, "SoftwareDocMatlabWorker");
 for (const field of [
   "sourceRevision",
@@ -92,9 +92,9 @@ for (const field of [
 }
 assert.equal(
   releaseSchema.properties.schema.const,
-  "sdg-native-matlab-gateway-companion-release/v5"
+  "sdg-native-matlab-gateway-companion-release/v6"
 );
-assert.equal(releaseSchema.properties.companionVersion.const, 5);
+assert.equal(releaseSchema.properties.companionVersion.const, 6);
 assert.ok(releaseSchema.required.includes("contents"));
 assert.equal(releaseSchema.properties.contents.properties.managedGatewayFileCount.const, 6);
 assert.equal(releaseSchema.properties.contents.properties.deploymentToolFileCount.const, 1);
@@ -107,7 +107,11 @@ assert.doesNotMatch(wrapper, /MATLAB_GATEWAY_EVALUATE_TOKEN\s*=/);
 
 assert.match(deployScript, /\$ServiceName = "SoftwareDocMatlabWorker"/);
 assert.match(deployScript, /\[switch\]\$ValidateOnly/);
+assert.match(deployScript, /\[switch\]\$ProvisionDirectories/);
 assert.match(deployScript, /\[switch\]\$Rollback/);
+assert.match(deployScript, /Invoke-ProvisionDirectories/);
+assert.match(deployScript, /Approved directory initialization passed\./);
+assert.doesNotMatch(deployScript, /AppendAllText/);
 assert.match(deployScript, /Save-Backup/);
 assert.match(deployScript, /Restore-Backup/);
 assert.match(deployScript, /Stop-GatewayService/);
@@ -165,7 +169,7 @@ assert.match(builder, /dependencyChanges:\s*false/);
 assert.match(builder, /zip/);
 assert.doesNotMatch(builder, /docker/);
 assert.doesNotMatch(builder, /buildImage|buildx|docker push/);
-assert.match(builder, /native-matlab-gateway-companion-v5-/);
+assert.match(builder, /native-matlab-gateway-companion-v6-/);
 assert.match(builder, /companionVersion:\s*config\.companionVersion/);
 assert.match(builder, /validationFiles/);
 assert.match(builder, /validationFileCount:\s*validationFiles\.length/);
@@ -178,6 +182,8 @@ for (const requiredCase of [
   "deployment failure restores managed files",
   "Container env is the single source",
   "formal env example's C:/ path",
+  "ProvisionDirectories creates only",
+  "Partial-existing and repeated initialization",
   "Forward- and backslash spellings",
   "delayed port",
   "early service exit",
@@ -199,6 +205,7 @@ assert.match(ps51Workflow, /StartsWith\("5\.1\."\)/);
 assert.match(ps51Workflow, /test-native-matlab-gateway-companion-ps51|native-gateway-companion-ps51\.Tests/);
 assert.match(ps51Workflow, /native-gateway-windows-wrapper-tests\.mjs/);
 assert.match(ps51Workflow, /native-gateway-companion-tests\.mjs/);
+assert.match(ps51Workflow, /windows-production-directories-tests\.mjs/);
 assert.match(wrapperRegression, /SDG_CONTAINER_DATA_DIR_REQUIRED/);
 assert.match(wrapperRegression, /HOST_ROOT_ABSOLUTE_REQUIRED/);
 assert.match(wrapperRegression, /MATLAB_GATEWAY_HOST_ROOT_CONFLICT/);
@@ -210,7 +217,12 @@ assert.match(wrapperRegression, /SOFTWARE_DOC_WORKER_ENV_FILE/);
 assert.match(wrapperRegression, /config\.managedFiles/);
 
 const productionDeploy = read("scripts/container-production.mjs");
+const productionDirectories = read("scripts/windows-production-directories.mjs");
 assert.match(productionDeploy, /evaluate_matlab_code/);
+assert.match(productionDeploy, /MATLAB_GATEWAY_STATE_DIR/);
+assert.match(productionDeploy, /prepareApprovedWindowsDirectories/);
+assert.match(productionDirectories, /C:\\\\ProgramData\\\\SoftwareDocGenerator/);
+assert.match(productionDirectories, /REPARSE_FORBIDDEN/);
 assert.match(productionDeploy, /x-sdg-evaluate-token/);
 assert.match(productionDeploy, /status!=='succeeded'/);
 

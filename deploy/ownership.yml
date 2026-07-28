@@ -93,6 +93,7 @@ windows:
   - scripts/install-windows-services.ps1
   - scripts/build-native-matlab-gateway-companion.mjs
   - scripts/deploy-native-matlab-gateway.ps1
+  - scripts/windows-production-directories.mjs
   - scripts/install-tcsd-hermes-skills.mjs
   - scripts/install-tcsd-hermes-skills.ps1
   - scripts/tcsd-python-dependencies.mjs

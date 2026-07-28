@@ -23,6 +23,7 @@ for (const required of [
   ".env.windows-docker-desktop.example",
   ".env.linux-container-prod.example",
   "scripts/container-production.mjs",
+  "scripts/windows-production-directories.mjs",
   "scripts/build-container-release.mjs",
   "scripts/build-native-matlab-gateway-companion.mjs",
   "scripts/deploy-native-matlab-gateway.ps1",
@@ -192,6 +193,7 @@ function testWindowsAddonIdDirectories() {
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-prod-addons-"));
   try {
     const addonRoot = path.join(temporaryDirectory, "project-addons");
+    const stateRoot = path.join(temporaryDirectory, "gateway-state");
     const envFile = path.join(temporaryDirectory, "production.env");
     const fakeDocker = path.join(temporaryDirectory, "docker");
     fs.mkdirSync(path.join(addonRoot, "01"), { recursive: true });
@@ -200,6 +202,7 @@ function testWindowsAddonIdDirectories() {
       envFile,
       windowsEnvironment()
         .replace("SDG_PROJECT_ADDONS_DIR=/tmp/sdg-addons", `SDG_PROJECT_ADDONS_DIR=${addonRoot}`)
+        .replace("MATLAB_GATEWAY_STATE_DIR=/tmp/sdg-gateway-state", `MATLAB_GATEWAY_STATE_DIR=${stateRoot}`)
         .replace("UNIT_TEST_CASE_DEFAULT_PROJECTS=01_楚能", "UNIT_TEST_CASE_DEFAULT_PROJECTS=01_楚能,02_TMS"),
       "utf8"
     );
@@ -232,6 +235,7 @@ function testWindowsAddonIdDirectories() {
     );
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.match(result.stdout, /windows-worker production preflight passed/);
+    assert.ok(fs.statSync(stateRoot).isDirectory(), "Gateway state directory was not prepared");
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
@@ -269,6 +273,7 @@ function windowsEnvironment() {
   return [
     `SDG_WORKER_IMAGE=registry.internal/sdg-worker@sha256:${digest}`,
     "SDG_CONTAINER_DATA_DIR=/tmp/sdg-data",
+    "MATLAB_GATEWAY_STATE_DIR=/tmp/sdg-gateway-state",
     "SDG_PROJECT_ADDONS_DIR=/tmp/sdg-addons",
     "SDG_WORKER_LOG_DIR=/tmp/sdg-worker-logs",
     "SDG_WORKER_BIND_IP=10.0.0.11",

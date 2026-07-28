@@ -6,6 +6,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { prepareApprovedWindowsDirectories } from "./windows-production-directories.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const target = String(process.argv[2] || "").trim().toLowerCase();
@@ -24,6 +25,7 @@ const targetConfig = {
       "MATLAB_GATEWAY_EVALUATE_TOKEN",
       "MATLAB_WORKER_HOST",
       "SDG_CONTAINER_DATA_DIR",
+      "MATLAB_GATEWAY_STATE_DIR",
       "SDG_PROJECT_ADDONS_DIR",
       "SDG_WORKER_LOG_DIR",
       "SDG_WORKER_BIND_IP"
@@ -249,9 +251,20 @@ function resolveDirectory(key) {
 
 function prepareDirectories() {
   const keys = target === "windows-worker"
-    ? ["SDG_CONTAINER_DATA_DIR", "SDG_PROJECT_ADDONS_DIR", "SDG_WORKER_LOG_DIR"]
+    ? [
+        "SDG_CONTAINER_DATA_DIR",
+        "MATLAB_GATEWAY_STATE_DIR",
+        "SDG_PROJECT_ADDONS_DIR",
+        "SDG_WORKER_LOG_DIR"
+      ]
     : ["SDG_CONTAINER_DATA_DIR", "SDG_PLATFORM_LOG_DIR"];
-  for (const key of keys) fs.mkdirSync(resolveDirectory(key), { recursive: true });
+  if (target === "windows-worker" && process.platform === "win32") {
+    prepareApprovedWindowsDirectories(
+      keys.map((key) => ({ value: value(key), category: key }))
+    );
+  } else {
+    for (const key of keys) fs.mkdirSync(resolveDirectory(key), { recursive: true });
+  }
   if (target === "windows-worker") {
     const addonRoot = resolveDirectory("SDG_PROJECT_ADDONS_DIR");
     const projects = value("UNIT_TEST_CASE_DEFAULT_PROJECTS")

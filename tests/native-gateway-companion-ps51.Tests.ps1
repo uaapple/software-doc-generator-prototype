@@ -42,6 +42,7 @@ function Get-FunctionImportScriptBlock([string[]]$Names) {
 $requiredFunctions = @(
   "Get-Sha256",
   "Resolve-SafePath",
+  "Read-EnvFile",
   "Assert-AtomicReplacementTarget",
   "Invoke-AtomicFileReplace",
   "Get-EnvKeyCount",
@@ -52,6 +53,10 @@ $requiredFunctions = @(
   "Assert-DirectoryExists",
   "Assert-RequiredFile",
   "Assert-EquivalentWindowsPath",
+  "Resolve-ApprovedProvisionPath",
+  "Initialize-ApprovedRoot",
+  "Initialize-ApprovedDirectory",
+  "Invoke-ProvisionDirectories",
   "Resolve-NativeGatewayConfiguration",
   "New-LocalEvaluateToken",
   "Resolve-TokenPlan",
@@ -91,6 +96,9 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
   "sdg-native-gateway-ps51-tests-{0}" -f ([Guid]::NewGuid().ToString("N"))
 )
 New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+$provisionRoot = Join-Path "C:\ProgramData\SoftwareDocGenerator" (
+  "ps51-test-{0}" -f ([Guid]::NewGuid().ToString("N"))
+)
 
 try {
   # PS5.1 CSPRNG path: URL-safe 32-byte tokens are 43 characters and not reused.
@@ -99,6 +107,99 @@ try {
   Assert-True ($tokenA.Length -eq 43) "Evaluate token length is not 43."
   Assert-True ($tokenA -match "^[A-Za-z0-9_-]{43}$") "Evaluate token is not URL-safe."
   Assert-True ($tokenA -ne $tokenB) "CSPRNG returned a repeated test token."
+
+  # ProvisionDirectories creates only the approved data/state directories.
+  $provisionData = Join-Path $provisionRoot "data"
+  $provisionState = Join-Path $provisionRoot "state"
+  $provisionEnv = Join-Path $testRoot "provision.env"
+  $provisionEnvBytes = [System.Text.Encoding]::UTF8.GetBytes((
+    "KEEP=unchanged`r`n" +
+    "SDG_CONTAINER_DATA_DIR=$($provisionData.Replace('\', '/'))`r`n" +
+    "MATLAB_GATEWAY_STATE_DIR=$($provisionState.Replace('\', '/'))`r`n"
+  ))
+  [System.IO.File]::WriteAllBytes($provisionEnv, $provisionEnvBytes)
+  $script:provisionServiceTouched = $false
+  function Get-Service {
+    $script:provisionServiceTouched = $true
+    throw "ProvisionDirectories must not inspect or modify a service."
+  }
+  Invoke-ProvisionDirectories (Read-EnvFile $provisionEnv)
+  Assert-True (Test-Path -LiteralPath $provisionData -PathType Container) (
+    "ProvisionDirectories did not create the data directory."
+  )
+  Assert-True (Test-Path -LiteralPath $provisionState -PathType Container) (
+    "ProvisionDirectories did not create the state directory."
+  )
+  Assert-True (-not $script:provisionServiceTouched) (
+    "ProvisionDirectories touched the service."
+  )
+  Assert-True (
+    [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($provisionEnv)) -eq
+    [Convert]::ToBase64String($provisionEnvBytes)
+  ) "ProvisionDirectories changed the container env bytes."
+
+  # Partial-existing and repeated initialization preserve existing content.
+  $provisionMarker = Join-Path $provisionData "preserve.txt"
+  [System.IO.File]::WriteAllText($provisionMarker, "preserve")
+  Remove-Item -LiteralPath $provisionState -Recurse -Force
+  Invoke-ProvisionDirectories (Read-EnvFile $provisionEnv)
+  Invoke-ProvisionDirectories (Read-EnvFile $provisionEnv)
+  Assert-True (
+    [System.IO.File]::ReadAllText($provisionMarker) -eq "preserve"
+  ) "Repeated directory initialization changed existing content."
+
+  foreach ($rejectedProvision in @(
+    @{ value = "C:\ProgramData\outside"; category = "HOST_ROOT_OUTSIDE_APPROVED_ROOT" },
+    @{ value = "C:\"; category = "HOST_ROOT_ROOT_FORBIDDEN" },
+    @{ value = "relative\data"; category = "HOST_ROOT_ABSOLUTE_REQUIRED" },
+    @{ value = "C:relative\data"; category = "HOST_ROOT_ABSOLUTE_REQUIRED" },
+    @{ value = "/tmp/data"; category = "HOST_ROOT_ABSOLUTE_REQUIRED" },
+    @{ value = "\\server\share\data"; category = "HOST_ROOT_UNC_FORBIDDEN" }
+  )) {
+    $provisionRejected = $false
+    try {
+      Resolve-ApprovedProvisionPath (
+        [string]$rejectedProvision.value
+      ) "HOST_ROOT" | Out-Null
+    } catch {
+      $provisionRejected = $_.Exception.Message -match (
+        "\[{0}\]" -f [regex]::Escape([string]$rejectedProvision.category)
+      )
+    }
+    Assert-True $provisionRejected (
+      "Unsafe provision path was not rejected as {0}." -f
+      [string]$rejectedProvision.category
+    )
+  }
+
+  $fileConflict = Join-Path $provisionRoot "file-conflict"
+  [System.IO.File]::WriteAllText($fileConflict, "file")
+  $fileRejected = $false
+  try {
+    Invoke-ProvisionDirectories @{
+      SDG_CONTAINER_DATA_DIR = $provisionData
+      MATLAB_GATEWAY_STATE_DIR = $fileConflict
+    }
+  } catch {
+    $fileRejected = $_.Exception.Message -match "\[STATE_DIR_FILE_CONFLICT\]"
+  }
+  Assert-True $fileRejected "An existing file was not rejected by directory provisioning."
+
+  $junctionTarget = Join-Path $provisionRoot "junction-target"
+  $junction = Join-Path $provisionRoot "junction"
+  New-Item -ItemType Directory -Path $junctionTarget | Out-Null
+  $junctionResult = & cmd.exe /c mklink /J "`"$junction`"" "`"$junctionTarget`""
+  Assert-True ($LASTEXITCODE -eq 0) "PS5.1 test could not create a junction fixture."
+  $reparseRejected = $false
+  try {
+    Invoke-ProvisionDirectories @{
+      SDG_CONTAINER_DATA_DIR = $provisionData
+      MATLAB_GATEWAY_STATE_DIR = (Join-Path $junction "state")
+    }
+  } catch {
+    $reparseRejected = $_.Exception.Message -match "\[STATE_DIR_REPARSE_FORBIDDEN\]"
+  }
+  Assert-True $reparseRejected "A reparse point was not rejected by directory provisioning."
 
   # Equal pre-existing evaluate tokens are a supported resumable production baseline.
   $existingPlan = Resolve-TokenPlan @{
@@ -424,6 +525,7 @@ try {
   Assert-True $timedOut "Readiness did not report bounded timeout exhaustion."
 } finally {
   Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $provisionRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host "Native Gateway Windows PowerShell 5.1 tests passed."
