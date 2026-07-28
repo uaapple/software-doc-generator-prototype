@@ -4162,6 +4162,8 @@ const tests = [
             "  console.error('module description addon marker missing');",
             "  process.exit(3);",
             "}",
+            "fs.mkdirSync('outputs', { recursive: true });",
+            "fs.writeFileSync('outputs/Demo_软件模块功能描述.docx', Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x64, 0x6f, 0x63, 0x78]));",
             "console.log(JSON.stringify({ status: 'completed', summary: 'module addon copied', outputFiles: [{ relativePath: 'outputs/Demo_软件模块功能描述.docx' }], warnings: [] }));"
           ].join("\n"),
           "utf8"
@@ -4192,6 +4194,9 @@ const tests = [
           assert.equal(body.status, "succeeded");
           assert.equal(body.artifact.summary, "module addon copied");
           assert.equal(body.artifact.outputFiles[0].kind, "software_module_description_docx");
+          assert.equal(body.artifact.outputFiles[0].encoding, "base64");
+          assert.equal(body.artifact.outputFiles[0].size, 8);
+          assert.match(body.artifact.outputFiles[0].sha256, /^[a-f0-9]{64}$/);
           assert.equal(await fs.readFile(path.join(workspaceDir, "module_doc_support.m"), "utf8"), "% module doc addon marker");
         });
       });
