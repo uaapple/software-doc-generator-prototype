@@ -34,7 +34,7 @@
     "check:encoding": "node scripts/check-text-encoding.mjs",
     "check:container-boundaries": "node scripts/check-container-boundaries.mjs",
     "check:container-secrets": "node scripts/check-container-secrets.mjs",
-    "test:container-config": "node tests/container-config-tests.mjs && node tests/container-production-config-tests.mjs && node tests/container-secret-scan-tests.mjs && node tests/tcsd-remote-transfer-tests.mjs",
+    "test:container-config": "node scripts/check-platform-container.mjs && node tests/container-config-tests.mjs && node tests/container-production-config-tests.mjs && node tests/container-secret-scan-tests.mjs && node tests/tcsd-remote-transfer-tests.mjs",
     "test:container-worker": "node tests/container-worker-static-tests.mjs && python3 tests/container-worker-hermes-config-tests.py",
     "test:matlab-gateway": "node tests/matlab-gateway-contract-tests.mjs && node tests/matlab-gateway-lease-tests.mjs && python3 tests/tcsd-runtime/test_satk_gateway.py",
     "container:dev:up": "node scripts/container-dev.mjs up",

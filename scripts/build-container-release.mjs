@@ -52,6 +52,7 @@ if (trackedChanges) {
 }
 
 try {
+  run(process.execPath, ["scripts/check-platform-container.mjs"]);
   run(process.execPath, ["tests/container-config-tests.mjs"]);
   run(process.execPath, ["tests/container-production-config-tests.mjs"]);
   run(process.execPath, ["tests/tcsd-remote-transfer-tests.mjs"]);
