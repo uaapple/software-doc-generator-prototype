@@ -435,6 +435,49 @@ test("different leases run independently while ordinary jobs retain per-job clie
   );
 });
 
+test("concurrent lease closes share one shutdown", async () => {
+  await withGateway(
+    async ({ clients, request }) => {
+      const workspaceId = "workspace-concurrent-close";
+      const leaseId = "lease-concurrent-close";
+      const ownerJobId = "owner-concurrent-close";
+      await createWorkspace(request, workspaceId);
+      await createLease(request, workspaceId, leaseId, ownerJobId);
+
+      const closeRoute =
+        `/api/workspaces/${workspaceId}/leases/${leaseId}`;
+      const [first, second] = await Promise.all([
+        request(closeRoute, {
+          method: "DELETE",
+          body: JSON.stringify({ ownerJobId })
+        }),
+        request(`${closeRoute}?ownerJobId=${ownerJobId}`, {
+          method: "DELETE"
+        })
+      ]);
+
+      assert.equal(first.response.status, 200);
+      assert.equal(second.response.status, 200);
+      assert.equal(first.payload.status, "closed");
+      assert.equal(second.payload.status, "closed");
+      assert.equal(first.payload.closedAt, second.payload.closedAt);
+      assert.equal(clients.length, 1);
+      assert.equal(clients[0].shutdownCount, 1);
+    },
+    {
+      createClient: (record) => ({
+        async callTool() {
+          return successResult;
+        },
+        async shutdown() {
+          record.shutdownCount += 1;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      })
+    }
+  );
+});
+
 test("lease owner, workspace, missing, and broken states fail closed", async () => {
   await withGateway(
     async ({ clients, request, service }) => {

@@ -31,7 +31,7 @@
     "check:container-secrets": "node scripts/check-container-secrets.mjs",
     "test:container-config": "node tests/container-config-tests.mjs && node tests/container-production-config-tests.mjs && node tests/container-secret-scan-tests.mjs && node tests/tcsd-remote-transfer-tests.mjs",
     "test:container-worker": "node tests/container-worker-static-tests.mjs && python3 tests/container-worker-hermes-config-tests.py",
-    "test:matlab-gateway": "node tests/matlab-gateway-contract-tests.mjs && python3 tests/tcsd-runtime/test_satk_gateway.py",
+    "test:matlab-gateway": "node tests/matlab-gateway-contract-tests.mjs && node tests/matlab-gateway-lease-tests.mjs && python3 tests/tcsd-runtime/test_satk_gateway.py",
     "container:dev:up": "node scripts/container-dev.mjs up",
     "container:dev:down": "node scripts/container-dev.mjs down",
     "container:dev:build": "node scripts/container-dev.mjs build",

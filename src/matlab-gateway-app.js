@@ -321,6 +321,10 @@ export class MatlabGatewayService {
     if (lease.status === "closed") {
       return publicLease(lease);
     }
+    if (lease.closePromise) {
+      await lease.closePromise;
+      return publicLease(lease);
+    }
     if (lease.activeJobKeys.size > 0) {
       throw gatewayError(
         "LEASE_ACTIVE",
@@ -328,20 +332,26 @@ export class MatlabGatewayService {
         409
       );
     }
-    try {
-      await lease.client?.shutdown?.();
-    } catch (cause) {
-      lease.status = "broken";
-      throw gatewayError(
-        "LEASE_SHUTDOWN_FAILED",
-        "MATLAB Gateway lease client could not be closed.",
-        502,
-        { category: "lease_shutdown_failed" }
-      );
-    }
-    lease.client = null;
-    lease.status = "closed";
-    lease.closedAt = now();
+    lease.status = "broken";
+    lease.closePromise = (async () => {
+      try {
+        await lease.client?.shutdown?.();
+        lease.client = null;
+        lease.status = "closed";
+        lease.closedAt = now();
+      } catch (cause) {
+        lease.status = "broken";
+        throw gatewayError(
+          "LEASE_SHUTDOWN_FAILED",
+          "MATLAB Gateway lease client could not be closed.",
+          502,
+          { category: "lease_shutdown_failed" }
+        );
+      } finally {
+        lease.closePromise = null;
+      }
+    })();
+    await lease.closePromise;
     return publicLease(lease);
   }
 

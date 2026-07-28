@@ -66,6 +66,11 @@ const suites = [
     args: ["tests/tcsd-pipeline-contract-tests.js"]
   },
   {
+    id: "matlab-gateway-lease",
+    command: process.execPath,
+    args: ["tests/matlab-gateway-lease-tests.mjs"]
+  },
+  {
     id: "release-package",
     command: process.execPath,
     args: ["tests/release-rollback-package-tests.mjs"]
