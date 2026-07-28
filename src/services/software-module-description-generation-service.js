@@ -21,6 +21,11 @@ const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordproces
 const PIPELINE_VERSION = 1;
 const PIPELINE_JOB_STATUSES = new Set(["queued", "running", "completed", "failed"]);
 const PIPELINE_STAGE_STATUSES = new Set(["pending", "running", "completed", "failed"]);
+const TRANSIENT_PIPELINE_POLL_ERROR_CODES = new Set([
+  "software_detail_worker_unavailable",
+  "software_detail_request_timeout",
+  "software_detail_poll_timeout"
+]);
 
 function now() {
   return new Date().toISOString();
@@ -276,6 +281,10 @@ function safePipelineError(error = null) {
     message,
     stageId: String(error.details?.stageId || error.stageId || "").slice(0, 120)
   };
+}
+
+function isTransientPipelinePollError(error = null) {
+  return TRANSIENT_PIPELINE_POLL_ERROR_CODES.has(String(error?.code || ""));
 }
 
 function summarizePipelineArtifacts(stage = {}) {
@@ -976,6 +985,7 @@ export class SoftwareModuleDescriptionGenerationService {
       stages,
       error: safePipelineError(job.error),
       awaitingReconcile: false,
+      diagnostic: null,
       updatedAt: String(job.updatedAt || timestamp)
     };
     task.status = "running";
@@ -1016,6 +1026,29 @@ export class SoftwareModuleDescriptionGenerationService {
     return cleanupError;
   }
 
+  async markPipelineAwaitingReconcile(taskId = "", error = {}) {
+    const task = await this.readTask(taskId);
+    if (!task?.pipeline?.workerJobId) {
+      return null;
+    }
+    const timestamp = now();
+    task.status = "running";
+    task.pipeline.awaitingReconcile = true;
+    task.pipeline.diagnostic = {
+      at: timestamp,
+      ...safePipelineError(error)
+    };
+    task.pipeline.updatedAt = timestamp;
+    task.updatedAt = timestamp;
+    task.progress = {
+      ...buildPipelineProgress(task.pipeline.stages, "running"),
+      message: "Worker 进度同步暂时中断，平台将在后台继续查询已有作业。",
+      updatedAt: timestamp
+    };
+    await this.saveTask(task);
+    return this.getTask(taskId);
+  }
+
   async runPipelineTask(taskId = "", task = {}, workerProfile = {}) {
     const hermesAgentClient = this.getHermesAgentClientForWorker(workerProfile);
     const existingWorkerJobId = String(task.pipeline?.workerJobId || "").trim();
@@ -1035,9 +1068,17 @@ export class SoftwareModuleDescriptionGenerationService {
     const deadline = Date.now() + this.pipelinePollWindowMs;
     try {
       while (!terminalJob && Date.now() < deadline) {
-        const job = await hermesAgentClient.getSoftwareDetailPipelineJob(workerJobId, {
-          localWorkspaceDir: task.workspace?.directory || ""
-        });
+        let job;
+        try {
+          job = await hermesAgentClient.getSoftwareDetailPipelineJob(workerJobId, {
+            localWorkspaceDir: task.workspace?.directory || ""
+          });
+        } catch (error) {
+          if (isTransientPipelinePollError(error)) {
+            return this.markPipelineAwaitingReconcile(taskId, error);
+          }
+          throw error;
+        }
         await this.syncPipelineJob(taskId, job);
         if (["completed", "failed"].includes(job.status)) {
           terminalJob = job;
@@ -1203,6 +1244,9 @@ export class SoftwareModuleDescriptionGenerationService {
         }
       );
     } catch (error) {
+      if (isTransientPipelinePollError(error)) {
+        return await this.markPipelineAwaitingReconcile(taskId, error);
+      }
       return this.failTask(taskId, error);
     } finally {
       if (terminalJob && hermesAgentClient) {
