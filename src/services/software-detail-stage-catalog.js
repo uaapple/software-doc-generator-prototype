@@ -32,8 +32,9 @@ const definitions = [
       input("worker-selection", "job-input")
     ],
     outputs: [
-      output("job-input-manifest"),
-      output("job-workspace")
+      output("input-manifest"),
+      output("workspace-manifest"),
+      output("matlab-session-lease")
     ]
   },
   {
@@ -44,8 +45,9 @@ const definitions = [
     runtimeKind: "reasoning",
     responsibility: "建立模型索引、层级清单与分析队列。",
     inputs: [
-      input("job-input-manifest", "software-detail-stage-01-initialize"),
-      input("job-workspace", "software-detail-stage-01-initialize")
+      input("input-manifest", "software-detail-stage-01-initialize"),
+      input("workspace-manifest", "software-detail-stage-01-initialize"),
+      input("matlab-session-lease", "software-detail-stage-01-initialize")
     ],
     outputs: [
       output("model-index"),
@@ -61,8 +63,9 @@ const definitions = [
     runtimeKind: "matlab",
     responsibility: "按计划提取模型证据。",
     inputs: [
-      input("job-input-manifest", "software-detail-stage-01-initialize"),
-      input("job-workspace", "software-detail-stage-01-initialize"),
+      input("input-manifest", "software-detail-stage-01-initialize"),
+      input("workspace-manifest", "software-detail-stage-01-initialize"),
+      input("matlab-session-lease", "software-detail-stage-01-initialize"),
       input("model-index", "software-detail-stage-02-model-plan"),
       input("hierarchy-manifest", "software-detail-stage-02-model-plan"),
       input("analysis-queue", "software-detail-stage-02-model-plan")
@@ -77,6 +80,7 @@ const definitions = [
     runtimeKind: "host",
     responsibility: "将模型证据整理为输出台账并检查覆盖率。",
     inputs: [
+      input("matlab-session-lease", "software-detail-stage-01-initialize"),
       input("analysis-queue", "software-detail-stage-02-model-plan"),
       input("evidence-shards", "software-detail-stage-03-evidence-extract")
     ],
@@ -93,6 +97,7 @@ const definitions = [
     runtimeKind: "reasoning",
     responsibility: "将输出台账投影为文档边界、行为分组与叙事计划。",
     inputs: [
+      input("matlab-session-lease", "software-detail-stage-01-initialize"),
       input("evidence-shards", "software-detail-stage-03-evidence-extract"),
       input("output-ledger", "software-detail-stage-04-output-ledger"),
       input("coverage-report", "software-detail-stage-04-output-ledger")
@@ -111,6 +116,7 @@ const definitions = [
     runtimeKind: "reasoning",
     responsibility: "生成架构部分草稿。",
     inputs: [
+      input("matlab-session-lease", "software-detail-stage-01-initialize"),
       input("output-ledger", "software-detail-stage-04-output-ledger"),
       input("boundary-projection", "software-detail-stage-05-boundary-projection"),
       input("narrative-plan", "software-detail-stage-05-boundary-projection")
@@ -125,6 +131,7 @@ const definitions = [
     runtimeKind: "reasoning",
     responsibility: "生成模块部分草稿。",
     inputs: [
+      input("matlab-session-lease", "software-detail-stage-01-initialize"),
       input("output-ledger", "software-detail-stage-04-output-ledger"),
       input("boundary-projection", "software-detail-stage-05-boundary-projection"),
       input("behavior-groups", "software-detail-stage-05-boundary-projection"),
@@ -141,6 +148,7 @@ const definitions = [
     runtimeKind: "reasoning",
     responsibility: "检查草稿内容并形成可交付内容。",
     inputs: [
+      input("matlab-session-lease", "software-detail-stage-01-initialize"),
       input("output-ledger", "software-detail-stage-04-output-ledger"),
       input("coverage-report", "software-detail-stage-04-output-ledger"),
       input("architecture-draft", "software-detail-stage-06-architecture-draft"),
@@ -159,13 +167,14 @@ const definitions = [
     runtimeKind: "docx-render",
     responsibility: "生成最终 DOCX、整理产物并清理任务级 MATLAB 会话。",
     inputs: [
-      input("job-workspace", "software-detail-stage-01-initialize"),
+      input("workspace-manifest", "software-detail-stage-01-initialize"),
+      input("matlab-session-lease", "software-detail-stage-01-initialize"),
       input("content-check-report", "software-detail-stage-08-content-check"),
       input("checked-content", "software-detail-stage-08-content-check")
     ],
     outputs: [
-      output("docx"),
-      output("manifest")
+      output("detail-design-docx"),
+      output("artifact-manifest")
     ]
   }
 ];

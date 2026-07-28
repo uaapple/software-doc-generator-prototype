@@ -138,7 +138,7 @@ for (const stage of stages) {
 assert.deepEqual(
   stages.map((stage) => stage.outputs.map((artifact) => artifact.role)),
   [
-    ["job-input-manifest", "job-workspace"],
+    ["input-manifest", "workspace-manifest", "matlab-session-lease"],
     ["model-index", "hierarchy-manifest", "analysis-queue"],
     ["evidence-shards"],
     ["output-ledger", "coverage-report"],
@@ -146,9 +146,34 @@ assert.deepEqual(
     ["architecture-draft"],
     ["module-draft"],
     ["content-check-report", "checked-content"],
-    ["docx", "manifest"]
+    ["detail-design-docx", "artifact-manifest"]
   ]
 );
+
+const removedArtifactRoles = new Set([
+  "job-input-manifest",
+  "job-workspace",
+  "docx",
+  "manifest"
+]);
+for (const stage of stages) {
+  assert.equal(
+    [...stage.inputs, ...stage.outputs].some((artifact) =>
+      removedArtifactRoles.has(artifact.role)
+    ),
+    false
+  );
+}
+for (const stage of stages.slice(1)) {
+  assert.equal(
+    stage.inputs.some(
+      (artifact) =>
+        artifact.role === "matlab-session-lease" &&
+        artifact.sourceStageId === "software-detail-stage-01-initialize"
+    ),
+    true
+  );
+}
 
 {
   let job = createSoftwareDetailPipelineJob({ jobId: "job-full-flow" });
