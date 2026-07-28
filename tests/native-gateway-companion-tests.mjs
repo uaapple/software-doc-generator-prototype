@@ -18,6 +18,7 @@ const releaseSchema = JSON.parse(
   read("deploy/schemas/native-matlab-gateway-companion-release.schema.json")
 );
 const deployScript = read("scripts/deploy-native-matlab-gateway.ps1");
+const ps51Tests = read("tests/native-gateway-companion-ps51.Tests.ps1");
 const builder = read("scripts/build-native-matlab-gateway-companion.mjs");
 const wrapper = read("native-gateway/windows-matlab-worker-server.mjs");
 for (const targetFile of [
@@ -48,6 +49,8 @@ assert.match(legacySource, /if\s*\(!authToken\)\s*\{\s*return next\(\)/);
 assert.ok(!legacySource.includes("MATLAB_GATEWAY_EVALUATE_TOKEN"));
 
 assert.equal(config.serviceName, "SoftwareDocMatlabWorker");
+assert.equal(config.companionVersion, 2);
+assert.equal(config.managedFiles.length, 6);
 assert.equal(calculateImageRevision("platform"), config.expectedImageRevisions.platform);
 assert.equal(calculateImageRevision("worker"), config.expectedImageRevisions.worker);
 for (const inputs of Object.values(imageInputs)) {
@@ -56,7 +59,8 @@ for (const inputs of Object.values(imageInputs)) {
   assert.ok(!inputs.some((entry) => entry === "scripts/build-native-matlab-gateway-companion.mjs"));
 }
 
-assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v1");
+assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v2");
+assert.equal(schema.properties.companionVersion.const, 2);
 assert.equal(schema.properties.serviceName.const, "SoftwareDocMatlabWorker");
 for (const field of [
   "sourceRevision",
@@ -72,8 +76,9 @@ for (const field of [
 }
 assert.equal(
   releaseSchema.properties.schema.const,
-  "sdg-native-matlab-gateway-companion-release/v1"
+  "sdg-native-matlab-gateway-companion-release/v2"
 );
+assert.equal(releaseSchema.properties.companionVersion.const, 2);
 
 assert.match(wrapper, /software-doc-worker\.env/);
 assert.match(wrapper, /await import\("\.\/matlab-worker-server-runtime\.js"\)/);
@@ -88,6 +93,24 @@ assert.match(deployScript, /Restore-Backup/);
 assert.match(deployScript, /Stop-GatewayService/);
 assert.match(deployScript, /Start-GatewayService/);
 assert.match(deployScript, /RandomNumberGenerator/);
+assert.match(deployScript, /RandomNumberGenerator\]::Create\(\)/);
+assert.match(deployScript, /\.GetBytes\(\$bytes\)/);
+assert.match(deployScript, /\.Dispose\(\)/);
+assert.doesNotMatch(deployScript, /RandomNumberGenerator\]::Fill/);
+assert.match(
+  deployScript,
+  /File\]::Replace\(\$TemporaryPath,\s*\$TargetPath,\s*\$backupPath,\s*\$true\)/
+);
+assert.doesNotMatch(deployScript, /File\]::Replace\([^)]*,\s*\$null\s*,/);
+assert.match(deployScript, /File\]::Move\(\$TemporaryPath,\s*\$TargetPath\)/);
+assert.match(deployScript, /Assert-WindowsPowerShellCompatibility/);
+assert.match(deployScript, /File\.Replace capability probe/);
+assert.match(deployScript, /Wait-GatewayHealth/);
+assert.match(deployScript, /TotalTimeoutSeconds = 120/);
+assert.match(deployScript, /HealthTimeoutSeconds = 30/);
+assert.match(deployScript, /\$service\.Status -eq "Stopped"/);
+assert.match(deployScript, /Test-TcpPort/);
+assert.match(deployScript, /duplicate MATLAB_GATEWAY_EVALUATE_TOKEN keys/);
 assert.match(deployScript, /MATLAB_GATEWAY_EVALUATE_TOKEN/);
 assert.match(deployScript, /MATLAB_GATEWAY_TOKEN/);
 assert.match(deployScript, /Invoke-GatewayReadiness/);
@@ -111,6 +134,22 @@ assert.match(builder, /dependencyChanges:\s*false/);
 assert.match(builder, /zip/);
 assert.doesNotMatch(builder, /docker/);
 assert.doesNotMatch(builder, /buildImage|buildx|docker push/);
+assert.match(builder, /native-matlab-gateway-companion-v2-/);
+assert.match(builder, /companionVersion:\s*config\.companionVersion/);
+
+for (const requiredCase of [
+  "PS5.1 CSPRNG path",
+  "Equal pre-existing evaluate tokens",
+  "missing target",
+  "restore the original bytes exactly",
+  "delayed port",
+  "early service exit",
+  "timeout exhaustion"
+]) {
+  assert.ok(ps51Tests.includes(requiredCase), `missing PS5.1 regression: ${requiredCase}`);
+}
+assert.match(ps51Tests, /Get-EnvKeyCount.*MATLAB_GATEWAY_EVALUATE_TOKEN/s);
+assert.match(ps51Tests, /ToBase64String\(\$restoredBytes\).*ToBase64String\(\$originalBytes\)/s);
 
 const productionDeploy = read("scripts/container-production.mjs");
 assert.match(productionDeploy, /evaluate_matlab_code/);
