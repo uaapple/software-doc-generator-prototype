@@ -36,6 +36,24 @@ Linux Platform 容器同时运行平台与 Wiki；生产 Compose 分别发布原
 `imageRevision` 与 Compose/preflight 所在提交 `deploymentToolRevision`，
 仅部署工具变化不触发镜像重建。
 
+Windows 原生 MATLAB Gateway 使用独立 companion release。companion manifest
+记录 source/deployment revision、精确受管文件 SHA-256、scan SHA-256，并在
+构建时断言 Platform/Worker imageRevision 未变化。只要 rootfs 输入不变，
+不得重建或重传镜像；继续使用已验证的 GHCR 精确 digest，只更新
+deploymentToolRevision 与 companion asset。旧
+`464b45448cd691fe94c4c5c843efe64ccd344a68` Gateway 只有
+`/mcp/tools/analyze_slx`，不满足新版 `/version`、`/capabilities`、
+workspace/job/evaluate-token contract，不能只补 env 后继续使用。
+
+Windows 正式顺序固定为：只读审计旧服务 → companion `-ValidateOnly` →
+备份并升级/真实 evaluate 验证 `SoftwareDocMatlabWorker` 5100 → Worker
+container config/preflight → 复用既有 Worker digest、只切 Hermes 3101 →
+容器内真实 evaluate readiness → Windows 黑盒验收 → 最后部署 Linux。
+companion 只管理 manifest 声明的 Gateway 文件与两个 env 中的 Gateway token
+键，不修改 MATLAB R2025b、SATK、runtime/data、addon、Hermes Home/session、
+用户输入输出或 MATLAB 产物。`MATLAB_GATEWAY_EVALUATE_TOKEN` 必须本地随机
+生成或安全接收，并与批准的 `MATLAB_GATEWAY_TOKEN` 保持独立。
+
 ### Hermes Agent 0.18.2 推理配置边界
 
 Hermes Agent 0.18.2 不会自动把应用层 `ZHIPU_*` 配置解释成 Hermes CLI 的

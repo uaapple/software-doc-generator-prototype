@@ -88,6 +88,36 @@ for (const productionComposePath of [
   );
 }
 
+const nativeGatewayConfig = JSON.parse(
+  read("deploy/native-matlab-gateway-companion.json") || "{}"
+);
+if (
+  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v1" ||
+  nativeGatewayConfig.serviceName !== "SoftwareDocMatlabWorker" ||
+  !Array.isArray(nativeGatewayConfig.managedFiles) ||
+  nativeGatewayConfig.managedFiles.length < 1
+) {
+  failures.push("native MATLAB Gateway companion config is incomplete");
+} else {
+  for (const entry of nativeGatewayConfig.managedFiles) {
+    for (const [label, candidate] of Object.entries({
+      source: String(entry?.source || ""),
+      target: String(entry?.target || "")
+    })) {
+      const normalized = candidate.replaceAll("\\", "/");
+      if (
+        !normalized ||
+        normalized.startsWith("/") ||
+        normalized.split("/").includes("..") ||
+        /(^|\/)(?:data|input|output|runtime|addon|logs?)(?:\/|$)/i.test(normalized) ||
+        /\.(?:env|mat|slx|sldd|xlsx|db|sqlite)$/i.test(normalized)
+      ) {
+        failures.push(`native Gateway ${label} is not release-safe: ${candidate}`);
+      }
+    }
+  }
+}
+
 if (failures.length) {
   for (const failure of failures) console.error(`FAIL: ${failure}`);
   process.exitCode = 1;

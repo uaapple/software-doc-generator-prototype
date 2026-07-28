@@ -39,6 +39,8 @@
     "scripts/tcsd-python-dependencies.mjs",
     "scripts/check-tcsd-python.py",
     "requirements/tcsd-runtime.txt",
+    "scripts/build-native-matlab-gateway-companion.mjs",
+    "scripts/deploy-native-matlab-gateway.ps1",
     "scripts/restore-windows-worker-source.ps1",
     "scripts/update-windows-worker-source.ps1",
     "scripts/build-windows-worker-source-update.mjs"

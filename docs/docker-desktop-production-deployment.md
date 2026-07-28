@@ -62,6 +62,19 @@ Trivy 必须对两个镜像都成功，否则不会生成正式 manifest。HIGH/
 和未知许可证只记录告警；secret finding 和明确禁用许可证仍然硬失败。
 `release-dist/**` 是构建产物，不进入 Git。
 
+Windows 原生 Gateway 与容器镜像是独立发布单元。若 Gateway 协议或部署工具
+变化、但 Platform/Worker imageRevision 未变化，必须运行：
+
+```bash
+node scripts/build-native-matlab-gateway-companion.mjs
+```
+
+它只生成 `release-dist/native-gateway/` 下的 companion ZIP、manifest、scan
+和 release JSON，不调用 Docker、不构建或推送镜像。companion manifest 记录
+精确 source/deployment revision、受管目标文件清单/大小/SHA-256，并断言
+Platform/Worker rootfs 输入仍等于冻结 imageRevision。生产继续复用既有 GHCR
+`repository@sha256:...`，不得因为 companion 更新重新上传相同镜像。
+
 GHCR 会复用已存在的 OCI layers，因此后续 push/pull 只传缺失 layer。两个
 Containerfile 均先安装固定 OS、npm/Python/Hermes 依赖，再复制源码和 skills；
 源码小改不会重新上传稳定依赖层。
@@ -91,7 +104,9 @@ compose.windows-docker-desktop.yaml
 
 - 已加载的 Worker `sha256:` image ID。
 - DeepSeek 或批准的 Hermes provider 凭据。
-- 三个互相独立的 Hermes/Gateway token。
+- 三个互相独立的 Hermes/Gateway token。其中
+  `MATLAB_GATEWAY_EVALUATE_TOKEN` 是每台 Worker 本地生成的随机秘密，不是
+  DeepSeek 或其他外部供应商凭据，也不得复用 `MATLAB_GATEWAY_TOKEN`。
 - 本机 Hermes profile。
 - 项目 addon 根目录。
 
@@ -129,7 +144,41 @@ C:\ProgramData\SoftwareDocGenerator\project-addons\02\
 `UNIT_TEST_CASE_DEFAULT_PROJECTS=01_楚能,02_TMS` 保留前端展示名；生产 preflight
 和 Worker 运行时都从展示名解析项目 ID，只检查并挂载 `01`、`02` 目录。
 
-部署命令：
+### Windows 原生 Gateway companion
+
+`464b45448cd691fe94c4c5c843efe64ccd344a68` 的旧
+`src/matlab-worker-server.js` 只提供 `/mcp/tools/analyze_slx`，没有新版
+`/version`、`/capabilities`、workspace/job API，也没有独立 evaluate-token
+边界。旧 `/health` 成功不能证明它满足容器 Worker contract；只补 env token
+也无法补出缺失路由。
+
+Windows 容器部署前必须先使用 companion asset 升级原生
+`SoftwareDocMatlabWorker`。生产机不执行 npm install/build；companion 只替换
+manifest 声明的 Gateway 源文件，并复用现有 Node `node_modules`、MATLAB
+R2025b 和 SATK。脚本会备份受管源、原生/容器 env 与服务配置，只停止并恢复
+`SoftwareDocMatlabWorker`；不触碰 Hermes、runtime/data、addon、Hermes
+Home/session、用户输入输出或 MATLAB 产物。
+
+校验外部提供的 ZIP/release/manifest/scan SHA-256 后，解压并先执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\deploy-native-matlab-gateway.ps1 `
+  -CompanionRoot <解压目录> `
+  -InstallDir C:\SoftwareDocWorker `
+  -ContainerEnvFile <未跟踪.env.windows-docker-desktop绝对路径> `
+  -ValidateOnly
+
+# ValidateOnly 通过后去掉该开关执行升级。
+```
+
+脚本复用 `software-doc-worker.env` 中现有批准的
+`MATLAB_GATEWAY_TOKEN`。若 evaluate token 尚不存在，脚本使用系统加密随机数
+生成一个值并原子写入原生与未跟踪容器 env；永不回显或写入制品。两个 env
+已有不同 token 时 fail-closed。部署完成前必须真实通过 `/version`、
+`/capabilities` 和 `evaluate_matlab_code` readiness；失败自动恢复旧 5100。
+
+Gateway 通过后再执行容器命令：
 
 ```powershell
 $env:SDG_PROD_ENV_FILE = '.env.windows-docker-desktop'
@@ -138,6 +187,10 @@ npm run container:prod:windows:preflight
 npm run container:prod:windows:up
 npm run container:prod:windows:test
 ```
+
+可直接交给生产 Agent 的冻结流程位于
+`docs/prompts/windows-native-gateway-companion-agent.md`；不得自行省略其中的
+外部 SHA 校验、`ValidateOnly`、evaluate readiness 或回滚验证。
 
 `config` 不打印展开后的 Compose，避免泄露 secret。`preflight` 验证：
 
@@ -148,15 +201,9 @@ npm run container:prod:windows:test
 
 `up` 先准备 bind mount/named volume 权限，再以 `--no-build` 启动 Worker。
 `test` 等待容器 healthy，并从 Worker 容器真实访问
-`http://host.docker.internal:5100` 的 Gateway health/version。
-
-Gateway 启动器会读取同一 env：
-
-```powershell
-$env:SDG_CONTAINER_ENV_FILE = '.env.windows-docker-desktop'
-npm run matlab:gateway:check
-npm run matlab:gateway:start
-```
+`http://host.docker.internal:5100` 的 Gateway health/version/capabilities，
+创建隔离 workspace 并完成真实 evaluate probe。不得用 host 侧 probe 替代
+容器侧路由验收。
 
 Windows 生产 env 明确设置：
 
@@ -209,12 +256,15 @@ Windows 不需要共享 SMB/NFS 目录，也不得把 Linux 绝对路径当成 W
 
 首次部署不得立即删除原生服务或旧 release：
 
-1. 记录当前服务、端口、release、镜像、env、数据目录和健康证据。
-2. 为新 Worker 使用批准的 canary 端口，避免与原生 3101 冲突。
-3. 从 Linux Platform 配置一个 canary Worker profile。
-4. 使用批准的非用户测试输入运行真实十二阶段任务。
-5. 验证十二阶段、Hermes session、MATLAB Gateway、addon、XLSX 下载和重启恢复。
-6. 验收通过后再切正式 3101/平台路由。
+1. 旧服务运行时只读审计：记录 3101/5100、服务配置、release、env 路径、
+   镜像精确 digest 和健康证据，不输出 secret。
+2. 校验 companion ZIP/manifest/scan，升级并真实验证原生 Gateway 5100；保留
+   自动生成的 backup 目录。
+3. 执行 Windows Worker container config/preflight。
+4. 复用既有 Worker digest，只切 Hermes 3101；运行容器侧 evaluate readiness。
+5. 使用批准的非用户测试输入运行真实十二阶段任务。
+6. Windows 验收通过后才部署 Linux Platform 的既有精确 digest。
+7. 验证十二阶段、Hermes session、MATLAB Gateway、addon、XLSX 下载和重启恢复。
 
 本项目的最终 TCSD 验收输入固定为用户已使用过的同类输入：
 
@@ -226,6 +276,19 @@ Windows 不需要共享 SMB/NFS 目录，也不得把 Linux 绝对路径当成 W
 仅 health check 通过不能表述为部署完成。
 
 回滚入口：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\deploy-native-matlab-gateway.ps1 `
+  -CompanionRoot <解压目录> `
+  -InstallDir C:\SoftwareDocWorker `
+  -ContainerEnvFile <未跟踪容器env绝对路径> `
+  -Rollback `
+  -BackupDir <native-gateway backup目录> `
+  -ValidateOnly
+
+# 校验通过后去掉 -ValidateOnly。
+```
 
 ```powershell
 $env:SDG_PROD_ENV_FILE = '.env.windows-docker-desktop'
@@ -247,5 +310,8 @@ npm run container:prod:linux:down
 - 不把 `.env`、API Key、token、addon、输入输出、Hermes Home 或 MATLAB
   产物提交 Git 或写入镜像。
 - 不因为容器 health 通过而跳过真实 TCSD 任务。
+- 不让旧 `/mcp/tools/analyze_slx` Gateway 冒充新版 workspace/job contract。
+- 不用 `MATLAB_GATEWAY_TOKEN` 代替 `MATLAB_GATEWAY_EVALUATE_TOKEN`，也不关闭
+  Gateway 鉴权来通过 readiness。
 - 不同时让原生 Worker 和容器 Worker占用同一端口。
 - 不在未知来源可访问的接口上开放 3101 或 5100。
