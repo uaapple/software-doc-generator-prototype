@@ -35,6 +35,9 @@ const workerContainerfile = read("containers/worker/Containerfile");
 const matlabWorkerServer = read("src/matlab-worker-server.js");
 const containerDevScript = read("scripts/container-dev.mjs");
 const gatewayLauncher = read("scripts/start-matlab-gateway.mjs");
+const packageConfig = JSON.parse(read("package.json"));
+const platformClosureCheckCommand = "node scripts/check-platform-container.mjs";
+const containerConfigTestScript = packageConfig.scripts["test:container-config"];
 assert.match(compose, /platform:\s*linux\/amd64/);
 assert.match(compose, /host\.docker\.internal:5100/);
 assert.match(compose, /read_only:\s*true/);
@@ -66,6 +69,25 @@ assert.equal(
 );
 assert.equal(platformSkillsDirectory, "/var/lib/sdg/skills");
 assert.match(platformContainerfile, /^USER node$/m, "platform must run as a non-root user");
+for (const dependency of [
+  "src/services/software-detail-pipeline-contract.js",
+  "src/services/software-detail-stage-catalog.js"
+]) {
+  assert.ok(
+    platformContainerfile.includes(dependency),
+    `platform image must include ${dependency}`
+  );
+}
+assert.equal(
+  containerConfigTestScript.split(platformClosureCheckCommand).length - 1,
+  1,
+  "container config tests must run the platform dependency-closure check once"
+);
+assert.ok(
+  containerConfigTestScript.indexOf(platformClosureCheckCommand) <
+    containerConfigTestScript.indexOf("node tests/container-config-tests.mjs"),
+  "platform dependency-closure check must run before container configuration tests"
+);
 assert.match(
   workerContainerfile,
   /COPY public\/skill-kind-matrix\.js \.\/public\/skill-kind-matrix\.js/,

@@ -31,6 +31,8 @@ for (const required of [
 const windowsCompose = read("compose.windows-docker-desktop.yaml");
 const linuxCompose = read("compose.linux-prod.yaml");
 const releaseBuilder = read("scripts/build-container-release.mjs");
+const platformClosureCheckInvocation =
+  'run(process.execPath, ["scripts/check-platform-container.mjs"]);';
 assert.match(windowsCompose, /APP_ENV:\s*production/);
 assert.match(windowsCompose, /APP_RUNTIME_ROLE:\s*hermes-agent/);
 assert.match(windowsCompose, /host\.docker\.internal:5100/);
@@ -62,6 +64,16 @@ assert.match(releaseBuilder, /\["syft", "trivy"\]/);
 assert.match(releaseBuilder, /deploymentToolRevision/);
 assert.match(releaseBuilder, /imageRevision/);
 assert.match(releaseBuilder, /registryReference/);
+assert.equal(
+  releaseBuilder.split(platformClosureCheckInvocation).length - 1,
+  1,
+  "container release build must run the platform dependency-closure check once"
+);
+assert.ok(
+  releaseBuilder.indexOf(platformClosureCheckInvocation) <
+    releaseBuilder.indexOf("buildImage(imageDefinitions.platform)"),
+  "platform dependency-closure check must run before the platform image build"
+);
 assert.doesNotMatch(releaseBuilder, /BUILD_CREATED/);
 assert.doesNotMatch(read("docker/platform.Containerfile"), /BUILD_CREATED|image\.created/);
 assert.doesNotMatch(read("containers/worker/Containerfile"), /BUILD_CREATED|image\.created/);
