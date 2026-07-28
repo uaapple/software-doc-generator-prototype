@@ -43,7 +43,8 @@ const targetConfig = {
       "UNIT_TEST_WORKER_PROFILES_JSON",
       "SDG_CONTAINER_DATA_DIR",
       "SDG_PLATFORM_LOG_DIR",
-      "SDG_PLATFORM_BIND_IP"
+      "SDG_PLATFORM_BIND_IP",
+      "SDG_WIKI_BIND_IP"
     ]
   }
 }[target];
@@ -120,6 +121,7 @@ function validateConfiguration() {
   if (target === "windows-worker") {
     validateBindAddress("MATLAB_WORKER_HOST");
   } else {
+    validateBindAddress("SDG_WIKI_BIND_IP");
     validateRemoteUrl("HERMES_BASE_URL", value("HERMES_BASE_URL"));
     validateRemoteUrl("MATLAB_MCP_BASE_URL", value("MATLAB_MCP_BASE_URL"));
     validateWorkerProfiles();
@@ -351,6 +353,8 @@ function verifyWorkerGateway() {
 function verifyPlatformRoutes() {
   const script = [
     "(async()=>{",
+    "const wiki=await fetch('http://127.0.0.1:3001/health');",
+    "if(!wiki.ok||!(await wiki.json()).ok)throw new Error('wiki');",
     "const profiles=JSON.parse(process.env.UNIT_TEST_WORKER_PROFILES_JSON).workers;",
     "const gatewayToken=process.env.MATLAB_MCP_AUTH_TOKEN;",
     "const hermesToken=process.env.HERMES_AUTH_TOKEN;",

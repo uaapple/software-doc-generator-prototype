@@ -63,6 +63,8 @@ services:
       APP_RUNTIME_ROLE: platform
       HOST: 0.0.0.0
       PORT: 3000
+      WIKI_HOST: 0.0.0.0
+      WIKI_PORT: 3001
       APP_DATA_DIR: /var/lib/sdg/data
       APP_SKILLS_DIR: /var/lib/sdg/skills
       HERMES_TRANSPORT: api
@@ -98,6 +100,7 @@ services:
         target: /var/log/sdg
     ports:
       - ${SDG_PLATFORM_BIND_IP:?SDG_PLATFORM_BIND_IP must be an approved host address}:${SDG_PLATFORM_PORT:-3000}:3000
+      - ${SDG_WIKI_BIND_IP:?SDG_WIKI_BIND_IP must be an approved host address}:${SDG_WIKI_PORT:-3001}:3001
     healthcheck:
       test:
         - CMD

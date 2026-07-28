@@ -41,6 +41,8 @@ assert.match(linuxCompose, /APP_ENV:\s*production/);
 assert.match(linuxCompose, /APP_RUNTIME_ROLE:\s*platform/);
 assert.match(linuxCompose, /HERMES_API_MODE:\s*upload/);
 assert.match(linuxCompose, /UNIT_TEST_WORKER_PROFILES_JSON/);
+assert.match(linuxCompose, /WIKI_PORT:\s*3001/);
+assert.match(linuxCompose, /SDG_WIKI_BIND_IP[^\n]*SDG_WIKI_PORT[^\n]*:3001/);
 assert.match(linuxCompose, /read_only:\s*true/);
 assert.match(linuxCompose, /no-new-privileges:true/);
 assert.match(linuxCompose, /pull_policy:\s*never/);
@@ -257,6 +259,7 @@ function linuxEnvironment() {
     "SDG_CONTAINER_DATA_DIR=/tmp/sdg-data",
     "SDG_PLATFORM_LOG_DIR=/tmp/sdg-platform-logs",
     "SDG_PLATFORM_BIND_IP=10.0.0.10",
+    "SDG_WIKI_BIND_IP=10.0.0.10",
     "HERMES_AGENT_TOKEN=hermes-secret",
     "MATLAB_GATEWAY_TOKEN=gateway-secret",
     "HERMES_BASE_URL=http://10.0.0.11:3101",

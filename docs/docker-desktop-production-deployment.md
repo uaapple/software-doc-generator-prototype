@@ -145,6 +145,7 @@ compose.linux-prod.yaml
 复制为未跟踪文件 `.env.linux-container-prod`，填写 Platform image ID、实际
 Windows 地址、共享 Hermes token 和 Gateway token。Worker 配置必须保留稳定
 ID，例如 `vm` 和 `physical`；不得把示例中的 `WINDOWS_*` 占位符带入生产。
+平台容器同时运行 Platform 和 Wiki，并分别将宿主 `3000`、`3001` 映射到容器。
 
 部署命令：
 
@@ -156,9 +157,9 @@ npm run container:prod:linux:up
 npm run container:prod:linux:test
 ```
 
-Linux `test` 会从 Platform 容器逐一访问每个 Worker 的 3101 health 和 MATLAB
-Gateway 的 5100 health。Platform 不接收 DeepSeek、GLM 或其他 Worker 推理
-凭据。
+Linux `test` 会先验证容器内 Wiki `3001/health`，再从 Platform 容器逐一访问
+每个 Worker 的 3101 health 和 MATLAB Gateway 的 5100 health。Platform 不接收
+DeepSeek、GLM 或其他 Worker 推理凭据。
 
 Platform 固定使用 `HERMES_API_MODE=upload`。创建 TCSD 或软件详设任务时，
 Platform 通过受认证 multipart 请求把本地 workspace 输入传到所选 Worker；

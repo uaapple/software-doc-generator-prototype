@@ -29,6 +29,8 @@ Mac all-in-one `compose.yaml + compose.mac.yaml`。
 HIGH/CRITICAL 漏洞作为 manifest 中的审计告警记录，不作为功能部署阻塞项；任何
 secret finding 或 `deploy/container-license-policy.json` 明确禁止的许可证仍然
 fail-closed。未知许可证分类只记录在原始 Trivy 报告中，不等同于禁用许可证。
+Linux Platform 容器同时运行平台与 Wiki；生产 Compose 分别发布原端口 `3000`
+和 `3001`，停止旧 systemd 平台/Wiki 服务后必须验证两者。
 
 ### Hermes Agent 0.18.2 推理配置边界
 
