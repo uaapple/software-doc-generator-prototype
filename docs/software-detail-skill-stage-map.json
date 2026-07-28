@@ -8,9 +8,126 @@
     "skillPath": "skills/hermes/simulink-module-description-generator/SKILL.md",
     "skillBlobSha1": "8e99cda6da9b54153b73476f884b463ebe8b1bc4",
     "skillContentSha256": "f9b9fb108ad5bee97597f9dc01a59cf37a6f85f0afd619b21b78df291f8d1dae",
+    "treeFileCount": 13,
+    "resourceFileCount": 12,
+    "skillIsContractSource": true,
     "defaultRuleTextSha256": "6ae4a1a783fd98a2eeff541139b1fa841c08ed159879e652ba884028b32a0d18",
     "workflowRuleTextSha256": "eb9387f295d040fd45a1e4a6d5cb0b63177a2080bcf052717d06b213ccd6a17b",
     "outputRuleTextSha256": "0715c672e88d70f40127b01e330b16c30b41b113724e75ef5594850b897c36dd"
+  },
+  "pipelineEntryTransformation": {
+    "sourceContent": {
+      "name": "simulink-module-description-generator",
+      "description": "Generate templated software module function descriptions from Simulink models. Use when the user provides a Simulink .slx model, model folder, or model-derived assets and asks Codex to create or update software detailed design content, software module function descriptions, or DOCX/Markdown drafts using MATLAB MCP/SATK, UI-selected addon files, model annotations, DocBlocks, and the bundled Software Detailed Design template.",
+      "title": "Simulink Module Description Generator",
+      "summary": "Generate software module function descriptions from Simulink model evidence, then place the content into the bundled Software Detailed Design template.",
+      "defaultInvocationUseCondition": "Use this skill when the user asks for a software detailed design, software module function description, or similar document based on a Simulink model.",
+      "minimalPrompt": "Use $simulink-module-description-generator to generate a software module function description for /path/to/Model.slx.",
+      "referencesIntroduction": "Read these references as needed:",
+      "references": [
+        {
+          "path": "references/model-evidence.md",
+          "description": "MATLAB MCP/SATK access pattern, addon handling, and evidence collection checklist."
+        },
+        {
+          "path": "references/module-boundary.md",
+          "description": "mandatory document-unit selection, A/B/C hierarchy, interface allowlist, and narrative-boundary validation. Read it before selecting modules or drafting."
+        },
+        {
+          "path": "references/writing-rules.md",
+          "description": "generalized reviewer feedback and wording rules for module descriptions."
+        },
+        {
+          "path": "references/a07-granularity-pattern.md",
+          "description": "mandatory target granularity, behavior-group layout, density gate, compact example, and short anti-pattern checklist. Read it before drafting module prose."
+        },
+        {
+          "path": "references/template-filling.md",
+          "description": "how to fill the bundled Software Detailed Design DOCX template."
+        }
+      ]
+    },
+    "pipelineEntry": {
+      "retainsLegacyNameAsCompatibilityAlias": true,
+      "triggerDescriptionSource": "sourceContent.description",
+      "usageConditionSource": "sourceContent.defaultInvocationUseCondition",
+      "minimalPromptTransformation": "Keep the model path and user intent as pipeline job inputs; replace the single legacy skill invocation with pipeline entry routing across the nine stage skills.",
+      "referenceTransformation": "Preserve every References bullet through the matching resources entry and its owner/use stages.",
+      "allowImplicitInvocation": true
+    },
+    "sourceDiscoveryMetadata": {
+      "path": "agents/openai.yaml",
+      "displayName": "Simulink 模块功能描述",
+      "shortDescription": "按功能层级和接口边界生成 Simulink 模块功能描述",
+      "defaultPrompt": "Use $simulink-module-description-generator to generate A-level module descriptions using only each module's direct inputs and outputs in final prose.",
+      "allowImplicitInvocation": true
+    },
+    "stageDiscoveryMetadata": [
+      {
+        "stageId": "software-detail-stage-01-initialize",
+        "skillName": "software-detail-stage-01-initialize",
+        "displayName": "Simulink 模块功能描述 · 阶段 1 初始化",
+        "shortDescription": "校验任务输入并初始化任务独占 MATLAB 会话与模型",
+        "defaultPrompt": "Use $software-detail-stage-01-initialize to initialize the pipeline job from its supplied model, workspace, and addon inputs."
+      },
+      {
+        "stageId": "software-detail-stage-02-model-plan",
+        "skillName": "software-detail-stage-02-model-plan",
+        "displayName": "Simulink 模块功能描述 · 阶段 2 模型规划",
+        "shortDescription": "轻量扫描模型并建立文档单元、分析单元与边界计划",
+        "defaultPrompt": "Use $software-detail-stage-02-model-plan to build the hierarchy, boundary allowlists, and bounded analysis queue from the initialized model."
+      },
+      {
+        "stageId": "software-detail-stage-03-evidence-extract",
+        "skillName": "software-detail-stage-03-evidence-extract",
+        "displayName": "Simulink 模块功能描述 · 阶段 3 证据提取",
+        "shortDescription": "逐分析单元深读模型并生成可追溯证据分片",
+        "defaultPrompt": "Use $software-detail-stage-03-evidence-extract to collect bounded model evidence shards for the planned analysis units."
+      },
+      {
+        "stageId": "software-detail-stage-04-output-ledger",
+        "skillName": "software-detail-stage-04-output-ledger",
+        "displayName": "Simulink 模块功能描述 · 阶段 4 输出账本",
+        "shortDescription": "按文档单元聚合证据并建立输出优先覆盖账本",
+        "defaultPrompt": "Use $software-detail-stage-04-output-ledger to aggregate evidence into an output-first private ledger and coverage record."
+      },
+      {
+        "stageId": "software-detail-stage-05-boundary-projection",
+        "skillName": "software-detail-stage-05-boundary-projection",
+        "displayName": "Simulink 模块功能描述 · 阶段 5 边界投影",
+        "shortDescription": "把内部模型事实投影为直接边界行为组",
+        "defaultPrompt": "Use $software-detail-stage-05-boundary-projection to project private evidence onto direct document-unit boundary behavior groups."
+      },
+      {
+        "stageId": "software-detail-stage-06-architecture-draft",
+        "skillName": "software-detail-stage-06-architecture-draft",
+        "displayName": "Simulink 模块功能描述 · 阶段 6 架构草稿",
+        "shortDescription": "依据模型证据生成总体功能、结构、架构与接口草稿",
+        "defaultPrompt": "Use $software-detail-stage-06-architecture-draft to draft the model purpose, overall structure, architecture, and interfaces."
+      },
+      {
+        "stageId": "software-detail-stage-07-module-draft",
+        "skillName": "software-detail-stage-07-module-draft",
+        "displayName": "Simulink 模块功能描述 · 阶段 7 模块草稿",
+        "shortDescription": "依据行为组逐文档单元生成模块功能与实现草稿",
+        "defaultPrompt": "Use $software-detail-stage-07-module-draft to draft each document unit from its projected boundary behavior groups."
+      },
+      {
+        "stageId": "software-detail-stage-08-content-check",
+        "skillName": "software-detail-stage-08-content-check",
+        "displayName": "Simulink 模块功能描述 · 阶段 8 内容检查",
+        "shortDescription": "校验并修正层级、边界、密度、覆盖与写作问题",
+        "defaultPrompt": "Use $software-detail-stage-08-content-check to validate and repair the software-detail draft against hierarchy, boundary, coverage, density, and writing rules."
+      },
+      {
+        "stageId": "software-detail-stage-09-docx-finalize",
+        "skillName": "software-detail-stage-09-docx-finalize",
+        "displayName": "Simulink 模块功能描述 · 阶段 9 DOCX 定稿",
+        "shortDescription": "受控填充模板、复验最终制品并清理任务状态",
+        "defaultPrompt": "Use $software-detail-stage-09-docx-finalize to fill and verify the final DOCX artifact and clean task-owned MATLAB state."
+      }
+    ],
+    "stageInvocationPolicy": "The pipeline entry may be discovered from the original use condition and metadata; the orchestrator invokes each stage skill explicitly with pinned stage inputs and the shared rule set."
   },
   "sessionPolicy": {
     "matlab": {
@@ -114,6 +231,36 @@
       "hermesSession": "new"
     }
   ],
+  "sharedRuleSet": {
+    "ruleSetId": "software-detail-shared-rules",
+    "version": "1.0.0",
+    "authoringManifestPath": "docs/software-detail-skill-stage-map.json",
+    "futureRuntimeSnapshotPath": "shared/software-detail-shared-rules.json",
+    "ruleIds": [
+      "SDD-DEF-001",
+      "SDD-DEF-002",
+      "SDD-DEF-003",
+      "SDD-DEF-010",
+      "SDD-DEF-011",
+      "SDD-DEF-018",
+      "SDD-DEF-020",
+      "SDD-OUT-001",
+      "SDD-OUT-002",
+      "SDD-OUT-013"
+    ],
+    "consumerStageIds": [
+      "software-detail-stage-01-initialize",
+      "software-detail-stage-02-model-plan",
+      "software-detail-stage-03-evidence-extract",
+      "software-detail-stage-04-output-ledger",
+      "software-detail-stage-05-boundary-projection",
+      "software-detail-stage-06-architecture-draft",
+      "software-detail-stage-07-module-draft",
+      "software-detail-stage-08-content-check",
+      "software-detail-stage-09-docx-finalize"
+    ],
+    "consumptionContract": "Every future stage skill snapshot must contain and read the same byte-identical shared rule set before applying its stage-specific clauses."
+  },
   "defaultRules": [
     {
       "id": "SDD-DEF-001",
@@ -527,6 +674,25 @@
     }
   ],
   "resources": [
+    {
+      "path": "agents/openai.yaml",
+      "type": "metadata",
+      "blobSha1": "462f4e3e6d501a6a7f277ccf77a961a7f3046f3e",
+      "contentSha256": "e7c16cecdb859f7c7bc960bd08fbae3aa801193f6d5ba7325b2b2215794c00fc",
+      "ownerComponent": "pipeline-entry-transformation",
+      "useStageIds": [
+        "software-detail-stage-01-initialize",
+        "software-detail-stage-02-model-plan",
+        "software-detail-stage-03-evidence-extract",
+        "software-detail-stage-04-output-ledger",
+        "software-detail-stage-05-boundary-projection",
+        "software-detail-stage-06-architecture-draft",
+        "software-detail-stage-07-module-draft",
+        "software-detail-stage-08-content-check",
+        "software-detail-stage-09-docx-finalize"
+      ],
+      "transformationTarget": "pipelineEntryTransformation.stageDiscoveryMetadata"
+    },
     {
       "path": "references/a07-granularity-pattern.md",
       "type": "reference",
