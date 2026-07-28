@@ -86,7 +86,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       --requirement /tmp/container-worker.txt && \
     python -c "from importlib.metadata import version; assert version('hermes-agent') == '${HERMES_AGENT_VERSION}'" && \
     hermes --version | grep -F "${HERMES_AGENT_VERSION}" && \
-    python -c "import yaml, openpyxl, et_xmlfile; assert yaml.__version__ == '6.0.3'; assert openpyxl.__version__ == '3.1.5'; assert et_xmlfile.__version__ == '2.0.0'" && \
+    python -c "import yaml, openpyxl, et_xmlfile, docx, lxml; assert yaml.__version__ == '6.0.3'; assert openpyxl.__version__ == '3.1.5'; assert et_xmlfile.__version__ == '2.0.0'; assert docx.__version__ == '1.2.0'; assert lxml.__version__ == '6.0.2'" && \
     python -m pip freeze --all | LC_ALL=C sort > /opt/sdg/python-lock.txt && \
     rm -rf /tmp/hermes-wheel /tmp/container-worker.txt
 
@@ -117,9 +117,28 @@ COPY skills/hermes/tcsd-stage-10-repair-coverage/ ./skills/hermes/tcsd-stage-10-
 COPY skills/hermes/tcsd-stage-11-final-validation/ ./skills/hermes/tcsd-stage-11-final-validation/
 COPY skills/hermes/tcsd-stage-12-package-cleanup/ ./skills/hermes/tcsd-stage-12-package-cleanup/
 
+# The software-detail runtime and its nine explicit stage skills are immutable
+# Worker image inputs. Mutable project addons remain host-mounted runtime data.
+COPY skills/hermes/software-detail-runtime/agents/ ./skills/hermes/software-detail-runtime/agents/
+COPY skills/hermes/software-detail-runtime/assets/ ./skills/hermes/software-detail-runtime/assets/
+COPY skills/hermes/software-detail-runtime/references/ ./skills/hermes/software-detail-runtime/references/
+COPY skills/hermes/software-detail-runtime/scripts/ ./skills/hermes/software-detail-runtime/scripts/
+COPY skills/hermes/software-detail-runtime/shared/ ./skills/hermes/software-detail-runtime/shared/
+COPY skills/hermes/software-detail-runtime/source-manifest.json ./skills/hermes/software-detail-runtime/source-manifest.json
+COPY skills/hermes/software-detail-stage-01-initialize/ ./skills/hermes/software-detail-stage-01-initialize/
+COPY skills/hermes/software-detail-stage-02-model-plan/ ./skills/hermes/software-detail-stage-02-model-plan/
+COPY skills/hermes/software-detail-stage-03-evidence-extract/ ./skills/hermes/software-detail-stage-03-evidence-extract/
+COPY skills/hermes/software-detail-stage-04-output-ledger/ ./skills/hermes/software-detail-stage-04-output-ledger/
+COPY skills/hermes/software-detail-stage-05-boundary-projection/ ./skills/hermes/software-detail-stage-05-boundary-projection/
+COPY skills/hermes/software-detail-stage-06-architecture-draft/ ./skills/hermes/software-detail-stage-06-architecture-draft/
+COPY skills/hermes/software-detail-stage-07-module-draft/ ./skills/hermes/software-detail-stage-07-module-draft/
+COPY skills/hermes/software-detail-stage-08-content-check/ ./skills/hermes/software-detail-stage-08-content-check/
+COPY skills/hermes/software-detail-stage-09-docx-finalize/ ./skills/hermes/software-detail-stage-09-docx-finalize/
+
 RUN mkdir -p \
       /var/lib/sdg/data/uploads \
       /var/lib/sdg/data/tcsd-pipeline-jobs \
+      /var/lib/sdg/data/software-detail-pipeline-jobs \
       /var/lib/sdg/hermes-home \
       /var/lib/sdg/logs \
       /var/lib/sdg/project-addons \
