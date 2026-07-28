@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import vm from "node:vm";
 
 const [
   workerServer,
@@ -167,6 +168,42 @@ assert.match(
   driver,
   /SDD_SYNTHETIC_USE_PREBUILT_IMAGES=1 时必须显式提供 SDD_SYNTHETIC_WORKER_IMAGE/
 );
+const imageReferenceValidatorStart = driver.indexOf(
+  "function validatePrebuiltImageReference"
+);
+const imageReferenceValidatorEnd = driver.indexOf(
+  "\n}\n\nfunction resolveImageMode",
+  imageReferenceValidatorStart
+);
+assert.ok(imageReferenceValidatorStart >= 0);
+assert.ok(imageReferenceValidatorEnd > imageReferenceValidatorStart);
+const validatePrebuiltImageReference = vm.runInNewContext(
+  `(${driver.slice(
+    imageReferenceValidatorStart,
+    imageReferenceValidatorEnd + 2
+  )})`
+);
+for (const invalidReference of [
+  "sdg-platform",
+  "registry.example:5000/sdg-platform",
+  "sdg-platform:latest",
+  "sdg-platform:LATEST"
+]) {
+  assert.throws(
+    () => validatePrebuiltImageReference(invalidReference, "测试"),
+    /明确标签|latest/
+  );
+}
+for (const preciseReference of [
+  "sdg-platform:sdd-wave5-bb01d50",
+  "sdg-hermes-worker:sdd-wave5-bb01d50",
+  "registry.example:5000/team/sdg-platform:release_2026.07-1"
+]) {
+  assert.equal(
+    validatePrebuiltImageReference(preciseReference, "测试"),
+    preciseReference
+  );
+}
 assert.doesNotMatch(driver, /dotenv|\.env\.container|SDG_CONTAINER_ENV_FILE/);
 assert.doesNotMatch(driver, /process\.env\.DEEPSEEK/);
 assert.doesNotMatch(driver, /process\.env\.OPENAI/);

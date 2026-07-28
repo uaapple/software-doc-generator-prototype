@@ -33,6 +33,30 @@ const evaluateToken = "software-detail-synthetic-evaluate-token";
 const workerToken = "software-detail-synthetic-worker-token";
 const expectedStages = listSoftwareDetailStages();
 
+function validatePrebuiltImageReference(image, label) {
+  const lastSlashIndex = image.lastIndexOf("/");
+  const lastColonIndex = image.lastIndexOf(":");
+  if (lastColonIndex <= lastSlashIndex) {
+    throw new Error(
+      `预构建${label}镜像必须使用带明确标签的精确引用：${image}`
+    );
+  }
+  const repository = image.slice(0, lastColonIndex);
+  const tag = image.slice(lastColonIndex + 1);
+  if (!repository || repository.endsWith("/") || repository.includes("@")) {
+    throw new Error(
+      `预构建${label}镜像必须使用带明确标签的精确引用：${image}`
+    );
+  }
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(tag)) {
+    throw new Error(`预构建${label}镜像标签不符合 Docker 标签语法：${image}`);
+  }
+  if (tag.toLowerCase() === "latest") {
+    throw new Error(`预构建${label}镜像禁止使用 latest 标签：${image}`);
+  }
+  return image;
+}
+
 function resolveImageMode(environment) {
   if (environment.SDD_SYNTHETIC_USE_PREBUILT_IMAGES !== "1") {
     return {
@@ -55,6 +79,8 @@ function resolveImageMode(environment) {
     workerImage,
     "SDD_SYNTHETIC_USE_PREBUILT_IMAGES=1 时必须显式提供 SDD_SYNTHETIC_WORKER_IMAGE。"
   );
+  validatePrebuiltImageReference(platformImage, "平台");
+  validatePrebuiltImageReference(workerImage, "Worker");
   return {
     usePrebuiltImages: true,
     platformImage,
