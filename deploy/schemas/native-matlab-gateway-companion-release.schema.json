@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema",
+    "companionVersion",
     "sourceRevision",
     "deploymentToolRevision",
     "asset",
@@ -16,7 +17,10 @@
   ],
   "properties": {
     "schema": {
-      "const": "sdg-native-matlab-gateway-companion-release/v1"
+      "const": "sdg-native-matlab-gateway-companion-release/v2"
+    },
+    "companionVersion": {
+      "const": 2
     },
     "sourceRevision": {
       "type": "string",

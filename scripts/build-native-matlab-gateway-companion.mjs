@@ -37,9 +37,10 @@ run(process.execPath, ["scripts/check-container-secrets.mjs"]);
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-native-gateway-release-"));
 const packageRoot = path.join(temporaryRoot, "package");
 const payloadRoot = path.join(packageRoot, "payload");
-const scanName = `native-matlab-gateway-companion-${shortRevision}.scan.json`;
-const manifestName = `native-matlab-gateway-companion-${shortRevision}.manifest.json`;
-const assetName = `native-matlab-gateway-companion-${shortRevision}.zip`;
+const assetPrefix = `native-matlab-gateway-companion-v2-${shortRevision}`;
+const scanName = `${assetPrefix}.scan.json`;
+const manifestName = `${assetPrefix}.manifest.json`;
+const assetName = `${assetPrefix}.zip`;
 
 try {
   fs.mkdirSync(payloadRoot, { recursive: true });
@@ -85,7 +86,8 @@ try {
   });
 
   const scan = {
-    schema: "sdg-native-matlab-gateway-companion-scan/v1",
+    schema: "sdg-native-matlab-gateway-companion-scan/v2",
+    companionVersion: config.companionVersion,
     sourceRevision: revision,
     status: "passed",
     policies: {
@@ -101,7 +103,8 @@ try {
   fs.writeFileSync(path.join(packageRoot, scanName), scanBytes);
 
   const manifest = {
-    schema: "sdg-native-matlab-gateway-companion/v1",
+    schema: "sdg-native-matlab-gateway-companion/v2",
+    companionVersion: config.companionVersion,
     sourceRevision: revision,
     deploymentToolRevision: revision,
     legacyGatewayRevision: config.legacyGatewayRevision,
@@ -143,7 +146,8 @@ try {
   run("zip", ["-X", "-q", "-r", assetPath, "."], { cwd: packageRoot });
 
   const release = {
-    schema: "sdg-native-matlab-gateway-companion-release/v1",
+    schema: "sdg-native-matlab-gateway-companion-release/v2",
+    companionVersion: config.companionVersion,
     sourceRevision: revision,
     deploymentToolRevision: revision,
     asset: {
@@ -165,7 +169,7 @@ try {
   };
   const releasePath = path.join(
     outputDir,
-    `native-matlab-gateway-companion-${shortRevision}.release.json`
+    `${assetPrefix}.release.json`
   );
   fs.writeFileSync(releasePath, jsonBytes(release));
   process.stdout.write(`${releasePath}\n`);

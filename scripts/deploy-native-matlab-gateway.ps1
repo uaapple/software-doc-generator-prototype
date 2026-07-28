@@ -18,6 +18,12 @@ function Get-Sha256([string]$PathValue) {
   return (Get-FileHash -LiteralPath $PathValue -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Assert-AtomicReplacementTarget([string]$PathValue) {
+  if (-not (Test-Path -LiteralPath $PathValue -PathType Leaf)) {
+    throw "Atomic replacement did not produce the target file."
+  }
+}
+
 function Resolve-SafePath([string]$PathValue) {
   return [System.IO.Path]::GetFullPath($PathValue)
 }
@@ -36,6 +42,68 @@ function Read-EnvFile([string]$PathValue) {
   return $values
 }
 
+function Get-EnvKeyCount([string]$PathValue, [string]$Key) {
+  $count = 0
+  foreach ($rawLine in Get-Content -LiteralPath $PathValue) {
+    if ([string]$rawLine -match "^\s*$([regex]::Escape($Key))\s*=") {
+      $count += 1
+    }
+  }
+  return $count
+}
+
+function Invoke-AtomicFileReplace(
+  [string]$TemporaryPath,
+  [string]$TargetPath
+) {
+  $targetExisted = Test-Path -LiteralPath $TargetPath -PathType Leaf
+  if (-not $targetExisted) {
+    # A same-directory File.Move is an atomic create when the destination does not exist.
+    [System.IO.File]::Move($TemporaryPath, $TargetPath)
+    return
+  }
+
+  $suffix = "{0}-{1}" -f $PID, ([Guid]::NewGuid().ToString("N"))
+  $backupPath = "$TargetPath.sdg-replace-backup-$suffix"
+  $recoveryPath = "$TargetPath.sdg-recovery-backup-$suffix"
+  $originalHash = Get-Sha256 $TargetPath
+  $safeToRemoveRecoveryFiles = $false
+  try {
+    # Windows PowerShell 5.1/.NET Framework rejects a null backup path.
+    [System.IO.File]::Replace($TemporaryPath, $TargetPath, $backupPath, $true)
+    Assert-AtomicReplacementTarget $TargetPath
+    $safeToRemoveRecoveryFiles = $true
+    Remove-Item -LiteralPath $backupPath -Force -ErrorAction Stop
+  } catch {
+    $failure = $_
+    $safeToRemoveRecoveryFiles = $false
+    try {
+      if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
+        if (Test-Path -LiteralPath $TargetPath -PathType Leaf) {
+          [System.IO.File]::Replace($backupPath, $TargetPath, $recoveryPath, $true)
+        } else {
+          [System.IO.File]::Move($backupPath, $TargetPath)
+        }
+      }
+      if (
+        -not (Test-Path -LiteralPath $TargetPath -PathType Leaf) -or
+        (Get-Sha256 $TargetPath) -ne $originalHash
+      ) {
+        throw "Original target hash verification failed."
+      }
+      $safeToRemoveRecoveryFiles = $true
+    } catch {
+      throw "Atomic replacement failed; recovery evidence was retained beside the target."
+    }
+    throw $failure
+  } finally {
+    if ($safeToRemoveRecoveryFiles) {
+      Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath $recoveryPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 function Set-EnvValuesAtomic(
   [string]$PathValue,
   [hashtable]$Updates
@@ -46,31 +114,89 @@ function Set-EnvValuesAtomic(
   }
   foreach ($key in $Updates.Keys) {
     $replaced = $false
-    for ($index = 0; $index -lt $lines.Count; $index += 1) {
+    for ($index = $lines.Count - 1; $index -ge 0; $index -= 1) {
       if ($lines[$index] -match "^\s*$([regex]::Escape($key))\s*=") {
-        $lines[$index] = "$key=$($Updates[$key])"
-        $replaced = $true
+        if ($replaced) {
+          $lines.RemoveAt($index)
+        } else {
+          $lines[$index] = "$key=$($Updates[$key])"
+          $replaced = $true
+        }
       }
     }
     if (-not $replaced) {
       $lines.Add("$key=$($Updates[$key])")
     }
   }
-  $temporary = "$PathValue.sdg-new-$PID"
+  $temporary = "$PathValue.sdg-new-$PID-$([Guid]::NewGuid().ToString("N"))"
   try {
     [System.IO.File]::WriteAllLines($temporary, $lines, [System.Text.UTF8Encoding]::new($false))
-    $acl = Get-Acl -LiteralPath $PathValue
-    Set-Acl -LiteralPath $temporary -AclObject $acl
-    [System.IO.File]::Replace($temporary, $PathValue, $null, $true)
+    if (Test-Path -LiteralPath $PathValue -PathType Leaf) {
+      $acl = Get-Acl -LiteralPath $PathValue
+      Set-Acl -LiteralPath $temporary -AclObject $acl
+    }
+    Invoke-AtomicFileReplace $temporary $PathValue
   } finally {
     Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
   }
 }
 
 function New-LocalEvaluateToken {
-  $bytes = [byte[]]::new(32)
-  [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-  return [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+  $bytes = New-Object byte[] 32
+  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  if (-not $rng) { throw "A cryptographic random number generator is unavailable." }
+  try {
+    $rng.GetBytes($bytes)
+    return [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+  } finally {
+    $rng.Dispose()
+  }
+}
+
+function Assert-WindowsPowerShellCompatibility {
+  if ($env:OS -ne "Windows_NT" -or $PSVersionTable.PSVersion.Major -lt 5) {
+    throw "Windows PowerShell 5.1 or a compatible newer Windows PowerShell runtime is required."
+  }
+
+  $probeRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "sdg-gateway-ps51-{0}" -f ([Guid]::NewGuid().ToString("N"))
+  )
+  New-Item -ItemType Directory -Path $probeRoot -Force | Out-Null
+  try {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+      if (-not $rng) { throw "CSPRNG creation returned no implementation." }
+      $rng.GetBytes($bytes)
+    } finally {
+      if ($rng) { $rng.Dispose() }
+    }
+
+    $target = Join-Path $probeRoot "target.env"
+    $staged = Join-Path $probeRoot "staged.env"
+    $backup = Join-Path $probeRoot "replace.backup"
+    [System.IO.File]::WriteAllText($target, "before")
+    [System.IO.File]::WriteAllText($staged, "after")
+    [System.IO.File]::Replace($staged, $target, $backup, $true)
+    if (
+      [System.IO.File]::ReadAllText($target) -ne "after" -or
+      [System.IO.File]::ReadAllText($backup) -ne "before"
+    ) {
+      throw "File.Replace capability probe returned unexpected bytes."
+    }
+
+    $absentTarget = Join-Path $probeRoot "absent-target.env"
+    $absentStaged = Join-Path $probeRoot "absent-staged.env"
+    [System.IO.File]::WriteAllText($absentStaged, "created")
+    [System.IO.File]::Move($absentStaged, $absentTarget)
+    if ([System.IO.File]::ReadAllText($absentTarget) -ne "created") {
+      throw "Atomic create capability probe returned unexpected bytes."
+    }
+  } catch {
+    throw "Windows PowerShell/.NET atomic file capability check failed: $($_.Exception.Message)"
+  } finally {
+    Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Assert-Manifest {
@@ -79,7 +205,8 @@ function Assert-Manifest {
     [string]$Root
   )
   if (
-    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v1" -or
+    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v2" -or
+    $Manifest.companionVersion -ne 2 -or
     $Manifest.serviceName -ne $ServiceName -or
     $Manifest.sourceRevision -notmatch "^[a-f0-9]{40}$" -or
     $Manifest.sourceRevision -ne $Manifest.deploymentToolRevision -or
@@ -151,8 +278,65 @@ function Start-GatewayService {
   $service = Get-Service -Name $ServiceName
   if ($service.Status -ne "Running") {
     Start-Service -Name $ServiceName
-    $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(45))
   }
+}
+
+function Test-TcpPort([string]$HostName, [int]$Port, [int]$TimeoutMilliseconds = 1000) {
+  $client = New-Object System.Net.Sockets.TcpClient
+  $asyncResult = $null
+  try {
+    $asyncResult = $client.BeginConnect($HostName, $Port, $null, $null)
+    if (-not $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds, $false)) {
+      return $false
+    }
+    $client.EndConnect($asyncResult)
+    return $client.Connected
+  } catch {
+    return $false
+  } finally {
+    if ($asyncResult -and $asyncResult.AsyncWaitHandle) {
+      $asyncResult.AsyncWaitHandle.Close()
+    }
+    $client.Close()
+  }
+}
+
+function Wait-GatewayHealth(
+  [hashtable]$NativeValues,
+  [string]$ReadinessLabel,
+  [int]$TotalTimeoutSeconds = 120,
+  [int]$HealthTimeoutSeconds = 30
+) {
+  $port = if ($NativeValues["MATLAB_WORKER_PORT"]) { [int]$NativeValues["MATLAB_WORKER_PORT"] } else { 5100 }
+  $deadline = (Get-Date).AddSeconds($TotalTimeoutSeconds)
+  do {
+    $remainingMilliseconds = [Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
+    if ($remainingMilliseconds -le 0) { break }
+    $service = Get-Service -Name $ServiceName
+    if ($service.Status -eq "Stopped") {
+      $serviceDetails = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+      $exitCode = if ($serviceDetails) { [int]$serviceDetails.ExitCode } else { -1 }
+      throw "$ReadinessLabel service exited before port $port became healthy (category=service-exited, win32ExitCode=$exitCode)."
+    }
+    $tcpTimeout = [Math]::Min(1000, [Math]::Max(1, $remainingMilliseconds))
+    if ($service.Status -eq "Running" -and (Test-TcpPort "127.0.0.1" $port $tcpTimeout)) {
+      $remaining = [Math]::Max(1, [Math]::Ceiling(($deadline - (Get-Date)).TotalSeconds))
+      $requestTimeout = [Math]::Min($HealthTimeoutSeconds, $remaining)
+      try {
+        $health = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$port/health" `
+          -TimeoutSec $requestTimeout
+        if ($health.ok) { return }
+      } catch {
+        # A running service may bind before HTTP is ready. Retry within the total deadline.
+      }
+    }
+    $sleepMilliseconds = [Math]::Min(
+      2000,
+      [Math]::Max(0, [Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds))
+    )
+    if ($sleepMilliseconds -gt 0) { Start-Sleep -Milliseconds $sleepMilliseconds }
+  } while ((Get-Date) -lt $deadline)
+  throw "$ReadinessLabel timed out after $TotalTimeoutSeconds seconds waiting for port $port health."
 }
 
 function Get-GatewayProtocolAudit(
@@ -177,17 +361,7 @@ function Get-GatewayProtocolAudit(
 }
 
 function Wait-LegacyGatewayHealth([hashtable]$NativeValues) {
-  $port = if ($NativeValues["MATLAB_WORKER_PORT"]) { [int]$NativeValues["MATLAB_WORKER_PORT"] } else { 5100 }
-  $deadline = (Get-Date).AddSeconds(60)
-  do {
-    try {
-      $health = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:$port/health" -TimeoutSec 3
-      if ($health.ok) { return }
-    } catch {
-    }
-    Start-Sleep -Seconds 2
-  } while ((Get-Date) -lt $deadline)
-  throw "Restored legacy MATLAB Gateway did not become healthy on port $port."
+  Wait-GatewayHealth $NativeValues "Restored legacy MATLAB Gateway" 120 30
 }
 
 function Protect-BackupDirectory([string]$PathValue) {
@@ -336,6 +510,21 @@ function Resolve-TokenPlan(
   }
 }
 
+function Assert-TokenKeyMultiplicity(
+  [string]$NativePath,
+  [string]$ContainerPath
+) {
+  foreach ($entry in @(
+    @{ path = $NativePath; label = "native env" },
+    @{ path = $ContainerPath; label = "container env" }
+  )) {
+    $count = Get-EnvKeyCount ([string]$entry.path) "MATLAB_GATEWAY_EVALUATE_TOKEN"
+    if ($count -gt 1) {
+      throw "$($entry.label) contains duplicate MATLAB_GATEWAY_EVALUATE_TOKEN keys."
+    }
+  }
+}
+
 function Invoke-GatewayReadiness(
   [string]$GatewayToken,
   [string]$EvaluateToken,
@@ -405,9 +594,11 @@ if (-not (Test-Path -LiteralPath $AppRoot -PathType Container)) { throw "Worker 
 if (-not (Test-Path -LiteralPath $NativeEnvFile -PathType Leaf)) { throw "Native Worker env file is missing." }
 if (-not (Test-Path -LiteralPath $ContainerEnvFile -PathType Leaf)) { throw "Untracked container env file is missing." }
 Assert-Manifest $manifest $CompanionRoot
+Assert-WindowsPowerShellCompatibility
 $serviceSnapshot = Get-ServiceSnapshot
 $nativeValues = Read-EnvFile $NativeEnvFile
 $containerValues = Read-EnvFile $ContainerEnvFile
+Assert-TokenKeyMultiplicity $NativeEnvFile $ContainerEnvFile
 
 if ($Rollback) {
   if (-not $BackupDir) { throw "-Rollback requires -BackupDir." }
@@ -462,6 +653,7 @@ try {
     DEEPSEEK_BASE_URL = $ExpectedBaseUrl
   }
   Start-GatewayService
+  Wait-GatewayHealth (Read-EnvFile $NativeEnvFile) "Native MATLAB Gateway" 120 30
   Invoke-GatewayReadiness $tokenPlan.gatewayToken $tokenPlan.evaluateToken (Read-EnvFile $NativeEnvFile)
   if ($serviceSnapshot.state -ne "Running") {
     Stop-GatewayService
