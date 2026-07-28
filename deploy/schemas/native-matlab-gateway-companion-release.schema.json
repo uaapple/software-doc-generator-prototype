@@ -18,10 +18,10 @@
   ],
   "properties": {
     "schema": {
-      "const": "sdg-native-matlab-gateway-companion-release/v4"
+      "const": "sdg-native-matlab-gateway-companion-release/v5"
     },
     "companionVersion": {
-      "const": 4
+      "const": 5
     },
     "sourceRevision": {
       "type": "string",
@@ -54,7 +54,7 @@
       "properties": {
         "managedGatewayFileCount": { "const": 6 },
         "deploymentToolFileCount": { "const": 1 },
-        "validationFileCount": { "const": 1 }
+        "validationFileCount": { "const": 2 }
       }
     },
     "imageRevisions": {

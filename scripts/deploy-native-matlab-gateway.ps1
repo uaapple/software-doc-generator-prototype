@@ -62,7 +62,7 @@ function Resolve-AbsoluteWindowsPath(
   [string]$CategoryPrefix
 ) {
   $candidate = [string]$Value
-  $isDriveAbsolute = $candidate -match "^[A-Za-z]:\\"
+  $isDriveAbsolute = $candidate -match "^[A-Za-z]:[\\/]"
   $isUncAbsolute = $candidate -match "^\\\\[^\\]+\\[^\\]+(?:\\|$)"
   if (-not $candidate -or (-not $isDriveAbsolute -and -not $isUncAbsolute)) {
     Throw-ConfigurationError "${CategoryPrefix}_ABSOLUTE_REQUIRED" "$Label must be an absolute Windows path."
@@ -427,8 +427,8 @@ function Assert-Manifest {
     [string]$Root
   )
   if (
-    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v4" -or
-    $Manifest.companionVersion -ne 4 -or
+    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v5" -or
+    $Manifest.companionVersion -ne 5 -or
     $Manifest.serviceName -ne $ServiceName -or
     $Manifest.sourceRevision -notmatch "^[a-f0-9]{40}$" -or
     $Manifest.sourceRevision -ne $Manifest.deploymentToolRevision -or
@@ -464,8 +464,9 @@ function Assert-Manifest {
   }
   foreach ($validation in $Manifest.validationFiles) {
     $validationPath = Resolve-SafePath (Join-Path $Root ([string]$validation.packagePath))
+    $runtime = [string]$validation.runtime
     if (
-      [string]$validation.runtime -ne "powershell.exe-5.1" -or
+      $runtime -notin @("powershell.exe-5.1", "env-example") -or
       $validation.readOnly -ne $true -or
       -not (Test-Path -LiteralPath $validationPath -PathType Leaf) -or
       (Get-Sha256 $validationPath) -ne [string]$validation.sha256 -or

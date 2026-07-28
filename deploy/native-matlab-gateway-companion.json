@@ -1,6 +1,6 @@
 {
-  "schema": "sdg-native-matlab-gateway-companion-config/v4",
-  "companionVersion": 4,
+  "schema": "sdg-native-matlab-gateway-companion-config/v5",
+  "companionVersion": 5,
   "legacyGatewayRevision": "464b45448cd691fe94c4c5c843efe64ccd344a68",
   "expectedImageRevisions": {
     "platform": "sha256:2260ce959b49b5721fd577c0c0a37e0a91b5a3c49ca84fdefb4e5fd007613ff2",
@@ -40,6 +40,12 @@
       "source": "tests/native-gateway-companion-ps51.Tests.ps1",
       "packagePath": "test-native-matlab-gateway-companion-ps51.ps1",
       "runtime": "powershell.exe-5.1",
+      "readOnly": true
+    },
+    {
+      "source": ".env.windows-docker-desktop.example",
+      "packagePath": ".env.windows-docker-desktop.example",
+      "runtime": "env-example",
       "readOnly": true
     }
   ]

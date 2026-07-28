@@ -64,7 +64,8 @@ function configureNativeGatewayEnvironment() {
   deriveEquivalent(
     "MATLAB_GATEWAY_HOST_ROOT",
     "SDG_CONTAINER_DATA_DIR",
-    normalizeWindowsPath
+    normalizeWindowsPath,
+    canonicalWindowsPath
   );
   deriveEquivalent(
     "MATLAB_GATEWAY_MAPPING_ID",
@@ -128,7 +129,7 @@ function configureNativeGatewayEnvironment() {
     process.env.MATLAB_GATEWAY_MCP_PREFLIGHT || "1";
 }
 
-function deriveEquivalent(targetKey, sourceKey, normalize) {
+function deriveEquivalent(targetKey, sourceKey, normalize, canonicalize = (value) => value) {
   const target = String(process.env[targetKey] || "").trim();
   const source = String(process.env[sourceKey] || "").trim();
   if (!source) {
@@ -143,7 +144,7 @@ function deriveEquivalent(targetKey, sourceKey, normalize) {
       `Native Gateway setting ${targetKey} conflicts with ${sourceKey}.`
     );
   }
-  process.env[targetKey] = source;
+  process.env[targetKey] = canonicalize(source);
 }
 
 function assertWindowsDirectory(key, categoryPrefix) {
@@ -186,12 +187,16 @@ function assertWindowsFile(key, categoryPrefix) {
 }
 
 function normalizeWindowsPath(value) {
-  return path.win32.resolve(String(value || "").trim()).toLowerCase();
+  return canonicalWindowsPath(value).toLowerCase();
+}
+
+function canonicalWindowsPath(value) {
+  return path.win32.resolve(String(value || "").trim());
 }
 
 function isFullyQualifiedWindowsPath(value) {
   return (
-    /^[A-Za-z]:\\/u.test(value) ||
+    /^[A-Za-z]:[\\/]/u.test(value) ||
     /^\\\\[^\\]+\\[^\\]+(?:\\|$)/u.test(value)
   );
 }

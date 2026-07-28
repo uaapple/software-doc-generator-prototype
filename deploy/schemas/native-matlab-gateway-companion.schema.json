@@ -23,10 +23,10 @@
   ],
   "properties": {
     "schema": {
-      "const": "sdg-native-matlab-gateway-companion/v4"
+      "const": "sdg-native-matlab-gateway-companion/v5"
     },
     "companionVersion": {
-      "const": 4
+      "const": 5
     },
     "sourceRevision": {
       "type": "string",
@@ -129,7 +129,9 @@
           "packagePath": { "type": "string", "minLength": 1 },
           "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
           "sizeBytes": { "type": "integer", "minimum": 1 },
-          "runtime": { "const": "powershell.exe-5.1" },
+          "runtime": {
+            "enum": ["powershell.exe-5.1", "env-example"]
+          },
           "readOnly": { "const": true }
         }
       }
