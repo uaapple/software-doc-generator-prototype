@@ -1,4 +1,6 @@
 import importlib.util
+import hashlib
+import json
 import os
 import tempfile
 import unittest
@@ -19,6 +21,15 @@ SPEC = importlib.util.spec_from_file_location("satk_eval_gateway_test", SCRIPT)
 SATK = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 SPEC.loader.exec_module(SATK)
+
+HOST_VALIDATOR_SCRIPT = SCRIPT.parent / "host_validate_tcsd_stage.py"
+HOST_VALIDATOR_SPEC = importlib.util.spec_from_file_location(
+    "host_validate_gateway_evidence_test",
+    HOST_VALIDATOR_SCRIPT,
+)
+HOST_VALIDATOR = importlib.util.module_from_spec(HOST_VALIDATOR_SPEC)
+assert HOST_VALIDATOR_SPEC.loader
+HOST_VALIDATOR_SPEC.loader.exec_module(HOST_VALIDATOR)
 
 
 class SatkGatewayTests(unittest.TestCase):
@@ -49,6 +60,115 @@ class SatkGatewayTests(unittest.TestCase):
                     "MATLAB Gateway is unavailable",
                 ):
                     SATK.gateway_request("GET", "/health")
+
+    def test_gateway_server_info_uses_authenticated_remote_evidence_without_local_path(self):
+        health = {
+            "schema": "matlab-gateway-health/v1",
+            "ok": True,
+            "service": "matlab-gateway",
+            "version": "1.0.0",
+        }
+        version = {
+            "schema": "matlab-gateway-version/v1",
+            "service": "matlab-gateway",
+            "gatewayVersion": "1.0.0",
+            "matlabRelease": "R2026a",
+            "matlabMcpVersion": "0.11.1",
+            "satkVersion": "2026.07.08",
+        }
+        environ = {
+            "SATK_GATEWAY_URL": "http://host.docker.internal:5100",
+            "MATLAB_MCP_AUTH_TOKEN": "fixture-token",
+        }
+        with mock.patch.object(
+            SATK,
+            "gateway_request",
+            side_effect=[health, version],
+        ):
+            server = SATK.server_info(environ=environ)
+
+        self.assertEqual(server["discovery"], "matlab-gateway")
+        self.assertNotIn("path", server)
+        self.assertNotIn("sizeBytes", server)
+        responses = {"/health": health, "/version": version}
+        details = HOST_VALIDATOR.validate_satk_server(
+            server,
+            environ=environ,
+            gateway_fetch=lambda route, _url, _token: responses[route],
+        )
+        self.assertEqual(details["satkServerDiscovery"], "matlab-gateway")
+        self.assertEqual(details["satkGatewayVersion"], "1.0.0")
+        self.assertRegex(details["satkGatewayEvidenceSha256"], r"^[a-f0-9]{64}$")
+
+    def test_gateway_server_evidence_rejects_forged_local_path_and_tampering(self):
+        payload = {
+            "schema": "tcsd-matlab-gateway-evidence/v1",
+            "authenticated": True,
+            "health": {
+                "schema": "matlab-gateway-health/v1",
+                "service": "matlab-gateway",
+                "ok": True,
+                "gatewayVersion": "1.0.0",
+            },
+            "version": {
+                "schema": "matlab-gateway-version/v1",
+                "service": "matlab-gateway",
+                "gatewayVersion": "1.0.0",
+                "matlabRelease": "R2026a",
+                "matlabMcpVersion": "0.11.1",
+                "satkVersion": "2026.07.08",
+            },
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        server = {
+            "discovery": "matlab-gateway",
+            "gatewayUrl": "http://host.docker.internal:5100",
+            "gatewayVersion": "1.0.0",
+            "matlabRelease": "R2026a",
+            "matlabMcpVersion": "0.11.1",
+            "satkVersion": "2026.07.08",
+            "gatewayEvidence": {**payload, "sha256": digest},
+        }
+        forged = {**server, "path": "/opt/fake/matlab-mcp-server"}
+        with self.assertRaisesRegex(ValueError, "must not claim"):
+            HOST_VALIDATOR.validate_satk_server(forged)
+        tampered = {
+            **server,
+            "gatewayEvidence": {
+                **server["gatewayEvidence"],
+                "version": {
+                    **server["gatewayEvidence"]["version"],
+                    "satkVersion": "tampered",
+                },
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "evidence is invalid"):
+            HOST_VALIDATOR.validate_satk_server(
+                tampered,
+                environ={
+                    "SATK_GATEWAY_URL": "http://host.docker.internal:5100",
+                    "MATLAB_MCP_AUTH_TOKEN": "fixture-token",
+                },
+                gateway_fetch=lambda route, _url, _token: (
+                    payload["health"] if route == "/health" else payload["version"]
+                ),
+            )
+
+    def test_direct_server_evidence_keeps_path_hash_and_size_validation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            server_path = Path(temp) / "matlab-mcp-server"
+            server_path.write_bytes(b"direct MCP fixture")
+            server = {
+                "discovery": "official-toolkit",
+                "path": str(server_path),
+                "sha256": hashlib.sha256(server_path.read_bytes()).hexdigest(),
+                "sizeBytes": server_path.stat().st_size,
+            }
+            details = HOST_VALIDATOR.validate_satk_server(server)
+            self.assertEqual(details["satkServerPath"], str(server_path.resolve()))
+            self.assertEqual(details["satkServerSha256"], server["sha256"])
 
     def test_runtime_matlab_helpers_are_mirrored_without_support_package(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { promises as fs } from "node:fs";
@@ -82,6 +83,42 @@ async function waitForJob(request, jobId, workspaceId) {
   throw new Error("job did not reach terminal state");
 }
 
+async function writeFakeMcpServer(root) {
+  const scriptPath = path.join(root, "fake-matlab-mcp.mjs");
+  await fs.writeFile(
+    scriptPath,
+    [
+      "import fs from 'node:fs';",
+      "import readline from 'node:readline';",
+      "const mode = process.argv[2] || 'success';",
+      "if (process.env.FAKE_ARGS_FILE) fs.writeFileSync(process.env.FAKE_ARGS_FILE, JSON.stringify(process.argv.slice(2)));",
+      "if (mode === 'exit') {",
+      "  process.stderr.write(`API_KEY=${process.env.FAKE_SECRET}\\n/Users/private-user/project/model.slx\\nfailed to attach to MATLAB session\\n`);",
+      "  process.exit(1);",
+      "}",
+      "const lines = readline.createInterface({ input: process.stdin });",
+      "lines.on('line', (line) => {",
+      "  const message = JSON.parse(line);",
+      "  if (message.method === 'initialize') {",
+      "    if (mode === 'init-error') {",
+      "      process.stderr.write('initialization transport unavailable\\n');",
+      "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, error: { code: 'INIT_FAILED', message: 'initialize failed' } }) + '\\n');",
+      "    } else {",
+      "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { capabilities: {} } }) + '\\n');",
+      "    }",
+      "  } else if (message.method === 'tools/call') {",
+      "    const result = mode === 'tool-error'",
+      "      ? { isError: true, content: [{ type: 'text', text: 'failed to attach to MATLAB session' }] }",
+      "      : { isError: false, content: [{ type: 'text', text: 'ok' }] };",
+      "    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');",
+      "  }",
+      "});"
+    ].join("\n"),
+    "utf8"
+  );
+  return scriptPath;
+}
+
 test("contract rejects arbitrary identifiers and absolute request paths", () => {
   assert.throws(() => requireGatewayIdentifier("../escape", "workspaceId"), /workspaceId/);
   assert.throws(
@@ -152,6 +189,210 @@ test("Gateway requires separate non-empty API and evaluate tokens", async () => 
   }
 });
 
+test("stdio client preserves a bounded redacted stderr diagnostic tail", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "matlab-mcp-stderr-"));
+  const fakeServer = await writeFakeMcpServer(root);
+  const tempDir = path.join(root, "temp");
+  const logFolder = path.join(root, "logs");
+  const secret = "secret-diagnostic-sentinel";
+  const client = new MatlabMcpClient({
+    transport: "stdio",
+    serverCommand: process.execPath,
+    serverArgs: [fakeServer, "exit"],
+    serverEnv: { FAKE_SECRET: secret },
+    tempDir,
+    logFolder,
+    timeoutMs: 2000
+  });
+  try {
+    await assert.rejects(
+      () => client.callTool("evaluate_matlab_code", { code: "disp(1);" }),
+      (error) => {
+        assert.equal(error.code, "PROCESS_EXIT");
+        assert.equal(error.details.category, "process_exit");
+        assert.match(error.details.stderrSummary, /failed to attach to MATLAB session/);
+        assert.doesNotMatch(error.details.stderrSummary, new RegExp(secret));
+        assert.doesNotMatch(error.details.stderrSummary, /private-user|model\.slx/);
+        assert.ok(Buffer.byteLength(error.details.stderrSummary) <= 8192);
+        return true;
+      }
+    );
+    assert.equal((await fs.stat(tempDir)).mode & 0o777, 0o700);
+    assert.equal((await fs.stat(logFolder)).mode & 0o777, 0o700);
+  } finally {
+    await client.shutdown();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("stdio initialization failures include a safe diagnostic category", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "matlab-mcp-init-"));
+  const fakeServer = await writeFakeMcpServer(root);
+  const client = new MatlabMcpClient({
+    transport: "stdio",
+    serverCommand: process.execPath,
+    serverArgs: [fakeServer, "init-error"],
+    tempDir: path.join(root, "temp"),
+    timeoutMs: 2000
+  });
+  try {
+    await assert.rejects(
+      () => client.callTool("evaluate_matlab_code", { code: "disp(1);" }),
+      (error) => {
+        assert.equal(error.code, "INIT_FAILED");
+        assert.equal(error.details.phase, "initialize");
+        assert.match(error.details.stderrSummary, /initialization transport unavailable/);
+        return true;
+      }
+    );
+  } finally {
+    await client.shutdown();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Gateway MCP preflight performs initialize and evaluate before serving", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "matlab-mcp-preflight-"));
+  const fakeServer = await writeFakeMcpServer(root);
+  const argsFile = path.join(root, "args.json");
+  const previousArgsFile = process.env.FAKE_ARGS_FILE;
+  process.env.FAKE_ARGS_FILE = argsFile;
+  const service = new MatlabGatewayService({
+    rootDir: path.join(root, "state"),
+    hostRoot: path.join(root, "host"),
+    platform: "darwin",
+    serverCommand: process.execPath,
+    serverArgs: [fakeServer, "success"],
+    mcpTempDir: path.join(root, "temp"),
+    mcpLogFolder: path.join(root, "safe-logs"),
+    mcpTimeoutMs: 2000
+  });
+  try {
+    await fs.mkdir(path.join(root, "host"), { recursive: true });
+    await service.initialize();
+    assert.deepEqual(await service.preflight(), {
+      ok: true,
+      category: "mcp_initialize_and_evaluate"
+    });
+    const args = JSON.parse(await fs.readFile(argsFile, "utf8"));
+    assert.ok(args.includes(`--log-folder=${path.join(root, "safe-logs")}`));
+
+    const windowsArgsFile = path.join(root, "windows-args.json");
+    process.env.FAKE_ARGS_FILE = windowsArgsFile;
+    const windowsService = new MatlabGatewayService({
+      rootDir: path.join(root, "windows-state"),
+      hostRoot: path.join(root, "host"),
+      platform: "win32",
+      serverCommand: process.execPath,
+      serverArgs: [fakeServer, "success"],
+      mcpTempDir: path.join(root, "windows-temp"),
+      mcpTimeoutMs: 2000
+    });
+    await windowsService.initialize();
+    await windowsService.preflight();
+    const windowsArgs = JSON.parse(await fs.readFile(windowsArgsFile, "utf8"));
+    assert.ok(!windowsArgs.some((argument) => String(argument).startsWith("--log-folder")));
+
+    const failingService = new MatlabGatewayService({
+      rootDir: path.join(root, "failing-state"),
+      hostRoot: path.join(root, "host"),
+      platform: "darwin",
+      serverCommand: process.execPath,
+      serverArgs: [fakeServer, "tool-error"],
+      mcpTempDir: path.join(root, "failing-temp"),
+      mcpLogFolder: path.join(root, "failing-logs"),
+      mcpTimeoutMs: 2000
+    });
+    await failingService.initialize();
+    await assert.rejects(
+      () => failingService.preflight(),
+      (error) =>
+        error.code === "MCP_TOOL_REPORTED_FAILURE" &&
+        error.details?.category === "tool_reported_failure"
+    );
+  } finally {
+    if (previousArgsFile === undefined) delete process.env.FAKE_ARGS_FILE;
+    else process.env.FAKE_ARGS_FILE = previousArgsFile;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Gateway preflight-only startup fails with a redacted actionable diagnostic", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "matlab-mcp-startup-failure-"));
+  const fakeServer = await writeFakeMcpServer(root);
+  const hostRoot = path.join(root, "host");
+  const secret = "startup-secret-sentinel";
+  await fs.mkdir(hostRoot, { recursive: true });
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ["src/matlab-worker-server.js", "--preflight-only"],
+      {
+        cwd: path.resolve(new URL("..", import.meta.url).pathname),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          NODE_ENV: "production",
+          MATLAB_GATEWAY_TOKEN: "gateway-test-placeholder",
+          MATLAB_GATEWAY_EVALUATE_TOKEN: "evaluate-test-placeholder",
+          MATLAB_GATEWAY_STATE_DIR: path.join(root, "state"),
+          MATLAB_GATEWAY_HOST_ROOT: hostRoot,
+          MATLAB_MCP_TMPDIR: path.join(root, "temp"),
+          MATLAB_MCP_LOG_FOLDER: path.join(root, "logs"),
+          MATLAB_MCP_SERVER_COMMAND: process.execPath,
+          MATLAB_MCP_SERVER_ARGS_JSON: JSON.stringify([fakeServer, "exit"]),
+          MATLAB_GATEWAY_MCP_PREFLIGHT: "0",
+          FAKE_SECRET: secret
+        }
+      }
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /\[process_exit\]/);
+    assert.match(result.stderr, /failed to attach to MATLAB session/);
+    assert.doesNotMatch(result.stderr, new RegExp(secret));
+    assert.doesNotMatch(result.stderr, /private-user|model\.slx/);
+    assert.doesNotMatch(result.stderr, /at file:|matlab-worker-server\.js:\d+/);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Gateway treats resolved MCP failure text as a failed job", async () => {
+  await withGateway(
+    async ({ request }) => {
+      const workspaceId = "workspace-tool-failure";
+      await request(`/api/workspaces/${workspaceId}`, {
+        method: "PUT",
+        body: JSON.stringify({ mappingId: "worker-data" })
+      });
+      await request(`/api/workspaces/${workspaceId}/assets/code/text`, {
+        method: "PUT",
+        body: JSON.stringify({
+          fileName: "failure.m",
+          content: "disp('/var/lib/sdg/data/failure');"
+        })
+      });
+      await request("/api/jobs/job-tool-failure", {
+        method: "POST",
+        body: JSON.stringify({
+          workspaceId,
+          operation: "evaluate_matlab_code",
+          inputAssetId: "code"
+        })
+      });
+      const job = await waitForJob(request, "job-tool-failure", workspaceId);
+      assert.equal(job.status, "failed");
+      assert.equal(job.error.code, "MCP_TOOL_REPORTED_FAILURE");
+      assert.equal(job.error.details.category, "tool_reported_failure");
+      assert.match(job.error.details.stderrSummary, /failed to attach to MATLAB session/);
+      assert.equal(job.artifactId, "");
+    },
+    {
+      callTool: () => "failed to attach to MATLAB session"
+    }
+  );
+});
+
 test("HTTP gateway client uses ID-only analyze and allowlisted tool jobs without stdio fallback", async () => {
   const bundle = createEmptyModelFactBundle();
   bundle.source = { fileName: "demo.slx", modelName: "Demo" };
@@ -215,6 +456,8 @@ test("Gateway exposes metadata and runs ID-only evaluate/artifact/cleanup flow",
   await withGateway(async ({ hostRoot, calls, request }) => {
     const health = await fetch((await request("/health")).response.url).then((response) => response.json());
     assert.equal(health.ok, true);
+    assert.equal(health.schema, "matlab-gateway-health/v1");
+    assert.equal(health.version, "1.0.0");
     assert.equal((await request("/version")).payload.gatewayVersion, "1.0.0");
     const capabilities = (await request("/capabilities")).payload;
     assert.equal(capabilities.contracts.absolutePathRequests, false);

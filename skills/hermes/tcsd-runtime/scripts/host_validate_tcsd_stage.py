@@ -7,10 +7,13 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Any
+import urllib.request
+from urllib.parse import urlsplit
 
 REPORT_SCHEMA = "tcsd-host-semantic-validation/v1"
 SELF_CHECK_SCHEMA = "tcsd-host-semantic-self-check/v1"
@@ -132,6 +135,123 @@ def canonical(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def fetch_gateway_evidence(route: str, gateway_url: str, token: str) -> dict[str, Any]:
+    request = urllib.request.Request(
+        f"{gateway_url}{route}",
+        headers={"Authorization": f"Bearer {token}"},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=10.0) as response:
+        value = json.loads(response.read().decode("utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("gateway evidence response must be an object")
+    return value
+
+
+def gateway_evidence_payload(
+    health: dict[str, Any],
+    version: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema": "tcsd-matlab-gateway-evidence/v1",
+        "authenticated": True,
+        "health": {
+            "schema": health.get("schema"),
+            "service": health.get("service"),
+            "ok": health.get("ok"),
+            "gatewayVersion": health.get("version"),
+        },
+        "version": {
+            "schema": version.get("schema"),
+            "service": version.get("service"),
+            "gatewayVersion": version.get("gatewayVersion"),
+            "matlabRelease": version.get("matlabRelease"),
+            "matlabMcpVersion": version.get("matlabMcpVersion"),
+            "satkVersion": version.get("satkVersion"),
+        },
+    }
+
+
+def validate_satk_server(
+    server: dict[str, Any],
+    *,
+    environ: dict[str, str] | None = None,
+    gateway_fetch=None,
+) -> dict[str, Any]:
+    discovery = str(server.get("discovery") or "")
+    if discovery == "matlab-gateway":
+        if any(key in server for key in ("path", "sha256", "sizeBytes")):
+            raise ValueError("gateway MCP evidence must not claim a container-local executable")
+        values = os.environ if environ is None else environ
+        gateway_url = str(server.get("gatewayUrl") or "")
+        configured_gateway_url = str(values.get("SATK_GATEWAY_URL") or "").strip().rstrip("/")
+        gateway_token = str(values.get("MATLAB_MCP_AUTH_TOKEN") or "").strip()
+        parsed_url = urlsplit(gateway_url)
+        evidence = server.get("gatewayEvidence")
+        if (
+            gateway_url != configured_gateway_url
+            or parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.hostname
+            or parsed_url.username is not None
+            or parsed_url.password is not None
+            or parsed_url.query
+            or parsed_url.fragment
+            or not gateway_token
+            or not isinstance(evidence, dict)
+        ):
+            raise ValueError("gateway MCP discovery evidence is incomplete")
+        supplied_sha256 = str(evidence.get("sha256") or "")
+        evidence_payload = {key: value for key, value in evidence.items() if key != "sha256"}
+        fetch = gateway_fetch or fetch_gateway_evidence
+        live_health = fetch("/health", configured_gateway_url, gateway_token)
+        live_version = fetch("/version", configured_gateway_url, gateway_token)
+        live_evidence_payload = gateway_evidence_payload(live_health, live_version)
+        health = evidence_payload.get("health")
+        version = evidence_payload.get("version")
+        expected_sha256 = hashlib.sha256(canonical(evidence_payload).encode()).hexdigest()
+        if (
+            evidence_payload.get("schema") != "tcsd-matlab-gateway-evidence/v1"
+            or evidence_payload.get("authenticated") is not True
+            or not isinstance(health, dict)
+            or health.get("schema") != "matlab-gateway-health/v1"
+            or health.get("service") != "matlab-gateway"
+            or health.get("ok") is not True
+            or not isinstance(version, dict)
+            or version.get("schema") != "matlab-gateway-version/v1"
+            or version.get("service") != "matlab-gateway"
+            or not str(version.get("gatewayVersion") or "")
+            or version.get("gatewayVersion") != server.get("gatewayVersion")
+            or version.get("matlabRelease") != server.get("matlabRelease")
+            or version.get("matlabMcpVersion") != server.get("matlabMcpVersion")
+            or version.get("satkVersion") != server.get("satkVersion")
+            or not re.fullmatch(r"[a-f0-9]{64}", supplied_sha256)
+            or supplied_sha256 != expected_sha256
+            or evidence_payload != live_evidence_payload
+        ):
+            raise ValueError("gateway MCP health/version evidence is invalid")
+        return {
+            "satkServerDiscovery": discovery,
+            "satkGatewayEvidenceSha256": supplied_sha256,
+            "satkGatewayVersion": version["gatewayVersion"],
+        }
+
+    if (
+        not server.get("path")
+        or not Path(str(server.get("path"))).is_file()
+        or not re.fullmatch(r"[a-f0-9]{64}", str(server.get("sha256") or ""))
+        or int(server.get("sizeBytes") or 0) <= 0
+    ):
+        raise ValueError("direct MCP executable evidence is incomplete")
+    server_path = Path(str(server["path"])).resolve()
+    if hashlib.sha256(server_path.read_bytes()).hexdigest() != server["sha256"]:
+        raise ValueError("environment canary MCP server hash does not match the selected executable")
+    return {
+        "satkServerDiscovery": discovery or "direct",
+        "satkServerPath": str(server_path),
+        "satkServerSha256": server["sha256"],
+    }
+
+
 def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
     _, gate = find_json_schema(request, ENVIRONMENT_SCHEMA)
     dependencies = gate.get("pythonDependencies")
@@ -169,14 +289,9 @@ def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
         or satk.get("nonceMatched") is not True
         or not satk.get("runner")
         or not isinstance(server, dict)
-        or not Path(str(server.get("path") or "")).is_file()
-        or not re.fullmatch(r"[a-f0-9]{64}", str(server.get("sha256") or ""))
-        or int(server.get("sizeBytes") or 0) <= 0
     ):
         raise ValueError("environment canary evidence is incomplete or internally inconsistent")
-    server_path = Path(str(server["path"])).resolve()
-    if hashlib.sha256(server_path.read_bytes()).hexdigest() != server["sha256"]:
-        raise ValueError("environment canary MCP server hash does not match the selected executable")
+    server_evidence = validate_satk_server(server)
     return {
         "environmentSchema": ENVIRONMENT_SCHEMA,
         "dependencyModules": sorted(required_modules),
@@ -184,8 +299,7 @@ def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
         "matlabNonceSha256": hashlib.sha256(str(gate["nonce"]).encode()).hexdigest(),
         "simulinkLoaded": True,
         "satkSentinelWritten": True,
-        "satkServerPath": str(server_path),
-        "satkServerSha256": server["sha256"],
+        **server_evidence,
     }
 
 

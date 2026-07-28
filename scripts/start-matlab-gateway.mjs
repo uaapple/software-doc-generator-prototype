@@ -47,6 +47,22 @@ const stateRoot = resolveLocalDirectory(
 fs.mkdirSync(dataRoot, { recursive: true });
 fs.mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
 fs.chmodSync(stateRoot, 0o700);
+const mcpTempRoot = resolveLocalDirectory(
+  process.env.MATLAB_MCP_TMPDIR ||
+    values.MATLAB_MCP_TMPDIR ||
+    path.join(stateRoot, "mcp-temp"),
+  "MATLAB_MCP_TMPDIR"
+);
+const mcpLogRoot = resolveLocalDirectory(
+  process.env.MATLAB_MCP_LOG_FOLDER ||
+    values.MATLAB_MCP_LOG_FOLDER ||
+    path.join(stateRoot, "mcp-logs"),
+  "MATLAB_MCP_LOG_FOLDER"
+);
+for (const directory of [mcpTempRoot, mcpLogRoot]) {
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.chmodSync(directory, 0o700);
+}
 
 const childEnv = {
   ...process.env,
@@ -59,20 +75,36 @@ const childEnv = {
     values.MATLAB_GATEWAY_CONTAINER_ROOT || "/var/lib/sdg/data",
   MATLAB_GATEWAY_HOST_ROOT: dataRoot,
   MATLAB_GATEWAY_STATE_DIR: stateRoot,
+  MATLAB_GATEWAY_MCP_PREFLIGHT:
+    process.argv.includes("--check")
+      ? "1"
+      : process.env.MATLAB_GATEWAY_MCP_PREFLIGHT ||
+        values.MATLAB_GATEWAY_MCP_PREFLIGHT ||
+        "1",
+  MATLAB_MCP_TMPDIR: mcpTempRoot,
+  MATLAB_MCP_LOG_FOLDER: mcpLogRoot,
+  MATLAB_MCP_SERVER_COMMAND:
+    process.env.MATLAB_MCP_SERVER_COMMAND ||
+    values.MATLAB_MCP_SERVER_COMMAND ||
+    "",
+  MATLAB_MCP_SERVER_ARGS_JSON:
+    process.env.MATLAB_MCP_SERVER_ARGS_JSON ||
+    values.MATLAB_MCP_SERVER_ARGS_JSON ||
+    "",
   MATLAB_WORKER_HOST: process.env.MATLAB_WORKER_HOST || "127.0.0.1",
   MATLAB_ROOT: matlabRoot,
   SATK_MATLAB_ROOT: matlabRoot,
   SATK_MATLAB_SESSION_MODE: "new"
 };
 
-if (process.argv.includes("--check")) {
-  console.log("MATLAB Gateway host preflight passed.");
-  process.exit(0);
-}
-
+const serverArguments = [
+  "--disable-warning=ExperimentalWarning",
+  "src/matlab-worker-server.js",
+  ...(process.argv.includes("--check") ? ["--preflight-only"] : [])
+];
 const child = spawn(
   process.execPath,
-  ["--disable-warning=ExperimentalWarning", "src/matlab-worker-server.js"],
+  serverArguments,
   { cwd: rootDir, env: childEnv, stdio: "inherit" }
 );
 child.once("error", (error) => {

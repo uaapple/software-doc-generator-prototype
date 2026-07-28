@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { request as httpRequest } from "node:http";
 
 /**
@@ -17,6 +18,8 @@ import { request as httpRequest } from "node:http";
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 const JSON_RPC_VERSION = "2.0";
+const STDERR_TAIL_MAX_BYTES = 8192;
+const STDERR_TAIL_MAX_LINES = 40;
 
 let nextRequestId = 1;
 
@@ -28,13 +31,16 @@ export class MatlabMcpClient {
     this.authToken = options.authToken || process.env.MATLAB_MCP_AUTH_TOKEN || "";
     this.gatewayMappingId = options.gatewayMappingId || process.env.SATK_GATEWAY_MAPPING_ID || "worker-data";
     this.timeoutMs = Number(options.timeoutMs || process.env.MATLAB_MCP_TIMEOUT_MS || 120000);
+    this.platform = options.platform || process.platform;
     this.tempDir = options.tempDir || process.env.MATLAB_MCP_TMPDIR || "/tmp";
+    this.logFolder = options.logFolder || process.env.MATLAB_MCP_LOG_FOLDER || "";
     this.serverCommand = options.serverCommand || process.env.MATLAB_MCP_SERVER_COMMAND || "";
     this.serverArgs = options.serverArgs || [];
     this.serverEnv = options.serverEnv || {};
     this._child = null;
     this._pendingRequests = new Map();
     this._responseBuffer = "";
+    this._stderrTail = "";
     this._initialized = false;
     this._initPromise = null;
   }
@@ -71,6 +77,7 @@ export class MatlabMcpClient {
       throw new MatlabMcpError("NO_COMMAND", "MATLAB MCP server command is not configured. Set MATLAB_MCP_SERVER_COMMAND or pass serverCommand option.");
     }
 
+    await this._prepareRuntimeDirectories();
     const env = {
       ...process.env,
       TMPDIR: this.tempDir,
@@ -89,17 +96,30 @@ export class MatlabMcpClient {
     this._child.on("error", (err) => {
       const pending = [...this._pendingRequests.values()];
       this._pendingRequests.clear();
+      const processError = new MatlabMcpError(
+        "PROCESS_ERROR",
+        "MATLAB MCP server process error.",
+        this._diagnosticDetails("process_error", { systemCode: String(err?.code || "") }, err?.message)
+      );
       for (const { reject } of pending) {
-        reject(new MatlabMcpError("PROCESS_ERROR", `MATLAB MCP server process error: ${err.message}`));
+        reject(processError);
       }
     });
 
-    this._child.on("exit", (code) => {
+    this._child.on("close", (code, signal) => {
       if (code !== 0 && code !== null) {
         const pending = [...this._pendingRequests.values()];
         this._pendingRequests.clear();
+        const processExit = new MatlabMcpError(
+          "PROCESS_EXIT",
+          `MATLAB MCP server exited with code ${code}.`,
+          this._diagnosticDetails("process_exit", {
+            exitCode: code,
+            signal: signal || null
+          })
+        );
         for (const { reject } of pending) {
-          reject(new MatlabMcpError("PROCESS_EXIT", `MATLAB MCP server exited with code ${code}`));
+          reject(processExit);
         }
       }
       this._child = null;
@@ -111,19 +131,83 @@ export class MatlabMcpClient {
       this._responseBuffer += chunk.toString("utf8");
       this._processBuffer();
     });
-
-    // Step 1: Send initialize request
-    const initResult = await this._sendRequest("initialize", {
-      protocolVersion: MCP_PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: "hermes-matlab-mcp-client", version: "1.0.0" }
+    this._child.stderr.on("data", (chunk) => {
+      this._appendStderr(chunk);
     });
 
-    // Step 2: Send initialized notification
-    this._sendNotification("notifications/initialized", {});
+    try {
+      // Step 1: Send initialize request
+      const initResult = await this._sendRequest("initialize", {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: "hermes-matlab-mcp-client", version: "1.0.0" }
+      });
 
-    this._initialized = true;
-    return initResult;
+      // Step 2: Send initialized notification
+      this._sendNotification("notifications/initialized", {});
+
+      this._initialized = true;
+      return initResult;
+    } catch (error) {
+      if (error instanceof MatlabMcpError) {
+        const initialization = this._diagnosticDetails("initialization_failed");
+        const stderrSummary = sanitizeMcpDiagnostic(
+          [
+            initialization.stderrSummary,
+            error.details?.stderrSummary
+          ].filter(Boolean).join("\n")
+        );
+        error.details = {
+          category: error.details?.category || "initialization_failed",
+          ...(stderrSummary ? { stderrSummary } : {}),
+          phase: "initialize"
+        };
+        throw error;
+      }
+      throw new MatlabMcpError(
+        "INITIALIZATION_FAILED",
+        "MATLAB MCP server initialization failed.",
+        this._diagnosticDetails("initialization_failed", {}, error?.message)
+      );
+    }
+  }
+
+  async _prepareRuntimeDirectories() {
+    await ensurePrivateRuntimeDirectory(this.tempDir, "MATLAB MCP temp directory", this.platform);
+    if (this.logFolder) {
+      await ensurePrivateRuntimeDirectory(this.logFolder, "MATLAB MCP log folder", this.platform);
+    }
+  }
+
+  _appendStderr(chunk) {
+    this._stderrTail += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk || "");
+    const lines = this._stderrTail.split(/\r?\n/);
+    if (lines.length > STDERR_TAIL_MAX_LINES * 2) {
+      this._stderrTail = lines.slice(-STDERR_TAIL_MAX_LINES * 2).join("\n");
+    }
+    if (Buffer.byteLength(this._stderrTail, "utf8") > STDERR_TAIL_MAX_BYTES * 2) {
+      this._stderrTail = Buffer.from(this._stderrTail, "utf8")
+        .subarray(-STDERR_TAIL_MAX_BYTES * 2)
+        .toString("utf8");
+    }
+  }
+
+  _diagnosticDetails(category, extra = {}, additionalText = "") {
+    const stderrSummary = sanitizeMcpDiagnostic(
+      [this._stderrTail, additionalText].filter(Boolean).join("\n"),
+      {
+        sensitiveValues: diagnosticEnvironmentValues({
+          ...process.env,
+          ...this.serverEnv
+        }),
+        privatePaths: [os.homedir(), this.tempDir, this.logFolder]
+      }
+    );
+    return {
+      category,
+      ...extra,
+      ...(stderrSummary ? { stderrSummary } : {})
+    };
   }
 
   /**
@@ -202,9 +286,14 @@ export class MatlabMcpClient {
       const { resolve, reject } = this._pendingRequests.get(message.id);
       this._pendingRequests.delete(message.id);
       if (message.error) {
+        const diagnostic = sanitizeMcpDiagnostic(message.error.message || "");
         reject(new MatlabMcpError(
-          message.error.code || "RPC_ERROR",
-          message.error.message || "Unknown JSON-RPC error"
+          normalizeDiagnosticCode(message.error.code, "RPC_ERROR"),
+          "MATLAB MCP JSON-RPC request failed.",
+          {
+            category: "rpc_error",
+            ...(diagnostic ? { stderrSummary: diagnostic } : {})
+          }
         ));
       } else {
         resolve(message.result);
@@ -222,6 +311,7 @@ export class MatlabMcpClient {
       name: toolName,
       arguments: args
     });
+    assertSuccessfulMcpToolResult(result, toolName);
 
     // Extract text content from MCP tool result
     if (result && Array.isArray(result.content)) {
@@ -496,7 +586,8 @@ export class MatlabMcpClient {
       if (["failed", "cancelled", "timed_out"].includes(job.status)) {
         throw new MatlabMcpError(
           job.error?.code || "MATLAB_GATEWAY_JOB_FAILED",
-          job.error?.message || `MATLAB Gateway job ${job.status}`
+          job.error?.message || `MATLAB Gateway job ${job.status}`,
+          job.error?.details || { category: `gateway_job_${job.status}` }
         );
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -545,7 +636,8 @@ export class MatlabMcpClient {
       if (!response.ok || parsed.error) {
         throw new MatlabMcpError(
           parsed.error?.code || `HTTP_${response.status}`,
-          parsed.error?.message || `MATLAB Gateway request failed with status ${response.status}`
+          parsed.error?.message || `MATLAB Gateway request failed with status ${response.status}`,
+          parsed.error?.details || null
         );
       }
       return parsed;
@@ -626,9 +718,104 @@ function assertNoAbsolutePathValues(value, pointer = "$") {
 }
 
 export class MatlabMcpError extends Error {
-  constructor(code, message) {
+  constructor(code, message, details = null) {
     super(message);
     this.name = "MatlabMcpError";
     this.code = code;
+    this.details = details;
+  }
+}
+
+export function assertSuccessfulMcpToolResult(result, toolName = "") {
+  const structuredError =
+    result?.error ||
+    result?.structuredContent?.error ||
+    (result?.structuredContent?.isError === true ? result.structuredContent : null);
+  const text = typeof result === "string"
+    ? result
+    : Array.isArray(result?.content)
+      ? result.content.find((item) => item?.type === "text" && item.text)?.text || ""
+      : "";
+  const failureText = /^(?:error\b|failed\s+to\b|failure\b|unable\s+to\b|cannot\b)/i.test(
+    String(text || "").trim()
+  );
+  if (result?.isError !== true && !structuredError && !failureText) return result;
+  const summary = sanitizeMcpDiagnostic(
+    structuredError?.message || structuredError?.code || text || "MCP tool reported failure."
+  );
+  throw new MatlabMcpError(
+    "MCP_TOOL_REPORTED_FAILURE",
+    `MATLAB MCP tool${toolName ? ` ${toolName}` : ""} reported failure.`,
+    {
+      category: "tool_reported_failure",
+      ...(summary ? { stderrSummary: summary } : {})
+    }
+  );
+}
+
+export function sanitizeMcpDiagnostic(raw, options = {}) {
+  let text = String(raw || "")
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>")
+    .replace(
+      /\b(api[_-]?key|token|secret|password|authorization|license[_-]?key)\b\s*[:=]\s*[^\s,;]+/gi,
+      "$1=<redacted>"
+    );
+  for (const value of options.sensitiveValues || []) {
+    if (value.length >= 6) text = text.split(value).join("<redacted>");
+  }
+  for (const privatePath of options.privatePaths || []) {
+    if (privatePath) text = text.split(String(privatePath)).join("<private-path>");
+  }
+  text = text
+    .replace(/\/Users\/[^/\s'"]+(?:\/[^\s'"]*)?/g, "<user-path>")
+    .replace(/[A-Za-z]:\\Users\\[^\\\s'"]+(?:\\[^\s'"]*)?/gi, "<user-path>")
+    .replace(/file:\/\/\/[^\s'"]+/gi, "<file-path>")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-STDERR_TAIL_MAX_LINES)
+    .join("\n");
+  while (Buffer.byteLength(text, "utf8") > STDERR_TAIL_MAX_BYTES) {
+    text = text.slice(Math.max(1, text.length - STDERR_TAIL_MAX_BYTES));
+  }
+  return text;
+}
+
+function diagnosticEnvironmentValues(environment) {
+  return [
+    ...new Set(
+      Object.values(environment || {})
+        .map((value) => String(value || ""))
+        .filter((value) => value.length >= 6)
+    )
+  ];
+}
+
+function normalizeDiagnosticCode(value, fallback) {
+  const normalized = String(value || "").trim();
+  return /^[A-Za-z0-9_-]{1,80}$/.test(normalized) ? normalized : fallback;
+}
+
+async function ensurePrivateRuntimeDirectory(directory, label, platform = process.platform) {
+  const resolved = path.resolve(String(directory || ""));
+  const existed = await fs.stat(resolved).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  await fs.mkdir(resolved, { recursive: true, mode: 0o700 });
+  const stat = await fs.stat(resolved);
+  if (!stat.isDirectory()) {
+    throw new MatlabMcpError("RUNTIME_DIRECTORY_INVALID", `${label} is not a directory.`, {
+      category: "runtime_directory_invalid"
+    });
+  }
+  if (platform !== "win32" && (!existed || resolved !== path.resolve(os.tmpdir()))) {
+    await fs.chmod(resolved, 0o700).catch((error) => {
+      throw new MatlabMcpError("RUNTIME_DIRECTORY_PERMISSION", `${label} permissions are invalid.`, {
+        category: "runtime_directory_permission",
+        systemCode: String(error?.code || "")
+      });
+    });
   }
 }

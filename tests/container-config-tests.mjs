@@ -242,6 +242,7 @@ function testQuietConfigDoesNotExposeSecrets() {
   const dockerCalls = path.join(temporaryDirectory, "docker-calls.txt");
   const envFile = path.join(temporaryDirectory, "container.env");
   const matlabRoot = path.join(temporaryDirectory, "MATLAB_R2026a.app");
+  const fakeMcpServer = path.join(temporaryDirectory, "fake-matlab-mcp.mjs");
   const sentinels = [
     "openai-secret-sentinel",
     "zhipu-secret-sentinel",
@@ -252,6 +253,18 @@ function testQuietConfigDoesNotExposeSecrets() {
   ];
   try {
     fs.mkdirSync(matlabRoot);
+    fs.writeFileSync(
+      fakeMcpServer,
+      [
+        "import readline from 'node:readline';",
+        "readline.createInterface({ input: process.stdin }).on('line', (line) => {",
+        "  const message = JSON.parse(line);",
+        "  if (message.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { capabilities: {} } }) + '\\n');",
+        "  if (message.method === 'tools/call') process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { isError: false, content: [{ type: 'text', text: 'ok' }] } }) + '\\n');",
+        "});"
+      ].join("\n"),
+      "utf8"
+    );
     fs.writeFileSync(
       fakeDocker,
       `#!/bin/sh\nprintf '%s\\n' "$*" >> "${dockerCalls}"\nexit 0\n`,
@@ -302,7 +315,9 @@ function testQuietConfigDoesNotExposeSecrets() {
           ...process.env,
           SDG_CONTAINER_ENV_FILE: envFile,
           MATLAB_ROOT: matlabRoot,
-          SATK_MATLAB_ROOT: path.join(temporaryDirectory, "must-not-be-used")
+          SATK_MATLAB_ROOT: path.join(temporaryDirectory, "must-not-be-used"),
+          MATLAB_MCP_SERVER_COMMAND: process.execPath,
+          MATLAB_MCP_SERVER_ARGS_JSON: JSON.stringify([fakeMcpServer])
         }
       }
     );

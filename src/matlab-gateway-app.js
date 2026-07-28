@@ -14,7 +14,12 @@ import {
   requireRelativeFileName,
   validateGatewayToolCall
 } from "./services/matlab-gateway-contract.js";
-import { MatlabMcpClient, MatlabMcpError } from "./services/matlab-mcp-client.js";
+import {
+  MatlabMcpClient,
+  MatlabMcpError,
+  assertSuccessfulMcpToolResult,
+  sanitizeMcpDiagnostic
+} from "./services/matlab-mcp-client.js";
 import { validateModelFactBundle } from "./services/model-fact-bundle.js";
 
 const GATEWAY_VERSION = "1.0.0";
@@ -116,6 +121,29 @@ export class MatlabGatewayService {
 
   async initialize() {
     await fs.mkdir(gatewayPath(this.rootDir, "workspaces"), { recursive: true });
+  }
+
+  async preflight() {
+    const client = this.createClient();
+    try {
+      const result = await client.callTool("evaluate_matlab_code", {
+        code: "value = 1 + 1; disp(value);"
+      });
+      assertSuccessfulMcpToolResult(result, "evaluate_matlab_code");
+      return { ok: true, category: "mcp_initialize_and_evaluate" };
+    } catch (error) {
+      if (error instanceof MatlabMcpError) throw error;
+      throw new MatlabMcpError(
+        "MCP_PREFLIGHT_FAILED",
+        "MATLAB MCP initialize/evaluate preflight failed.",
+        {
+          category: "mcp_preflight_failed",
+          diagnostic: sanitizeMcpDiagnostic(error?.message || "")
+        }
+      );
+    } finally {
+      await client.shutdown?.().catch(() => {});
+    }
   }
 
   async createWorkspace(workspaceId, body = {}) {
@@ -331,6 +359,7 @@ export class MatlabGatewayService {
           client.callTool("evaluate_matlab_code", { code: mapped.code }),
           timeout
         ]);
+        assertSuccessfulMcpToolResult(result, "evaluate_matlab_code");
       } else if (job.operation === "analyze_slx") {
         const asset = await this.getAsset(job.workspaceId, job.inputAssetId);
         const contentPath = this.assetContentPath(job.workspaceId, asset);
@@ -342,6 +371,7 @@ export class MatlabGatewayService {
           }),
           timeout
         ]);
+        assertSuccessfulMcpToolResult(result, "analyze_slx");
         const validation = validateModelFactBundle(result);
         if (!validation.valid) {
           throw gatewayError(
@@ -360,6 +390,7 @@ export class MatlabGatewayService {
           client.callTool(job.toolName, toolArguments),
           timeout
         ]);
+        assertSuccessfulMcpToolResult(result, job.toolName);
       }
       if (state.cancelled) return;
       const artifactId = `result-${job.jobId}`;
@@ -383,7 +414,8 @@ export class MatlabGatewayService {
       job.endedAt = now();
       job.error = {
         code: error?.code || "MATLAB_JOB_FAILED",
-        message: String(error?.message || "MATLAB Gateway job failed.")
+        message: String(error?.message || "MATLAB Gateway job failed."),
+        details: error?.details || { category: "matlab_job_failed" }
       };
       await this.saveJob(job);
     } finally {
@@ -472,6 +504,9 @@ export async function createMatlabGatewayApp(options = {}) {
       500
     );
   }
+  if (options.runMcpPreflight === true) {
+    await service.preflight();
+  }
   const uploadDir = gatewayPath(service.rootDir, "uploads");
   await fs.mkdir(uploadDir, { recursive: true });
   const upload = multer({
@@ -492,6 +527,7 @@ export async function createMatlabGatewayApp(options = {}) {
 
   app.get("/health", (_req, res) => {
     res.json({
+      schema: "matlab-gateway-health/v1",
       ok: true,
       service: "matlab-gateway",
       version: GATEWAY_VERSION,
@@ -644,29 +680,66 @@ async function waitForTerminalJob(service, jobId, workspaceId) {
 
 function createLocalMatlabClient(options = {}) {
   const rootDir = path.resolve(options.projectRoot || process.cwd());
+  const platform = options.platform || process.platform;
   const matlabRoot = options.matlabRoot || process.env.MATLAB_ROOT || "/Applications/MATLAB_R2026a.app";
   const toolkitRoot =
     options.toolkitRoot ||
     process.env.SIMULINK_AGENTIC_TOOLKIT_ROOT ||
     path.join(os.homedir(), ".matlab", "agentic-toolkits", "simulink");
+  const tempDir =
+    options.mcpTempDir ||
+    process.env.MATLAB_MCP_TMPDIR ||
+    path.join(os.tmpdir(), "software-doc-matlab-mcp");
+  const logFolder =
+    options.mcpLogFolder ||
+    process.env.MATLAB_MCP_LOG_FOLDER ||
+    path.join(
+      options.gatewayStateDir ||
+        process.env.MATLAB_GATEWAY_STATE_DIR ||
+        path.join(os.tmpdir(), "software-doc-matlab-gateway"),
+      "mcp-logs"
+    );
+  const configuredServerArgs = parseServerArgs(process.env.MATLAB_MCP_SERVER_ARGS_JSON);
+  const baseServerArgs = options.serverArgs || configuredServerArgs || [
+    "--matlab-session-mode=" + (process.env.SATK_MATLAB_SESSION_MODE || "existing"),
+    "--extension-file=" +
+      (process.env.SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE || path.join(toolkitRoot, "tools", "tools.json")),
+    ...(process.env.SATK_MATLAB_SESSION_MODE === "new" ? [`--matlab-root=${matlabRoot}`] : [])
+  ];
+  const serverArgs =
+    platform === "darwin" &&
+    !baseServerArgs.some((argument) => String(argument).startsWith("--log-folder"))
+      ? [...baseServerArgs, `--log-folder=${logFolder}`]
+      : baseServerArgs;
   return new MatlabMcpClient({
     transport: "stdio",
     timeoutMs: Number(options.mcpTimeoutMs || process.env.MATLAB_MCP_TIMEOUT_MS || 10 * 60 * 1000),
-    tempDir: options.mcpTempDir || process.env.MATLAB_MCP_TMPDIR || path.join(os.tmpdir(), "software-doc-matlab-mcp"),
+    tempDir,
+    logFolder: platform === "darwin" ? logFolder : "",
+    platform,
     serverCommand:
       options.serverCommand ||
       process.env.MATLAB_MCP_SERVER_COMMAND ||
       path.join(os.homedir(), ".matlab", "agentic-toolkits", "bin", "matlab-mcp-server"),
-    serverArgs: options.serverArgs || [
-      "--matlab-session-mode=" + (process.env.SATK_MATLAB_SESSION_MODE || "existing"),
-      "--extension-file=" +
-        (process.env.SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE || path.join(toolkitRoot, "tools", "tools.json")),
-      ...(process.env.SATK_MATLAB_SESSION_MODE === "new" ? [`--matlab-root=${matlabRoot}`] : [])
-    ],
+    serverArgs,
     serverEnv: {
       SOFTWARE_DOC_PROJECT_ROOT: rootDir
     }
   });
+}
+
+function parseServerArgs(raw) {
+  if (!String(raw || "").trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : null;
+  } catch {
+    throw new MatlabMcpError(
+      "SERVER_ARGS_INVALID",
+      "MATLAB_MCP_SERVER_ARGS_JSON must be a JSON array.",
+      { category: "server_args_invalid" }
+    );
+  }
 }
 
 function constantTimeEqual(left, right) {

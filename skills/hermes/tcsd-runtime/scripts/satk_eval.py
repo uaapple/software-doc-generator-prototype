@@ -135,7 +135,42 @@ def gateway_request(
 def server_info(**kwargs) -> dict[str, object]:
     values = kwargs.get("environ")
     if gateway_url(values):
+        health = gateway_request("GET", "/health", environ=values)
         version = gateway_request("GET", "/version", environ=values)
+        if (
+            health.get("ok") is not True
+            or health.get("service") != "matlab-gateway"
+            or health.get("schema") != "matlab-gateway-health/v1"
+            or version.get("service") != "matlab-gateway"
+            or version.get("schema") != "matlab-gateway-version/v1"
+        ):
+            raise RuntimeError("MATLAB Gateway health/version evidence is invalid")
+        evidence_payload = {
+            "schema": "tcsd-matlab-gateway-evidence/v1",
+            "authenticated": bool(gateway_headers(values).get("Authorization")),
+            "health": {
+                "schema": health["schema"],
+                "service": health["service"],
+                "ok": health["ok"],
+                "gatewayVersion": health.get("version", "unknown"),
+            },
+            "version": {
+                "schema": version["schema"],
+                "service": version["service"],
+                "gatewayVersion": version.get("gatewayVersion", "unknown"),
+                "matlabRelease": version.get("matlabRelease", "unknown"),
+                "matlabMcpVersion": version.get("matlabMcpVersion", "unknown"),
+                "satkVersion": version.get("satkVersion", "unknown"),
+            },
+        }
+        evidence_sha256 = hashlib.sha256(
+            json.dumps(
+                evidence_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
         return {
             "discovery": "matlab-gateway",
             "gatewayUrl": gateway_url(values),
@@ -143,6 +178,10 @@ def server_info(**kwargs) -> dict[str, object]:
             "matlabRelease": version.get("matlabRelease", "unknown"),
             "matlabMcpVersion": version.get("matlabMcpVersion", "unknown"),
             "satkVersion": version.get("satkVersion", "unknown"),
+            "gatewayEvidence": {
+                **evidence_payload,
+                "sha256": evidence_sha256,
+            },
         }
     server, source = resolve_server(**kwargs)
     digest = hashlib.sha256()

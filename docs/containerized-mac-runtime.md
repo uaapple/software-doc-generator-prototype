@@ -40,6 +40,24 @@ chmod 600 .env.container
 根目录为 `/Applications/MATLAB_R2026a.app`，并在启动前检查该目录存在。
 `MATLAB_GATEWAY_STATE_DIR` 默认为仓库内
 `.local/container/matlab-gateway-state`，权限会收紧为 `0700`，不会落到 `/tmp`。
+MCP 临时目录与日志目录默认分别位于该状态目录下的 `mcp-temp`、`mcp-logs`，
+权限同样为 `0700`；Mac MCP 参数显式携带 `--log-folder`。Windows 不注入
+Mac 日志路径或参数。
+
+Mac 启动器默认设置 `MATLAB_GATEWAY_MCP_PREFLIGHT=1`。Gateway 在监听 5100
+之前必须完成真实 MCP `initialize` 与一个最小 `evaluate_matlab_code`；失败
+则直接退出，避免业务任务进入 Stage 2 后才发现 MATLAB/MCP 不可用。
+`npm run matlab:gateway:check` 也执行同一真实 preflight，而不再只检查 binary
+或 MATLAB 目录是否存在。MCP stderr 只保留有界、脱敏尾部，任务错误仅暴露
+诊断类别与安全摘要，不包含 token、API key 或宿主用户绝对路径。
+
+Stage 2 的 `environment.json` 按实际 discovery 模式保存不同证据。direct
+stdio 模式继续记录宿主可见的 MCP executable path、size 与 SHA-256，并由
+同一宿主重新读取校验；Gateway 模式绝不伪造容器内不存在的 executable
+路径，而是记录经过认证的 `/health` 与 `/version` 响应字段及其规范化
+SHA-256。host semantic validator 会核对 schema、服务标识、版本字段和证据
+hash，并使用配置的 URL/token 重新请求当前 `/health` 与 `/version` 比对，
+拒绝 Gateway 证据中夹带的本地 path、size 或 executable hash。
 
 ```bash
 npm run matlab:gateway:check
