@@ -116,6 +116,7 @@ for (const envFile of [
 
 testConfiguration("windows-worker", windowsEnvironment());
 testConfiguration("linux-platform", linuxEnvironment());
+testWindowsAddonIdDirectories();
 testMutableImageFailsClosed();
 console.log("Production container configuration tests passed.");
 
@@ -149,6 +150,55 @@ function testConfiguration(target, envContent) {
     for (const secret of ["hermes-secret", "gateway-secret", "deepseek-secret"]) {
       assert.ok(!`${result.stdout}\n${result.stderr}`.includes(secret));
     }
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+function testWindowsAddonIdDirectories() {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-prod-addons-"));
+  try {
+    const addonRoot = path.join(temporaryDirectory, "project-addons");
+    const envFile = path.join(temporaryDirectory, "production.env");
+    const fakeDocker = path.join(temporaryDirectory, "docker");
+    fs.mkdirSync(path.join(addonRoot, "01"), { recursive: true });
+    fs.mkdirSync(path.join(addonRoot, "02"), { recursive: true });
+    fs.writeFileSync(
+      envFile,
+      windowsEnvironment()
+        .replace("SDG_PROJECT_ADDONS_DIR=/tmp/sdg-addons", `SDG_PROJECT_ADDONS_DIR=${addonRoot}`)
+        .replace("UNIT_TEST_CASE_DEFAULT_PROJECTS=01_楚能", "UNIT_TEST_CASE_DEFAULT_PROJECTS=01_楚能,02_TMS"),
+      "utf8"
+    );
+    fs.writeFileSync(
+      fakeDocker,
+      [
+        "#!/bin/sh",
+        "case \"$*\" in",
+        "  \"info --format {{.OSType}}/{{.Architecture}}\") printf '%s\\n' 'linux/amd64' ;;",
+        "  \"compose version\") printf '%s\\n' 'Docker Compose version test' ;;",
+        "  \"image inspect \"*) printf '%s\\n' '{\"Os\":\"linux\",\"Architecture\":\"amd64\"}' ;;",
+        "esac",
+        "exit 0",
+        ""
+      ].join("\n"),
+      { mode: 0o755 }
+    );
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/container-production.mjs", "windows-worker", "preflight"],
+      {
+        cwd: rootDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${temporaryDirectory}${path.delimiter}${process.env.PATH || ""}`,
+          SDG_PROD_ENV_FILE: envFile
+        }
+      }
+    );
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /windows-worker production preflight passed/);
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }

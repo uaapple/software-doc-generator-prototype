@@ -256,7 +256,18 @@ function prepareDirectories() {
       .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean);
-    const missing = projects.filter((project) => !fs.existsSync(path.join(addonRoot, project)));
+    const projectAddonIds = projects.map((project) => {
+      const match = project.match(/^(\d{2,})(?:_|$)/);
+      if (!match) {
+        throw new Error(
+          `UNIT_TEST_CASE_DEFAULT_PROJECTS entry must begin with a numeric project ID: ${project}.`
+        );
+      }
+      return match[1];
+    });
+    const missing = projectAddonIds.filter(
+      (projectId) => !fs.existsSync(path.join(addonRoot, projectId))
+    );
     if (missing.length) {
       throw new Error(`Project addon directories are missing: ${missing.join(", ")}.`);
     }

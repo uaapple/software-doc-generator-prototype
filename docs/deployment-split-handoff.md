@@ -297,6 +297,7 @@ Windows release；Windows 继续使用自己的 MCP 参数。MCP 子进程错误
 文本都必须使 Gateway job 进入 `failed`，不能生成 succeeded artifact。
 
 项目选择只在平台端保存编号和展示名，例如 `01_楚能`、`02_TMS`；任务 payload 内部只依赖 `unitTestProject.id`，例如 `01`。Hermes Agent 启动 CLI 前会从当前 Agent 进程的 `UNIT_TEST_CASE_PROJECT_ADDON_ROOT/<编号>` 复制全部 addon 内容到 workspace 根目录。Mac 本地默认 addon root 是 `.local/project-addons`，目录示例为 `.local/project-addons/01`；Windows 生产默认 addon root 是 `C:\ProgramData\SoftwareDocGenerator\project-addons`，目录示例为 `C:\ProgramData\SoftwareDocGenerator\project-addons\01`。
+Windows 容器生产 preflight 同样从 `UNIT_TEST_CASE_DEFAULT_PROJECTS` 的展示名解析数字项目 ID，不能要求宿主目录使用 `01_楚能` 或 `02_TMS`。
 
 初始化脚本支持两种模式：未上传 `.m` 时，Hermes/skill 使用项目 addon 中已经复制到 workspace 的通用初始化脚本，由 `setup_ut_support(rootDir)` 自动发现；上传 `.m` 时，平台把脚本放入 `workspace/inputs` 并通过 `projectInitScripts` 显式传给 Hermes，Hermes/skill 应优先执行该模型级脚本，不再用 addon 自动发现来决定初始化入口。addon 仍会照常复制和加入 MATLAB path，用于库、数据字典、接口包和其他项目依赖。
 

@@ -84,8 +84,12 @@ mapping ID 固定为 `worker-data`。因此 Gateway 与 Worker 共享任务文�
 项目 addon 不进入镜像。每个启用项目必须存在独立目录，例如：
 
 ```text
-C:\ProgramData\SoftwareDocGenerator\project-addons\01_楚能\init_Global.m
+C:\ProgramData\SoftwareDocGenerator\project-addons\01\init_Global.m
+C:\ProgramData\SoftwareDocGenerator\project-addons\02\
 ```
+
+`UNIT_TEST_CASE_DEFAULT_PROJECTS=01_楚能,02_TMS` 保留前端展示名；生产 preflight
+和 Worker 运行时都从展示名解析项目 ID，只检查并挂载 `01`、`02` 目录。
 
 部署命令：
 
