@@ -162,7 +162,7 @@ for (const stageId of stageIds) {
   );
 
   const sharedPath =
-    "../software-detail-runtime/shared/software-detail-shared-rules.json";
+    "<runtime-root>/shared/software-detail-shared-rules.json";
   assert.ok(skillText.includes("As the first operational action"));
   assert.ok(skillText.includes(sharedPath));
   assert.match(skillText, /Fail closed/);
@@ -187,12 +187,12 @@ for (const stageId of stageIds) {
   const expectedRuntimePaths = sorted([
     sharedPath,
     ...mappedResources.map(
-      (resource) => `../software-detail-runtime/${resource.path}`
+      (resource) => `<runtime-root>/${resource.path}`
     )
   ]);
   const actualRuntimePaths = sorted(
     new Set(
-      skillText.match(/\.\.\/software-detail-runtime\/[A-Za-z0-9_./-]+/g) || []
+      skillText.match(/<runtime-root>\/[A-Za-z0-9_./-]+/g) || []
     )
   );
   assert.deepEqual(

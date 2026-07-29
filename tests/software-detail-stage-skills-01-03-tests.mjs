@@ -250,7 +250,7 @@ for (const definition of catalogStages) {
   assert.ok(skill.includes("fresh Hermes session"));
   assert.ok(
     skill.includes(
-      "../software-detail-runtime/shared/software-detail-shared-rules.json"
+      "<runtime-root>/shared/software-detail-shared-rules.json"
     ),
     `${definition.id} does not consume the shared rule set`
   );
@@ -299,7 +299,7 @@ for (const definition of catalogStages) {
     .map((resource) => resource.path);
   const declaredRuntimeResources = [
     ...skill.matchAll(
-      /`\.\.\/software-detail-runtime\/((?:references|scripts|assets)\/[^`]+)`/g
+      /`<runtime-root>\/((?:references|scripts|assets)\/[^`]+)`/g
     )
   ].map((match) => match[1]);
   assert.deepEqual(

@@ -9,13 +9,21 @@ description: Deep-read the bounded analysis queue in the existing task-owned MAT
 
 Execute only `software-detail-stage-03-evidence-extract`. This stage reads the planned model areas and persists private evidence shards. It does not aggregate the Stage 4 output ledger, project final narrative, draft prose, or render DOCX.
 
+## Host execution envelope
+
+Read the authoritative stage input manifest named by the host invocation before any business artifact. Require schema `software-detail-minimal-stage-input/v1`, this exact `stageId`, and the supplied `jobId`, `attempt`, `status`, input `artifacts`, `outputArtifacts`, `gatewayLease`, `runtime.installedPath`, and `candidateResultPath`. Treat every supplied role/path binding and Gateway lease field as immutable.
+
+`runtime.installedPath` is the absolute path of the snapshotted shared runtime installed for this job. Require it to be absolute and readable, call it `<runtime-root>`, and resolve every shared resource below from that root. Never resolve the runtime from the task working directory or a skill-adjacent relative path.
+
+Write every declared result artifact to the exact `relativePath` bound to its role in `outputArtifacts`. After all artifacts validate, write the candidate JSON only to `candidateResultPath` with schema `software-detail-minimal-stage-result/v1`, the manifest's exact `jobId`, `stageId`, `attempt`, `status: "completed"`, `matlabSessionId`, an exact copy of `gatewayLease`, and `artifacts` produced by mapping every `outputArtifacts` entry one-for-one to `{ "role", "relativePath" }`. Do not add, omit, rename, or rebind artifact roles, and do not claim completion before the files exist.
+
 ## Required shared contract
 
-Before taking any stage action, read all rules from `../software-detail-runtime/shared/software-detail-shared-rules.json`. Then read:
+Before taking any stage action, read all rules from `<runtime-root>/shared/software-detail-shared-rules.json`. Then read:
 
-- `../software-detail-runtime/references/model-evidence.md`, including its bounded output-cone batch contract and required evidence fields.
-- `../software-detail-runtime/scripts/collect_module_doc_evidence.m` when a bounded compact snapshot is useful for the current queue item.
-- `../software-detail-runtime/scripts/satk_eval.py` only through an execution adapter explicitly bound to `matlab-session-lease` and the existing Worker/native MATLAB Gateway session.
+- `<runtime-root>/references/model-evidence.md`, including its bounded output-cone batch contract and required evidence fields.
+- `<runtime-root>/scripts/collect_module_doc_evidence.m` when a bounded compact snapshot is useful for the current queue item.
+- `<runtime-root>/scripts/satk_eval.py` only through an execution adapter explicitly bound to `matlab-session-lease` and the existing Worker/native MATLAB Gateway session.
 
 ## Inputs
 

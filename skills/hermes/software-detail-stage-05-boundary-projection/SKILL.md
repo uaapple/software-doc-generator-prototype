@@ -11,10 +11,18 @@ Execute only Stage 5. Use a new Hermes session for this stage attempt; never reu
 Hermes session from another stage or a failed attempt. Reuse the task-owned MATLAB
 session identified by the lease without initializing, replacing, or closing it.
 
+## Host execution envelope
+
+Read the authoritative stage input manifest named by the host invocation before any business artifact. Require schema `software-detail-minimal-stage-input/v1`, this exact `stageId`, and the supplied `jobId`, `attempt`, `status`, input `artifacts`, `outputArtifacts`, `gatewayLease`, `runtime.installedPath`, and `candidateResultPath`. Treat every supplied role/path binding and Gateway lease field as immutable.
+
+`runtime.installedPath` is the absolute path of the snapshotted shared runtime installed for this job. Require it to be absolute and readable, call it `<runtime-root>`, and resolve every shared resource below from that root. Never resolve the runtime from the task working directory or a skill-adjacent relative path.
+
+Write every declared result artifact to the exact `relativePath` bound to its role in `outputArtifacts`. After all artifacts validate, write the candidate JSON only to `candidateResultPath` with schema `software-detail-minimal-stage-result/v1`, the manifest's exact `jobId`, `stageId`, `attempt`, `status: "completed"`, `matlabSessionId`, an exact copy of `gatewayLease`, and `artifacts` produced by mapping every `outputArtifacts` entry one-for-one to `{ "role", "relativePath" }`. Do not add, omit, rename, or rebind artifact roles, and do not claim completion before the files exist.
+
 ## Mandatory first read
 
 Before reading or transforming any business artifact, read
-`../software-detail-runtime/shared/software-detail-shared-rules.json`. Require the
+`<runtime-root>/shared/software-detail-shared-rules.json`. Require the
 shared rule set to be present and readable, then apply these mapped shared clauses:
 
 - `SDD-DEF-001`, `SDD-DEF-002`, `SDD-DEF-003`
@@ -27,7 +35,7 @@ internal identifiers, exclude tool metadata, use Chinese narrative where applica
 and prohibit invented meanings.
 
 Then read, without modifying,
-`../software-detail-runtime/references/module-boundary.md` for the document-unit
+`<runtime-root>/references/module-boundary.md` for the document-unit
 allowlist, cross-unit port treatment, private-to-public projection, and ledger
 visibility rules.
 

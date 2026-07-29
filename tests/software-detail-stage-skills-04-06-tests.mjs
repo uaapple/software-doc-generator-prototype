@@ -15,7 +15,7 @@ const manifest = JSON.parse(
 const sourceCommit = "ce5d3c2c08788fa8ab9013f18bd985f7355df0b6";
 const sourceRoot = "skills/hermes/simulink-module-description-generator";
 const sharedRulePath =
-  "../software-detail-runtime/shared/software-detail-shared-rules.json";
+  "<runtime-root>/shared/software-detail-shared-rules.json";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const sorted = (values) => [...values].sort();
 const showPinnedFile = (path) =>
@@ -232,7 +232,7 @@ for (const expectation of expectations) {
   const actualRuntimeResources = sorted(
     [
       ...skillSource.matchAll(
-        /\.\.\/software-detail-runtime\/((?:references|scripts)\/[A-Za-z0-9._/-]+)/g
+        /<runtime-root>\/((?:references|scripts)\/[A-Za-z0-9._/-]+)/g
       )
     ].map((match) => match[1])
   );

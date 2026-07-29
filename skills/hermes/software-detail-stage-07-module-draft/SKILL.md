@@ -9,6 +9,14 @@ description: Draft the module-function sections for software-detail pipeline sta
 
 Execute only `software-detail-stage-07-module-draft`. Do not invoke another stage, recollect model evidence, render DOCX, or reuse a Hermes session from another stage or failed attempt.
 
+## Host execution envelope
+
+Read the authoritative stage input manifest named by the host invocation before any business artifact. Require schema `software-detail-minimal-stage-input/v1`, this exact `stageId`, and the supplied `jobId`, `attempt`, `status`, input `artifacts`, `outputArtifacts`, `gatewayLease`, `runtime.installedPath`, and `candidateResultPath`. Treat every supplied role/path binding and Gateway lease field as immutable.
+
+`runtime.installedPath` is the absolute path of the snapshotted shared runtime installed for this job. Require it to be absolute and readable, call it `<runtime-root>`, and resolve every shared resource below from that root. Never resolve the runtime from the task working directory or a skill-adjacent relative path.
+
+Write every declared result artifact to the exact `relativePath` bound to its role in `outputArtifacts`. After all artifacts validate, write the candidate JSON only to `candidateResultPath` with schema `software-detail-minimal-stage-result/v1`, the manifest's exact `jobId`, `stageId`, `attempt`, `status: "completed"`, `matlabSessionId`, an exact copy of `gatewayLease`, and `artifacts` produced by mapping every `outputArtifacts` entry one-for-one to `{ "role", "relativePath" }`. Do not add, omit, rename, or rebind artifact roles, and do not claim completion before the files exist.
+
 ## Stage contract
 
 ```json
@@ -35,7 +43,7 @@ Treat every input as a read-only artifact from the same job. Preserve each input
 
 ## Read shared rules first
 
-As the first operational action, read `../software-detail-runtime/shared/software-detail-shared-rules.json`. Require rule-set ID `software-detail-shared-rules`, version `1.0.0`, and all of these rules:
+As the first operational action, read `<runtime-root>/shared/software-detail-shared-rules.json`. Require rule-set ID `software-detail-shared-rules`, version `1.0.0`, and all of these rules:
 
 - `SDD-DEF-001`
 - `SDD-DEF-002`
@@ -52,10 +60,10 @@ Fail closed with a safe diagnostic if the shared artifact is missing, unreadable
 
 Then read these pinned runtime references:
 
-- `../software-detail-runtime/references/module-boundary.md`
-- `../software-detail-runtime/references/a07-granularity-pattern.md`
-- `../software-detail-runtime/references/writing-rules.md`
-- `../software-detail-runtime/references/template-filling.md`
+- `<runtime-root>/references/module-boundary.md`
+- `<runtime-root>/references/a07-granularity-pattern.md`
+- `<runtime-root>/references/writing-rules.md`
+- `<runtime-root>/references/template-filling.md`
 
 ## Draft procedure
 

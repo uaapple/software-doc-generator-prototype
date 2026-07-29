@@ -17,7 +17,7 @@ const runtimeRoot = path.join(hermesRoot, "software-detail-runtime");
 const sourceCommit = "ce5d3c2c08788fa8ab9013f18bd985f7355df0b6";
 const sourceRoot = "skills/hermes/simulink-module-description-generator";
 const sharedRuntimePath =
-  "../software-detail-runtime/shared/software-detail-shared-rules.json";
+  "<runtime-root>/shared/software-detail-shared-rules.json";
 const wave0 = readJson("docs/software-detail-skill-stage-map.json");
 const sharedRules = readJson(
   "skills/hermes/software-detail-runtime/shared/software-detail-shared-rules.json"
@@ -210,6 +210,26 @@ for (const definition of catalogStages) {
     skill,
     /fresh Hermes session|new Hermes session|"hermesSession": "new"/
   );
+  for (const field of [
+    "schema",
+    "jobId",
+    "stageId",
+    "attempt",
+    "status",
+    "artifacts",
+    "outputArtifacts",
+    "gatewayLease",
+    "runtime.installedPath",
+    "candidateResultPath"
+  ]) {
+    assert.ok(skill.includes(field), `${stageId} omits host field ${field}`);
+  }
+  assert.match(skill, /software-detail-minimal-stage-result\/v1/);
+  assert.match(skill, /mapping every `outputArtifacts` entry one-for-one/);
+  assert.match(skill, /exact copy of `gatewayLease`/);
+  assert.match(skill, /`runtime\.installedPath` is the absolute path/);
+  assert.match(skill, /Require it to be absolute and readable/);
+  assert.doesNotMatch(skill, /\.\.\/software-detail-runtime/);
 
   assert.equal(
     quotedYamlValue(metadata, "display_name"),
@@ -243,7 +263,7 @@ for (const definition of catalogStages) {
 
   const sharedPaths = new Set(
     skill.match(
-      /\.\.\/software-detail-runtime\/shared\/[A-Za-z0-9._/-]+/g
+      /<runtime-root>\/shared\/[A-Za-z0-9._/-]+/g
     ) || []
   );
   assert.deepEqual([...sharedPaths], [sharedRuntimePath]);
@@ -282,7 +302,7 @@ for (const definition of catalogStages) {
     new Set(
       [
         ...skill.matchAll(
-          /\.\.\/software-detail-runtime\/((?:references|scripts|assets)\/[A-Za-z0-9._/-]+)/g
+          /<runtime-root>\/((?:references|scripts|assets)\/[A-Za-z0-9._/-]+)/g
         )
       ].map((match) => match[1])
     )
