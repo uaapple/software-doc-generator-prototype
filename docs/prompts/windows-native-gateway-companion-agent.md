@@ -12,9 +12,9 @@ SHA-256；旧 tag/Release 保持不可变，禁止使用现场临时脚本。
 - 原生 env：`C:\SoftwareDocWorker\software-doc-worker.env`
 - 容器 env：用户提供的未跟踪 `.env.windows-docker-desktop` 绝对路径
 - Worker imageRevision：
-  `sha256:c3f6dbdd80df4c4769eff8e1dffffb3979aecfa5dbab9dcb398503fa985704c2`
+  `sha256:2eb8789031751ede7fb24d436533c00510ef01248121720c3c575f3b849b4829`
 - Platform imageRevision：
-  `sha256:240d7bf71ef8de9767f2abb168d3a907cdaae15990a1c5d87e945056f9c9ef97`
+  `sha256:0d94ba790f13786bcce4e93ca4cd5d534f1a2f9e89bf3407e5af4442f28dbdb4`
 
 不得 build、push 或替换镜像，不得输出 env 值、路径、token 或 API key，不得
 修改 addon、旧 app\data、Hermes Home/session、用户输入输出或 MATLAB 产物。
