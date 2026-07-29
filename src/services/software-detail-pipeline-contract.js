@@ -84,7 +84,7 @@ function queueItemIdentity(item) {
     item.analysisUnit,
     item.scope,
     item.scopePath,
-    item.outputName
+    item.directOutport
   ].join("\0");
 }
 
@@ -157,21 +157,40 @@ export function validateSoftwareDetailModelPlanArtifacts(
         { index }
       );
     }
+    const scope = optionalArtifactText(item.scope) || "analysis_unit";
+    const directOutport = optionalArtifactText(item.directOutport);
+    const analysisUnit = optionalArtifactText(item.analysisUnit);
+    if (scope === "direct_outport") {
+      if (!directOutport) {
+        throw contractError(
+          "software_detail_invalid_model_plan_artifacts",
+          "direct_outport queue item 必须声明 directOutport",
+          {
+            field: `items[${index}].directOutport`,
+            documentUnit: optionalArtifactText(item.parentDocumentUnit)
+          }
+        );
+      }
+    } else if (!analysisUnit) {
+      throw contractError(
+        "software_detail_invalid_business_artifact",
+        `items[${index}].analysisUnit 必须是非空文本`,
+        {
+          field: `items[${index}].analysisUnit`,
+          documentUnit: optionalArtifactText(item.parentDocumentUnit)
+        }
+      );
+    }
     return {
       id: optionalArtifactText(item.id || item.queueItemId),
       parentDocumentUnit: requiredArtifactText(
         item.parentDocumentUnit,
         `items[${index}].parentDocumentUnit`
       ),
-      analysisUnit: requiredArtifactText(
-        item.analysisUnit,
-        `items[${index}].analysisUnit`
-      ),
-      scope: optionalArtifactText(item.scope) || "analysis_unit",
+      analysisUnit,
+      scope,
       scopePath: optionalArtifactText(item.scopePath),
-      outputName: optionalArtifactText(
-        item.outputName || item.directOutput || item.output
-      )
+      directOutport
     };
   });
   const queueIdentities = new Set();
@@ -185,16 +204,6 @@ export function validateSoftwareDetailModelPlanArtifacts(
       );
     }
     queueIdentities.add(identity);
-    if (
-      queueItem.scope.toLowerCase().includes("outport") &&
-      !queueItem.outputName
-    ) {
-      throw contractError(
-        "software_detail_invalid_model_plan_artifacts",
-        "direct outport queue item 必须声明 outputName",
-        { documentUnit: queueItem.parentDocumentUnit }
-      );
-    }
   }
   for (const documentUnit of documentUnits) {
     if (
@@ -268,10 +277,24 @@ export function validateSoftwareDetailEvidenceArtifacts(
       if (queueItem.id || shardQueueItemId) {
         return Boolean(queueItem.id) && shardQueueItemId === queueItem.id;
       }
+      if (shardParent(shard) !== queueItem.parentDocumentUnit) {
+        return false;
+      }
+      if (queueItem.scope === "direct_outport") {
+        if (optionalArtifactText(shard.scope) !== "direct_outport") {
+          return false;
+        }
+        const shardScopePath = optionalArtifactText(shard.scopePath);
+        if (queueItem.scopePath !== shardScopePath) {
+          return false;
+        }
+        return normalizedOutputNames(shard.outports).has(
+          queueItem.directOutport
+        );
+      }
       if (
-        shardParent(shard) !== queueItem.parentDocumentUnit ||
         optionalArtifactText(shard.analysisUnitPath) !==
-          queueItem.analysisUnit
+        queueItem.analysisUnit
       ) {
         return false;
       }
@@ -287,10 +310,7 @@ export function validateSoftwareDetailEvidenceArtifacts(
       if (queueItem.scopePath !== shardScopePath) {
         return false;
       }
-      return (
-        !queueItem.outputName ||
-        normalizedOutputNames(shard.outports).has(queueItem.outputName)
-      );
+      return true;
     });
     if (matchedIndex < 0) {
       throw contractError(
@@ -298,7 +318,12 @@ export function validateSoftwareDetailEvidenceArtifacts(
         "analysis queue item 缺少对应 evidence shard",
         {
           documentUnit: queueItem.parentDocumentUnit,
-          analysisUnit: queueItem.analysisUnit
+          ...(queueItem.analysisUnit
+            ? { analysisUnit: queueItem.analysisUnit }
+            : {}),
+          ...(queueItem.directOutport
+            ? { output: queueItem.directOutport }
+            : {})
         }
       );
     }

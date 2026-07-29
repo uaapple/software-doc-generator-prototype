@@ -402,6 +402,8 @@ const stage2Skill = readText(
 for (const required of [
   "scope=document_unit_direct",
   "scope=direct_outport",
+  "exact non-empty `directOutport` name and may omit `analysisUnit`",
+  "do not rename `directOutport` to another field",
   "every selected `document_unit` has at least one queue item",
   "A document unit with zero queue items is an invalid plan"
 ]) {
@@ -415,6 +417,9 @@ for (const required of [
   "template must predeclare `scope`",
   "Do not add a field to only one MATLAB structure",
   "A failed fallback read is a failed required queue item",
+  "whose `outports` contains that exact `directOutport`",
+  "One shard must not stand in for multiple direct-Outport queue items",
+  "every direct Outport has direct evidence in its corresponding `direct_outport` shard",
   "every selected document unit has at least one shard",
   "Any required fallback execution error fails the stage"
 ]) {

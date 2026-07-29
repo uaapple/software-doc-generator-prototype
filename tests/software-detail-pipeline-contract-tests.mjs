@@ -641,20 +641,62 @@ for (const stage of stages.slice(1)) {
   const directOutputQueue = {
     schema: "software-detail-analysis-queue/v1",
     items: [
+      ...Array.from({ length: 12 }, (_, index) => ({
+        parentDocumentUnit: "Model/A03_Function",
+        analysisUnit: `Model/A03_Function/B${String(index + 1).padStart(2, "0")}`,
+        scope: "analysis_unit"
+      })),
       {
         parentDocumentUnit: "Model/A03_Function",
-        analysisUnit: "Model/A03_Function",
         scope: "direct_outport",
-        outputName: "A03_Output1"
+        directOutport: "A03_Output1"
       },
       {
         parentDocumentUnit: "Model/A03_Function",
-        analysisUnit: "Model/A03_Function",
         scope: "direct_outport",
-        outputName: "A03_Output2"
+        directOutport: "A03_Output2"
       }
     ]
   };
+  const analysisShards = Array.from({ length: 12 }, (_, index) => ({
+    parentDocumentUnitPath: "Model/A03_Function",
+    analysisUnitPath: `Model/A03_Function/B${String(index + 1).padStart(2, "0")}`,
+    scope: "analysis_unit",
+    outports: []
+  }));
+  const directOutportShards = [
+    {
+      parentDocumentUnitPath: "Model/A03_Function",
+      scope: "direct_outport",
+      outports: { name: "A03_Output1" }
+    },
+    {
+      parentDocumentUnitPath: "Model/A03_Function",
+      scope: "direct_outport",
+      outports: [{ name: "A03_Output2" }]
+    }
+  ];
+  const normalizedDirectPlan = validateSoftwareDetailModelPlanArtifacts(
+    directOutputHierarchy,
+    directOutputQueue
+  );
+  assert.equal(normalizedDirectPlan.queueItems.length, 14);
+  assert.equal(normalizedDirectPlan.queueItems[12].analysisUnit, "");
+  assert.equal(
+    normalizedDirectPlan.queueItems[12].directOutport,
+    "A03_Output1"
+  );
+  assert.equal(
+    validateSoftwareDetailEvidenceArtifacts(
+      directOutputHierarchy,
+      directOutputQueue,
+      {
+        schema: "software-detail-evidence-shards/v1",
+        shards: [...analysisShards, ...directOutportShards]
+      }
+    ).queueItems.length,
+    14
+  );
   assert.throws(
     () =>
       validateSoftwareDetailEvidenceArtifacts(
@@ -663,9 +705,43 @@ for (const stage of stages.slice(1)) {
         {
           schema: "software-detail-evidence-shards/v1",
           shards: [
+            ...analysisShards,
+            ...directOutportShards.map((shard) => ({
+              ...shard,
+              scope: "analysis_unit"
+            }))
+          ]
+        }
+      ),
+    (error) =>
+      error.code === "software_detail_evidence_queue_item_missing" &&
+      error.details.output === "A03_Output1"
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailEvidenceArtifacts(
+        directOutputHierarchy,
+        directOutputQueue,
+        {
+          schema: "software-detail-evidence-shards/v1",
+          shards: [...analysisShards, directOutportShards[0]]
+        }
+      ),
+    (error) =>
+      error.code === "software_detail_evidence_direct_output_missing" &&
+      error.details.output === "A03_Output2"
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailEvidenceArtifacts(
+        directOutputHierarchy,
+        directOutputQueue,
+        {
+          schema: "software-detail-evidence-shards/v1",
+          shards: [
+            ...analysisShards,
             {
               parentDocumentUnitPath: "Model/A03_Function",
-              analysisUnitPath: "Model/A03_Function",
               scope: "direct_outport",
               outports: [
                 { name: "A03_Output1" },

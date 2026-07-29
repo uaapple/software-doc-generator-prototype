@@ -38,6 +38,10 @@ function safeError(cause, stageId = "") {
       safeDetails.failedGates = cause.details.failedGates;
     }
   }
+  for (const field of ["field", "documentUnit", "output"]) {
+    const value = safeDiagnosticText(cause?.details?.[field], 200);
+    if (value) safeDetails[field] = value;
+  }
   return {
     code,
     message: stageId

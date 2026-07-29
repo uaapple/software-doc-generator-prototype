@@ -393,7 +393,8 @@ try {
         missingDocumentQueueAt: "software-detail-stage-02-model-plan"
       },
       expectedCalls: 2,
-      expectedCode: "software_detail_model_plan_missing_queue_item"
+      expectedCode: "software_detail_model_plan_missing_queue_item",
+      expectedDetails: { documentUnit: "Model/A02_Function" }
     },
     {
       key: "missing-direct-output-evidence",
@@ -401,7 +402,11 @@ try {
         missingDirectOutputAt: "software-detail-stage-03-evidence-extract"
       },
       expectedCalls: 3,
-      expectedCode: "software_detail_evidence_direct_output_missing"
+      expectedCode: "software_detail_evidence_direct_output_missing",
+      expectedDetails: {
+        documentUnit: "Model/A02_Function",
+        output: "A02_Output"
+      }
     }
   ]) {
     const scenarioRoot = path.join(root, scenario.key);
@@ -416,6 +421,18 @@ try {
     );
     assert.equal(job.status, "failed", scenario.key);
     assert.equal(job.error.code, scenario.expectedCode, scenario.key);
+    if (scenario.expectedDetails) {
+      assert.deepEqual(
+        {
+          documentUnit: job.error.details.documentUnit,
+          ...(scenario.expectedDetails.output
+            ? { output: job.error.details.output }
+            : {})
+        },
+        scenario.expectedDetails,
+        `${scenario.key} safe diagnostic details`
+      );
+    }
     assert.equal(executor.calls.length, scenario.expectedCalls, scenario.key);
     assert.equal(leaseClient.closed.length, 1, scenario.key);
     assert.equal(
