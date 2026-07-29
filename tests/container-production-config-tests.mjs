@@ -54,7 +54,11 @@ assert.match(linuxCompose, /UNIT_TEST_WORKER_PROFILES_JSON/);
 assert.match(linuxCompose, /WIKI_PORT:\s*3001/);
 assert.match(linuxCompose, /SDG_WIKI_BIND_IP[^\n]*SDG_WIKI_PORT[^\n]*:3001/);
 assert.match(linuxCompose, /read_only:\s*true/);
-assert.match(linuxCompose, /no-new-privileges:true/);
+assert.doesNotMatch(
+  linuxCompose,
+  /no-new-privileges:true/,
+  "Canonical Docker Snap rejects container exec with no-new-privileges"
+);
 assert.match(linuxCompose, /pull_policy:\s*never/);
 assert.match(linuxCompose, /SDG_PLATFORM_SKILLS_DIR/);
 assert.match(linuxCompose, /SDG_PLATFORM_HOME_DIR/);

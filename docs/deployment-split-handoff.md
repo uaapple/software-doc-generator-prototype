@@ -45,6 +45,10 @@ Linux 容器部署直接复用原生服务的 `prod-data` 与 `prod-skills` bind
 Snap Docker 还会拒绝 Compose `init: true` 注入的 `/sbin/docker-init`，因此
 Linux Platform 直接以处理 SIGTERM/SIGINT 的 Node entrypoint 作为 PID 1；
 镜像 `STOPSIGNAL SIGTERM` 与 Compose 30 秒停止宽限期保持优雅退出边界。
+Canonical Docker Snap 同时明确不支持 `no-new-privileges` security option，
+会在入口进程 `exec` 前返回 `operation not permitted`。Linux Compose 不设置
+该项，但仍以非 root 运行、保持只读 rootfs、丢弃全部 capabilities，且不启用
+privileged；Windows Docker Desktop Compose 继续保留其既有 NNP 边界。
 
 Windows 原生 MATLAB Gateway 使用独立 companion release。companion manifest
 记录 source/deployment revision、精确受管文件 SHA-256、scan SHA-256，并在

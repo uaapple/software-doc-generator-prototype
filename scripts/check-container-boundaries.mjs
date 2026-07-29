@@ -76,11 +76,19 @@ for (const productionComposePath of [
     /read_only:\s*true/g,
     `${productionComposePath} must use a read-only root filesystem`
   );
-  requirePattern(
-    productionCompose,
-    /no-new-privileges:true/g,
-    `${productionComposePath} must enable no-new-privileges`
-  );
+  if (productionComposePath === "compose.linux-prod.yaml") {
+    forbidPattern(
+      productionCompose,
+      /no-new-privileges:true/g,
+      `${productionComposePath} must remain compatible with Canonical Docker Snap`
+    );
+  } else {
+    requirePattern(
+      productionCompose,
+      /no-new-privileges:true/g,
+      `${productionComposePath} must enable no-new-privileges`
+    );
+  }
   forbidPattern(
     productionCompose,
     /^\s+build:/m,

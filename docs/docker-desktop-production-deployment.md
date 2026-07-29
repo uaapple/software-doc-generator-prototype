@@ -147,7 +147,11 @@ Linux 容器直接复用原生服务已经使用的 `prod-data` 与 `prod-skills
 日志和容器 home 也必须是预先创建、由镜像内 `node` UID/GID 可写的 bind
 mount。生产 Compose 不运行 root `permissions-init`，不申请 CHOWN/FOWNER
 capability，也不对任何正式目录执行 `chgrp`、`chmod` 或递归修改。该边界同时
-避免 Snap Docker 在 `no-new-privileges` 下拒绝 root shell 初始化容器。
+避免依赖 root shell 初始化容器。Canonical Docker Snap 不支持
+`no-new-privileges` security option，会在容器入口 `exec` 前以
+`operation not permitted` 拒绝；Linux Compose 因此不设置该选项，但继续保持
+非 root 用户、只读根文件系统、`cap_drop: ALL`、无 privileged 和固定 bind
+mount 边界。
 Linux Platform Compose 也不启用 `init: true`：Snap Docker 会拒绝其注入的
 `/sbin/docker-init`。Platform 镜像直接以 Node entrypoint 作为 PID 1，镜像
 声明 `STOPSIGNAL SIGTERM`，entrypoint 显式处理 SIGTERM/SIGINT 并有 30 秒
