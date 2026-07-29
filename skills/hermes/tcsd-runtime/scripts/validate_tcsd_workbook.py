@@ -181,6 +181,15 @@ def scan_cell(
     return errors, input_assignment_count, parameter_assignment_count, exp_count
 
 
+def count_valid_action_exp_values(text: str, root_outputs: set[str]) -> int:
+    count = 0
+    for raw in (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        match = EXP_ASSIGN_RE.match(raw.strip())
+        if match and match.group(1) in root_outputs:
+            count += 1
+    return count
+
+
 def validate_workbook(
     workbook: str | Path,
     root_inputs: set[str],
@@ -213,6 +222,7 @@ def validate_workbook(
     exp_count = 0
     test_count = 0
     test_ids: set[str] = set()
+    test_exp_value_counts: list[dict[str, Any]] = []
 
     for row in range(1, ws.max_row + 1):
         row_type = str(ws.cell(row, type_col).value or "").strip()
@@ -260,6 +270,19 @@ def validate_workbook(
             exp_count += exp_seen
 
         if row_type == "Test":
+            test_exp_count = count_valid_action_exp_values(
+                str(ws.cell(row, action_col).value or ""),
+                root_outputs,
+            )
+            test_exp_value_counts.append(
+                {
+                    "row": row,
+                    "test_id": test_id,
+                    "exp_value_count": test_exp_count,
+                }
+            )
+
+        if row_type == "Test":
             action_lines = [
                 line.strip()
                 for line in str(ws.cell(row, action_col).value or "").splitlines()
@@ -289,6 +312,17 @@ def validate_workbook(
 
     if test_count == 0:
         errors.append({"code": "missing_test_cases", "workbook": str(workbook)})
+    missing_exp_value_test_cases = [
+        item for item in test_exp_value_counts if item["exp_value_count"] < 1
+    ]
+    if require_exp_values and missing_exp_value_test_cases:
+        errors.append(
+            {
+                "code": "missing_test_exp_values",
+                "workbook": str(workbook),
+                "test_cases": missing_exp_value_test_cases,
+            }
+        )
     if require_exp_values and exp_count == 0:
         errors.append({"code": "missing_exp_values", "workbook": str(workbook)})
     if not root_inputs:
@@ -303,6 +337,8 @@ def validate_workbook(
         "input_assignment_count": input_assignment_count,
         "parameter_assignment_count": parameter_assignment_count,
         "exp_value_count": exp_count,
+        "test_exp_value_counts": test_exp_value_counts,
+        "missing_exp_value_test_cases": missing_exp_value_test_cases,
         "errors": errors,
         "warnings": warnings,
     }
@@ -326,9 +362,15 @@ def print_text_report(report: dict[str, Any]) -> None:
             location = f"{error['sheet']}!{error['cell']}"
         elif error.get("workbook"):
             location = error["workbook"]
+        missing_tests = error.get("test_cases") or []
+        missing_test_labels = ", ".join(
+            str(item.get("test_id") or f"row {item.get('row')}")
+            for item in missing_tests
+        )
         print(
             f"- {error.get('code')}: {location} "
-            f"{error.get('test_id', '')} {error.get('signal', '')} {error.get('line', '')}".rstrip(),
+            f"{error.get('test_id', '')} {error.get('signal', '')} "
+            f"{error.get('line', '')} {missing_test_labels}".rstrip(),
             file=sys.stderr,
         )
 

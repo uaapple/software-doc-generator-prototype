@@ -222,6 +222,7 @@ DEDICATED_WORKER = os.environ.get("TCSD_DEDICATED_WORKER", "").lower() in {"1", 
 CLEAN_STALE_MCP = DEDICATED_WORKER or os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "true", "yes", "on"}
 SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new" if DEDICATED_WORKER else "existing")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
+DISPLAY_MODE = os.environ.get("SATK_MATLAB_DISPLAY_MODE", "").strip()
 LOG_FOLDER = Path(os.environ.get("SATK_MCP_LOG_FOLDER", default_log_folder()))
 
 
@@ -229,6 +230,28 @@ def send(proc: subprocess.Popen[str], msg: dict) -> None:
     assert proc.stdin is not None
     proc.stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
     proc.stdin.flush()
+
+
+def build_server_command(
+    selected_server: Path,
+    *,
+    session_mode: str = SESSION_MODE,
+    matlab_root: str = MATLAB_ROOT,
+    display_mode: str = DISPLAY_MODE,
+    log_folder: Path = LOG_FOLDER,
+    extension_file: Path = DEFAULT_EXTENSION,
+) -> list[str]:
+    command = [
+        str(selected_server),
+        f"--matlab-session-mode={session_mode}",
+        f"--log-folder={log_folder}",
+        f"--extension-file={extension_file}",
+    ]
+    if display_mode:
+        command.append(f"--matlab-display-mode={display_mode}")
+    if session_mode != "existing" and matlab_root:
+        command.append(f"--matlab-root={matlab_root}")
+    return command
 
 
 def read_json(proc: subprocess.Popen[str], timeout_s: float = 120.0) -> dict:
@@ -550,14 +573,7 @@ def main() -> int:
     code = code_file.read_text(encoding="utf-8")
     LOG_FOLDER.mkdir(parents=True, exist_ok=True)
     clean_stale_mcp_processes()
-    command = [
-        str(selected_server),
-        f"--matlab-session-mode={SESSION_MODE}",
-        f"--log-folder={LOG_FOLDER}",
-        f"--extension-file={DEFAULT_EXTENSION}",
-    ]
-    if SESSION_MODE != "existing" and MATLAB_ROOT:
-        command.append(f"--matlab-root={MATLAB_ROOT}")
+    command = build_server_command(selected_server)
 
     proc = subprocess.Popen(
         command,

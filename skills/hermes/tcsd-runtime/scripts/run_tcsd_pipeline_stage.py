@@ -52,7 +52,15 @@ def ensure_within(root: Path, candidate: Path, label: str) -> Path:
     if not resolved.is_relative_to(root.resolve()): raise RuntimeError(f"{label} is outside the task workspace: {resolved}")
     return resolved
 
+class RecoverableStageValidationError(RuntimeError):
+    """A deterministic Agent artifact defect that one fresh session may repair."""
+
+    def __init__(self, message: str, validation_report_path: Path):
+        super().__init__(message)
+        self.validation_report_path = validation_report_path
+
 def hard_error_code(stage: int, error: BaseException) -> str:
+    if isinstance(error, RecoverableStageValidationError): return "tcsd_stage_validation_failed"
     if isinstance(error, subprocess.TimeoutExpired): return "tcsd_stage_timeout"
     if stage == 1: return "tcsd_input_invalid"
     if stage == 2: return "tcsd_environment_gate_failed"
@@ -139,7 +147,7 @@ def initial_spec(interface: dict[str, Any], model: str) -> dict[str, Any]:
     root = interface.get("rootPorts", interface); inputs = root.get("inputs", []); outputs_ = root.get("outputs", [])
     input_names, output_names = interface_names(inputs), interface_names(outputs_)
     initialization = "\n".join(f"{name}=0;" for name in input_names)
-    action = "\n".join([*(f"{name}=0;" for name in input_names), "[+0.1s]"])
+    action = "\n".join(["[+0.01s]", *(f"{name}=0;" for name in input_names), "[+0.1s]"])
     return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线"}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action}]}
 STEP_MARKER_RE = re.compile(r"^\s*\[\+")
 EXP_VALUE_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*expValue\(\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*\)\s*;?\s*$")
@@ -186,15 +194,30 @@ def simulation_backfill_evidence(simulation: dict[str, Any], workbook: Path) -> 
         counts: dict[str, int] = {}
         for step in steps:
             result = simulation_steps[step["index"]]; stable = result.get("stable", {}); outputs_ = result.get("outputs", {})
-            expected = {} if step["finalEmptyDelay"] else {str(name): value for name, value in outputs_.items() if stable.get(name) is not False}
+            expected = {} if step["finalEmptyDelay"] else {str(name): value for name, value in outputs_.items() if stable.get(name) is True}
             actual = step["values"]
             if set(expected) != set(actual): raise RuntimeError(f"simulation/workbook output mismatch: {key} step {step['index']} expected={sorted(expected)} actual={sorted(actual)}")
             for name, value in expected.items():
                 if isinstance(value, (dict, list)) or not math.isclose(float(value), actual[name], rel_tol=1e-7, abs_tol=1e-7): raise RuntimeError(f"simulation/workbook value mismatch: {key} step {step['index']} output {name}")
                 counts[name] = counts.get(name, 0) + 1; matched.append({"row": key[0], "testId": key[1], "step": step["index"], "output": name, "value": actual[name]})
         case_outputs[f"{key[0]}:{key[1]}"] = counts
+    tests_without_expected_values = [
+        {"row": key[0], "testId": key[1]}
+        for key in workbook_cases
+        if not case_outputs.get(f"{key[0]}:{key[1]}")
+    ]
+    if tests_without_expected_values:
+        labels = ", ".join(item["testId"] or f"row {item['row']}" for item in tests_without_expected_values)
+        raise RuntimeError(f"simulation backfill produced no verified expValue for Test cases: {labels}")
     if not matched: raise RuntimeError("simulation backfill produced no verified expValue items")
-    return {"simulationValueCount": len(matched), "workbookBackfillCount": len(matched), "caseOutputCounts": case_outputs, "backfillItems": matched}
+    return {
+        "simulationValueCount": len(matched),
+        "workbookBackfillCount": len(matched),
+        "testCaseCount": len(workbook_cases),
+        "testsWithoutExpectedValues": tests_without_expected_values,
+        "caseOutputCounts": case_outputs,
+        "backfillItems": matched,
+    }
 def coverage_meets(report: dict[str, Any], threshold: float) -> bool:
     records = report.get("models", report)
     valid = [record for record in records.values() if isinstance(record, dict) and all(key in record for key in ("condition", "decision", "mcdc"))]
@@ -449,25 +472,52 @@ def stage_run(
             raise RuntimeError("stage 10 requires an Agent-authored coverage repair proposal")
 
         proposal_ir = out / f"{model}_agent_repair_coverage_ir.json"
-        proposal_validation = out / f"{model}_agent_repair_validation.json"
-        run(
-            [
-                sys.executable,
-                str(scripts() / "validate_agent_coverage_repair.py"),
-                "validate",
-                "--brief",
-                str(brief),
-                "--proposal",
-                str(proposal),
-                "--interface",
-                str(interface),
-                "--output-ir",
-                str(proposal_ir),
-                "--report-json",
-                str(proposal_validation),
-            ],
-            root,
+        proposal_validation = out / (
+            f"{model}_agent_repair_validation_attempt"
+            f"{int(job.get('_stageAttempt') or 1)}.json"
         )
+        proposal_ir.unlink(missing_ok=True)
+        proposal_validation.unlink(missing_ok=True)
+        try:
+            run(
+                [
+                    sys.executable,
+                    str(scripts() / "validate_agent_coverage_repair.py"),
+                    "validate",
+                    "--brief",
+                    str(brief),
+                    "--proposal",
+                    str(proposal),
+                    "--interface",
+                    str(interface),
+                    "--output-ir",
+                    str(proposal_ir),
+                    "--report-json",
+                    str(proposal_validation),
+                ],
+                root,
+            )
+        except subprocess.CalledProcessError:
+            if not proposal_validation.is_file():
+                raise
+            failure_report = read_json(proposal_validation)
+            validation_error = failure_report.get("error", {})
+            if (
+                failure_report.get("schema") != "tcsd-agent-coverage-repair-validation/v1"
+                or failure_report.get("jobId") != job["jobId"]
+                or failure_report.get("model") != model
+                or failure_report.get("passed") is not False
+                or not isinstance(validation_error, dict)
+                or validation_error.get("code") != "proposal_validation_failed"
+            ):
+                raise
+            detail = public_error_text(
+                validation_error.get("message")
+            )
+            raise RecoverableStageValidationError(
+                f"Agent coverage repair proposal failed deterministic validation: {detail}",
+                proposal_validation,
+            ) from None
         validation = read_json(proposal_validation)
         base_artifacts = [
             artifact(root, brief, "json", "coverage-repair-brief"),
@@ -719,6 +769,7 @@ def main() -> int:
     if stage < 1 or stage > 12: raise RuntimeError("stage input manifest stageIndex is invalid")
     job = manifest.get("job")
     if not isinstance(job, dict) or job.get("jobId") != manifest.get("jobId"): raise RuntimeError("stage input manifest job snapshot is invalid")
+    job["_stageAttempt"] = int(manifest.get("attempt") or 1)
     result_path = ensure_within(workspace(job), Path(args.result), "resultPath")
     job["_stageResultPath"] = str(result_path)
     if args.repair_brief:
@@ -742,6 +793,18 @@ def main() -> int:
             raise RuntimeError("stage runtime produced an invalid result envelope")
         return 0
     except BaseException as error:
+        recoverable_validation = isinstance(error, RecoverableStageValidationError)
+        error_payload = {
+            "code": hard_error_code(stage, error),
+            "message": public_error_text(error),
+            "hard": not recoverable_validation,
+        }
+        if recoverable_validation:
+            error_payload["details"] = {
+                "validationReportPath": error.validation_report_path.resolve()
+                .relative_to(workspace(job).resolve())
+                .as_posix()
+            }
         write_json(result_path, {
             "schema": RESULT_SCHEMA,
             "jobId": job["jobId"],
@@ -749,11 +812,7 @@ def main() -> int:
             "status": "failed",
             "summary": "TCSD deterministic stage runtime failed.",
             "artifacts": [],
-            "error": {
-                "code": hard_error_code(stage, error),
-                "message": str(error),
-                "hard": True
-            }
+            "error": error_payload,
         })
-        return 1
+        return 0 if recoverable_validation else 1
 if __name__ == "__main__": raise SystemExit(main())

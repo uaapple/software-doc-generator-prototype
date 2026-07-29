@@ -90,11 +90,15 @@ function publicRuntimeError(cause, stageIndex, timeoutMs) {
 
 function stageRuntimeResultError(result, stageIndex, attempt, sessionId = "") {
   if (result?.status !== "failed") return null;
+  const resultDetails = result.error?.details && typeof result.error.details === "object"
+    ? result.error.details
+    : {};
   return Object.assign(
     new Error(result.error?.message || result.summary || `TCSD stage ${stageIndex} deterministic runtime failed.`),
     {
       code: result.error?.code || TCSD_ERROR_CODES.stageRuntime,
       details: {
+        ...resultDetails,
         stageIndex,
         attempt,
         sessionId,
@@ -330,9 +334,57 @@ export class TcsdHermesStageExecutor {
     const artifacts = [...checkpointArtifacts, ...(agentArtifacts || [])]
       .filter((artifact) => artifact?.path && artifact?.kind)
       .filter((artifact, index, values) => values.findIndex((item) => item.path === artifact.path) === index);
-    const latestWorkbook = [...(job.stages || [])]
-      .reverse()
-      .flatMap((stage) => stage.checkpoint?.artifacts || [])
+    const finalValidationCheckpoint = job.stages?.[10]?.checkpoint;
+    const initialBackfillCheckpoint = job.stages?.[7]?.checkpoint;
+    const oracleCheckpoint = finalValidationCheckpoint?.status !== "skipped" && finalValidationCheckpoint?.evidence
+      ? finalValidationCheckpoint
+      : initialBackfillCheckpoint;
+    const oracleEvidence = oracleCheckpoint?.evidence;
+    const oracleStageIndex = oracleCheckpoint === finalValidationCheckpoint ? 11 : 8;
+    const caseOutputCounts = oracleEvidence?.caseOutputCounts;
+    const testCaseCount = Number(oracleEvidence?.testCaseCount);
+    const expValueCount = Number(oracleEvidence?.workbookBackfillCount);
+    const testsWithoutExpectedValues = oracleEvidence?.testsWithoutExpectedValues;
+    const caseOutputEntries = caseOutputCounts && typeof caseOutputCounts === "object" && !Array.isArray(caseOutputCounts)
+      ? Object.entries(caseOutputCounts)
+      : [];
+    const countedExpectedValues = caseOutputEntries.length
+      ? caseOutputEntries.reduce((total, [, counts]) => (
+          total + (
+            counts && typeof counts === "object" && !Array.isArray(counts)
+              ? Object.values(counts).reduce((subtotal, count) => subtotal + Number(count || 0), 0)
+              : 0
+          )
+        ), 0)
+      : 0;
+    if (
+      !oracleCheckpoint ||
+      oracleCheckpoint.validation?.passed !== true ||
+      !Number.isInteger(testCaseCount) ||
+      testCaseCount < 1 ||
+      !Number.isInteger(expValueCount) ||
+      expValueCount < testCaseCount ||
+      !Array.isArray(testsWithoutExpectedValues) ||
+      testsWithoutExpectedValues.length !== 0 ||
+      caseOutputEntries.length !== testCaseCount ||
+      caseOutputEntries.some(([identity, counts]) => (
+        !identity ||
+        !counts ||
+        typeof counts !== "object" ||
+        Array.isArray(counts) ||
+        !Object.keys(counts).length ||
+        Object.values(counts).some((count) => !Number.isInteger(Number(count)) || Number(count) < 1)
+      )) ||
+      countedExpectedValues !== expValueCount ||
+      Number(oracleEvidence?.simulationValueCount) !== expValueCount ||
+      Number(oracleEvidence?.expValueCount) !== expValueCount ||
+      !oracleEvidence?.simulationResult
+    ) {
+      throw Object.assign(new Error("Host cannot package TCSD completion without complete per-Test oracle evidence."), {
+        code: TCSD_ERROR_CODES.validation
+      });
+    }
+    const latestWorkbook = (oracleCheckpoint.artifacts || [])
       .find((artifact) => artifact.kind === "xlsx")?.path || "";
     if (!latestWorkbook) {
       throw Object.assign(new Error("Host cannot package TCSD completion without a verified final workbook."), {
@@ -349,9 +401,7 @@ export class TcsdHermesStageExecutor {
     if (latestWorkbookAbsolutePath !== finalWorkbookAbsolutePath) {
       await fs.copyFile(latestWorkbookAbsolutePath, finalWorkbookAbsolutePath);
     }
-    const latestSimulation = job.stages?.[10]?.checkpoint?.evidence?.simulationResult ||
-      job.stages?.[7]?.checkpoint?.evidence?.simulationResult ||
-      "";
+    const latestSimulation = oracleEvidence.simulationResult;
     const initialCoverageArtifact = job.stages?.[8]?.checkpoint?.evidence?.coverageReport || "";
     const finalCoverageArtifact = job.stages?.[10]?.checkpoint?.evidence?.coverageReport || initialCoverageArtifact;
     const planningMappingArtifact = artifacts.find((artifact) => artifact.role === "planning-mapping-assessment");
@@ -398,8 +448,19 @@ export class TcsdHermesStageExecutor {
       generatedAt: this.now(),
       workbook: finalWorkbookPath,
       simulation: {
-        status: latestSimulation ? "completed" : "not_required",
+        status: "completed",
         result: latestSimulation
+      },
+      oracle: {
+        authority: "host",
+        status: "complete",
+        sourceStageIndex: oracleStageIndex,
+        testCaseCount,
+        expValueCount,
+        testsWithoutExpectedValues: [],
+        caseOutputCounts,
+        simulationResult: latestSimulation,
+        workbookSha256: sha256(await fs.readFile(finalWorkbookAbsolutePath))
       },
       evidence: {
         checkpointCount: (job.checkpoints || []).length + 1,
@@ -607,7 +668,15 @@ export class TcsdHermesStageExecutor {
       resultReadError = cause;
     }
     const runtimeError = stageRuntimeResultError(result, stageIndex, attempt, sessionId);
-    if (runtimeError) throw runtimeError;
+    if (runtimeError) {
+      runtimeError.details = {
+        ...(runtimeError.details || {}),
+        profile: this.profile,
+        model: tokenUsage.model,
+        tokenUsage
+      };
+      throw runtimeError;
+    }
     let validatedResult;
     let semanticEvidence;
     try {

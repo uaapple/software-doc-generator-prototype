@@ -202,14 +202,23 @@ for k = 1:numel(steps)
         sampleValue = sample_output_value(data, vals.Time, sampleIndex);
         if isscalar(sampleValue)
             outputs.(signalName) = double(sampleValue);
+            % MQTester checks an expValue written after this event at the next
+            % event too, so both interval boundaries must be observed. A
+            % singleton timestamp is not evidence of stability (duplicate
+            % event samples included).
             if k < numel(steps)
-                intervalMask = vals.Time >= (eventTimes(k) - (dt / 100)) & vals.Time < (eventTimes(k + 1) - (dt / 100));
+                intervalStart = eventTimes(k);
+                intervalEnd = eventTimes(k + 1);
+                intervalMask = following_interval_mask(vals.Time, intervalStart, intervalEnd, dt);
+                hasCompleteInterval = has_complete_interval_samples( ...
+                    vals.Time(intervalMask), intervalStart, intervalEnd, dt);
             else
-                intervalMask = abs(vals.Time - eventTimes(k)) <= (dt / 100);
+                intervalMask = false(size(vals.Time));
+                hasCompleteInterval = false;
             end
             intervalData = interval_output_data(data, vals.Time, intervalMask);
-            if isempty(intervalData)
-                stable.(signalName) = true;
+            if isempty(intervalData) || ~hasCompleteInterval
+                stable.(signalName) = false;
             else
                 intervalData = double(intervalData(:));
                 stable.(signalName) = (max(intervalData) - min(intervalData)) <= stability_tolerance(signalName);
@@ -355,6 +364,31 @@ elseif size(data, ndims(data)) == numel(time)
 else
     values = data(intervalMask);
 end
+end
+
+function mask = following_interval_mask(time, intervalStart, intervalEnd, dt)
+time = double(time(:));
+lowerBound = min(double(intervalStart), double(intervalEnd));
+upperBound = max(double(intervalStart), double(intervalEnd));
+magnitude = max([1; abs(time); abs(lowerBound); abs(upperBound)]);
+timeTolerance = max(dt / 100, 32 * eps(magnitude));
+mask = time >= (lowerBound - timeTolerance) & time <= (upperBound + timeTolerance);
+end
+
+function tf = has_complete_interval_samples(time, intervalStart, intervalEnd, dt)
+if numel(time) < 2
+    tf = false;
+    return;
+end
+time = sort(double(time(:)));
+lowerBound = min(double(intervalStart), double(intervalEnd));
+upperBound = max(double(intervalStart), double(intervalEnd));
+magnitude = max([1; abs(time); abs(lowerBound); abs(upperBound)]);
+timeTolerance = max(dt / 100, 32 * eps(magnitude));
+hasDistinctTimes = any(diff(time) > timeTolerance);
+hasStart = any(abs(time - lowerBound) <= timeTolerance);
+hasEnd = any(abs(time - upperBound) <= timeTolerance);
+tf = hasDistinctTimes && hasStart && hasEnd;
 end
 
 function tol = stability_tolerance(signalName)

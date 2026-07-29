@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -24,13 +25,23 @@ ALLOWED_UNRESOLVED_REASONS = {
 }
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
 SAMPLE_PERIOD_TEXT_RE = re.compile(
-    r"(?i)(simulation|solver|sample|sampling|unit\s*delay|counter|timer|周期|采样|计数|仿真)"
+    r"(?i)(simulation|solver|sample|sampling|unit\s*delay|counter|timer|"
+    r"stored\s+state|feedback\s+path|stateful|周期|采样|计数|仿真|状态|反馈)"
 )
 ACTION_STEP_LIMIT_TEXT_RE = re.compile(
     r"(?i)(exceed(?:s|ing|ed)?|more\s+than|greater\s+than|over|超过|大于|超出)"
     r".{0,80}(?:action\s*)?(?:step|steps|步|guardrail|limit|限制)"
     r"|(?:step|steps|步|guardrail|limit|限制).{0,80}"
     r"(?:exceed(?:s|ing|ed)?|more\s+than|greater\s+than|over|超过|大于|超出)"
+)
+STATE_TRANSITION_BUDGET_TEXT_RE = re.compile(
+    r"(?is)(?:requir(?:e|es|ed|ing)|demand(?:s|ed|ing)?|need(?:s|ed|ing)?)"
+    r".{0,120}\b(?:toggle|toggles|transition|transitions|increment|increments|"
+    r"update|updates|advance|advances)\b"
+    r".{0,320}\b(?:step|steps|entry|entries|budget|guardrail|limit)\b"
+    r"|\b(?:step|steps|entry|entries|budget|guardrail|limit)\b"
+    r".{0,320}(?:toggle|toggles|transition|transitions|increment|increments|"
+    r"update|updates|advance|advances)\b"
 )
 
 
@@ -230,7 +241,11 @@ def unresolved_confuses_sample_periods_with_action_steps(
         return False
     if guardrails.get("longHoldAsSingleActionAllowed") is not True:
         return False
-    return bool(SAMPLE_PERIOD_TEXT_RE.search(evidence) and ACTION_STEP_LIMIT_TEXT_RE.search(evidence))
+    action_budget_claim = (
+        ACTION_STEP_LIMIT_TEXT_RE.search(evidence)
+        or STATE_TRANSITION_BUDGET_TEXT_RE.search(evidence)
+    )
+    return bool(SAMPLE_PERIOD_TEXT_RE.search(evidence) and action_budget_claim)
 
 
 def validate_proposal(
@@ -480,8 +495,43 @@ def main() -> int:
     brief = read_json(Path(args.brief))
     if brief.get("schema") != BRIEF_SCHEMA:
         raise ValueError("coverage repair brief schema is invalid")
-    proposal = read_json(Path(args.proposal))
-    ir, report = validate_proposal(proposal, brief, read_json(Path(args.interface)))
+    interface = read_json(Path(args.interface))
+    proposal: dict[str, Any] = {}
+    try:
+        proposal = read_json(Path(args.proposal))
+        ir, report = validate_proposal(proposal, brief, interface)
+    except ValueError as error:
+        failure_report = {
+            "schema": VALIDATION_SCHEMA,
+            "jobId": brief.get("jobId"),
+            "model": brief.get("model"),
+            "proposalItemCount": len(proposal.get("tests", []))
+            if isinstance(proposal, dict) and isinstance(proposal.get("tests"), list)
+            else 0,
+            "acceptedCandidateCount": 0,
+            "unresolvedCount": 0,
+            "acceptedCandidateIds": [],
+            "unresolved": [],
+            "guardrails": brief.get("guardrails", {}),
+            "passed": False,
+            "error": {
+                "code": "proposal_validation_failed",
+                "message": str(error),
+            },
+        }
+        write_json(Path(args.report_json), failure_report)
+        print(
+            json.dumps(
+                {
+                    "output": args.report_json,
+                    "passed": False,
+                    "error": str(error),
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        return 2
     write_json(Path(args.output_ir), ir)
     write_json(Path(args.report_json), report)
     print(

@@ -450,7 +450,27 @@ def validate_workbook_stage(request: dict[str, Any], require_exp_values: bool) -
         or action_step_count < int(report.get("test_count") or 0)
     ):
         first = (report.get("errors") or [{"code": "missing_executable_tests"}])[0]
-        raise ValueError(f"TCSD workbook semantic validation failed: {first.get('code')}")
+        message = f"TCSD workbook semantic validation failed: {first.get('code')}"
+        missing_error = next(
+            (
+                error
+                for error in report.get("errors") or []
+                if error.get("code") == "missing_test_exp_values"
+            ),
+            None,
+        )
+        if missing_error:
+            missing_tests = missing_error.get("test_cases")
+            if not isinstance(missing_tests, list):
+                missing_tests = report.get("missing_exp_value_test_cases") or []
+            labels = [
+                str(item.get("test_id") or f"row {item.get('row')}")
+                for item in missing_tests
+                if isinstance(item, dict)
+            ]
+            if labels:
+                message = f"{message} (missing Test cases: {', '.join(labels)})"
+        raise ValueError(message)
     return {
         "testCount": int(report["test_count"]),
         "inputAssignmentCount": int(report.get("input_assignment_count") or 0),

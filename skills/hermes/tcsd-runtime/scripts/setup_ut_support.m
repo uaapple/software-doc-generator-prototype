@@ -171,6 +171,7 @@ if should_skip_project_path(scriptDir, rootDir)
     return;
 end
 [~, name, ext] = fileparts(scriptPath);
+fileName = [name ext];
 excludedNames = {
     'setup_ut_support.m'
     'simulate_tcsd_cases.m'
@@ -178,9 +179,19 @@ excludedNames = {
     'configure_tcsd_sim_config.m'
     'cast_input_for_simulink_ut.m'
 };
-if any(strcmpi([name ext], excludedNames))
+if any(strcmpi(fileName, excludedNames)) || is_backup_or_temporary_init_script(fileName)
     skip = true;
 end
+end
+
+function tf = is_backup_or_temporary_init_script(fileName)
+normalized = lower(char(fileName));
+tf = ~isempty(regexp(normalized, ...
+    '(^|[._-])(backup|bak|copy|old|orig|original|tmp|temp|autosave)([._-]|$)', ...
+    'once')) || ...
+    contains(normalized, '备份') || ...
+    contains(normalized, '副本') || ...
+    contains(normalized, '~');
 end
 
 function relPath = relative_to_root(filePath, rootDir)
@@ -242,6 +253,12 @@ function restore_matlab_mcp_core_path()
 homeDir = getenv('HOME');
 if isempty(homeDir)
     homeDir = getenv('USERPROFILE');
+end
+
+sessionRoot = getenv('MW_MCP_SESSION_DIR');
+if ~isempty(sessionRoot) && exist(fullfile(sessionRoot, '+matlab_mcp'), 'dir')
+    addpath(sessionRoot);
+    return;
 end
 
 candidates = {};
