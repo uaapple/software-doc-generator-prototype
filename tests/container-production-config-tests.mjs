@@ -57,12 +57,9 @@ assert.match(linuxCompose, /read_only:\s*true/);
 assert.match(linuxCompose, /no-new-privileges:true/);
 assert.match(linuxCompose, /pull_policy:\s*never/);
 assert.match(linuxCompose, /SDG_PLATFORM_SKILLS_DIR/);
-assert.doesNotMatch(linuxCompose, /source:\s*platform-skills/);
-assert.doesNotMatch(
-  linuxCompose,
-  /for directory in[^\n]*(?:state\/data|state\/platform-skills)/,
-  "Linux permissions init must not mutate existing production data or skills roots"
-);
+assert.match(linuxCompose, /SDG_PLATFORM_HOME_DIR/);
+assert.doesNotMatch(linuxCompose, /permissions-init|platform-skills|platform-home:/);
+assert.doesNotMatch(linuxCompose, /user:\s*["']?0:0|cap_add:|CHOWN|FOWNER/);
 assert.doesNotMatch(linuxCompose, /^\s+build:/m);
 assert.doesNotMatch(
   linuxCompose,
@@ -204,17 +201,21 @@ function testLinuxPersistentDirectoryPreflight() {
     const dataRoot = path.join(temporaryDirectory, "prod-data");
     const skillsRoot = path.join(temporaryDirectory, "prod-skills");
     const logsRoot = path.join(temporaryDirectory, "logs");
+    const homeRoot = path.join(temporaryDirectory, "home");
     const envFile = path.join(temporaryDirectory, "production.env");
     const fakeDocker = path.join(temporaryDirectory, "docker");
     const callsFile = path.join(temporaryDirectory, "docker-calls.txt");
     fs.mkdirSync(dataRoot);
     fs.mkdirSync(skillsRoot);
+    fs.mkdirSync(logsRoot);
+    fs.mkdirSync(homeRoot);
     fs.writeFileSync(
       envFile,
       linuxEnvironment()
         .replace("SDG_CONTAINER_DATA_DIR=/tmp/sdg-data", `SDG_CONTAINER_DATA_DIR=${dataRoot}`)
         .replace("SDG_PLATFORM_SKILLS_DIR=/tmp/sdg-skills", `SDG_PLATFORM_SKILLS_DIR=${skillsRoot}`)
-        .replace("SDG_PLATFORM_LOG_DIR=/tmp/sdg-platform-logs", `SDG_PLATFORM_LOG_DIR=${logsRoot}`),
+        .replace("SDG_PLATFORM_LOG_DIR=/tmp/sdg-platform-logs", `SDG_PLATFORM_LOG_DIR=${logsRoot}`)
+        .replace("SDG_PLATFORM_HOME_DIR=/tmp/sdg-platform-home", `SDG_PLATFORM_HOME_DIR=${homeRoot}`),
       "utf8"
     );
     fs.writeFileSync(
@@ -252,7 +253,9 @@ function testLinuxPersistentDirectoryPreflight() {
     const calls = fs.readFileSync(callsFile, "utf8");
     assert.match(calls, new RegExp(`type=bind,source=${escapeRegex(dataRoot)},target=/probe,readonly`));
     assert.match(calls, new RegExp(`type=bind,source=${escapeRegex(skillsRoot)},target=/probe,readonly`));
-    assert.ok(fs.statSync(logsRoot).isDirectory());
+    assert.match(calls, new RegExp(`type=bind,source=${escapeRegex(logsRoot)},target=/probe,readonly`));
+    assert.match(calls, new RegExp(`type=bind,source=${escapeRegex(homeRoot)},target=/probe,readonly`));
+    assert.doesNotMatch(calls, /permissions-init/);
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
@@ -437,6 +440,7 @@ function linuxEnvironment() {
     "SDG_CONTAINER_DATA_DIR=/tmp/sdg-data",
     "SDG_PLATFORM_SKILLS_DIR=/tmp/sdg-skills",
     "SDG_PLATFORM_LOG_DIR=/tmp/sdg-platform-logs",
+    "SDG_PLATFORM_HOME_DIR=/tmp/sdg-platform-home",
     "SDG_PLATFORM_BIND_IP=10.0.0.10",
     "SDG_WIKI_BIND_IP=10.0.0.10",
     "HERMES_AGENT_TOKEN=hermes-secret",

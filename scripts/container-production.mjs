@@ -46,6 +46,7 @@ const targetConfig = {
       "SDG_CONTAINER_DATA_DIR",
       "SDG_PLATFORM_SKILLS_DIR",
       "SDG_PLATFORM_LOG_DIR",
+      "SDG_PLATFORM_HOME_DIR",
       "SDG_PLATFORM_BIND_IP",
       "SDG_WIKI_BIND_IP"
     ]
@@ -283,7 +284,7 @@ function prepareDirectories() {
         "SDG_PROJECT_ADDONS_DIR",
         "SDG_WORKER_LOG_DIR"
       ]
-    : ["SDG_PLATFORM_LOG_DIR"];
+    : [];
   if (target === "windows-worker" && process.platform === "win32") {
     prepareApprovedWindowsDirectories(
       keys.map((key) => ({ value: value(key), category: key }))
@@ -341,7 +342,12 @@ function validateLinuxPersistentDirectories() {
   if (!Number.isInteger(containerUid) || !Number.isInteger(containerGid)) {
     throw new Error("Unable to resolve the Platform container node UID/GID.");
   }
-  for (const key of ["SDG_CONTAINER_DATA_DIR", "SDG_PLATFORM_SKILLS_DIR"]) {
+  for (const key of [
+    "SDG_CONTAINER_DATA_DIR",
+    "SDG_PLATFORM_SKILLS_DIR",
+    "SDG_PLATFORM_LOG_DIR",
+    "SDG_PLATFORM_HOME_DIR"
+  ]) {
     const directory = resolveDirectory(key);
     const metadata = fs.lstatSync(directory, { throwIfNoEntry: false });
     if (!metadata?.isDirectory() || metadata.isSymbolicLink()) {
@@ -497,7 +503,6 @@ async function main() {
     return;
   }
   if (action === "up") {
-    runDocker([...composeArgs, "run", "--rm", "permissions-init"]);
     runDocker([
       ...composeArgs,
       "up",

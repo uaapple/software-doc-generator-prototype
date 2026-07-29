@@ -14,44 +14,10 @@ x-platform-runtime: &platform-runtime
     - /tmp:rw,noexec,nosuid,size=256m
 
 services:
-  permissions-init:
-    platform: linux/amd64
-    image: ${SDG_PLATFORM_IMAGE:?SDG_PLATFORM_IMAGE must be an immutable reference}
-    pull_policy: never
-    user: "0:0"
-    read_only: true
-    restart: "no"
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - FOWNER
-    entrypoint:
-      - /bin/sh
-      - -eu
-      - -c
-    command:
-      - |
-        for directory in /state/logs /state/platform-home; do
-          chgrp 20000 "$$directory"
-          chmod 2770 "$$directory"
-        done
-    volumes:
-      - type: bind
-        source: ${SDG_PLATFORM_LOG_DIR:?SDG_PLATFORM_LOG_DIR must be set}
-        target: /state/logs
-      - type: volume
-        source: platform-home
-        target: /state/platform-home
-
   platform:
     <<: *platform-runtime
     image: ${SDG_PLATFORM_IMAGE:?SDG_PLATFORM_IMAGE must be an immutable reference}
     pull_policy: never
-    group_add:
-      - "20000"
     environment:
       APP_ENV: production
       APP_RUNTIME_ROLE: platform
@@ -86,8 +52,8 @@ services:
       - type: bind
         source: ${SDG_PLATFORM_SKILLS_DIR:?SDG_PLATFORM_SKILLS_DIR must be set}
         target: /var/lib/sdg/skills
-      - type: volume
-        source: platform-home
+      - type: bind
+        source: ${SDG_PLATFORM_HOME_DIR:?SDG_PLATFORM_HOME_DIR must be set}
         target: /var/lib/sdg/home
       - type: bind
         source: ${SDG_PLATFORM_LOG_DIR:?SDG_PLATFORM_LOG_DIR must be set}
@@ -105,7 +71,3 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
-
-volumes:
-  platform-home:
-    name: ${SDG_PLATFORM_HOME_VOLUME_NAME:-sdg-platform-home-prod}

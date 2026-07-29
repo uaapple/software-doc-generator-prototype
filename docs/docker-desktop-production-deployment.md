@@ -144,8 +144,10 @@ Linux 容器直接复用原生服务已经使用的 `prod-data` 与 `prod-skills
 只读发布根下创建空的 `container-data`，也不得以空 Docker volume 覆盖正式
 技能目录。生产 preflight 会解析镜像内 `node` 的数值 UID/GID，确认两个既有
 目录无需改权即可写入，并用只读临时容器验证 Docker daemon 能挂载它们。
-`permissions-init` 只处理新建的日志目录与容器 home volume，不对
-`prod-data`、`prod-skills` 执行 `chgrp`、`chmod` 或递归修改。
+日志和容器 home 也必须是预先创建、由镜像内 `node` UID/GID 可写的 bind
+mount。生产 Compose 不运行 root `permissions-init`，不申请 CHOWN/FOWNER
+capability，也不对任何正式目录执行 `chgrp`、`chmod` 或递归修改。该边界同时
+避免 Snap Docker 在 `no-new-privileges` 下拒绝 root shell 初始化容器。
 
 ## Windows Docker Desktop Worker
 
