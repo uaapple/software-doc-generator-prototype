@@ -663,76 +663,76 @@ export async function createApp() {
   });
 
   app.get("/", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "index.html"));
+    res.sendFile("index.html", { root: config.publicDir });
   });
   app.get("/projects/new", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "project-create.html"));
+    res.sendFile("project-create.html", { root: config.publicDir });
   });
   app.get("/projects/:projectId/edit", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "project-create.html"));
+    res.sendFile("project-create.html", { root: config.publicDir });
   });
   app.get("/projects/:projectId", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "project-detail.html"));
+    res.sendFile("project-detail.html", { root: config.publicDir });
   });
   app.get("/projects/:projectId/modules/new", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "module-create.html"));
+    res.sendFile("module-create.html", { root: config.publicDir });
   });
   app.get("/projects/:projectId/modules/:moduleId/edit", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "module-create.html"));
+    res.sendFile("module-create.html", { root: config.publicDir });
   });
   app.get("/projects/:projectId/modules/:moduleId", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "module-detail.html"));
+    res.sendFile("module-detail.html", { root: config.publicDir });
   });
   app.get("/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/:taskId", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "task-detail.html"));
+    res.sendFile("task-detail.html", { root: config.publicDir });
   });
   app.get("/projects/:projectId/modules/:moduleId/tasks/:taskId", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "task-detail.html"));
+    res.sendFile("task-detail.html", { root: config.publicDir });
   });
   app.get("/requirement-generation", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "requirement-generation.html"));
+    res.sendFile("requirement-generation.html", { root: config.publicDir });
   });
   app.get("/detail-design-generation", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "detail-design-generation.html"));
+    res.sendFile("detail-design-generation.html", { root: config.publicDir });
   });
   app.get("/generation-tools", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "generation-tools.html"));
+    res.sendFile("generation-tools.html", { root: config.publicDir });
   });
   app.get("/software-detail-design-generation", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "software-detail-design-generation.html"));
+    res.sendFile("software-detail-design-generation.html", { root: config.publicDir });
   });
   app.get("/document-extractor", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "document-extractor.html"));
+    res.sendFile("document-extractor.html", { root: config.publicDir });
   });
   app.get("/slx-parser", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "slx-parser.html"));
+    res.sendFile("slx-parser.html", { root: config.publicDir });
   });
   app.get("/windows-worker-debug", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "windows-worker-debug.html"));
+    res.sendFile("windows-worker-debug.html", { root: config.publicDir });
   });
   app.get("/slx-interpreter", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "slx-parser.html"));
+    res.sendFile("slx-parser.html", { root: config.publicDir });
   });
   app.get("/hil-test-case-generation", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "hil-test-case-generation.html"));
+    res.sendFile("hil-test-case-generation.html", { root: config.publicDir });
   });
   app.get("/unit-test-case-generation", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "unit-test-case-generation.html"));
+    res.sendFile("unit-test-case-generation.html", { root: config.publicDir });
   });
   app.get("/skill-refinement", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "skill-refinement.html"));
+    res.sendFile("skill-refinement.html", { root: config.publicDir });
   });
   app.get("/skill-management", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "skill-management.html"));
+    res.sendFile("skill-management.html", { root: config.publicDir });
   });
   app.get("/feedback-pool", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "feedback-pool.html"));
+    res.sendFile("feedback-pool.html", { root: config.publicDir });
   });
   app.get("/feedback-tickets", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "feedback-tickets.html"));
+    res.sendFile("feedback-tickets.html", { root: config.publicDir });
   });
   app.get("/replay-lab", (_req, res) => {
-    res.sendFile(path.join(config.publicDir, "replay-lab.html"));
+    res.sendFile("replay-lab.html", { root: config.publicDir });
   });
   app.use("/feedback-ticket-assets", express.static(config.feedbackTicketUploadDir));
   app.use(express.static(config.publicDir));
