@@ -229,20 +229,97 @@ function isWorkbookOutput(relativePath = "") {
   return parts.length === 2 && parts[0] === "outputs" && parts[1].toLowerCase().endsWith(".xlsx");
 }
 
-function countTextOccurrences(text = "", needle = "") {
-  if (!needle) {
-    return 0;
+function decodeXmlEntities(value = "") {
+  return String(value || "")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_match, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_match, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&apos;", "'")
+    .replaceAll("&amp;", "&");
+}
+
+function readXmlAttributes(fragment = "") {
+  const attributes = {};
+  for (const match of String(fragment || "").matchAll(/([A-Za-z_:][A-Za-z0-9_.:-]*)="([^"]*)"/g)) {
+    attributes[match[1]] = decodeXmlEntities(match[2]);
   }
-  let count = 0;
-  let offset = 0;
-  while (true) {
-    const index = text.indexOf(needle, offset);
-    if (index === -1) {
-      return count;
+  return attributes;
+}
+
+function parseSharedStrings(xml = "") {
+  return [...String(xml || "").matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)].map((item) =>
+    [...item[1].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+      .map((text) => decodeXmlEntities(text[1] || ""))
+      .join("")
+  );
+}
+
+function columnRefToIndex(cellRef = "") {
+  const letters = String(cellRef || "").match(/[A-Za-z]+/)?.[0] || "";
+  let index = 0;
+  for (const letter of letters.toUpperCase()) {
+    index = index * 26 + letter.charCodeAt(0) - 64;
+  }
+  return Math.max(0, index - 1);
+}
+
+function parseWorksheetRows(xml = "", sharedStrings = []) {
+  const rows = [];
+  for (const rowMatch of String(xml || "").matchAll(/<row\b([^>]*)>([\s\S]*?)<\/row>/g)) {
+    const rowAttributes = readXmlAttributes(rowMatch[1]);
+    const rowNumber = Number(rowAttributes.r) || rows.length + 1;
+    const values = [];
+    for (const cellMatch of rowMatch[2].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+      const attributes = readXmlAttributes(cellMatch[1]);
+      const columnIndex = columnRefToIndex(attributes.r || "");
+      let value = "";
+      if (attributes.t === "inlineStr") {
+        value = [...cellMatch[2].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)]
+          .map((text) => decodeXmlEntities(text[1] || ""))
+          .join("");
+      } else {
+        const rawValue = cellMatch[2].match(/<v\b[^>]*>([\s\S]*?)<\/v>/)?.[1] || "";
+        const sharedIndex = Number(rawValue);
+        value = attributes.t === "s" && Number.isInteger(sharedIndex)
+          ? sharedStrings[sharedIndex] || ""
+          : decodeXmlEntities(rawValue);
+      }
+      values[columnIndex] = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
     }
-    count += 1;
-    offset = index + needle.length;
+    rows.push({ row: rowNumber, values });
   }
+  return rows;
+}
+
+function resolveTcsdWorksheetPath(archive) {
+  const workbookXml = archive.readText("xl/workbook.xml", { required: true });
+  const relationshipsXml = archive.readText("xl/_rels/workbook.xml.rels", { required: true });
+  const tcsdSheet = [...workbookXml.matchAll(/<sheet\b([^>]*)\/>/g)]
+    .map((match) => readXmlAttributes(match[1]))
+    .find((sheet) => sheet.name === "TCSD");
+  if (!tcsdSheet) {
+    return "";
+  }
+  const relationshipId = tcsdSheet["r:id"] || tcsdSheet.id || "";
+  const relationship = [...relationshipsXml.matchAll(/<Relationship\b([^>]*)\/>/g)]
+    .map((match) => readXmlAttributes(match[1]))
+    .find((item) => item.Id === relationshipId);
+  if (!relationship?.Target) {
+    return "";
+  }
+  const target = relationship.Target.replaceAll("\\", "/").replace(/^\/+/, "");
+  return target.startsWith("xl/") ? target : `xl/${target}`;
+}
+
+function countTcsdExpValues(text = "") {
+  return String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .filter((line) => /^\s*[A-Za-z_]\w*\s*=\s*expValue\s*\(/.test(line))
+    .length;
 }
 
 async function summarizeWorkbookExpectedValues(absolutePath = "") {
@@ -251,14 +328,47 @@ async function summarizeWorkbookExpectedValues(absolutePath = "") {
     maxEntryUncompressedBytes: 64 * 1024 * 1024,
     maxTotalUncompressedBytes: 256 * 1024 * 1024
   });
+  const worksheetPath = resolveTcsdWorksheetPath(archive);
+  if (!worksheetPath) {
+    return { expValueCount: 0, testCaseCount: 0, missingExpectedValueTestCases: [] };
+  }
+  const sharedStringsXml = archive.readText("xl/sharedStrings.xml");
+  const rows = parseWorksheetRows(
+    archive.readText(worksheetPath, { required: true }),
+    sharedStringsXml ? parseSharedStrings(sharedStringsXml) : []
+  );
+  const header = rows.find((item) => item.row === 1)?.values || [];
+  const headerIndex = (name, fallback) => {
+    const index = header.findIndex((value) => String(value || "").trim() === name);
+    return index >= 0 ? index : fallback;
+  };
+  const testIdColumn = headerIndex("TestID", 0);
+  const typeColumn = headerIndex("Type", 2);
+  const initializationColumn = headerIndex("Initialization", 5);
+  const actionColumn = headerIndex("Action", 6);
   let expValueCount = 0;
-  for (const entry of archive.readTextEntriesBySuffix(".xml")) {
-    if (!entry.fileName.startsWith("xl/worksheets/") && entry.fileName !== "xl/sharedStrings.xml") {
+  const testCases = [];
+  for (const item of rows) {
+    const rowType = String(item.values[typeColumn] || "").trim();
+    if (rowType !== "Test" && rowType !== "TestGroup") {
       continue;
     }
-    expValueCount += countTextOccurrences(entry.text, "expValue(");
+    const initializationExpValueCount = countTcsdExpValues(item.values[initializationColumn]);
+    const actionExpValueCount = countTcsdExpValues(item.values[actionColumn]);
+    expValueCount += initializationExpValueCount + actionExpValueCount;
+    if (rowType === "Test") {
+      testCases.push({
+        row: item.row,
+        testId: String(item.values[testIdColumn] || "").trim(),
+        expectedValueCount: actionExpValueCount
+      });
+    }
   }
-  return { expValueCount };
+  return {
+    expValueCount,
+    testCaseCount: testCases.length,
+    missingExpectedValueTestCases: testCases.filter((item) => item.expectedValueCount < 1)
+  };
 }
 
 function toPlatformPath(filePath = "") {
@@ -1003,6 +1113,8 @@ export class UnitTestCaseGenerationService {
             : "生成的 TCSD 单元测试用例 Excel"
         ),
         expectedValueCount: expectedValueSummary.expValueCount,
+        testCaseCount: expectedValueSummary.testCaseCount,
+        missingExpectedValueTestCases: expectedValueSummary.missingExpectedValueTestCases,
         createdAt: now()
       });
     }
@@ -1020,17 +1132,34 @@ export class UnitTestCaseGenerationService {
         expectedOutputPattern: task.hermes?.expectedOutputPattern || unitTestCaseConfig().expectedOutputPattern
       });
     }
-    const usableArtifacts = artifacts.filter((artifact) => Number(artifact.expectedValueCount || 0) > 0);
-    if (!usableArtifacts.length) {
+    const invalidArtifacts = artifacts.filter((artifact) =>
+      Number(artifact.testCaseCount || 0) < 1 ||
+      artifact.missingExpectedValueTestCases.length > 0
+    );
+    if (invalidArtifacts.length) {
+      const missingTestCases = invalidArtifacts.flatMap((artifact) =>
+        artifact.missingExpectedValueTestCases.map((testCase) => ({
+          relativePath: artifact.relativePath,
+          ...testCase
+        }))
+      );
+      const missingLabels = missingTestCases
+        .map((item) => item.testId || `row ${item.row}`)
+        .join(", ");
       throw createHttpError(
-        "Hermes 已生成 TCSD workbook，但未检测到 expValue(...) 期望值；该用例无法作为自动化测试执行结果使用。",
+        missingTestCases.length
+          ? `Hermes 已生成 TCSD workbook，但以下 Test 用例未检测到 expValue(...) 期望值：${missingLabels}。`
+          : "Hermes 已生成 TCSD workbook，但未检测到可执行的普通 Test 用例及其 expValue(...) 期望值。",
         502,
         "unit_test_case_expected_values_missing",
         {
           artifacts: artifacts.map((artifact) => ({
             relativePath: artifact.relativePath,
-            expectedValueCount: artifact.expectedValueCount || 0
-          }))
+            expectedValueCount: artifact.expectedValueCount || 0,
+            testCaseCount: artifact.testCaseCount || 0,
+            missingExpectedValueTestCases: artifact.missingExpectedValueTestCases
+          })),
+          missingTestCases
         }
       );
     }
