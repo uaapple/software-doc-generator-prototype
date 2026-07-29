@@ -1,0 +1,6 @@
+interface:
+  display_name: "Simulink 模块功能描述 · 阶段 7 模块草稿"
+  short_description: "依据行为组逐文档单元生成模块功能与实现草稿"
+  default_prompt: "Use $software-detail-stage-07-module-draft to draft each document unit from its projected boundary behavior groups."
+policy:
+  allow_implicit_invocation: false

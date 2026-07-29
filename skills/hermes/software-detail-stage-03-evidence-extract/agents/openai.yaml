@@ -1,0 +1,7 @@
+interface:
+  display_name: "Simulink 模块功能描述 · 阶段 3 证据提取"
+  short_description: "逐分析单元深读模型并生成可追溯证据分片"
+  default_prompt: "Use $software-detail-stage-03-evidence-extract to collect bounded model evidence shards for the planned analysis units."
+
+policy:
+  allow_implicit_invocation: false

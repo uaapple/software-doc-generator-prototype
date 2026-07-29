@@ -35,6 +35,9 @@ const workerContainerfile = read("containers/worker/Containerfile");
 const matlabWorkerServer = read("src/matlab-worker-server.js");
 const containerDevScript = read("scripts/container-dev.mjs");
 const gatewayLauncher = read("scripts/start-matlab-gateway.mjs");
+const packageConfig = JSON.parse(read("package.json"));
+const platformClosureCheckCommand = "node scripts/check-platform-container.mjs";
+const containerConfigTestScript = packageConfig.scripts["test:container-config"];
 assert.match(compose, /platform:\s*linux\/amd64/);
 assert.match(compose, /host\.docker\.internal:5100/);
 assert.match(compose, /read_only:\s*true/);
@@ -66,6 +69,25 @@ assert.equal(
 );
 assert.equal(platformSkillsDirectory, "/var/lib/sdg/skills");
 assert.match(platformContainerfile, /^USER node$/m, "platform must run as a non-root user");
+for (const dependency of [
+  "src/services/software-detail-pipeline-contract.js",
+  "src/services/software-detail-stage-catalog.js"
+]) {
+  assert.ok(
+    platformContainerfile.includes(dependency),
+    `platform image must include ${dependency}`
+  );
+}
+assert.equal(
+  containerConfigTestScript.split(platformClosureCheckCommand).length - 1,
+  1,
+  "container config tests must run the platform dependency-closure check once"
+);
+assert.ok(
+  containerConfigTestScript.indexOf(platformClosureCheckCommand) <
+    containerConfigTestScript.indexOf("node tests/container-config-tests.mjs"),
+  "platform dependency-closure check must run before container configuration tests"
+);
 assert.match(
   workerContainerfile,
   /COPY public\/skill-kind-matrix\.js \.\/public\/skill-kind-matrix\.js/,
@@ -192,6 +214,8 @@ assert.match(emptyPreflight.stderr, /DEEPSEEK_API_KEY/);
 
 testProviderPreflightFailsClosed();
 testHermesProviderComposeMapping();
+testMacWorkerProfileConfiguration();
+testWorkerProfileModeCompatibility();
 testQuietConfigDoesNotExposeSecrets();
 
 console.log("Container configuration tests passed.");
@@ -458,6 +482,92 @@ function renderComposeConfig(temporaryDirectory, fileName, providerLines) {
   );
   assert.equal(result.status, 0, "docker compose config must render the provider mapping");
   return JSON.parse(result.stdout);
+}
+
+function testMacWorkerProfileConfiguration() {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-mac-worker-profile-"));
+  try {
+    const rendered = renderComposeConfig(
+      temporaryDirectory,
+      "mac-worker-profile.env",
+      [
+        "HERMES_INFERENCE_PROVIDER=deepseek",
+        "HERMES_INFERENCE_MODEL=deepseek-v4-pro",
+        "DEEPSEEK_API_KEY=deepseek-test-placeholder",
+        "DEEPSEEK_BASE_URL=https://api.deepseek.com"
+      ]
+    );
+    const platformEnvironment = rendered.services.platform.environment;
+    const profileDocument = JSON.parse(platformEnvironment.UNIT_TEST_WORKER_PROFILES_JSON);
+    assert.deepEqual(profileDocument.workers, [
+      {
+        id: "mac-container",
+        label: "Mac Container Worker",
+        hermesTransport: "api",
+        hermesBaseURL: "http://worker:3101",
+        hermesApiMode: "upload",
+        hermesAuthTokenEnv: "HERMES_AUTH_TOKEN",
+        matlabBaseURL: "http://host.docker.internal:5100",
+        matlabHttpMode: "gateway",
+        matlabAuthTokenEnv: "MATLAB_MCP_AUTH_TOKEN"
+      }
+    ]);
+    assert.equal(platformEnvironment.HERMES_AUTH_TOKEN, "hermes-test-placeholder");
+    assert.equal(platformEnvironment.MATLAB_MCP_AUTH_TOKEN, "gateway-test-placeholder");
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+function testWorkerProfileModeCompatibility() {
+  const childScript = [
+    'import assert from "node:assert/strict";',
+    'import { config } from "./src/config.js";',
+    "const [upload, legacy] = config.unitTestCase.workerProfiles;",
+    'assert.equal(upload.hermesTransport, "api");',
+    'assert.equal(upload.hermesApiMode, "upload");',
+    'assert.equal(upload.hermesAuthToken, "profile-test-hermes");',
+    'assert.equal(upload.matlabHttpMode, "gateway");',
+    'assert.equal(upload.matlabAuthToken, "profile-test-matlab");',
+    'assert.equal(legacy.hermesApiMode, "json");',
+    'assert.equal(legacy.matlabHttpMode, "path");'
+  ].join("\n");
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "--eval", childScript],
+    {
+      cwd: rootDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HERMES_AUTH_TOKEN: "profile-test-hermes",
+        HERMES_API_MODE: "json",
+        MATLAB_MCP_AUTH_TOKEN: "profile-test-matlab",
+        MATLAB_MCP_HTTP_MODE: "path",
+        UNIT_TEST_DEFAULT_WORKER_ID: "upload",
+        UNIT_TEST_WORKER_PROFILES_JSON: JSON.stringify({
+          workers: [
+            {
+              id: "upload",
+              hermesTransport: "api",
+              hermesBaseURL: "http://worker.invalid",
+              hermesApiMode: "upload",
+              hermesAuthTokenEnv: "HERMES_AUTH_TOKEN",
+              matlabBaseURL: "http://gateway.invalid",
+              matlabHttpMode: "gateway",
+              matlabAuthTokenEnv: "MATLAB_MCP_AUTH_TOKEN"
+            },
+            {
+              id: "legacy",
+              hermesBaseURL: "http://legacy-worker.invalid",
+              matlabBaseURL: "http://legacy-matlab.invalid"
+            }
+          ]
+        })
+      }
+    }
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 }
 
 function withoutHermesProviderEnvironment(source) {

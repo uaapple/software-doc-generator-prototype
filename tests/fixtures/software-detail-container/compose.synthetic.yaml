@@ -1,0 +1,22 @@
+services:
+  worker:
+    entrypoint:
+      - /usr/bin/tini
+      - --
+      - node
+      - --disable-warning=ExperimentalWarning
+    command:
+      - tests/software-detail-container-worker-server.mjs
+    volumes:
+      - type: bind
+        source: ${SDD_SYNTHETIC_WORKER_SERVER_FILE:?set SDD_SYNTHETIC_WORKER_SERVER_FILE}
+        target: /opt/sdg/app/tests/software-detail-container-worker-server.mjs
+        read_only: true
+    labels:
+      io.software-doc-generator.validation: synthetic
+      io.software-doc-generator.validation.scope: software-detail-nine-stage-container-flow
+
+  platform:
+    labels:
+      io.software-doc-generator.validation: synthetic
+      io.software-doc-generator.validation.scope: software-detail-nine-stage-container-flow

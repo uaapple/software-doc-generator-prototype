@@ -11,8 +11,10 @@ Windows Docker Desktop Worker 与 Linux VM Platform 的生产部署不是直接�
 ## 运行边界
 
 - `sdg-platform`：前端、后端、Wiki、调度和 Worker 路由。
-- `sdg-hermes-worker`：Hermes Agent、固定 Node/Python、十二阶段技能及运行脚本。
-- 宿主 MATLAB Gateway：提供受限的 workspace/job/asset/artifact API；容器不提交
+- `sdg-hermes-worker`：Hermes Agent、固定 Node/Python、TCSD 单元测试用例生成的
+  十二阶段技能、软件详设生成的九阶段技能及对应运行脚本。
+- 宿主 MATLAB Gateway：为两类流水线提供真实 MATLAB、Simulink、SATK 和 MCP
+  能力；这些软件仍运行在 macOS 宿主，不安装进 Worker 容器。容器不提交
   `/Users/...` 或 Windows 盘符路径。
 - 任务数据、项目 addon、Hermes Home、平台技能状态和日志全部挂载在镜像外。
 
@@ -81,7 +83,8 @@ npm run matlab:gateway:start
 
 如确需覆盖 MATLAB 安装位置，只能通过 `MATLAB_ROOT` 指向一个已存在的目录；
 启动器会把同一值同时传给 `MATLAB_ROOT` 与 `SATK_MATLAB_ROOT`。Gateway 的
-`evaluate_matlab_code` 使用独立 token 和固定调用方标识，仅供十二阶段运行时；
+`evaluate_matlab_code` 使用独立 token 和固定调用方标识，仅供 TCSD 十二阶段和
+软件详设九阶段运行时；
 通用 MCP 调用只允许显式 allowlist 工具和结构化参数，不能透传任意 MATLAB
 代码或宿主路径。
 

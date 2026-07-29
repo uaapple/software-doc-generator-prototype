@@ -85,6 +85,10 @@ windows:
   - src/services/tcsd-hermes-stage-executor.js
   - src/services/tcsd-host-semantic-validator.js
   - src/services/tcsd-hermes-skill-registry.js
+  - src/services/software-detail-hermes-skill-registry.js
+  - src/services/software-detail-hermes-stage-executor.js
+  - src/services/software-detail-matlab-lease-client.js
+  - src/services/software-detail-pipeline-job-service.js
   - src/services/slx-model-analysis-service.js
   - src/services/satk-model-fact-builder.js
   - src/services/slx-model-fact-adapter.js
@@ -143,13 +147,22 @@ shared:
   - src/services/zip-archive.js
   - src/services/tcsd-pipeline-contract.js
   - src/services/tcsd-stage-catalog.js
+  - src/services/software-detail-pipeline-contract.js
+  - src/services/software-detail-artifact-name.js
+  - src/services/software-detail-stage-catalog.js
   - src/services/software-requirement-agent-shared.js
   - src/services/software-requirement-markdown-agent-service.js
   - src/matlab-gateway-app.js
   - src/matlab-worker-server.js
   - src/services/matlab-gateway-contract.js
   - templates/**
-  - skills/**
+  - skills/active/**
+  - skills/bundles/**
+  - skills/examples/**
+  - skills/domain-knowledge.json
+  - skills/requirement_extraction.md
+  - skills/requirement_validation.md
+  - skills/requirement_writing.md
   - docs/**
 dev-only:
   - .github/workflows/**

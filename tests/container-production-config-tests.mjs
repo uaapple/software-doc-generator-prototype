@@ -37,6 +37,8 @@ for (const required of [
 const windowsCompose = read("compose.windows-docker-desktop.yaml");
 const linuxCompose = read("compose.linux-prod.yaml");
 const releaseBuilder = read("scripts/build-container-release.mjs");
+const platformClosureCheckInvocation =
+  'run(process.execPath, ["scripts/check-platform-container.mjs"]);';
 assert.match(windowsCompose, /APP_ENV:\s*production/);
 assert.match(windowsCompose, /APP_RUNTIME_ROLE:\s*hermes-agent/);
 assert.match(windowsCompose, /host\.docker\.internal:5100/);
@@ -83,6 +85,16 @@ assert.match(releaseBuilder, /\["syft", "trivy"\]/);
 assert.match(releaseBuilder, /deploymentToolRevision/);
 assert.match(releaseBuilder, /imageRevision/);
 assert.match(releaseBuilder, /registryReference/);
+assert.equal(
+  releaseBuilder.split(platformClosureCheckInvocation).length - 1,
+  1,
+  "container release build must run the platform dependency-closure check once"
+);
+assert.ok(
+  releaseBuilder.indexOf(platformClosureCheckInvocation) <
+    releaseBuilder.indexOf("buildImage(imageDefinitions.platform)"),
+  "platform dependency-closure check must run before the platform image build"
+);
 assert.doesNotMatch(releaseBuilder, /BUILD_CREATED/);
 assert.doesNotMatch(read("docker/platform.Containerfile"), /BUILD_CREATED|image\.created/);
 assert.doesNotMatch(read("containers/worker/Containerfile"), /BUILD_CREATED|image\.created/);
@@ -98,6 +110,14 @@ assert.ok(
 );
 for (const inputs of Object.values(imageInputs)) {
   assert.ok(!inputs.some((entry) => /^(?:compose|docs\/|\.env|scripts\/container-production)/.test(entry)));
+}
+assert.ok(imageInputs.worker.includes("skills/hermes/software-detail-runtime"));
+for (let stageNumber = 1; stageNumber <= 9; stageNumber += 1) {
+  const prefix = `skills/hermes/software-detail-stage-${String(stageNumber).padStart(2, "0")}-`;
+  assert.ok(
+    imageInputs.worker.some((entry) => entry.startsWith(prefix)),
+    `Worker image inputs must include software-detail stage ${stageNumber}.`
+  );
 }
 for (const name of Object.keys(imageInputs)) {
   assert.match(calculateImageRevision(name), /^sha256:[a-f0-9]{64}$/);

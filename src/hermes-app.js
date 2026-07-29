@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { createWriteStream, promises as fs } from "node:fs";
 import { Transform } from "node:stream";
@@ -21,6 +21,10 @@ import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js"
 import { TCSD_ERROR_CODES, isTerminalJobStatus } from "./services/tcsd-pipeline-contract.js";
 import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.js";
 import { TcsdHermesSkillRegistry } from "./services/tcsd-hermes-skill-registry.js";
+import { SoftwareDetailPipelineJobService, isTerminalSoftwareDetailJobStatus } from "./services/software-detail-pipeline-job-service.js";
+import { SoftwareDetailHermesStageExecutor } from "./services/software-detail-hermes-stage-executor.js";
+import { SoftwareDetailHermesSkillRegistry } from "./services/software-detail-hermes-skill-registry.js";
+import { SoftwareDetailMatlabLeaseClient } from "./services/software-detail-matlab-lease-client.js";
 
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
 const MAX_MULTIPART_FILE_COUNT = 2048;
@@ -489,6 +493,9 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
     skillName: String(inputArtifact.skillName || defaultSkillName).trim(),
     expectedOutputPattern: String(inputArtifact.expectedOutputPattern || defaultExpectedOutputPattern).trim(),
     modelSlxFileName: inputArtifact.modelSlxFileName || path.basename(modelSlxPath),
+    modelSlxOriginalName: String(
+      inputArtifact.modelSlxOriginalName || inputArtifact.modelSlxFileName || path.basename(modelSlxPath)
+    ).trim(),
     modelMatFileName: inputArtifact.modelMatFileName || path.basename(modelMatPath),
     modelInitScriptFileName: modelInitScriptPath
       ? inputArtifact.modelInitScriptFileName || path.basename(modelInitScriptPath)
@@ -575,6 +582,129 @@ async function attachUnitTestCaseOutputFiles(artifact = {}, inputArtifact = {}) 
     });
   }
 
+  return {
+    ...artifact,
+    outputFiles
+  };
+}
+
+function normalizeSoftwareDetailOutputRelativePath(value = "") {
+  const normalized = String(value || "")
+    .replace(/\\/g, "/")
+    .replace(/^\.\/+/, "");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\0")) {
+    return "";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  if (
+    parts.some((part) => part === "." || part === "..") ||
+    parts.length !== 2 ||
+    parts[0] !== "outputs" ||
+    !parts[1].toLowerCase().endsWith(".docx")
+  ) {
+    return "";
+  }
+  return parts.join("/");
+}
+
+async function buildSoftwareDetailDocxTransfer(
+  artifact = {},
+  inputArtifact = {}
+) {
+  const workspaceDir = path.resolve(String(inputArtifact.workspaceDir || ""));
+  const outputDir = path.resolve(
+    String(inputArtifact.outputDir || path.join(workspaceDir, "outputs"))
+  );
+  if (!workspaceDir || !isPathAllowed(outputDir, [workspaceDir])) {
+    return null;
+  }
+  const relativePath = normalizeSoftwareDetailOutputRelativePath(
+    artifact.relativePath
+  );
+  if (!relativePath) {
+    return null;
+  }
+  const absolutePath = path.resolve(
+    workspaceDir,
+    ...relativePath.split("/")
+  );
+  if (!absolutePath.startsWith(`${workspaceDir}${path.sep}`)) {
+    return null;
+  }
+  const stat = await fs.stat(absolutePath).catch(() => null);
+  if (
+    !stat?.isFile() ||
+    stat.size <= 0 ||
+    stat.size > MAX_TRANSFERRED_TCSD_OUTPUT_BYTES
+  ) {
+    return null;
+  }
+  const bytes = await fs.readFile(absolutePath);
+  if (
+    bytes.length < 4 ||
+    bytes[0] !== 0x50 ||
+    bytes[1] !== 0x4b ||
+    bytes[2] !== 0x03 ||
+    bytes[3] !== 0x04
+  ) {
+    return null;
+  }
+  return {
+    ...artifact,
+    relativePath,
+    fileName: artifact.fileName || path.basename(absolutePath),
+    kind: artifact.kind || "software_detail_docx",
+    mimeType:
+      artifact.mimeType ||
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+    encoding: "base64",
+    contentBase64: bytes.toString("base64")
+  };
+}
+
+export async function attachSoftwareDetailOutputFiles(
+  artifacts = [],
+  inputArtifact = {}
+) {
+  const transferred = [];
+  for (const artifact of Array.isArray(artifacts) ? artifacts : []) {
+    if (
+      !artifact ||
+      typeof artifact !== "object" ||
+      artifact.role !== "detail-design-docx"
+    ) {
+      transferred.push(artifact);
+      continue;
+    }
+    const transfer = await buildSoftwareDetailDocxTransfer(
+      artifact,
+      inputArtifact
+    );
+    if (transfer) {
+      transferred.push(transfer);
+    }
+  }
+  return transferred;
+}
+
+async function attachLegacySoftwareDetailOutputFiles(
+  artifact = {},
+  inputArtifact = {}
+) {
+  const outputFiles = [];
+  for (const outputFile of Array.isArray(artifact.outputFiles)
+    ? artifact.outputFiles
+    : []) {
+    const transfer = await buildSoftwareDetailDocxTransfer(
+      outputFile,
+      inputArtifact
+    );
+    if (transfer) {
+      outputFiles.push(transfer);
+    }
+  }
   return {
     ...artifact,
     outputFiles
@@ -1200,7 +1330,7 @@ async function buildSlxInterpretFallbackArtifact(inputArtifact = {}, allowedPath
   };
 }
 
-export async function createHermesApp() {
+export async function createHermesApp(options = {}) {
   const app = express();
   const extractionService = new ExtractionService();
   const llmService = new LlmService();
@@ -1235,6 +1365,49 @@ export async function createHermesApp() {
   });
   await tcsdJobs.expireStaleJobs(Date.now() - 7 * 24 * 60 * 60 * 1000);
   await tcsdJobs.recoverAll();
+  const softwareDetailStageExecutor =
+    options.softwareDetailStageExecutor ||
+    new SoftwareDetailHermesStageExecutor();
+  const softwareDetailSkillRegistry =
+    options.softwareDetailSkillRegistry ||
+    new SoftwareDetailHermesSkillRegistry({
+      command: softwareDetailStageExecutor.command,
+      commandArgsPrefix: softwareDetailStageExecutor.commandArgsPrefix,
+      profile: softwareDetailStageExecutor.profile
+    });
+  const softwareDetailLeaseClient =
+    options.softwareDetailLeaseClient ||
+    new SoftwareDetailMatlabLeaseClient({
+      baseURL: config.softwareDetailPipeline?.gatewayBaseURL,
+      authToken: config.softwareDetailPipeline?.gatewayAuthToken,
+      evaluateToken:
+        config.softwareDetailPipeline?.gatewayEvaluateToken,
+      mappingId: config.softwareDetailPipeline?.gatewayMappingId,
+      timeoutMs: config.softwareDetailPipeline?.gatewayTimeoutMs
+    });
+  let preparedSoftwareDetailSkills = null;
+  const prepareSoftwareDetailSkills = async () => {
+    if (!preparedSoftwareDetailSkills) {
+      preparedSoftwareDetailSkills = softwareDetailSkillRegistry
+        .prepare()
+        .catch((cause) => {
+          preparedSoftwareDetailSkills = null;
+          throw cause;
+        });
+    }
+    return preparedSoftwareDetailSkills;
+  };
+  const softwareDetailJobs =
+    options.softwareDetailJobs ||
+    new SoftwareDetailPipelineJobService({
+      jobDir:
+        config.softwareDetailPipeline?.jobStoreDir ||
+        path.join(config.dataDir, "software-detail-pipeline-jobs"),
+      prepareJob: prepareSoftwareDetailSkills,
+      executor: softwareDetailStageExecutor,
+      leaseClient: softwareDetailLeaseClient
+    });
+  await softwareDetailJobs.failNonTerminalJobsOnStartup();
 
   app.use(express.json({ limit: "8mb" }));
 
@@ -1261,6 +1434,47 @@ export async function createHermesApp() {
     });
   };
 
+  const startSoftwareDetailPipelineJob = async (
+    payload = {},
+    startOptions = {}
+  ) => {
+    const allowedPaths = normalizeAllowedPaths(
+      payload.allowedPaths?.length
+        ? payload.allowedPaths
+        : [payload.inputArtifact?.workspaceDir]
+    );
+    const inputArtifact = await normalizeUnitTestCaseArtifact(
+      payload.inputArtifact || {},
+      allowedPaths,
+      {
+        stepType: "software_detail_pipeline",
+        defaultSkillName: "software-detail-stage-skills",
+        defaultExpectedOutputPattern: "outputs/*.docx"
+      }
+    );
+    const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
+    return softwareDetailJobs.start({
+      taskId: payload.taskId,
+      idempotencyKey: payload.idempotencyKey || payload.taskId,
+      ...inputArtifact,
+      uploadSessionDir: String(startOptions.uploadSessionDir || ""),
+      projectAddonCopy: {
+        copiedFileCount: addonCopy.copiedFileCount,
+        unitTestProject: addonCopy.unitTestProject
+      },
+      workerId: String(payload.workerId || "").trim(),
+      workerSelection:
+        payload.workerSelection &&
+        typeof payload.workerSelection === "object" &&
+        !Array.isArray(payload.workerSelection)
+          ? {
+              id: String(payload.workerSelection.id || payload.workerId || "").trim(),
+              label: String(payload.workerSelection.label || "").trim()
+            }
+          : { id: String(payload.workerId || "").trim(), label: "" }
+    });
+  };
+
   const cleanupTerminalTcsdUpload = async (job) => {
     const sessionDir = String(job?.input?.uploadSessionDir || "");
     if (!sessionDir || !isTerminalJobStatus(job?.status) || !isManagedUploadSession(sessionDir, uploadTempDir)) {
@@ -1273,12 +1487,29 @@ export async function createHermesApp() {
     return true;
   };
 
+  const cleanupTerminalSoftwareDetailUpload = async (job) => {
+    const sessionDir = String(job?.input?.uploadSessionDir || "");
+    if (
+      !sessionDir ||
+      !isTerminalSoftwareDetailJobStatus(job?.status) ||
+      !isManagedUploadSession(sessionDir, uploadTempDir)
+    ) {
+      return false;
+    }
+    await fs.rm(sessionDir, { recursive: true, force: true });
+    job.input.uploadSessionDir = "";
+    job.uploadCleanedAt = now();
+    await softwareDetailJobs.save(job);
+    return true;
+  };
+
   const sweepTerminalTcsdUploads = async () => {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     await tcsdJobs.expireStaleJobs(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const jobs = await tcsdJobs.list();
+    const softwareDetailJobList = await softwareDetailJobs.list();
     const referencedSessions = new Set(
-      jobs
+      [...jobs, ...softwareDetailJobList]
         .map((job) => String(job?.input?.uploadSessionDir || ""))
         .filter((sessionDir) => isManagedUploadSession(sessionDir, uploadTempDir))
         .map((sessionDir) => path.resolve(sessionDir))
@@ -1287,6 +1518,15 @@ export async function createHermesApp() {
       const updatedAt = Date.parse(job?.updatedAt || job?.createdAt || "") || 0;
       if (isTerminalJobStatus(job?.status) && updatedAt <= cutoff) {
         await cleanupTerminalTcsdUpload(job).catch(() => {});
+      }
+    }
+    for (const job of softwareDetailJobList) {
+      const updatedAt = Date.parse(job?.updatedAt || job?.createdAt || "") || 0;
+      if (
+        isTerminalSoftwareDetailJobStatus(job?.status) &&
+        updatedAt <= cutoff
+      ) {
+        await cleanupTerminalSoftwareDetailUpload(job).catch(() => {});
       }
     }
     for (const entry of await fs.readdir(uploadTempDir, { withFileTypes: true }).catch(() => [])) {
@@ -1368,6 +1608,111 @@ export async function createHermesApp() {
       return next(error);
     }
   });
+
+  app.post(
+    "/internal/software-detail-pipeline/jobs",
+    requireHermesAuth,
+    async (req, res, next) => {
+      try {
+        const job = await startSoftwareDetailPipelineJob(req.body || {});
+        return res.status(202).json({
+          jobId: job.jobId,
+          status: job.status,
+          schema: job.schema
+        });
+      } catch (error) {
+        return next(error);
+      }
+    }
+  );
+
+  app.post(
+    "/internal/software-detail-pipeline/jobs-upload",
+    requireHermesAuth,
+    upload.any(),
+    async (req, res, next) => {
+      let cleanupDir = "";
+      let retained = false;
+      try {
+        const prepared = await prepareMultipartStepPayload(req);
+        cleanupDir = prepared.cleanupDir;
+        const job = await startSoftwareDetailPipelineJob(prepared.payload, {
+          uploadSessionDir: cleanupDir
+        });
+        retained =
+          path.resolve(job.input?.workspaceDir || "") ===
+          path.resolve(
+            prepared.payload?.inputArtifact?.workspaceDir || ""
+          );
+        return res.status(202).json({
+          jobId: job.jobId,
+          status: job.status,
+          schema: job.schema
+        });
+      } catch (error) {
+        return next(error);
+      } finally {
+        if (cleanupDir && !retained) {
+          await fs.rm(cleanupDir, { recursive: true, force: true }).catch(
+            () => {}
+          );
+        }
+        for (const file of Array.isArray(req.files) ? req.files : []) {
+          await fs.rm(file.path, { force: true }).catch(() => {});
+        }
+      }
+    }
+  );
+
+  app.get(
+    "/internal/software-detail-pipeline/jobs/:jobId",
+    requireHermesAuth,
+    async (req, res, next) => {
+      try {
+        const job = await softwareDetailJobs.get(req.params.jobId);
+        if (!job) {
+          return res.status(404).json({
+            error: "Software-detail job does not exist.",
+            code: "software_detail_job_not_found"
+          });
+        }
+        const artifacts = await attachSoftwareDetailOutputFiles(
+          job.artifacts || [],
+          job.input || {}
+        );
+        return res.json({ ...job, artifacts });
+      } catch (error) {
+        return next(error);
+      }
+    }
+  );
+
+  app.delete(
+    "/internal/software-detail-pipeline/jobs/:jobId/upload-session",
+    requireHermesAuth,
+    async (req, res, next) => {
+      try {
+        const job = await softwareDetailJobs.get(req.params.jobId);
+        if (!job) {
+          return res.status(404).json({
+            error: "Software-detail job does not exist.",
+            code: "software_detail_job_not_found"
+          });
+        }
+        if (!isTerminalSoftwareDetailJobStatus(job.status)) {
+          return res.status(409).json({
+            error:
+              "Software-detail job is not terminal; its upload session cannot be removed.",
+            code: "software_detail_job_not_terminal"
+          });
+        }
+        const cleaned = await cleanupTerminalSoftwareDetailUpload(job);
+        return res.json({ ok: true, cleaned, jobId: job.jobId });
+      } catch (error) {
+        return next(error);
+      }
+    }
+  );
 
   const executeStepRequest = async (req, res, next) => {
     const startedAt = Date.now();
@@ -1634,8 +1979,12 @@ export async function createHermesApp() {
           },
           {}
         );
+        const artifact = await attachLegacySoftwareDetailOutputFiles(
+          result.artifact || {},
+          inputArtifact
+        );
         return res.json(
-          buildStepResponse(stepType, result.artifact || {}, startedAt, {
+          buildStepResponse(stepType, artifact, startedAt, {
             metrics: result.metrics || {},
             logs: result.logs || []
           })
@@ -1660,7 +2009,7 @@ export async function createHermesApp() {
       retainUploadedFiles =
         prepared.payload?.stepType === "windows_worker_probe" &&
         prepared.payload?.inputArtifact?.retainUploadedFiles === true;
-      return executeStepRequest(req, res, next);
+      return await executeStepRequest(req, res, next);
     } catch (error) {
       return next(error);
     } finally {

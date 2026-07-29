@@ -388,6 +388,25 @@ HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE=10000
 
 如果 Linux 平台和 Windows VM 不是同一套绝对路径，`SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT` 可显式设置；未设置时会回退到 `UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT`。Windows VM 需要安装或随包携带 `simulink-module-description-generator` skill，并准备 MATLAB/SATK 环境。
 
+### 软件详设九阶段 Worker 链路
+
+Worker 端新增九阶段作业接口，把原有单次 `simulink_module_description_generate` 调用拆为九个独立 Hermes 会话。九个会话依次执行初始化、模型规划、证据提取、输出台账、边界投影、架构草稿、模块草稿、内容检查和 DOCX 定稿；每个阶段使用同名的 `software-detail-stage-*` 技能，公共脚本、参考资料和原始 DOCX 模板固定在 `software-detail-runtime`。阶段 1 建立任务专属 MATLAB Gateway 租约，阶段 2 至阶段 8 复用该租约，阶段 9 在确认 DOCX 后关闭租约。
+
+Worker 接口为 `/internal/software-detail-pipeline/jobs`、`/internal/software-detail-pipeline/jobs-upload`、`GET /internal/software-detail-pipeline/jobs/<jobId>` 和 `DELETE /internal/software-detail-pipeline/jobs/<jobId>/upload-session`。终态查询只传输 `outputs/*.docx`，并同时返回 Base64 字节、大小和 SHA-256；平台客户端先验证三者，再通过同目录临时文件和原子重命名写入最终路径。旧单体接口继续返回相同的 DOCX 字节校验信息，供已有任务兼容使用。本轮只完成 Worker、Gateway 和平台传输客户端，现有页面及公开任务接口切换到九阶段作业由后续平台接线完成。
+
+Windows Worker 镜像必须包含 `software-detail-runtime`、九个 `software-detail-stage-*` 技能、`python-docx==1.2.0` 和 `lxml==6.0.2`。这些内容参与 Worker `imageRevision`；Linux 包显式排除上述 Worker 专用技能。Worker 新增的可选阶段配置为：
+
+```bash
+SOFTWARE_DETAIL_STAGE_HERMES_PROFILE=default
+SOFTWARE_DETAIL_STAGE_HERMES_MAX_TURNS=200
+SOFTWARE_DETAIL_STAGE_HERMES_TIMEOUT_MS=3600000
+MATLAB_GATEWAY_BASE_URL=http://host.docker.internal:5100
+MATLAB_GATEWAY_MAPPING_ID=worker-data
+MATLAB_GATEWAY_REQUEST_TIMEOUT_MS=300000
+```
+
+Gateway 认证值和执行授权值继续沿用现有 Worker 运行环境配置，不写入发布包或任务产物。`data/software-detail-pipeline-jobs/**`、上传会话、Hermes 会话、MATLAB 租约、用户模型、项目 addon 和生成 DOCX 都属于运行态或本地数据。
+
 Mac 本机开发的一键脚本默认启动平台服务和本地 Hermes Agent sidecar：平台端监听 `3000`，Hermes Agent 监听 `3101`，平台端通过 `HERMES_TRANSPORT=api` 调用 sidecar，并将 `HERMES_SERVER_REQUEST_TIMEOUT_MS` 设为 `0` 以支持长任务。在 Darwin 上，`scripts/start-local.sh` 仅为本机 all-in-one 进程显式注入 `MATLAB_ROOT=/Applications/MATLAB_R2026a.app`、`SATK_MATLAB_ROOT=/Applications/MATLAB_R2026a.app` 和 `SATK_MATLAB_SESSION_MODE=new`，避免电脑重启后 Stage 02 依赖不存在的共享 MATLAB 会话；该 macOS 路径不得进入 Windows/Linux 生产环境配置，Windows 生产仍使用自己配置的 MATLAB 根目录与 `SATK_MATLAB_SESSION_MODE=new`。sidecar health 只证明 Node API 壳可访问；只有 checkpoint 中的真实外部 model、12 个不同 session、token usage，以及 `state.db` 精确 slash invocation 与 Hermes skill-usage 计数/时间组合证据才能证明 LLM-backed 阶段执行，fake Hermes E2E 不能替代。TCSD 每阶段默认 `TCSD_STAGE_HERMES_TIMEOUT_MS=3600000`、`TCSD_STAGE_HERMES_MAX_TURNS=200`。可以通过 `TCSD_STAGE_HERMES_PROFILE=deepseek` 只覆盖 TCSD 阶段 profile；未设置时回退 `HERMES_PROFILE`。若使用命名 profile，必须确保对应的 Hermes `state.db` 可由 Agent 读取，必要时设置 `TCSD_STAGE_HERMES_STATE_DB_PATH`。
 
 Mac 宿主 Gateway 还必须在监听端口前通过真实 MCP `initialize` 加最小

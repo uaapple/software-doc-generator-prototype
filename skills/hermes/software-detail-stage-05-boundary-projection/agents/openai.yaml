@@ -1,0 +1,6 @@
+interface:
+  display_name: "Simulink 模块功能描述 · 阶段 5 边界投影"
+  short_description: "把内部模型事实投影为直接边界行为组"
+  default_prompt: "Use $software-detail-stage-05-boundary-projection to project private evidence onto direct document-unit boundary behavior groups."
+policy:
+  allow_implicit_invocation: false

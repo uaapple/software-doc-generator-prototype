@@ -31,6 +31,8 @@
     "videos",
     "skills/hermes/tcsd-runtime",
     "skills/hermes/tcsd-stage-*",
+    "skills/hermes/software-detail-runtime",
+    "skills/hermes/software-detail-stage-*",
     "tools",
     "scripts/deploy-release.ps1",
     "scripts/install-windows-services.ps1",
@@ -46,5 +48,5 @@
     "scripts/build-windows-worker-source-update.mjs"
   ],
   "copyFiles": [],
-  "runtimeDataPolicy": "Linux production keeps APP_DATA_DIR and APP_SKILLS_DIR outside the code directory, persists Windows TCSD jobId state, and reconciles remote staged jobs through HTTP without packaging runtime data."
+  "runtimeDataPolicy": "Linux production keeps APP_DATA_DIR and APP_SKILLS_DIR outside the code directory, persists remote TCSD and software-detail jobId state, and reconciles remote staged jobs through HTTP without packaging runtime data."
 }

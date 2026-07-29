@@ -1,0 +1,6 @@
+interface:
+  display_name: "Simulink 模块功能描述 · 阶段 9 DOCX 定稿"
+  short_description: "受控填充模板、复验最终制品并清理任务状态"
+  default_prompt: "Use $software-detail-stage-09-docx-finalize to fill and verify the final DOCX artifact and clean task-owned MATLAB state."
+policy:
+  allow_implicit_invocation: false

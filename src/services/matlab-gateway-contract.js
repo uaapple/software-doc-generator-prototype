@@ -13,6 +13,13 @@ const FORBIDDEN_MATLAB_PRIMITIVE_PATTERN =
 const QUOTED_ABSOLUTE_PATH_PATTERN =
   /["']((?:\/[^"'\r\n]*|[A-Za-z]:[\\/][^"'\r\n]*|\\\\[^"'\r\n]*))/gu;
 
+export const MATLAB_GATEWAY_LEASE_SCHEMA = "matlab-gateway-lease/v1";
+export const MATLAB_GATEWAY_LEASE_STATUSES = Object.freeze([
+  "active",
+  "broken",
+  "closed"
+]);
+
 export class MatlabGatewayContractError extends Error {
   constructor(code, message, statusCode = 400, details = null) {
     super(message);
@@ -32,6 +39,20 @@ export function requireGatewayIdentifier(value, label = "identifier") {
     );
   }
   return normalized;
+}
+
+export function validateGatewayLeaseIdentity(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new MatlabGatewayContractError(
+      "INVALID_LEASE_REQUEST",
+      "MATLAB Gateway lease identity must be an object."
+    );
+  }
+  return Object.freeze({
+    leaseId: requireGatewayIdentifier(value.leaseId, "leaseId"),
+    workspaceId: requireGatewayIdentifier(value.workspaceId, "workspaceId"),
+    ownerJobId: requireGatewayIdentifier(value.ownerJobId, "ownerJobId")
+  });
 }
 
 export function requireRelativeFileName(value, label = "fileName") {

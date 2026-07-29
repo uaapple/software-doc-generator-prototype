@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
+import { promises as fs, realpathSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import os from "node:os";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { config } from "../src/config.js";
-import { createApp } from "../src/app.js";
+import { createApp as createProductApp } from "../src/app.js";
 import { CExtractor } from "../src/services/c-extractor.js";
 import { ValidationService } from "../src/services/validation-service.js";
 import { LlmService, buildReplayModelInput } from "../src/services/llm-service.js";
@@ -28,7 +30,10 @@ import { SkillDatabaseService } from "../src/services/skill-database-service.js"
 import { SkillWorkOrderService } from "../src/services/skill-work-order-service.js";
 import { ReplayLabService } from "../src/services/replay-lab-service.js";
 import { FeedbackTicketService } from "../src/services/feedback-ticket-service.js";
-import { createAggregateLimitedUploadStorage, createHermesApp } from "../src/hermes-app.js";
+import {
+  createAggregateLimitedUploadStorage,
+  createHermesApp as createProductHermesApp
+} from "../src/hermes-app.js";
 import { HermesAgentClient } from "../src/services/hermes-agent-client.js";
 import { HermesTaskQueueService } from "../src/services/hermes-task-queue-service.js";
 import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
@@ -50,6 +55,13 @@ import { buildZipArchive } from "./zip-fixture.js";
 const execFileAsync = promisify(execFile);
 const TEST_TEMP_REMOVE_RETRY_DELAY_MS = 100;
 const TEST_TEMP_REMOVE_MAX_RETRIES = 10;
+const TEST_REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const TEST_RUNTIME_ISOLATION_MARKER = "sdg-isolated-test-runtime/v1";
+const TEST_RUNTIME_ISOLATION_ENV = "SDG_TEST_RUNTIME_ISOLATION";
+const TEST_RUNTIME_ROOT_ENV = "SDG_TEST_RUNTIME_ROOT";
+const activeTempConfigRoots = [];
+
+assertIsolatedRunnerEnvironment();
 
 class FakeModuleSkillBootstrapLlmService {
   constructor(result) {
@@ -58,6 +70,39 @@ class FakeModuleSkillBootstrapLlmService {
 
   async synthesizeKnowledge() {
     return this.result;
+  }
+}
+
+function assertIsolatedRunnerEnvironment() {
+  assert.equal(
+    process.env[TEST_RUNTIME_ISOLATION_ENV],
+    TEST_RUNTIME_ISOLATION_MARKER,
+    "tests/run-tests.js must be started through tests/run-test-suite-isolated.mjs"
+  );
+
+  const runtimeRootValue = String(process.env[TEST_RUNTIME_ROOT_ENV] || "").trim();
+  assert.ok(runtimeRootValue, `${TEST_RUNTIME_ROOT_ENV} must identify the temporary test runtime`);
+  const temporaryRoot = realpathSync(os.tmpdir());
+  const runtimeRoot = realpathSync(runtimeRootValue);
+  const relativeRuntimePath = path.relative(temporaryRoot, runtimeRoot);
+  assert.ok(
+    relativeRuntimePath &&
+      !relativeRuntimePath.startsWith("..") &&
+      !path.isAbsolute(relativeRuntimePath),
+    `${TEST_RUNTIME_ROOT_ENV} must be a child of the operating-system temporary directory`
+  );
+
+  for (const envKey of ["APP_DATA_DIR", "APP_SKILLS_DIR", "HERMES_HOME"]) {
+    const configuredPath = String(process.env[envKey] || "").trim();
+    assert.ok(configuredPath, `${envKey} must be set by the isolated test runner`);
+    const resolvedPath = realpathSync(configuredPath);
+    const relativePath = path.relative(runtimeRoot, resolvedPath);
+    assert.ok(
+      relativePath &&
+        !relativePath.startsWith("..") &&
+        !path.isAbsolute(relativePath),
+      `${envKey} must be a child of ${TEST_RUNTIME_ROOT_ENV}`
+    );
   }
 }
 
@@ -70,7 +115,7 @@ async function withTempConfig(run) {
 
   Object.assign(config, {
     rootDir: tempDir,
-    publicDir: path.join(tempDir, "public"),
+    publicDir: path.join(TEST_REPOSITORY_ROOT, "public"),
     legacySkillDir: path.join(tempDir, "skills"),
     activeSkillDir: path.join(tempDir, "skills", "active"),
     skillBundleDir: path.join(tempDir, "skills", "bundles"),
@@ -173,12 +218,14 @@ async function withTempConfig(run) {
   config.openai.apiKey = "";
   config.openai.baseURL = undefined;
   config.openai.model = "gpt-4.1-mini";
+  activeTempConfigRoots.push(tempDir);
 
   try {
     await seedFixtureFiles(tempDir);
     await ensureStorage();
     return await run(tempDir);
   } finally {
+    const activeRoot = activeTempConfigRoots.pop();
     SkillDatabaseService.closeAll();
     Object.assign(config, originalConfig);
     config.openai.apiKey = originalConfig.openai.apiKey;
@@ -190,7 +237,107 @@ async function withTempConfig(run) {
       maxRetries: TEST_TEMP_REMOVE_MAX_RETRIES,
       retryDelay: TEST_TEMP_REMOVE_RETRY_DELAY_MS
     });
+    assert.equal(activeRoot, tempDir, "Temporary test config scopes must close in stack order");
   }
+}
+
+function isPathInside(rootDir, candidate) {
+  if (!candidate) return true;
+  const relativePath = path.relative(path.resolve(rootDir), path.resolve(candidate));
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+function assertIsolatedTestRuntime(options = {}) {
+  const tempDir = activeTempConfigRoots.at(-1);
+  assert.ok(tempDir, "Product app tests must run inside withTempConfig()");
+
+  const isolatedPaths = {
+    rootDir: config.rootDir,
+    legacySkillDir: config.legacySkillDir,
+    activeSkillDir: config.activeSkillDir,
+    skillBundleDir: config.skillBundleDir,
+    generationTaskArtifactDir: config.generationTaskArtifactDir,
+    replayTaskArtifactDir: config.replayTaskArtifactDir,
+    unitTestCaseTaskStoreDir: config.unitTestCase?.taskStoreDir,
+    unitTestCaseUploadTempDir: config.unitTestCase?.uploadTempDir,
+    unitTestCaseProjectRegistryPath: config.unitTestCase?.projectRegistryPath,
+    unitTestCaseProjectAddonRoot: config.unitTestCase?.projectAddonRoot,
+    softwareModuleDescriptionTaskStoreDir: config.softwareModuleDescription?.taskStoreDir,
+    softwareModuleDescriptionUploadTempDir: config.softwareModuleDescription?.uploadTempDir,
+    dataDir: config.dataDir,
+    skillDatabasePath: config.skillDatabasePath,
+    projectStoreDir: config.projectStoreDir,
+    uploadDir: config.uploadDir,
+    llmProfileStorePath: config.llmProfileStorePath,
+    skillRefinementDir: config.skillRefinementDir,
+    skillRuleDir: config.skillRuleDir,
+    skillRuleChangeLogPath: config.skillRuleChangeLogPath,
+    rejectionStoreDir: config.rejectionStoreDir,
+    replayTaskStoreDir: config.replayTaskStoreDir,
+    skillWorkOrderStoreDir: config.skillWorkOrderStoreDir,
+    feedbackTicketStoreDir: config.feedbackTicketStoreDir,
+    feedbackTicketUploadDir: config.feedbackTicketUploadDir,
+    tcsdPipelineJobStoreDir: config.tcsdPipeline?.jobStoreDir,
+    hermesHomeDir: config.hermes?.homeDir,
+    hermesWorkdir: config.hermes?.workdir
+  };
+
+  for (const [label, candidate] of Object.entries(isolatedPaths)) {
+    assert.ok(
+      isPathInside(tempDir, candidate),
+      `${label} must remain inside temporary test runtime ${tempDir}; received ${candidate}`
+    );
+  }
+
+  assert.ok(
+    (config.unitTestCase?.workerProfiles || []).every(
+      (profile) =>
+        profile.hermesBaseURL === "http://127.0.0.1:0" &&
+        profile.matlabBaseURL === "http://127.0.0.1:0" &&
+        !profile.hermesAuthToken &&
+        !profile.matlabAuthToken
+    ),
+    "Test Worker profiles must use credential-free loopback transports"
+  );
+
+  if (options.transportRole === "platform") {
+    assert.equal(config.hermes?.transport, "api");
+    assert.equal(config.hermes?.baseURL, "http://127.0.0.1:0");
+  }
+
+  if (options.transportRole === "hermes" && config.hermes?.transport === "cli") {
+    assert.equal(
+      config.hermes?.command,
+      process.execPath,
+      "Hermes CLI tests must execute a controlled Node fixture"
+    );
+    assert.ok(
+      config.hermes?.commandArgsPrefix?.length > 0 &&
+        isPathInside(tempDir, config.hermes.commandArgsPrefix[0]),
+      "Hermes CLI tests must load their command fixture from the temporary runtime"
+    );
+  }
+}
+
+async function withIsolatedTestRuntime(run) {
+  if (activeTempConfigRoots.length) {
+    assertIsolatedTestRuntime();
+    return run();
+  }
+  return withTempConfig(async () => {
+    assertIsolatedTestRuntime();
+    return run();
+  });
+}
+
+async function createTestApp() {
+  assertIsolatedTestRuntime({ transportRole: "platform" });
+  return createProductApp();
+}
+
+async function createTestHermesApp() {
+  assertIsolatedTestRuntime({ transportRole: "hermes" });
+  return createProductHermesApp();
 }
 
 async function seedFixtureFiles(tempDir) {
@@ -418,25 +565,28 @@ async function listenOnFetchSafePort(server, options = {}) {
 }
 
 async function withTestServer(run) {
-  const app = await createApp();
-  const server = http.createServer(app);
-  const { port } = await listenOnFetchSafePort(server);
-  const baseUrl = `http://127.0.0.1:${port}`;
+  return withIsolatedTestRuntime(async () => {
+    const app = await createTestApp();
+    const server = http.createServer(app);
+    const { port } = await listenOnFetchSafePort(server);
+    const baseUrl = `http://127.0.0.1:${port}`;
 
-  try {
-    return await run({ baseUrl });
-  } finally {
-    clearInterval(app.locals.tcsdReconcileTimer);
-    await new Promise((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
+    try {
+      return await run({ baseUrl, app });
+    } finally {
+      clearInterval(app.locals.tcsdReconcileTimer);
+      clearInterval(app.locals.softwareDetailReconcileTimer);
+      await new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
       });
-    });
-  }
+    }
+  });
 }
 
 async function waitForApiTaskTerminal(taskUrl, options = {}) {
@@ -472,24 +622,26 @@ async function createMockUploadFile(tempDir, originalname, content = "fixture") 
 }
 
 async function withHermesServer(run) {
-  const app = await createHermesApp();
-  const server = http.createServer(app);
-  const { port } = await listenOnFetchSafePort(server);
-  const baseUrl = `http://127.0.0.1:${port}`;
+  return withIsolatedTestRuntime(async () => {
+    const app = await createTestHermesApp();
+    const server = http.createServer(app);
+    const { port } = await listenOnFetchSafePort(server);
+    const baseUrl = `http://127.0.0.1:${port}`;
 
-  try {
-    return await run({ baseUrl });
-  } finally {
-    await new Promise((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
+    try {
+      return await run({ baseUrl });
+    } finally {
+      await new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
       });
-    });
-  }
+    }
+  });
 }
 
 async function seedWikiFixture(rootDir, overrides = {}) {
@@ -3268,6 +3420,9 @@ const tests = [
                     relativePath: outputRelativePath,
                     kind: "software_module_description_docx",
                     mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    encoding: "base64",
+                    size: outputBytes.length,
+                    sha256: createHash("sha256").update(outputBytes).digest("hex"),
                     contentBase64: outputBytes.toString("base64")
                   }
                 ]
@@ -4012,6 +4167,8 @@ const tests = [
             "  console.error('module description addon marker missing');",
             "  process.exit(3);",
             "}",
+            "fs.mkdirSync('outputs', { recursive: true });",
+            "fs.writeFileSync('outputs/Demo_软件模块功能描述.docx', Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x64, 0x6f, 0x63, 0x78]));",
             "console.log(JSON.stringify({ status: 'completed', summary: 'module addon copied', outputFiles: [{ relativePath: 'outputs/Demo_软件模块功能描述.docx' }], warnings: [] }));"
           ].join("\n"),
           "utf8"
@@ -4042,6 +4199,9 @@ const tests = [
           assert.equal(body.status, "succeeded");
           assert.equal(body.artifact.summary, "module addon copied");
           assert.equal(body.artifact.outputFiles[0].kind, "software_module_description_docx");
+          assert.equal(body.artifact.outputFiles[0].encoding, "base64");
+          assert.equal(body.artifact.outputFiles[0].size, 8);
+          assert.match(body.artifact.outputFiles[0].sha256, /^[a-f0-9]{64}$/);
           assert.equal(await fs.readFile(path.join(workspaceDir, "module_doc_support.m"), "utf8"), "% module doc addon marker");
         });
       });
@@ -4997,7 +5157,9 @@ const tests = [
           updatedAt: staleTime
         });
 
-        await createApp();
+        const recoveredApp = await createTestApp();
+        clearInterval(recoveredApp.locals.tcsdReconcileTimer);
+        clearInterval(recoveredApp.locals.softwareDetailReconcileTimer);
 
         const refreshedTask = await projectService.getGenerationTask(
           project.id,
@@ -9915,6 +10077,14 @@ const tests = [
         path.join(config.rootDir, "deploy", "targets", "linux-prod.json"),
         "utf8"
       ));
+      const windowsFullTarget = JSON.parse(await fs.readFile(
+        path.join(config.rootDir, "deploy", "targets", "windows-prod-full.json"),
+        "utf8"
+      ));
+      const windowsSourceTarget = JSON.parse(await fs.readFile(
+        path.join(config.rootDir, "deploy", "targets", "windows-prod-source.json"),
+        "utf8"
+      ));
 
       assert.ok(startShell.includes("src/hermes-server.js"));
       assert.ok(startShell.includes("hermes-agent.pid"));
@@ -9940,6 +10110,12 @@ const tests = [
       assert.ok(!windowsProductionEnv.includes("/Applications/MATLAB_R2026a.app"));
       assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-runtime"));
       assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/tcsd-stage-*"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/software-detail-runtime"));
+      assert.ok(linuxProductionTarget.excludePaths.includes("skills/hermes/software-detail-stage-*"));
+      for (const windowsTarget of [windowsFullTarget, windowsSourceTarget]) {
+        assert.ok(windowsTarget.includePaths.includes("skills"));
+        assert.ok(windowsTarget.includePaths.includes("src"));
+      }
       assert.ok(stopWindows.includes("hermes-agent.pid"));
       assert.ok(restartWindows.includes("HermesPort"));
       assert.ok(startCommand.includes("%*"));
@@ -10873,6 +11049,20 @@ const tests = [
     }
   },
   {
+    name: "Software detail reconcile timer keeps the existing task list route available",
+    run: async () => {
+      await withTempConfig(async () => {
+        await withTestServer(async ({ baseUrl, app }) => {
+          assert.ok(app.locals.softwareDetailReconcileTimer);
+          const response = await fetch(`${baseUrl}/api/software-module-description-generation/tasks`);
+          assert.equal(response.status, 200);
+          const body = await response.json();
+          assert.ok(Array.isArray(body.tasks));
+        });
+      });
+    }
+  },
+  {
     name: "Software module description generation API validates uploads and creates queued DOCX tasks",
     run: async () => {
       await withTempConfig(async () => {
@@ -11110,6 +11300,10 @@ const tests = [
         assert.equal(payload.inputArtifact.skillName, "simulink-module-description-generator");
         assert.equal(payload.inputArtifact.expectedOutputPattern, "outputs/*.docx");
 
+        // 此用例继续验证流水线字段出现前，已存量任务的 executeStep 兼容契约。
+        const legacyTask = await service.readTask(task.id);
+        delete legacyTask.pipeline;
+        await service.saveTask(legacyTask);
         const completed = await service.runTask(task.id);
         assert.equal(seenPayloads.length, 1);
         assert.equal(completed.status, "completed");
@@ -11169,6 +11363,9 @@ const tests = [
           { projectId: "01" }
         );
 
+        const legacyTask = await service.readTask(task.id);
+        delete legacyTask.pipeline;
+        await service.saveTask(legacyTask);
         await assert.rejects(() => service.runTask(task.id), /未在 workspace\/outputs 下找到 \.docx/);
         const stored = await service.readTask(task.id);
         assert.equal(stored.status, "failed");

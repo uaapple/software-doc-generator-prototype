@@ -1,0 +1,7 @@
+interface:
+  display_name: "Simulink 模块功能描述"
+  short_description: "按功能层级和接口边界生成 Simulink 模块功能描述"
+  default_prompt: "Use $simulink-module-description-generator to generate A-level module descriptions using only each module's direct inputs and outputs in final prose."
+
+policy:
+  allow_implicit_invocation: true

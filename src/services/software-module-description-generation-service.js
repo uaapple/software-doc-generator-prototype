@@ -3,8 +3,14 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
 import { HermesAgentClient } from "./hermes-agent-client.js";
+import {
+  listSoftwareDetailStages,
+  SOFTWARE_DETAIL_STAGE_CATALOG_VERSION
+} from "./software-detail-stage-catalog.js";
+import { SOFTWARE_DETAIL_JOB_SCHEMA } from "./software-detail-pipeline-contract.js";
 import { readJson, writeJson, pathExists } from "./storage.js";
 import { normalizeUploadedFileName } from "./upload-filename.js";
+import { buildSoftwareDetailDocxFileName } from "./software-detail-artifact-name.js";
 import { publicUnitTestWorkerProfile, resolveUnitTestWorkerProfile } from "./unit-test-case-generation-service.js";
 
 const TASK_FILE_NAME = "task.json";
@@ -13,6 +19,14 @@ const QUEUE_TYPE = "software_module_description_generation";
 const STEP_TYPE = "simulink_module_description_generate";
 const PROJECT_ID_PATTERN = /^\d{2,}$/;
 const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PIPELINE_VERSION = 1;
+const PIPELINE_JOB_STATUSES = new Set(["queued", "running", "completed", "failed"]);
+const PIPELINE_STAGE_STATUSES = new Set(["pending", "running", "completed", "failed"]);
+const TRANSIENT_PIPELINE_POLL_ERROR_CODES = new Set([
+  "software_detail_worker_unavailable",
+  "software_detail_request_timeout",
+  "software_detail_poll_timeout"
+]);
 
 function now() {
   return new Date().toISOString();
@@ -173,12 +187,22 @@ function normalizeStoredRelativePath(value = "") {
 }
 
 function isDocxOutput(relativePath = "") {
-  const normalized = normalizeStoredRelativePath(relativePath);
-  if (!normalized || normalized.includes("..")) {
+  const normalized = String(relativePath || "").replaceAll("\\", "/").trim();
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:\//.test(normalized)
+  ) {
     return false;
   }
-  const parts = normalized.split("/").filter(Boolean);
-  return parts.length === 2 && parts[0] === "outputs" && parts[1].toLowerCase().endsWith(".docx");
+  const parts = normalized.split("/");
+  return (
+    parts.length === 2 &&
+    parts[0] === "outputs" &&
+    parts[1] !== "" &&
+    parts.every((part) => part !== "." && part !== "..") &&
+    parts[1].toLowerCase().endsWith(".docx")
+  );
 }
 
 function toPlatformPath(filePath = "") {
@@ -218,6 +242,117 @@ function buildProgress(status = "queued", message = "") {
   };
   return {
     ...(progressByStatus[status] || progressByStatus.queued),
+    updatedAt: now()
+  };
+}
+
+function createPipelineStageSnapshot(definition = {}, timestamp = "") {
+  return {
+    id: definition.id,
+    order: definition.order,
+    skillName: definition.skillName,
+    title: definition.responsibility,
+    status: "pending",
+    attempt: 0,
+    startedAt: "",
+    endedAt: "",
+    updatedAt: timestamp,
+    error: null,
+    artifacts: []
+  };
+}
+
+function createPipelineSnapshot(timestamp = now()) {
+  return {
+    schema: SOFTWARE_DETAIL_JOB_SCHEMA,
+    version: PIPELINE_VERSION,
+    catalogVersion: SOFTWARE_DETAIL_STAGE_CATALOG_VERSION,
+    workerJobId: "",
+    status: "queued",
+    stages: listSoftwareDetailStages().map((definition) =>
+      createPipelineStageSnapshot(definition, timestamp)
+    ),
+    error: null,
+    cleanup: {
+      status: "pending",
+      attemptedAt: "",
+      error: null
+    },
+    updatedAt: timestamp
+  };
+}
+
+function safePipelineError(error = null) {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const message = clipTaskMessage(error.message || "", 800);
+  return {
+    code: String(error.code || "software_detail_stage_failed").slice(0, 120),
+    message,
+    stageId: String(error.details?.stageId || error.stageId || "").slice(0, 120)
+  };
+}
+
+function isTransientPipelinePollError(error = null) {
+  return TRANSIENT_PIPELINE_POLL_ERROR_CODES.has(String(error?.code || ""));
+}
+
+function summarizePipelineArtifacts(stage = {}) {
+  const source = Array.isArray(stage.checkpoint?.artifacts)
+    ? stage.checkpoint.artifacts
+    : Array.isArray(stage.result?.artifacts)
+      ? stage.result.artifacts
+      : Array.isArray(stage.artifacts)
+        ? stage.artifacts
+        : [];
+  return source
+    .filter((artifact) => artifact && typeof artifact === "object" && !Array.isArray(artifact))
+    .map((artifact) => ({
+      role: String(artifact.role || "").slice(0, 100),
+      relativePath: normalizeStoredRelativePath(artifact.relativePath || "").slice(0, 500),
+      size: Number(artifact.size || 0) || 0,
+      sha256: String(artifact.sha256 || "").slice(0, 64)
+    }))
+    .filter((artifact) => artifact.role);
+}
+
+function buildPipelineProgress(stages = [], workerStatus = "running") {
+  const definitions = listSoftwareDetailStages();
+  const completedCount = stages.filter((stage) => stage.status === "completed").length;
+  const runningStage = stages.find((stage) => stage.status === "running");
+  const failedStage = stages.find((stage) => stage.status === "failed");
+  const activeStage = failedStage || runningStage || stages.find((stage) => stage.status === "pending");
+  const stageNumber = activeStage
+    ? definitions.findIndex((definition) => definition.id === activeStage.id) + 1
+    : definitions.length;
+  const title = activeStage?.title || "整理最终结果";
+
+  if (workerStatus === "completed") {
+    return {
+      stage: "pipeline_completed",
+      percent: 96,
+      label: "九个阶段已完成",
+      message: "Worker 已完成九个阶段，平台正在确认并登记最终 DOCX。",
+      updatedAt: now()
+    };
+  }
+  if (workerStatus === "failed") {
+    return {
+      stage: failedStage?.id || "pipeline_failed",
+      percent: 100,
+      label: `第 ${Math.max(1, stageNumber)}/9 阶段失败`,
+      message: failedStage?.error?.message || "Worker 阶段执行失败。",
+      updatedAt: now()
+    };
+  }
+  return {
+    stage: activeStage?.id || "pipeline_running",
+    percent: Math.min(95, 5 + Math.floor((completedCount / definitions.length) * 90)),
+    label: `第 ${Math.max(1, stageNumber)}/9 阶段：${title}`,
+    message: runningStage
+      ? `正在执行“${title}”。`
+      : `等待执行“${title}”。`,
     updatedAt: now()
   };
 }
@@ -267,6 +402,20 @@ export class SoftwareModuleDescriptionGenerationService {
     this.hermesAgentClientFactory = typeof options.hermesAgentClientFactory === "function"
       ? options.hermesAgentClientFactory
       : null;
+    this.pipelinePollIntervalMs = Math.max(
+      0,
+      Number(options.pipelinePollIntervalMs ?? 1000) || 0
+    );
+    this.pipelinePollWindowMs = Math.max(
+      0,
+      Number(
+        options.pipelinePollWindowMs ??
+        config.unitTestCase?.remotePollWindowMs ??
+        5 * 60 * 1000
+      ) || 0
+    );
+    this.sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.pipelineTasksInFlight = new Set();
     this.deletedTaskIds = new Set();
   }
 
@@ -433,6 +582,13 @@ export class SoftwareModuleDescriptionGenerationService {
     if (!task) {
       throw createHttpError("任务不存在。", 404, "software_module_description_task_not_found");
     }
+    if (task.status === "running") {
+      throw createHttpError(
+        "任务正在 Worker 中执行，暂不能删除。",
+        409,
+        "software_module_description_task_running"
+      );
+    }
     this.deletedTaskIds.add(task.id);
     const taskDir = this.getTaskDir(task.id);
     await fs.rm(taskDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
@@ -493,6 +649,9 @@ export class SoftwareModuleDescriptionGenerationService {
       const slxName = sanitizeStoredFileName(modelSlx.originalname, "model.slx");
       const matName = sanitizeStoredFileName(modelMat.originalname, "model.mat");
       const workspaceModelBase = toMatlabModelBase(modelSlx.originalname, "model");
+      const detailDesignFileName = buildSoftwareDetailDocxFileName(
+        normalizeUploadedFileName(modelSlx.originalname)
+      );
       const workspaceSlxName = `${workspaceModelBase}.slx`;
       const workspaceMatName = `${workspaceModelBase}.mat`;
       const initScriptName = modelInitScript ? sanitizeStoredFileName(modelInitScript.originalname, "model_init.m") : "";
@@ -585,6 +744,7 @@ export class SoftwareModuleDescriptionGenerationService {
             workspaceRelativePath: normalizeStoredRelativePath(path.relative(workspaceDir, workspaceMatPath))
           }
         },
+        detailDesignFileName,
         workspace: {
           directory: workspaceDir,
           inputDir: workspaceInputDir,
@@ -608,6 +768,7 @@ export class SoftwareModuleDescriptionGenerationService {
           sessionId: "",
           logs: []
         },
+        pipeline: createPipelineSnapshot(createdAt),
         runtimeEvents: [],
         artifacts: [],
         timeline: [
@@ -722,6 +883,7 @@ export class SoftwareModuleDescriptionGenerationService {
       expectedOutputPattern: cfg.expectedOutputPattern,
       localPlatformWorkspaceDir: task.workspace?.directory || "",
       modelSlxFileName: task.inputs?.modelSlx?.workspaceName || task.inputs?.modelSlx?.originalName || path.basename(modelSlxPath),
+      modelSlxOriginalName: task.inputs?.modelSlx?.originalName || "",
       modelMatFileName: task.inputs?.modelMat?.workspaceName || task.inputs?.modelMat?.originalName || path.basename(modelMatPath)
     };
     if (modelInitScriptPath && modelInitScriptRelativePath) {
@@ -738,34 +900,390 @@ export class SoftwareModuleDescriptionGenerationService {
     };
   }
 
+  buildPipelinePayload(task = {}) {
+    const legacyPayload = this.buildHermesPayload(task);
+    const {
+      skillName: _legacySkillName,
+      ...inputArtifact
+    } = legacyPayload.inputArtifact;
+    return {
+      taskId: task.id,
+      idempotencyKey: task.id,
+      type: QUEUE_TYPE,
+      allowedPaths: legacyPayload.allowedPaths,
+      workdir: legacyPayload.workdir,
+      workerId: task.workerProfile?.id || "",
+      workerSelection: {
+        id: task.workerProfile?.id || "",
+        label: task.workerProfile?.label || ""
+      },
+      inputArtifact: {
+        ...inputArtifact,
+        pipelineSchema: SOFTWARE_DETAIL_JOB_SCHEMA
+      }
+    };
+  }
+
+  normalizePipelineStages(task = {}, workerStages = []) {
+    const priorStages = Array.isArray(task.pipeline?.stages)
+      ? task.pipeline.stages
+      : createPipelineSnapshot().stages;
+    const workerById = new Map(
+      (Array.isArray(workerStages) ? workerStages : [])
+        .filter((stage) => stage && typeof stage === "object" && !Array.isArray(stage))
+        .map((stage) => [String(stage.id || ""), stage])
+    );
+    return listSoftwareDetailStages().map((definition) => {
+      const prior = priorStages.find((stage) => stage.id === definition.id) ||
+        createPipelineStageSnapshot(definition);
+      const worker = workerById.get(definition.id);
+      if (!worker) {
+        return prior;
+      }
+      const status = PIPELINE_STAGE_STATUSES.has(String(worker.status || ""))
+        ? String(worker.status)
+        : prior.status;
+      return {
+        id: definition.id,
+        order: definition.order,
+        skillName: definition.skillName,
+        title: definition.responsibility,
+        status,
+        attempt: Math.max(0, Number(worker.attempt || 0) || 0),
+        startedAt: String(worker.startedAt || prior.startedAt || ""),
+        endedAt: String(worker.endedAt || prior.endedAt || ""),
+        updatedAt: String(worker.endedAt || worker.startedAt || task.updatedAt || now()),
+        error: safePipelineError(worker.error),
+        artifacts: summarizePipelineArtifacts(worker)
+      };
+    });
+  }
+
+  async syncPipelineJob(taskId = "", job = {}) {
+    const task = await this.readTask(taskId);
+    if (!task) {
+      return null;
+    }
+    if (
+      !job ||
+      typeof job !== "object" ||
+      Array.isArray(job) ||
+      job.schema !== SOFTWARE_DETAIL_JOB_SCHEMA ||
+      !PIPELINE_JOB_STATUSES.has(String(job.status || "")) ||
+      !String(job.jobId || "").trim()
+    ) {
+      throw createHttpError(
+        "Worker 返回了无法识别的九阶段作业状态。",
+        502,
+        "software_module_description_pipeline_response_invalid"
+      );
+    }
+    const workerJobId = String(job.jobId).trim();
+    if (
+      task.pipeline?.workerJobId &&
+      task.pipeline.workerJobId !== workerJobId
+    ) {
+      throw createHttpError(
+        "Worker 返回的作业编号与当前任务不一致。",
+        502,
+        "software_module_description_pipeline_job_mismatch"
+      );
+    }
+    const stages = this.normalizePipelineStages(task, job.stages);
+    const timestamp = now();
+    task.pipeline = {
+      ...(task.pipeline || createPipelineSnapshot(timestamp)),
+      schema: SOFTWARE_DETAIL_JOB_SCHEMA,
+      version: PIPELINE_VERSION,
+      catalogVersion: SOFTWARE_DETAIL_STAGE_CATALOG_VERSION,
+      workerJobId,
+      status: job.status,
+      stages,
+      error: safePipelineError(job.error),
+      awaitingReconcile: false,
+      diagnostic: null,
+      updatedAt: String(job.updatedAt || timestamp)
+    };
+    task.status = "running";
+    task.updatedAt = timestamp;
+    task.progress = buildPipelineProgress(stages, job.status);
+    await this.saveTask(task);
+    return task;
+  }
+
+  async recordPipelineCleanup(taskId = "", client = null, workerJobId = "") {
+    const jobId = String(workerJobId || "").trim();
+    if (!jobId || typeof client?.cleanupSoftwareDetailPipelineUpload !== "function") {
+      return null;
+    }
+    const attemptedAt = now();
+    let cleanupError = null;
+    try {
+      await client.cleanupSoftwareDetailPipelineUpload(jobId);
+    } catch (error) {
+      cleanupError = safePipelineError(error) || {
+        code: "software_detail_upload_cleanup_failed",
+        message: "Worker 上传工作区清理失败。",
+        stageId: ""
+      };
+    }
+    const task = await this.readTask(taskId);
+    if (!task?.pipeline) {
+      return cleanupError;
+    }
+    task.pipeline.cleanup = {
+      status: cleanupError ? "failed" : "completed",
+      attemptedAt,
+      error: cleanupError
+    };
+    task.pipeline.updatedAt = now();
+    task.updatedAt = task.pipeline.updatedAt;
+    await this.saveTask(task);
+    return cleanupError;
+  }
+
+  async markPipelineAwaitingReconcile(taskId = "", error = {}) {
+    const task = await this.readTask(taskId);
+    if (!task?.pipeline?.workerJobId) {
+      return null;
+    }
+    const timestamp = now();
+    task.status = "running";
+    task.pipeline.awaitingReconcile = true;
+    task.pipeline.diagnostic = {
+      at: timestamp,
+      ...safePipelineError(error)
+    };
+    task.pipeline.updatedAt = timestamp;
+    task.updatedAt = timestamp;
+    task.progress = {
+      ...buildPipelineProgress(task.pipeline.stages, "running"),
+      message: "Worker 进度同步暂时中断，平台将在后台继续查询已有作业。",
+      updatedAt: timestamp
+    };
+    await this.saveTask(task);
+    return this.getTask(taskId);
+  }
+
+  async runPipelineTask(taskId = "", task = {}, workerProfile = {}) {
+    const hermesAgentClient = this.getHermesAgentClientForWorker(workerProfile);
+    const existingWorkerJobId = String(task.pipeline?.workerJobId || "").trim();
+    const started = existingWorkerJobId
+      ? {
+          schema: SOFTWARE_DETAIL_JOB_SCHEMA,
+          jobId: existingWorkerJobId,
+          status: task.pipeline?.status || "running"
+        }
+      : await hermesAgentClient.startSoftwareDetailPipelineJob(
+          this.buildPipelinePayload(task)
+        );
+    await this.syncPipelineJob(taskId, started);
+    const workerJobId = String(started.jobId || "").trim();
+    let terminalJob = null;
+    let completedTask = null;
+    const deadline = Date.now() + this.pipelinePollWindowMs;
+    try {
+      while (!terminalJob && Date.now() < deadline) {
+        let job;
+        try {
+          job = await hermesAgentClient.getSoftwareDetailPipelineJob(workerJobId, {
+            localWorkspaceDir: task.workspace?.directory || ""
+          });
+        } catch (error) {
+          if (isTransientPipelinePollError(error)) {
+            return this.markPipelineAwaitingReconcile(taskId, error);
+          }
+          throw error;
+        }
+        await this.syncPipelineJob(taskId, job);
+        if (["completed", "failed"].includes(job.status)) {
+          terminalJob = job;
+          break;
+        }
+        await this.sleep(this.pipelinePollIntervalMs);
+      }
+
+      if (!terminalJob) {
+        const pending = await this.readTask(taskId);
+        if (pending?.pipeline) {
+          const timestamp = now();
+          pending.status = "running";
+          pending.pipeline.awaitingReconcile = true;
+          pending.pipeline.updatedAt = timestamp;
+          pending.updatedAt = timestamp;
+          pending.progress = {
+            ...buildPipelineProgress(pending.pipeline.stages, "running"),
+            message: "Worker 作业仍在执行，平台将在后台继续同步九阶段进度。",
+            updatedAt: timestamp
+          };
+          await this.saveTask(pending);
+        }
+        return this.getTask(taskId);
+      }
+
+      if (terminalJob.status === "failed") {
+        throw createHttpError(
+          terminalJob.error?.message || "Worker 九阶段作业执行失败。",
+          502,
+          terminalJob.error?.code || "software_module_description_pipeline_failed",
+          {
+            stageId: terminalJob.error?.details?.stageId ||
+              terminalJob.stages?.find((stage) => stage.status === "failed")?.id ||
+              ""
+          }
+        );
+      }
+
+      completedTask = await this.completeTask(
+        taskId,
+        {
+          status: "completed",
+          summary: "软件详设九个阶段已完成。",
+          outputFiles: terminalJob.artifacts || [],
+          warnings: []
+        },
+        {
+          metrics: { pipelineJobId: workerJobId },
+          pipelineJob: terminalJob
+        }
+      );
+    } finally {
+      if (terminalJob) {
+        await this.recordPipelineCleanup(taskId, hermesAgentClient, workerJobId);
+      }
+    }
+    return (await this.getTask(taskId)) || completedTask;
+  }
+
+  async runLegacyTask(taskId = "", task = {}, workerProfile = {}) {
+    const hermesAgentClient = this.getHermesAgentClientForWorker(workerProfile);
+    const result = await hermesAgentClient.executeStep(this.buildHermesPayload(task), {
+      onEvent: (event) => this.appendRuntimeEvent(taskId, event)
+    });
+    const artifact = result?.artifact || {};
+    if (result?.status && result.status !== "succeeded") {
+      throw createHttpError(result?.error?.message || "Hermes Agent 执行失败。", 502, "software_module_description_hermes_failed");
+    }
+    if (artifact.status === "failed") {
+      throw createHttpError(artifact.errorMessage || artifact.summary || "Hermes Agent 返回失败状态。", 502, "software_module_description_hermes_failed");
+    }
+    return this.completeTask(taskId, artifact, result);
+  }
+
   async runTask(taskId = "") {
     let task = await this.readTask(taskId);
     if (!task) {
       throw createHttpError("任务不存在。", 404, "software_module_description_task_not_found");
     }
-    await this.markRunning(taskId);
-    task = await this.readTask(taskId);
+    const usesPipeline = Object.prototype.hasOwnProperty.call(task, "pipeline");
+    if (usesPipeline && this.pipelineTasksInFlight.has(taskId)) {
+      return this.getTask(taskId);
+    }
+    if (usesPipeline) {
+      this.pipelineTasksInFlight.add(taskId);
+    }
 
     try {
+      await this.markRunning(taskId);
+      task = await this.readTask(taskId);
       const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
       task.workerProfile = publicUnitTestWorkerProfile(workerProfile);
       await this.saveTask(task);
-      const hermesAgentClient = this.getHermesAgentClientForWorker(workerProfile);
-      const result = await hermesAgentClient.executeStep(this.buildHermesPayload(task), {
-        onEvent: (event) => this.appendRuntimeEvent(taskId, event)
-      });
-      const artifact = result?.artifact || {};
-      if (result?.status && result.status !== "succeeded") {
-        throw createHttpError(result?.error?.message || "Hermes Agent 执行失败。", 502, "software_module_description_hermes_failed");
+      if (usesPipeline) {
+        return await this.runPipelineTask(taskId, task, workerProfile);
       }
-      if (artifact.status === "failed") {
-        throw createHttpError(artifact.errorMessage || artifact.summary || "Hermes Agent 返回失败状态。", 502, "software_module_description_hermes_failed");
-      }
-      return await this.completeTask(taskId, artifact, result);
+      return await this.runLegacyTask(taskId, task, workerProfile);
     } catch (error) {
       await this.failTask(taskId, error);
       throw error;
+    } finally {
+      if (usesPipeline) {
+        this.pipelineTasksInFlight.delete(taskId);
+      }
     }
+  }
+
+  async reconcileTask(taskId = "") {
+    const task = await this.readTask(taskId);
+    const workerJobId = String(task?.pipeline?.workerJobId || "").trim();
+    if (
+      !task ||
+      task.status !== "running" ||
+      !Object.prototype.hasOwnProperty.call(task, "pipeline") ||
+      !workerJobId
+    ) {
+      return task ? publicTask(task) : null;
+    }
+    if (this.pipelineTasksInFlight.has(taskId)) {
+      return this.getTask(taskId);
+    }
+    this.pipelineTasksInFlight.add(taskId);
+    let terminalJob = null;
+    let hermesAgentClient = null;
+    try {
+      const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
+      hermesAgentClient = this.getHermesAgentClientForWorker(workerProfile);
+      const job = await hermesAgentClient.getSoftwareDetailPipelineJob(workerJobId, {
+        localWorkspaceDir: task.workspace?.directory || ""
+      });
+      await this.syncPipelineJob(taskId, job);
+      if (!["completed", "failed"].includes(job.status)) {
+        return this.getTask(taskId);
+      }
+      terminalJob = job;
+      if (job.status === "failed") {
+        return this.failTask(
+          taskId,
+          createHttpError(
+            job.error?.message || "Worker 九阶段作业执行失败。",
+            502,
+            job.error?.code || "software_module_description_pipeline_failed",
+            {
+              stageId: job.error?.details?.stageId ||
+                job.stages?.find((stage) => stage.status === "failed")?.id ||
+                ""
+            }
+          )
+        );
+      }
+      return await this.completeTask(
+        taskId,
+        {
+          status: "completed",
+          summary: "软件详设九个阶段已完成。",
+          outputFiles: job.artifacts || [],
+          warnings: []
+        },
+        {
+          metrics: { pipelineJobId: workerJobId },
+          pipelineJob: job
+        }
+      );
+    } catch (error) {
+      if (isTransientPipelinePollError(error)) {
+        return await this.markPipelineAwaitingReconcile(taskId, error);
+      }
+      return this.failTask(taskId, error);
+    } finally {
+      if (terminalJob && hermesAgentClient) {
+        await this.recordPipelineCleanup(taskId, hermesAgentClient, workerJobId);
+      }
+      this.pipelineTasksInFlight.delete(taskId);
+    }
+  }
+
+  async reconcileRemoteTasks() {
+    const results = [];
+    for (const task of await this.listTasks()) {
+      if (
+        task.status === "running" &&
+        Object.prototype.hasOwnProperty.call(task, "pipeline") &&
+        task.pipeline?.workerJobId
+      ) {
+        results.push(await this.reconcileTask(task.id));
+      }
+    }
+    return results;
   }
 
   async resolveHermesOutputCandidates(task = {}, artifact = {}) {
@@ -774,7 +1292,11 @@ export class SoftwareModuleDescriptionGenerationService {
     const candidates = new Map();
     const addCandidate = (relativePath = "", meta = {}) => {
       const normalized = normalizeStoredRelativePath(relativePath);
-      if (isDocxOutput(normalized)) {
+      const expectedFileName = String(task.detailDesignFileName || "").trim();
+      if (
+        isDocxOutput(normalized) &&
+        (!expectedFileName || path.posix.basename(normalized) === expectedFileName)
+      ) {
         candidates.set(normalized, { relativePath: normalized, ...meta });
       }
     };
@@ -895,6 +1417,12 @@ export class SoftwareModuleDescriptionGenerationService {
     for (const task of tasks) {
       const updatedAt = Date.parse(task.updatedAt || task.createdAt || "") || 0;
       if (task.status === "running" && updatedAt < cutoff) {
+        if (
+          Object.prototype.hasOwnProperty.call(task, "pipeline") &&
+          task.pipeline?.workerJobId
+        ) {
+          continue;
+        }
         await this.failTask(task.id, createHttpError("服务重启后任务未恢复，已标记为失败。", 500, "software_module_description_task_recovered_failed"));
       }
     }
