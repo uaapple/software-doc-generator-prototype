@@ -37,6 +37,165 @@ REPAIR_SPEC.loader.exec_module(REPAIR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_agent_proposal_validation_failure_is_recoverable(self):
+        error = RUNNER.RecoverableStageValidationError(
+            "invalid proposal",
+            Path("/tmp/proposal-validation.json"),
+        )
+        self.assertEqual(
+            RUNNER.hard_error_code(10, error),
+            "tcsd_stage_validation_failed",
+        )
+
+    def test_stage10_validator_crash_cannot_reuse_stale_attempt_outputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "outputs"
+            output.mkdir()
+            model = root / "GenericModel.slx"
+            mat = root / "GenericModel.mat"
+            model.write_bytes(b"slx")
+            mat.write_bytes(b"mat")
+            job = {
+                "jobId": "job-generic",
+                "_stageAttempt": 1,
+                "_stageResultPath": str(output / "stage-10-result.json"),
+                "resources": {"ownerJobId": "job-generic"},
+                "input": {
+                    "workspaceDir": str(root),
+                    "outputDir": str(output),
+                    "modelSlxPath": str(model),
+                    "modelMatPath": str(mat),
+                    "coverageThreshold": 80,
+                },
+            }
+            RUNNER.write_json(
+                RUNNER.state_path(job),
+                {
+                    "schema": "tcsd-stage-runner-state/v1",
+                    "jobId": "job-generic",
+                    "workbook": str(output / "GenericModel_Test0001_tcsd.xlsx"),
+                    "spec": str(output / "GenericModel_tcsd_spec.json"),
+                },
+            )
+            RUNNER.write_json(
+                output / "GenericModel_initial_coverage_summary.json",
+                {
+                    "schema": "tcsd-coverage-report/v1",
+                    "models": {
+                        "GenericModel": {
+                            metric: {"percent": 50}
+                            for metric in ("condition", "decision", "mcdc")
+                        },
+                    },
+                },
+            )
+            brief = output / "GenericModel_coverage_repair_brief.json"
+            proposal = output / "GenericModel_agent_coverage_repair_proposal.json"
+            brief.write_text("{}", encoding="utf-8")
+            proposal.write_text("{}", encoding="utf-8")
+            stale_ir = output / "GenericModel_agent_repair_coverage_ir.json"
+            stale_report = output / "GenericModel_agent_repair_validation_attempt1.json"
+            stale_ir.write_text('{"stale":true}', encoding="utf-8")
+            RUNNER.write_json(
+                stale_report,
+                {
+                    "schema": REPAIR.VALIDATION_SCHEMA,
+                    "jobId": "job-generic",
+                    "model": "GenericModel",
+                    "passed": False,
+                    "error": {
+                        "code": "proposal_validation_failed",
+                        "message": "stale deterministic failure",
+                    },
+                },
+            )
+            validator_crash = subprocess.CalledProcessError(
+                1,
+                ["python3", "validate_agent_coverage_repair.py"],
+                stderr="validator crashed",
+            )
+            with mock.patch.object(RUNNER, "run", side_effect=validator_crash):
+                with self.assertRaises(subprocess.CalledProcessError) as raised:
+                    RUNNER.stage_run(
+                        10,
+                        job,
+                        stage10_mode="validate",
+                        repair_brief=str(brief),
+                        repair_proposal=str(proposal),
+                    )
+            self.assertIs(raised.exception, validator_crash)
+            self.assertEqual(
+                RUNNER.hard_error_code(10, raised.exception),
+                "tcsd_stage_runtime_failed",
+            )
+            self.assertFalse(stale_ir.exists())
+            self.assertFalse(stale_report.exists())
+
+    def test_agent_proposal_cli_writes_structured_failure_for_schema_and_json_errors(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            brief = root / "brief.json"
+            interface = root / "interface.json"
+            brief.write_text(
+                json.dumps({
+                    "schema": REPAIR.BRIEF_SCHEMA,
+                    "jobId": "job-generic",
+                    "model": "GenericModel",
+                    "guardrails": {},
+                }),
+                encoding="utf-8",
+            )
+            interface.write_text(
+                json.dumps({
+                    "schema": "tcsd-model-interface/v1",
+                    "inputs": ["Enable"],
+                    "outputs": ["Output"],
+                }),
+                encoding="utf-8",
+            )
+            for label, proposal_text in (
+                ("schema", json.dumps({"schema": "wrong/v1", "tests": [], "unresolved": []})),
+                ("json", "{"),
+            ):
+                with self.subTest(label=label):
+                    proposal = root / f"proposal-{label}.json"
+                    report = root / f"report-{label}.json"
+                    output_ir = root / f"ir-{label}.json"
+                    proposal.write_text(proposal_text, encoding="utf-8")
+                    completed = subprocess.run(
+                        [
+                            sys.executable,
+                            "-B",
+                            str(REPAIR_SCRIPT),
+                            "validate",
+                            "--brief",
+                            str(brief),
+                            "--proposal",
+                            str(proposal),
+                            "--interface",
+                            str(interface),
+                            "--output-ir",
+                            str(output_ir),
+                            "--report-json",
+                            str(report),
+                        ],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 2)
+                    failure = json.loads(report.read_text(encoding="utf-8"))
+                    self.assertEqual(failure["schema"], REPAIR.VALIDATION_SCHEMA)
+                    self.assertEqual(failure["jobId"], "job-generic")
+                    self.assertEqual(failure["model"], "GenericModel")
+                    self.assertFalse(failure["passed"])
+                    self.assertEqual(
+                        failure["error"]["code"],
+                        "proposal_validation_failed",
+                    )
+                    self.assertFalse(output_ir.exists())
+
     def test_runtime_python_subprocesses_disable_bytecode_writes(self):
         command = [sys.executable, "sibling.py", "--check"]
         self.assertEqual(
@@ -206,6 +365,18 @@ class PipelineStageRunnerTests(unittest.TestCase):
                 ),
             }],
         }
+        with self.assertRaisesRegex(ValueError, "sample periods as TCSD action steps"):
+            REPAIR.validate_proposal(
+                proposal,
+                brief,
+                {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+            )
+
+        proposal["unresolved"][0]["evidence"] = (
+            "A Unit Delay counter needs 65534 separate input transitions. "
+            "Each transition maps to one TCSD stimulus.steps entry, while the "
+            "allocated per-test entry budget is 8."
+        )
         with self.assertRaisesRegex(ValueError, "sample periods as TCSD action steps"):
             REPAIR.validate_proposal(
                 proposal,
@@ -605,6 +776,11 @@ class PipelineStageRunnerTests(unittest.TestCase):
         spec = RUNNER.initial_spec({"inputs": "OnlyInput", "outputs": "OnlyOutput"}, "GenericModel")
         self.assertEqual(interface["inputs"], ["OnlyInput"])
         self.assertEqual(spec["tests"][0]["initialization"], "OnlyInput=0;")
+        self.assertEqual(
+            spec["tests"][0]["action"],
+            "[+0.01s]\nOnlyInput=0;\n[+0.1s]",
+        )
+        self.assertEqual(len(RUNNER.workbook_steps(spec["tests"][0]["action"])), 2)
         self.assertNotIn("output_reference", spec["tests"][0])
         with self.assertRaises(RuntimeError):
             RUNNER.validate_interface({"schema": "tcsd-model-interface/v1", "inputs": "OnlyInput", "outputs": ["OnlyOutput"]})
@@ -625,9 +801,36 @@ class PipelineStageRunnerTests(unittest.TestCase):
             evidence = RUNNER.simulation_backfill_evidence(simulation, workbook)
             self.assertEqual(evidence["simulationValueCount"], 1)
             self.assertEqual(evidence["workbookBackfillCount"], 1)
+            self.assertEqual(evidence["testCaseCount"], 1)
+            self.assertEqual(evidence["testsWithoutExpectedValues"], [])
+            self.assertEqual(evidence["caseOutputCounts"], {"3:TC_001": {"OnlyOutput": 1}})
             self.assertEqual(evidence["backfillItems"], [{"row": 3, "testId": "TC_001", "step": 1, "output": "OnlyOutput", "value": 1.0}])
             with self.assertRaises(RuntimeError):
                 RUNNER.simulation_backfill_evidence({"tests": []}, workbook)
+
+    def test_simulation_backfill_requires_explicit_stability_and_an_oracle_per_test(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workbook = Path(temp) / "result.xlsx"
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "TCSD"
+            ws["A3"] = "TC_001"
+            ws["C3"] = "Test"
+            ws["G3"] = "[+0.1s]\n[+0.1s]"
+            wb.save(workbook)
+            simulation = {
+                "tests": [{
+                    "row": 3,
+                    "test_id": "TC_001",
+                    "steps": [
+                        {"index": 1, "outputs": {"OnlyOutput": 1}, "stable": {}},
+                        {"index": 2, "outputs": {"OnlyOutput": 1}, "stable": {"OnlyOutput": True}},
+                    ],
+                }]
+            }
+
+            with self.assertRaisesRegex(RuntimeError, r"no verified expValue for Test cases: TC_001"):
+                RUNNER.simulation_backfill_evidence(simulation, workbook)
 
     def test_simulation_backfill_rejects_missing_extra_and_wrong_values(self):
         with tempfile.TemporaryDirectory() as temp:

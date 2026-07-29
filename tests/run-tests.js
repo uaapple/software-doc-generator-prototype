@@ -10096,6 +10096,7 @@ const tests = [
       assert.ok(startShell.includes('MATLAB_ROOT="/Applications/MATLAB_R2026a.app"'));
       assert.ok(startShell.includes('SATK_MATLAB_ROOT="/Applications/MATLAB_R2026a.app"'));
       assert.ok(startShell.includes('SATK_MATLAB_SESSION_MODE="new"'));
+      assert.ok(startShell.includes('SATK_MATLAB_DISPLAY_MODE="${SATK_MATLAB_DISPLAY_MODE:-nodesktop}"'));
       assert.equal((startShell.match(/"\${LOCAL_TCSD_ENV\[@\]}"/g) || []).length, 2);
       assert.ok(stopShell.includes("hermes-agent.pid"));
 
@@ -11391,8 +11392,8 @@ const tests = [
               await fs.mkdir(path.dirname(finalOutputPath), { recursive: true });
               const workbookSheets = {
                 TCSD: [
-                  ["TestID", "Name", "Type", "Expected"],
-                  ["TC_001", "Case", "Test", "expValue(Out1, 1)"]
+                  ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action", "Work Status", "Report Links"],
+                  ["TC_001", "Case", "Test", "REQ-1", "测试方法：等价类。", "InputA = 0;", "[+0.1s]\nOut1 = expValue(1);\n[+0.1s]", "reviewed", ""]
                 ]
               };
               await createMinimalXlsx(initialOutputPath, workbookSheets);
@@ -11500,7 +11501,7 @@ const tests = [
     }
   },
   {
-    name: "UnitTestCaseGenerationService rejects TCSD workbooks without expValue expectations",
+    name: "UnitTestCaseGenerationService rejects TCSD workbooks when any Test lacks expValue expectations",
     run: async () => {
       await withTempConfig(async (tempDir) => {
         const service = new UnitTestCaseGenerationService({
@@ -11513,7 +11514,8 @@ const tests = [
                 TCSD: [
                   ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action", "Work Status", "Report Links"],
                   ["TG_001", "Group", "TestGroup", "", "", "", "", "", ""],
-                  ["TC_001", "Case", "Test", "REQ-1", "测试方法：等价类。", "InputA = 0;", "[+0.1s]\nInputA = 1;\n[+0.1s]", "reviewed", ""]
+                  ["TC_001", "Case 1", "Test", "REQ-1", "测试方法：等价类。", "InputA = 0;", "[+0.1s]\nOut1 = expValue(1);\n[+0.1s]", "reviewed", ""],
+                  ["TC_002", "Case 2", "Test", "REQ-2", "测试方法：边界值。", "Out1 = expValue(9);", "[+0.1s]\nInputA = 1;\n[+0.1s]", "reviewed", ""]
                 ]
               });
               this.job = {
@@ -11543,10 +11545,19 @@ const tests = [
           { unitTestProjectId: "01" }
         );
 
-        await assert.rejects(() => service.runTask(task.id), /未检测到 expValue/);
+        await assert.rejects(() => service.runTask(task.id), /TC_002/);
         const stored = await service.readTask(task.id);
         assert.equal(stored.status, "failed");
         assert.equal(stored.hermes.errorCode, "unit_test_case_expected_values_missing");
+        assert.deepEqual(stored.hermes.errorDetails.missingTestCases, [
+          {
+            relativePath: "outputs/Demo_Test0001_tcsd.xlsx",
+            row: 4,
+            testId: "TC_002",
+            expectedValueCount: 0
+          }
+        ]);
+        assert.equal(stored.hermes.errorDetails.artifacts[0].expectedValueCount, 2);
       });
     }
   },

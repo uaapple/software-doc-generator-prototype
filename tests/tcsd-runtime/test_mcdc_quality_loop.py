@@ -439,6 +439,54 @@ class McdcQualityLoopTests(unittest.TestCase):
         self.assertNotIn("OutA = expValue(0,0.01,0);", rebuilt)
         self.assertIn("[+6.3s] // timer expired\nOutA = expValue(1);", rebuilt)
 
+    def test_backfill_requires_explicit_stability_and_skips_final_empty_delay(self) -> None:
+        backfill = load_script_module("backfill_expected_outputs.py")
+        action = "\n".join(
+            [
+                "[+6.3s] // timer is changing throughout this interval",
+                "TimerEnable = 1;",
+                "[+0.01s] // settled state",
+                "OutA = expValue(999);",
+                "[+0.1s]",
+                "OutA = expValue(999);",
+            ]
+        )
+        step_results = {
+            # A missing stability verdict must not recreate the old timer oracle.
+            1: {"outputs": {"OutA": 0.01}, "stable": {}},
+            2: {"outputs": {"OutA": 1}, "stable": {"OutA": True}},
+            3: {"outputs": {"OutA": 1}, "stable": {"OutA": True}},
+        }
+
+        rebuilt = backfill.build_action(action, step_results, ["OutA"])
+
+        self.assertNotIn("OutA = expValue(0.01);", rebuilt)
+        self.assertIn("[+0.01s] // settled state\nOutA = expValue(1);", rebuilt)
+        self.assertTrue(rebuilt.endswith("[+0.1s]"))
+
+    def test_simulation_requires_both_following_interval_endpoints_for_stability(self) -> None:
+        timer_times = [0.01, 0.02]
+        timer_values = [0.01, 0.02]
+        duplicate_singleton_times = [0.02, 0.02]
+
+        # MQTester compares the expectation at 0.02, so the timer change at
+        # the right endpoint must make the complete 0.01 -> 0.02 interval
+        # unstable. Duplicate samples at one instant remain insufficient.
+        self.assertGreater(max(timer_values) - min(timer_values), 0)
+        self.assertEqual(timer_times, [0.01, 0.02])
+        self.assertEqual(len(set(duplicate_singleton_times)), 1)
+
+        source = (SCRIPTS / "simulate_tcsd_cases.m").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "following_interval_mask(vals.Time, intervalStart, intervalEnd, dt)",
+            source,
+        )
+        self.assertIn("time <= (upperBound + timeTolerance)", source)
+        self.assertIn("has_complete_interval_samples(", source)
+        self.assertIn("hasDistinctTimes && hasStart && hasEnd", source)
+        self.assertIn("stable.(signalName) = false;", source)
+
     def test_probe_obligations_distinguish_required_and_unreachable(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             work = Path(td)

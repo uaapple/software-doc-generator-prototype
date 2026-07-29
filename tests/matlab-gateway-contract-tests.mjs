@@ -10,12 +10,58 @@ import {
   rejectAbsolutePathFields,
   requireGatewayIdentifier
 } from "../src/services/matlab-gateway-contract.js";
-import { createMatlabGatewayApp, MatlabGatewayService } from "../src/matlab-gateway-app.js";
+import {
+  createMatlabGatewayApp,
+  deriveLocalMatlabMcpServerArgs,
+  MatlabGatewayService
+} from "../src/matlab-gateway-app.js";
 import { MatlabMcpClient } from "../src/services/matlab-mcp-client.js";
 import { createEmptyModelFactBundle } from "../src/services/model-fact-bundle.js";
 
 const tests = [];
 const test = (name, run) => tests.push({ name, run });
+
+test("local MATLAB Gateway derives nodesktop and preserves explicit overrides", async () => {
+  const derived = deriveLocalMatlabMcpServerArgs({
+    platform: "darwin",
+    environment: {
+      MATLAB_ROOT: "/Applications/MATLAB_R2026a.app",
+      SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE: "/tmp/satk-tools.json"
+    }
+  });
+  assert.ok(derived.includes("--matlab-session-mode=new"));
+  assert.ok(derived.includes("--matlab-display-mode=nodesktop"));
+  assert.ok(derived.includes("--matlab-root=/Applications/MATLAB_R2026a.app"));
+
+  const explicitDisplay = deriveLocalMatlabMcpServerArgs({
+    environment: {
+      SATK_MATLAB_SESSION_MODE: "new",
+      SATK_MATLAB_DISPLAY_MODE: "nodesktop"
+    },
+    matlabDisplayMode: "desktop"
+  });
+  assert.ok(explicitDisplay.includes("--matlab-display-mode=desktop"));
+  assert.ok(!explicitDisplay.includes("--matlab-display-mode=nodesktop"));
+
+  const explicitArgs = ["--matlab-session-mode=existing", "--matlab-display-mode=desktop"];
+  assert.deepEqual(
+    deriveLocalMatlabMcpServerArgs({
+      environment: { SATK_MATLAB_DISPLAY_MODE: "nodesktop" },
+      serverArgs: explicitArgs
+    }),
+    explicitArgs
+  );
+
+  const unchangedOtherPlatformDefault = deriveLocalMatlabMcpServerArgs({
+    platform: "linux",
+    environment: {
+      SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE: "/tmp/satk-tools.json"
+    }
+  });
+  assert.ok(unchangedOtherPlatformDefault.includes("--matlab-session-mode=existing"));
+  assert.ok(!unchangedOtherPlatformDefault.some((item) => item.startsWith("--matlab-display-mode=")));
+  assert.ok(!unchangedOtherPlatformDefault.some((item) => item.startsWith("--matlab-root=")));
+});
 
 async function withGateway(run, options = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "matlab-gateway-contract-"));

@@ -48,6 +48,42 @@ class JsonResponse:
 
 
 class SatkGatewayTests(unittest.TestCase):
+    def test_direct_mcp_command_derives_display_mode_without_changing_session_mode(self):
+        command = SATK.build_server_command(
+            Path("/opt/matlab-mcp-server"),
+            session_mode="new",
+            matlab_root="/Applications/MATLAB_R2026a.app",
+            display_mode="nodesktop",
+            log_folder=Path("/tmp/matlab-mcp-log"),
+            extension_file=Path("/tmp/tools.json"),
+        )
+        self.assertIn("--matlab-session-mode=new", command)
+        self.assertIn("--matlab-display-mode=nodesktop", command)
+        self.assertIn("--matlab-root=/Applications/MATLAB_R2026a.app", command)
+
+        explicit = SATK.build_server_command(
+            Path("/opt/matlab-mcp-server"),
+            session_mode="new",
+            display_mode="desktop",
+            log_folder=Path("/tmp/matlab-mcp-log"),
+            extension_file=Path("/tmp/tools.json"),
+        )
+        self.assertIn("--matlab-display-mode=desktop", explicit)
+        self.assertNotIn("--matlab-display-mode=nodesktop", explicit)
+
+        unchanged_default = SATK.build_server_command(
+            Path("/opt/matlab-mcp-server"),
+            session_mode="existing",
+            matlab_root="/not/used",
+            display_mode="",
+            log_folder=Path("/tmp/matlab-mcp-log"),
+            extension_file=Path("/tmp/tools.json"),
+        )
+        self.assertFalse(
+            any(item.startswith("--matlab-display-mode=") for item in unchanged_default)
+        )
+        self.assertFalse(any(item.startswith("--matlab-root=") for item in unchanged_default))
+
     def test_gateway_evaluate_headers_use_separate_scoped_token(self):
         headers = SATK.gateway_headers(
             {

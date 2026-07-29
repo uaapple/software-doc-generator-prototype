@@ -163,7 +163,18 @@ assert.equal(parseExecutionManifest({
   status: "completed",
   completion: "partial",
   workbook: "outputs/result.xlsx",
-  simulation: {},
+  simulation: { status: "completed", result: "outputs/simulation.json" },
+  oracle: {
+    authority: "host",
+    status: "complete",
+    sourceStageIndex: 8,
+    testCaseCount: 1,
+    expValueCount: 1,
+    testsWithoutExpectedValues: [],
+    caseOutputCounts: { "3:TC_001": { Output: 1 } },
+    simulationResult: "outputs/simulation.json",
+    workbookSha256: "a".repeat(64)
+  },
   evidence: {},
   coverage: {
     initial: coverage(50),
@@ -176,6 +187,31 @@ assert.equal(parseExecutionManifest({
     repair_evidence: "outputs/repair.json"
   }
 }).completion, "partial");
+assert.throws(() => parseExecutionManifest({
+  schema: "simulink-ut-tcsd-execution-manifest/v1",
+  status: "completed",
+  completion: "complete",
+  simulation: { status: "completed", result: "outputs/simulation.json" },
+  oracle: {
+    authority: "host",
+    status: "complete",
+    sourceStageIndex: 8,
+    testCaseCount: 1,
+    expValueCount: 0,
+    testsWithoutExpectedValues: ["TC_001"],
+    caseOutputCounts: { "3:TC_001": {} },
+    simulationResult: "outputs/simulation.json",
+    workbookSha256: "a".repeat(64)
+  },
+  coverage: {
+    initial: coverage(100),
+    final: coverage(100),
+    repair_required: false,
+    repair_attempted: false,
+    repair_applied: false,
+    repair_passes: 0
+  }
+}), /逐 Test oracle/);
 
 {
   const error = publicSemanticError(2, {
@@ -811,6 +847,8 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
       expValueCount: 1,
       simulationValueCount: 1,
       workbookBackfillCount: 1,
+      testCaseCount: 1,
+      testsWithoutExpectedValues: [],
       caseOutputCounts: { "3:TC_001": { Output: 1 } },
       backfillItems: [{ row: 3, testId: "TC_001", step: 1, output: "Output", value: 1 }]
     };
@@ -959,6 +997,8 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
         expValueCount: 1,
         simulationValueCount: 1,
         workbookBackfillCount: 1,
+        testCaseCount: 1,
+        testsWithoutExpectedValues: [],
         caseOutputCounts: { "3:TC_001": { Output: 1 } },
         backfillItems: [{ row: 3, testId: "TC_001", step: 1, output: "Output", value: 1 }]
       };
@@ -1026,6 +1066,8 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
       expValueCount: 1,
       simulationValueCount: 1,
       workbookBackfillCount: 1,
+      testCaseCount: 1,
+      testsWithoutExpectedValues: [],
       caseOutputCounts: { "3:TC_001": { Output: 1 } },
       backfillItems: [{ row: 3, testId: "TC_001", step: 1, output: "Output", value: 1 }]
     };
@@ -1072,6 +1114,42 @@ function createFakeHermes(workspace, options = {}) {
       : `session-${String(manifest.stageIndex).padStart(2, "0")}-${attempt}`;
     invocations.push({ args, prompt, manifest, sessionId });
     workspace.jobId = manifest.jobId;
+    if (
+      options.recoverableRuntimeValidationOnceStage === manifest.stageIndex &&
+      attempt === 1
+    ) {
+      const validationReportPath = path.join(
+        workspace.outputDir,
+        `stage-${manifest.stageIndex}-runtime-validation.json`
+      );
+      await writeFile(validationReportPath, JSON.stringify({
+        schema: "tcsd-agent-coverage-repair-validation/v1",
+        jobId: manifest.jobId,
+        model: "GenericModel",
+        passed: false,
+        error: {
+          code: "proposal_validation_failed",
+          message: "sample periods were incorrectly treated as action steps"
+        }
+      }));
+      await writeFile(resultPath, JSON.stringify({
+        schema: TCSD_STAGE_RESULT_SCHEMA,
+        jobId: manifest.jobId,
+        stageIndex: manifest.stageIndex,
+        status: "failed",
+        summary: "recoverable deterministic validation failure",
+        artifacts: [],
+        error: {
+          code: TCSD_ERROR_CODES.validation,
+          message: "Agent coverage repair proposal failed deterministic validation",
+          hard: false,
+          details: {
+            validationReportPath: rel(workspace.root, validationReportPath)
+          }
+        }
+      }));
+      return { stdout: `session_id: ${sessionId}\n`, stderr: "" };
+    }
     const omit =
       options.failValidationAlwaysStage === manifest.stageIndex ||
       (options.failValidationOnceStage === manifest.stageIndex && attempt === 1);
@@ -1203,6 +1281,43 @@ async function runAgentPipeline(options = {}) {
 }
 
 {
+  const { fake, job } = await runAgentPipeline({
+    recoverableRuntimeValidationOnceStage: 10
+  });
+  assert.equal(job.status, "已完成", JSON.stringify(job.error));
+  assert.equal(fake.invocations.length, 13);
+  assert.equal(job.stages[9].attempt, 2);
+  assert.equal(job.stages[9].attempts[0].status, "validation_failed");
+  assert.equal(job.stages[9].attempts[1].status, "completed");
+  assert.equal(job.stages[9].attempts[0].sessionId, "session-10-1");
+  assert.equal(job.stages[9].attempts[0].profile, "worker-profile");
+  assert.equal(job.stages[9].attempts[0].model, "fake-model-v1");
+  assert.equal(job.stages[9].attempts[0].tokenUsage.totalTokens, 120);
+  assert.match(
+    job.stages[9].attempts[0].validationReportPath,
+    /stage-10-runtime-validation\.json/
+  );
+  const secondAttempt = fake.invocations.find(
+    (item) => item.manifest.stageIndex === 10 && item.manifest.attempt === 2
+  );
+  assert.ok(secondAttempt);
+  assert.match(secondAttempt.prompt, /validation repair attempt 2/);
+  assert.match(secondAttempt.prompt, /stage-10-runtime-validation\.json/);
+}
+
+{
+  const { fake, job } = await runAgentPipeline({
+    initialCoverage: 50,
+    hardFailureStage: 10
+  });
+  assert.equal(job.status, "失败");
+  assert.equal(job.error.code, TCSD_ERROR_CODES.stageRuntime);
+  assert.equal(job.stages[9].attempt, 1);
+  assert.equal(fake.attemptByStage.get(10), 1);
+  assert.equal(fake.invocations.filter((item) => item.manifest.stageIndex === 10).length, 1);
+}
+
+{
   const { fake, job } = await runAgentPipeline({ malformedResultOnceStage: 4 });
   assert.equal(job.status, "已完成");
   assert.equal(job.stages[3].attempt, 2);
@@ -1255,7 +1370,7 @@ for (const [options, stageIndex, label] of [
 }
 
 {
-  const { fake, job } = await runAgentPipeline({ initialCoverage: 50, finalCoverage: 60 });
+  const { workspace, fake, job } = await runAgentPipeline({ initialCoverage: 50, finalCoverage: 60 });
   assert.equal(job.status, "部分完成");
   assert.equal(job.completion, "partial");
   assert.equal(job.repair.required, true);
@@ -1268,6 +1383,21 @@ for (const [options, stageIndex, label] of [
   assert.equal(job.stages[10].status, "已完成");
   assert.equal(job.stages[11].checkpoint.executionManifest.authority, "host");
   assert.equal(job.stages[11].checkpoint.executionManifest.completion, "partial");
+  assert.deepEqual(job.stages[11].checkpoint.executionManifest.oracle, {
+    authority: "host",
+    status: "complete",
+    sourceStageIndex: 11,
+    testCaseCount: 1,
+    expValueCount: 1,
+    testsWithoutExpectedValues: [],
+    caseOutputCounts: { "3:TC_001": { Output: 1 } },
+    simulationResult: job.stages[10].checkpoint.evidence.simulationResult,
+    workbookSha256: hash(await readFile(path.join(
+      workspace.root,
+      "outputs",
+      "GenericModel_Test0001_tcsd.xlsx"
+    )))
+  });
   assert.equal(
     job.stages[11].checkpoint.executionManifest.workbook,
     "outputs/GenericModel_Test0001_tcsd.xlsx"
@@ -1307,6 +1437,14 @@ for (const [options, stageIndex, label] of [
   assert.deepEqual(
     job.coverage.final,
     job.stages[11].checkpoint.executionManifest.coverage.final
+  );
+  assert.equal(job.stages[11].checkpoint.executionManifest.oracle.sourceStageIndex, 8);
+  assert.equal(job.stages[11].checkpoint.executionManifest.oracle.testCaseCount, 1);
+  assert.equal(job.stages[11].checkpoint.executionManifest.oracle.expValueCount, 1);
+  assert.deepEqual(job.stages[11].checkpoint.executionManifest.oracle.testsWithoutExpectedValues, []);
+  assert.deepEqual(
+    job.stages[11].checkpoint.executionManifest.oracle.caseOutputCounts,
+    job.stages[7].checkpoint.evidence.caseOutputCounts
   );
   assert.equal(fake.invocations.length, 12);
 }

@@ -117,6 +117,10 @@ assert.match(gatewayLauncher, /values\.MATLAB_WORKER_PORT/);
 assert.match(gatewayLauncher, /MATLAB_ROOT:\s*matlabRoot/);
 assert.match(gatewayLauncher, /SATK_MATLAB_ROOT:\s*matlabRoot/);
 assert.match(gatewayLauncher, /SATK_MATLAB_SESSION_MODE:\s*"new"/);
+assert.match(
+  gatewayLauncher,
+  /process\.env\.SATK_MATLAB_DISPLAY_MODE\s*\|\|\s*values\.SATK_MATLAB_DISPLAY_MODE\s*\|\|\s*\(process\.platform === "darwin" \? "nodesktop" : ""\)/
+);
 
 for (const token of [
   "HERMES_AGENT_TOKEN",

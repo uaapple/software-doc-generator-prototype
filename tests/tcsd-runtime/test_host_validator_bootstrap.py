@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -22,6 +23,14 @@ PYTHON_GATE = REPO / "scripts" / "check-tcsd-python.py"
 
 def load_python_gate():
     spec = importlib.util.spec_from_file_location("check_tcsd_python", PYTHON_GATE)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_host_validator():
+    spec = importlib.util.spec_from_file_location("host_validate_tcsd_stage_test", HOST_VALIDATOR)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader
     spec.loader.exec_module(module)
@@ -64,6 +73,46 @@ def write_stub_runtime(directory: Path, *, include_runner: bool = True) -> Path:
 
 
 class HostValidatorBootstrapTests(unittest.TestCase):
+    def test_workbook_validation_error_names_tests_without_expectations(self):
+        validator = load_host_validator()
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            workbook = root / "result.xlsx"
+            workbook.write_bytes(b"workbook")
+            report = {
+                "status": "failed",
+                "test_count": 2,
+                "errors": [
+                    {"code": "unknown_exp_output"},
+                    {
+                        "code": "missing_test_exp_values",
+                        "test_cases": [
+                            {"row": 3, "test_id": "TC_001", "exp_value_count": 0},
+                            {"row": 4, "test_id": "", "exp_value_count": 0},
+                        ],
+                    }
+                ],
+            }
+            with (
+                mock.patch.object(validator, "find_workbook", return_value=workbook),
+                mock.patch.object(validator, "resolve_workspace_path", return_value=root / "interface.json"),
+                mock.patch.object(validator, "load_interface_names", return_value=({"Input"}, {"Output"})),
+                mock.patch.object(validator, "validate_workbook", return_value=report),
+                mock.patch.object(validator, "count_action_steps", return_value=2),
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"unknown_exp_output \(missing Test cases: TC_001, row 4\)",
+                ):
+                    validator.validate_workbook_stage(
+                        {
+                            "workspaceDir": str(root),
+                            "interfacePath": "interface.json",
+                            "templatePath": str(root / "missing-template.xlsx"),
+                        },
+                        require_exp_values=True,
+                    )
+
     def test_isolated_self_check_imports_only_trusted_sibling_modules(self):
         with tempfile.TemporaryDirectory() as raw_root:
             root = Path(raw_root)
