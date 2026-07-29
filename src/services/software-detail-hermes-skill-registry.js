@@ -10,6 +10,7 @@ import { listSoftwareDetailStages } from "./software-detail-stage-catalog.js";
 const execFileAsync = promisify(execFile);
 const REGISTRY_SCHEMA = "software-detail-hermes-skill-registry/v1";
 const MANAGED_SCHEMA = "software-detail-hermes-managed-bundle/v1";
+const HERMES_SKILLS_LIST_COLUMNS = "512";
 
 function registryError(message, details = {}) {
   return Object.assign(new Error(message), {
@@ -198,7 +199,11 @@ export class SoftwareDetailHermesSkillRegistry {
           timeout: 30000,
           maxBuffer: 4 * 1024 * 1024,
           windowsHide: true,
-          env: { ...process.env, NO_COLOR: "1" }
+          env: {
+            ...process.env,
+            NO_COLOR: "1",
+            COLUMNS: HERMES_SKILLS_LIST_COLUMNS
+          }
         }
       );
     } catch (cause) {

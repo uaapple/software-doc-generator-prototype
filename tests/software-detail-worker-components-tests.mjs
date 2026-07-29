@@ -298,17 +298,30 @@ try {
   const listedNames = listSoftwareDetailStages()
     .map((stage) => stage.skillName)
     .join("\n");
+  const registryCommandInvocations = [];
   const registry = new SoftwareDetailHermesSkillRegistry({
     command: "hermes",
     profile: "default",
     sourceRoot: path.resolve("skills/hermes"),
     skillsDir: registrySkillsDir,
-    commandRunner: async () => ({ stdout: listedNames, stderr: "" })
+    commandRunner: async (command, args, options) => {
+      registryCommandInvocations.push({ command, args, options });
+      const output =
+        Number(options.env.COLUMNS) >= 512
+          ? listedNames
+          : listSoftwareDetailStages()
+              .map((stage) => `${stage.skillName.slice(0, 24)}…`)
+              .join("\n");
+      return { stdout: output, stderr: "" };
+    }
   });
   const snapshot = await registry.prepare();
   assert.equal(snapshot.schema, "software-detail-hermes-skill-registry/v1");
   assert.equal(snapshot.stages.length, 9);
   assert.equal(snapshot.discovery.allDiscovered, true);
+  assert.deepEqual(registryCommandInvocations[0].args, ["skills", "list"]);
+  assert.equal(registryCommandInvocations[0].options.env.NO_COLOR, "1");
+  assert.equal(registryCommandInvocations[0].options.env.COLUMNS, "512");
   assert.ok(
     await fs.stat(
       path.join(
@@ -327,6 +340,27 @@ try {
   assert.deepEqual(
     repeated.stages.map((stage) => stage.bundleHash),
     snapshot.stages.map((stage) => stage.bundleHash)
+  );
+
+  const truncatedRegistry = new SoftwareDetailHermesSkillRegistry({
+    command: "hermes",
+    profile: "default",
+    sourceRoot: path.resolve("skills/hermes"),
+    skillsDir: path.join(root, "hermes-skills-truncated"),
+    commandRunner: async () => ({
+      stdout: listSoftwareDetailStages()
+        .map((stage) => `${stage.skillName.slice(0, 24)}…`)
+        .join("\n"),
+      stderr: ""
+    })
+  });
+  await assert.rejects(
+    () => truncatedRegistry.prepare(),
+    (error) =>
+      error.code === "software_detail_skill_registry_failed" &&
+      error.message ===
+        "Hermes did not discover all software-detail stage skills." &&
+      error.details.missing.length === 9
   );
 } finally {
   await fs.rm(root, { recursive: true, force: true });
