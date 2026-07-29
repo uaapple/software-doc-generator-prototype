@@ -229,6 +229,9 @@ assert.match(stage7, /this reasoning stage must not call MATLAB/);
 assert.match(stage7, /`document_unit` list carried by `boundary-projection` or `narrative-plan`/);
 assert.match(stage7, /Do not require or fetch a separate hierarchy-manifest input/);
 assert.match(stage7, /Do not create a requirements trace matrix/);
+assert.match(stage7, /every listed unit has at least one evidence shard/);
+assert.match(stage7, /Reject any direct boundary output marked missing or unsupported/);
+assert.match(stage7, /do not draft it from port contracts, module names, or inferred behavior/);
 
 const stage8 = readFileSync(
   path.join(

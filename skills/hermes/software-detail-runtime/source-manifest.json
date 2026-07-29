@@ -1,6 +1,6 @@
 {
   "schema": "software-detail-runtime-source-manifest/v1",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "authoritativeSource": {
     "commit": "ce5d3c2c08788fa8ab9013f18bd985f7355df0b6",
     "root": "skills/hermes/simulink-module-description-generator",
@@ -30,6 +30,15 @@
       "skills/hermes/software-detail-stage-03-evidence-extract/agents/openai.yaml"
     ]
   },
+  "runtimeClarifications": [
+    {
+      "path": "references/model-evidence.md",
+      "basedOnBlobSha1": "543583b153da16c909f5986bf83f7d952d50680a",
+      "basedOnContentSha256": "eaaf1a39c549cc1d7fc755dd17240bae0c2c7855e2d7d1214e8bd95ad487322b",
+      "contentSha256": "6b2e2e0d61562b64bf6416794fe711b0fb88cdc310d75e6e71eeecba400766b9",
+      "purpose": "Make the original per-document-unit evidence requirements explicit at staged queue, shard, aggregation, projection, and drafting boundaries."
+    }
+  ],
   "resources": [
     {
       "path": "agents/openai.yaml",

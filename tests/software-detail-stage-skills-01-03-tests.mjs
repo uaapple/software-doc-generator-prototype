@@ -149,13 +149,43 @@ assert.equal(
 for (const resource of sourceManifest.resources) {
   const runtimeBytes = readFileSync(path.join(runtimeRoot, resource.path));
   const sourceBytes = showPinned(resource.path);
-  assert.equal(
-    runtimeBytes.equals(sourceBytes),
-    true,
-    `${resource.path} is not a byte-identical source copy`
+  const clarification = sourceManifest.runtimeClarifications.find(
+    (entry) => entry.path === resource.path
   );
+  if (clarification) {
+    const clarificationStart = runtimeBytes.indexOf(
+      Buffer.from("\n## Pipeline Evidence-Coverage Execution Clarification\n")
+    );
+    const clarificationEnd = runtimeBytes.indexOf(
+      Buffer.from("\nFor complex outputs,"),
+      clarificationStart
+    );
+    assert.ok(clarificationStart >= 0, "clarification start is missing");
+    assert.ok(clarificationEnd > clarificationStart, "clarification end is missing");
+    const reconstructedSource = Buffer.concat([
+      runtimeBytes.subarray(0, clarificationStart),
+      runtimeBytes.subarray(clarificationEnd)
+    ]);
+    assert.equal(
+      reconstructedSource.equals(sourceBytes),
+      true,
+      `${resource.path} changed content outside the traced clarification`
+    );
+    assert.equal(clarification.basedOnBlobSha1, resource.blobSha1);
+    assert.equal(
+      clarification.basedOnContentSha256,
+      resource.contentSha256
+    );
+    assert.equal(sha256(runtimeBytes), clarification.contentSha256);
+  } else {
+    assert.equal(
+      runtimeBytes.equals(sourceBytes),
+      true,
+      `${resource.path} is not a byte-identical source copy`
+    );
+  }
   assert.equal(pinnedBlob(resource.path), resource.blobSha1);
-  assert.equal(sha256(runtimeBytes), resource.contentSha256);
+  assert.equal(sha256(sourceBytes), resource.contentSha256);
 }
 
 const resourceCounts = sourceManifest.resources.reduce((counts, resource) => {
@@ -366,6 +396,50 @@ for (const stageId of expectedStageIds.slice(1)) {
   assert.equal(/\bdefault\b[^\n]{0,80}\bnew\b/i.test(skill), false);
 }
 
+const stage2Skill = readText(
+  "skills/hermes/software-detail-stage-02-model-plan/SKILL.md"
+);
+for (const required of [
+  "scope=document_unit_direct",
+  "scope=direct_outport",
+  "every selected `document_unit` has at least one queue item",
+  "A document unit with zero queue items is an invalid plan"
+]) {
+  assert.ok(stage2Skill.includes(required), `stage 2 misses: ${required}`);
+}
+
+const stage3Skill = readText(
+  "skills/hermes/software-detail-stage-03-evidence-extract/SKILL.md"
+);
+for (const required of [
+  "template must predeclare `scope`",
+  "Do not add a field to only one MATLAB structure",
+  "A failed fallback read is a failed required queue item",
+  "every selected document unit has at least one shard",
+  "Any required fallback execution error fails the stage"
+]) {
+  assert.ok(stage3Skill.includes(required), `stage 3 misses: ${required}`);
+}
+
+assert.deepEqual(
+  sourceManifest.runtimeClarifications.map((entry) => entry.path),
+  ["references/model-evidence.md"]
+);
+const evidenceReference = readText(
+  "skills/hermes/software-detail-runtime/references/model-evidence.md"
+);
+for (const required of [
+  "## Pipeline Evidence-Coverage Execution Clarification",
+  "A zero-item parent is never implicitly covered by its port list.",
+  "A structure-append error is a failed required",
+  "Stages that aggregate, project, or draft must fail on missing evidence."
+]) {
+  assert.ok(
+    evidenceReference.includes(required),
+    `model-evidence clarification misses: ${required}`
+  );
+}
+
 console.log(
-  "software detail stage skills 01-03 tests passed: 3 skills, 19 stage-clause assignments, 10 shared rules, 12 byte-identical source resources"
+  "software detail stage skills 01-03 tests passed: 3 skills, 19 stage-clause assignments, 10 shared rules, 11 byte-identical source resources, 1 traced clarification"
 );

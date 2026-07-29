@@ -194,6 +194,26 @@ After the ledger is complete, create a private behavior-group plan before prose:
 Do not draft from a ports-only ledger. A ledger that contains only inport/outport names, direct source names, or broad input/output groups is an index, not sufficient evidence for `实现方式`.
 Do not draft from a block-source ledger. A ledger that contains only `RSLatch`, `Switch`, `Unit Delay`, `Memory`, `Goto/From`, or direct source block names is private traceability, not sufficient evidence for `实现方式`.
 
+## Pipeline Evidence-Coverage Execution Clarification
+
+This clarification makes the original evidence requirements executable across the
+staged pipeline; it does not add a new business rule or change document hierarchy.
+
+- Every selected `document_unit` must own at least one bounded analysis-queue item.
+  When it has no eligible analysis child, queue the small unit itself with
+  `scope=document_unit_direct`, or split it by direct Outport/shared-source output
+  group. A zero-item parent is never implicitly covered by its port list.
+- Use one fixed evidence-shard field set for every queue scope. Predeclare `scope`
+  and all optional fields before constructing MATLAB structure arrays, and normalize
+  field sets before concatenation. A structure-append error is a failed required
+  evidence read, not an ignorable limitation.
+- Before Stage 3 completes, verify every queue item, every document unit, and every
+  direct Outport. Each direct Outport needs model evidence or an explicit limitation
+  backed by recorded targeted reads. “No evidence shard”, an empty shard, or a
+  boundary-only inference is not sufficient coverage.
+- Stages that aggregate, project, or draft must fail on missing evidence. They must
+  not turn an uncovered output into a ledger claim, boundary behavior, or prose.
+
 For complex outputs, private facts should be specific enough to produce boundary-projected wording like the following. Every identifier shown in final prose must be allowlisted:
 
 ```text

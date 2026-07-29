@@ -68,7 +68,10 @@ body text, or DOCX, and do not execute another stage.
 
 1. Validate that all inputs belong to the same job, preserve each input's originating
    stage and attempt for traceability, and confirm that ledger rows and coverage
-   entries refer only to supplied evidence shards and document units.
+   entries refer only to supplied evidence shards and document units. Fail before
+   projection if any document unit has no evidence shard or any direct boundary
+   output is marked missing or unresolved without a model-backed targeted-read
+   limitation.
 2. Apply the allowlist independently for each `document_unit`. A cross-A signal is
    usable only when it is a direct port of the current unit; when connected port
    names differ, use the current unit's direct Inport name for its projection.
@@ -86,9 +89,9 @@ body text, or DOCX, and do not execute another stage.
    `boundary_outputs`, `internal_evidence_rows`, `condition_actions`, and
    `covered_ledger_items`. Combine conditions that produce the same action, while
    retaining exact private traceability to ledger items.
-7. Keep evidence coverage and narrative coverage distinct. Preserve missing or
-   unresolved ledger coverage in the outputs rather than hiding it with compressed
-   prose.
+7. Keep evidence coverage and narrative coverage distinct. Do not convert missing
+   or unsupported ledger coverage into boundary prose, behavior groups, or a
+   narrative plan; fail with an upstream-evidence diagnostic.
 
 ## Stage-specific source clauses
 
@@ -100,6 +103,7 @@ body text, or DOCX, and do not execute another stage.
   direct boundary, allow valid cross-A direct ports, and keep unresolved or
   unapproved internals private without invention.
 
-Fail the stage when an input is missing, an internal row is unmapped, a behavior group
-uses a private identifier as its public title, a projection crosses the current
-document unit's allowlist, or an output role cannot be written.
+Fail the stage when an input is missing, a document unit or direct output lacks
+supported evidence, an internal row is unmapped, a behavior group uses a private
+identifier as its public title, a projection crosses the current document unit's
+allowlist, or an output role cannot be written.

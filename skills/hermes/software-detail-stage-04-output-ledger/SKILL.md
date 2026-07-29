@@ -69,7 +69,8 @@ prose, generate DOCX, or execute another stage.
 1. Validate that the inputs belong to the same job, preserve each input's originating
    stage and attempt for traceability, confirm that the MATLAB lease names the
    existing task-owned session, and tie every completed shard to an analysis-queue
-   item and its parent `document_unit`.
+   item and its parent `document_unit`. Fail if any document unit has no shard, any
+   queue item is absent, or a required fallback item ended in an execution error.
 2. Aggregate shard fragments by parent `document_unit`. Treat a document unit as the
    aggregation boundary, not as a new whole-subsystem deep-read batch. Preserve
    unresolved evidence limitations instead of filling them with guesses.
@@ -110,6 +111,7 @@ prose, generate DOCX, or execute another stage.
 - `SDD-OUT-010`: preserve output-near state-holding and selection logic as functional
   evidence until proven otherwise.
 
-Fail the stage when a required input is missing, a direct output has neither coverage
-nor an explicit unresolved record, a ledger row lacks its boundary mapping, or an
-output role cannot be written.
+Fail the stage when a required input is missing, a document unit has no evidence
+shard, a direct output lacks model evidence, a limitation is not backed by recorded
+targeted-read evidence, a ledger row lacks its boundary mapping, or an output role
+cannot be written. Do not emit `missing` coverage and continue toward drafting.

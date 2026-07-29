@@ -170,13 +170,40 @@ for (const resource of wave0.resources) {
   assert.ok(existsSync(runtimePath), `missing runtime resource ${resource.path}`);
   const runtimeBytes = readFileSync(runtimePath);
   const sourceBytes = showPinnedFile(resource.path);
-  assert.equal(
-    runtimeBytes.equals(sourceBytes),
-    true,
-    `${resource.path} is not byte-identical to the pinned Git object`
+  const clarification = sourceManifest.runtimeClarifications.find(
+    (entry) => entry.path === resource.path
   );
+  if (clarification) {
+    const clarificationStart = runtimeBytes.indexOf(
+      Buffer.from("\n## Pipeline Evidence-Coverage Execution Clarification\n")
+    );
+    const clarificationEnd = runtimeBytes.indexOf(
+      Buffer.from("\nFor complex outputs,"),
+      clarificationStart
+    );
+    assert.ok(clarificationStart >= 0, "clarification start is missing");
+    assert.ok(clarificationEnd > clarificationStart, "clarification end is missing");
+    const reconstructedSource = Buffer.concat([
+      runtimeBytes.subarray(0, clarificationStart),
+      runtimeBytes.subarray(clarificationEnd)
+    ]);
+    assert.equal(
+      reconstructedSource.equals(sourceBytes),
+      true,
+      `${resource.path} changed content outside the traced clarification`
+    );
+    assert.equal(clarification.basedOnBlobSha1, resource.blobSha1);
+    assert.equal(clarification.basedOnContentSha256, resource.contentSha256);
+    assert.equal(sha256(runtimeBytes), clarification.contentSha256);
+  } else {
+    assert.equal(
+      runtimeBytes.equals(sourceBytes),
+      true,
+      `${resource.path} is not byte-identical to the pinned Git object`
+    );
+  }
   assert.equal(pinnedBlob(resource.path), resource.blobSha1);
-  assert.equal(sha256(runtimeBytes), resource.contentSha256);
+  assert.equal(sha256(sourceBytes), resource.contentSha256);
 }
 
 let stageSpecificAssignmentCount = 0;

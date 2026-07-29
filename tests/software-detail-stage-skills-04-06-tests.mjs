@@ -58,7 +58,9 @@ const expectations = [
       "Aggregate shard fragments by parent `document_unit`",
       "enumerate its direct Outports and work backward",
       "`visibility=internal_evidence`",
-      "`coverage-report` separately"
+      "`coverage-report` separately",
+      "any document unit has no shard",
+      "Do not emit `missing` coverage and continue toward drafting"
     ]
   },
   {
@@ -77,7 +79,9 @@ const expectations = [
       "Apply the allowlist independently for each `document_unit`",
       "Project conditions onto current-unit direct inputs",
       "Never use an internal identifier as a group title",
-      "`covered_ledger_items`"
+      "`covered_ledger_items`",
+      "output is marked missing or unresolved",
+      "fail with an upstream-evidence diagnostic"
     ]
   },
   {
