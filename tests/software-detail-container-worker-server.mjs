@@ -216,16 +216,14 @@ class SyntheticSoftwareDetailStageExecutor {
           workspaceDir,
           docxArtifact.relativePath
         );
-        payload.document = {
+        payload.schema = "software-detail-artifact-manifest/v1";
+        payload.artifacts = [{
           role: "detail-design-docx",
           relativePath: docxArtifact.relativePath,
+          fileName: path.posix.basename(docxArtifact.relativePath),
           size: (await fs.stat(docxPath)).size,
-          sha256: await sha256File(docxPath),
-          templateRelativePath:
-            "skills/hermes/software-detail-runtime/assets/templates/Template_Software_Detailed_Design.docx",
-          renderer: "python-docx",
-          openablePackageCheckedByHost: false
-        };
+          sha256: await sha256File(docxPath)
+        }];
       }
       await writeJson(targetPath, payload);
     }

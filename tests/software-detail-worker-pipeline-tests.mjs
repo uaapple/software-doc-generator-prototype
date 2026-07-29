@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,8 +19,13 @@ assert.equal(
 );
 assert.equal(
   buildSoftwareDetailDocxFileName("../危险 模型?.slx"),
-  "危险_模型-software-detail-design.docx"
+  "危险 模型_-software-detail-design.docx"
 );
+assert.equal(buildSoftwareDetailDocxFileName("C:\\模型\\café 日本語.SLX"), "café 日本語-software-detail-design.docx");
+assert.equal(buildSoftwareDetailDocxFileName("A..B.slx"), "A..B-software-detail-design.docx");
+assert.equal(buildSoftwareDetailDocxFileName("...slx"), "model-software-detail-design.docx");
+assert.equal(buildSoftwareDetailDocxFileName(""), "model-software-detail-design.docx");
+assert.ok(Buffer.byteLength(buildSoftwareDetailDocxFileName("中文".repeat(200)), "utf8") <= 255);
 
 function stageArtifactPayload(role, context, options = {}) {
   const documentUnits = [
@@ -194,13 +200,35 @@ class FakeExecutor {
         ...artifact.relativePath.split("/")
       );
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+      if (artifact.role === "detail-design-docx") {
+        await fs.writeFile(absolutePath, DOCX_BYTES);
+        continue;
+      }
+      if (artifact.role === "artifact-manifest") {
+        const docx = context.outputArtifacts.find((item) => item.role === "detail-design-docx");
+        const entry = {
+          role: "detail-design-docx",
+          relativePath: docx.relativePath,
+          fileName: path.posix.basename(docx.relativePath),
+          size: DOCX_BYTES.length,
+          sha256: createHash("sha256").update(DOCX_BYTES).digest("hex")
+        };
+        if (this.options.manifestMutation === "old-name") entry.fileName = "software-detail-design.docx";
+        if (this.options.manifestMutation === "missing-filename") delete entry.fileName;
+        if (this.options.manifestMutation === "wrong-size") entry.size += 1;
+        if (this.options.manifestMutation === "wrong-hash") entry.sha256 = "0".repeat(64);
+        await fs.writeFile(absolutePath, `${JSON.stringify({
+          schema: "software-detail-artifact-manifest/v1",
+          jobId: context.job.jobId,
+          stageId: context.definition.id,
+          attempt: context.stageInput.attempt,
+          artifacts: [entry]
+        })}\n`);
+        continue;
+      }
       await fs.writeFile(
         absolutePath,
-        artifact.role === "detail-design-docx"
-          ? DOCX_BYTES
-          : `${JSON.stringify(
-              stageArtifactPayload(artifact.role, context, this.options)
-            )}\n`
+        `${JSON.stringify(stageArtifactPayload(artifact.role, context, this.options))}\n`
       );
     }
     const artifacts = context.outputArtifacts.map((artifact) => ({
@@ -423,6 +451,31 @@ try {
         documentUnit: "Model/A02_Function",
         output: "A02_Output"
       }
+    },
+    // These malformed stage-9 manifests were accepted before host-side manifest validation.
+    {
+      key: "stage-nine-manifest-old-name",
+      options: { manifestMutation: "old-name" },
+      expectedCalls: 9,
+      expectedCode: "software_detail_invalid_artifact_manifest"
+    },
+    {
+      key: "stage-nine-manifest-missing-filename",
+      options: { manifestMutation: "missing-filename" },
+      expectedCalls: 9,
+      expectedCode: "software_detail_invalid_artifact_manifest"
+    },
+    {
+      key: "stage-nine-manifest-wrong-size",
+      options: { manifestMutation: "wrong-size" },
+      expectedCalls: 9,
+      expectedCode: "software_detail_invalid_artifact_manifest"
+    },
+    {
+      key: "stage-nine-manifest-wrong-hash",
+      options: { manifestMutation: "wrong-hash" },
+      expectedCalls: 9,
+      expectedCode: "software_detail_invalid_artifact_manifest"
     }
   ]) {
     const scenarioRoot = path.join(root, scenario.key);

@@ -187,12 +187,22 @@ function normalizeStoredRelativePath(value = "") {
 }
 
 function isDocxOutput(relativePath = "") {
-  const normalized = normalizeStoredRelativePath(relativePath);
-  if (!normalized || normalized.includes("..")) {
+  const normalized = String(relativePath || "").replaceAll("\\", "/").trim();
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:\//.test(normalized)
+  ) {
     return false;
   }
-  const parts = normalized.split("/").filter(Boolean);
-  return parts.length === 2 && parts[0] === "outputs" && parts[1].toLowerCase().endsWith(".docx");
+  const parts = normalized.split("/");
+  return (
+    parts.length === 2 &&
+    parts[0] === "outputs" &&
+    parts[1] !== "" &&
+    parts.every((part) => part !== "." && part !== "..") &&
+    parts[1].toLowerCase().endsWith(".docx")
+  );
 }
 
 function toPlatformPath(filePath = "") {

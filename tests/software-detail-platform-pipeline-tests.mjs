@@ -642,7 +642,7 @@ test("旧任务读取不改字节，执行仍使用旧 executeStep 路径", asyn
         async executeStep(payload) {
           executeCalls += 1;
           await fs.writeFile(
-            path.join(payload.inputArtifact.outputDir, "Legacy.docx"),
+            path.join(payload.inputArtifact.outputDir, "Legacy..docx"),
             "legacy-docx"
           );
           return {
@@ -650,7 +650,7 @@ test("旧任务读取不改字节，执行仍使用旧 executeStep 路径", asyn
             artifact: {
               status: "completed",
               summary: "旧任务已完成。",
-              outputFiles: [{ relativePath: "outputs/Legacy.docx" }]
+              outputFiles: [{ relativePath: "outputs/Legacy..docx" }]
             }
           };
         }
@@ -665,7 +665,7 @@ test("旧任务读取不改字节，执行仍使用旧 executeStep 路径", asyn
     const completed = await service.runTask(legacyTask.id);
     assert.equal(executeCalls, 1);
     assert.equal(completed.status, "completed");
-    assert.equal(completed.artifacts[0].relativePath, "outputs/Legacy.docx");
+    assert.equal(completed.artifacts[0].relativePath, "outputs/Legacy..docx");
   });
 });
 

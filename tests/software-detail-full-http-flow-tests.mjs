@@ -366,6 +366,28 @@ class RecordingStageExecutor {
         ]);
         this.docxByJobId.set(context.job.jobId, bytes);
         await fs.writeFile(absolutePath, bytes);
+      } else if (artifact.role === "artifact-manifest") {
+        const docxArtifact = context.outputArtifacts.find(
+          (item) => item.role === "detail-design-docx"
+        );
+        const bytes = this.docxByJobId.get(context.job.jobId);
+        await fs.writeFile(
+          absolutePath,
+          `${JSON.stringify({
+            schema: "software-detail-artifact-manifest/v1",
+            jobId: context.job.jobId,
+            stageId: context.definition.id,
+            attempt: context.stageInput.attempt,
+            artifacts: [{
+              role: "detail-design-docx",
+              relativePath: docxArtifact.relativePath,
+              fileName: path.posix.basename(docxArtifact.relativePath),
+              size: bytes.length,
+              sha256: sha256(bytes)
+            }]
+          })}\n`,
+          "utf8"
+        );
       } else {
         const semanticPayload =
           artifact.role === "hierarchy-manifest"
@@ -666,7 +688,7 @@ try {
     `${platformBaseURL}/api/software-module-description-generation/tasks`,
     {
       method: "POST",
-      body: createUploadForm("Wave4Second", "second")
+      body: createUploadForm("café 日本語 空格", "second")
     }
   );
   assert.equal(secondResponse.status, 202);
@@ -732,7 +754,7 @@ try {
   );
   assert.equal(secondWorkerDocx.size, secondExpectedDocx.length);
   assert.equal(secondWorkerDocx.sha256, sha256(secondExpectedDocx));
-  assert.equal(secondWorkerDocx.relativePath, "outputs/Wave4Second-software-detail-design.docx");
+  assert.equal(secondWorkerDocx.relativePath, "outputs/café 日本語 空格-software-detail-design.docx");
 
   const firstCompleted = await waitFor(
     "平台后台对账完成第一个公开任务",
@@ -759,7 +781,7 @@ try {
 
   for (const [completed, expectedFileName] of [
     [firstCompleted, "Wave4First-software-detail-design.docx"],
-    [secondCompleted, "Wave4Second-software-detail-design.docx"]
+    [secondCompleted, "café 日本語 空格-software-detail-design.docx"]
   ]) {
     assert.equal(completed.pipeline.status, "completed");
     assert.equal(completed.pipeline.cleanup.status, "completed");
@@ -791,10 +813,19 @@ try {
       `${platformBaseURL}/api/software-module-description-generation/tasks/${completed.id}/artifacts/${artifact.id}/download`
     );
     assert.equal(downloadResponse.status, 200);
-    assert.match(
-      downloadResponse.headers.get("content-disposition") || "",
-      new RegExp(artifact.fileName.replace(/[.]/g, "\\."))
-    );
+    const contentDisposition = downloadResponse.headers.get("content-disposition") || "";
+    if (/^[\x00-\x7f]+$/.test(artifact.fileName)) {
+      assert.match(
+        contentDisposition,
+        new RegExp(artifact.fileName.replace(/[.]/g, "\\."))
+      );
+    }
+    if (/[^\x00-\x7f]/.test(artifact.fileName)) {
+      assert.match(
+        contentDisposition,
+        new RegExp(`filename\\*=UTF-8''${encodeURIComponent(artifact.fileName)}`)
+      );
+    }
     assert.deepEqual(
       Buffer.from(await downloadResponse.arrayBuffer()),
       expectedDocx

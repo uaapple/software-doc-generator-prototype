@@ -240,6 +240,65 @@ async function validateArtifact(workspaceDir, artifact) {
   };
 }
 
+function artifactManifestError(message, details = {}) {
+  return serviceError("software_detail_invalid_artifact_manifest", message, details);
+}
+
+function requireManifestText(value, field) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    throw artifactManifestError("Software-detail artifact manifest is missing a required field.", { field });
+  }
+  return normalized;
+}
+
+function validateFinalArtifactManifest(manifest, context = {}) {
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw artifactManifestError("Software-detail artifact manifest is invalid.");
+  }
+  if (manifest.schema !== "software-detail-artifact-manifest/v1") {
+    throw artifactManifestError("Software-detail artifact manifest schema is invalid.", { field: "schema" });
+  }
+  for (const [field, expected] of [
+    ["jobId", context.jobId],
+    ["stageId", context.stageId],
+    ["attempt", context.attempt]
+  ]) {
+    if (field === "attempt") {
+      if (Number(manifest.attempt) !== Number(expected)) {
+        throw artifactManifestError("Software-detail artifact manifest identity is invalid.", { field });
+      }
+    } else if (manifest[field] !== expected) {
+      throw artifactManifestError("Software-detail artifact manifest identity is invalid.", { field });
+    }
+  }
+  if (!Array.isArray(manifest.artifacts)) {
+    throw artifactManifestError("Software-detail artifact manifest artifacts are invalid.", { field: "artifacts" });
+  }
+  const docxEntries = manifest.artifacts.filter(
+    (item) => item && typeof item === "object" && !Array.isArray(item) && item.role === "detail-design-docx"
+  );
+  if (docxEntries.length !== 1) {
+    throw artifactManifestError("Software-detail artifact manifest must declare exactly one final DOCX.", { field: "artifacts" });
+  }
+  const entry = docxEntries[0];
+  const expected = context.docxArtifact;
+  const relativePath = requireManifestText(entry.relativePath, "artifacts.detail-design-docx.relativePath");
+  const fileName = requireManifestText(entry.fileName, "artifacts.detail-design-docx.fileName");
+  if (
+    relativePath !== expected.relativePath ||
+    fileName !== path.posix.basename(expected.relativePath) ||
+    Number(entry.size) !== expected.size ||
+    !Number.isSafeInteger(Number(entry.size)) ||
+    Number(entry.size) <= 0
+  ) {
+    throw artifactManifestError("Software-detail artifact manifest does not match the final DOCX.");
+  }
+  if (Object.hasOwn(entry, "sha256") && String(entry.sha256 || "").toLowerCase() !== expected.sha256) {
+    throw artifactManifestError("Software-detail artifact manifest hash does not match the final DOCX.", { field: "artifacts.detail-design-docx.sha256" });
+  }
+}
+
 function candidateArtifacts(candidate, definition, expectedBindings) {
   if (
     !candidate ||
@@ -706,6 +765,23 @@ export class SoftwareDetailPipelineJobService {
     for (const artifact of artifacts) {
       validated.push(
         await validateArtifact(job.input.workspaceDir, artifact)
+      );
+    }
+    if (definition.order === 900) {
+      const docxArtifact = validated.find((artifact) => artifact.role === "detail-design-docx");
+      const manifestArtifact = artifacts.find((artifact) => artifact.role === "artifact-manifest");
+      validateFinalArtifactManifest(
+        await readJsonStrict(
+          withinWorkspace(job.input.workspaceDir, manifestArtifact.relativePath),
+          "software_detail_invalid_artifact_manifest",
+          "Software-detail artifact manifest is unreadable."
+        ),
+        {
+          jobId: job.jobId,
+          stageId: definition.id,
+          attempt,
+          docxArtifact
+        }
       );
     }
     if (definition.order === 200) {
