@@ -133,9 +133,12 @@ export class SoftwareDetailHermesStageExecutor {
   buildPrompt(context) {
     const {
       definition,
+      jobId,
+      attempt,
       manifestRelativePath,
       candidateRelativePath,
       outputArtifacts,
+      runtimeInstalledPath,
       lease
     } = context;
     const outputLines = outputArtifacts.map(
@@ -164,18 +167,32 @@ export class SoftwareDetailHermesStageExecutor {
             "Perform only the skill's model/path cleanup. Do not DELETE the Gateway lease; the host closes and confirms it after validating your DOCX and manifest."
           ]
         : [];
+    const candidateSkeleton = {
+      schema: SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA,
+      jobId,
+      stageId: definition.id,
+      attempt,
+      status: "completed",
+      artifacts: outputArtifacts.map((artifact) => ({
+        role: artifact.role,
+        relativePath: artifact.relativePath
+      }))
+    };
     return [
       `/${definition.skillName}`,
       `Execute only ${definition.id} in this fresh Hermes session.`,
       `Read the unique authoritative stage input manifest: ${manifestRelativePath}`,
       `Write the only candidate result to: ${candidateRelativePath}`,
       `Candidate schema: ${SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA}`,
+      "The stage input artifacts and outputArtifacts are path bindings only; they are not the candidate-result JSON contract.",
+      "Write candidate-result.json with this complete JSON shape. The output array field must be named artifacts:",
+      JSON.stringify(candidateSkeleton, null, 2),
       "Write every declared output to its exact task-relative path:",
       ...outputLines,
       ...leaseLines,
       ...stageOneGuard,
       ...stageNineGuard,
-      "Use only the shared software-detail runtime installed adjacent to the slash-invoked skill.",
+      `Use only the shared software-detail runtime at this installed absolute path: ${runtimeInstalledPath}`,
       "Do not execute another stage, reuse a Hermes session, write a host checkpoint, expose hidden reasoning, or include secrets.",
       "Your stdout is diagnostic only. The host accepts success only from the candidate JSON and independently validated artifact files."
     ].join("\n");
@@ -220,9 +237,16 @@ export class SoftwareDetailHermesStageExecutor {
         bundleHash: stage.bundleHash
       },
       runtime: {
-        bundleHash: runtime.bundleHash
+        bundleHash: runtime.bundleHash,
+        installedPath: path.resolve(runtime.installedPath)
       },
       outputArtifacts,
+      candidateContract: {
+        schema: SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA,
+        resultPath: candidateRelativePath,
+        status: "completed",
+        artifactArrayField: "artifacts"
+      },
       gatewayLease: context.lease
         ? {
             workspaceId: context.lease.workspaceId,
@@ -242,9 +266,12 @@ export class SoftwareDetailHermesStageExecutor {
 
     const prompt = this.buildPrompt({
       definition,
+      jobId: job.jobId,
+      attempt: context.stageInput.attempt,
       manifestRelativePath,
       candidateRelativePath,
       outputArtifacts,
+      runtimeInstalledPath: path.resolve(runtime.installedPath),
       lease: context.lease
     });
     const rawArgs = [

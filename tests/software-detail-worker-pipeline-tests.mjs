@@ -115,18 +115,32 @@ class FakeExecutor {
     await fs.mkdir(path.dirname(context.candidateResultPath), {
       recursive: true
     });
+    const candidate = {
+      schema: "software-detail-minimal-stage-result/v1",
+      jobId: context.job.jobId,
+      stageId: context.definition.id,
+      attempt: context.stageInput.attempt,
+      status: "completed"
+    };
+    if (this.options.outputArtifactsCandidate === true) {
+      candidate.outputArtifacts = artifacts;
+    } else if (
+      this.options.conflictingArtifactFieldsAt === context.definition.id
+    ) {
+      candidate.artifacts = artifacts;
+      candidate.outputArtifacts = artifacts.map((artifact, artifactIndex) =>
+        artifactIndex === 0
+          ? { ...artifact, relativePath: `.software-detail/conflict/${artifact.role}.json` }
+          : artifact
+      );
+    } else {
+      candidate.artifacts = artifacts;
+    }
     await fs.writeFile(
       context.candidateResultPath,
       this.options.nonJsonAt === context.definition.id
         ? "not-json"
-        : `${JSON.stringify({
-            schema: "software-detail-minimal-stage-result/v1",
-            jobId: context.job.jobId,
-            stageId: context.definition.id,
-            attempt: context.stageInput.attempt,
-            status: "completed",
-            artifacts
-          })}\n`
+        : `${JSON.stringify(candidate)}\n`
     );
     return {
       sessionId: `hermes-${context.job.jobId}-${String(index).padStart(2, "0")}`,
@@ -288,6 +302,41 @@ try {
       true,
       `${scenario.key} advanced beyond the failed stage`
     );
+  }
+
+  {
+    const { service, executor } = createService(
+      path.join(root, "compatible-output-artifacts"),
+      { outputArtifactsCandidate: true }
+    );
+    const job = await runJob(
+      service,
+      await createWorkspace(root, "compatible-output-artifacts-workspace"),
+      "compatible-output-artifacts-task"
+    );
+    assert.equal(job.status, "completed");
+    assert.equal(executor.calls.length, 9);
+  }
+
+  {
+    const { service, executor } = createService(
+      path.join(root, "conflicting-artifact-fields"),
+      {
+        conflictingArtifactFieldsAt:
+          "software-detail-stage-02-model-plan"
+      }
+    );
+    const job = await runJob(
+      service,
+      await createWorkspace(root, "conflicting-artifact-fields-workspace"),
+      "conflicting-artifact-fields-task"
+    );
+    assert.equal(job.status, "failed");
+    assert.equal(
+      job.error.code,
+      "software_detail_candidate_artifacts_conflict"
+    );
+    assert.equal(executor.calls.length, 2);
   }
 
   {

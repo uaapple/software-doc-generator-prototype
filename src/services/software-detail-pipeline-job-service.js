@@ -197,16 +197,46 @@ function candidateArtifacts(candidate, definition, expectedBindings) {
       "Software-detail candidate result contract is invalid."
     );
   }
-  if (!Array.isArray(candidate.artifacts)) {
+  const hasArtifacts = Object.hasOwn(candidate, "artifacts");
+  const hasOutputArtifacts = Object.hasOwn(candidate, "outputArtifacts");
+  if (
+    (hasArtifacts && !Array.isArray(candidate.artifacts)) ||
+    (hasOutputArtifacts && !Array.isArray(candidate.outputArtifacts)) ||
+    (!hasArtifacts && !hasOutputArtifacts)
+  ) {
     throw serviceError(
       "software_detail_invalid_candidate_result",
       "Software-detail candidate artifacts must be an array."
     );
   }
-  const actual = candidate.artifacts.map((artifact) => ({
-    role: String(artifact?.role || "").trim(),
-    relativePath: normalizeRelativePath(artifact?.relativePath)
-  }));
+  const normalizeCandidateArtifacts = (rawArtifacts) =>
+    rawArtifacts.map((artifact) => ({
+      role: String(artifact?.role || "").trim(),
+      relativePath: normalizeRelativePath(artifact?.relativePath)
+    }));
+  const canonicalArtifacts = hasArtifacts
+    ? normalizeCandidateArtifacts(candidate.artifacts)
+    : null;
+  const compatibleOutputArtifacts = hasOutputArtifacts
+    ? normalizeCandidateArtifacts(candidate.outputArtifacts)
+    : null;
+  if (canonicalArtifacts && compatibleOutputArtifacts) {
+    const asSemanticBindings = (artifacts) =>
+      artifacts
+        .map((artifact) => `${artifact.role}\0${artifact.relativePath}`)
+        .sort();
+    if (
+      JSON.stringify(asSemanticBindings(canonicalArtifacts)) !==
+      JSON.stringify(asSemanticBindings(compatibleOutputArtifacts))
+    ) {
+      throw serviceError(
+        "software_detail_candidate_artifacts_conflict",
+        "Software-detail candidate artifacts and outputArtifacts conflict.",
+        { stageId: definition.id }
+      );
+    }
+  }
+  const actual = canonicalArtifacts || compatibleOutputArtifacts;
   if (
     actual.length !== expectedBindings.length ||
     expectedBindings.some((expected) => {

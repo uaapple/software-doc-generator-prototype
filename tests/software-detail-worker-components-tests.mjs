@@ -253,6 +253,13 @@ try {
   const prompt = commandInvocations[0].args[2];
   assert.match(prompt, new RegExp(`^/${definition.skillName}`, "m"));
   assert.match(prompt, /candidate-result\.json/);
+  assert.match(prompt, /"artifacts": \[/);
+  assert.match(prompt, /output array field must be named artifacts/);
+  assert.match(prompt, /path bindings only/);
+  assert.match(
+    prompt,
+    new RegExp(installedRuntimePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+  );
   for (const artifact of outputArtifacts) {
     assert.match(prompt, new RegExp(artifact.relativePath.replaceAll(".", "\\.")));
   }
@@ -265,6 +272,15 @@ try {
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
   assert.equal(manifest.gatewayLease.ownerJobId, lease.ownerJobId);
   assert.deepEqual(manifest.outputArtifacts, outputArtifacts);
+  assert.equal(manifest.runtime.installedPath, installedRuntimePath);
+  assert.deepEqual(manifest.candidateContract, {
+    schema: "software-detail-minimal-stage-result/v1",
+    resultPath: path
+      .relative(workspaceDir, candidateResultPath)
+      .replaceAll(path.sep, "/"),
+    status: "completed",
+    artifactArrayField: "artifacts"
+  });
   assert.doesNotMatch(
     await fs.readFile(manifestPath, "utf8"),
     /gateway-auth-secret|gateway-evaluate-secret/
