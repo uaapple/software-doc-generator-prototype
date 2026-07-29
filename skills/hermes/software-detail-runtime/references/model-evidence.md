@@ -223,7 +223,8 @@ staged pipeline; it does not add a new business rule or change document hierarch
   path. Analysis entries inline every direct output they affect; `direct_outport`
   entries put the exact short-name output in `directOutport` and canonical
   `outports`. Mirror `scopePath` from the queue item exactly, including an empty
-  value. A queue-item ID is an additional identity check, not a replacement for
+  value. Never populate a missing queue `scopePath` from `analysisUnitPath`.
+  A queue-item ID is an additional identity check, not a replacement for
   parent, scope, scope-path, or output checks. A shard-file path alone is not an
   evidence index.
 - Before Stage 3 completes, verify every queue item, every document unit, and every

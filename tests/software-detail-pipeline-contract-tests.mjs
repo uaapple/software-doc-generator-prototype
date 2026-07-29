@@ -1020,6 +1020,64 @@ for (const stage of stages.slice(1)) {
     );
   }
 
+  const identifiedAnalysisHierarchy = {
+    schema: "software-detail-hierarchy-manifest/v1",
+    documentUnits: [
+      {
+        path: "Model/A05",
+        allowedOutputs: ["A05_Output"]
+      }
+    ]
+  };
+  const identifiedAnalysisQueue = {
+    schema: "software-detail-analysis-queue/v1",
+    items: [
+      {
+        id: "q-01",
+        parentDocumentUnit: "Model/A05",
+        analysisUnit: "Model/A05/B01",
+        scope: "analysis_unit"
+      }
+    ]
+  };
+  const analysisScopePathShard = {
+    queueItemId: "q-01",
+    parentDocumentUnitPath: "Model/A05",
+    analysisUnitPath: "Model/A05/B01",
+    scope: "analysis_unit",
+    scopePath: "Model/A05/B01",
+    outports: [{ name: "A05_Output" }]
+  };
+  assert.equal(
+    validateSoftwareDetailEvidenceArtifacts(
+      identifiedAnalysisHierarchy,
+      identifiedAnalysisQueue,
+      {
+        schema: "software-detail-evidence-shards/v1",
+        shards: [analysisScopePathShard]
+      }
+    ).queueItems.length,
+    1
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailEvidenceArtifacts(
+        identifiedAnalysisHierarchy,
+        identifiedAnalysisQueue,
+        {
+          schema: "software-detail-evidence-shards/v1",
+          shards: [
+            {
+              ...analysisScopePathShard,
+              scopePath: "Model/A05/B02-Other"
+            }
+          ]
+        }
+      ),
+    (error) =>
+      error.code === "software_detail_evidence_queue_item_missing"
+  );
+
   const crossParentHierarchy = {
     schema: "software-detail-hierarchy-manifest/v1",
     documentUnits: [

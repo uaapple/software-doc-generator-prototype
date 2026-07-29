@@ -382,7 +382,13 @@ export function validateSoftwareDetailEvidenceArtifacts(
       if (queueItem.scope !== shardScope) {
         return false;
       }
-      const shardScopePath = optionalArtifactText(shard.scopePath);
+      let shardScopePath = optionalArtifactText(shard.scopePath);
+      if (
+        !queueItem.scopePath &&
+        shardScopePath === queueItem.analysisUnit
+      ) {
+        shardScopePath = "";
+      }
       if (queueItem.scopePath !== shardScopePath) {
         return false;
       }

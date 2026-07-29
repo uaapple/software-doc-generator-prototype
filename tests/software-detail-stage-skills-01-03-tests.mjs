@@ -422,6 +422,7 @@ for (const required of [
   "A failed fallback read is a failed required queue item",
   "when it is absent, deterministically use `parentDocumentUnit` as the effective analysis unit",
   "If an explicit `analysisUnit` differs from `parentDocumentUnit`, fail the stage",
+  "Never fill an omitted `scopePath` with `analysisUnitPath`",
   "whose `outports` contains that exact `directOutport`",
   "Write the effective parent path to the shard's `analysisUnitPath`",
   "One shard must not stand in for multiple direct-Outport queue items",
