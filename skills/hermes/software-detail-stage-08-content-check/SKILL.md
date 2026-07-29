@@ -89,3 +89,16 @@ Then read these pinned runtime resources:
 Write `checked-content` as the fully ordered, repaired source content ready for controlled template filling. Preserve exact hierarchy headings, blank design-basis sections, level-one implementation sub-points, and provenance links to private evidence.
 
 Write `content-check-report` with deterministic rule results, validator command status, document-unit and boundary-output coverage, ledger mapping counts, density counts, repair records, source-stage/source-attempt provenance, optional host-provided content hashes, and final pass/fail. Do not report success unless every content gate passes. On failure, emit no successful `checked-content`.
+
+When any content gate remains failed, do not use the successful candidate envelope.
+Write the candidate result with `status: "failed"` and include both of these
+required top-level diagnostic fields:
+
+- `failureReason`: one concise, path-free summary of why Stage 8 cannot pass.
+- `failedGates`: a non-empty array whose entries identify the failed gate and
+  its concise reason, using `{ "gate", "reason" }` when a reason is available.
+
+Keep detailed gate results in `content-check-report`. Do not put source content,
+credentials, absolute paths, or tool output in the top-level diagnostics. The
+host uses these two fields to preserve the real Stage 8 failure instead of
+misclassifying it as an invalid candidate.

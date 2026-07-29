@@ -367,14 +367,51 @@ class RecordingStageExecutor {
         this.docxByJobId.set(context.job.jobId, bytes);
         await fs.writeFile(absolutePath, bytes);
       } else {
+        const semanticPayload =
+          artifact.role === "hierarchy-manifest"
+            ? {
+                schema: "software-detail-hierarchy-manifest/v1",
+                documentUnits: [
+                  {
+                    path: "Model/A01_Function",
+                    allowedOutputs: ["A01_Output"]
+                  }
+                ],
+                analysisUnits: []
+              }
+            : artifact.role === "analysis-queue"
+              ? {
+                  schema: "software-detail-analysis-queue/v1",
+                  items: [
+                    {
+                      parentDocumentUnit: "Model/A01_Function",
+                      analysisUnit: "Model/A01_Function",
+                      scope: "document_unit_direct_fallback"
+                    }
+                  ]
+                }
+              : artifact.role === "evidence-shards"
+                ? {
+                    schema: "software-detail-evidence-shards/v1",
+                    shards: [
+                      {
+                        parentDocumentUnitPath: "Model/A01_Function",
+                        analysisUnitPath: "Model/A01_Function",
+                        scope: "document_unit_direct_fallback",
+                        outports: [{ name: "A01_Output" }],
+                        limitations: []
+                      }
+                    ]
+                  }
+                : {
+                    schema: "software-detail-wave4-artifact/v1",
+                    jobId: context.job.jobId,
+                    stageId: context.definition.id,
+                    role: artifact.role
+                  };
         await fs.writeFile(
           absolutePath,
-          `${JSON.stringify({
-            schema: "software-detail-wave4-artifact/v1",
-            jobId: context.job.jobId,
-            stageId: context.definition.id,
-            role: artifact.role
-          })}\n`,
+          `${JSON.stringify(semanticPayload)}\n`,
           "utf8"
         );
       }

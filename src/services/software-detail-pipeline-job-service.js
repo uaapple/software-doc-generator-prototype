@@ -7,7 +7,9 @@ import {
   finishSoftwareDetailStage,
   SOFTWARE_DETAIL_JOB_SCHEMA,
   SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA,
-  startSoftwareDetailStage
+  startSoftwareDetailStage,
+  validateSoftwareDetailEvidenceArtifacts,
+  validateSoftwareDetailModelPlanArtifacts
 } from "./software-detail-pipeline-contract.js";
 import { listSoftwareDetailStages } from "./software-detail-stage-catalog.js";
 import { readJson, writeJson } from "./storage.js";
@@ -27,12 +29,58 @@ function safeError(cause, stageId = "") {
     typeof cause?.code === "string" && cause.code.startsWith("software_detail_")
       ? cause.code
       : "software_detail_stage_failed";
+  const safeDetails = {};
+  if (typeof cause?.details?.failureReason === "string") {
+    safeDetails.failureReason = cause.details.failureReason;
+  }
+  if (Array.isArray(cause?.details?.failedGates)) {
+    if (cause.details.failedGates.length > 0) {
+      safeDetails.failedGates = cause.details.failedGates;
+    }
+  }
   return {
     code,
     message: stageId
       ? `Software-detail stage failed: ${stageId}.`
       : "Software-detail job failed.",
-    details: stageId ? { stageId } : null
+    details:
+      stageId || Object.keys(safeDetails).length > 0
+        ? { ...(stageId ? { stageId } : {}), ...safeDetails }
+        : null
+  };
+}
+
+function safeDiagnosticText(value, maxLength = 500) {
+  return String(value || "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function safeCandidateFailure(candidate) {
+  const failureReason = safeDiagnosticText(candidate?.failureReason);
+  const failedGates = (
+    Array.isArray(candidate?.failedGates) ? candidate.failedGates : []
+  )
+    .slice(0, 20)
+    .map((gate) => {
+      if (typeof gate === "string") return safeDiagnosticText(gate, 160);
+      if (!gate || typeof gate !== "object" || Array.isArray(gate)) return "";
+      const identity = safeDiagnosticText(
+        gate.gate || gate.code || gate.name || gate.id,
+        80
+      );
+      const reason = safeDiagnosticText(
+        gate.reason || gate.detail || gate.message,
+        160
+      );
+      return [identity, reason].filter(Boolean).join(": ");
+    })
+    .filter(Boolean);
+  return {
+    ...(failureReason ? { failureReason } : {}),
+    ...(failedGates.length > 0 ? { failedGates } : {})
   };
 }
 
@@ -189,12 +237,27 @@ function candidateArtifacts(candidate, definition, expectedBindings) {
     !candidate ||
     typeof candidate !== "object" ||
     Array.isArray(candidate) ||
-    candidate.schema !== SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA ||
-    candidate.status !== "completed"
+    candidate.schema !== SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA
   ) {
     throw serviceError(
       "software_detail_invalid_candidate_result",
       "Software-detail candidate result contract is invalid."
+    );
+  }
+  if (candidate.status === "failed") {
+    throw serviceError(
+      "software_detail_candidate_reported_failure",
+      "Software-detail stage candidate reported failed gates.",
+      {
+        stageId: definition.id,
+        ...safeCandidateFailure(candidate)
+      }
+    );
+  }
+  if (candidate.status !== "completed") {
+    throw serviceError(
+      "software_detail_invalid_candidate_result",
+      "Software-detail candidate result status is invalid."
     );
   }
   const hasArtifacts = Object.hasOwn(candidate, "artifacts");
@@ -251,6 +314,12 @@ function candidateArtifacts(candidate, definition, expectedBindings) {
     );
   }
   return actual;
+}
+
+function checkpointArtifact(job, stageId, role) {
+  return job.stages
+    ?.find((stage) => stage.id === stageId)
+    ?.checkpoint?.artifacts?.find((artifact) => artifact.role === role);
 }
 
 export class SoftwareDetailPipelineJobService {
@@ -629,6 +698,64 @@ export class SoftwareDetailPipelineJobService {
     for (const artifact of artifacts) {
       validated.push(
         await validateArtifact(job.input.workspaceDir, artifact)
+      );
+    }
+    if (definition.order === 200) {
+      const hierarchyArtifact = artifacts.find(
+        (artifact) => artifact.role === "hierarchy-manifest"
+      );
+      const queueArtifact = artifacts.find(
+        (artifact) => artifact.role === "analysis-queue"
+      );
+      validateSoftwareDetailModelPlanArtifacts(
+        await readJsonStrict(
+          withinWorkspace(job.input.workspaceDir, hierarchyArtifact.relativePath),
+          "software_detail_invalid_model_plan_artifacts",
+          "Software-detail hierarchy manifest is unreadable."
+        ),
+        await readJsonStrict(
+          withinWorkspace(job.input.workspaceDir, queueArtifact.relativePath),
+          "software_detail_invalid_model_plan_artifacts",
+          "Software-detail analysis queue is unreadable."
+        )
+      );
+    }
+    if (definition.order === 300) {
+      const hierarchyArtifact = checkpointArtifact(
+        job,
+        "software-detail-stage-02-model-plan",
+        "hierarchy-manifest"
+      );
+      const queueArtifact = checkpointArtifact(
+        job,
+        "software-detail-stage-02-model-plan",
+        "analysis-queue"
+      );
+      const evidenceArtifact = artifacts.find(
+        (artifact) => artifact.role === "evidence-shards"
+      );
+      if (!hierarchyArtifact || !queueArtifact || !evidenceArtifact) {
+        throw serviceError(
+          "software_detail_invalid_evidence_artifacts",
+          "Software-detail evidence validation inputs are missing."
+        );
+      }
+      validateSoftwareDetailEvidenceArtifacts(
+        await readJsonStrict(
+          withinWorkspace(job.input.workspaceDir, hierarchyArtifact.relativePath),
+          "software_detail_invalid_model_plan_artifacts",
+          "Software-detail hierarchy manifest is unreadable."
+        ),
+        await readJsonStrict(
+          withinWorkspace(job.input.workspaceDir, queueArtifact.relativePath),
+          "software_detail_invalid_model_plan_artifacts",
+          "Software-detail analysis queue is unreadable."
+        ),
+        await readJsonStrict(
+          withinWorkspace(job.input.workspaceDir, evidenceArtifact.relativePath),
+          "software_detail_invalid_evidence_artifacts",
+          "Software-detail evidence shards are unreadable."
+        )
       );
     }
     return { candidate, artifacts: validated };

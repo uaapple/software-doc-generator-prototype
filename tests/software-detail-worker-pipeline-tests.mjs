@@ -11,6 +11,98 @@ const DOCX_BYTES = Buffer.concat([
   Buffer.from("synthetic-docx")
 ]);
 
+function stageArtifactPayload(role, context, options = {}) {
+  const documentUnits = [
+    {
+      path: "Model/A01_Function",
+      name: "A01_Function",
+      allowedInputs: ["A01_Input"],
+      allowedOutputs: ["A01_Output"]
+    },
+    {
+      path: "Model/A02_Function",
+      name: "A02_Function",
+      allowedInputs: ["A02_Input"],
+      allowedOutputs: ["A02_Output"]
+    }
+  ];
+  const queueItems = [
+    {
+      parentDocumentUnit: "Model/A01_Function",
+      analysisUnit: "Model/A01_Function/B01_Calculation",
+      scope: "analysis_unit",
+      status: "pending"
+    },
+    ...(options.missingDocumentQueueAt === context.definition.id
+      ? []
+      : [
+          {
+            parentDocumentUnit: "Model/A02_Function",
+            analysisUnit: "Model/A02_Function",
+            scope: "document_unit_direct_fallback",
+            status: "pending"
+          }
+        ])
+  ];
+  if (role === "hierarchy-manifest") {
+    return {
+      schema: "software-detail-hierarchy-manifest/v1",
+      documentUnits,
+      analysisUnits: [
+        {
+          path: "Model/A01_Function/B01_Calculation",
+          parentDocumentUnit: "Model/A01_Function"
+        }
+      ]
+    };
+  }
+  if (role === "analysis-queue") {
+    return {
+      schema: "software-detail-analysis-queue/v1",
+      totalItems: queueItems.length,
+      items: queueItems
+    };
+  }
+  if (role === "evidence-shards") {
+    const omitDirectOutput =
+      options.missingDirectOutputAt === context.definition.id ||
+      options.supportedLimitationAt === context.definition.id;
+    return {
+      schema: "software-detail-evidence-shards/v1",
+      shards: [
+        {
+          parentDocumentUnitPath: "Model/A01_Function",
+          analysisUnitPath: "Model/A01_Function/B01_Calculation",
+          scope: "analysis_unit",
+          outports: [{ name: "A01_Output" }],
+          limitations: []
+        },
+        {
+          parentDocumentUnitPath: "Model/A02_Function",
+          analysisUnitPath: "Model/A02_Function",
+          scope: "document_unit_direct_fallback",
+          outports: omitDirectOutput ? [] : [{ name: "A02_Output" }],
+          limitations:
+            options.supportedLimitationAt === context.definition.id
+              ? [
+                  {
+                    affectedBoundaryOutput: "A02_Output",
+                    reason: "targeted model read was unavailable"
+                  }
+                ]
+              : []
+        }
+      ]
+    };
+  }
+  return {
+    schema: "software-detail-test-artifact/v1",
+    jobId: context.job.jobId,
+    stageId: context.definition.id,
+    role
+  };
+}
+
 class FakeLeaseClient {
   constructor() {
     this.created = [];
@@ -96,12 +188,9 @@ class FakeExecutor {
         absolutePath,
         artifact.role === "detail-design-docx"
           ? DOCX_BYTES
-          : `${JSON.stringify({
-              schema: "software-detail-test-artifact/v1",
-              jobId: context.job.jobId,
-              stageId: context.definition.id,
-              role: artifact.role
-            })}\n`
+          : `${JSON.stringify(
+              stageArtifactPayload(artifact.role, context, this.options)
+            )}\n`
       );
     }
     const artifacts = context.outputArtifacts.map((artifact) => ({
@@ -120,8 +209,24 @@ class FakeExecutor {
       jobId: context.job.jobId,
       stageId: context.definition.id,
       attempt: context.stageInput.attempt,
-      status: "completed"
+      status:
+        this.options.failedCandidateAt === context.definition.id ||
+        this.options.failedCandidateWithoutDiagnosticsAt ===
+          context.definition.id
+          ? "failed"
+          : "completed"
     };
+    if (
+      candidate.status === "failed" &&
+      this.options.failedCandidateWithoutDiagnosticsAt !==
+        context.definition.id
+    ) {
+      candidate.failureReason =
+        "内容检查未通过，必须保留失败状态。";
+      candidate.failedGates = [
+        { gate: "boundary-output-coverage", reason: "A02_Output 缺少证据" }
+      ];
+    }
     if (this.options.outputArtifactsCandidate === true) {
       candidate.outputArtifacts = artifacts;
     } else if (
@@ -281,6 +386,22 @@ try {
       options: { throwAt: "software-detail-stage-01-initialize" },
       expectedCalls: 1,
       expectedCode: "software_detail_hermes_failed"
+    },
+    {
+      key: "missing-document-queue",
+      options: {
+        missingDocumentQueueAt: "software-detail-stage-02-model-plan"
+      },
+      expectedCalls: 2,
+      expectedCode: "software_detail_model_plan_missing_queue_item"
+    },
+    {
+      key: "missing-direct-output-evidence",
+      options: {
+        missingDirectOutputAt: "software-detail-stage-03-evidence-extract"
+      },
+      expectedCalls: 3,
+      expectedCode: "software_detail_evidence_direct_output_missing"
     }
   ]) {
     const scenarioRoot = path.join(root, scenario.key);
@@ -302,6 +423,82 @@ try {
       true,
       `${scenario.key} advanced beyond the failed stage`
     );
+  }
+
+  {
+    const { service, executor } = createService(
+      path.join(root, "limitation-does-not-replace-output"),
+      {
+        supportedLimitationAt:
+          "software-detail-stage-03-evidence-extract"
+      }
+    );
+    const job = await runJob(
+      service,
+      await createWorkspace(root, "limitation-does-not-replace-output-workspace"),
+      "limitation-does-not-replace-output-task"
+    );
+    assert.equal(job.status, "failed");
+    assert.equal(
+      job.error.code,
+      "software_detail_evidence_direct_output_missing"
+    );
+    assert.equal(executor.calls.length, 3);
+  }
+
+  {
+    const { service, executor } = createService(
+      path.join(root, "failed-candidate-diagnostics"),
+      {
+        failedCandidateAt: "software-detail-stage-08-content-check"
+      }
+    );
+    const job = await runJob(
+      service,
+      await createWorkspace(root, "failed-candidate-diagnostics-workspace"),
+      "failed-candidate-diagnostics-task"
+    );
+    assert.equal(job.status, "failed");
+    assert.equal(
+      job.error.code,
+      "software_detail_candidate_reported_failure"
+    );
+    assert.equal(
+      job.error.details.failureReason,
+      "内容检查未通过，必须保留失败状态。"
+    );
+    assert.deepEqual(job.error.details.failedGates, [
+      "boundary-output-coverage: A02_Output 缺少证据"
+    ]);
+    assert.equal(executor.calls.length, 8);
+    assert.equal(job.stages[8].status, "pending");
+  }
+
+  {
+    const { service, executor } = createService(
+      path.join(root, "legacy-failed-candidate-without-diagnostics"),
+      {
+        failedCandidateWithoutDiagnosticsAt:
+          "software-detail-stage-08-content-check"
+      }
+    );
+    const job = await runJob(
+      service,
+      await createWorkspace(
+        root,
+        "legacy-failed-candidate-without-diagnostics-workspace"
+      ),
+      "legacy-failed-candidate-without-diagnostics-task"
+    );
+    assert.equal(job.status, "failed");
+    assert.equal(
+      job.error.code,
+      "software_detail_candidate_reported_failure"
+    );
+    assert.equal(Object.hasOwn(job.error.details, "failureReason"), false);
+    assert.equal(Object.hasOwn(job.error.details, "failedGates"), false);
+    assert.equal(executor.calls.length, 8);
+    assert.equal(job.stages[8].status, "pending");
   }
 
   {

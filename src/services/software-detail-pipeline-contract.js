@@ -6,6 +6,12 @@ import {
 export const SOFTWARE_DETAIL_JOB_SCHEMA = "software-detail-minimal-job/v1";
 export const SOFTWARE_DETAIL_STAGE_INPUT_SCHEMA = "software-detail-minimal-stage-input/v1";
 export const SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA = "software-detail-minimal-stage-result/v1";
+export const SOFTWARE_DETAIL_HIERARCHY_MANIFEST_SCHEMA =
+  "software-detail-hierarchy-manifest/v1";
+export const SOFTWARE_DETAIL_ANALYSIS_QUEUE_SCHEMA =
+  "software-detail-analysis-queue/v1";
+export const SOFTWARE_DETAIL_EVIDENCE_SHARDS_SCHEMA =
+  "software-detail-evidence-shards/v1";
 
 export const SOFTWARE_DETAIL_JOB_STATUSES = Object.freeze([
   "queued",
@@ -35,6 +41,270 @@ function isPlainObject(value) {
   }
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function requiredArtifactText(value, field) {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    throw contractError(
+      "software_detail_invalid_business_artifact",
+      `${field} 必须是非空文本`,
+      { field }
+    );
+  }
+  return normalized;
+}
+
+function normalizedOutputNames(outports) {
+  const entries = Array.isArray(outports)
+    ? outports
+    : isPlainObject(outports) || typeof outports === "string"
+      ? [outports]
+      : [];
+  return new Set(
+    entries
+      .map((outport) =>
+        typeof outport === "string" ? outport : outport?.name
+      )
+      .map((name) => String(name || "").trim())
+      .filter(Boolean)
+  );
+}
+
+function optionalArtifactText(value) {
+  return String(value || "").trim();
+}
+
+function queueItemIdentity(item) {
+  const explicitId = optionalArtifactText(item.id || item.queueItemId);
+  if (explicitId) return `id:${explicitId}`;
+  return [
+    "scope",
+    item.parentDocumentUnit,
+    item.analysisUnit,
+    item.scope,
+    item.scopePath,
+    item.outputName
+  ].join("\0");
+}
+
+function artifactDocumentUnits(hierarchyManifest) {
+  if (
+    !isPlainObject(hierarchyManifest) ||
+    hierarchyManifest.schema !== SOFTWARE_DETAIL_HIERARCHY_MANIFEST_SCHEMA ||
+    !Array.isArray(hierarchyManifest.documentUnits) ||
+    hierarchyManifest.documentUnits.length === 0
+  ) {
+    throw contractError(
+      "software_detail_invalid_model_plan_artifacts",
+      "hierarchy-manifest 必须包含 documentUnits"
+    );
+  }
+  const seen = new Set();
+  return hierarchyManifest.documentUnits.map((unit, index) => {
+    if (!isPlainObject(unit) || !Array.isArray(unit.allowedOutputs)) {
+      throw contractError(
+        "software_detail_invalid_model_plan_artifacts",
+        "document unit 必须包含 allowedOutputs 数组",
+        { index }
+      );
+    }
+    const unitPath = requiredArtifactText(
+      unit.path,
+      `documentUnits[${index}].path`
+    );
+    if (seen.has(unitPath)) {
+      throw contractError(
+        "software_detail_invalid_model_plan_artifacts",
+        "document unit path 不得重复",
+        { documentUnit: unitPath }
+      );
+    }
+    seen.add(unitPath);
+    return {
+      path: unitPath,
+      allowedOutputs: [
+        ...new Set(
+          unit.allowedOutputs
+            .map((name) => String(name || "").trim())
+            .filter(Boolean)
+        )
+      ]
+    };
+  });
+}
+
+export function validateSoftwareDetailModelPlanArtifacts(
+  hierarchyManifest,
+  analysisQueue
+) {
+  const documentUnits = artifactDocumentUnits(hierarchyManifest);
+  if (
+    !isPlainObject(analysisQueue) ||
+    analysisQueue.schema !== SOFTWARE_DETAIL_ANALYSIS_QUEUE_SCHEMA ||
+    !Array.isArray(analysisQueue.items)
+  ) {
+    throw contractError(
+      "software_detail_invalid_model_plan_artifacts",
+      "analysis-queue 必须包含 items 数组"
+    );
+  }
+  const queueItems = analysisQueue.items.map((item, index) => {
+    if (!isPlainObject(item)) {
+      throw contractError(
+        "software_detail_invalid_model_plan_artifacts",
+        "analysis queue item 非法",
+        { index }
+      );
+    }
+    return {
+      id: optionalArtifactText(item.id || item.queueItemId),
+      parentDocumentUnit: requiredArtifactText(
+        item.parentDocumentUnit,
+        `items[${index}].parentDocumentUnit`
+      ),
+      analysisUnit: requiredArtifactText(
+        item.analysisUnit,
+        `items[${index}].analysisUnit`
+      ),
+      scope: optionalArtifactText(item.scope) || "analysis_unit",
+      scopePath: optionalArtifactText(item.scopePath),
+      outputName: optionalArtifactText(
+        item.outputName || item.directOutput || item.output
+      )
+    };
+  });
+  const queueIdentities = new Set();
+  for (const queueItem of queueItems) {
+    const identity = queueItemIdentity(queueItem);
+    if (queueIdentities.has(identity)) {
+      throw contractError(
+        "software_detail_model_plan_duplicate_queue_item",
+        "analysis queue item 身份不得重复",
+        { documentUnit: queueItem.parentDocumentUnit }
+      );
+    }
+    queueIdentities.add(identity);
+    if (
+      queueItem.scope.toLowerCase().includes("outport") &&
+      !queueItem.outputName
+    ) {
+      throw contractError(
+        "software_detail_invalid_model_plan_artifacts",
+        "direct outport queue item 必须声明 outputName",
+        { documentUnit: queueItem.parentDocumentUnit }
+      );
+    }
+  }
+  for (const documentUnit of documentUnits) {
+    if (
+      !queueItems.some(
+        (item) => item.parentDocumentUnit === documentUnit.path
+      )
+    ) {
+      throw contractError(
+        "software_detail_model_plan_missing_queue_item",
+        "每个 document unit 至少需要一个 analysis queue item",
+        { documentUnit: documentUnit.path }
+      );
+    }
+  }
+  return Object.freeze({ documentUnits, queueItems });
+}
+
+export function validateSoftwareDetailEvidenceArtifacts(
+  hierarchyManifest,
+  analysisQueue,
+  evidenceShards
+) {
+  const modelPlan = validateSoftwareDetailModelPlanArtifacts(
+    hierarchyManifest,
+    analysisQueue
+  );
+  if (
+    !isPlainObject(evidenceShards) ||
+    evidenceShards.schema !== SOFTWARE_DETAIL_EVIDENCE_SHARDS_SCHEMA ||
+    !Array.isArray(evidenceShards.shards)
+  ) {
+    throw contractError(
+      "software_detail_invalid_evidence_artifacts",
+      "evidence-shards 必须包含 shards 数组"
+    );
+  }
+  const shards = evidenceShards.shards.filter(isPlainObject);
+  const shardParent = (shard) =>
+    String(
+      shard.parentDocumentUnitPath || shard.parentDocumentUnit || ""
+    ).trim();
+  for (const documentUnit of modelPlan.documentUnits) {
+    const unitShards = shards.filter(
+      (shard) => shardParent(shard) === documentUnit.path
+    );
+    if (unitShards.length === 0) {
+      throw contractError(
+        "software_detail_evidence_document_unit_missing",
+        "每个 document unit 至少需要一个 evidence shard",
+        { documentUnit: documentUnit.path }
+      );
+    }
+    for (const outputName of documentUnit.allowedOutputs) {
+      const hasEvidence = unitShards.some((shard) =>
+        normalizedOutputNames(shard.outports).has(outputName)
+      );
+      if (!hasEvidence) {
+        throw contractError(
+          "software_detail_evidence_direct_output_missing",
+          "document unit 的直接输出缺少 outports 证据",
+          { documentUnit: documentUnit.path, output: outputName }
+        );
+      }
+    }
+  }
+  const usedShardIndexes = new Set();
+  for (const queueItem of modelPlan.queueItems) {
+    const matchedIndex = shards.findIndex((shard, index) => {
+      if (usedShardIndexes.has(index)) return false;
+      const shardQueueItemId = optionalArtifactText(shard.queueItemId);
+      if (queueItem.id || shardQueueItemId) {
+        return Boolean(queueItem.id) && shardQueueItemId === queueItem.id;
+      }
+      if (
+        shardParent(shard) !== queueItem.parentDocumentUnit ||
+        optionalArtifactText(shard.analysisUnitPath) !==
+          queueItem.analysisUnit
+      ) {
+        return false;
+      }
+      const shardScope =
+        optionalArtifactText(shard.scope) ||
+        (optionalArtifactText(shard.analysisUnitPath)
+          ? "analysis_unit"
+          : "");
+      if (queueItem.scope !== shardScope) {
+        return false;
+      }
+      const shardScopePath = optionalArtifactText(shard.scopePath);
+      if (queueItem.scopePath !== shardScopePath) {
+        return false;
+      }
+      return (
+        !queueItem.outputName ||
+        normalizedOutputNames(shard.outports).has(queueItem.outputName)
+      );
+    });
+    if (matchedIndex < 0) {
+      throw contractError(
+        "software_detail_evidence_queue_item_missing",
+        "analysis queue item 缺少对应 evidence shard",
+        {
+          documentUnit: queueItem.parentDocumentUnit,
+          analysisUnit: queueItem.analysisUnit
+        }
+      );
+    }
+    usedShardIndexes.add(matchedIndex);
+  }
+  return Object.freeze(modelPlan);
 }
 
 function requiredText(value, field, pattern, maxLength = 500) {

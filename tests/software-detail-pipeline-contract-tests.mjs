@@ -13,6 +13,8 @@ import {
   getSoftwareDetailResumePoint,
   prepareSoftwareDetailJobForResume,
   startSoftwareDetailStage,
+  validateSoftwareDetailEvidenceArtifacts,
+  validateSoftwareDetailModelPlanArtifacts,
   validateSoftwareDetailStageResult
 } from "../src/services/software-detail-pipeline-contract.js";
 
@@ -511,6 +513,170 @@ for (const stage of stages.slice(1)) {
         { expectedMatlabSessionId: matlabSessionId, usedHermesSessionIds: [] }
       ),
     (error) => error.code === "software_detail_matlab_session_cleanup_invalid"
+  );
+}
+
+{
+  const hierarchyManifest = {
+    schema: "software-detail-hierarchy-manifest/v1",
+    documentUnits: [
+      {
+        path: "Model/A01_Function",
+        allowedOutputs: ["A01_Output"]
+      },
+      {
+        path: "Model/A02_Function",
+        allowedOutputs: ["A02_Output"]
+      }
+    ]
+  };
+  const analysisQueue = {
+    schema: "software-detail-analysis-queue/v1",
+    items: [
+      {
+        parentDocumentUnit: "Model/A01_Function",
+        analysisUnit: "Model/A01_Function/B01_Calculation"
+      },
+      {
+        parentDocumentUnit: "Model/A02_Function",
+        analysisUnit: "Model/A02_Function",
+        scope: "document_unit_direct_fallback"
+      }
+    ]
+  };
+  assert.equal(
+    validateSoftwareDetailModelPlanArtifacts(
+      hierarchyManifest,
+      analysisQueue
+    ).queueItems.length,
+    2
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailModelPlanArtifacts(hierarchyManifest, {
+        ...analysisQueue,
+        items: analysisQueue.items.slice(0, 1)
+      }),
+    (error) =>
+      error.code === "software_detail_model_plan_missing_queue_item" &&
+      error.details.documentUnit === "Model/A02_Function"
+  );
+
+  const evidenceShards = {
+    schema: "software-detail-evidence-shards/v1",
+    shards: [
+      {
+        parentDocumentUnitPath: "Model/A01_Function",
+        analysisUnitPath: "Model/A01_Function/B01_Calculation",
+        outports: [{ name: "A01_Output" }],
+        limitations: []
+      },
+      {
+        parentDocumentUnitPath: "Model/A02_Function",
+        analysisUnitPath: "Model/A02_Function",
+        scope: "document_unit_direct_fallback",
+        outports: { name: "A02_Output" },
+        limitations: []
+      }
+    ]
+  };
+  assert.equal(
+    validateSoftwareDetailEvidenceArtifacts(
+      hierarchyManifest,
+      analysisQueue,
+      evidenceShards
+    ).documentUnits.length,
+    2
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailEvidenceArtifacts(
+        hierarchyManifest,
+        analysisQueue,
+        {
+          ...evidenceShards,
+          shards: evidenceShards.shards.map((shard) => ({
+            ...shard,
+            outports:
+              shard.parentDocumentUnitPath === "Model/A02_Function"
+                ? []
+                : shard.outports,
+            limitations:
+              shard.parentDocumentUnitPath === "Model/A02_Function"
+                ? [
+                    {
+                      affectedBoundaryOutput: "A02_Output",
+                      reason: "targeted model read was unavailable"
+                    }
+                  ]
+                : []
+          }))
+        }
+      ),
+    (error) =>
+      error.code ===
+        "software_detail_evidence_direct_output_missing" &&
+      error.details.output === "A02_Output"
+  );
+
+  assert.throws(
+    () =>
+      validateSoftwareDetailModelPlanArtifacts(hierarchyManifest, {
+        ...analysisQueue,
+        items: [...analysisQueue.items, { ...analysisQueue.items[1] }]
+      }),
+    (error) =>
+      error.code === "software_detail_model_plan_duplicate_queue_item"
+  );
+
+  const directOutputHierarchy = {
+    schema: "software-detail-hierarchy-manifest/v1",
+    documentUnits: [
+      {
+        path: "Model/A03_Function",
+        allowedOutputs: ["A03_Output1", "A03_Output2"]
+      }
+    ]
+  };
+  const directOutputQueue = {
+    schema: "software-detail-analysis-queue/v1",
+    items: [
+      {
+        parentDocumentUnit: "Model/A03_Function",
+        analysisUnit: "Model/A03_Function",
+        scope: "direct_outport",
+        outputName: "A03_Output1"
+      },
+      {
+        parentDocumentUnit: "Model/A03_Function",
+        analysisUnit: "Model/A03_Function",
+        scope: "direct_outport",
+        outputName: "A03_Output2"
+      }
+    ]
+  };
+  assert.throws(
+    () =>
+      validateSoftwareDetailEvidenceArtifacts(
+        directOutputHierarchy,
+        directOutputQueue,
+        {
+          schema: "software-detail-evidence-shards/v1",
+          shards: [
+            {
+              parentDocumentUnitPath: "Model/A03_Function",
+              analysisUnitPath: "Model/A03_Function",
+              scope: "direct_outport",
+              outports: [
+                { name: "A03_Output1" },
+                { name: "A03_Output2" }
+              ]
+            }
+          ]
+        }
+      ),
+    (error) =>
+      error.code === "software_detail_evidence_queue_item_missing"
   );
 }
 

@@ -255,6 +255,10 @@ assert.match(stage8, /Repair all supported leaks/);
 assert.match(stage8, /derive the boundary validator manifest/);
 assert.match(stage8, /never fetch or treat a separate hierarchy-manifest as an additional stage input/);
 assert.match(stage8, /evidence traceability only; never create or infer a requirements trace matrix/);
+assert.match(stage8, /candidate result with `status: "failed"`/);
+assert.match(stage8, /`failureReason`: one concise, path-free summary/);
+assert.match(stage8, /`failedGates`: a non-empty array/);
+assert.match(stage8, /Do not put source content,\s*credentials, absolute paths, or tool output/);
 
 const stage9 = readFileSync(
   path.join(
