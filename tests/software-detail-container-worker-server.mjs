@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -131,8 +132,7 @@ class SyntheticSoftwareDetailStageExecutor {
   async execute(context) {
     const { definition, job, outputArtifacts } = context;
     const workspaceDir = path.resolve(job.input.workspaceDir);
-    const attempt =
-      job.stages.find((stage) => stage.id === definition.id)?.attempt || 1;
+    const attempt = context.stageInput.attempt;
     const snapshot = await verifyImageSkillSnapshotFromSyntheticList(
       job,
       definition
@@ -163,6 +163,16 @@ class SyntheticSoftwareDetailStageExecutor {
         .relative(workspaceDir, context.candidateResultPath)
         .replaceAll(path.sep, "/")
     });
+    const stageInputManifest = JSON.parse(
+      await fs.readFile(context.manifestPath, "utf8")
+    );
+    assert.ok(
+      stageInputManifest.artifacts.every(
+        (artifact) =>
+          typeof artifact.sourceStageId === "string" &&
+          Number.isSafeInteger(artifact.sourceAttempt)
+      )
+    );
 
     for (const artifact of outputArtifacts) {
       const targetPath = withinWorkspace(workspaceDir, artifact.relativePath);
@@ -216,13 +226,19 @@ class SyntheticSoftwareDetailStageExecutor {
           workspaceDir,
           docxArtifact.relativePath
         );
+        const contentCheckSource = stageInputManifest.artifacts.find(
+          (item) => item.role === "content-check-report"
+        );
+        assert.equal(
+          contentCheckSource?.sourceStageId,
+          "software-detail-stage-08-content-check"
+        );
+        assert.ok(Number.isSafeInteger(contentCheckSource?.sourceAttempt));
         payload.schema = "software-detail-artifact-manifest/v1";
         payload.sourceStages = {
           "content-check": {
-            stageId: "software-detail-stage-08-content-check",
-            sourceAttempt: job.stages.find(
-              (stage) => stage.id === "software-detail-stage-08-content-check"
-            ).attempt
+            stageId: contentCheckSource.sourceStageId,
+            sourceAttempt: contentCheckSource.sourceAttempt
           }
         };
         payload.artifacts = [{

@@ -227,15 +227,21 @@ try {
       artifacts: [
         {
           role: "input-manifest",
-          relativePath: ".software-detail/upstream/input-manifest.json"
+          relativePath: ".software-detail/upstream/input-manifest.json",
+          sourceStageId: "software-detail-stage-01-initialize",
+          sourceAttempt: 1
         },
         {
           role: "workspace-manifest",
-          relativePath: ".software-detail/upstream/workspace-manifest.json"
+          relativePath: ".software-detail/upstream/workspace-manifest.json",
+          sourceStageId: "software-detail-stage-01-initialize",
+          sourceAttempt: 1
         },
         {
           role: "matlab-session-lease",
-          relativePath: ".software-detail/upstream/matlab-session-lease.json"
+          relativePath: ".software-detail/upstream/matlab-session-lease.json",
+          sourceStageId: "software-detail-stage-01-initialize",
+          sourceAttempt: 1
         }
       ]
     },
@@ -255,7 +261,7 @@ try {
   assert.match(prompt, /candidate-result\.json/);
   assert.match(prompt, /"artifacts": \[/);
   assert.match(prompt, /output array field must be named artifacts/);
-  assert.match(prompt, /path bindings only/);
+  assert.match(prompt, /sourceStageId, and sourceAttempt bindings/);
   assert.match(
     prompt,
     new RegExp(installedRuntimePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
@@ -272,6 +278,13 @@ try {
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
   assert.equal(manifest.gatewayLease.ownerJobId, lease.ownerJobId);
   assert.deepEqual(manifest.outputArtifacts, outputArtifacts);
+  assert.ok(
+    manifest.artifacts.every(
+      (artifact) =>
+        artifact.sourceStageId === "software-detail-stage-01-initialize" &&
+        artifact.sourceAttempt === 1
+    )
+  );
   assert.equal(manifest.runtime.installedPath, installedRuntimePath);
   assert.deepEqual(manifest.candidateContract, {
     schema: "software-detail-minimal-stage-result/v1",

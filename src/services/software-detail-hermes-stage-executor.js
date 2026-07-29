@@ -184,7 +184,7 @@ export class SoftwareDetailHermesStageExecutor {
       `Read the unique authoritative stage input manifest: ${manifestRelativePath}`,
       `Write the only candidate result to: ${candidateRelativePath}`,
       `Candidate schema: ${SOFTWARE_DETAIL_STAGE_RESULT_SCHEMA}`,
-      "The stage input artifacts and outputArtifacts are path bindings only; they are not the candidate-result JSON contract.",
+      "The stage input artifacts carry immutable role, relativePath, sourceStageId, and sourceAttempt bindings; outputArtifacts are immutable role/path bindings. They are not the candidate-result JSON contract.",
       "Write candidate-result.json with this complete JSON shape. The output array field must be named artifacts:",
       JSON.stringify(candidateSkeleton, null, 2),
       "Write every declared output to its exact task-relative path:",

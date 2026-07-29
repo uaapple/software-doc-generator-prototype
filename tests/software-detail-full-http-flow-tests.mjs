@@ -340,14 +340,18 @@ class RecordingStageExecutor {
     await fs.mkdir(path.dirname(context.manifestPath), { recursive: true });
     await fs.writeFile(
       context.manifestPath,
-      `${JSON.stringify({
-        schema: "software-detail-wave4-stage-input/v1",
-        jobId: context.job.jobId,
-        stageId: context.definition.id,
-        skillName: context.definition.skillName,
-        inputs: context.stageInput.artifacts
-      })}\n`,
+      `${JSON.stringify(context.stageInput)}\n`,
       "utf8"
+    );
+    const stageInputManifest = JSON.parse(
+      await fs.readFile(context.manifestPath, "utf8")
+    );
+    assert.ok(
+      stageInputManifest.artifacts.every(
+        (artifact) =>
+          typeof artifact.sourceStageId === "string" &&
+          Number.isSafeInteger(artifact.sourceAttempt)
+      )
     );
 
     // 延迟让公开任务详情能够稳定观察到中间阶段快照。
@@ -371,6 +375,14 @@ class RecordingStageExecutor {
           (item) => item.role === "detail-design-docx"
         );
         const bytes = this.docxByJobId.get(context.job.jobId);
+        const contentCheckSource = stageInputManifest.artifacts.find(
+          (item) => item.role === "content-check-report"
+        );
+        assert.equal(
+          contentCheckSource?.sourceStageId,
+          "software-detail-stage-08-content-check"
+        );
+        assert.ok(Number.isSafeInteger(contentCheckSource?.sourceAttempt));
         await fs.writeFile(
           absolutePath,
           `${JSON.stringify({
@@ -380,10 +392,8 @@ class RecordingStageExecutor {
             attempt: context.stageInput.attempt,
             sourceStages: {
               "content-check": {
-                stageId: "software-detail-stage-08-content-check",
-                sourceAttempt: context.job.stages.find(
-                  (stage) => stage.id === "software-detail-stage-08-content-check"
-                ).attempt
+                stageId: contentCheckSource.sourceStageId,
+                sourceAttempt: contentCheckSource.sourceAttempt
               }
             },
             artifacts: [{

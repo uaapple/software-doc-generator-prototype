@@ -331,8 +331,14 @@ function validateFinalArtifactManifest(manifest, context = {}) {
   ) {
     throw artifactManifestError("Software-detail artifact manifest does not match the final DOCX.");
   }
-  if (Object.hasOwn(entry, "sha256") && entry.sha256 !== expected.sha256) {
-    throw artifactManifestError("Software-detail artifact manifest hash does not match the final DOCX.", { field: "artifacts.detail-design-docx.sha256" });
+  if (Object.hasOwn(entry, "sha256")) {
+    const manifestHash = String(entry.sha256 || "").trim();
+    if (
+      !/^[a-fA-F0-9]{64}$/.test(manifestHash) ||
+      manifestHash.toLowerCase() !== expected.sha256.toLowerCase()
+    ) {
+      throw artifactManifestError("Software-detail artifact manifest hash does not match the final DOCX.", { field: "artifacts.detail-design-docx.sha256" });
+    }
   }
 }
 
@@ -670,7 +676,14 @@ export class SoftwareDetailPipelineJobService {
             `Software-detail job input is missing: ${specification.role}.`
           );
         }
-        return artifact || null;
+        return artifact
+          ? {
+              role: artifact.role,
+              relativePath: artifact.relativePath,
+              sourceStageId: "job-input",
+              sourceAttempt: 0
+            }
+          : null;
       }
       const source = job.stages.find(
         (stage) => stage.id === specification.sourceStageId
@@ -679,6 +692,17 @@ export class SoftwareDetailPipelineJobService {
         throw serviceError(
           "software_detail_upstream_unverified",
           `Software-detail upstream stage is not verified: ${specification.sourceStageId}.`
+        );
+      }
+      if (
+        source.checkpoint.stageId !== source.id ||
+        !Number.isSafeInteger(source.checkpoint.attempt) ||
+        source.checkpoint.attempt < 1 ||
+        source.checkpoint.attempt !== source.attempt
+      ) {
+        throw serviceError(
+          "software_detail_upstream_provenance_invalid",
+          `Software-detail upstream provenance is invalid: ${specification.sourceStageId}.`
         );
       }
       const artifact = source.checkpoint.artifacts.find(
@@ -693,7 +717,9 @@ export class SoftwareDetailPipelineJobService {
       return artifact
         ? {
             role: artifact.role,
-            relativePath: artifact.relativePath
+            relativePath: artifact.relativePath,
+            sourceStageId: source.id,
+            sourceAttempt: source.checkpoint.attempt
           }
         : null;
     }).filter(Boolean);

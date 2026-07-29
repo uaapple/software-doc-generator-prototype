@@ -487,10 +487,42 @@ function normalizeArtifacts(rawArtifacts, specifications, options = {}) {
       );
     }
     seen.add(role);
-    return Object.freeze({
+    const normalizedArtifact = {
       role,
       relativePath: normalizeRelativePath(artifact.relativePath)
-    });
+    };
+    const hasSourceStageId = Object.hasOwn(artifact, "sourceStageId");
+    const hasSourceAttempt = Object.hasOwn(artifact, "sourceAttempt");
+    if (hasSourceStageId || hasSourceAttempt) {
+      const sourceStageId = requiredText(
+        artifact.sourceStageId,
+        "artifact.sourceStageId",
+        null,
+        80
+      );
+      if (sourceStageId !== specificationsByRole.get(role).sourceStageId) {
+        throw contractError(
+          "software_detail_artifact_source_mismatch",
+          `artifact sourceStageId 与 stage catalog 不一致: ${role}`,
+          { role, sourceStageId }
+        );
+      }
+      if (
+        !Number.isSafeInteger(artifact.sourceAttempt) ||
+        artifact.sourceAttempt < 0 ||
+        (sourceStageId !== "job-input" && artifact.sourceAttempt < 1) ||
+        (sourceStageId === "job-input" && artifact.sourceAttempt !== 0)
+      ) {
+        throw contractError(
+          "software_detail_artifact_source_attempt_invalid",
+          `artifact sourceAttempt 非法: ${role}`,
+          { role }
+        );
+      }
+      normalizedArtifact.sourceStageId = sourceStageId;
+      normalizedArtifact.sourceAttempt = artifact.sourceAttempt;
+    }
+    return Object.freeze(normalizedArtifact);
   });
 
   if (options.requireAll !== false) {

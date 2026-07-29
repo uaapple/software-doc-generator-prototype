@@ -182,6 +182,22 @@ class FakeExecutor {
       gatewayEnvironment: { ...context.gatewayEnvironment }
     };
     this.calls.push(call);
+    await fs.mkdir(path.dirname(context.manifestPath), { recursive: true });
+    await fs.writeFile(
+      context.manifestPath,
+      `${JSON.stringify(context.stageInput)}\n`
+    );
+    const stageInputManifest = JSON.parse(
+      await fs.readFile(context.manifestPath, "utf8")
+    );
+    assert.ok(
+      stageInputManifest.artifacts.every(
+        (artifact) =>
+          typeof artifact.sourceStageId === "string" &&
+          Number.isSafeInteger(artifact.sourceAttempt)
+      ),
+      "every persisted stage input artifact must include host provenance"
+    );
     if (this.options.throwAt === context.definition.id) {
       throw Object.assign(new Error("synthetic Hermes failure"), {
         code: "software_detail_hermes_failed"
@@ -206,6 +222,14 @@ class FakeExecutor {
       }
       if (artifact.role === "artifact-manifest") {
         const docx = context.outputArtifacts.find((item) => item.role === "detail-design-docx");
+        const contentCheckSource = stageInputManifest.artifacts.find(
+          (item) => item.role === "content-check-report"
+        );
+        assert.equal(
+          contentCheckSource?.sourceStageId,
+          "software-detail-stage-08-content-check"
+        );
+        assert.ok(Number.isSafeInteger(contentCheckSource?.sourceAttempt));
         const entry = {
           role: "detail-design-docx",
           relativePath: docx.relativePath,
@@ -222,10 +246,8 @@ class FakeExecutor {
           attempt: context.stageInput.attempt,
           sourceStages: {
             "content-check": {
-              stageId: "software-detail-stage-08-content-check",
-              sourceAttempt: context.job.stages.find(
-                (stage) => stage.id === "software-detail-stage-08-content-check"
-              ).attempt
+              stageId: contentCheckSource.sourceStageId,
+              sourceAttempt: contentCheckSource.sourceAttempt
             }
           },
           artifacts: [entry]
@@ -234,6 +256,7 @@ class FakeExecutor {
         if (this.options.manifestMutation === "missing-filename") delete entry.filename;
         if (this.options.manifestMutation === "wrong-size") entry.sizeBytes += 1;
         if (this.options.manifestMutation === "wrong-hash") entry.sha256 = "0".repeat(64);
+        if (this.options.manifestMutation === "uppercase-hash") entry.sha256 = entry.sha256.toUpperCase();
         if (this.options.manifestMutation === "missing-source-stages") delete manifest.sourceStages;
         if (this.options.manifestMutation === "string-attempt") manifest.attempt = String(manifest.attempt);
         if (this.options.manifestMutation === "string-source-attempt") {
@@ -437,6 +460,18 @@ try {
       "utf8"
     );
     assert.doesNotMatch(persisted, /must-not-persist/);
+  }
+
+  {
+    const { service } = createService(path.join(root, "uppercase-manifest-hash"), {
+      manifestMutation: "uppercase-hash"
+    });
+    const job = await runJob(
+      service,
+      await createWorkspace(root, "uppercase-manifest-hash-workspace"),
+      "uppercase-manifest-hash-task"
+    );
+    assert.equal(job.status, "completed");
   }
 
   for (const scenario of [
