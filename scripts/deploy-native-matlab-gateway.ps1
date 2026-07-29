@@ -569,8 +569,8 @@ function Assert-Manifest {
     [string]$Root
   )
   if (
-    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v7" -or
-    $Manifest.companionVersion -ne 7 -or
+    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v8" -or
+    $Manifest.companionVersion -ne 8 -or
     $Manifest.serviceName -ne $ServiceName -or
     $Manifest.sourceRevision -notmatch "^[a-f0-9]{40}$" -or
     $Manifest.sourceRevision -ne $Manifest.deploymentToolRevision -or
@@ -942,13 +942,26 @@ function Invoke-GatewayReadiness(
   if ($capabilities.operations -notcontains "evaluate_matlab_code") {
     throw "Native Gateway evaluate capability is missing."
   }
+  if (-not $capabilities.contracts.leases) {
+    throw "Native Gateway lease capability is missing."
+  }
   $suffix = "{0}-{1}" -f [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(), ([Guid]::NewGuid().ToString("N"))
   $workspaceId = "deploy-ready-$suffix"
   $jobId = "deploy-ready-$suffix"
+  $ownerJobId = "deploy-owner-$suffix"
+  $leaseId = "deploy-lease-$suffix"
   $workspaceUrl = "$base/api/workspaces/$workspaceId"
+  $leaseUrl = "$workspaceUrl/leases/$leaseId"
   $jsonHeaders = @{ Authorization = "Bearer $GatewayToken"; "Content-Type" = "application/json" }
+  $leaseCreated = $false
   try {
     Invoke-RestMethod -Method Put -Uri $workspaceUrl -Headers $jsonHeaders -Body '{"mappingId":"worker-data"}' -TimeoutSec 10 | Out-Null
+    $leaseBody = @{ ownerJobId = $ownerJobId } | ConvertTo-Json -Compress
+    $lease = Invoke-RestMethod -Method Put -Uri $leaseUrl -Headers $jsonHeaders -Body $leaseBody -TimeoutSec 10
+    if ($lease.status -ne "active" -or $lease.leaseId -ne $leaseId -or $lease.ownerJobId -ne $ownerJobId) {
+      throw "Native Gateway lease readiness returned an invalid contract."
+    }
+    $leaseCreated = $true
     Invoke-RestMethod -Method Put -Uri "$workspaceUrl/assets/probe/text" -Headers $jsonHeaders -Body '{"fileName":"deployment_readiness.m","content":"value = 1 + 1; disp(value);"}' -TimeoutSec 10 | Out-Null
     $evaluateHeaders = @{
       Authorization = "Bearer $GatewayToken"
@@ -961,6 +974,8 @@ function Invoke-GatewayReadiness(
       operation = "evaluate_matlab_code"
       inputAssetId = "probe"
       timeoutMs = 120000
+      leaseId = $leaseId
+      ownerJobId = $ownerJobId
     } | ConvertTo-Json -Compress
     Invoke-RestMethod -Method Post -Uri "$base/api/jobs/$jobId" -Headers $evaluateHeaders -Body $body -TimeoutSec 10 | Out-Null
     $deadline = (Get-Date).AddSeconds(150)
@@ -973,6 +988,17 @@ function Invoke-GatewayReadiness(
     } while ($job.status -ne "succeeded" -and (Get-Date) -lt $deadline)
     if ($job.status -ne "succeeded") { throw "Native Gateway evaluate readiness timed out." }
   } finally {
+    if ($leaseCreated) {
+      try {
+        $closeBody = @{ ownerJobId = $ownerJobId } | ConvertTo-Json -Compress
+        $closedLease = Invoke-RestMethod -Method Delete -Uri $leaseUrl -Headers $jsonHeaders -Body $closeBody -TimeoutSec 10
+        if ($closedLease.status -ne "closed") {
+          Write-Warning "Readiness lease cleanup returned a non-closed state."
+        }
+      } catch {
+        Write-Warning "Readiness lease cleanup did not complete."
+      }
+    }
     try {
       Invoke-RestMethod -Method Delete -Uri $workspaceUrl -Headers $headers -TimeoutSec 5 | Out-Null
     } catch {
@@ -1098,7 +1124,7 @@ try {
     deploymentToolRevision = $manifest.deploymentToolRevision
     serviceName = $ServiceName
     backupDir = $BackupDir
-    readiness = "evaluate_matlab_code"
+    readiness = "evaluate_matlab_code+leases"
   } | ConvertTo-Json -Depth 5 |
     Set-Content -LiteralPath (Join-Path $BackupDir "deployment-result.json") -Encoding utf8
   Write-Host "Native MATLAB Gateway companion deployment and evaluate readiness passed." -ForegroundColor Green

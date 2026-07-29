@@ -1,10 +1,10 @@
 {
-  "schema": "sdg-native-matlab-gateway-companion-config/v7",
-  "companionVersion": 7,
+  "schema": "sdg-native-matlab-gateway-companion-config/v8",
+  "companionVersion": 8,
   "legacyGatewayRevision": "464b45448cd691fe94c4c5c843efe64ccd344a68",
   "expectedImageRevisions": {
-    "platform": "sha256:2260ce959b49b5721fd577c0c0a37e0a91b5a3c49ca84fdefb4e5fd007613ff2",
-    "worker": "sha256:5e57aff413c616faba9d4d690db1ac6af58d26259c1969a8ba9802f3aa7f69ab"
+    "platform": "sha256:240d7bf71ef8de9767f2abb168d3a907cdaae15990a1c5d87e945056f9c9ef97",
+    "worker": "sha256:c3f6dbdd80df4c4769eff8e1dffffb3979aecfa5dbab9dcb398503fa985704c2"
   },
   "serviceName": "SoftwareDocMatlabWorker",
   "installRoot": "C:\\SoftwareDocWorker",

@@ -51,7 +51,7 @@ assert.match(legacySource, /if\s*\(!authToken\)\s*\{\s*return next\(\)/);
 assert.ok(!legacySource.includes("MATLAB_GATEWAY_EVALUATE_TOKEN"));
 
 assert.equal(config.serviceName, "SoftwareDocMatlabWorker");
-assert.equal(config.companionVersion, 7);
+assert.equal(config.companionVersion, 8);
 assert.equal(config.managedFiles.length, 6);
 assert.equal(config.validationFiles.length, 2);
 assert.deepEqual(config.validationFiles[0], {
@@ -74,8 +74,8 @@ for (const inputs of Object.values(imageInputs)) {
   assert.ok(!inputs.some((entry) => entry === "scripts/build-native-matlab-gateway-companion.mjs"));
 }
 
-assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v7");
-assert.equal(schema.properties.companionVersion.const, 7);
+assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v8");
+assert.equal(schema.properties.companionVersion.const, 8);
 assert.equal(schema.properties.serviceName.const, "SoftwareDocMatlabWorker");
 for (const field of [
   "sourceRevision",
@@ -92,9 +92,9 @@ for (const field of [
 }
 assert.equal(
   releaseSchema.properties.schema.const,
-  "sdg-native-matlab-gateway-companion-release/v7"
+  "sdg-native-matlab-gateway-companion-release/v8"
 );
-assert.equal(releaseSchema.properties.companionVersion.const, 7);
+assert.equal(releaseSchema.properties.companionVersion.const, 8);
 assert.ok(releaseSchema.required.includes("contents"));
 assert.equal(releaseSchema.properties.contents.properties.managedGatewayFileCount.const, 6);
 assert.equal(releaseSchema.properties.contents.properties.deploymentToolFileCount.const, 1);
@@ -155,6 +155,8 @@ assert.match(deployScript, /applicationCategory=/);
 assert.match(deployScript, /evaluate_matlab_code/);
 assert.match(deployScript, /\/version/);
 assert.match(deployScript, /\/capabilities/);
+assert.match(deployScript, /contracts\.leases/);
+assert.match(deployScript, /\/leases\//);
 assert.match(deployScript, /HERMES_INFERENCE_PROVIDER/);
 assert.match(deployScript, /deepseek-v4-pro/);
 assert.match(deployScript, /https:\/\/api\.deepseek\.com/);
@@ -174,7 +176,7 @@ assert.match(builder, /dependencyChanges:\s*false/);
 assert.match(builder, /zip/);
 assert.doesNotMatch(builder, /docker/);
 assert.doesNotMatch(builder, /buildImage|buildx|docker push/);
-assert.match(builder, /native-matlab-gateway-companion-v7-/);
+assert.match(builder, /native-matlab-gateway-companion-v8-/);
 assert.match(builder, /companionVersion:\s*config\.companionVersion/);
 assert.match(builder, /validationFiles/);
 assert.match(builder, /validationFileCount:\s*validationFiles\.length/);
@@ -226,6 +228,9 @@ assert.match(wrapperRegression, /config\.managedFiles/);
 const productionDeploy = read("scripts/container-production.mjs");
 const productionDirectories = read("scripts/windows-production-directories.mjs");
 assert.match(productionDeploy, /evaluate_matlab_code/);
+assert.match(productionDeploy, /contracts\?\.leases/);
+assert.match(productionDeploy, /lease-create/);
+assert.match(productionDeploy, /leaseId,ownerJobId/);
 assert.match(productionDeploy, /MATLAB_GATEWAY_STATE_DIR/);
 assert.match(productionDeploy, /_MULTIPLICITY/);
 assert.match(productionDeploy, /_EMPTY/);
