@@ -179,7 +179,7 @@ services:
       HERMES_TASK_CONCURRENCY: "1"
       HERMES_SERVER_REQUEST_TIMEOUT_MS: "0"
       UNIT_TEST_DEFAULT_WORKER_ID: mac-container
-      UNIT_TEST_WORKER_PROFILES_JSON: '{"workers":[{"id":"mac-container","label":"Mac Container Worker","hermesBaseURL":"http://worker:3101","matlabBaseURL":"${MATLAB_MCP_BASE_URL:-http://host.docker.internal:5100}"}]}'
+      UNIT_TEST_WORKER_PROFILES_JSON: '{"workers":[{"id":"mac-container","label":"Mac Container Worker","hermesTransport":"api","hermesBaseURL":"http://worker:3101","hermesApiMode":"upload","hermesAuthTokenEnv":"HERMES_AUTH_TOKEN","matlabBaseURL":"${MATLAB_MCP_BASE_URL:-http://host.docker.internal:5100}","matlabHttpMode":"gateway","matlabAuthTokenEnv":"MATLAB_MCP_AUTH_TOKEN"}]}'
       UNIT_TEST_CASE_AGENT_WORKSPACE_ROOT: /var/lib/sdg/data/unit-test-case-generation/tasks
       SOFTWARE_MODULE_DESCRIPTION_AGENT_WORKSPACE_ROOT: /var/lib/sdg/data/software-module-description-generation/tasks
       UNIT_TEST_CASE_PROJECT_ADMIN_CODE: ${UNIT_TEST_CASE_PROJECT_ADMIN_CODE:-114301}
