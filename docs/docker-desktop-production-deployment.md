@@ -148,6 +148,10 @@ Linux 容器直接复用原生服务已经使用的 `prod-data` 与 `prod-skills
 mount。生产 Compose 不运行 root `permissions-init`，不申请 CHOWN/FOWNER
 capability，也不对任何正式目录执行 `chgrp`、`chmod` 或递归修改。该边界同时
 避免 Snap Docker 在 `no-new-privileges` 下拒绝 root shell 初始化容器。
+Linux Platform Compose 也不启用 `init: true`：Snap Docker 会拒绝其注入的
+`/sbin/docker-init`。Platform 镜像直接以 Node entrypoint 作为 PID 1，镜像
+声明 `STOPSIGNAL SIGTERM`，entrypoint 显式处理 SIGTERM/SIGINT 并有 30 秒
+停止宽限期，因此不依赖 Docker 注入 init。
 
 ## Windows Docker Desktop Worker
 

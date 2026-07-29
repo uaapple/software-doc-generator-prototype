@@ -60,6 +60,13 @@ assert.match(linuxCompose, /SDG_PLATFORM_SKILLS_DIR/);
 assert.match(linuxCompose, /SDG_PLATFORM_HOME_DIR/);
 assert.doesNotMatch(linuxCompose, /permissions-init|platform-skills|platform-home:/);
 assert.doesNotMatch(linuxCompose, /user:\s*["']?0:0|cap_add:|CHOWN|FOWNER/);
+assert.doesNotMatch(
+  linuxCompose,
+  /^\s*init:\s*true\s*$/m,
+  "Snap Docker must not inject a blocked /sbin/docker-init binary"
+);
+assert.match(read("docker/platform.Containerfile"), /STOPSIGNAL SIGTERM/);
+assert.match(read("docker/platform-entrypoint.mjs"), /process\.on\("SIGTERM"/);
 assert.doesNotMatch(linuxCompose, /^\s+build:/m);
 assert.doesNotMatch(
   linuxCompose,
