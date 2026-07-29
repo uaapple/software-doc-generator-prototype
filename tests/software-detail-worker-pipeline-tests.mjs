@@ -5,11 +5,21 @@ import path from "node:path";
 
 import { listSoftwareDetailStages } from "../src/services/software-detail-stage-catalog.js";
 import { SoftwareDetailPipelineJobService } from "../src/services/software-detail-pipeline-job-service.js";
+import { buildSoftwareDetailDocxFileName } from "../src/services/software-detail-artifact-name.js";
 
 const DOCX_BYTES = Buffer.concat([
   Buffer.from([0x50, 0x4b, 0x03, 0x04]),
   Buffer.from("synthetic-docx")
 ]);
+
+assert.equal(
+  buildSoftwareDetailDocxFileName("ActrReft.slx"),
+  "ActrReft-software-detail-design.docx"
+);
+assert.equal(
+  buildSoftwareDetailDocxFileName("../危险 模型?.slx"),
+  "危险_模型-software-detail-design.docx"
+);
 
 function stageArtifactPayload(role, context, options = {}) {
   const documentUnits = [
@@ -303,6 +313,7 @@ async function runJob(service, workspace, taskId) {
     taskId,
     idempotencyKey: taskId,
     ...workspace,
+    modelSlxOriginalName: "ActrReft.slx",
     unitTestProject: { id: "01", name: "Test", label: "01_Test" },
     projectAddonCopy: { copiedFileCount: 1 },
     workerSelection: { id: "worker-a", label: "Worker A" }
@@ -348,6 +359,11 @@ try {
     assert.deepEqual(
       job.artifacts.map((artifact) => artifact.role),
       ["detail-design-docx", "artifact-manifest"]
+    );
+    assert.equal(
+      job.artifacts.find((artifact) => artifact.role === "detail-design-docx")
+        ?.relativePath,
+      "outputs/ActrReft-software-detail-design.docx"
     );
     const persisted = await fs.readFile(
       path.join(root, "happy", "jobs", `${job.jobId}.json`),

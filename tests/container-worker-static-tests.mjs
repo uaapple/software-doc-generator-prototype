@@ -75,7 +75,8 @@ try {
     "src/services/software-detail-hermes-skill-registry.js",
     "src/services/software-detail-hermes-stage-executor.js",
     "src/services/software-detail-matlab-lease-client.js",
-    "src/services/software-detail-pipeline-job-service.js"
+    "src/services/software-detail-pipeline-job-service.js",
+    "src/services/software-detail-artifact-name.js"
   ]) {
     assert.ok(
       manifest.files.includes(serviceFile),

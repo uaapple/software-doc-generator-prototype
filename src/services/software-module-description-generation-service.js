@@ -10,6 +10,7 @@ import {
 import { SOFTWARE_DETAIL_JOB_SCHEMA } from "./software-detail-pipeline-contract.js";
 import { readJson, writeJson, pathExists } from "./storage.js";
 import { normalizeUploadedFileName } from "./upload-filename.js";
+import { buildSoftwareDetailDocxFileName } from "./software-detail-artifact-name.js";
 import { publicUnitTestWorkerProfile, resolveUnitTestWorkerProfile } from "./unit-test-case-generation-service.js";
 
 const TASK_FILE_NAME = "task.json";
@@ -638,6 +639,9 @@ export class SoftwareModuleDescriptionGenerationService {
       const slxName = sanitizeStoredFileName(modelSlx.originalname, "model.slx");
       const matName = sanitizeStoredFileName(modelMat.originalname, "model.mat");
       const workspaceModelBase = toMatlabModelBase(modelSlx.originalname, "model");
+      const detailDesignFileName = buildSoftwareDetailDocxFileName(
+        normalizeUploadedFileName(modelSlx.originalname)
+      );
       const workspaceSlxName = `${workspaceModelBase}.slx`;
       const workspaceMatName = `${workspaceModelBase}.mat`;
       const initScriptName = modelInitScript ? sanitizeStoredFileName(modelInitScript.originalname, "model_init.m") : "";
@@ -730,6 +734,7 @@ export class SoftwareModuleDescriptionGenerationService {
             workspaceRelativePath: normalizeStoredRelativePath(path.relative(workspaceDir, workspaceMatPath))
           }
         },
+        detailDesignFileName,
         workspace: {
           directory: workspaceDir,
           inputDir: workspaceInputDir,
@@ -868,6 +873,7 @@ export class SoftwareModuleDescriptionGenerationService {
       expectedOutputPattern: cfg.expectedOutputPattern,
       localPlatformWorkspaceDir: task.workspace?.directory || "",
       modelSlxFileName: task.inputs?.modelSlx?.workspaceName || task.inputs?.modelSlx?.originalName || path.basename(modelSlxPath),
+      modelSlxOriginalName: task.inputs?.modelSlx?.originalName || "",
       modelMatFileName: task.inputs?.modelMat?.workspaceName || task.inputs?.modelMat?.originalName || path.basename(modelMatPath)
     };
     if (modelInitScriptPath && modelInitScriptRelativePath) {
@@ -1276,7 +1282,11 @@ export class SoftwareModuleDescriptionGenerationService {
     const candidates = new Map();
     const addCandidate = (relativePath = "", meta = {}) => {
       const normalized = normalizeStoredRelativePath(relativePath);
-      if (isDocxOutput(normalized)) {
+      const expectedFileName = String(task.detailDesignFileName || "").trim();
+      if (
+        isDocxOutput(normalized) &&
+        (!expectedFileName || path.posix.basename(normalized) === expectedFileName)
+      ) {
         candidates.set(normalized, { relativePath: normalized, ...meta });
       }
     };

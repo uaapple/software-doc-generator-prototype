@@ -172,6 +172,7 @@ try {
       modelSlxPath: path.join(sourceWorkspace, "Demo.slx"),
       modelMatPath: path.join(sourceWorkspace, "Demo.mat"),
       outputDir: path.join(sourceWorkspace, "outputs"),
+      modelSlxOriginalName: "ActrReft.slx",
       unitTestProject: { id: "01", name: "Demo", label: "01_Demo" }
     }
   };
@@ -209,6 +210,7 @@ try {
     await fs.readFile(jobs.startedInputs[0].modelSlxPath),
     slxBytes
   );
+  assert.equal(jobs.startedInputs[0].modelSlxOriginalName, "ActrReft.slx");
   assert.ok(
     await fs.stat(path.join(retainedWorkspace, "init_Global.m"))
   );

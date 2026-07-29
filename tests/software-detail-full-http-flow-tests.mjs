@@ -699,6 +699,7 @@ try {
   assert.equal(firstWorkerDocx.contentBase64, firstExpectedDocx.toString("base64"));
   assert.equal(firstWorkerDocx.size, firstExpectedDocx.length);
   assert.equal(firstWorkerDocx.sha256, sha256(firstExpectedDocx));
+  assert.equal(firstWorkerDocx.relativePath, "outputs/Wave4First-software-detail-design.docx");
 
   const secondWorkerJob = await waitFor(
     "第二个 Worker 九阶段作业完成",
@@ -731,6 +732,7 @@ try {
   );
   assert.equal(secondWorkerDocx.size, secondExpectedDocx.length);
   assert.equal(secondWorkerDocx.sha256, sha256(secondExpectedDocx));
+  assert.equal(secondWorkerDocx.relativePath, "outputs/Wave4Second-software-detail-design.docx");
 
   const firstCompleted = await waitFor(
     "平台后台对账完成第一个公开任务",
@@ -755,7 +757,10 @@ try {
     { timeoutMs: 9000 }
   );
 
-  for (const completed of [firstCompleted, secondCompleted]) {
+  for (const [completed, expectedFileName] of [
+    [firstCompleted, "Wave4First-software-detail-design.docx"],
+    [secondCompleted, "Wave4Second-software-detail-design.docx"]
+  ]) {
     assert.equal(completed.pipeline.status, "completed");
     assert.equal(completed.pipeline.cleanup.status, "completed");
     assert.equal(completed.pipeline.stages.length, 9);
@@ -771,7 +776,8 @@ try {
       completed.artifacts[0].kind,
       "software_module_description_docx"
     );
-    assert.match(completed.artifacts[0].relativePath, /^outputs\/[^/]+\.docx$/);
+    assert.equal(completed.artifacts[0].relativePath, `outputs/${expectedFileName}`);
+    assert.equal(completed.artifacts[0].fileName, expectedFileName);
   }
 
   const completedPairs = [
@@ -785,6 +791,10 @@ try {
       `${platformBaseURL}/api/software-module-description-generation/tasks/${completed.id}/artifacts/${artifact.id}/download`
     );
     assert.equal(downloadResponse.status, 200);
+    assert.match(
+      downloadResponse.headers.get("content-disposition") || "",
+      new RegExp(artifact.fileName.replace(/[.]/g, "\\."))
+    );
     assert.deepEqual(
       Buffer.from(await downloadResponse.arrayBuffer()),
       expectedDocx

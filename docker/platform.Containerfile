@@ -78,6 +78,7 @@ COPY --chown=node:node \
   src/services/slx-model-analysis-service.js \
   src/services/slx-model-fact-adapter.js \
   src/services/software-detail-pipeline-contract.js \
+  src/services/software-detail-artifact-name.js \
   src/services/software-detail-stage-catalog.js \
   src/services/software-module-description-generation-service.js \
   src/services/software-requirement-agent-shared.js \

@@ -93,6 +93,6 @@ Then read these pinned runtime resources:
 
 ## Package outputs
 
-Publish `detail-design-docx` only after every final check passes. Use the deterministic default filename `<ModelName>_软件模块功能描述.docx` unless the job specifies another safe name.
+Publish `detail-design-docx` only after every final check passes. Use the exact filename bound to its `outputArtifacts.relativePath`: it is derived from the uploaded SLX filename as `<上传的SLX模型文件名去掉扩展名>-software-detail-design.docx`. Do not substitute a workspace, MATLAB-normalized, or legacy filename.
 
 Write `artifact-manifest` with the contract version, job/stage/attempt identity, source-stage/source-attempt provenance, artifact role, task-relative path, output filename, media type, size, and validation results. Include content hashes and task-owned cleanup evidence only when they are already available; their absence does not invalidate an otherwise valid document. Never include credentials, environment contents, private absolute host paths, or unrequested internal model evidence. On content validation failure, do not publish `detail-design-docx`; preserve any diagnostic and cleanup result for the host.

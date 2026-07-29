@@ -13,6 +13,7 @@ import {
 } from "./software-detail-pipeline-contract.js";
 import { listSoftwareDetailStages } from "./software-detail-stage-catalog.js";
 import { readJson, writeJson } from "./storage.js";
+import { buildSoftwareDetailDocxFileName } from "./software-detail-artifact-name.js";
 
 const CHECKPOINT_SCHEMA = "software-detail-stage-checkpoint/v1";
 const PROJECT_SELECTION_SCHEMA = "software-detail-project-selection/v1";
@@ -177,12 +178,15 @@ function extensionForRole(role) {
   return role === "detail-design-docx" ? ".docx" : ".json";
 }
 
-function outputBindings(definition) {
+function outputBindings(definition, job = {}) {
+  const detailDesignDocxName = String(job.input?.modelSlxOriginalName || "").trim()
+    ? buildSoftwareDetailDocxFileName(job.input.modelSlxOriginalName)
+    : "software-detail-design.docx";
   return definition.outputs.map((artifact) => ({
     role: artifact.role,
     relativePath:
       artifact.role === "detail-design-docx"
-        ? "outputs/software-detail-design.docx"
+        ? `outputs/${detailDesignDocxName}`
         : artifact.role === "artifact-manifest"
           ? "outputs/artifact-manifest.json"
           : `.software-detail/artifacts/${definition.id}/${artifact.role}${extensionForRole(
@@ -801,7 +805,7 @@ export class SoftwareDetailPipelineJobService {
     stage.error = null;
     const attempt = stage.attempt;
     const paths = this.attemptPaths(job, definition, attempt);
-    const expectedBindings = outputBindings(definition);
+    const expectedBindings = outputBindings(definition, job);
     await fs.mkdir(paths.directory, { recursive: true });
 
     let lease = job.resources.leaseStatus === "active" ? job.resources : null;

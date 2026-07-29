@@ -493,6 +493,9 @@ async function normalizeUnitTestCaseArtifact(inputArtifact = {}, allowedPaths = 
     skillName: String(inputArtifact.skillName || defaultSkillName).trim(),
     expectedOutputPattern: String(inputArtifact.expectedOutputPattern || defaultExpectedOutputPattern).trim(),
     modelSlxFileName: inputArtifact.modelSlxFileName || path.basename(modelSlxPath),
+    modelSlxOriginalName: String(
+      inputArtifact.modelSlxOriginalName || inputArtifact.modelSlxFileName || path.basename(modelSlxPath)
+    ).trim(),
     modelMatFileName: inputArtifact.modelMatFileName || path.basename(modelMatPath),
     modelInitScriptFileName: modelInitScriptPath
       ? inputArtifact.modelInitScriptFileName || path.basename(modelInitScriptPath)

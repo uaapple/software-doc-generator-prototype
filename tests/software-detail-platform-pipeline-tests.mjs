@@ -175,7 +175,7 @@ test("新任务固化九阶段快照，并持久化多轮进度后完成 DOCX", 
             runningIndex: 8
           }));
         }
-        const relativePath = "outputs/Demo_软件详设.docx";
+        const relativePath = "outputs/Demo-software-detail-design.docx";
         await fs.mkdir(path.join(options.localWorkspaceDir, "outputs"), { recursive: true });
         await fs.writeFile(path.join(options.localWorkspaceDir, ...relativePath.split("/")), "docx");
         return job(workerJobId, "completed", stageRecords({ completedCount: 9 }), {
@@ -192,7 +192,7 @@ test("新任务固化九阶段快照，并持久化多轮进度后完成 DOCX", 
       async cleanupSoftwareDetailPipelineUpload(workerJobId) {
         const stored = await service.readTask(taskId);
         const docxExists = await fs.stat(
-          path.join(stored.workspace.directory, "outputs", "Demo_软件详设.docx")
+          path.join(stored.workspace.directory, "outputs", "Demo-software-detail-design.docx")
         ).then(() => true, () => false);
         calls.push({
           type: "cleanup",
@@ -244,7 +244,7 @@ test("新任务固化九阶段快照，并持久化多轮进度后完成 DOCX", 
     assert.equal(completed.pipeline.cleanup.status, "completed");
     assert.equal(completed.pipeline.stages.filter((stage) => stage.status === "completed").length, 9);
     assert.equal(completed.artifacts.length, 1);
-    assert.equal(completed.artifacts[0].relativePath, "outputs/Demo_软件详设.docx");
+    assert.equal(completed.artifacts[0].relativePath, "outputs/Demo-software-detail-design.docx");
     assert.ok(
       snapshots.some((snapshot) =>
         snapshot.pipeline?.stages?.[2]?.status === "running" &&
@@ -259,6 +259,7 @@ test("新任务固化九阶段快照，并持久化多轮进度后完成 DOCX", 
     assert.equal(start.payload.workerId, "worker-01");
     assert.equal(start.payload.workerSelection.label, "测试 Worker");
     assert.equal(start.payload.inputArtifact.pipelineSchema, SOFTWARE_DETAIL_JOB_SCHEMA);
+    assert.equal(start.payload.inputArtifact.modelSlxOriginalName, "Demo.slx");
     assert.equal(start.payload.inputArtifact.unitTestProject.id, "01");
     assert.deepEqual(start.payload.inputArtifact.projectInitScripts, ["inputs/Demo_init.m"]);
     assert.equal(Object.hasOwn(start.payload.inputArtifact, "skillName"), false);
@@ -366,7 +367,7 @@ test("已有 Worker 作业轮询暂时断开时保持运行，后台续查后完
             code: "software_detail_worker_unavailable"
           });
         }
-        const relativePath = "outputs/Transient.docx";
+        const relativePath = "outputs/Transient-software-detail-design.docx";
         await fs.mkdir(path.join(options.localWorkspaceDir, "outputs"), { recursive: true });
         await fs.writeFile(
           path.join(options.localWorkspaceDir, ...relativePath.split("/")),
@@ -402,7 +403,7 @@ test("已有 Worker 作业轮询暂时断开时保持运行，后台续查后完
     assert.equal(completed.pipeline.awaitingReconcile, false);
     assert.equal(completed.pipeline.diagnostic, null);
     assert.equal(completed.pipeline.cleanup.status, "completed");
-    assert.equal(completed.artifacts[0].relativePath, "outputs/Transient.docx");
+    assert.equal(completed.artifacts[0].relativePath, "outputs/Transient-software-detail-design.docx");
     assert.equal(cleanupCalls, 1);
   });
 });
@@ -481,7 +482,7 @@ test("有限轮询窗口释放队列，后台只续查已有 Worker 作业", asy
       },
       async getSoftwareDetailPipelineJob(workerJobId, options) {
         pollCalls += 1;
-        const relativePath = "outputs/Window.docx";
+        const relativePath = "outputs/Window-software-detail-design.docx";
         await fs.mkdir(path.join(options.localWorkspaceDir, "outputs"), { recursive: true });
         await fs.writeFile(
           path.join(options.localWorkspaceDir, ...relativePath.split("/")),
@@ -700,7 +701,8 @@ test("两个九阶段任务的 Worker 作业编号、阶段与 DOCX 不会串线
       async getSoftwareDetailPipelineJob(workerJobId, options) {
         const taskId = taskByJob.get(workerJobId);
         assert.ok(taskId);
-        const fileName = `${taskId}.docx`;
+        const task = await service.readTask(taskId);
+        const fileName = task.detailDesignFileName;
         const relativePath = `outputs/${fileName}`;
         await fs.mkdir(path.join(options.localWorkspaceDir, "outputs"), { recursive: true });
         await fs.writeFile(
@@ -732,14 +734,14 @@ test("两个九阶段任务的 Worker 作业编号、阶段与 DOCX 不会串线
     assert.equal(storedFirst.pipeline.workerJobId, `worker-${first.id}`);
     assert.equal(storedSecond.pipeline.workerJobId, `worker-${second.id}`);
     assert.notEqual(storedFirst.pipeline.workerJobId, storedSecond.pipeline.workerJobId);
-    assert.equal(storedFirst.artifacts[0].fileName, `${first.id}.docx`);
-    assert.equal(storedSecond.artifacts[0].fileName, `${second.id}.docx`);
+    assert.equal(storedFirst.artifacts[0].fileName, "ParallelA-software-detail-design.docx");
+    assert.equal(storedSecond.artifacts[0].fileName, "ParallelB-software-detail-design.docx");
     assert.equal(
-      await fs.readFile(path.join(storedFirst.workspace.outputDir, `${first.id}.docx`), "utf8"),
+      await fs.readFile(path.join(storedFirst.workspace.outputDir, "ParallelA-software-detail-design.docx"), "utf8"),
       storedFirst.pipeline.workerJobId
     );
     assert.equal(
-      await fs.readFile(path.join(storedSecond.workspace.outputDir, `${second.id}.docx`), "utf8"),
+      await fs.readFile(path.join(storedSecond.workspace.outputDir, "ParallelB-software-detail-design.docx"), "utf8"),
       storedSecond.pipeline.workerJobId
     );
   });
