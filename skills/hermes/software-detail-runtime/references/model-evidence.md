@@ -202,7 +202,13 @@ staged pipeline; it does not add a new business rule or change document hierarch
 - Every selected `document_unit` must own at least one bounded analysis-queue item.
   When it has no eligible analysis child, queue the small unit itself with
   `scope=document_unit_direct`, or split it by direct Outport/shared-source output
-  group. A zero-item parent is never implicitly covered by its port list.
+  group. A `document_unit_direct` item must explicitly set `analysisUnit` equal
+  to `parentDocumentUnit`; reread the persisted queue and verify this equality.
+  For compatibility when Stage 3 reads an older persisted item that omitted
+  `analysisUnit`, use `parentDocumentUnit` as the effective analysis unit and
+  write that path to `shard.analysisUnitPath`. If an explicit value differs
+  from the parent, fail instead of guessing.
+  A zero-item parent is never implicitly covered by its port list.
 - The persisted `software-detail-analysis-queue/v1` artifact uses the canonical
   top-level `items` array. Do not write `queueItems` or another alias. Reread the
   written JSON and verify the parsed `items` array before Stage 2 reports success.

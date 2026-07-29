@@ -581,6 +581,90 @@ for (const stage of stages.slice(1)) {
       error.code === "software_detail_analysis_queue_alias_conflict" &&
       error.details.field === "analysisQueue.items"
   );
+
+  const directDocumentHierarchy = {
+    schema: "software-detail-hierarchy-manifest/v1",
+    documentUnits: [
+      {
+        path: "Model/A04_Function",
+        allowedOutputs: ["A04_Output"]
+      }
+    ]
+  };
+  const directDocumentQueue = {
+    schema: "software-detail-analysis-queue/v1",
+    items: [
+      {
+        order: 11,
+        parentDocumentUnit: "Model/A04_Function",
+        scope: "document_unit_direct",
+        estimatedComplexity: "small",
+        notableConstructs: []
+      }
+    ]
+  };
+  const normalizedDirectDocument =
+    validateSoftwareDetailModelPlanArtifacts(
+      directDocumentHierarchy,
+      directDocumentQueue
+    );
+  assert.equal(
+    normalizedDirectDocument.queueItems[0].analysisUnit,
+    "Model/A04_Function"
+  );
+  assert.equal(
+    validateSoftwareDetailEvidenceArtifacts(
+      directDocumentHierarchy,
+      directDocumentQueue,
+      {
+        schema: "software-detail-evidence-shards/v1",
+        shards: [
+          {
+            parentDocumentUnitPath: "Model/A04_Function",
+            analysisUnitPath: "Model/A04_Function",
+            scope: "document_unit_direct",
+            scopePath: "",
+            outports: [{ name: "A04_Output" }]
+          }
+        ]
+      }
+    ).queueItems.length,
+    1
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailModelPlanArtifacts(
+        directDocumentHierarchy,
+        {
+          ...directDocumentQueue,
+          items: [
+            {
+              ...directDocumentQueue.items[0],
+              analysisUnit: "Model/A04_Function/B01_Wrong"
+            }
+          ]
+        }
+      ),
+    (error) =>
+      error.code === "software_detail_document_unit_direct_mismatch"
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailModelPlanArtifacts(
+        directDocumentHierarchy,
+        {
+          ...directDocumentQueue,
+          items: [
+            {
+              parentDocumentUnit: "Model/A04_Function",
+              scope: "analysis_unit"
+            }
+          ]
+        }
+      ),
+    (error) =>
+      error.code === "software_detail_invalid_business_artifact"
+  );
   assert.throws(
     () =>
       validateSoftwareDetailModelPlanArtifacts(hierarchyManifest, {

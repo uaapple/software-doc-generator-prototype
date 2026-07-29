@@ -210,7 +210,11 @@ export function validateSoftwareDetailModelPlanArtifacts(
     }
     const scope = optionalArtifactText(item.scope) || "analysis_unit";
     const directOutport = optionalArtifactText(item.directOutport);
-    const analysisUnit = optionalArtifactText(item.analysisUnit);
+    const parentDocumentUnit = requiredArtifactText(
+      item.parentDocumentUnit,
+      `items[${index}].parentDocumentUnit`
+    );
+    let analysisUnit = optionalArtifactText(item.analysisUnit);
     if (scope === "direct_outport") {
       if (!directOutport) {
         throw contractError(
@@ -218,26 +222,35 @@ export function validateSoftwareDetailModelPlanArtifacts(
           "direct_outport queue item 必须声明 directOutport",
           {
             field: `items[${index}].directOutport`,
-            documentUnit: optionalArtifactText(item.parentDocumentUnit)
+            documentUnit: parentDocumentUnit
           }
         );
       }
+    } else if (scope === "document_unit_direct") {
+      if (analysisUnit && analysisUnit !== parentDocumentUnit) {
+        throw contractError(
+          "software_detail_document_unit_direct_mismatch",
+          "document_unit_direct 的 analysisUnit 必须等于 parentDocumentUnit",
+          {
+            field: `items[${index}].analysisUnit`,
+            documentUnit: parentDocumentUnit
+          }
+        );
+      }
+      analysisUnit = parentDocumentUnit;
     } else if (!analysisUnit) {
       throw contractError(
         "software_detail_invalid_business_artifact",
         `items[${index}].analysisUnit 必须是非空文本`,
         {
           field: `items[${index}].analysisUnit`,
-          documentUnit: optionalArtifactText(item.parentDocumentUnit)
+          documentUnit: parentDocumentUnit
         }
       );
     }
     return {
       id: optionalArtifactText(item.id || item.queueItemId),
-      parentDocumentUnit: requiredArtifactText(
-        item.parentDocumentUnit,
-        `items[${index}].parentDocumentUnit`
-      ),
+      parentDocumentUnit,
       analysisUnit,
       scope,
       scopePath: optionalArtifactText(item.scopePath),
