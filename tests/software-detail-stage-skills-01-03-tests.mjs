@@ -402,6 +402,8 @@ const stage2Skill = readText(
 for (const required of [
   "scope=document_unit_direct",
   "scope=direct_outport",
+  "canonical top-level queue array field is exactly `items`",
+  "reread the persisted JSON",
   "exact non-empty `directOutport` name and may omit `analysisUnit`",
   "do not rename `directOutport` to another field",
   "every selected `document_unit` has at least one queue item",

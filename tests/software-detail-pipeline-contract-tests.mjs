@@ -551,6 +551,45 @@ for (const stage of stages.slice(1)) {
     ).queueItems.length,
     2
   );
+  assert.equal(
+    validateSoftwareDetailModelPlanArtifacts(hierarchyManifest, {
+      schema: "software-detail-analysis-queue/v1",
+      queueItems: analysisQueue.items
+    }).queueItems.length,
+    2
+  );
+  assert.equal(
+    validateSoftwareDetailModelPlanArtifacts(hierarchyManifest, {
+      schema: "software-detail-analysis-queue/v1",
+      items: analysisQueue.items,
+      queueItems: analysisQueue.items.map((item) => ({
+        scope: item.scope,
+        analysisUnit: item.analysisUnit,
+        parentDocumentUnit: item.parentDocumentUnit
+      }))
+    }).queueItems.length,
+    2
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailModelPlanArtifacts(hierarchyManifest, {
+        schema: "software-detail-analysis-queue/v1",
+        items: analysisQueue.items,
+        queueItems: analysisQueue.items.slice(0, 1)
+      }),
+    (error) =>
+      error.code === "software_detail_analysis_queue_alias_conflict" &&
+      error.details.field === "analysisQueue.items"
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailModelPlanArtifacts(hierarchyManifest, {
+        schema: "software-detail-analysis-queue/v1"
+      }),
+    (error) =>
+      error.code === "software_detail_invalid_model_plan_artifacts" &&
+      error.details.field === "analysisQueue.items"
+  );
   assert.throws(
     () =>
       validateSoftwareDetailModelPlanArtifacts(hierarchyManifest, {

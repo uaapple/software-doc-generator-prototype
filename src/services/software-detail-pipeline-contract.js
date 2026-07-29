@@ -89,6 +89,16 @@ function optionalArtifactText(value) {
   return String(value || "").trim();
 }
 
+function semanticJson(value) {
+  if (Array.isArray(value)) return value.map(semanticJson);
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, semanticJson(value[key])])
+  );
+}
+
 function queueItemIdentity(item) {
   const explicitId = optionalArtifactText(item.id || item.queueItemId);
   if (explicitId) return `id:${explicitId}`;
@@ -155,15 +165,42 @@ export function validateSoftwareDetailModelPlanArtifacts(
   const documentUnits = artifactDocumentUnits(hierarchyManifest);
   if (
     !isPlainObject(analysisQueue) ||
-    analysisQueue.schema !== SOFTWARE_DETAIL_ANALYSIS_QUEUE_SCHEMA ||
-    !Array.isArray(analysisQueue.items)
+    analysisQueue.schema !== SOFTWARE_DETAIL_ANALYSIS_QUEUE_SCHEMA
   ) {
     throw contractError(
       "software_detail_invalid_model_plan_artifacts",
-      "analysis-queue 必须包含 items 数组"
+      "analysis-queue schema 非法"
     );
   }
-  const queueItems = analysisQueue.items.map((item, index) => {
+  const hasItems = Object.hasOwn(analysisQueue, "items");
+  const hasQueueItems = Object.hasOwn(analysisQueue, "queueItems");
+  if (
+    (!hasItems && !hasQueueItems) ||
+    (hasItems && !Array.isArray(analysisQueue.items)) ||
+    (hasQueueItems && !Array.isArray(analysisQueue.queueItems))
+  ) {
+    throw contractError(
+      "software_detail_invalid_model_plan_artifacts",
+      "analysis-queue 必须包含 items 或 queueItems 数组",
+      { field: "analysisQueue.items" }
+    );
+  }
+  if (
+    hasItems &&
+    hasQueueItems &&
+    JSON.stringify(semanticJson(analysisQueue.items)) !==
+      JSON.stringify(semanticJson(analysisQueue.queueItems))
+  ) {
+    throw contractError(
+      "software_detail_analysis_queue_alias_conflict",
+      "analysis-queue 的 items 与 queueItems 语义冲突",
+      { field: "analysisQueue.items" }
+    );
+  }
+  const rawQueueItems = hasItems
+    ? analysisQueue.items
+    : analysisQueue.queueItems;
+  const queueItems = rawQueueItems.map((item, index) => {
     if (!isPlainObject(item)) {
       throw contractError(
         "software_detail_invalid_model_plan_artifacts",

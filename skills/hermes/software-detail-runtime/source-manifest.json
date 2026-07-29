@@ -1,6 +1,6 @@
 {
   "schema": "software-detail-runtime-source-manifest/v1",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "authoritativeSource": {
     "commit": "ce5d3c2c08788fa8ab9013f18bd985f7355df0b6",
     "root": "skills/hermes/simulink-module-description-generator",
@@ -35,7 +35,7 @@
       "path": "references/model-evidence.md",
       "basedOnBlobSha1": "543583b153da16c909f5986bf83f7d952d50680a",
       "basedOnContentSha256": "eaaf1a39c549cc1d7fc755dd17240bae0c2c7855e2d7d1214e8bd95ad487322b",
-      "contentSha256": "ce96ce87c8512d1b27a0280dd1308c9941121cbbf1ad40cb34d2bcc18d9049c9",
+      "contentSha256": "d2041b0b378b6f6ba6e411c5df475f1fce85ecf18ac131f067adf9d613bdda0e",
       "purpose": "Make the original per-document-unit evidence requirements explicit at staged queue, shard, aggregation, projection, and drafting boundaries."
     }
   ],

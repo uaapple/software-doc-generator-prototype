@@ -203,6 +203,9 @@ staged pipeline; it does not add a new business rule or change document hierarch
   When it has no eligible analysis child, queue the small unit itself with
   `scope=document_unit_direct`, or split it by direct Outport/shared-source output
   group. A zero-item parent is never implicitly covered by its port list.
+- The persisted `software-detail-analysis-queue/v1` artifact uses the canonical
+  top-level `items` array. Do not write `queueItems` or another alias. Reread the
+  written JSON and verify the parsed `items` array before Stage 2 reports success.
 - Use one fixed evidence-shard field set for every queue scope. Predeclare `scope`
   and all optional fields before constructing MATLAB structure arrays, and normalize
   field sets before concatenation. A structure-append error is a failed required
