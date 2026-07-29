@@ -207,10 +207,24 @@ staged pipeline; it does not add a new business rule or change document hierarch
   and all optional fields before constructing MATLAB structure arrays, and normalize
   field sets before concatenation. A structure-append error is a failed required
   evidence read, not an ignorable limitation.
+- The persisted `software-detail-evidence-shards/v1` index has a top-level
+  `shards[]`. Each entry inlines its document-unit path, queue identity when
+  available, scope and scope path, canonical direct-output names as
+  `outports: [{"name": "..."}]`, limitations, and the persistent private-shard
+  path. Analysis entries inline every direct output they affect; `direct_outport`
+  entries put the exact short-name output in `directOutport` and canonical
+  `outports`. Mirror `scopePath` from the queue item exactly, including an empty
+  value. A queue-item ID is an additional identity check, not a replacement for
+  parent, scope, scope-path, or output checks. A shard-file path alone is not an
+  evidence index.
 - Before Stage 3 completes, verify every queue item, every document unit, and every
   direct Outport. Each direct Outport needs model evidence or an explicit limitation
   backed by recorded targeted reads. “No evidence shard”, an empty shard, or a
   boundary-only inference is not sufficient coverage.
+- Reread the written evidence index JSON and run queue-item, document-unit, and
+  direct-output checks against the parsed file before writing a successful stage
+  candidate. In-memory structures do not prove that required fields survived JSON
+  serialization.
 - Stages that aggregate, project, or draft must fail on missing evidence. They must
   not turn an uncovered output into a ledger claim, boundary behavior, or prose.
 

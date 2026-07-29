@@ -421,7 +421,16 @@ for (const required of [
   "One shard must not stand in for multiple direct-Outport queue items",
   "every direct Outport has direct evidence in its corresponding `direct_outport` shard",
   "every selected document unit has at least one shard",
-  "Any required fallback execution error fails the stage"
+  "Any required fallback execution error fails the stage",
+  "top-level `shards` array",
+  "canonical `outports` as an array of",
+  "task-relative `shardPath`",
+  "must not reduce an entry to only `shardPath`",
+  "Mirror the queue item's `scopePath` exactly",
+  "an ID never replaces parent/scope/output checks",
+  "set `directOutport` to the exact short-name output",
+  "read that JSON file back from disk",
+  "Do not write the successful candidate until this reread validation passes"
 ]) {
   assert.ok(stage3Skill.includes(required), `stage 3 misses: ${required}`);
 }

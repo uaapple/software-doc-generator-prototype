@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import {
   getSoftwareDetailStage,
   listSoftwareDetailStages
@@ -69,6 +71,18 @@ function normalizedOutputNames(outports) {
       .map((name) => String(name || "").trim())
       .filter(Boolean)
   );
+}
+
+function shardOutputNames(shard) {
+  const legacyNames = normalizedOutputNames(shard?.outports);
+  const nestedNames = normalizedOutputNames(
+    isPlainObject(shard?.ports) ? shard.ports.outports : []
+  );
+  return new Set([...legacyNames, ...nestedNames]);
+}
+
+function outputBaseName(value) {
+  return path.posix.basename(String(value || "").trim());
 }
 
 function optionalArtifactText(value) {
@@ -257,8 +271,9 @@ export function validateSoftwareDetailEvidenceArtifacts(
       );
     }
     for (const outputName of documentUnit.allowedOutputs) {
+      const expectedOutputName = outputBaseName(outputName);
       const hasEvidence = unitShards.some((shard) =>
-        normalizedOutputNames(shard.outports).has(outputName)
+        shardOutputNames(shard).has(expectedOutputName)
       );
       if (!hasEvidence) {
         throw contractError(
@@ -275,7 +290,9 @@ export function validateSoftwareDetailEvidenceArtifacts(
       if (usedShardIndexes.has(index)) return false;
       const shardQueueItemId = optionalArtifactText(shard.queueItemId);
       if (queueItem.id || shardQueueItemId) {
-        return Boolean(queueItem.id) && shardQueueItemId === queueItem.id;
+        if (!queueItem.id || shardQueueItemId !== queueItem.id) {
+          return false;
+        }
       }
       if (shardParent(shard) !== queueItem.parentDocumentUnit) {
         return false;
@@ -288,7 +305,16 @@ export function validateSoftwareDetailEvidenceArtifacts(
         if (queueItem.scopePath !== shardScopePath) {
           return false;
         }
-        return normalizedOutputNames(shard.outports).has(
+        const shardDirectOutport = optionalArtifactText(
+          shard.directOutport
+        );
+        if (
+          shardDirectOutport &&
+          shardDirectOutport !== queueItem.directOutport
+        ) {
+          return false;
+        }
+        return shardOutputNames(shard).has(
           queueItem.directOutport
         );
       }

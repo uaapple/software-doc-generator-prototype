@@ -754,6 +754,208 @@ for (const stage of stages.slice(1)) {
     (error) =>
       error.code === "software_detail_evidence_queue_item_missing"
   );
+
+  const realShapeHierarchy = {
+    schema: "software-detail-hierarchy-manifest/v1",
+    documentUnits: [
+      {
+        path: "ActrReft/ActrReft/A01_EasCtrl",
+        allowedOutputs: [
+          "A01_EasCtrl/ActrReft_bEasEna"
+        ]
+      }
+    ]
+  };
+  const realShapeQueue = {
+    schema: "software-detail-analysis-queue/v1",
+    items: [
+      {
+        parentDocumentUnit: "ActrReft/ActrReft/A01_EasCtrl",
+        scope: "direct_outport",
+        directOutport: "ActrReft_bEasEna"
+      }
+    ]
+  };
+  const realShapeShard = {
+    parentDocumentUnit: "ActrReft/ActrReft/A01_EasCtrl",
+    analysisUnit: "",
+    scope: "direct_outport",
+    directOutport: "ActrReft_bEasEna",
+    ports: {
+      outports: [{ name: "ActrReft_bEasEna" }]
+    },
+    outputCone: {},
+    parameters: {},
+    affectedBoundaryOutputs: ["ActrReft_bEasEna"],
+    limitations: []
+  };
+  assert.equal(
+    validateSoftwareDetailEvidenceArtifacts(
+      realShapeHierarchy,
+      realShapeQueue,
+      {
+        schema: "software-detail-evidence-shards/v1",
+        shards: [realShapeShard]
+      }
+    ).queueItems.length,
+    1
+  );
+  assert.throws(
+    () =>
+      validateSoftwareDetailEvidenceArtifacts(
+        realShapeHierarchy,
+        realShapeQueue,
+        {
+          schema: "software-detail-evidence-shards/v1",
+          shards: [
+            {
+              ...realShapeShard,
+              ports: { outports: [] }
+            }
+          ]
+        }
+      ),
+    (error) =>
+      error.code === "software_detail_evidence_direct_output_missing" &&
+      error.details.output ===
+        "A01_EasCtrl/ActrReft_bEasEna"
+  );
+
+  const identifiedQueue = {
+    ...realShapeQueue,
+    items: [
+      {
+        ...realShapeQueue.items[0],
+        id: "a01-eas-enable"
+      }
+    ]
+  };
+  const canonicalShard = {
+    parentDocumentUnitPath: "ActrReft/ActrReft/A01_EasCtrl",
+    queueItemId: "a01-eas-enable",
+    scope: "direct_outport",
+    scopePath: "",
+    directOutport: "ActrReft_bEasEna",
+    outports: [{ name: "ActrReft_bEasEna" }],
+    limitations: [],
+    shardPath:
+      ".software-detail/private-shards/a01-eas-enable.json"
+  };
+  assert.equal(
+    validateSoftwareDetailEvidenceArtifacts(
+      realShapeHierarchy,
+      identifiedQueue,
+      {
+        schema: "software-detail-evidence-shards/v1",
+        shards: [canonicalShard]
+      }
+    ).queueItems.length,
+    1
+  );
+  for (const [name, shard, expectedCode] of [
+    [
+      "wrong parent",
+      {
+        ...canonicalShard,
+        parentDocumentUnitPath: "ActrReft/ActrReft/A02_SovCtrl"
+      },
+      "software_detail_evidence_document_unit_missing"
+    ],
+    [
+      "wrong scope",
+      { ...canonicalShard, scope: "analysis_unit" },
+      "software_detail_evidence_queue_item_missing"
+    ],
+    [
+      "wrong scope path",
+      { ...canonicalShard, scopePath: "other-scope" },
+      "software_detail_evidence_queue_item_missing"
+    ],
+    [
+      "empty outports",
+      { ...canonicalShard, outports: [] },
+      "software_detail_evidence_direct_output_missing"
+    ],
+    [
+      "wrong outports",
+      { ...canonicalShard, outports: [{ name: "OtherOutput" }] },
+      "software_detail_evidence_direct_output_missing"
+    ]
+  ]) {
+    assert.throws(
+      () =>
+        validateSoftwareDetailEvidenceArtifacts(
+          realShapeHierarchy,
+          identifiedQueue,
+          {
+            schema: "software-detail-evidence-shards/v1",
+            shards: [shard]
+          }
+        ),
+      (error) => error.code === expectedCode,
+      `identified direct_outport accepted ${name}`
+    );
+  }
+
+  const crossParentHierarchy = {
+    schema: "software-detail-hierarchy-manifest/v1",
+    documentUnits: [
+      {
+        path: "Model/A01",
+        allowedOutputs: ["A01/SharedOutput"]
+      },
+      {
+        path: "Model/A02",
+        allowedOutputs: ["A02/OtherOutput"]
+      }
+    ]
+  };
+  const crossParentQueue = {
+    schema: "software-detail-analysis-queue/v1",
+    items: [
+      {
+        parentDocumentUnit: "Model/A01",
+        scope: "direct_outport",
+        directOutport: "SharedOutput"
+      },
+      {
+        parentDocumentUnit: "Model/A02",
+        scope: "direct_outport",
+        directOutport: "OtherOutput"
+      }
+    ]
+  };
+  assert.throws(
+    () =>
+      validateSoftwareDetailEvidenceArtifacts(
+        crossParentHierarchy,
+        crossParentQueue,
+        {
+          schema: "software-detail-evidence-shards/v1",
+          shards: [
+            {
+              parentDocumentUnitPath: "Model/A01",
+              scope: "direct_outport",
+              directOutport: "SharedOutput",
+              outports: [{ name: "OtherOutput" }]
+            },
+            {
+              parentDocumentUnitPath: "Model/A02",
+              scope: "direct_outport",
+              directOutport: "OtherOutput",
+              outports: [
+                { name: "OtherOutput" },
+                { name: "SharedOutput" }
+              ]
+            }
+          ]
+        }
+      ),
+    (error) =>
+      error.code === "software_detail_evidence_direct_output_missing" &&
+      error.details.documentUnit === "Model/A01" &&
+      error.details.output === "A01/SharedOutput"
+  );
 }
 
 console.log("software detail minimal nine-stage contract tests passed");
