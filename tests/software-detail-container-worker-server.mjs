@@ -209,6 +209,33 @@ class SyntheticSoftwareDetailStageExecutor {
       if (artifact.role === "content-check-report") {
         payload.contentPassed = true;
       }
+      if (artifact.role === "hierarchy-manifest") {
+        payload.schema = "software-detail-hierarchy-manifest/v1";
+        payload.documentUnits = [{
+          path: "SyntheticModel/Controller",
+          allowedOutputs: ["ControlOutput"]
+        }];
+      }
+      if (artifact.role === "analysis-queue") {
+        payload.schema = "software-detail-analysis-queue/v1";
+        payload.items = [{
+          id: "synthetic-controller",
+          parentDocumentUnit: "SyntheticModel/Controller",
+          analysisUnit: "SyntheticModel/Controller",
+          scope: "document_unit_direct"
+        }];
+      }
+      if (artifact.role === "evidence-shards") {
+        payload.schema = "software-detail-evidence-shards/v1";
+        payload.shards = [{
+          queueItemId: "synthetic-controller",
+          parentDocumentUnitPath: "SyntheticModel/Controller",
+          analysisUnitPath: "SyntheticModel/Controller",
+          scope: "document_unit_direct",
+          outports: [{ name: "ControlOutput" }],
+          limitations: []
+        }];
+      }
       if (artifact.role === "checked-content") {
         payload.title = "软件详设九阶段容器合成验收";
         payload.sections = [
