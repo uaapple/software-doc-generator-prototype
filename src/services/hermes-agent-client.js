@@ -2512,7 +2512,9 @@ async function materializeTransferredOutputFiles(artifact = {}, payload = {}) {
     }
     await materializeSoftwareDetailDocx(
       item,
-      payload.inputArtifact?.workspaceDir || ""
+      payload.inputArtifact?.localPlatformWorkspaceDir ||
+        payload.inputArtifact?.workspaceDir ||
+        ""
     );
   }
 }

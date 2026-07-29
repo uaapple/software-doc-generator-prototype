@@ -1292,7 +1292,9 @@ export class SoftwareModuleDescriptionGenerationService {
     const candidates = new Map();
     const addCandidate = (relativePath = "", meta = {}) => {
       const normalized = normalizeStoredRelativePath(relativePath);
-      const expectedFileName = String(task.detailDesignFileName || "").trim();
+      const expectedFileName = Object.prototype.hasOwnProperty.call(task, "pipeline")
+        ? String(task.detailDesignFileName || "").trim()
+        : "";
       if (
         isDocxOutput(normalized) &&
         (!expectedFileName || path.posix.basename(normalized) === expectedFileName)

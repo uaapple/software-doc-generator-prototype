@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { once } from "node:events";
+import { fileURLToPath } from "node:url";
 import {
   mapContainerWorkspaceCode,
   rejectAbsolutePathFields,
@@ -354,7 +355,7 @@ test("Gateway preflight-only startup fails with a redacted actionable diagnostic
       process.execPath,
       ["src/matlab-worker-server.js", "--preflight-only"],
       {
-        cwd: path.resolve(new URL("..", import.meta.url).pathname),
+        cwd: fileURLToPath(new URL("..", import.meta.url)),
         encoding: "utf8",
         env: {
           ...process.env,

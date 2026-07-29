@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const root = path.resolve(new URL("..", import.meta.url).pathname);
+const root = fileURLToPath(new URL("..", import.meta.url));
 const containerfilePath = path.join(root, "containers", "worker", "Containerfile");
 const containerfile = await fs.readFile(containerfilePath, "utf8");
 
