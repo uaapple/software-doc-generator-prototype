@@ -130,6 +130,59 @@ export function coverageCompletion(coverage = {}, unresolved = false, threshold 
   return unresolved || !coverageMeetsThreshold(coverage, threshold) ? "partial" : "complete";
 }
 
+function parseOracleManifest(oracle = {}, simulation = {}) {
+  const testCaseCount = Number(oracle.testCaseCount);
+  const expValueCount = Number(oracle.expValueCount);
+  const caseOutputCounts = oracle.caseOutputCounts;
+  const caseEntries = caseOutputCounts && typeof caseOutputCounts === "object" && !Array.isArray(caseOutputCounts)
+    ? Object.entries(caseOutputCounts)
+    : [];
+  const countedExpectedValues = caseEntries.reduce((total, [, counts]) => (
+    total + (
+      counts && typeof counts === "object" && !Array.isArray(counts)
+        ? Object.values(counts).reduce((subtotal, count) => subtotal + Number(count || 0), 0)
+        : 0
+    )
+  ), 0);
+  if (
+    oracle.authority !== "host" ||
+    oracle.status !== "complete" ||
+    ![8, 11].includes(Number(oracle.sourceStageIndex)) ||
+    !Number.isInteger(testCaseCount) ||
+    testCaseCount < 1 ||
+    !Number.isInteger(expValueCount) ||
+    expValueCount < testCaseCount ||
+    !Array.isArray(oracle.testsWithoutExpectedValues) ||
+    oracle.testsWithoutExpectedValues.length !== 0 ||
+    caseEntries.length !== testCaseCount ||
+    caseEntries.some(([identity, counts]) => (
+      !identity ||
+      !counts ||
+      typeof counts !== "object" ||
+      Array.isArray(counts) ||
+      !Object.keys(counts).length ||
+      Object.values(counts).some((count) => !Number.isInteger(Number(count)) || Number(count) < 1)
+    )) ||
+    countedExpectedValues !== expValueCount ||
+    !oracle.simulationResult ||
+    oracle.simulationResult !== simulation?.result ||
+    !/^[a-f0-9]{64}$/.test(String(oracle.workbookSha256 || ""))
+  ) {
+    throw contractError("最终执行 manifest 缺少完整的逐 Test oracle 证据");
+  }
+  return {
+    authority: "host",
+    status: "complete",
+    sourceStageIndex: Number(oracle.sourceStageIndex),
+    testCaseCount,
+    expValueCount,
+    testsWithoutExpectedValues: [],
+    caseOutputCounts,
+    simulationResult: oracle.simulationResult,
+    workbookSha256: oracle.workbookSha256
+  };
+}
+
 export function parseExecutionManifest(manifest = {}) {
   if (
     manifest.schema !== TCSD_EXECUTION_MANIFEST_SCHEMA ||
@@ -140,6 +193,7 @@ export function parseExecutionManifest(manifest = {}) {
   }
   const initial = normalizeCoverageReport(manifest.coverage?.initial);
   const final = normalizeCoverageReport(manifest.coverage?.final);
+  const oracle = parseOracleManifest(manifest.oracle, manifest.simulation);
   const repair = {
     required: Boolean(manifest.coverage?.repair_required),
     attempted: Boolean(manifest.coverage?.repair_attempted),
@@ -163,6 +217,7 @@ export function parseExecutionManifest(manifest = {}) {
     repair,
     workbook: manifest.workbook,
     simulation: manifest.simulation,
+    oracle,
     evidence: manifest.evidence,
     initialArtifact: manifest.coverage?.initial_artifact,
     finalArtifact: manifest.coverage?.final_artifact
@@ -247,19 +302,47 @@ async function validateBackfillEvidence(raw, context, artifacts) {
   const simulationCount = Number(raw.evidence?.simulationValueCount || 0);
   const workbookCount = Number(raw.evidence?.workbookBackfillCount || 0);
   const expCount = Number(raw.evidence?.expValueCount || 0);
+  const testCaseCount = Number(raw.evidence?.testCaseCount);
+  const testsWithoutExpectedValues = raw.evidence?.testsWithoutExpectedValues;
+  const caseOutputCounts = raw.evidence?.caseOutputCounts;
+  const caseEntries = caseOutputCounts && typeof caseOutputCounts === "object" && !Array.isArray(caseOutputCounts)
+    ? Object.entries(caseOutputCounts)
+    : [];
+  const caseExpectedValueCount = caseEntries.reduce((total, [, counts]) => (
+    total + (
+      counts && typeof counts === "object" && !Array.isArray(counts)
+        ? Object.values(counts).reduce((subtotal, count) => subtotal + Number(count || 0), 0)
+        : 0
+    )
+  ), 0);
   const items = raw.evidence?.backfillItems;
   if (
     !raw.evidence?.simulationResult ||
     simulationCount < 1 ||
     workbookCount !== simulationCount ||
     expCount !== workbookCount ||
+    !Number.isInteger(testCaseCount) ||
+    testCaseCount < 1 ||
+    !Array.isArray(testsWithoutExpectedValues) ||
+    testsWithoutExpectedValues.length !== 0 ||
+    caseEntries.length !== testCaseCount ||
+    caseEntries.some(([identity, counts]) => (
+      !identity ||
+      !counts ||
+      typeof counts !== "object" ||
+      Array.isArray(counts) ||
+      !Object.keys(counts).length ||
+      Object.values(counts).some((count) => !Number.isInteger(Number(count)) || Number(count) < 1)
+    )) ||
+    caseExpectedValueCount !== workbookCount ||
     !Array.isArray(items) ||
     items.length !== workbookCount ||
-    !raw.evidence?.caseOutputCounts
+    !caseOutputCounts
   ) {
     throw contractError(`第 ${context.stageIndex} 阶段缺少逐项仿真/回填交叉证据`);
   }
   const identities = new Set();
+  const itemCounts = {};
   for (const item of items) {
     const key = `${item?.row}|${item?.testId}|${item?.step}|${item?.output}`;
     if (
@@ -275,6 +358,12 @@ async function validateBackfillEvidence(raw, context, artifacts) {
       throw contractError(`第 ${context.stageIndex} 阶段回填明细非法或重复`);
     }
     identities.add(key);
+    const caseKey = `${item.row}:${item.testId}`;
+    itemCounts[caseKey] ||= {};
+    itemCounts[caseKey][item.output] = Number(itemCounts[caseKey][item.output] || 0) + 1;
+  }
+  if (JSON.stringify(itemCounts) !== JSON.stringify(caseOutputCounts)) {
+    throw contractError(`第 ${context.stageIndex} 阶段逐 Test oracle 计数与回填明细不一致`);
   }
   const workbook = artifacts.find((item) => item.kind === "xlsx");
   if (!workbook || !xlsxText(await fs.readFile(workbook.absolutePath)).includes("expValue(")) {
@@ -437,7 +526,10 @@ export async function validateStageResult(raw = {}, context = {}) {
     if (
       Number(raw.evidence?.expValueCount || 0) !== Number(semantic.expValueCount || 0) ||
       Number(raw.evidence?.simulationValueCount || 0) !== Number(semantic.simulationValueCount || 0) ||
-      Number(raw.evidence?.workbookBackfillCount || 0) !== Number(semantic.workbookBackfillCount || 0)
+      Number(raw.evidence?.workbookBackfillCount || 0) !== Number(semantic.workbookBackfillCount || 0) ||
+      Number(raw.evidence?.testCaseCount || 0) !== Number(semantic.testCaseCount || 0) ||
+      JSON.stringify(raw.evidence?.testsWithoutExpectedValues) !== JSON.stringify(semantic.testsWithoutExpectedValues) ||
+      JSON.stringify(raw.evidence?.caseOutputCounts) !== JSON.stringify(semantic.caseOutputCounts)
     ) {
       throw contractError("第 8 阶段 Agent 计数与宿主逐项仿真/工作簿结果不一致");
     }
@@ -497,7 +589,13 @@ export async function validateStageResult(raw = {}, context = {}) {
   if (context.stageIndex === 11 && raw.status !== "skipped") {
     const semantic = requireSemanticEvidence(context, 11);
     await validateBackfillEvidence(raw, context, artifacts);
-    if (!raw.coverage || !coverageMatches(raw.coverage, semantic.coverage)) {
+    if (
+      !raw.coverage ||
+      !coverageMatches(raw.coverage, semantic.coverage) ||
+      Number(raw.evidence?.testCaseCount || 0) !== Number(semantic.testCaseCount || 0) ||
+      JSON.stringify(raw.evidence?.testsWithoutExpectedValues) !== JSON.stringify(semantic.testsWithoutExpectedValues) ||
+      JSON.stringify(raw.evidence?.caseOutputCounts) !== JSON.stringify(semantic.caseOutputCounts)
+    ) {
       throw contractError("第 11 阶段最终覆盖率与宿主解析报告不一致");
     }
     raw.coverage = normalizeCoverageReport(semantic.coverage);
@@ -696,6 +794,18 @@ export async function validateStageCheckpoint(raw = {}, context = {}) {
     }
     const parsedManifest = parseExecutionManifest(executionReference.value);
     const threshold = Number(context.pipelineState?.input?.coverageThreshold || 80);
+    const finalValidationCheckpoint = context.pipelineState?.stages?.[10]?.checkpoint;
+    const expectedOracleCheckpoint = finalValidationCheckpoint?.status !== "skipped" && finalValidationCheckpoint?.evidence
+      ? finalValidationCheckpoint
+      : context.pipelineState?.stages?.[7]?.checkpoint;
+    const expectedOracle = expectedOracleCheckpoint?.evidence;
+    const expectedOracleStageIndex = expectedOracleCheckpoint === finalValidationCheckpoint ? 11 : 8;
+    const workbookAbsolutePath = resolveWorkspacePath(
+      context.workspaceDir,
+      executionReference.value.workbook,
+      "final workbook"
+    );
+    const workbookSha256 = createHash("sha256").update(await fs.readFile(workbookAbsolutePath)).digest("hex");
     const expectedCompletion = coverageCompletion(
       parsedManifest.final,
       !coverageMeetsThreshold(parsedManifest.final, threshold),
@@ -711,9 +821,16 @@ export async function validateStageCheckpoint(raw = {}, context = {}) {
       parsedManifest.repair.required !== Boolean(context.pipelineState?.repair?.required) ||
       parsedManifest.repair.attempted !== Boolean(context.pipelineState?.repair?.attempted) ||
       parsedManifest.repair.applied !== Boolean(context.pipelineState?.repair?.applied) ||
-      parsedManifest.repair.passes !== Number(context.pipelineState?.repair?.passes || 0)
+      parsedManifest.repair.passes !== Number(context.pipelineState?.repair?.passes || 0) ||
+      parsedManifest.oracle.sourceStageIndex !== expectedOracleStageIndex ||
+      parsedManifest.oracle.testCaseCount !== Number(expectedOracle?.testCaseCount) ||
+      parsedManifest.oracle.expValueCount !== Number(expectedOracle?.workbookBackfillCount) ||
+      parsedManifest.oracle.simulationResult !== expectedOracle?.simulationResult ||
+      parsedManifest.oracle.workbookSha256 !== workbookSha256 ||
+      JSON.stringify(parsedManifest.oracle.testsWithoutExpectedValues) !== JSON.stringify(expectedOracle?.testsWithoutExpectedValues) ||
+      JSON.stringify(parsedManifest.oracle.caseOutputCounts) !== JSON.stringify(expectedOracle?.caseOutputCounts)
     ) {
-      throw contractError("第 12 阶段宿主 manifest 与已验证覆盖率/修正状态不一致");
+      throw contractError("第 12 阶段宿主 manifest 与已验证覆盖率/修正/oracle 状态不一致");
     }
   }
   return {

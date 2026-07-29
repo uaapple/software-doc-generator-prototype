@@ -82,7 +82,7 @@ MERGE_HEAD peeled = a882c1e22c9fa10bfd761ec6a3487899ee988d0a
 5. `maxStepsPerTest` 表示 TCSD 动作条目数，不是 Simulink sample period 数；长时间保持可以是一个动作。
 6. 第 9 阶段的实测覆盖率是覆盖率权威来源，静态 obligation 匹配只作为规划提示。
 7. 首轮三项覆盖率均达到 80% 时直接结束；否则只修正一轮，修正后的结果作为最终结果，不要求强行达到 80%。
-8. 只有候选产物的确定性校验失败才允许一次新的 Agent 修复 session；环境、Hermes、MATLAB、超时等硬错误不重试。
+8. 只有候选产物的确定性校验失败才允许一次新的 Agent 修复 session；Stage 10 的错误 repair proposal（包括把 sample hit、计数器更新或长保持误当成 TCSD action step）也归入该可修复门禁，并把结构化失败报告交给新 session。环境、Hermes、MATLAB、超时等硬错误不重试。
 9. 最终只向前端暴露 `<模型名>_Test0001_tcsd.xlsx`，中间 iter0/iter1 workbook 保留为任务证据但不作为用户下载产物。
 10. 前端任务详情支持滚动查看全部十二阶段，并以中文显示阶段状态、错误和 checkpoint 摘要。
 
@@ -193,7 +193,7 @@ TCSD_STAGE_HERMES_STATE_DB_PATH=<该 profile 的 state.db>
 TCSD_STAGE_HERMES_SKILLS_DIR=<该 profile 的 skills 目录>
 ```
 
-不要把 macOS 的 `/Applications/MATLAB_R2026a.app` 配置带入生产。Windows 必须继续使用 `SATK_MATLAB_SESSION_MODE=new`，避免依赖跨阶段共享的 MATLAB base workspace。
+不要把 macOS 的 `/Applications/MATLAB_R2026a.app` 或本地 `SATK_MATLAB_DISPLAY_MODE=nodesktop` 默认配置带入生产。Mac 本地仍使用 `SATK_MATLAB_SESSION_MODE=new`，TCSD 直连 MCP 与本地 MATLAB Gateway 都把显式 display mode 传成 `--matlab-display-mode=<值>`；未配置时不自行改变其他平台显示模式。Windows 必须继续使用 `SATK_MATLAB_SESSION_MODE=new`，避免依赖跨阶段共享的 MATLAB base workspace。
 
 Windows 部署前先执行 `py -3.11 -c "import sys; print(sys.executable)"`，把输出的绝对 `python.exe` 路径写入 `TCSD_PIPELINE_PYTHON`；不要配置为 PATH 中可能指向 Python 3.9 或 Microsoft Store alias 的 `python`/`python3`。仅在未配置该变量时，Node 生产代码才回退为独立 executable `py` 与参数前缀 `-3.11`。
 
@@ -338,14 +338,15 @@ http://<LINUX_PLATFORM>:3000/unit-test-case-generation
 2. Windows 生成十二个不同的 Hermes session，不复用 session。
 3. 每阶段 checkpoint 中存在技能名、版本、技能 hash、runtime hash、实际 model 和 token usage。
 4. Stage 02 nonce 一致，MATLAB、Simulink、SATK/MCP 和 workspace I/O 全部通过。
-5. Stage 08 的每个 `expValue` 来自实际仿真。
+5. Stage 08 的每个 `expValue` 来自实际仿真；稳定性证据覆盖当前事件至下一事件的完整区间（含两端），且至少有两个不同时间戳。
 6. Stage 09 生成真实 Condition、Decision、MC/DC 覆盖率。
 7. 未达到 80% 时 Stage 10 最多修正一次；达到 80% 时按规则跳过修正。
 8. Stage 11 始终对最终用例重新仿真并重新采集覆盖率。
-9. Stage 12 由宿主生成 `simulink-ut-tcsd-execution-manifest/v1`。
+9. Stage 12 由宿主生成 `simulink-ut-tcsd-execution-manifest/v1`，其中 `oracle` 证据证明每个普通 Test 的 Action 至少有一个经仿真交叉验证的 root-Outport `expValue`，`testsWithoutExpectedValues` 必须为空。
 10. 前端最终只提供 `<模型名>_Test0001_tcsd.xlsx`。
 11. 服务重启后，已完成 checkpoint 不重复执行，未完成任务可以继续对账。
-12. 任务错误能够定位到具体中文阶段，并显示 MATLAB/SATK 的公开错误摘要，不泄露 token、密码或 API key。
+12. 任务错误能够定位到具体中文阶段；缺少 oracle 时列出具体 Test ID/行号，并显示 MATLAB/SATK 的公开错误摘要，不泄露 token、密码或 API key。
+13. 将最终 workbook 导入与目标工程一致的 MQTester 环境执行 MIL Batch；每个 Test 都必须得到明确 verdict，不允许 `None`，且回填的动态输出不得产生区间末端 mismatch。
 
 本机黑盒基准已经验证：
 
@@ -354,7 +355,8 @@ http://<LINUX_PLATFORM>:3000/unit-test-case-generation
 - Stage 10 增加 1 条针对 MinMax 缺失分支的多步骤用例；
 - 最终 18 条用例；
 - Condition、Decision、MC/DC 均为 100%；
-- 最终 workbook 含 25 个仿真回填的 `expValue`。
+- 最终 workbook 的每个普通 Test 均含至少一个仿真回填的 `expValue`，宿主 manifest 中的逐 Test oracle 清单完整。
+- MQTester 验收必须单独记录 Passed/Failed/None；覆盖率达标不能替代输出断言通过。
 
 该结果用于证明流水线能力，不应作为其他模型必须达到相同百分比的硬编码预期。生产代码不得包含 A02 或具体业务信号名。
 

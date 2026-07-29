@@ -977,6 +977,40 @@ async function waitForTerminalJob(service, jobId, workspaceId) {
   }
 }
 
+export function deriveLocalMatlabMcpServerArgs(options = {}) {
+  const environment = options.environment || process.env;
+  const platform = options.platform || process.platform;
+  const matlabRoot =
+    options.matlabRoot ||
+    environment.MATLAB_ROOT ||
+    "/Applications/MATLAB_R2026a.app";
+  const toolkitRoot =
+    options.toolkitRoot ||
+    environment.SIMULINK_AGENTIC_TOOLKIT_ROOT ||
+    path.join(os.homedir(), ".matlab", "agentic-toolkits", "simulink");
+  const configuredServerArgs =
+    options.serverArgs ||
+    parseServerArgs(environment.MATLAB_MCP_SERVER_ARGS_JSON);
+  if (configuredServerArgs) {
+    return configuredServerArgs.map(String);
+  }
+  const sessionMode =
+    options.matlabSessionMode ||
+    environment.SATK_MATLAB_SESSION_MODE ||
+    (platform === "darwin" ? "new" : "existing");
+  const displayMode =
+    options.matlabDisplayMode ??
+    environment.SATK_MATLAB_DISPLAY_MODE ??
+    (platform === "darwin" ? "nodesktop" : "");
+  return [
+    `--matlab-session-mode=${sessionMode}`,
+    "--extension-file=" +
+      (environment.SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE || path.join(toolkitRoot, "tools", "tools.json")),
+    ...(displayMode ? [`--matlab-display-mode=${displayMode}`] : []),
+    ...(sessionMode === "new" ? [`--matlab-root=${matlabRoot}`] : [])
+  ];
+}
+
 function createLocalMatlabClient(options = {}) {
   const rootDir = path.resolve(options.projectRoot || process.cwd());
   const platform = options.platform || process.platform;
@@ -998,13 +1032,11 @@ function createLocalMatlabClient(options = {}) {
         path.join(os.tmpdir(), "software-doc-matlab-gateway"),
       "mcp-logs"
     );
-  const configuredServerArgs = parseServerArgs(process.env.MATLAB_MCP_SERVER_ARGS_JSON);
-  const baseServerArgs = options.serverArgs || configuredServerArgs || [
-    "--matlab-session-mode=" + (process.env.SATK_MATLAB_SESSION_MODE || "existing"),
-    "--extension-file=" +
-      (process.env.SIMULINK_AGENTIC_TOOLKIT_TOOLS_FILE || path.join(toolkitRoot, "tools", "tools.json")),
-    ...(process.env.SATK_MATLAB_SESSION_MODE === "new" ? [`--matlab-root=${matlabRoot}`] : [])
-  ];
+  const baseServerArgs = deriveLocalMatlabMcpServerArgs({
+    ...options,
+    matlabRoot,
+    toolkitRoot
+  });
   const serverArgs =
     platform === "darwin" &&
     !baseServerArgs.some((argument) => String(argument).startsWith("--log-folder"))

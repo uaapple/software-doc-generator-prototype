@@ -106,7 +106,11 @@ const childEnv = {
     "5100",
   MATLAB_ROOT: matlabRoot,
   SATK_MATLAB_ROOT: matlabRoot,
-  SATK_MATLAB_SESSION_MODE: "new"
+  SATK_MATLAB_SESSION_MODE: "new",
+  SATK_MATLAB_DISPLAY_MODE:
+    process.env.SATK_MATLAB_DISPLAY_MODE ||
+    values.SATK_MATLAB_DISPLAY_MODE ||
+    (process.platform === "darwin" ? "nodesktop" : "")
 };
 
 const serverArguments = [

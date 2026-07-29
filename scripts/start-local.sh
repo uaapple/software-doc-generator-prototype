@@ -16,6 +16,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     MATLAB_ROOT="/Applications/MATLAB_R2026a.app"
     SATK_MATLAB_ROOT="/Applications/MATLAB_R2026a.app"
     SATK_MATLAB_SESSION_MODE="new"
+    SATK_MATLAB_DISPLAY_MODE="${SATK_MATLAB_DISPLAY_MODE:-nodesktop}"
   )
 fi
 
