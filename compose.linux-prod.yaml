@@ -34,20 +34,14 @@ services:
       - -c
     command:
       - |
-        for directory in /state/data /state/logs /state/platform-skills /state/platform-home; do
+        for directory in /state/logs /state/platform-home; do
           chgrp 20000 "$$directory"
           chmod 2770 "$$directory"
         done
     volumes:
       - type: bind
-        source: ${SDG_CONTAINER_DATA_DIR:?SDG_CONTAINER_DATA_DIR must be set}
-        target: /state/data
-      - type: bind
         source: ${SDG_PLATFORM_LOG_DIR:?SDG_PLATFORM_LOG_DIR must be set}
         target: /state/logs
-      - type: volume
-        source: platform-skills
-        target: /state/platform-skills
       - type: volume
         source: platform-home
         target: /state/platform-home
@@ -89,8 +83,8 @@ services:
       - type: bind
         source: ${SDG_CONTAINER_DATA_DIR:?SDG_CONTAINER_DATA_DIR must be set}
         target: /var/lib/sdg/data
-      - type: volume
-        source: platform-skills
+      - type: bind
+        source: ${SDG_PLATFORM_SKILLS_DIR:?SDG_PLATFORM_SKILLS_DIR must be set}
         target: /var/lib/sdg/skills
       - type: volume
         source: platform-home
@@ -113,7 +107,5 @@ services:
       start_period: 20s
 
 volumes:
-  platform-skills:
-    name: ${SDG_PLATFORM_SKILLS_VOLUME_NAME:-sdg-platform-skills-prod}
   platform-home:
     name: ${SDG_PLATFORM_HOME_VOLUME_NAME:-sdg-platform-home-prod}

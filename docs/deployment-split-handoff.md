@@ -36,6 +36,12 @@ Linux Platform 容器同时运行平台与 Wiki；生产 Compose 分别发布原
 `imageRevision` 与 Compose/preflight 所在提交 `deploymentToolRevision`，
 仅部署工具变化不触发镜像重建。
 
+Linux 容器部署直接复用原生服务的 `prod-data` 与 `prod-skills` bind mount，
+避免空目录或空 Docker volume 隐藏正式项目与技能。preflight 必须在停服务前
+确认两个目录已存在、不是符号链接、Docker daemon 可只读挂载，并且镜像内
+`node` 的数值 UID/GID 无需修改现有权限即可写入。`permissions-init` 只准备
+日志与容器 home，不得对正式 data/skills 执行 `chgrp` 或 `chmod`。
+
 Windows 原生 MATLAB Gateway 使用独立 companion release。companion manifest
 记录 source/deployment revision、精确受管文件 SHA-256、scan SHA-256，并在
 构建时断言 Platform/Worker imageRevision 未变化。只要 rootfs 输入不变，

@@ -56,6 +56,13 @@ assert.match(linuxCompose, /SDG_WIKI_BIND_IP[^\n]*SDG_WIKI_PORT[^\n]*:3001/);
 assert.match(linuxCompose, /read_only:\s*true/);
 assert.match(linuxCompose, /no-new-privileges:true/);
 assert.match(linuxCompose, /pull_policy:\s*never/);
+assert.match(linuxCompose, /SDG_PLATFORM_SKILLS_DIR/);
+assert.doesNotMatch(linuxCompose, /source:\s*platform-skills/);
+assert.doesNotMatch(
+  linuxCompose,
+  /for directory in[^\n]*(?:state\/data|state\/platform-skills)/,
+  "Linux permissions init must not mutate existing production data or skills roots"
+);
 assert.doesNotMatch(linuxCompose, /^\s+build:/m);
 assert.doesNotMatch(
   linuxCompose,
@@ -150,6 +157,7 @@ for (const envFile of [
 
 testConfiguration("windows-worker", windowsEnvironment());
 testConfiguration("linux-platform", linuxEnvironment());
+testLinuxPersistentDirectoryPreflight();
 testWindowsAddonIdDirectories();
 testWindowsCriticalEnvMultiplicity();
 testMutableImageFailsClosed();
@@ -188,6 +196,70 @@ function testConfiguration(target, envContent) {
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
+}
+
+function testLinuxPersistentDirectoryPreflight() {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-prod-linux-paths-"));
+  try {
+    const dataRoot = path.join(temporaryDirectory, "prod-data");
+    const skillsRoot = path.join(temporaryDirectory, "prod-skills");
+    const logsRoot = path.join(temporaryDirectory, "logs");
+    const envFile = path.join(temporaryDirectory, "production.env");
+    const fakeDocker = path.join(temporaryDirectory, "docker");
+    const callsFile = path.join(temporaryDirectory, "docker-calls.txt");
+    fs.mkdirSync(dataRoot);
+    fs.mkdirSync(skillsRoot);
+    fs.writeFileSync(
+      envFile,
+      linuxEnvironment()
+        .replace("SDG_CONTAINER_DATA_DIR=/tmp/sdg-data", `SDG_CONTAINER_DATA_DIR=${dataRoot}`)
+        .replace("SDG_PLATFORM_SKILLS_DIR=/tmp/sdg-skills", `SDG_PLATFORM_SKILLS_DIR=${skillsRoot}`)
+        .replace("SDG_PLATFORM_LOG_DIR=/tmp/sdg-platform-logs", `SDG_PLATFORM_LOG_DIR=${logsRoot}`),
+      "utf8"
+    );
+    fs.writeFileSync(
+      fakeDocker,
+      [
+        "#!/bin/sh",
+        `printf '%s\\n' \"$*\" >> \"${callsFile}\"`,
+        "case \"$*\" in",
+        "  \"info --format {{.OSType}}/{{.Architecture}}\") printf '%s\\n' 'linux/amd64' ;;",
+        "  \"compose version\") printf '%s\\n' 'Docker Compose version test' ;;",
+        "  \"image inspect \"*) printf '%s\\n' '{\"Os\":\"linux\",\"Architecture\":\"amd64\"}' ;;",
+        `  *\"--entrypoint /usr/bin/id\"*\" -u node\") printf '%s\\n' '${process.getuid?.() ?? 0}' ;;`,
+        `  *\"--entrypoint /usr/bin/id\"*\" -g node\") printf '%s\\n' '${process.getgid?.() ?? 0}' ;;`,
+        "esac",
+        "exit 0",
+        ""
+      ].join("\n"),
+      { mode: 0o755 }
+    );
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/container-production.mjs", "linux-platform", "preflight"],
+      {
+        cwd: rootDir,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${temporaryDirectory}${path.delimiter}${process.env.PATH || ""}`,
+          SDG_PROD_ENV_FILE: envFile
+        }
+      }
+    );
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /linux-platform production preflight passed/);
+    const calls = fs.readFileSync(callsFile, "utf8");
+    assert.match(calls, new RegExp(`type=bind,source=${escapeRegex(dataRoot)},target=/probe,readonly`));
+    assert.match(calls, new RegExp(`type=bind,source=${escapeRegex(skillsRoot)},target=/probe,readonly`));
+    assert.ok(fs.statSync(logsRoot).isDirectory());
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function testWindowsAddonIdDirectories() {
@@ -363,6 +435,7 @@ function linuxEnvironment() {
   return [
     `SDG_PLATFORM_IMAGE=registry.internal/sdg-platform@sha256:${digest}`,
     "SDG_CONTAINER_DATA_DIR=/tmp/sdg-data",
+    "SDG_PLATFORM_SKILLS_DIR=/tmp/sdg-skills",
     "SDG_PLATFORM_LOG_DIR=/tmp/sdg-platform-logs",
     "SDG_PLATFORM_BIND_IP=10.0.0.10",
     "SDG_WIKI_BIND_IP=10.0.0.10",

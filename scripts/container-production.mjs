@@ -44,6 +44,7 @@ const targetConfig = {
       "UNIT_TEST_DEFAULT_WORKER_ID",
       "UNIT_TEST_WORKER_PROFILES_JSON",
       "SDG_CONTAINER_DATA_DIR",
+      "SDG_PLATFORM_SKILLS_DIR",
       "SDG_PLATFORM_LOG_DIR",
       "SDG_PLATFORM_BIND_IP",
       "SDG_WIKI_BIND_IP"
@@ -282,7 +283,7 @@ function prepareDirectories() {
         "SDG_PROJECT_ADDONS_DIR",
         "SDG_WORKER_LOG_DIR"
       ]
-    : ["SDG_CONTAINER_DATA_DIR", "SDG_PLATFORM_LOG_DIR"];
+    : ["SDG_PLATFORM_LOG_DIR"];
   if (target === "windows-worker" && process.platform === "win32") {
     prepareApprovedWindowsDirectories(
       keys.map((key) => ({ value: value(key), category: key }))
@@ -311,6 +312,59 @@ function prepareDirectories() {
     if (missing.length) {
       throw new Error(`Project addon directories are missing: ${missing.join(", ")}.`);
     }
+  }
+}
+
+function validateLinuxPersistentDirectories() {
+  if (target !== "linux-platform") return;
+  const image = value("SDG_PLATFORM_IMAGE");
+  const containerUid = Number.parseInt(
+    runDocker(
+      [
+        "run", "--rm", "--pull", "never", "--network", "none", "--read-only",
+        "--entrypoint", "/usr/bin/id", image, "-u", "node"
+      ],
+      { capture: true }
+    ),
+    10
+  );
+  const containerGid = Number.parseInt(
+    runDocker(
+      [
+        "run", "--rm", "--pull", "never", "--network", "none", "--read-only",
+        "--entrypoint", "/usr/bin/id", image, "-g", "node"
+      ],
+      { capture: true }
+    ),
+    10
+  );
+  if (!Number.isInteger(containerUid) || !Number.isInteger(containerGid)) {
+    throw new Error("Unable to resolve the Platform container node UID/GID.");
+  }
+  for (const key of ["SDG_CONTAINER_DATA_DIR", "SDG_PLATFORM_SKILLS_DIR"]) {
+    const directory = resolveDirectory(key);
+    const metadata = fs.lstatSync(directory, { throwIfNoEntry: false });
+    if (!metadata?.isDirectory() || metadata.isSymbolicLink()) {
+      throw new Error(`${key} must reference an existing non-symlink production directory.`);
+    }
+    const mode = metadata.mode & 0o777;
+    const writable =
+      (metadata.uid === containerUid && Boolean(mode & 0o200)) ||
+      (metadata.gid === containerGid && Boolean(mode & 0o020)) ||
+      Boolean(mode & 0o002);
+    if (!writable) {
+      throw new Error(
+        `${key} is not writable by the Platform container identity without changing production permissions.`
+      );
+    }
+    runDocker(
+      [
+        "run", "--rm", "--pull", "never", "--network", "none", "--read-only",
+        "--mount", `type=bind,source=${directory},target=/probe,readonly`,
+        "--entrypoint", "/usr/bin/test", image, "-d", "/probe"
+      ],
+      { capture: true }
+    );
   }
 }
 
@@ -437,6 +491,7 @@ async function main() {
   }
   validateDockerRuntime();
   prepareDirectories();
+  validateLinuxPersistentDirectories();
   if (action === "preflight") {
     console.log(`${target} production preflight passed.`);
     return;

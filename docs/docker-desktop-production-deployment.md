@@ -140,6 +140,13 @@ GHCR 不可达时才使用离线 tar。每台 Windows 只需要 Worker tar；Lin
 需要 Platform tar。传输前后必须重新计算 SHA-256 并与 manifest 完全匹配。
 `docker load` 后使用 manifest 中的不可变 `imageId` 配置生产 env。
 
+Linux 容器直接复用原生服务已经使用的 `prod-data` 与 `prod-skills`，不得在
+只读发布根下创建空的 `container-data`，也不得以空 Docker volume 覆盖正式
+技能目录。生产 preflight 会解析镜像内 `node` 的数值 UID/GID，确认两个既有
+目录无需改权即可写入，并用只读临时容器验证 Docker daemon 能挂载它们。
+`permissions-init` 只处理新建的日志目录与容器 home volume，不对
+`prod-data`、`prod-skills` 执行 `chgrp`、`chmod` 或递归修改。
+
 ## Windows Docker Desktop Worker
 
 生产配置文件来自：
