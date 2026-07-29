@@ -378,12 +378,22 @@ class RecordingStageExecutor {
             jobId: context.job.jobId,
             stageId: context.definition.id,
             attempt: context.stageInput.attempt,
+            sourceStages: {
+              "content-check": {
+                stageId: "software-detail-stage-08-content-check",
+                sourceAttempt: context.job.stages.find(
+                  (stage) => stage.id === "software-detail-stage-08-content-check"
+                ).attempt
+              }
+            },
             artifacts: [{
               role: "detail-design-docx",
               relativePath: docxArtifact.relativePath,
-              fileName: path.posix.basename(docxArtifact.relativePath),
-              size: bytes.length,
-              sha256: sha256(bytes)
+              filename: path.posix.basename(docxArtifact.relativePath),
+              mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              sizeBytes: bytes.length,
+              sha256: sha256(bytes),
+              validation: { boundaryValidation: "PASS" }
             }]
           })}\n`,
           "utf8"

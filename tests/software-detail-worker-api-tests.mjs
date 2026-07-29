@@ -59,8 +59,24 @@ class FakeSoftwareDetailJobs {
       `${JSON.stringify({
         schema: "software-detail-artifact-manifest/v1",
         jobId,
+        stageId: "software-detail-stage-09-docx-finalize",
+        attempt: 1,
+        sourceStages: {
+          "content-check": {
+            stageId: "software-detail-stage-08-content-check",
+            sourceAttempt: 1
+          }
+        },
         artifacts: [
-          { role: "detail-design-docx", relativePath: docxRelativePath }
+          {
+            role: "detail-design-docx",
+            relativePath: docxRelativePath,
+            filename: path.posix.basename(docxRelativePath),
+            mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            sizeBytes: DOCX_BYTES.length,
+            sha256: createHash("sha256").update(DOCX_BYTES).digest("hex"),
+            validation: { boundaryValidation: "PASS" }
+          }
         ]
       })}\n`
     );

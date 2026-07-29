@@ -209,21 +209,60 @@ class FakeExecutor {
         const entry = {
           role: "detail-design-docx",
           relativePath: docx.relativePath,
-          fileName: path.posix.basename(docx.relativePath),
-          size: DOCX_BYTES.length,
-          sha256: createHash("sha256").update(DOCX_BYTES).digest("hex")
+          filename: path.posix.basename(docx.relativePath),
+          mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          sizeBytes: DOCX_BYTES.length,
+          sha256: createHash("sha256").update(DOCX_BYTES).digest("hex"),
+          validation: { boundaryValidation: "PASS" }
         };
-        if (this.options.manifestMutation === "old-name") entry.fileName = "software-detail-design.docx";
-        if (this.options.manifestMutation === "missing-filename") delete entry.fileName;
-        if (this.options.manifestMutation === "wrong-size") entry.size += 1;
-        if (this.options.manifestMutation === "wrong-hash") entry.sha256 = "0".repeat(64);
-        await fs.writeFile(absolutePath, `${JSON.stringify({
+        const manifest = {
           schema: "software-detail-artifact-manifest/v1",
           jobId: context.job.jobId,
           stageId: context.definition.id,
           attempt: context.stageInput.attempt,
+          sourceStages: {
+            "content-check": {
+              stageId: "software-detail-stage-08-content-check",
+              sourceAttempt: context.job.stages.find(
+                (stage) => stage.id === "software-detail-stage-08-content-check"
+              ).attempt
+            }
+          },
           artifacts: [entry]
-        })}\n`);
+        };
+        if (this.options.manifestMutation === "old-name") entry.filename = "software-detail-design.docx";
+        if (this.options.manifestMutation === "missing-filename") delete entry.filename;
+        if (this.options.manifestMutation === "wrong-size") entry.sizeBytes += 1;
+        if (this.options.manifestMutation === "wrong-hash") entry.sha256 = "0".repeat(64);
+        if (this.options.manifestMutation === "missing-source-stages") delete manifest.sourceStages;
+        if (this.options.manifestMutation === "string-attempt") manifest.attempt = String(manifest.attempt);
+        if (this.options.manifestMutation === "string-source-attempt") {
+          manifest.sourceStages["content-check"].sourceAttempt = String(
+            manifest.sourceStages["content-check"].sourceAttempt
+          );
+        }
+        if (this.options.manifestMutation === "wrong-source-attempt") {
+          manifest.sourceStages["content-check"].sourceAttempt += 1;
+        }
+        if (this.options.manifestMutation === "wrong-source-stage-id") {
+          manifest.sourceStages["content-check"].stageId = "software-detail-stage-07-module-draft";
+        }
+        if (this.options.manifestMutation === "missing-media-type") delete entry.mediaType;
+        if (this.options.manifestMutation === "missing-validation") delete entry.validation;
+        if (this.options.manifestMutation === "empty-validation") entry.validation = {};
+        if (this.options.manifestMutation === "failed-boundary-validation") {
+          entry.validation.boundaryValidation = "FAIL";
+        }
+        if (this.options.manifestMutation === "string-size-bytes") entry.sizeBytes = String(entry.sizeBytes);
+        if (this.options.manifestMutation === "duplicate-artifact") manifest.artifacts.push({ ...entry });
+        if (this.options.manifestMutation === "extra-artifact") {
+          manifest.artifacts.push({ role: "unexpected", relativePath: "outputs/unexpected.json" });
+        }
+        if (this.options.manifestMutation === "legacy-keys") {
+          entry.fileName = entry.filename;
+          entry.size = entry.sizeBytes;
+        }
+        await fs.writeFile(absolutePath, `${JSON.stringify(manifest)}\n`);
         continue;
       }
       await fs.writeFile(
@@ -476,7 +515,27 @@ try {
       options: { manifestMutation: "wrong-hash" },
       expectedCalls: 9,
       expectedCode: "software_detail_invalid_artifact_manifest"
-    }
+    },
+    ...[
+      "missing-source-stages",
+      "string-attempt",
+      "string-source-attempt",
+      "wrong-source-attempt",
+      "wrong-source-stage-id",
+      "missing-media-type",
+      "missing-validation",
+      "empty-validation",
+      "failed-boundary-validation",
+      "string-size-bytes",
+      "duplicate-artifact",
+      "extra-artifact",
+      "legacy-keys"
+    ].map((manifestMutation) => ({
+      key: `stage-nine-manifest-${manifestMutation}`,
+      options: { manifestMutation },
+      expectedCalls: 9,
+      expectedCode: "software_detail_invalid_artifact_manifest"
+    }))
   ]) {
     const scenarioRoot = path.join(root, scenario.key);
     const { service, executor, leaseClient } = createService(

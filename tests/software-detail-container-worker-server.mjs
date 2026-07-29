@@ -217,12 +217,22 @@ class SyntheticSoftwareDetailStageExecutor {
           docxArtifact.relativePath
         );
         payload.schema = "software-detail-artifact-manifest/v1";
+        payload.sourceStages = {
+          "content-check": {
+            stageId: "software-detail-stage-08-content-check",
+            sourceAttempt: job.stages.find(
+              (stage) => stage.id === "software-detail-stage-08-content-check"
+            ).attempt
+          }
+        };
         payload.artifacts = [{
           role: "detail-design-docx",
           relativePath: docxArtifact.relativePath,
-          fileName: path.posix.basename(docxArtifact.relativePath),
-          size: (await fs.stat(docxPath)).size,
-          sha256: await sha256File(docxPath)
+          filename: path.posix.basename(docxArtifact.relativePath),
+          mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          sizeBytes: (await fs.stat(docxPath)).size,
+          sha256: await sha256File(docxPath),
+          validation: { boundaryValidation: "PASS" }
         }];
       }
       await writeJson(targetPath, payload);

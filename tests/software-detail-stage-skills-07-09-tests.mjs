@@ -143,7 +143,9 @@ for (const stageId of stageIds) {
   );
   assert.deepEqual(
     mentionedStageIds,
-    [stageId],
+    stageId === "software-detail-stage-09-docx-finalize"
+      ? ["software-detail-stage-08-content-check", stageId]
+      : [stageId],
     `${stageId} must not claim another stage`
   );
 
@@ -287,6 +289,12 @@ for (const field of [
 }
 assert.match(stage9, /Include content hashes .* only when they are already available/);
 assert.match(stage9, /their absence does not invalidate an otherwise valid document/);
+assert.match(stage9, /`sourceStages\["content-check"\]`/);
+assert.match(stage9, /`sourceAttempt`/);
+assert.match(stage9, /`filename`/);
+assert.match(stage9, /`sizeBytes`/);
+assert.match(stage9, /`boundaryValidation: "PASS"`/);
+assert.match(stage9, /Do not use legacy keys `fileName` or `size`/);
 
 console.log(
   "PASS software-detail stage skills 07-09: exact contracts, metadata, mapped rules, pinned resources, and stage-specific gates verified"
