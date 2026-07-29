@@ -1,6 +1,6 @@
 {
-  "schema": "sdg-native-matlab-gateway-companion-config/v6",
-  "companionVersion": 6,
+  "schema": "sdg-native-matlab-gateway-companion-config/v7",
+  "companionVersion": 7,
   "legacyGatewayRevision": "464b45448cd691fe94c4c5c843efe64ccd344a68",
   "expectedImageRevisions": {
     "platform": "sha256:2260ce959b49b5721fd577c0c0a37e0a91b5a3c49ca84fdefb4e5fd007613ff2",

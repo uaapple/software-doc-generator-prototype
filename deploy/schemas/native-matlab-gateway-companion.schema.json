@@ -23,10 +23,10 @@
   ],
   "properties": {
     "schema": {
-      "const": "sdg-native-matlab-gateway-companion/v6"
+      "const": "sdg-native-matlab-gateway-companion/v7"
     },
     "companionVersion": {
-      "const": 6
+      "const": 7
     },
     "sourceRevision": {
       "type": "string",

@@ -75,18 +75,18 @@ node scripts/build-native-matlab-gateway-companion.mjs
 Platform/Worker rootfs 输入仍等于冻结 imageRevision。生产继续复用既有 GHCR
 `repository@sha256:...`，不得因为 companion 更新重新上传相同镜像。
 
-companion v6 是 Windows PowerShell 5.1 兼容发布：本地 evaluate token 使用
+companion v7 是 Windows PowerShell 5.1 兼容发布：本地 evaluate token 使用
 `RandomNumberGenerator.Create()`/`GetBytes()`；现有 env 通过同目录临时文件和
 带非空 backup path 的 `File.Replace` 原子替换，不存在的目标使用同卷原子
 创建。`ValidateOnly` 在停服务前执行这些 .NET 能力探针，但不修改 env。
-v6 ZIP 还包含独立、只读且由 manifest size/SHA-256 保护的
+v7 ZIP 还包含独立、只读且由 manifest size/SHA-256 保护的
 `test-native-matlab-gateway-companion-ps51.ps1`。该测试不 dot-source 部署
 脚本顶层逻辑，只解析所需函数、在脚本作用域导入并逐个检查可见性；正式
 `.env.windows-docker-desktop.example` 也作为只读、受 hash 保护的验证输入。
 
 新 companion tag/Release 只能在 GitHub Actions 的 Windows runner 使用
 `powershell.exe` 5.1 跑完该行为测试和 Windows wrapper 启动合同后创建。
-v6 在停服务前从未跟踪容器 env 的 `SDG_CONTAINER_DATA_DIR`、
+v7 在停服务前从未跟踪容器 env 的 `SDG_CONTAINER_DATA_DIR`、
 `MATLAB_GATEWAY_STATE_DIR`、`MATLAB_GATEWAY_CONTAINER_ROOT` 和
 `SATK_GATEWAY_MAPPING_ID` 派生原生 Gateway 映射；host/state 必须是存在、
 可写、非盘符根的绝对 Windows 路径，container root 和 mapping ID 必须分别
@@ -100,7 +100,7 @@ Windows/Docker Desktop 合法绝对路径可使用 `C:\...` 或 `C:/...`；部�
 root-relative、POSIX/相对路径及盘符根仍 fail-closed。v4 因只接受反斜杠而
 错误拒绝正式 env 示例，保持不可变且禁止继续部署。
 
-新 Worker 或重建节点的生产顺序固定为：核对 v6 资产 → 从新临时目录运行
+新 Worker 或重建节点的生产顺序固定为：核对 v7 资产 → 从新临时目录运行
 受保护的 PS5.1 测试 → `-ProvisionDirectories` → `-ValidateOnly` →
 管理员 PowerShell 正式执行 → 验证 `/health`、`/version`、
 `/capabilities`、`worker-data` mapping 和真实 evaluate readiness。任一步
@@ -115,7 +115,14 @@ container env 的 data/state 两个目录值。目标必须是
 保持只读且要求目录已存在，正式升级也不会隐式创建。Windows
 `container-production prepareDirectories` 使用相同边界并同时准备
 `MATLAB_GATEWAY_STATE_DIR`。当前已经用 v5 成功部署并通过 evaluate readiness
-的 WX11P 不需要为此重跑 v6；v6 面向未来新 Worker/重建节点。
+的 WX11P 不需要为此重跑 v7；v7 面向未来新 Worker/重建节点。
+
+部署脚本必须在读取为 hashtable、创建目录或读取服务前检查安全关键 env：
+ProvisionDirectories 要求 `SDG_CONTAINER_DATA_DIR` 与
+`MATLAB_GATEWAY_STATE_DIR` 各恰好一个非空、非注释赋值；ValidateOnly/正式
+部署还要求 `MATLAB_GATEWAY_CONTAINER_ROOT` 与 `SATK_GATEWAY_MAPPING_ID`。
+重复键（包括相同值）、空白值和只有注释均 fail-closed。Windows
+container-production preflight 执行相同检查，禁止 last-wins。
 
 GHCR 会复用已存在的 OCI layers，因此后续 push/pull 只传缺失 layer。两个
 Containerfile 均先安装固定 OS、npm/Python/Hermes 依赖，再复制源码和 skills；

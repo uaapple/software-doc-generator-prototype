@@ -151,6 +151,7 @@ for (const envFile of [
 testConfiguration("windows-worker", windowsEnvironment());
 testConfiguration("linux-platform", linuxEnvironment());
 testWindowsAddonIdDirectories();
+testWindowsCriticalEnvMultiplicity();
 testMutableImageFailsClosed();
 console.log("Production container configuration tests passed.");
 
@@ -269,11 +270,80 @@ function testMutableImageFailsClosed() {
   }
 }
 
+function testWindowsCriticalEnvMultiplicity() {
+  for (const key of [
+    "SDG_CONTAINER_DATA_DIR",
+    "MATLAB_GATEWAY_STATE_DIR",
+    "MATLAB_GATEWAY_CONTAINER_ROOT",
+    "SATK_GATEWAY_MAPPING_ID"
+  ]) {
+    for (const mutation of ["duplicate", "duplicate-case", "empty", "comment-only"]) {
+      const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-prod-env-gate-"));
+      try {
+        const envFile = path.join(temporaryDirectory, "production.env");
+        const dataRoot = path.join(temporaryDirectory, "data");
+        const stateRoot = path.join(temporaryDirectory, "state");
+        const addonRoot = path.join(temporaryDirectory, "addons");
+        const logRoot = path.join(temporaryDirectory, "logs");
+        const fakeDocker = path.join(temporaryDirectory, "docker");
+        const dockerMarker = path.join(temporaryDirectory, "docker-called");
+        const original = windowsEnvironment()
+          .replace("SDG_CONTAINER_DATA_DIR=/tmp/sdg-data", `SDG_CONTAINER_DATA_DIR=${dataRoot}`)
+          .replace(
+            "MATLAB_GATEWAY_STATE_DIR=/tmp/sdg-gateway-state",
+            `MATLAB_GATEWAY_STATE_DIR=${stateRoot}`
+          )
+          .replace("SDG_PROJECT_ADDONS_DIR=/tmp/sdg-addons", `SDG_PROJECT_ADDONS_DIR=${addonRoot}`)
+          .replace("SDG_WORKER_LOG_DIR=/tmp/sdg-worker-logs", `SDG_WORKER_LOG_DIR=${logRoot}`);
+        const line = original.split("\n").find((entry) => entry.startsWith(`${key}=`));
+        let changed;
+        if (mutation === "duplicate") changed = `${original}\n${line}`;
+        else if (mutation === "duplicate-case") {
+          changed = `${original}\n${line.replace(key, key.toLowerCase())}`;
+        }
+        else if (mutation === "empty") changed = original.replace(line, `${key}=   `);
+        else changed = original.replace(line, `# ${line}`);
+        fs.writeFileSync(envFile, changed, "utf8");
+        fs.writeFileSync(
+          fakeDocker,
+          `#!/bin/sh\ntouch "${dockerMarker}"\nexit 0\n`,
+          { mode: 0o755 }
+        );
+        const result = spawnSync(
+          process.execPath,
+          ["scripts/container-production.mjs", "windows-worker", "preflight"],
+          {
+            cwd: rootDir,
+            encoding: "utf8",
+            env: {
+              ...process.env,
+              PATH: `${temporaryDirectory}${path.delimiter}${process.env.PATH || ""}`,
+              SDG_PROD_ENV_FILE: envFile
+            }
+          }
+        );
+        assert.notEqual(result.status, 0, `${key} ${mutation} unexpectedly passed`);
+        const expected = mutation === "empty" ? `${key}_EMPTY` : `${key}_MULTIPLICITY`;
+        assert.match(result.stderr, new RegExp(`\\[${expected}\\]`));
+        assert.doesNotMatch(result.stderr, /C:[\\/]|\/tmp\/sdg|worker-data/);
+        assert.ok(!fs.existsSync(dockerMarker), "Invalid env reached Docker preflight");
+        for (const candidate of [dataRoot, stateRoot, addonRoot, logRoot]) {
+          assert.ok(!fs.existsSync(candidate), "Invalid env created a production directory");
+        }
+      } finally {
+        fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+      }
+    }
+  }
+}
+
 function windowsEnvironment() {
   return [
     `SDG_WORKER_IMAGE=registry.internal/sdg-worker@sha256:${digest}`,
     "SDG_CONTAINER_DATA_DIR=/tmp/sdg-data",
     "MATLAB_GATEWAY_STATE_DIR=/tmp/sdg-gateway-state",
+    "MATLAB_GATEWAY_CONTAINER_ROOT=/var/lib/sdg/data",
+    "SATK_GATEWAY_MAPPING_ID=worker-data",
     "SDG_PROJECT_ADDONS_DIR=/tmp/sdg-addons",
     "SDG_WORKER_LOG_DIR=/tmp/sdg-worker-logs",
     "SDG_WORKER_BIND_IP=10.0.0.11",

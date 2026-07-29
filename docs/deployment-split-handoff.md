@@ -56,11 +56,11 @@ R2025b、SATK、runtime/data、addon、Hermes Home/session、用户输入输出�
 MATLAB 产物。`MATLAB_GATEWAY_EVALUATE_TOKEN` 必须本地随机生成或安全接收，
 并与批准的 `MATLAB_GATEWAY_TOKEN` 保持独立。
 
-Windows companion v6 保留 PowerShell 5.1/.NET Framework 边界：CSPRNG 使用
+Windows companion v7 保留 PowerShell 5.1/.NET Framework 边界：CSPRNG 使用
 `RandomNumberGenerator.Create()`/`GetBytes()` 并可靠释放；存在的 env 使用
 同目录临时文件、继承 ACL 和非空 backup path 的 `File.Replace`，不存在目标
-走单独的同卷原子创建路径。两个 env 已有同一个 evaluate token 时，v6 将其
-视为合法续跑输入并先备份当前字节，不重新生成或输出；backup 仅代表 v6
+走单独的同卷原子创建路径。两个 env 已有同一个 evaluate token 时，v7 将其
+视为合法续跑输入并先备份当前字节，不重新生成或输出；backup 仅代表 v7
 执行前状态，不能证明现场人工写 token 之前的状态。重复键或不一致值
 fail-closed。
 
@@ -71,7 +71,7 @@ version/capabilities/evaluate probe，回滚恢复旧 Gateway 时使用相同有
 不存在目标的原子创建能力，且不修改 env。现场临时 `ps51`/`enhanced` 脚本不
 属于 companion release，禁止继续使用。
 
-v6 保留旧原生 env workspace mapping 修复，并修正 v4 PowerShell preflight
+v7 保留旧原生 env workspace mapping 修复，并修正 v4 PowerShell preflight
 只接受 `C:\...`、错误拒绝正式 Docker Desktop env 示例 `C:/...` 的缺陷。
 两种盘符绝对路径会先规范化再做等价/冲突判断；drive-relative、root-relative、
 POSIX、相对路径和盘符根继续拒绝。部署工具从未跟踪
@@ -82,7 +82,7 @@ command/tools 文件存在、container root 固定 `/var/lib/sdg/data`、mapping
 固定 `worker-data`，并将 Windows session mode 缺省为 `new`。MCP log folder
 不属于 Windows 启动必需项；若 legacy native env 已配置则一并验证。
 
-v6 新增与 `-ValidateOnly`、`-Rollback` 互斥的 `-ProvisionDirectories`。
+v7 提供与 `-ValidateOnly`、`-Rollback` 互斥的 `-ProvisionDirectories`。
 它只从未跟踪 container env 读取 `SDG_CONTAINER_DATA_DIR` 和
 `MATLAB_GATEWAY_STATE_DIR`，仅允许 `C:\ProgramData\SoftwareDocGenerator`
 严格子目录。缺失目录仅创建空目录并继承父 ACL；已有目录只验证，绝不清空、
@@ -91,13 +91,20 @@ point 均 fail-closed。该模式不读取或修改原生 env、服务、addon�
 MATLAB 产物，也不使用现场临时日志。`ValidateOnly` 继续严格只读并要求目录
 已经存在；正式升级绝不隐式创建目录。
 
+v7 在解析 env、创建目录或读取服务前由版本化脚本自身强制关键键唯一且非空：
+ProvisionDirectories 检查 data/state 两项，ValidateOnly 和正式部署检查
+data/state/container-root/mapping-id 四项。重复键即使值相同也以
+`<KEY>_MULTIPLICITY` 拒绝，空白赋值以 `<KEY>_EMPTY` 拒绝；注释不算赋值。
+Windows container-production preflight 使用同一 fail-closed 规则，不再依赖
+生产 Agent 人工发现 last-wins 配置。
+
 Windows wrapper 也执行同一 fail-closed 边界，在导入监听服务前建立
 `createConfiguredWorkspaceMapping`。启动失败只向服务日志写固定安全类别；
 部署 readiness 不能把 Win32 exit code 0 当作应用成功，会从本轮日志提取该
 类别。Windows CI 另以生产等价最小 env 启动 wrapper 配置入口，覆盖缺目录、
 相对路径和映射冲突。
 
-v6 companion manifest 将 6 个受管 Gateway payload、1 个 deployment tool、
+v7 companion manifest 将 6 个受管 Gateway payload、1 个 deployment tool、
 1 个只读 PS5.1 validation script 和正式 Windows env example 分为三个独立
 清单。两个 validation inputs 同时受 ZIP、manifest size/SHA-256 和 scan
 保护，支持从仓库或解压目录运行；
@@ -108,7 +115,7 @@ v6 companion manifest 将 6 个受管 Gateway payload、1 个 deployment tool、
 `.github/workflows/native-gateway-companion-ps51.yml` 在 Windows runner 上
 明确调用 `powershell.exe` 5.1。只有对应 source revision 的远端 job 成功后
 才能创建 annotated tag/Release。未来新 Worker 或重建节点必须从新临时目录
-下载 v6，依次运行受保护测试、`-ProvisionDirectories` 和 `-ValidateOnly`；
+下载 v7，依次运行受保护测试、`-ProvisionDirectories` 和 `-ValidateOnly`；
 通过后才可用同一受 hash 保护脚本正式升级。当前已用 v5 成功完成
 协议/evaluate readiness 的 WX11P 无需仅为目录初始化重新部署。旧 tag/Release
 保持不可变。失败

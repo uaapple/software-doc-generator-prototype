@@ -37,7 +37,7 @@ run(process.execPath, ["scripts/check-container-secrets.mjs"]);
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-native-gateway-release-"));
 const packageRoot = path.join(temporaryRoot, "package");
 const payloadRoot = path.join(packageRoot, "payload");
-const assetPrefix = `native-matlab-gateway-companion-v6-${shortRevision}`;
+const assetPrefix = `native-matlab-gateway-companion-v7-${shortRevision}`;
 const scanName = `${assetPrefix}.scan.json`;
 const manifestName = `${assetPrefix}.manifest.json`;
 const assetName = `${assetPrefix}.zip`;
@@ -111,7 +111,7 @@ try {
   }
 
   const scan = {
-    schema: "sdg-native-matlab-gateway-companion-scan/v6",
+    schema: "sdg-native-matlab-gateway-companion-scan/v7",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     status: "passed",
@@ -128,7 +128,7 @@ try {
   fs.writeFileSync(path.join(packageRoot, scanName), scanBytes);
 
   const manifest = {
-    schema: "sdg-native-matlab-gateway-companion/v6",
+    schema: "sdg-native-matlab-gateway-companion/v7",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     deploymentToolRevision: revision,
@@ -172,7 +172,7 @@ try {
   run("zip", ["-X", "-q", "-r", assetPath, "."], { cwd: packageRoot });
 
   const release = {
-    schema: "sdg-native-matlab-gateway-companion-release/v6",
+    schema: "sdg-native-matlab-gateway-companion-release/v7",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     deploymentToolRevision: revision,

@@ -60,6 +60,31 @@ function Get-EnvKeyCount([string]$PathValue, [string]$Key) {
   return $count
 }
 
+function Assert-EnvKeysSingleNonEmpty(
+  [string]$PathValue,
+  [string[]]$Keys
+) {
+  $lines = @(Get-Content -LiteralPath $PathValue)
+  foreach ($key in $Keys) {
+    $assignments = @($lines | Where-Object {
+      [string]$_ -match "^\s*$([regex]::Escape($key))\s*="
+    })
+    if ($assignments.Count -ne 1) {
+      Throw-ConfigurationError "${key}_MULTIPLICITY" (
+        "A security-critical container setting must be assigned exactly once."
+      )
+    }
+    $line = [string]$assignments[0]
+    $separator = $line.IndexOf("=")
+    $configuredValue = $line.Substring($separator + 1).Trim().Trim('"').Trim("'")
+    if (-not $configuredValue) {
+      Throw-ConfigurationError "${key}_EMPTY" (
+        "A security-critical container setting must be non-empty."
+      )
+    }
+  }
+}
+
 function Throw-ConfigurationError([string]$Category, [string]$Message) {
   throw "[$Category] $Message"
 }
@@ -544,8 +569,8 @@ function Assert-Manifest {
     [string]$Root
   )
   if (
-    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v6" -or
-    $Manifest.companionVersion -ne 6 -or
+    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v7" -or
+    $Manifest.companionVersion -ne 7 -or
     $Manifest.serviceName -ne $ServiceName -or
     $Manifest.sourceRevision -notmatch "^[a-f0-9]{40}$" -or
     $Manifest.sourceRevision -ne $Manifest.deploymentToolRevision -or
@@ -967,6 +992,19 @@ if (-not $manifestPath) { throw "Companion manifest was not found." }
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 
 if (-not (Test-Path -LiteralPath $ContainerEnvFile -PathType Leaf)) { throw "Untracked container env file is missing." }
+if ($ProvisionDirectories) {
+  Assert-EnvKeysSingleNonEmpty $ContainerEnvFile @(
+    "SDG_CONTAINER_DATA_DIR",
+    "MATLAB_GATEWAY_STATE_DIR"
+  )
+} elseif (-not $Rollback) {
+  Assert-EnvKeysSingleNonEmpty $ContainerEnvFile @(
+    "SDG_CONTAINER_DATA_DIR",
+    "MATLAB_GATEWAY_STATE_DIR",
+    "MATLAB_GATEWAY_CONTAINER_ROOT",
+    "SATK_GATEWAY_MAPPING_ID"
+  )
+}
 Assert-Manifest $manifest $CompanionRoot
 Assert-WindowsPowerShellCompatibility
 $containerValues = Read-EnvFile $ContainerEnvFile

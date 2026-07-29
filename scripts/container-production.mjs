@@ -69,7 +69,7 @@ if (!fs.existsSync(envFile)) {
   );
 }
 
-const envValues = readEnvFile(envFile);
+const { values: envValues, counts: envKeyCounts } = readEnvFile(envFile);
 const composeArgs = [
   "compose",
   "--env-file",
@@ -80,15 +80,18 @@ const composeArgs = [
 
 function readEnvFile(filePath) {
   const values = {};
+  const counts = {};
   for (const rawLine of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
     const separator = line.indexOf("=");
     if (separator < 1) continue;
     const key = line.slice(0, separator).trim();
+    const normalizedKey = key.toUpperCase();
+    counts[normalizedKey] = (counts[normalizedKey] || 0) + 1;
     values[key] = line.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2");
   }
-  return values;
+  return { values, counts };
 }
 
 function value(key) {
@@ -96,6 +99,7 @@ function value(key) {
 }
 
 function validateConfiguration() {
+  validateCriticalWindowsEnvFile();
   const missing = targetConfig.required.filter((key) => !value(key));
   if (target === "windows-worker") {
     const provider = value("HERMES_INFERENCE_PROVIDER").toLowerCase();
@@ -127,6 +131,27 @@ function validateConfiguration() {
     validateRemoteUrl("HERMES_BASE_URL", value("HERMES_BASE_URL"));
     validateRemoteUrl("MATLAB_MCP_BASE_URL", value("MATLAB_MCP_BASE_URL"));
     validateWorkerProfiles();
+  }
+}
+
+function validateCriticalWindowsEnvFile() {
+  if (target !== "windows-worker") return;
+  for (const key of [
+    "SDG_CONTAINER_DATA_DIR",
+    "MATLAB_GATEWAY_STATE_DIR",
+    "MATLAB_GATEWAY_CONTAINER_ROOT",
+    "SATK_GATEWAY_MAPPING_ID"
+  ]) {
+    if (envKeyCounts[key] !== 1) {
+      throw new Error(
+        `[${key}_MULTIPLICITY] A security-critical production setting must be assigned exactly once.`
+      );
+    }
+    if (!String(envValues[key] || "").trim()) {
+      throw new Error(
+        `[${key}_EMPTY] A security-critical production setting must be non-empty.`
+      );
+    }
   }
 }
 

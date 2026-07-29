@@ -92,8 +92,8 @@ const nativeGatewayConfig = JSON.parse(
   read("deploy/native-matlab-gateway-companion.json") || "{}"
 );
 if (
-  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v6" ||
-  nativeGatewayConfig.companionVersion !== 6 ||
+  nativeGatewayConfig.schema !== "sdg-native-matlab-gateway-companion-config/v7" ||
+  nativeGatewayConfig.companionVersion !== 7 ||
   nativeGatewayConfig.serviceName !== "SoftwareDocMatlabWorker" ||
   !Array.isArray(nativeGatewayConfig.managedFiles) ||
   nativeGatewayConfig.managedFiles.length !== 6 ||

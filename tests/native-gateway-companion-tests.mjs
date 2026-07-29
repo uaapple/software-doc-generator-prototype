@@ -51,7 +51,7 @@ assert.match(legacySource, /if\s*\(!authToken\)\s*\{\s*return next\(\)/);
 assert.ok(!legacySource.includes("MATLAB_GATEWAY_EVALUATE_TOKEN"));
 
 assert.equal(config.serviceName, "SoftwareDocMatlabWorker");
-assert.equal(config.companionVersion, 6);
+assert.equal(config.companionVersion, 7);
 assert.equal(config.managedFiles.length, 6);
 assert.equal(config.validationFiles.length, 2);
 assert.deepEqual(config.validationFiles[0], {
@@ -74,8 +74,8 @@ for (const inputs of Object.values(imageInputs)) {
   assert.ok(!inputs.some((entry) => entry === "scripts/build-native-matlab-gateway-companion.mjs"));
 }
 
-assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v6");
-assert.equal(schema.properties.companionVersion.const, 6);
+assert.equal(schema.properties.schema.const, "sdg-native-matlab-gateway-companion/v7");
+assert.equal(schema.properties.companionVersion.const, 7);
 assert.equal(schema.properties.serviceName.const, "SoftwareDocMatlabWorker");
 for (const field of [
   "sourceRevision",
@@ -92,9 +92,9 @@ for (const field of [
 }
 assert.equal(
   releaseSchema.properties.schema.const,
-  "sdg-native-matlab-gateway-companion-release/v6"
+  "sdg-native-matlab-gateway-companion-release/v7"
 );
-assert.equal(releaseSchema.properties.companionVersion.const, 6);
+assert.equal(releaseSchema.properties.companionVersion.const, 7);
 assert.ok(releaseSchema.required.includes("contents"));
 assert.equal(releaseSchema.properties.contents.properties.managedGatewayFileCount.const, 6);
 assert.equal(releaseSchema.properties.contents.properties.deploymentToolFileCount.const, 1);
@@ -110,6 +110,7 @@ assert.match(deployScript, /\[switch\]\$ValidateOnly/);
 assert.match(deployScript, /\[switch\]\$ProvisionDirectories/);
 assert.match(deployScript, /\[switch\]\$Rollback/);
 assert.match(deployScript, /Invoke-ProvisionDirectories/);
+assert.match(deployScript, /Assert-EnvKeysSingleNonEmpty/);
 assert.match(deployScript, /Approved directory initialization passed\./);
 assert.doesNotMatch(deployScript, /AppendAllText/);
 assert.match(deployScript, /Save-Backup/);
@@ -160,6 +161,10 @@ assert.match(deployScript, /https:\/\/api\.deepseek\.com/);
 assert.doesNotMatch(deployScript, /Write-(?:Host|Output|Verbose).*(?:gatewayToken|evaluateToken)/i);
 assert.doesNotMatch(deployScript, /MATLAB_GATEWAY_EVALUATE_TOKEN\s*=\s*MATLAB_GATEWAY_TOKEN/i);
 assert.doesNotMatch(deployScript, /0\.0\.0\.0.*(?:disable|bypass|auth)/i);
+const criticalCheckIndex = deployScript.indexOf("Assert-EnvKeysSingleNonEmpty $ContainerEnvFile");
+assert.ok(criticalCheckIndex > 0);
+assert.ok(criticalCheckIndex < deployScript.indexOf("$containerValues = Read-EnvFile"));
+assert.ok(criticalCheckIndex < deployScript.indexOf("$serviceSnapshot = Get-ServiceSnapshot"));
 
 assert.match(builder, /gitBuffer\(\["show"/);
 assert.match(builder, /check-container-secrets\.mjs/);
@@ -169,7 +174,7 @@ assert.match(builder, /dependencyChanges:\s*false/);
 assert.match(builder, /zip/);
 assert.doesNotMatch(builder, /docker/);
 assert.doesNotMatch(builder, /buildImage|buildx|docker push/);
-assert.match(builder, /native-matlab-gateway-companion-v6-/);
+assert.match(builder, /native-matlab-gateway-companion-v7-/);
 assert.match(builder, /companionVersion:\s*config\.companionVersion/);
 assert.match(builder, /validationFiles/);
 assert.match(builder, /validationFileCount:\s*validationFiles\.length/);
@@ -183,6 +188,8 @@ for (const requiredCase of [
   "Container env is the single source",
   "formal env example's C:/ path",
   "ProvisionDirectories creates only",
+  "Critical container env keys reject",
+  "Invalid provisioning env fails before",
   "Partial-existing and repeated initialization",
   "Forward- and backslash spellings",
   "delayed port",
@@ -220,6 +227,8 @@ const productionDeploy = read("scripts/container-production.mjs");
 const productionDirectories = read("scripts/windows-production-directories.mjs");
 assert.match(productionDeploy, /evaluate_matlab_code/);
 assert.match(productionDeploy, /MATLAB_GATEWAY_STATE_DIR/);
+assert.match(productionDeploy, /_MULTIPLICITY/);
+assert.match(productionDeploy, /_EMPTY/);
 assert.match(productionDeploy, /prepareApprovedWindowsDirectories/);
 assert.match(productionDirectories, /C:\\\\ProgramData\\\\SoftwareDocGenerator/);
 assert.match(productionDirectories, /REPARSE_FORBIDDEN/);

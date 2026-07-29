@@ -46,6 +46,7 @@ $requiredFunctions = @(
   "Assert-AtomicReplacementTarget",
   "Invoke-AtomicFileReplace",
   "Get-EnvKeyCount",
+  "Assert-EnvKeysSingleNonEmpty",
   "Set-EnvValuesAtomic",
   "Throw-ConfigurationError",
   "Resolve-AbsoluteWindowsPath",
@@ -108,6 +109,64 @@ try {
   Assert-True ($tokenA -match "^[A-Za-z0-9_-]{43}$") "Evaluate token is not URL-safe."
   Assert-True ($tokenA -ne $tokenB) "CSPRNG returned a repeated test token."
 
+  # Critical container env keys reject duplicate, empty and comment-only input.
+  $criticalKeys = @(
+    "SDG_CONTAINER_DATA_DIR",
+    "MATLAB_GATEWAY_STATE_DIR",
+    "MATLAB_GATEWAY_CONTAINER_ROOT",
+    "SATK_GATEWAY_MAPPING_ID"
+  )
+  $validCriticalLines = [ordered]@{
+    SDG_CONTAINER_DATA_DIR = "C:/ProgramData/SoftwareDocGenerator/ps51-data"
+    MATLAB_GATEWAY_STATE_DIR = "C:/ProgramData/SoftwareDocGenerator/ps51-state"
+    MATLAB_GATEWAY_CONTAINER_ROOT = "/var/lib/sdg/data"
+    SATK_GATEWAY_MAPPING_ID = "worker-data"
+  }
+  $validCriticalEnv = Join-Path $testRoot "critical-valid.env"
+  [System.IO.File]::WriteAllLines(
+    $validCriticalEnv,
+    @($validCriticalLines.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })
+  )
+  Assert-EnvKeysSingleNonEmpty $validCriticalEnv $criticalKeys
+
+  foreach ($criticalKey in $criticalKeys) {
+    foreach ($invalidKind in @("duplicate", "empty", "comment-only")) {
+      $invalidCriticalEnv = Join-Path $testRoot (
+        "critical-{0}-{1}.env" -f $criticalKey, $invalidKind
+      )
+      $lines = New-Object System.Collections.Generic.List[string]
+      foreach ($entry in $validCriticalLines.GetEnumerator()) {
+        if ($entry.Key -eq $criticalKey -and $invalidKind -eq "empty") {
+          $null = $lines.Add("$($entry.Key)=   ")
+        } elseif ($entry.Key -eq $criticalKey -and $invalidKind -eq "comment-only") {
+          $null = $lines.Add("# $($entry.Key)=$($entry.Value)")
+        } else {
+          $null = $lines.Add("$($entry.Key)=$($entry.Value)")
+        }
+      }
+      if ($invalidKind -eq "duplicate") {
+        $null = $lines.Add("$criticalKey=$($validCriticalLines[$criticalKey])")
+      }
+      [System.IO.File]::WriteAllLines($invalidCriticalEnv, $lines)
+      $criticalRejected = $false
+      try {
+        Assert-EnvKeysSingleNonEmpty $invalidCriticalEnv $criticalKeys
+      } catch {
+        $expectedCategory = if ($invalidKind -eq "empty") {
+          "${criticalKey}_EMPTY"
+        } else {
+          "${criticalKey}_MULTIPLICITY"
+        }
+        $criticalRejected = $_.Exception.Message -match (
+          "\[{0}\]" -f [regex]::Escape($expectedCategory)
+        )
+      }
+      Assert-True $criticalRejected (
+        "Critical env key {0} did not reject {1} input." -f $criticalKey, $invalidKind
+      )
+    }
+  }
+
   # ProvisionDirectories creates only the approved data/state directories.
   $provisionData = Join-Path $provisionRoot "data"
   $provisionState = Join-Path $provisionRoot "state"
@@ -123,6 +182,10 @@ try {
     $script:provisionServiceTouched = $true
     throw "ProvisionDirectories must not inspect or modify a service."
   }
+  Assert-EnvKeysSingleNonEmpty $provisionEnv @(
+    "SDG_CONTAINER_DATA_DIR",
+    "MATLAB_GATEWAY_STATE_DIR"
+  )
   Invoke-ProvisionDirectories (Read-EnvFile $provisionEnv)
   Assert-True (Test-Path -LiteralPath $provisionData -PathType Container) (
     "ProvisionDirectories did not create the data directory."
@@ -137,6 +200,36 @@ try {
     [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($provisionEnv)) -eq
     [Convert]::ToBase64String($provisionEnvBytes)
   ) "ProvisionDirectories changed the container env bytes."
+
+  # Invalid provisioning env fails before directory or service side effects.
+  $blockedProvisionRoot = Join-Path "C:\ProgramData\SoftwareDocGenerator" (
+    "blocked-{0}" -f ([Guid]::NewGuid().ToString("N"))
+  )
+  $blockedProvisionEnv = Join-Path $testRoot "provision-duplicate.env"
+  [System.IO.File]::WriteAllLines($blockedProvisionEnv, @(
+    "SDG_CONTAINER_DATA_DIR=$($blockedProvisionRoot.Replace('\', '/'))/data",
+    "SDG_CONTAINER_DATA_DIR=$($blockedProvisionRoot.Replace('\', '/'))/data",
+    "MATLAB_GATEWAY_STATE_DIR=$($blockedProvisionRoot.Replace('\', '/'))/state"
+  ))
+  $blockedProvision = $false
+  try {
+    Assert-EnvKeysSingleNonEmpty $blockedProvisionEnv @(
+      "SDG_CONTAINER_DATA_DIR",
+      "MATLAB_GATEWAY_STATE_DIR"
+    )
+    Invoke-ProvisionDirectories (Read-EnvFile $blockedProvisionEnv)
+  } catch {
+    $blockedProvision = $_.Exception.Message -match (
+      "\[SDG_CONTAINER_DATA_DIR_MULTIPLICITY\]"
+    )
+  }
+  Assert-True $blockedProvision "Duplicate provisioning env was not blocked."
+  Assert-True (-not (Test-Path -LiteralPath $blockedProvisionRoot)) (
+    "Invalid provisioning env created a directory."
+  )
+  Assert-True (-not $script:provisionServiceTouched) (
+    "Invalid provisioning env touched the service."
+  )
 
   # Partial-existing and repeated initialization preserve existing content.
   $provisionMarker = Join-Path $provisionData "preserve.txt"

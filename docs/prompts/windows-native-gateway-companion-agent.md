@@ -1,8 +1,8 @@
-# Windows 原生 MATLAB Gateway companion v6 部署 Agent 提示词
+# Windows 原生 MATLAB Gateway companion v7 部署 Agent 提示词
 
-你正在为未来的新 Windows Worker 或重建节点部署正式 companion v6。当前已用
+你正在为未来的新 Windows Worker 或重建节点部署正式 companion v7。当前已用
 v5 成功通过协议/evaluate readiness 的 WX11P 无需重新部署。只允许使用发布者
-给出的 v6 annotated tag、peeled commit、GitHub Release URL 和四项资产
+给出的 v7 annotated tag、peeled commit、GitHub Release URL 和四项资产
 SHA-256；旧 tag/Release 保持不可变，禁止使用现场临时脚本。
 
 冻结边界：
@@ -21,8 +21,8 @@ SHA-256；旧 tag/Release 保持不可变，禁止使用现场临时脚本。
 
 ## 固定执行顺序
 
-1. 在全新临时目录下载 v6 ZIP、manifest、scan、release JSON，逐项核对发布者
-   提供的 SHA-256。核对 companionVersion=6、source/deployment revision 等于
+1. 在全新临时目录下载 v7 ZIP、manifest、scan、release JSON，逐项核对发布者
+   提供的 SHA-256。核对 companionVersion=7、source/deployment revision 等于
    peeled commit、6 个 managed Gateway files、1 个 deployment tool、2 个
    read-only validation inputs、`rootfsInputsChanged=false`，并复核 ZIP 内
    每项 size/SHA-256。
@@ -32,7 +32,7 @@ SHA-256；旧 tag/Release 保持不可变，禁止使用现场临时脚本。
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass `
      -File .\test-native-matlab-gateway-companion-ps51.ps1 `
-     -RepositoryRoot <v6解压目录>
+     -RepositoryRoot <v7解压目录>
    ```
 
    必须看到 `Native Gateway Windows PowerShell 5.1 tests passed.`。
@@ -42,7 +42,7 @@ SHA-256；旧 tag/Release 保持不可变，禁止使用现场临时脚本。
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass `
      -File .\deploy-native-matlab-gateway.ps1 `
-     -CompanionRoot <v6解压目录> `
+     -CompanionRoot <v7解压目录> `
      -InstallDir C:\SoftwareDocWorker `
      -ContainerEnvFile <未跟踪容器env绝对路径> `
      -ProvisionDirectories
@@ -56,13 +56,14 @@ SHA-256；旧 tag/Release 保持不可变，禁止使用现场临时脚本。
    ```powershell
    powershell.exe -NoProfile -ExecutionPolicy Bypass `
      -File .\deploy-native-matlab-gateway.ps1 `
-     -CompanionRoot <v6解压目录> `
+     -CompanionRoot <v7解压目录> `
      -InstallDir C:\SoftwareDocWorker `
      -ContainerEnvFile <未跟踪容器env绝对路径> `
      -ValidateOnly
    ```
 
-   失败时只报告安全类别并停止，不得临时改脚本绕过。
+   脚本自身必须拒绝四个关键配置的重复、空白或只有注释状态；失败时只报告
+   `<KEY>_MULTIPLICITY` / `<KEY>_EMPTY` 等安全类别并停止，不得临时改脚本绕过。
 
 5. 只有前四步全部通过，才去掉且仅去掉 `-ValidateOnly` 正式升级。脚本会备份
    6 个受管文件、两个 env 原字节和服务配置；有界等待服务/TCP 5100/health，
