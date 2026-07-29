@@ -1,0 +1,97 @@
+{
+  "schema": "sdg-software-detail-production-candidate/v2",
+  "generatedAt": "2026-07-29T19:25:23Z",
+  "candidateTag": "software-detail-nine-stage-production-candidate-v2-run30483265284",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "f4662e92085767ae6fb58864471debc2dd39bd6c",
+  "containerBuildRevision": "17b9428787671062dd33b5916e0c063f184989e7",
+  "deploymentToolRevision": "f4662e92085767ae6fb58864471debc2dd39bd6c",
+  "supersedes": {
+    "candidateTag": "software-detail-nine-stage-production-candidate-v1-f4662e920857",
+    "manifestSha256": "2d42e321642b9fbb7b32ad28bb6190394bc85b2ec3a0e1e5f95a7b6297e7876a"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 30483265284,
+    "runAttempt": 1,
+    "event": "push",
+    "headSha": "f4662e92085767ae6fb58864471debc2dd39bd6c",
+    "status": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-07-29T19:10:55Z",
+    "completedAt": "2026-07-29T19:11:39Z",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/30483265284",
+    "job": {
+      "id": 90682499301,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/30483265284/job/90682499301",
+      "requiredSteps": [
+        {
+          "name": "Check out exact revision",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run companion tests with Windows PowerShell 5.1",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked Node.js dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Reproduce legacy native env wrapper startup",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "testedInputs": {
+      "tests/native-gateway-companion-ps51.Tests.ps1": "6b7de29fc1825108f403e6476f230cd96db4c165774a21ef9e32ffe28a9021b8",
+      "scripts/deploy-native-matlab-gateway.ps1": "dc09047a8050b925c1816bd707901c52d334508365c7d8ce6692c69158fa78a3"
+    },
+    "jobLogSha256": "1ebe9863c6cea35b62d5fc7075908a57fba18013a88a7e485111b73286e12a69",
+    "uploadedWorkflowArtifacts": {
+      "count": 0,
+      "note": "This workflow records its immutable run, job, step and log evidence through GitHub Actions; release artifacts are published separately below."
+    }
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:0d94ba790f13786bcce4e93ca4cd5d534f1a2f9e89bf3407e5af4442f28dbdb4",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:7a7588a6146ba958c76f636af543a44511b84ac701b9d6aacd6157527f5bd2db"
+    },
+    "worker": {
+      "imageRevision": "sha256:2eb8789031751ede7fb24d436533c00510ef01248121720c3c575f3b849b4829",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:ca96576e6bb4141a5e2aa1f268092d17bd2113549318e3fea238443c407d81aa"
+    }
+  },
+  "releaseAssets": {
+    "container/container-release-17b942878767.json": "dcf08108629c7588ad9381c7f362a5943c03025d2a2e8f9489c4da50b17585a4",
+    "container/scans/scan-summary.json": "e2f745292ff5b20f59369dde1aaa96b7f6360f401be4c3f21d6d943754770122",
+    "native-gateway/native-matlab-gateway-companion-v8-f4662e920857.zip": "8c173e71ffd83bbde672bedc44878e8ae5dff5ce041fb39479b5f7d5d381ba98",
+    "native-gateway/native-matlab-gateway-companion-v8-f4662e920857.release.json": "e25706987cd2e9104c4a0d769db8e3c23898bbf5f3be399a5a5c739ca24abbcb",
+    "native-gateway/native-matlab-gateway-companion-v8-f4662e920857.manifest.json": "1304dec834d443c2c98d8e656faafed53cea11678bd6042a986475616da6cf6d",
+    "native-gateway/native-matlab-gateway-companion-v8-f4662e920857.scan.json": "69402160976f1ad32bb96b1234b24b8b0cf273f10d084eff44baa7b8a9bf3020"
+  },
+  "acceptance": {
+    "macSourceAndContractSuite": "passed",
+    "macSyntheticContainerFlow": "passed",
+    "windowsPowerShell51BehavioralAndWrapper": "passed",
+    "productionDeployment": "not-performed",
+    "realBusinessInput": "pending-user-after-production-health"
+  },
+  "distribution": {
+    "containerRegistry": "published-private-ghcr-exact-digests",
+    "containerRootfsAction": "reuse-existing-digests",
+    "githubRelease": {
+      "status": "published",
+      "tag": "software-detail-nine-stage-production-candidate-v2-run30483265284",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/software-detail-nine-stage-production-candidate-v2-run30483265284"
+    },
+    "productionConsumption": "authenticated-release-download-or-release-side-secure-transfer-followed-by-local-sha256-validation"
+  }
+}

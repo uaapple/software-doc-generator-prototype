@@ -105,6 +105,7 @@ windows:
 
 shared:
   - deploy/container-license-policy.json
+  - deploy/releases/**
   - .dockerignore
   - .env.container.example
   - compose.yaml

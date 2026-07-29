@@ -11,6 +11,7 @@
     "compose.linux-prod.yaml",
     "docker",
     "deploy/container-license-policy.json",
+    "deploy/releases",
     "README.md",
     "package.json",
     "package-lock.json",
