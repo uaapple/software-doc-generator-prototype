@@ -116,6 +116,11 @@ const suites = [
     args: ["tests/release-rollback-package-tests.mjs"]
   },
   {
+    id: "image-archive",
+    command: "python3",
+    args: ["tests/verify-image-archive-tests.py"]
+  },
+  {
     id: "rollback",
     command: "sh",
     args: ["tests/rollback-linux-release-tests.sh"]

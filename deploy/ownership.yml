@@ -134,6 +134,7 @@ shared:
   - scripts/container-image-revisions.mjs
   - scripts/build-container-release.mjs
   - scripts/container-production.mjs
+  - scripts/verify_image_archive.py
   - src/config.js
   - src/services/c-extractor.js
   - src/services/pdf-extractor.js

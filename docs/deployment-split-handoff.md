@@ -35,6 +35,11 @@ Linux Platform 容器同时运行平台与 Wiki；生产 Compose 分别发布原
 首次部署或 GHCR 不可达时的离线回退。release manifest 分别记录镜像输入哈希
 `imageRevision` 与 Compose/preflight 所在提交 `deploymentToolRevision`，
 仅部署工具变化不触发镜像重建。
+离线归档在传输前后都必须用 `scripts/verify_image_archive.py` 校验归档
+SHA-256、单镜像数量、`linux/amd64`、OCI revision、config 原字节摘要和全部
+layer 内容摘要。registry/index digest 与 `docker load` 后的 config image ID
+属于不同身份层，不要求二者相等；当 load 不保留 RepoDigest 时，Linux Compose
+必须引用校验器报告的本地 config image ID，并保持 `pull_policy: never`。
 
 Linux 容器部署直接复用原生服务的 `prod-data` 与 `prod-skills` bind mount，
 避免空目录或空 Docker volume 隐藏正式项目与技能。preflight 必须在停服务前
