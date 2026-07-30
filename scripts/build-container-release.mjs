@@ -13,10 +13,14 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const outputDir = path.join(rootDir, "release-dist", "container");
 const deploymentToolRevision = run("git", ["rev-parse", "HEAD"], { capture: true });
 const shortDeploymentRevision = deploymentToolRevision.slice(0, 12);
-const createOfflineArchives = process.argv.includes("--offline");
 const pushToRegistry = process.argv.includes("--push");
-if (!createOfflineArchives && !pushToRegistry) {
-  throw new Error("Specify at least one release mode: --offline or --push.");
+if (process.argv.includes("--offline")) {
+  throw new Error(
+    "Full-image offline archives are not regular Release assets. " +
+      "After an exact GHCR pull is proven unavailable, use " +
+      "npm run container:archive:on-demand -- --image=<platform|worker> " +
+      "--reference=<repository@sha256> --revision=<sha256>."
+  );
 }
 const registryNamespace = String(
   process.env.SDG_CONTAINER_REGISTRY_NAMESPACE || "ghcr.io/uaapple"
@@ -109,25 +113,17 @@ try {
       images[name].registryDigest = digest;
       images[name].registryReference = `${repository}@${digest}`;
     }
-    if (createOfflineArchives) {
-      const archive = path.join(
-        outputDir,
-        `${name}-${imageRevision.slice(7, 19)}-linux-amd64.tar`
-      );
-      run("docker", ["save", "--output", archive, tag]);
-      images[name].archive = path.basename(archive);
-      images[name].sha256 = await sha256File(archive);
-      images[name].sizeBytes = fs.statSync(archive).size;
-    }
   }
 
   const manifest = {
-    schema: "sdg-container-release/v2",
+    schema: "sdg-container-release/v3",
     generatedAt: new Date().toISOString(),
     deploymentToolRevision,
     distribution: {
-      registryPreferred: pushToRegistry,
-      offlineArchivesIncluded: createOfflineArchives
+      primary: "ghcr-exact-digest",
+      registryPublished: pushToRegistry,
+      offlineImageArchives: "on-demand-only",
+      githubReleaseFullImageTarRequired: false
     },
     images,
     scans: await collectScanEvidence()

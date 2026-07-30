@@ -19,7 +19,7 @@ worker image ID，通过 Docker Desktop 的 Linux containers 后端和
 适配不在本轮范围。生产持久数据、Hermes Home、项目 addon、日志、secrets、
 模型/MAT/SLX 和 MATLAB 许可证始终位于镜像外。
 
-生产 Compose、离线镜像 tar、Windows/Linux env、灰度、真实 TCSD 验收与回滚
+生产 Compose、按需离线镜像、Windows/Linux env、灰度、真实 TCSD 验收与回滚
 统一见 `docs/docker-desktop-production-deployment.md`。生产端不得直接运行
 Mac all-in-one `compose.yaml + compose.mac.yaml`。
 
@@ -31,15 +31,39 @@ secret finding 或 `deploy/container-license-policy.json` 明确禁止的许可�
 fail-closed。未知许可证分类只记录在原始 Trivy 报告中，不等同于禁用许可证。
 Linux Platform 容器同时运行平台与 Wiki；生产 Compose 分别发布原端口 `3000`
 和 `3001`，停止旧 systemd 平台/Wiki 服务后必须验证两者。
-容器日常分发优先使用私有 GHCR 的精确 digest；完整 docker-save tar 仅用于
-首次部署或 GHCR 不可达时的离线回退。release manifest 分别记录镜像输入哈希
-`imageRevision` 与 Compose/preflight 所在提交 `deploymentToolRevision`，
-仅部署工具变化不触发镜像重建。
-离线归档在传输前后都必须用 `scripts/verify_image_archive.py` 校验归档
+容器正式主分发只使用私有 GHCR 的精确 `repository@sha256` digest，并优先利用
+OCI layers 做增量 pull。GitHub Release 只携带候选 manifest、container release
+manifest、scan summary、SBOM/Trivy/策略证据，以及确有变化的 Native Gateway
+companion；完整 Platform/Worker 镜像 tar 不是每次 Release 的必传资产。
+release manifest 分别记录镜像 digest、架构、镜像输入哈希 `imageRevision`、
+回滚 digest 与 Compose/preflight 所在提交 `deploymentToolRevision`。仅部署工具
+变化不触发镜像重建或重推。
+
+只有生产端已证明某一个精确 GHCR 镜像因网络、代理或权限问题不可达时，发布端
+才可针对实际受阻的单个镜像运行：
+
+```bash
+npm run container:archive:on-demand -- \
+  --image=<platform|worker> \
+  --reference=<ghcr.io/...@sha256:...> \
+  --revision=<sha256:...> \
+  --output=<受控临时目录/镜像.tar>
+```
+
+该 tar 只通过受控临时通道传输，不补传为固定 GitHub Release 资产。离线归档在
+传输前后都必须用 `scripts/verify_image_archive.py` 校验归档
 SHA-256、单镜像数量、`linux/amd64`、OCI revision、config 原字节摘要和全部
 layer 内容摘要。registry/index digest 与 `docker load` 后的 config image ID
 属于不同身份层，不要求二者相等；当 load 不保留 RepoDigest 时，Linux Compose
 必须引用校验器报告的本地 config image ID，并保持 `pull_policy: never`。
+
+发布策略常量：
+
+```text
+OFFLINE_IMAGE_ARCHIVES=ON_DEMAND_ONLY
+GHCR_EXACT_DIGEST=PRIMARY_DISTRIBUTION
+GITHUB_RELEASE_FULL_IMAGE_TAR=NOT_REQUIRED
+```
 
 Linux 容器部署直接复用原生服务的 `prod-data` 与 `prod-skills` bind mount，
 避免空目录或空 Docker volume 隐藏正式项目与技能。preflight 必须在停服务前
@@ -455,6 +479,22 @@ SATK_MATLAB_SESSION_MODE=new
 ```
 
 ## Release 包构建入口
+
+Platform/Worker 容器的普通本地构建与私有 GHCR 发布分别使用：
+
+```bash
+npm run container:release:build
+npm run container:release:publish
+```
+
+两个入口默认都不生成完整镜像 tar；`publish` 只推送并记录精确 GHCR digest。
+不得把旧 `--offline` 当作日常发布模式。离线归档只能在生产端已经给出精确的
+GHCR 分发阻塞证据后，使用上文的单镜像按需入口生成。
+
+如果镜像 rootfs 输入未变、只需用新的部署工具提交重新固化候选元数据，使用
+`npm run container:release:reuse-metadata -- --source=<既有已验证manifest> ...`
+生成不含 tar 字段的新 manifest。该入口必须同时给出 Platform/Worker 回滚
+`repository@sha256`，不得重建或重推已有镜像。
 
 Linux 包：
 

@@ -106,6 +106,7 @@ windows:
 shared:
   - deploy/container-license-policy.json
   - deploy/releases/**
+  - deploy/schemas/main-unification-production-candidate.schema.json
   - .dockerignore
   - .env.container.example
   - compose.yaml
@@ -133,6 +134,8 @@ shared:
   - scripts/container-scan-policy.mjs
   - scripts/container-image-revisions.mjs
   - scripts/build-container-release.mjs
+  - scripts/prepare-container-release-metadata.mjs
+  - scripts/create-offline-image-archive.mjs
   - scripts/container-production.mjs
   - scripts/verify_image_archive.py
   - src/config.js

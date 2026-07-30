@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://software-doc-generator.local/schemas/main-unification-production-candidate.schema.json",
+  "title": "Main unification production candidate",
+  "type": "object",
+  "required": [
+    "schema",
+    "candidateTag",
+    "validatedSourceRevision",
+    "containerBuildRevision",
+    "deploymentToolRevision",
+    "windowsPowerShell51Evidence",
+    "images",
+    "releaseAssets",
+    "distribution",
+    "rollbackAnchors"
+  ],
+  "properties": {
+    "schema": {
+      "const": "sdg-main-unification-production-candidate/v2"
+    },
+    "candidateTag": {
+      "type": "string",
+      "minLength": 1
+    },
+    "validatedSourceRevision": {
+      "$ref": "#/$defs/gitSha"
+    },
+    "containerBuildRevision": {
+      "$ref": "#/$defs/gitSha"
+    },
+    "deploymentToolRevision": {
+      "$ref": "#/$defs/gitSha"
+    },
+    "windowsPowerShell51Evidence": {
+      "type": "object",
+      "required": ["status", "runId", "headSha", "conclusion"],
+      "properties": {
+        "status": { "const": "passed" },
+        "runId": { "type": "integer", "minimum": 1 },
+        "headSha": { "$ref": "#/$defs/gitSha" },
+        "conclusion": { "const": "success" }
+      }
+    },
+    "images": {
+      "type": "object",
+      "required": ["platform", "worker"],
+      "properties": {
+        "platform": { "$ref": "#/$defs/image" },
+        "worker": { "$ref": "#/$defs/image" }
+      },
+      "additionalProperties": false
+    },
+    "releaseAssets": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "not": {
+          "pattern": "\\.(?:tar|tar\\.gz|tgz|oci)$"
+        }
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "required": [
+        "ghcrExactDigest",
+        "offlineImageArchives",
+        "githubReleaseFullImageTar"
+      ],
+      "properties": {
+        "ghcrExactDigest": { "const": "primary-distribution" },
+        "offlineImageArchives": { "const": "on-demand-only" },
+        "githubReleaseFullImageTar": { "const": "not-required" }
+      }
+    }
+  },
+  "$defs": {
+    "gitSha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "image": {
+      "type": "object",
+      "required": [
+        "imageRevision",
+        "registryReference",
+        "registryIndexDigest",
+        "os",
+        "architecture"
+      ],
+      "properties": {
+        "imageRevision": { "$ref": "#/$defs/digest" },
+        "registryReference": {
+          "type": "string",
+          "pattern": "^ghcr\\.io/.+@sha256:[a-f0-9]{64}$"
+        },
+        "registryIndexDigest": { "$ref": "#/$defs/digest" },
+        "os": { "const": "linux" },
+        "architecture": { "const": "amd64" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["offlineArchive"] },
+          { "required": ["offlineArchiveSha256"] },
+          { "required": ["offlineArchiveSizeBytes"] }
+        ]
+      }
+    }
+  }
+}
