@@ -18,7 +18,7 @@ if (process.argv.includes("--offline")) {
   throw new Error(
     "Full-image offline archives are not regular Release assets. " +
       "After an exact GHCR pull is proven unavailable, use " +
-      "npm run container:archive:on-demand -- --image=<platform|worker> " +
+      "node scripts/create-offline-image-archive.mjs --image=<platform|worker> " +
       "--reference=<repository@sha256> --revision=<sha256>."
   );
 }

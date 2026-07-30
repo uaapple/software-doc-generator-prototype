@@ -7,20 +7,15 @@ const read = (file) => fs.readFileSync(new URL(`../${file}`, import.meta.url), "
 const builder = read("scripts/build-container-release.mjs");
 const metadataBuilder = read("scripts/prepare-container-release-metadata.mjs");
 const archiveBuilder = read("scripts/create-offline-image-archive.mjs");
-const packageJson = JSON.parse(read("package.json"));
 const schema = JSON.parse(
   read("deploy/schemas/main-unification-production-candidate.schema.json")
 );
 
-assert.doesNotMatch(
-  packageJson.scripts["container:release:build"],
-  /--offline/,
-  "regular release build must not create full-image archives"
-);
 assert.match(builder, /primary: "ghcr-exact-digest"/);
 assert.match(builder, /offlineImageArchives: "on-demand-only"/);
 assert.match(builder, /githubReleaseFullImageTarRequired: false/);
 assert.match(builder, /process\.argv\.includes\("--offline"\)/);
+assert.match(builder, /Full-image offline archives are not regular Release assets/);
 assert.match(metadataBuilder, /offlineImageArchives: "on-demand-only"/);
 assert.match(metadataBuilder, /rollbackRegistryReference/);
 assert.doesNotMatch(metadataBuilder, /offlineArchive/);

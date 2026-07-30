@@ -43,7 +43,7 @@ release manifest 分别记录镜像 digest、架构、镜像输入哈希 `imageR
 才可针对实际受阻的单个镜像运行：
 
 ```bash
-npm run container:archive:on-demand -- \
+node scripts/create-offline-image-archive.mjs \
   --image=<platform|worker> \
   --reference=<ghcr.io/...@sha256:...> \
   --revision=<sha256:...> \
@@ -480,19 +480,20 @@ SATK_MATLAB_SESSION_MODE=new
 
 ## Release 包构建入口
 
-Platform/Worker 容器的普通本地构建与私有 GHCR 发布分别使用：
+Platform/Worker 容器的普通本地构建与私有 GHCR 发布分别使用版本化脚本：
 
 ```bash
-npm run container:release:build
-npm run container:release:publish
+node scripts/build-container-release.mjs
+node scripts/build-container-release.mjs --push
 ```
 
 两个入口默认都不生成完整镜像 tar；`publish` 只推送并记录精确 GHCR digest。
-不得把旧 `--offline` 当作日常发布模式。离线归档只能在生产端已经给出精确的
-GHCR 分发阻塞证据后，使用上文的单镜像按需入口生成。
+旧 `npm run container:release:build` 仍保留为兼容别名，但其历史 `--offline`
+参数会被版本化脚本明确拒绝；不得再把它当作日常发布入口。离线归档只能在
+生产端已经给出精确的 GHCR 分发阻塞证据后，使用上文单镜像入口生成。
 
 如果镜像 rootfs 输入未变、只需用新的部署工具提交重新固化候选元数据，使用
-`npm run container:release:reuse-metadata -- --source=<既有已验证manifest> ...`
+`node scripts/prepare-container-release-metadata.mjs --source=<既有已验证manifest> ...`
 生成不含 tar 字段的新 manifest。该入口必须同时给出 Platform/Worker 回滚
 `repository@sha256`，不得重建或重推已有镜像。
 
