@@ -1,0 +1,176 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v1",
+  "generatedAt": "2026-07-30T07:24:00Z",
+  "candidateTag": "main-unification-production-candidate-v1-run30522780268",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "46fc7847ec4b76e989f5e5a1379e9ab1d6c038eb",
+  "containerBuildRevision": "46fc7847ec4b76e989f5e5a1379e9ab1d6c038eb",
+  "deploymentToolRevision": "0fb349296abc86599af5bf0287264a7b2e7cb82e",
+  "baseProductionCandidate": {
+    "tag": "software-detail-nine-stage-production-candidate-v2-run30483265284",
+    "peeledCommit": "1e22a45728203217da13df7d87dc8cccad42262b",
+    "manifestSha256": "cca2e3bac102fa62140077d640a148b1f04556e7a2e34a33747970f8d07651c6"
+  },
+  "scope": {
+    "summary": "Deploy four additive TCSD oracle, coverage repair, host validation, and macOS headless MATLAB contract commits on top of the accepted nine-stage production baseline.",
+    "platformAction": "replace-exact-image",
+    "workerAction": "replace-exact-image",
+    "nativeGatewayAction": "reuse-v8-and-verify-only",
+    "nativeGatewayRationale": "The only Gateway source delta derives macOS local MCP defaults. Windows keeps existing session mode and protocol behavior; lease/evaluate capabilities are unchanged.",
+    "wikiAction": "replace-with-platform-compose",
+    "schemaCompatibility": "additive; legacy unit-test, module-description, and software-detail records remain readable"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 30522780268,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "0fb349296abc86599af5bf0287264a7b2e7cb82e",
+    "status": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-07-30T07:22:59Z",
+    "completedAt": "2026-07-30T07:23:47Z",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/30522780268",
+    "job": {
+      "id": 90806730890,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/30522780268/job/90806730890",
+      "requiredSteps": [
+        {
+          "name": "Check out exact revision",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run companion tests with Windows PowerShell 5.1",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked Node.js dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Reproduce legacy native env wrapper startup",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "testedInputs": {
+      "tests/native-gateway-companion-ps51.Tests.ps1": "b3abf90a9033b1f6019408f425909b199da1bdcb8d793f1839e5b5b5a723e0be",
+      "tests/native-gateway-companion-tests.mjs": "3e9ef2b7a172e919d567fb4e8c846c4e6e0dc14aa7cf3ef2c45453604feaada2",
+      "tests/native-gateway-windows-wrapper-tests.mjs": "997a2b8de995d97daf43b30809f15f973768a2f434adc294dc767424225c99b1",
+      "tests/windows-production-directories-tests.mjs": "cf705abee4f76f52f9d051f5d4be153abffcb7a714fde11f474f427f0438de69",
+      "scripts/deploy-native-matlab-gateway.ps1": "2495e321e6b20c805b36ee98ed611507cd47c8637b352af2460828b5bb283d30",
+      "scripts/container-production.mjs": "cedbcb6eb6055e582bd7755d7f59dd8b20193991fa43abaa43df469cc44b2bc0"
+    },
+    "jobLogSha256": "0ea8fe2589d006f1a5a79c80c5b95a8e106ac920447cc50e832b8ab37eef0c4e",
+    "uploadedWorkflowArtifacts": {
+      "count": 0,
+      "note": "The immutable run, job, steps, tested inputs and job-log hash are recorded here. Release assets are published separately."
+    }
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:0ad44ea77ebe60505f4beb439599811cad21428fbcc40894d5c69a9485a1275e",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:4f2d89cd86e2d26a28b0e2b1b1daf2d9960cf0ed9aa687e2068bb7c976cd0cea",
+      "registryIndexDigest": "sha256:4f2d89cd86e2d26a28b0e2b1b1daf2d9960cf0ed9aa687e2068bb7c976cd0cea",
+      "offlineArchive": "platform-0ad44ea77ebe-linux-amd64.tar",
+      "offlineArchiveSha256": "7f7496388edabafb3fb37d8ece3676b0984ac90d3b3ed95594916a913b08e1a2",
+      "offlineArchiveSizeBytes": 94650368,
+      "offlineConfigImageId": "sha256:078491ed03ac8ae09072427718903af9f285eeef7d4a029b5f9d69b8b21bee4d",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:986c28c86401e880cd547de88021eb37938f2183a42ef3a0065efb1f34b29f50",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:5d9983092896c7d7a62b4405349a3fc28bbce112ddf4e0c0daf6488b991c70a2",
+      "registryIndexDigest": "sha256:5d9983092896c7d7a62b4405349a3fc28bbce112ddf4e0c0daf6488b991c70a2",
+      "offlineArchive": "worker-986c28c86401-linux-amd64.tar",
+      "offlineArchiveSha256": "adcb10f9f80540989e004aff80f2e94042a47078d8c028c3a830b79f4aa27487",
+      "offlineArchiveSizeBytes": 226791424,
+      "offlineConfigImageId": "sha256:f8b6818709b2508052b35c62969b32fc36dcffcb9ca9b0ef4af338563e64944a",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "reuse-v8-and-verify-only",
+    "companionVersion": 8,
+    "releaseTag": "software-detail-nine-stage-production-candidate-v2-run30483265284",
+    "sourceRevision": "f4662e92085767ae6fb58864471debc2dd39bd6c",
+    "asset": "native-matlab-gateway-companion-v8-f4662e920857.zip",
+    "assetSha256": "8c173e71ffd83bbde672bedc44878e8ae5dff5ce041fb39479b5f7d5d381ba98",
+    "requiredReadiness": [
+      "health HTTP 200",
+      "activeJobs=0",
+      "activeLeases=0",
+      "authorized version/capabilities remain v8 lease-capable"
+    ]
+  },
+  "releaseAssets": {
+    "container-release-46fc7847ec4b.json": "d7e93b01c09d87e3f4a118e1f8e83833a025e68cafa4435de159314e5d5144a0",
+    "scan-summary.json": "81cffaad83a4c95b40aeeb7820f2d581c900b4df263a8e036de3aed47b6e2e44",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-0ad44ea77ebe.sbom.spdx.json": "4be3234d7ef9170819072ec6a58c217e4e45cba305dcf441d33e4304da0c95a6",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-0ad44ea77ebe.trivy.json": "28643dc5a8aebec5b838f731ba69dfedbea0019c58d6dce560170b1906593c67",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-0ad44ea77ebe.trivy.json.policy.json": "bf49d14d7016e16dc4dcee3948f4837f1d2ba11aaf03eb5aa640e2a6318a6718",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-986c28c86401.sbom.spdx.json": "9a1c70c20e6da65560add246e09b1617b548375f267cbf4ee103a5169ffc1a5f",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-986c28c86401.trivy.json": "6d3d96eac79b8aad7e4184a2228c588500b8109ce17a73606b274f703d722773",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-986c28c86401.trivy.json.policy.json": "9c26f372b872a02c2d1ebce0a1c4474e471e98f942775d1ac7c4cd64f9eb96e7",
+    "platform-0ad44ea77ebe-linux-amd64.tar": "7f7496388edabafb3fb37d8ece3676b0984ac90d3b3ed95594916a913b08e1a2",
+    "worker-986c28c86401-linux-amd64.tar": "adcb10f9f80540989e004aff80f2e94042a47078d8c028c3a830b79f4aa27487"
+  },
+  "archiveVerifier": {
+    "path": "scripts/verify_image_archive.py",
+    "sha256": "18a55135a84c0af5fd8366aa5854a34469f0c25066770de8314e2ebb8b8ea24d",
+    "platform": "passed",
+    "worker": "passed"
+  },
+  "scanPolicy": {
+    "syft": "passed-both-images",
+    "trivy": "passed-both-images",
+    "policyFindingCount": 0,
+    "grype": "not-installed-optional",
+    "highCriticalCve": "warn",
+    "unknownLicense": "warn",
+    "secretFinding": "hard-fail",
+    "prohibitedLicense": "hard-fail"
+  },
+  "rollbackAnchors": {
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:7a7588a6146ba958c76f636af543a44511b84ac701b9d6aacd6157527f5bd2db",
+      "linuxLocalConfigImageId": "sha256:264c2d73b3883a5c0bb594e7aebda966190e467415da71548c90046354734a99",
+      "imageRevision": "sha256:0d94ba790f13786bcce4e93ca4cd5d534f1a2f9e89bf3407e5af4442f28dbdb4"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:ca96576e6bb4141a5e2aa1f268092d17bd2113549318e3fea238443c407d81aa"
+    },
+    "nativeGateway": "existing supported v8 backup; no Gateway replacement is authorized by this candidate"
+  },
+  "acceptance": {
+    "coreTests": "passed-193",
+    "slxTests": "passed-46",
+    "tcsdContractRecoveryAndRollback": "passed",
+    "softwareDetailNineStageCompatibility": "passed",
+    "pythonTcsdFocusedTests": "passed-56",
+    "matlabR2026aSatkRegression": "passed",
+    "containerStaticAndHttp": "passed",
+    "windowsPowerShell51BehavioralAndWrapper": "passed",
+    "productionDeployment": "not-performed",
+    "realBusinessInput": "pending-user-after-automatic-production-acceptance"
+  },
+  "distribution": {
+    "containerRegistry": "published-private-ghcr-exact-digests",
+    "containerRootfsAction": "use-new-platform-and-worker-digests",
+    "offlineArchives": "release-assets-for-fallback-only-after-online-path-is-proven-unavailable",
+    "githubRelease": {
+      "status": "published",
+      "tag": "main-unification-production-candidate-v1-run30522780268",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/main-unification-production-candidate-v1-run30522780268"
+    },
+    "productionConsumption": "reuse-existing-authenticated-git-release-and-ghcr-paths; gh-cli-optional"
+  }
+}
