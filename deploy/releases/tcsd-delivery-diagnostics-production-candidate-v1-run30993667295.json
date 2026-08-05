@@ -1,0 +1,147 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-05T09:34:52Z",
+  "candidateTag": "tcsd-delivery-diagnostics-production-candidate-v1-run30993667295",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "4484da3795764aac75239755de2adb9db500e79e",
+  "containerBuildRevision": "4484da3795764aac75239755de2adb9db500e79e",
+  "deploymentToolRevision": "4484da3795764aac75239755de2adb9db500e79e",
+  "baseProductionCandidate": {
+    "tag": "main-unification-production-candidate-v2-run30524309776",
+    "tagObject": "936d31c3409ccfd611cebaace46d728e64df6e0a",
+    "peeledCommit": "ffa48e89bc498914e15341625ac4cf73eacae3c1"
+  },
+  "scope": {
+    "summary": "Add safe TCSD delivery diagnostics, structured Worker request correlation, retry classification, backoff, inherited credential status and idempotent redelivery without changing legacy task schemas.",
+    "platformAction": "replace-exact-ghcr-image",
+    "workerAction": "replace-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-v8-and-verify-only",
+    "wikiAction": "replace-with-platform-compose",
+    "schemaCompatibility": "additive; existing unit-test, module-description and software-detail task records remain readable"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 30993667295,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "4484da3795764aac75239755de2adb9db500e79e",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-08-05T09:32:03Z",
+    "completedAt": "2026-08-05T09:32:47Z",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/30993667295",
+    "job": {
+      "id": 92265480561,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-08-05T09:32:07Z",
+      "completedAt": "2026-08-05T09:32:46Z",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/30993667295/job/92265480561",
+      "requiredSteps": [
+        { "name": "Check out exact revision", "conclusion": "success" },
+        { "name": "Run companion tests with Windows PowerShell 5.1", "conclusion": "success" },
+        { "name": "Install locked Node.js dependencies", "conclusion": "success" },
+        { "name": "Reproduce legacy native env wrapper startup", "conclusion": "success" }
+      ]
+    },
+    "testedInputs": {
+      "tests/native-gateway-companion-ps51.Tests.ps1": "b3abf90a9033b1f6019408f425909b199da1bdcb8d793f1839e5b5b5a723e0be",
+      "tests/native-gateway-companion-tests.mjs": "3e9ef2b7a172e919d567fb4e8c846c4e6e0dc14aa7cf3ef2c45453604feaada2",
+      "tests/native-gateway-windows-wrapper-tests.mjs": "997a2b8de995d97daf43b30809f15f973768a2f434adc294dc767424225c99b1",
+      "tests/windows-production-directories-tests.mjs": "cf705abee4f76f52f9d051f5d4be153abffcb7a714fde11f474f427f0438de69",
+      "scripts/deploy-native-matlab-gateway.ps1": "ff42f35720d3e0c7580a18f000052e03c52819c43b1841cd2cefd0c16fd6f2a1",
+      "scripts/container-production.mjs": "cedbcb6eb6055e582bd7755d7f59dd8b20193991fa43abaa43df469cc44b2bc0"
+    },
+    "jobLogSha256": "458dba9c78b364555928f69e87fdd009d091125ebbfc626c88097392cb01e5f2",
+    "uploadedWorkflowArtifacts": {
+      "count": 0,
+      "note": "The immutable run, job, steps, tested inputs and streamed job-log hash are recorded here."
+    }
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:bef64d6f05b435e35318c20f93fe0d2604d38b7a447d37a262662a4d070e6e57",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:40ad3c2ac4d7dc524c2d06f8d57ab0b256e20435580508bf8d38c695f1cac00f",
+      "registryIndexDigest": "sha256:40ad3c2ac4d7dc524c2d06f8d57ab0b256e20435580508bf8d38c695f1cac00f",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:4f85b75a87bda1e5d83eb839244f27d3d84327196b5ab087b4976704014d3c21",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:fad5091430412a4acfbc1dd7e2e7116947636e4eea0a40b56efd5bd725cd164e",
+      "registryIndexDigest": "sha256:fad5091430412a4acfbc1dd7e2e7116947636e4eea0a40b56efd5bd725cd164e",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "reuse-v8-and-verify-only",
+    "companionVersion": 8,
+    "sourceRevision": "f4662e92085767ae6fb58864471debc2dd39bd6c",
+    "requiredReadiness": [
+      "health HTTP 200",
+      "activeJobs=0",
+      "activeLeases=0",
+      "authorized version/capabilities remain v8 lease-capable"
+    ]
+  },
+  "releaseAssets": {
+    "container-release-4484da379576.json": "562cf337b3f2d6536b4ae88d4895cfc2f82c3b7df17218de2796694ddf2b6b7d",
+    "scan-summary.json": "0617a7bdf66dd0a2110511559ce6423accbed67e634b27acfd326486275eb7c1",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-bef64d6f05b4.sbom.spdx.json": "3b649805fc9cc4a1744389c066fdb87486f6c6d9fb0a9687369a3e1c79734bf6",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-bef64d6f05b4.trivy.json": "b12f3ee86ee64d031395a24fd780495f20fdcf00c2af52292bbdfa283f0fb05b",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-bef64d6f05b4.trivy.json.policy.json": "5633470946f36ea1b9709928decb6264ce3da7e864719d122ae5b97a07b9d873",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f85b75a87bd.sbom.spdx.json": "be77da2d8e6e4e380be3e815d5d623d229b3e818e0f389888669072e58538d56",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f85b75a87bd.trivy.json": "a37fa151dd879e2cfa38e9195d2e746287ed9920c5882ea1b147f28d41d93ff3",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f85b75a87bd.trivy.json.policy.json": "0052ce3438f40f7527ed90a7e6fac880384a7064d971ee11fe46d01b02fe16c3"
+  },
+  "scanPolicy": {
+    "syft": "passed-both-images",
+    "trivy": "passed-both-images",
+    "policyFindingCount": 0,
+    "grype": "not-installed-optional",
+    "highCriticalCve": "warn",
+    "unknownLicense": "warn",
+    "secretFinding": "hard-fail",
+    "prohibitedLicense": "hard-fail"
+  },
+  "rollbackAnchors": {
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:4f2d89cd86e2d26a28b0e2b1b1daf2d9960cf0ed9aa687e2068bb7c976cd0cea",
+      "linuxLocalConfigImageId": "sha256:078491ed03ac8ae09072427718903af9f285eeef7d4a029b5f9d69b8b21bee4d",
+      "imageRevision": "sha256:0ad44ea77ebe60505f4beb439599811cad21428fbcc40894d5c69a9485a1275e"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:5d9983092896c7d7a62b4405349a3fc28bbce112ddf4e0c0daf6488b991c70a2",
+      "imageRevision": "sha256:986c28c86401e880cd547de88021eb37938f2183a42ef3a0065efb1f34b29f50"
+    },
+    "nativeGateway": "existing supported v8 backup; no Gateway replacement is authorized by this candidate"
+  },
+  "acceptance": {
+    "coreTests": "passed-193",
+    "slxTests": "passed-46",
+    "tcsdContractRecoveryAndRollback": "passed",
+    "containerReleaseGate": "passed",
+    "securityReview": "passed",
+    "stateMachineReview": "passed",
+    "windowsPowerShell51BehavioralAndWrapper": "passed-run-30993667295",
+    "productionDeployment": "not-performed",
+    "realBusinessInput": "pending-user-after-automatic-production-acceptance"
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-delivery-diagnostics-production-candidate-v1-run30993667295",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-delivery-diagnostics-production-candidate-v1-run30993667295"
+    },
+    "linuxPlatformDistribution": "fixed-wx11p-relay; linux-direct-ghcr-not-supported-by-topology",
+    "productionConsumption": "reuse-existing-authenticated-git-release-and-ghcr-paths; gh-cli-optional"
+  }
+}
