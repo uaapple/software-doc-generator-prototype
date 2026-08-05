@@ -141,8 +141,8 @@ export function publicUnitTestWorkerProfile(profile = {}) {
     matlabBaseURL: String(profile.matlabBaseURL || "").trim(),
     matlabHttpMode: String(profile.matlabHttpMode || "path").trim() || "path",
     authConfigured: {
-      hermes: Boolean(profile.hermesAuthToken),
-      matlabWorker: Boolean(profile.matlabAuthToken)
+      hermes: Boolean(profile.hermesAuthToken || profile.authConfigured?.hermes),
+      matlabWorker: Boolean(profile.matlabAuthToken || profile.authConfigured?.matlabWorker)
     }
   };
 }
@@ -417,24 +417,248 @@ function clipTaskMessage(value = "", maxLength = 1800) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
+function safeDeliveryText(value = "", maxLength = 120) {
+  const text = String(value || "").trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(text) ? text.slice(0, maxLength) : "";
+}
+
+function normalizeWorkerDeliveryFailure(error = {}) {
+  const details = error?.details && typeof error.details === "object" && !Array.isArray(error.details)
+    ? error.details
+    : {};
+  const retryable = error?.retryable === true || details.retryable === true;
+  const httpStatus = Number(details.httpStatus || 0);
+  return {
+    state: retryable ? "retrying" : "blocked",
+    operation: safeDeliveryText(details.operation) || "create",
+    category: safeDeliveryText(details.category) || (retryable ? "network" : "request"),
+    retryable,
+    ...(Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? { httpStatus } : {}),
+    ...(safeDeliveryText(details.remoteCode || error?.code) ? { remoteCode: safeDeliveryText(details.remoteCode || error?.code) } : {}),
+    ...(safeDeliveryText(details.correlationId) ? { correlationId: safeDeliveryText(details.correlationId) } : {})
+  };
+}
+
 function taskFilePath(taskDir = "") {
   return path.join(taskDir, TASK_FILE_NAME);
 }
 
-function publicTask(task = {}) {
-  const clone = structuredClone(task);
-  clone.unitTestProject = normalizeTaskProjectSnapshot(clone.unitTestProject);
-  clone.workerProfile = publicUnitTestWorkerProfile(clone.workerProfile) || publicUnitTestWorkerProfile(resolveUnitTestWorkerProfile(""));
-  if (clone.workspace) {
-    clone.workspace = {
-      directory: clone.workspace.directory,
-      inputDir: clone.workspace.inputDir,
-      outputDir: clone.workspace.outputDir,
-      agentDirectory: clone.workspace.agentDirectory || "",
-      agentOutputDir: clone.workspace.agentOutputDir || ""
-    };
+function publicDiagnosticText(value = "", maxLength = 500) {
+  return String(value || "")
+    .replace(/[A-Za-z]:[\\/][^\s,;]+/g, "[path]")
+    .replace(/(?:^|\s)\/(?:[^\s,;]+\/)+[^\s,;]*/g, " [path]")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function publicTokenUsage(value = null) {
+  if (!value || typeof value !== "object") return null;
+  const result = {};
+  for (const key of ["inputTokens", "outputTokens", "totalTokens"]) {
+    const amount = Number(value[key]);
+    if (Number.isSafeInteger(amount) && amount >= 0) result[key] = amount;
   }
-  return clone;
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function publicExecutionMessage(status = "", code = "") {
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  const normalizedCode = safeDeliveryText(code, 160);
+  if (["failed", "error", "blocked"].includes(normalizedStatus)) {
+    return normalizedCode ? `执行失败（${normalizedCode}）。` : "执行失败。";
+  }
+  if (["running", "processing", "in_progress"].includes(normalizedStatus)) return "正在执行。";
+  if (["queued", "pending", "retrying"].includes(normalizedStatus)) return "等待执行。";
+  if (["completed", "succeeded", "success"].includes(normalizedStatus)) return "执行完成。";
+  if (["cancelled", "canceled"].includes(normalizedStatus)) return "执行已取消。";
+  return "";
+}
+
+function publicInputFile(input = null) {
+  if (!input || typeof input !== "object") return null;
+  return {
+    originalName: String(input.originalName || "").slice(0, 260),
+    workspaceName: String(input.workspaceName || "").slice(0, 260),
+    workspaceRelativePath: normalizeStoredRelativePath(input.workspaceRelativePath || ""),
+    size: Number(input.size || 0) || 0,
+    mimeType: String(input.mimeType || "").slice(0, 120)
+  };
+}
+
+function publicWorkerDelivery(delivery = null) {
+  if (!delivery || typeof delivery !== "object") return null;
+  const state = ["accepted", "queued", "retrying", "blocked"].includes(delivery.state)
+    ? delivery.state
+    : "";
+  const failureState = ["retrying", "blocked"].includes(state) || !state;
+  const normalized = failureState
+    ? normalizeWorkerDeliveryFailure({
+      code: delivery.remoteCode,
+      retryable: delivery.retryable,
+      details: delivery
+    })
+    : {
+      state,
+      retryable: delivery.retryable === true,
+      ...(safeDeliveryText(delivery.operation) ? { operation: safeDeliveryText(delivery.operation) } : {}),
+      ...(safeDeliveryText(delivery.category) ? { category: safeDeliveryText(delivery.category) } : {}),
+      ...(safeDeliveryText(delivery.remoteCode) ? { remoteCode: safeDeliveryText(delivery.remoteCode) } : {}),
+      ...(safeDeliveryText(delivery.correlationId) ? { correlationId: safeDeliveryText(delivery.correlationId) } : {})
+    };
+  return {
+    ...normalized,
+    state: state || normalized.state,
+    attemptCount: Number(delivery.attemptCount || 0) || 0,
+    firstFailureAt: String(delivery.firstFailureAt || ""),
+    lastFailureAt: String(delivery.lastFailureAt || ""),
+    nextAttemptAt: String(delivery.nextAttemptAt || ""),
+    acceptedAt: String(delivery.acceptedAt || ""),
+    lastSuccessAt: String(delivery.lastSuccessAt || "")
+  };
+}
+
+function publicTaskErrorMessage(task = {}) {
+  const code = safeDeliveryText(task.hermes?.errorCode || task.workerDelivery?.remoteCode, 160);
+  if (!task.errorMessage) return "";
+  if (code === "matlab_unavailable") return "MATLAB unavailable";
+  return publicExecutionMessage("failed", code);
+}
+
+function publicPipelineStage(stage = {}) {
+  const checkpoint = stage.checkpoint && typeof stage.checkpoint === "object"
+    ? stage.checkpoint
+    : null;
+  return {
+    index: Number(stage.index || 0) || 0,
+    name: String(stage.name || "").slice(0, 160),
+    status: String(stage.status || "").slice(0, 60),
+    summary: publicExecutionMessage(stage.status, stage.error?.code),
+    skillName: String(stage.skillName || "").slice(0, 160),
+    skillVersion: String(stage.skillVersion || "").slice(0, 80),
+    bundleVersion: String(stage.bundleVersion || "").slice(0, 80),
+    attempt: Number(stage.attempt || 0) || 0,
+    startedAt: String(stage.startedAt || "").slice(0, 40),
+    endedAt: String(stage.endedAt || "").slice(0, 40),
+    error: stage.error ? {
+      code: safeDeliveryText(stage.error.code),
+      message: publicExecutionMessage("failed", stage.error.code)
+    } : null,
+    attempts: (Array.isArray(stage.attempts) ? stage.attempts : []).slice(-20).map((attempt) => ({
+      attempt: Number(attempt?.attempt || 0) || 0,
+      status: String(attempt?.status || "").slice(0, 60),
+      sessionId: safeDeliveryText(attempt?.sessionId, 200),
+      model: String(attempt?.model || "").slice(0, 120)
+    })),
+    checkpoint: checkpoint ? {
+      schema: String(checkpoint.schema || "").slice(0, 120),
+      skill: checkpoint.skill ? {
+        name: String(checkpoint.skill.name || "").slice(0, 160),
+        version: String(checkpoint.skill.version || "").slice(0, 80),
+        bundleVersion: String(checkpoint.skill.bundleVersion || "").slice(0, 80),
+        bundleHash: safeDeliveryText(checkpoint.skill.bundleHash, 128)
+      } : null,
+      agent: checkpoint.agent ? {
+        profile: String(checkpoint.agent.profile || "").slice(0, 120),
+        model: String(checkpoint.agent.model || "").slice(0, 120),
+        sessionId: safeDeliveryText(checkpoint.agent.sessionId, 200),
+        tokenUsage: publicTokenUsage(checkpoint.agent.tokenUsage)
+      } : null,
+      artifacts: (Array.isArray(checkpoint.artifacts) ? checkpoint.artifacts : []).slice(0, 80).map((artifact) => ({
+        role: String(artifact?.role || "").slice(0, 120),
+        kind: String(artifact?.kind || "").slice(0, 80),
+        fileName: String(artifact?.fileName || "").slice(0, 260)
+      })),
+      validation: checkpoint.validation ? {
+        status: String(checkpoint.validation.status || "").slice(0, 60),
+        code: safeDeliveryText(checkpoint.validation.code),
+        summary: publicExecutionMessage(checkpoint.validation.status, checkpoint.validation.code)
+      } : null
+    } : null
+  };
+}
+
+function publicTask(task = {}) {
+  const workerProfile = publicUnitTestWorkerProfile(task.workerProfile) || publicUnitTestWorkerProfile(resolveUnitTestWorkerProfile(""));
+  return {
+    id: String(task.id || ""),
+    type: String(task.type || QUEUE_TYPE),
+    status: String(task.status || "queued"),
+    title: String(task.title || "").slice(0, 200),
+    createdAt: String(task.createdAt || ""),
+    updatedAt: String(task.updatedAt || ""),
+    startedAt: String(task.startedAt || ""),
+    completedAt: String(task.completedAt || ""),
+    failedAt: String(task.failedAt || ""),
+    summary: publicExecutionMessage(task.status, task.workerDelivery?.remoteCode),
+    errorMessage: publicTaskErrorMessage(task),
+    progress: task.progress ? {
+      stage: String(task.progress.stage || "").slice(0, 60),
+      percent: Number(task.progress.percent || 0) || 0,
+      label: String(task.progress.label || "").slice(0, 120),
+      message: publicExecutionMessage(task.progress.stage || task.status, task.workerDelivery?.remoteCode),
+      updatedAt: String(task.progress.updatedAt || "")
+    } : null,
+    unitTestProject: normalizeTaskProjectSnapshot(task.unitTestProject),
+    workerProfile,
+    workerPending: task.workerPending === true,
+    workerDelivery: publicWorkerDelivery(task.workerDelivery),
+    inputs: {
+      modelSlx: publicInputFile(task.inputs?.modelSlx),
+      modelMat: publicInputFile(task.inputs?.modelMat),
+      ...(task.inputs?.modelInitScript ? { modelInitScript: publicInputFile(task.inputs.modelInitScript) } : {})
+    },
+    hermes: {
+      stepType: String(task.hermes?.stepType || STEP_TYPE).slice(0, 120),
+      pipelineName: String(task.hermes?.pipelineName || "").slice(0, 160),
+      expectedOutputPattern: String(task.hermes?.expectedOutputPattern || "").slice(0, 200),
+      errorCode: safeDeliveryText(task.hermes?.errorCode, 160),
+      tokenUsage: publicTokenUsage(task.hermes?.tokenUsage),
+      sessionId: safeDeliveryText(task.hermes?.sessionId, 200),
+      warnings: (Array.isArray(task.hermes?.warnings) ? task.hermes.warnings : []).slice(0, 20).map(() => "Agent 返回了受限诊断信息。")
+    },
+    runtimeEvents: (Array.isArray(task.runtimeEvents) ? task.runtimeEvents : []).slice(-80).map((event) => ({
+      at: String(event?.at || ""),
+      type: String(event?.type || "").slice(0, 80),
+      status: String(event?.status || "").slice(0, 60),
+      level: String(event?.level || "").slice(0, 40),
+      label: String(event?.label || "").slice(0, 160),
+      message: publicExecutionMessage(event?.status, event?.code),
+      transport: String(event?.transport || "").slice(0, 60),
+      elapsedMs: Number(event?.elapsedMs || 0) || 0,
+      sessionId: safeDeliveryText(event?.sessionId, 200),
+      tokenUsage: publicTokenUsage(event?.tokenUsage)
+    })),
+    artifacts: (Array.isArray(task.artifacts) ? task.artifacts : []).slice(0, 80).map((artifact) => ({
+      id: String(artifact?.id || "").slice(0, 160),
+      fileName: String(artifact?.fileName || "").slice(0, 260),
+      relativePath: normalizeStoredRelativePath(artifact?.relativePath || ""),
+      size: Number(artifact?.size || 0) || 0,
+      mimeType: String(artifact?.mimeType || "").slice(0, 120),
+      description: String(artifact?.description || "") === "最终 TCSD 单元测试用例 Excel"
+        ? "最终 TCSD 单元测试用例 Excel"
+        : "",
+      expectedValueCount: Number(artifact?.expectedValueCount || 0) || 0
+    })),
+    timeline: (Array.isArray(task.timeline) ? task.timeline : []).slice(-100).map((entry) => ({
+      at: String(entry?.at || ""),
+      status: String(entry?.status || "").slice(0, 60),
+      message: publicExecutionMessage(entry?.status)
+    })),
+    pipeline: task.pipeline ? {
+      jobId: safeDeliveryText(task.pipeline.jobId, 200),
+      schema: String(task.pipeline.schema || "").slice(0, 160),
+      status: String(task.pipeline.status || "").slice(0, 60),
+      completion: String(task.pipeline.completion || "").slice(0, 60),
+      stages: (Array.isArray(task.pipeline.stages) ? task.pipeline.stages : []).map(publicPipelineStage),
+      checkpoints: (Array.isArray(task.pipeline.checkpoints) ? task.pipeline.checkpoints : []).slice(0, 20).map((checkpoint) => ({
+        stageIndex: Number(checkpoint?.stageIndex || 0) || 0,
+        schema: String(checkpoint?.schema || "").slice(0, 120)
+      })),
+      updatedAt: String(task.pipeline.updatedAt || "")
+    } : null
+  };
 }
 
 async function copyUploadedFile(file = {}, targetPath = "") {
@@ -459,6 +683,7 @@ export class UnitTestCaseGenerationService {
       ? options.hermesAgentClientFactory
       : null;
     this.deletedTaskIds = new Set();
+    this.deliveryRuns = new Map();
     this.remotePollWindowMs = Number(options.remotePollWindowMs ?? config.unitTestCase?.remotePollWindowMs ?? 5 * 60 * 1000);
     this.sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
@@ -834,7 +1059,7 @@ export class UnitTestCaseGenerationService {
     task.timeline = [
       ...(task.timeline || []),
       { at: timestamp, status: "running", message: "Hermes Agent 已开始处理。" }
-    ];
+    ].slice(-100);
     return this.saveTask(task);
   }
 
@@ -948,6 +1173,15 @@ export class UnitTestCaseGenerationService {
     };
     task.status = job.status === "失败" ? "failed" : job.status === "部分完成" ? "partial" : job.status === "已完成" ? "completed" : "running";
     task.workerPending = false;
+    task.workerDelivery = {
+      ...(task.workerDelivery || {}),
+      state: "accepted",
+      retryable: false,
+      workerJobId: String(job.jobId || "").trim(),
+      ...(safeDeliveryText(job.deliveryCorrelationId) ? { correlationId: safeDeliveryText(job.deliveryCorrelationId) } : {}),
+      acceptedAt: task.workerDelivery?.acceptedAt || now(),
+      lastSuccessAt: now()
+    };
     task.progress = buildProgress(task.status, job.stages?.find((stage) => stage.status === "正在执行")?.name || job.error?.message || "正在同步 TCSD 十二阶段进度。");
     task.updatedAt = now();
     await this.saveTask(task);
@@ -984,7 +1218,7 @@ export class UnitTestCaseGenerationService {
         delayMs = 1000;
       } catch (error) {
         // A temporary network break is not a MATLAB failure; retain the last confirmed job state.
-        if (error.code === "tcsd_job_not_found") throw error;
+        if (error.code === "tcsd_job_not_found" || error?.retryable === false) throw error;
         delayMs = Math.min(15000, Math.round(delayMs * 1.8));
       }
       await this.sleep(delayMs);
@@ -1001,6 +1235,17 @@ export class UnitTestCaseGenerationService {
   }
 
   async runTask(taskId = "") {
+    const normalizedTaskId = String(taskId || "").trim();
+    const pending = this.deliveryRuns.get(normalizedTaskId);
+    if (pending) return pending;
+    const execution = this.runTaskUnlocked(normalizedTaskId).finally(() => {
+      if (this.deliveryRuns.get(normalizedTaskId) === execution) this.deliveryRuns.delete(normalizedTaskId);
+    });
+    this.deliveryRuns.set(normalizedTaskId, execution);
+    return execution;
+  }
+
+  async runTaskUnlocked(taskId = "") {
     let task = await this.readTask(taskId);
     if (!task) {
       throw createHttpError("任务不存在。", 404, "unit_test_case_task_not_found");
@@ -1028,12 +1273,80 @@ export class UnitTestCaseGenerationService {
       );
       return completed;
     } catch (error) {
-      if (["tcsd_worker_unavailable", "tcsd_poll_timeout"].includes(error.code)) {
-        const pending = await this.readTask(taskId); pending.status = pending.pipeline?.jobId ? "running" : "queued"; pending.workerPending = true; pending.updatedAt = now(); pending.progress = buildProgress(pending.status, "Windows Worker 暂不可用，平台将在后台继续尝试。"); await this.saveTask(pending); return this.getTask(taskId);
+      const hasExplicitRetryable =
+        typeof error?.retryable === "boolean" ||
+        typeof error?.details?.retryable === "boolean";
+      const legacyRetryable =
+        !hasExplicitRetryable &&
+        ["tcsd_worker_unavailable", "tcsd_poll_timeout"].includes(error.code);
+      const isDeliveryFailure =
+        legacyRetryable ||
+        ["create", "poll"].includes(String(error?.details?.operation || ""));
+      if (!isDeliveryFailure) {
+        await this.failTask(taskId, error);
+        throw error;
       }
-      await this.failTask(taskId, error);
-      throw error;
+      const deliveryFailure = normalizeWorkerDeliveryFailure({ ...error, retryable: error?.retryable === true || legacyRetryable });
+      const failed = await this.readTask(taskId);
+      const timestamp = now();
+      failed.workerDelivery = {
+        ...(failed.workerDelivery || {}),
+        ...deliveryFailure,
+        attemptCount: Number(failed.workerDelivery?.attemptCount || 0) + 1,
+        firstFailureAt: failed.workerDelivery?.firstFailureAt || timestamp,
+        lastFailureAt: timestamp
+      };
+      failed.updatedAt = timestamp;
+      if (deliveryFailure.retryable) {
+        const retryDelayMs = Math.min(
+          15 * 60 * 1000,
+          30 * 1000 * 2 ** Math.min(5, Math.max(0, failed.workerDelivery.attemptCount - 1))
+        );
+        failed.workerDelivery.nextAttemptAt = new Date(Date.now() + retryDelayMs).toISOString();
+        failed.status = failed.pipeline?.jobId ? "running" : "queued";
+        failed.workerPending = true;
+        failed.progress = buildProgress(failed.status, failed.pipeline?.jobId
+          ? "Windows Worker 连接暂时中断，平台将在后台继续同步。"
+          : "Windows Worker 暂时不可达，平台将在后台重新投递。");
+        await this.saveTask(failed);
+        return this.getTask(taskId);
+      }
+      failed.status = "failed";
+      failed.workerPending = false;
+      failed.failedAt = timestamp;
+      failed.errorMessage = "Windows Worker 已拒绝任务投递，请查看安全诊断并在修复后重新投递。";
+      failed.progress = buildProgress("failed", failed.errorMessage);
+      failed.hermes = { ...(failed.hermes || {}), errorCode: error?.code || "tcsd_worker_request_rejected", errorDetails: deliveryFailure };
+      failed.timeline = [...(failed.timeline || []), { at: timestamp, status: "failed", message: failed.errorMessage }];
+      await this.saveTask(failed);
+      return this.getTask(taskId);
     }
+  }
+
+  async redeliverTask(taskId = "") {
+    const normalizedTaskId = String(taskId || "").trim();
+    const task = await this.readTask(normalizedTaskId);
+    if (!task) throw createHttpError("任务不存在。", 404, "unit_test_case_task_not_found");
+    if (task.pipeline?.jobId) {
+      throw createHttpError("Worker 作业已经创建，不能重复投递。", 409, "unit_test_case_worker_job_already_created");
+    }
+    if (!task.workerPending && task.workerDelivery?.state !== "blocked") {
+      throw createHttpError("当前任务不处于可重新投递状态。", 409, "unit_test_case_redelivery_not_allowed");
+    }
+    if (this.deliveryRuns.has(normalizedTaskId)) {
+      throw createHttpError("该任务正在投递，请勿重复操作。", 409, "unit_test_case_redelivery_in_progress");
+    }
+    task.status = "queued";
+    task.workerPending = true;
+    task.failedAt = "";
+    task.errorMessage = "";
+    task.workerDelivery = { ...(task.workerDelivery || {}), state: "queued", retryable: true, manuallyRequestedAt: now() };
+    task.workerDelivery.nextAttemptAt = "";
+    task.progress = buildProgress("queued", "正在重新投递到原 Windows Worker。");
+    task.updatedAt = now();
+    await this.saveTask(task);
+    this.runTask(normalizedTaskId).catch(() => {});
+    return this.getTask(normalizedTaskId);
   }
 
   async resolveHermesOutputCandidates(task = {}, artifact = {}) {
@@ -1222,6 +1535,17 @@ export class UnitTestCaseGenerationService {
   }
 
   async reconcileTask(taskId = "") {
+    const normalizedTaskId = String(taskId || "").trim();
+    const pending = this.deliveryRuns.get(normalizedTaskId);
+    if (pending) return pending;
+    const execution = this.reconcileTaskUnlocked(normalizedTaskId).finally(() => {
+      if (this.deliveryRuns.get(normalizedTaskId) === execution) this.deliveryRuns.delete(normalizedTaskId);
+    });
+    this.deliveryRuns.set(normalizedTaskId, execution);
+    return execution;
+  }
+
+  async reconcileTaskUnlocked(taskId = "") {
     const task = await this.readTask(taskId); if (!task?.pipeline?.jobId || !["queued", "running"].includes(task.status)) return task;
     try {
       const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
@@ -1242,11 +1566,47 @@ export class UnitTestCaseGenerationService {
       return this.getTask(taskId);
     } catch (error) {
       if (error.code === "tcsd_job_not_found") return this.failTask(taskId, createHttpError("Windows Worker 中不存在该 jobId。", 404, "tcsd_job_not_found"));
-      const pending = await this.readTask(taskId); pending.status = "running"; pending.workerPending = true; pending.updatedAt = now(); pending.progress = buildProgress("running", error.code === "tcsd_worker_unavailable" ? "Windows Worker 暂不可用，等待后台重连。" : "进度同步暂时中断，等待后台重试。"); await this.saveTask(pending); return pending;
+      const deliveryFailure = normalizeWorkerDeliveryFailure(error);
+      if (!deliveryFailure.retryable) {
+        const rejected = await this.readTask(taskId);
+        rejected.workerPending = false;
+        rejected.workerDelivery = {
+          ...(rejected.workerDelivery || {}),
+          ...deliveryFailure,
+          attemptCount: Number(rejected.workerDelivery?.attemptCount || 0) + 1,
+          firstFailureAt: rejected.workerDelivery?.firstFailureAt || now(),
+          lastFailureAt: now()
+        };
+        await this.saveTask(rejected);
+        return this.failTask(taskId, createHttpError("Windows Worker 拒绝了作业查询。", deliveryFailure.httpStatus || 502, error.code || "tcsd_worker_poll_rejected", deliveryFailure));
+      }
+      const pending = await this.readTask(taskId);
+      pending.status = "running";
+      pending.workerPending = true;
+      pending.workerDelivery = {
+        ...(pending.workerDelivery || {}),
+        ...deliveryFailure,
+        attemptCount: Number(pending.workerDelivery?.attemptCount || 0) + 1,
+        firstFailureAt: pending.workerDelivery?.firstFailureAt || now(),
+        lastFailureAt: now()
+      };
+      pending.updatedAt = now();
+      pending.progress = buildProgress("running", "Windows Worker 连接暂时中断，等待后台重试。");
+      await this.saveTask(pending);
+      return pending;
     }
   }
 
-  async reconcileRemoteTasks() { const results = []; for (const task of await this.listTasks()) if (["queued", "running"].includes(task.status)) results.push(task.pipeline?.jobId ? await this.reconcileTask(task.id) : await this.runTask(task.id)); return results; }
+  async reconcileRemoteTasks() {
+    const results = [];
+    for (const task of await this.listTasks()) {
+      if (!["queued", "running"].includes(task.status)) continue;
+      const nextAttemptAt = Date.parse(task.workerDelivery?.nextAttemptAt || "") || 0;
+      if (!task.pipeline?.jobId && nextAttemptAt > Date.now()) continue;
+      results.push(task.pipeline?.jobId ? await this.reconcileTask(task.id) : await this.runTask(task.id));
+    }
+    return results;
+  }
 
   async getArtifact(taskId = "", artifactId = "") {
     const task = await this.readTask(taskId);

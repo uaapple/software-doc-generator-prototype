@@ -41,6 +41,34 @@ function now() {
   return new Date().toISOString();
 }
 
+function safeTcsdAuditId(value = "") {
+  const normalized = String(value || "").trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(normalized) ? normalized : "";
+}
+
+function ensureTcsdCorrelation(req, res) {
+  const correlationId =
+    safeTcsdAuditId(req.sdgCorrelationId) ||
+    safeTcsdAuditId(req.get("x-sdg-correlation-id")) ||
+    `tcsd-${randomUUID()}`;
+  req.sdgCorrelationId = correlationId;
+  res.set("X-SDG-Correlation-ID", correlationId);
+  return correlationId;
+}
+
+function logTcsdRequest(event, fields = {}) {
+  console.info(JSON.stringify({
+    type: "tcsd_worker_request",
+    event,
+    at: now(),
+    ...(safeTcsdAuditId(fields.correlationId) ? { correlationId: safeTcsdAuditId(fields.correlationId) } : {}),
+    ...(safeTcsdAuditId(fields.taskId) ? { taskId: safeTcsdAuditId(fields.taskId) } : {}),
+    ...(safeTcsdAuditId(fields.jobId) ? { jobId: safeTcsdAuditId(fields.jobId) } : {}),
+    ...(safeTcsdAuditId(fields.code) ? { code: safeTcsdAuditId(fields.code) } : {}),
+    ...(Number.isInteger(fields.httpStatus) ? { httpStatus: fields.httpStatus } : {})
+  }));
+}
+
 function normalizeAllowedPaths(allowedPaths = []) {
   return Array.isArray(allowedPaths)
     ? allowedPaths.map((item) => path.resolve(String(item || ""))).filter(Boolean)
@@ -53,17 +81,29 @@ function isPathAllowed(targetPath = "", allowedPaths = []) {
 }
 
 function requireHermesAuth(req, res, next) {
+  const isTcsdRequest = String(req.path || "").startsWith("/internal/tcsd-pipeline/");
+  const correlationId = isTcsdRequest ? ensureTcsdCorrelation(req, res) : "";
   const authToken = String(config.hermes.authToken || "").trim();
   if (!authToken) {
+    if (isTcsdRequest) logTcsdRequest("auth_accepted", { correlationId });
     return next();
   }
   const header = String(req.get("authorization") || "");
   if (header === `Bearer ${authToken}`) {
+    if (isTcsdRequest) logTcsdRequest("auth_accepted", { correlationId });
     return next();
+  }
+  if (isTcsdRequest) {
+    logTcsdRequest("auth_rejected", {
+      correlationId,
+      httpStatus: 401,
+      code: "hermes_unauthorized"
+    });
   }
   return res.status(401).json({
     error: "Invalid Hermes agent token",
-    code: "hermes_unauthorized"
+    code: "hermes_unauthorized",
+    ...(correlationId ? { correlationId } : {})
   });
 }
 
@@ -1547,9 +1587,20 @@ export async function createHermesApp(options = {}) {
 
   app.post("/internal/tcsd-pipeline/jobs", requireHermesAuth, async (req, res, next) => {
     try {
+      const correlationId = ensureTcsdCorrelation(req, res);
       const payload = req.body || {};
+      logTcsdRequest("request_received", {
+        correlationId,
+        taskId: payload.taskId
+      });
       const job = await startTcsdPipelineJob(payload);
-      res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema });
+      logTcsdRequest("job_accepted", {
+        correlationId,
+        taskId: payload.taskId,
+        jobId: job.jobId,
+        httpStatus: 202
+      });
+      res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema, correlationId });
     } catch (error) { next(error); }
   });
 
@@ -1561,13 +1612,25 @@ export async function createHermesApp(options = {}) {
       let cleanupDir = "";
       let retained = false;
       try {
+        const correlationId = ensureTcsdCorrelation(req, res);
+        logTcsdRequest("request_received", { correlationId });
         const prepared = await prepareMultipartStepPayload(req);
         cleanupDir = prepared.cleanupDir;
+        logTcsdRequest("upload_prepared", {
+          correlationId,
+          taskId: prepared.payload?.taskId
+        });
         const job = await startTcsdPipelineJob(prepared.payload, { uploadSessionDir: cleanupDir });
         retained = path.resolve(job.input?.workspaceDir || "") === path.resolve(
           prepared.payload?.inputArtifact?.workspaceDir || ""
         );
-        res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema });
+        logTcsdRequest("job_accepted", {
+          correlationId,
+          taskId: prepared.payload?.taskId,
+          jobId: job.jobId,
+          httpStatus: 202
+        });
+        res.status(202).json({ jobId: job.jobId, status: job.status, schema: job.schema, correlationId });
       } catch (error) {
         next(error);
       } finally {
@@ -2022,11 +2085,31 @@ export async function createHermesApp(options = {}) {
     }
   });
 
-  app.use((error, _req, res, _next) => {
-    res.status(error.statusCode || 500).json({
+  app.use((error, req, res, _next) => {
+    const isTcsdRequest = String(req.path || "").startsWith("/internal/tcsd-pipeline/");
+    const correlationId = isTcsdRequest ? ensureTcsdCorrelation(req, res) : "";
+    const statusCode = Number(error.statusCode || 500);
+    const safeCode = safeTcsdAuditId(error.code) || "hermes_step_failed";
+    if (isTcsdRequest) {
+      logTcsdRequest("request_rejected", {
+        correlationId,
+        taskId: req.body?.taskId,
+        httpStatus: statusCode,
+        code: safeCode
+      });
+      return res.status(statusCode).json({
+        error: statusCode >= 500
+          ? "TCSD Worker 内部处理失败。"
+          : "TCSD Worker 拒绝了任务请求。",
+        code: safeCode,
+        correlationId
+      });
+    }
+    res.status(statusCode).json({
       error: error.message || "Hermes step execution failed",
-      code: error.code || "hermes_step_failed",
-      details: error.details || null
+      code: safeCode,
+      details: error.details || null,
+      ...(correlationId ? { correlationId } : {})
     });
   });
 

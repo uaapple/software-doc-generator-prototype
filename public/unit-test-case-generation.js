@@ -11,7 +11,8 @@ const state = {
   projectMutating: false,
   projectLoadError: "",
   workerLoadError: "",
-  deletingTaskIds: new Set()
+  deletingTaskIds: new Set(),
+  redeliveringTaskIds: new Set()
 };
 
 const elements = {
@@ -88,11 +89,11 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
   const artifacts = Array.isArray(checkpoint?.artifacts) ? checkpoint.artifacts : [];
   const attempts = Array.isArray(stage.attempts) ? stage.attempts : [];
   const artifactSummary = artifacts.length
-    ? artifacts.map((item) => `${item.role || item.kind || "artifact"}: ${item.path || ""}`).join("\n")
+    ? artifacts.map((item) => [item.role || item.kind || "artifact", item.fileName].filter(Boolean).join(": ")).join("\n")
     : "无";
   const attemptSummary = attempts.length
     ? attempts.map((item) => {
-        const trace = [item.status, item.sessionId, item.model, item.validationReportPath].filter(Boolean).join(" · ");
+        const trace = [item.status, item.sessionId, item.model].filter(Boolean).join(" · ");
         return `#${item.attempt}: ${trace}`;
       }).join("\n")
     : "无";
@@ -110,21 +111,15 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
           <div><dt>Session</dt><dd>${escapeHtml(agent.sessionId || "未记录")}</dd></div>
           <div><dt>Token</dt><dd>${escapeHtml(formatTokenUsage(agent.tokenUsage))}</dd></div>
           <div><dt>尝试次数</dt><dd>${escapeHtml(String(stage.attempt || 0))}</dd></div>
-          <div><dt>Checkpoint</dt><dd>${escapeHtml(checkpointIndex?.path || checkpoint?.schema || "未生成")}</dd></div>
+          <div><dt>Checkpoint</dt><dd>${escapeHtml(checkpointIndex?.schema || checkpoint?.schema || "未生成")}</dd></div>
           <div><dt>开始 / 结束</dt><dd>${escapeHtml([formatTime(stage.startedAt), formatTime(stage.endedAt)].filter(Boolean).join(" → ") || "未记录")}</dd></div>
         </dl>
         <h4>尝试与会话</h4>
         <pre>${escapeHtml(attemptSummary)}</pre>
-        <h4>输入</h4>
-        <pre>${escapeHtml(compactJson(checkpoint?.input))}</pre>
-        <h4>结果</h4>
-        <pre>${escapeHtml(compactJson(checkpoint?.result))}</pre>
         <h4>宿主验证</h4>
         <pre>${escapeHtml(compactJson(checkpoint?.validation || stage.error))}</pre>
         <h4>产物</h4>
         <pre>${escapeHtml(artifactSummary)}</pre>
-        <h4>工具日志摘要</h4>
-        <pre>${escapeHtml(compactJson(checkpoint?.toolLogs))}</pre>
       </div>
     </details>
   `;
@@ -644,6 +639,25 @@ async function deleteTask(taskId = "") {
   }
 }
 
+async function redeliverTask(taskId = "") {
+  if (!taskId || state.redeliveringTaskIds.has(taskId)) return;
+  state.redeliveringTaskIds.add(taskId);
+  setStatus("正在重新投递到原 Windows Worker。", "busy");
+  try {
+    await requestJson(`/api/unit-test-case-generation/tasks/${encodeURIComponent(taskId)}/redeliver`, {
+      method: "POST"
+    });
+    await loadTasks({ preserveSelection: true });
+    await loadSelectedTask();
+    startPolling();
+    setStatus("重新投递已启动。", "success");
+  } catch (error) {
+    setStatus(error.message || "重新投递失败。", "error");
+  } finally {
+    state.redeliveringTaskIds.delete(taskId);
+  }
+}
+
 function renderTaskDetail(task) {
   if (!task) {
     elements.detailSubtitle.textContent = "选择任务后查看运行摘要、错误信息和下载结果。";
@@ -749,6 +763,27 @@ function renderTaskDetail(task) {
   const pipelineHtml = pipelineStages.length
     ? `<div class="unit-detail-section"><h3>十二阶段运行态</h3><p>每个阶段由独立 Hermes Agent 会话执行；展开可查看技能、模型、token、验证与产物追溯。</p><div class="unit-runtime-list">${pipelineStages.map((stage) => renderPipelineStage(stage, pipelineCheckpoints)).join("")}</div></div>`
     : "";
+  const delivery = task.workerDelivery || null;
+  const canRedeliver =
+    !task.pipeline?.jobId &&
+    (task.workerPending === true || delivery?.state === "blocked") &&
+    ["queued", "failed"].includes(task.status);
+  const deliveryHtml = delivery
+    ? `
+      <div class="unit-detail-section">
+        <h3>Worker 投递诊断</h3>
+        <dl class="unit-meta-list">
+          <div><dt>状态</dt><dd>${escapeHtml(delivery.state || "未记录")}</dd></div>
+          <div><dt>类别</dt><dd>${escapeHtml(delivery.category || "未记录")}</dd></div>
+          <div><dt>HTTP</dt><dd>${escapeHtml(delivery.httpStatus ? String(delivery.httpStatus) : "未记录")}</dd></div>
+          <div><dt>远端错误码</dt><dd>${escapeHtml(delivery.remoteCode || "未记录")}</dd></div>
+          <div><dt>关联ID</dt><dd>${escapeHtml(delivery.correlationId || "未记录")}</dd></div>
+          <div><dt>最近失败</dt><dd>${escapeHtml(formatTime(delivery.lastFailureAt) || "未记录")}</dd></div>
+        </dl>
+        ${canRedeliver ? `<button class="btn btn-secondary" type="button" data-redeliver-task-id="${escapeHtml(task.id)}" ${state.redeliveringTaskIds.has(task.id) ? "disabled" : ""}>重新投递</button>` : ""}
+      </div>
+    `
+    : "";
 
   elements.taskDetail.innerHTML = `
     <div class="unit-detail-summary">
@@ -782,6 +817,7 @@ function renderTaskDetail(task) {
       </div>
     </div>
     ${errorHtml}
+    ${deliveryHtml}
     ${warningHtml}
     ${pipelineHtml}
     ${runtimeHtml}
@@ -838,6 +874,11 @@ elements.taskList?.addEventListener("click", (event) => {
   state.selectedTaskId = button.dataset.taskId || "";
   updateUrlTaskId(state.selectedTaskId);
   void loadSelectedTask();
+});
+elements.taskDetail?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-redeliver-task-id]");
+  if (!button) return;
+  void redeliverTask(button.dataset.redeliverTaskId || "");
 });
 
 try {

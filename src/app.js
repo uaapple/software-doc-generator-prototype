@@ -515,6 +515,15 @@ export async function createApp() {
     }
   });
 
+  app.post("/api/unit-test-case-generation/tasks/:taskId/redeliver", async (req, res, next) => {
+    try {
+      const task = await unitTestCaseGenerationService.redeliverTask(req.params.taskId);
+      res.status(202).json({ task, redeliveryStarted: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/unit-test-case-generation/tasks/:taskId/artifacts/:artifactId/download", async (req, res, next) => {
     try {
       const artifact = await unitTestCaseGenerationService.getArtifact(req.params.taskId, req.params.artifactId);

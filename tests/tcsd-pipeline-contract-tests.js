@@ -1648,7 +1648,8 @@ assert.match(frontend, /十二阶段运行态/);
 assert.match(frontend, /独立 Hermes Agent 会话/);
 assert.match(frontend, /版本 \/ bundle/);
 assert.match(frontend, /Profile \/ Model/);
-assert.match(frontend, /工具日志摘要/);
+assert.doesNotMatch(frontend, /工具日志摘要/);
+assert.match(frontend, /宿主验证/);
 assert.doesNotMatch(frontend, /simulink_ut_tcsd_generate|simulink-ut-tcsd-generator/);
 
 const productionSources = await Promise.all([

@@ -17,12 +17,14 @@ const CLI_PATH_MAX_LENGTH = 260;
 const HERMES_USAGE_QUERY_RETRIES = 5;
 const HERMES_USAGE_QUERY_RETRY_DELAY_MS = 250;
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
+const MAX_TCSD_CONTROL_RESPONSE_BYTES = 256 * 1024;
 const MAX_TRANSFERRED_SOFTWARE_DETAIL_OUTPUT_BYTES = 50 * 1024 * 1024;
 const SOFTWARE_DETAIL_DOCX_ROLE = "detail-design-docx";
 const SOFTWARE_DETAIL_JOB_SCHEMA = "software-detail-minimal-job/v1";
 const SOFTWARE_DETAIL_JOB_STATUSES = new Set(["queued", "running", "completed", "failed"]);
 const STRICT_BASE64_PATTERN =
   /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const SAFE_REMOTE_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 
 function trimTrailingSlash(value = "") {
   return String(value || "").replace(/\/+$/, "");
@@ -30,6 +32,68 @@ function trimTrailingSlash(value = "") {
 
 function isMultipartApiMode(value = "") {
   return ["multipart", "upload"].includes(String(value || "").trim().toLowerCase());
+}
+
+function safeRemoteCode(value = "") {
+  const code = String(value || "").trim();
+  return SAFE_REMOTE_CODE_PATTERN.test(code) ? code : "";
+}
+
+function parseJsonObject(value = "") {
+  try {
+    const parsed = JSON.parse(String(value || ""));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function classifyTcsdHttpFailure(status = 0) {
+  if (status === 401) return { category: "authentication", retryable: false };
+  if (status === 403) return { category: "authorization", retryable: false };
+  if (status === 404) return { category: "protocol", retryable: false };
+  if ([400, 409, 413, 422].includes(status)) return { category: "request", retryable: false };
+  if (status === 408) return { category: "timeout", retryable: true };
+  if (status === 429) return { category: "rate-limit", retryable: true };
+  if (status >= 500) return { category: "remote-server", retryable: true };
+  return { category: "remote-response", retryable: false };
+}
+
+function createTcsdTransportError({ operation, cause = null, response = null, correlationId = "" } = {}) {
+  const status = Number(response?.status || 0) || 0;
+  const body = parseJsonObject(response?.text);
+  const remoteCode = safeRemoteCode(body?.code);
+  let category = "client";
+  let retryable = false;
+  if (response) {
+    ({ category, retryable } = classifyTcsdHttpFailure(status));
+  } else if (cause?.name === "AbortError" || ["ETIMEDOUT", "tcsd_poll_timeout"].includes(String(cause?.code || ""))) {
+    category = "timeout";
+    retryable = true;
+  } else if (["ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"].includes(String(cause?.code || ""))) {
+    category = "network";
+    retryable = true;
+  } else if (safeRemoteCode(cause?.code) === "tcsd_upload_empty") {
+    category = "upload";
+  } else if (safeRemoteCode(cause?.code) === "tcsd_worker_response_too_large") {
+    category = "response-limit";
+  }
+  const resolvedCorrelationId = String(response?.correlationId || correlationId || "").trim().slice(0, 120);
+  const error = new Error(retryable ? `TCSD Worker ${operation}暂时不可用。` : `TCSD Worker ${operation}被拒绝。`);
+  error.code = retryable
+    ? "tcsd_worker_unavailable"
+    : remoteCode || safeRemoteCode(cause?.code) || "tcsd_worker_request_rejected";
+  error.retryable = retryable;
+  error.details = {
+    operation,
+    category,
+    retryable,
+    ...(status ? { httpStatus: status } : {}),
+    ...(remoteCode ? { remoteCode } : {}),
+    ...(resolvedCorrelationId ? { correlationId: resolvedCorrelationId } : {})
+  };
+  error.cause = cause || undefined;
+  return error;
 }
 
 function clipText(value = "", maxLength = CLI_JSON_MAX_LENGTH) {
@@ -2042,7 +2106,7 @@ async function defaultCommandRunner(command, args, options = {}) {
   });
 }
 
-async function postJsonWithTimeout(url, payload, timeoutMs, headers = {}) {
+async function postJsonWithTimeout(url, payload, timeoutMs, headers = {}, options = {}) {
   const body = JSON.stringify(payload);
   const target = new URL(url);
   const transport = target.protocol === "https:" ? https : http;
@@ -2061,14 +2125,27 @@ async function postJsonWithTimeout(url, payload, timeoutMs, headers = {}) {
       (response) => {
         response.setEncoding("utf8");
         let text = "";
+        let responseBytes = 0;
+        let rejected = false;
         response.on("data", (chunk) => {
+          responseBytes += Buffer.byteLength(chunk);
+          if (options.maxResponseBytes && responseBytes > options.maxResponseBytes) {
+            rejected = true;
+            response.destroy();
+            reject(Object.assign(new Error("Hermes response exceeded the allowed size."), {
+              code: "tcsd_worker_response_too_large"
+            }));
+            return;
+          }
           text += chunk;
         });
         response.on("end", () => {
+          if (rejected) return;
           resolve({
             ok: response.statusCode >= 200 && response.statusCode < 300,
             status: response.statusCode,
-            text
+            text,
+            correlationId: String(response.headers["x-sdg-correlation-id"] || "")
           });
         });
       }
@@ -2092,7 +2169,7 @@ function escapeMultipartHeaderValue(value = "") {
     .replace(/"/g, '\\"');
 }
 
-async function postMultipartWithTimeout(url, fields = {}, files = [], headers = {}, timeoutMs) {
+async function postMultipartWithTimeout(url, fields = {}, files = [], headers = {}, timeoutMs, options = {}) {
   const target = new URL(url);
   const transport = target.protocol === "https:" ? https : http;
   const boundary = `----software-doc-hermes-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
@@ -2137,14 +2214,27 @@ async function postMultipartWithTimeout(url, fields = {}, files = [], headers = 
       (response) => {
         response.setEncoding("utf8");
         let text = "";
+        let responseBytes = 0;
+        let rejected = false;
         response.on("data", (chunk) => {
+          responseBytes += Buffer.byteLength(chunk);
+          if (options.maxResponseBytes && responseBytes > options.maxResponseBytes) {
+            rejected = true;
+            response.destroy();
+            reject(Object.assign(new Error("Hermes response exceeded the allowed size."), {
+              code: "tcsd_worker_response_too_large"
+            }));
+            return;
+          }
           text += chunk;
         });
         response.on("end", () => {
+          if (rejected) return;
           resolve({
             ok: response.statusCode >= 200 && response.statusCode < 300,
             status: response.statusCode,
             text,
+            correlationId: String(response.headers["x-sdg-correlation-id"] || ""),
             async json() {
               return text ? JSON.parse(text) : {};
             }
@@ -3590,6 +3680,8 @@ export class HermesAgentClient {
 
   async startTcsdPipelineJob(payload = {}) {
     let response;
+    const correlationId = `tcsd-${randomUUID()}`;
+    const headers = { ...this._authHeaders(), "X-SDG-Correlation-ID": correlationId };
     try {
       if (isMultipartApiMode(this.apiMode)) {
         const uploadManifest = await collectUploadFilesForAllowedPaths(payload.allowedPaths || []);
@@ -3605,40 +3697,83 @@ export class HermesAgentClient {
             uploadManifest: JSON.stringify(uploadManifest)
           },
           uploadManifest.files,
-          this._authHeaders(),
-          this.timeoutMs
+          headers,
+          this.timeoutMs,
+          { maxResponseBytes: MAX_TCSD_CONTROL_RESPONSE_BYTES }
         );
       } else {
         response = await postJsonWithTimeout(
           `${this.baseURL}/internal/tcsd-pipeline/jobs`,
           payload,
           this.timeoutMs,
-          this._authHeaders()
+          headers,
+          { maxResponseBytes: MAX_TCSD_CONTROL_RESPONSE_BYTES }
         );
       }
+    } catch (cause) {
+      throw createTcsdTransportError({ operation: "create", cause, correlationId });
     }
-    catch (cause) { const error = new Error(`TCSD Worker 不可用：${cause.message}`); error.code = "tcsd_worker_unavailable"; error.cause = cause; throw error; }
-    let body = null;
-    try { body = JSON.parse(response.text); } catch (_error) { body = null; }
-    if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 启动作业失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
-    return body;
+    if (!response.ok) {
+      throw createTcsdTransportError({ operation: "create", response, correlationId });
+    }
+    const body = parseJsonObject(response.text);
+    if (!body || !safeRemoteCode(body.jobId)) {
+      throw createTcsdTransportError({
+        operation: "create",
+        cause: { code: "tcsd_worker_invalid_response" },
+        correlationId: response.correlationId || correlationId
+      });
+    }
+    return {
+      ...body,
+      ...(response.correlationId ? { deliveryCorrelationId: response.correlationId } : {})
+    };
   }
 
   async getTcsdPipelineJob(jobId = "", options = {}) {
     const target = new URL(`${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}`);
     const transport = target.protocol === "https:" ? https : http;
     let response;
+    const correlationId = `tcsd-${randomUUID()}`;
     try { response = await new Promise((resolve, reject) => {
       const request = transport.request(target, {
         method: "GET",
         timeout: this.timeoutMs,
-        headers: this._authHeaders()
+        headers: { ...this._authHeaders(), "X-SDG-Correlation-ID": correlationId }
       }, (result) => {
-        let text = ""; result.setEncoding("utf8"); result.on("data", (chunk) => { text += chunk; }); result.on("end", () => resolve({ ok: result.statusCode >= 200 && result.statusCode < 300, status: result.statusCode, text }));
+        let text = "";
+        let responseBytes = 0;
+        let rejected = false;
+        result.setEncoding("utf8");
+        result.on("data", (chunk) => {
+          responseBytes += Buffer.byteLength(chunk);
+          if (responseBytes > MAX_TCSD_CONTROL_RESPONSE_BYTES) {
+            rejected = true;
+            result.destroy();
+            reject(Object.assign(new Error("TCSD Worker response exceeded the allowed size."), {
+              code: "tcsd_worker_response_too_large"
+            }));
+            return;
+          }
+          text += chunk;
+        });
+        result.on("end", () => {
+          if (rejected) return;
+          resolve({ ok: result.statusCode >= 200 && result.statusCode < 300, status: result.statusCode, text, correlationId: String(result.headers["x-sdg-correlation-id"] || "") });
+        });
       }); request.on("timeout", () => request.destroy(Object.assign(new Error("TCSD Worker 轮询超时。"), { code: "tcsd_poll_timeout" }))); request.on("error", reject); request.end();
-    }); } catch (cause) { if (cause.code === "tcsd_poll_timeout") throw cause; const error = new Error(`TCSD Worker 不可用：${cause.message}`); error.code = "tcsd_worker_unavailable"; error.cause = cause; throw error; }
-    let body = null; try { body = JSON.parse(response.text); } catch (_error) { body = null; }
-    if (!response.ok) { const error = new Error(body?.error || "TCSD Worker 作业查询失败。"); error.code = body?.code || "tcsd_worker_unavailable"; throw error; }
+    }); } catch (cause) {
+      throw createTcsdTransportError({ operation: "poll", cause, correlationId });
+    }
+    const body = parseJsonObject(response.text);
+    if (!response.ok) throw createTcsdTransportError({ operation: "poll", response, correlationId });
+    if (!body || safeRemoteCode(body.jobId) !== safeRemoteCode(jobId)) {
+      throw createTcsdTransportError({
+        operation: "poll",
+        cause: { code: "tcsd_worker_invalid_response" },
+        correlationId: response.correlationId || correlationId
+      });
+    }
     return materializeTcsdPipelineArtifacts(body, options.localWorkspaceDir || "");
   }
 
