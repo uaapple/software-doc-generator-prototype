@@ -388,7 +388,9 @@ try {
   };
   const redelivered = await service.redeliverTask(taskId);
   assert.equal(redelivered.status, "queued");
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  for (let attempt = 0; attempt < 100 && startCount < 2; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   assert.equal(startCount, 2);
   await assert.rejects(
     service.redeliverTask(taskId),
