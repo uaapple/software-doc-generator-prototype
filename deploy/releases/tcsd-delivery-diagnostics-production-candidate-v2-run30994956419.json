@@ -1,0 +1,114 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-05T09:53:08Z",
+  "candidateTag": "tcsd-delivery-diagnostics-production-candidate-v2-run30994956419",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "d33e1af309c77f2c7fbb924b8a6b23e6764793d6",
+  "containerBuildRevision": "4484da3795764aac75239755de2adb9db500e79e",
+  "deploymentToolRevision": "d33e1af309c77f2c7fbb924b8a6b23e6764793d6",
+  "supersedesCandidate": {
+    "tag": "tcsd-delivery-diagnostics-production-candidate-v1-run30993667295",
+    "tagObject": "c2d295667ccdbfe63d5c93c6c273721ae62caa9a",
+    "peeledCommit": "07328157d8595c347b65e820bee719b9bbb5a53f",
+    "reason": "The v1 archive verifier used Python 3.9 str.removeprefix/removesuffix APIs and could not run on the production Linux Python 3.8 runtime. No image input changed."
+  },
+  "scope": {
+    "summary": "Retain the v1 TCSD delivery diagnostics images and add a Python 3.8-compatible offline image archive verifier.",
+    "platformAction": "reuse-v1-exact-ghcr-image-and-relay-archive",
+    "workerAction": "reuse-v1-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-v8-and-verify-only",
+    "schemaCompatibility": "no runtime schema changes after v1"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 30994956419,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "d33e1af309c77f2c7fbb924b8a6b23e6764793d6",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-08-05T09:50:45Z",
+    "completedAt": "2026-08-05T09:51:23Z",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/30994956419",
+    "job": {
+      "id": 92269707552,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-08-05T09:50:48Z",
+      "completedAt": "2026-08-05T09:51:22Z",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/30994956419/job/92269707552",
+      "requiredSteps": [
+        { "name": "Check out exact revision", "conclusion": "success" },
+        { "name": "Run companion tests with Windows PowerShell 5.1", "conclusion": "success" },
+        { "name": "Install locked Node.js dependencies", "conclusion": "success" },
+        { "name": "Reproduce legacy native env wrapper startup", "conclusion": "success" }
+      ]
+    },
+    "jobLogSha256": "b5d0e7af917fe1a6f8d89b39d48d910236609476540910f2d1e6b05f3687870a"
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:bef64d6f05b435e35318c20f93fe0d2604d38b7a447d37a262662a4d070e6e57",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:40ad3c2ac4d7dc524c2d06f8d57ab0b256e20435580508bf8d38c695f1cac00f",
+      "registryIndexDigest": "sha256:40ad3c2ac4d7dc524c2d06f8d57ab0b256e20435580508bf8d38c695f1cac00f",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:4f85b75a87bda1e5d83eb839244f27d3d84327196b5ab087b4976704014d3c21",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:fad5091430412a4acfbc1dd7e2e7116947636e4eea0a40b56efd5bd725cd164e",
+      "registryIndexDigest": "sha256:fad5091430412a4acfbc1dd7e2e7116947636e4eea0a40b56efd5bd725cd164e",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "archiveVerifier": {
+    "path": "scripts/verify_image_archive.py",
+    "sha256": "ce20f85fa2dc8e9a6adf45fb94f15527a1197218f88d729b93260d9d6d347bb9",
+    "minimumPython": "3.8",
+    "compatibilityTest": "tests/verify-image-archive-tests.py",
+    "regularReleaseAsset": false
+  },
+  "releaseAssets": {
+    "container-release-d33e1af-reused-images.json": "8cd402b3d692325a877f0f311ae0a5258aa11dd8d3100177bd4add3cb2dc5c70",
+    "scan-summary.json": "0617a7bdf66dd0a2110511559ce6423accbed67e634b27acfd326486275eb7c1",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-bef64d6f05b4.sbom.spdx.json": "3b649805fc9cc4a1744389c066fdb87486f6c6d9fb0a9687369a3e1c79734bf6",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-bef64d6f05b4.trivy.json": "b12f3ee86ee64d031395a24fd780495f20fdcf00c2af52292bbdfa283f0fb05b",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-bef64d6f05b4.trivy.json.policy.json": "5633470946f36ea1b9709928decb6264ce3da7e864719d122ae5b97a07b9d873",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f85b75a87bd.sbom.spdx.json": "be77da2d8e6e4e380be3e815d5d623d229b3e818e0f389888669072e58538d56",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f85b75a87bd.trivy.json": "a37fa151dd879e2cfa38e9195d2e746287ed9920c5882ea1b147f28d41d93ff3",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f85b75a87bd.trivy.json.policy.json": "0052ce3438f40f7527ed90a7e6fac880384a7064d971ee11fe46d01b02fe16c3"
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "linuxPlatformDistribution": "fixed-wx11p-relay; linux-direct-ghcr-not-supported-by-topology",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-delivery-diagnostics-production-candidate-v2-run30994956419",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-delivery-diagnostics-production-candidate-v2-run30994956419"
+    }
+  },
+  "rollbackAnchors": {
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:4f2d89cd86e2d26a28b0e2b1b1daf2d9960cf0ed9aa687e2068bb7c976cd0cea",
+      "linuxLocalConfigImageId": "sha256:078491ed03ac8ae09072427718903af9f285eeef7d4a029b5f9d69b8b21bee4d"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:5d9983092896c7d7a62b4405349a3fc28bbce112ddf4e0c0daf6488b991c70a2"
+    },
+    "nativeGateway": "existing supported v8 backup; no Gateway replacement is authorized"
+  },
+  "acceptance": {
+    "python38ArchiveVerifier": "passed-5-tests",
+    "imageInputs": "unchanged-from-v1",
+    "imagesRebuiltOrRepushed": false,
+    "windowsPowerShell51": "passed-run-30994956419",
+    "productionDeployment": "not-performed"
+  }
+}
