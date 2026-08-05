@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import io
 import json
@@ -65,6 +66,12 @@ def build_archive(path, *, revision=REVISION, config_name=None, unsafe=False):
 
 
 class VerifyImageArchiveTests(unittest.TestCase):
+    def test_verifier_source_is_python38_compatible(self):
+        source = VERIFIER.read_text(encoding="utf-8")
+        ast.parse(source, filename=str(VERIFIER), feature_version=(3, 8))
+        self.assertNotIn(".removeprefix(", source)
+        self.assertNotIn(".removesuffix(", source)
+
     def run_verifier(self, archive, *extra):
         return subprocess.run(
             [

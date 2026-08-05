@@ -40,9 +40,11 @@ def safe_member_name(value: str) -> str:
 def content_digest_from_path(value: str) -> str | None:
     normalized = safe_member_name(value)
     if normalized.startswith("blobs/sha256/"):
-        candidate = normalized.removeprefix("blobs/sha256/")
+        candidate = normalized[len("blobs/sha256/") :]
     else:
-        candidate = pathlib.PurePosixPath(normalized).name.removesuffix(".json")
+        candidate = pathlib.PurePosixPath(normalized).name
+        if candidate.endswith(".json"):
+            candidate = candidate[: -len(".json")]
     if len(candidate) == 64 and all(character in "0123456789abcdef" for character in candidate):
         return candidate
     return None
@@ -185,7 +187,7 @@ def verify_archive(arguments: argparse.Namespace) -> dict[str, Any]:
                 digest = str(descriptor.get("digest") or "")
                 if not digest.startswith("sha256:") or len(digest) != 71:
                     raise VerificationError(f"invalid OCI index digest: {digest!r}")
-                blob_path = f"blobs/sha256/{digest.removeprefix('sha256:')}"
+                blob_path = f"blobs/sha256/{digest[len('sha256:') :]}"
                 verify_content_address(reader, blob_path)
                 top_level_digests.append(digest)
 
