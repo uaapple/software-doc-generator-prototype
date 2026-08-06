@@ -1,0 +1,133 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-07T06:30:00Z",
+  "candidateTag": "tcsd-stage6-probe-timeout-production-candidate-v1-run31128845409",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "f9682f950dabac4829b187c6cd53c3440dcfc455",
+  "containerBuildRevision": "f9682f950dabac4829b187c6cd53c3440dcfc455",
+  "deploymentToolRevision": "f9682f950dabac4829b187c6cd53c3440dcfc455",
+  "supersedesCandidate": {
+    "tag": "tcsd-stage6-diagnostics-production-candidate-v1-run31117034797",
+    "tagObject": "6519092aaade92c5147a6f7692daad00fd35b421",
+    "peeledCommit": "f22bee1b6eadf9c05a7407c8ce09f75935847062",
+    "reason": "Stage 6 在生产以 310 个探针候选真实执行时被 Gateway 内部 MATLAB MCP 客户端 10 分钟默认超时截断（tools/call timed out after 600000ms），job 1 小时预算未生效。本候选让 MCP 请求超时按 job.timeoutMs 加余量对齐，并将 TCSD 阶段默认超时上调至 2 小时。"
+  },
+  "scope": {
+    "summary": "修复 Gateway MATLAB MCP 内层 10 分钟超时截断长探针任务；TCSD 阶段超时默认上调至 7200000ms；Native Gateway companion 升至 v9（受管文件含超时修复）。",
+    "platformAction": "deploy-new-exact-ghcr-image-via-wx11p-relay",
+    "workerAction": "deploy-new-exact-ghcr-image",
+    "nativeGatewayAction": "deploy-v9-with-validateonly-and-backup",
+    "schemaCompatibility": "additive diagnostics and timeout semantics only; existing tasks remain readable"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 31128845409,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "f9682f950dabac4829b187c6cd53c3440dcfc455",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31128845409",
+    "job": {
+      "id": 92711537096,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31128845409/job/92711537096",
+      "requiredSteps": [
+        { "name": "Check out exact revision", "conclusion": "success" },
+        { "name": "Run companion tests with Windows PowerShell 5.1", "conclusion": "success" },
+        { "name": "Install locked Node.js dependencies", "conclusion": "success" },
+        { "name": "Reproduce legacy native env wrapper startup", "conclusion": "success" }
+      ]
+    },
+    "jobLogSha256": "1702ffd46c7e50808f1c11b51365df7c26ee279dabec65f4f38e3c48bd51857d"
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:96064a45e2b74d3e3c0736a096490cff8481ac746f859818123b215fc6724de6",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:c4596133e8f4a1604350a856acfc67fc9e7cd75621dd6066402065f44fcb6ff7",
+      "registryIndexDigest": "sha256:c4596133e8f4a1604350a856acfc67fc9e7cd75621dd6066402065f44fcb6ff7",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:ac22f13eb218bcbc8cddd0ec9657fdce4e8f9cce61c0a07d87bba50102ce6b89",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:480dbf89a9c4b4c49b72989a90a430e4bc10a80c9d21755fe99d99302f331c84",
+      "registryIndexDigest": "sha256:480dbf89a9c4b4c49b72989a90a430e4bc10a80c9d21755fe99d99302f331c84",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "deploy-v9-with-validateonly-and-backup",
+    "companionVersion": 9,
+    "sourceRevision": "f9682f950dabac4829b187c6cd53c3440dcfc455",
+    "asset": "native-matlab-gateway-companion-v9-f9682f950dab.zip",
+    "assetSha256": "74de7e9309f78de7e47c22994a9276408281f0a4ec9eee2b85adf572d9d997ed",
+    "releaseManifest": "native-matlab-gateway-companion-v9-f9682f950dab.release.json",
+    "releaseManifestSha256": "8388566a9447f7b31748c649254ac7918324c43cd4611bdd48818655b75c1031",
+    "manifest": "native-matlab-gateway-companion-v9-f9682f950dab.manifest.json",
+    "manifestSha256": "91949061da900dad3eb4262526ce61f566dc77aee63762b83c6cb06bcfdff157",
+    "requiredReadiness": [
+      "health HTTP 200",
+      "activeJobs=0",
+      "activeLeases=0",
+      "authorized version/capabilities report v9",
+      "ValidateOnly 通过后再正式替换，部署前自动备份现有 v8 BackupDir"
+    ]
+  },
+  "releaseAssets": {
+    "container-release-f9682f950dab.json": "559f7898a5a5c5f6570197c65b624dc0a037117f32f2f67080a8c733e49fa2fe",
+    "scan-summary.json": "d5dbe342b845cb8258c44855a8e3de8668153e8a805ac3ddfbb545554f35f173",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-96064a45e2b7.sbom.spdx.json": "b4bd074f837800b8a1439ba9815bc9ae1198876930b55f3958182c5d5544f48c",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-96064a45e2b7.trivy.json": "286308f71f86d07c15dfeb0f1b38ae9d079ab3e94ee652e9e2c7d722cd88ff5a",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-96064a45e2b7.trivy.json.policy.json": "b2b1ecd512348c32a2901cd4de5dea87e5cbbd182ac02225c578bb76b2197dcd",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-ac22f13eb218.sbom.spdx.json": "997d2f2386055c58b9f35a5c078f80ce476d8680eef77de9e497b315ff0e7197",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-ac22f13eb218.trivy.json": "6294bab3f33e2eb9ad3954639319cb5567bfa99ef583e36183e1cd00375afd29",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-ac22f13eb218.trivy.json.policy.json": "0dd1ad6d402e08b7c94213526e0f65ef43812f7e40105e2cd7f6b204a391ae12",
+    "native-matlab-gateway-companion-v9-f9682f950dab.zip": "74de7e9309f78de7e47c22994a9276408281f0a4ec9eee2b85adf572d9d997ed",
+    "native-matlab-gateway-companion-v9-f9682f950dab.manifest.json": "91949061da900dad3eb4262526ce61f566dc77aee63762b83c6cb06bcfdff157",
+    "native-matlab-gateway-companion-v9-f9682f950dab.release.json": "8388566a9447f7b31748c649254ac7918324c43cd4611bdd48818655b75c1031",
+    "native-matlab-gateway-companion-v9-f9682f950dab.scan.json": "4ab0d57a7f8ba2f0ca275a2098d87b82c68069f94298fcf48de17eb2dc4cace5"
+  },
+  "archiveVerifier": {
+    "path": "scripts/verify_image_archive.py",
+    "sha256": "ce20f85fa2dc8e9a6adf45fb94f15527a1197218f88d729b93260d9d6d347bb9",
+    "minimumPython": "3.8",
+    "compatibilityTest": "tests/verify-image-archive-tests.py",
+    "regularReleaseAsset": false
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "linuxPlatformDistribution": "fixed-wx11p-relay; linux-direct-ghcr-not-supported-by-topology",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-stage6-probe-timeout-production-candidate-v1-run31128845409",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-stage6-probe-timeout-production-candidate-v1-run31128845409"
+    }
+  },
+  "rollbackAnchors": {
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:d73bf2bd159c63d3074cba0e28dcd9a2c6178fd80c9118e5c5b2613a03462c3b",
+      "linuxLocalConfigImageId": "sha256:00b32fbcb6cc4f31687b1c241c09c3c527eb042f1a1bd84e3eab8801ea5a169b"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:ccccca2ba2b878fe842a070da1875b2556a206f072fbb3cf041360f156de251b"
+    },
+    "nativeGateway": "existing supported v8 backup; v9 deployment creates a fresh BackupDir before replacement"
+  },
+  "acceptance": {
+    "stage6ProbeTimeoutFix": "passed-local-gateway-contract-and-full-suite",
+    "containerReleaseTests": "passed",
+    "containerScans": "passed-with-policy-finding-count-zero",
+    "windowsPowerShell51": "passed-run-31128845409",
+    "productionDeployment": "not-performed",
+    "realTaskAcceptance": "pending-user"
+  }
+}
