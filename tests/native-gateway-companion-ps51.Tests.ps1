@@ -65,6 +65,7 @@ $requiredFunctions = @(
   "Test-TcpPort",
   "Get-SafeGatewayStartupCategory",
   "Wait-GatewayHealth"
+  "Assert-Manifest"
 )
 $functionImport = Get-FunctionImportScriptBlock $requiredFunctions
 . $functionImport
@@ -128,6 +129,36 @@ try {
     @($validCriticalLines.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })
   )
   Assert-EnvKeysSingleNonEmpty $validCriticalEnv $criticalKeys
+
+  # Companion manifest image boundary must match the release evidence source.
+  $boundaryCases = @(
+    @{ Changed = $true; Source = "this-release-container-release-manifest"; Expected = $true },
+    @{ Changed = $true; Source = "previous-approved-container-release-manifest"; Expected = $false },
+    @{ Changed = $false; Source = "previous-approved-container-release-manifest"; Expected = $true },
+    @{ Changed = $false; Source = "this-release-container-release-manifest"; Expected = $false },
+    @{ Changed = $null; Source = "this-release-container-release-manifest"; Expected = $false }
+  )
+  foreach ($case in $boundaryCases) {
+    $manifest = [pscustomobject]@{
+      imageRevisions = [pscustomobject]@{
+        rootfsInputsChanged = $case.Changed
+      }
+      containerImages = [pscustomobject]@{
+        registryReferencesSource = $case.Source
+      }
+    }
+    try {
+      if (-not (Test-ImageBoundaryConsistency $manifest)) {
+        throw "boundary consistency returned false"
+      }
+      $accepted = $true
+    } catch {
+      $accepted = $false
+    }
+    Assert-True ($accepted -eq $case.Expected) (
+      "Image boundary case changed=$($case.Changed) source=$($case.Source) expected=$($case.Expected) got=$accepted"
+    )
+  }
 
   foreach ($criticalKey in $criticalKeys) {
     foreach ($invalidKind in @("duplicate", "empty", "comment-only")) {

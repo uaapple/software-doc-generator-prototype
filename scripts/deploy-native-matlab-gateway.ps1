@@ -563,6 +563,24 @@ function Assert-WindowsPowerShellCompatibility {
   }
 }
 
+function Test-ImageBoundaryConsistency {
+  param(
+    [object]$Manifest
+  )
+  $imageBoundaryValid = $false
+  $rootfsChanged = $Manifest.imageRevisions.rootfsInputsChanged
+  if ($rootfsChanged -eq $true) {
+    $imageBoundaryValid = (
+      $Manifest.containerImages.registryReferencesSource -eq "this-release-container-release-manifest"
+    )
+  } elseif ($rootfsChanged -eq $false) {
+    $imageBoundaryValid = (
+      $Manifest.containerImages.registryReferencesSource -eq "previous-approved-container-release-manifest"
+    )
+  }
+  return $imageBoundaryValid
+}
+
 function Assert-Manifest {
   param(
     [object]$Manifest,
@@ -574,7 +592,7 @@ function Assert-Manifest {
     $Manifest.serviceName -ne $ServiceName -or
     $Manifest.sourceRevision -notmatch "^[a-f0-9]{40}$" -or
     $Manifest.sourceRevision -ne $Manifest.deploymentToolRevision -or
-    $Manifest.imageRevisions.rootfsInputsChanged -ne $false
+    -not (Test-ImageBoundaryConsistency $Manifest)
   ) {
     throw "Companion manifest identity or image boundary is invalid."
   }

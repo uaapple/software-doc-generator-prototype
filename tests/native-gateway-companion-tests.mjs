@@ -127,6 +127,10 @@ assert.doesNotMatch(wrapper, /MATLAB_GATEWAY_EVALUATE_TOKEN\s*=/);
 
 assert.match(deployScript, /\$ServiceName = "SoftwareDocMatlabWorker"/);
 assert.match(deployScript, /\[switch\]\$ValidateOnly/);
+assert.match(deployScript, /function Test-ImageBoundaryConsistency/);
+assert.match(deployScript, /rootfsChanged -eq \$true/);
+assert.match(deployScript, /this-release-container-release-manifest/);
+assert.match(deployScript, /-not \(Test-ImageBoundaryConsistency \$Manifest\)/);
 assert.match(deployScript, /\[switch\]\$ProvisionDirectories/);
 assert.match(deployScript, /\[switch\]\$Rollback/);
 assert.match(deployScript, /Invoke-ProvisionDirectories/);
