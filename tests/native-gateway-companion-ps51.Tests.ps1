@@ -65,6 +65,7 @@ $requiredFunctions = @(
   "Test-TcpPort",
   "Get-SafeGatewayStartupCategory",
   "Wait-GatewayHealth"
+  "Test-ImageBoundaryConsistency"
   "Assert-Manifest"
 )
 $functionImport = Get-FunctionImportScriptBlock $requiredFunctions
