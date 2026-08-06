@@ -13,22 +13,23 @@ import { hashTcsdBundle } from "./tcsd-stage-catalog.js";
 const execFileAsync = promisify(execFile);
 const SNAPSHOT_SCHEMA = "tcsd-hermes-skill-snapshot/v1";
 const MANAGED_SCHEMA = "tcsd-hermes-managed-skill/v1";
+const ANSI_ESCAPE_PATTERN = /\u001B\[[0-?]*[ -/]*[@-~]/gu;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function profileArgs(profile, args) {
   return !profile || profile === "default" ? args : ["-p", profile, ...args];
 }
 
-function error(message, details = {}) {
+function error(message, prepareFailureReason, details = {}) {
   return Object.assign(new Error(message), {
     code: TCSD_ERROR_CODES.workerUnavailable,
-    details
+    details: { prepareFailureReason, ...details }
   });
 }
 
-function isListed(output, name) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[\\s┃│])${escaped}(?=[\\s┃│]|$)`, "m").test(String(output || ""));
+export function parseHermesSkillNames(output = "") {
+  const normalized = String(output || "").replace(ANSI_ESCAPE_PATTERN, "");
+  return new Set(normalized.match(/[A-Za-z0-9][A-Za-z0-9._-]*/gu) || []);
 }
 
 async function readJson(filePath) {
@@ -44,7 +45,7 @@ async function replaceManagedDirectory({ source, target, markerPath, expectedHas
   const current = await fs.stat(target).catch(() => null);
   const marker = await readJson(markerPath);
   if (current) {
-    if (!current.isDirectory()) throw error(`Hermes TCSD skill target is not a directory: ${target}`);
+    if (!current.isDirectory()) throw error(`Hermes TCSD skill target is not a directory: ${target}`, "target_not_directory");
     const currentHash = (await hashTcsdBundle(target)).sha256;
     if (currentHash === expectedHash) {
       await fs.mkdir(path.dirname(markerPath), { recursive: true });
@@ -55,7 +56,7 @@ async function replaceManagedDirectory({ source, target, markerPath, expectedHas
       return;
     }
     if (marker?.schema !== MANAGED_SCHEMA || marker.bundleHash !== currentHash) {
-      throw error(`Hermes TCSD skill has an unmanaged or locally modified collision: ${target}`);
+      throw error(`Hermes TCSD skill has an unmanaged or locally modified collision: ${target}`, "unmanaged_collision");
     }
   }
   const suffix = `${process.pid}-${Date.now()}`;
@@ -66,7 +67,7 @@ async function replaceManagedDirectory({ source, target, markerPath, expectedHas
   const copiedHash = (await hashTcsdBundle(temporary)).sha256;
   if (copiedHash !== expectedHash) {
     await fs.rm(temporary, { recursive: true, force: true });
-    throw error(`Hermes TCSD skill copy hash mismatch: ${target}`);
+    throw error(`Hermes TCSD skill copy hash mismatch: ${target}`, "copy_hash_mismatch");
   }
   if (current) await fs.rename(target, backup);
   try {
@@ -102,7 +103,7 @@ export class TcsdHermesSkillRegistry {
   }
 
   async prepare() {
-    if (!this.catalog) throw error("TCSD Hermes skill registry has no source catalog.");
+    if (!this.catalog) throw error("TCSD Hermes skill registry has no source catalog.", "source_catalog_missing");
     const categoryDir = path.join(this.skillsDir, "tcsd");
     const markerDir = path.join(this.skillsDir, ".tcsd-managed");
     const stages = [];
@@ -120,7 +121,7 @@ export class TcsdHermesSkillRegistry {
       const installedSkillFile = path.join(installedPath, "SKILL.md");
       const installedSkillFileHash = sha256(await fs.readFile(installedSkillFile));
       if (installed.sha256 !== skill.bundleHash || installedSkillFileHash !== skill.skillFileHash) {
-        throw error(`Installed Hermes skill does not match its source: ${skill.name}`);
+        throw error(`Installed Hermes skill does not match its source: ${skill.name}`, "installed_skill_mismatch");
       }
       stages.push({
         index: definition.index,
@@ -141,7 +142,7 @@ export class TcsdHermesSkillRegistry {
       expectedHash: runtime.bundleHash
     });
     if ((await hashTcsdBundle(installedRuntimePath)).sha256 !== runtime.bundleHash) {
-      throw error("Installed Hermes TCSD runtime does not match its source.");
+      throw error("Installed Hermes TCSD runtime does not match its source.", "installed_runtime_mismatch");
     }
     let commandResult;
     try {
@@ -157,13 +158,16 @@ export class TcsdHermesSkillRegistry {
         }
       );
     } catch (cause) {
-      throw error("Hermes skills discovery command failed.", {
+      throw error("Hermes skills discovery command failed.", "discovery_command_failed", {
         exitCode: Number.isInteger(cause?.code) ? cause.code : null
       });
     }
     const discoveryOutput = `${commandResult?.stdout || ""}\n${commandResult?.stderr || ""}`;
-    const missing = stages.filter((stage) => !isListed(discoveryOutput, stage.name)).map((stage) => stage.name);
-    if (missing.length) throw error("Hermes did not discover all TCSD stage skills.", { missing });
+    const discoveredNames = parseHermesSkillNames(discoveryOutput);
+    const missing = stages.filter((stage) => !discoveredNames.has(stage.name)).map((stage) => stage.name);
+    if (missing.length) throw error("Hermes did not discover all TCSD stage skills.", "discovery_missing_skills", {
+      missingCount: missing.length
+    });
     return {
       schema: SNAPSHOT_SCHEMA,
       profile: this.profile,

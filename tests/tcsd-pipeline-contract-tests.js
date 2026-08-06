@@ -16,7 +16,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { TcsdHermesStageExecutor } from "../src/services/tcsd-hermes-stage-executor.js";
-import { TcsdHermesSkillRegistry } from "../src/services/tcsd-hermes-skill-registry.js";
+import {
+  parseHermesSkillNames,
+  TcsdHermesSkillRegistry
+} from "../src/services/tcsd-hermes-skill-registry.js";
 import {
   publicSemanticError,
   TcsdHostSemanticValidator
@@ -72,6 +75,16 @@ const repairValidator = path.join(
   "scripts",
   "validate_agent_coverage_repair.py"
 );
+
+{
+  const names = parseHermesSkillNames(
+    "\u001b[36m║ tcsd-stage-01-validate-inputs ║ tcsd ║ enabled ║\u001b[0m\n" +
+    "│ tcsd-stage-12-package-cleanup │ tcsd │ enabled │"
+  );
+  assert.equal(names.has("tcsd-stage-01-validate-inputs"), true);
+  assert.equal(names.has("tcsd-stage-12-package-cleanup"), true);
+  assert.equal(names.has("tcsd-stage-01"), false);
+}
 
 assert.deepEqual(
   resolveHermesCommand("C:\\Hermes Runtime\\hermes.cmd", ["skills", "list"], { platform: "win32" }),
@@ -599,7 +612,13 @@ assert.throws(() => parseExecutionManifest({
       stderr: ""
     })
   });
-  await assert.rejects(() => registry.prepare(), /did not discover all TCSD stage skills/);
+  await assert.rejects(
+    () => registry.prepare(),
+    (cause) =>
+      /did not discover all TCSD stage skills/.test(cause.message) &&
+      cause.details?.prepareFailureReason === "discovery_missing_skills" &&
+      cause.details?.missingCount === 1
+  );
 
   const jsCommandPath = path.join(root, "fake-hermes-cli.js");
   const invocations = [];

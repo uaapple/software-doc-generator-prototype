@@ -63,6 +63,7 @@ function createTcsdTransportError({ operation, cause = null, response = null, co
   const status = Number(response?.status || 0) || 0;
   const body = parseJsonObject(response?.text);
   const remoteCode = safeRemoteCode(body?.code);
+  const prepareFailureReason = safeRemoteCode(body?.prepareFailureReason);
   let category = "client";
   let retryable = false;
   if (response) {
@@ -90,6 +91,7 @@ function createTcsdTransportError({ operation, cause = null, response = null, co
     retryable,
     ...(status ? { httpStatus: status } : {}),
     ...(remoteCode ? { remoteCode } : {}),
+    ...(prepareFailureReason ? { prepareFailureReason } : {}),
     ...(resolvedCorrelationId ? { correlationId: resolvedCorrelationId } : {})
   };
   error.cause = cause || undefined;

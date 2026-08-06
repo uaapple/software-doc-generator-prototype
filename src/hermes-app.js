@@ -65,6 +65,7 @@ function logTcsdRequest(event, fields = {}) {
     ...(safeTcsdAuditId(fields.taskId) ? { taskId: safeTcsdAuditId(fields.taskId) } : {}),
     ...(safeTcsdAuditId(fields.jobId) ? { jobId: safeTcsdAuditId(fields.jobId) } : {}),
     ...(safeTcsdAuditId(fields.code) ? { code: safeTcsdAuditId(fields.code) } : {}),
+    ...(safeTcsdAuditId(fields.prepareFailureReason) ? { prepareFailureReason: safeTcsdAuditId(fields.prepareFailureReason) } : {}),
     ...(Number.isInteger(fields.httpStatus) ? { httpStatus: fields.httpStatus } : {})
   }));
 }
@@ -2090,18 +2091,21 @@ export async function createHermesApp(options = {}) {
     const correlationId = isTcsdRequest ? ensureTcsdCorrelation(req, res) : "";
     const statusCode = Number(error.statusCode || 500);
     const safeCode = safeTcsdAuditId(error.code) || "hermes_step_failed";
+    const prepareFailureReason = safeTcsdAuditId(error.details?.prepareFailureReason);
     if (isTcsdRequest) {
       logTcsdRequest("request_rejected", {
         correlationId,
         taskId: req.body?.taskId,
         httpStatus: statusCode,
-        code: safeCode
+        code: safeCode,
+        prepareFailureReason
       });
       return res.status(statusCode).json({
         error: statusCode >= 500
           ? "TCSD Worker 内部处理失败。"
           : "TCSD Worker 拒绝了任务请求。",
         code: safeCode,
+        ...(prepareFailureReason ? { prepareFailureReason } : {}),
         correlationId
       });
     }

@@ -777,6 +777,7 @@ function renderTaskDetail(task) {
           <div><dt>类别</dt><dd>${escapeHtml(delivery.category || "未记录")}</dd></div>
           <div><dt>HTTP</dt><dd>${escapeHtml(delivery.httpStatus ? String(delivery.httpStatus) : "未记录")}</dd></div>
           <div><dt>远端错误码</dt><dd>${escapeHtml(delivery.remoteCode || "未记录")}</dd></div>
+          <div><dt>准备失败原因</dt><dd>${escapeHtml(delivery.prepareFailureReason || "未记录")}</dd></div>
           <div><dt>关联ID</dt><dd>${escapeHtml(delivery.correlationId || "未记录")}</dd></div>
           <div><dt>最近失败</dt><dd>${escapeHtml(formatTime(delivery.lastFailureAt) || "未记录")}</dd></div>
         </dl>

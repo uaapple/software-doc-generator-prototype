@@ -52,6 +52,7 @@ async function expectCreateFailure(status, body, expected) {
         assert.equal(error.details.httpStatus, status);
         assert.equal(error.details.category, expected.category);
         assert.equal(error.details.remoteCode, expected.remoteCode);
+        assert.equal(error.details.prepareFailureReason, expected.prepareFailureReason);
         assert.equal(error.details.correlationId, receivedCorrelationId);
         assert.ok(!JSON.stringify(error.details).includes("must-not-appear"));
         assert.ok(!JSON.stringify(error.details).includes("private-model.slx"));
@@ -117,12 +118,17 @@ for (const responseBody of [
 
 await expectCreateFailure(
   503,
-  { error: "temporary", code: "worker_capacity_exhausted" },
+  {
+    error: "temporary",
+    code: "tcsd_worker_unavailable",
+    prepareFailureReason: "discovery_missing_skills"
+  },
   {
     code: "tcsd_worker_unavailable",
     retryable: true,
     category: "remote-server",
-    remoteCode: "worker_capacity_exhausted"
+    remoteCode: "tcsd_worker_unavailable",
+    prepareFailureReason: "discovery_missing_skills"
   }
 );
 
@@ -266,6 +272,7 @@ const rejectingClient = {
       retryable: false,
       httpStatus: 422,
       remoteCode: "hermes_invalid_upload_manifest",
+      prepareFailureReason: "discovery_missing_skills",
       correlationId: "tcsd-safe-correlation"
     };
     throw error;
@@ -348,6 +355,7 @@ try {
       retryable: failed.workerDelivery.retryable,
       httpStatus: failed.workerDelivery.httpStatus,
       remoteCode: failed.workerDelivery.remoteCode,
+      prepareFailureReason: failed.workerDelivery.prepareFailureReason,
       correlationId: failed.workerDelivery.correlationId,
       attemptCount: failed.workerDelivery.attemptCount
     },
@@ -357,6 +365,7 @@ try {
       retryable: false,
       httpStatus: 422,
       remoteCode: "hermes_invalid_upload_manifest",
+      prepareFailureReason: "discovery_missing_skills",
       correlationId: "tcsd-safe-correlation",
       attemptCount: 1
     }

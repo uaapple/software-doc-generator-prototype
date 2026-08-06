@@ -435,6 +435,7 @@ function normalizeWorkerDeliveryFailure(error = {}) {
     retryable,
     ...(Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599 ? { httpStatus } : {}),
     ...(safeDeliveryText(details.remoteCode || error?.code) ? { remoteCode: safeDeliveryText(details.remoteCode || error?.code) } : {}),
+    ...(safeDeliveryText(details.prepareFailureReason) ? { prepareFailureReason: safeDeliveryText(details.prepareFailureReason) } : {}),
     ...(safeDeliveryText(details.correlationId) ? { correlationId: safeDeliveryText(details.correlationId) } : {})
   };
 }
@@ -505,6 +506,7 @@ function publicWorkerDelivery(delivery = null) {
       ...(safeDeliveryText(delivery.operation) ? { operation: safeDeliveryText(delivery.operation) } : {}),
       ...(safeDeliveryText(delivery.category) ? { category: safeDeliveryText(delivery.category) } : {}),
       ...(safeDeliveryText(delivery.remoteCode) ? { remoteCode: safeDeliveryText(delivery.remoteCode) } : {}),
+      ...(safeDeliveryText(delivery.prepareFailureReason) ? { prepareFailureReason: safeDeliveryText(delivery.prepareFailureReason) } : {}),
       ...(safeDeliveryText(delivery.correlationId) ? { correlationId: safeDeliveryText(delivery.correlationId) } : {})
     };
   return {
