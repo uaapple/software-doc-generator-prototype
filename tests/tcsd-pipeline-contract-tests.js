@@ -639,6 +639,7 @@ assert.throws(() => parseExecutionManifest({
   assert.equal(invocations.length, 1);
   assert.equal(invocations[0].command, process.execPath);
   assert.deepEqual(invocations[0].args, [jsCommandPath, "skills", "list"]);
+  assert.equal(invocations[0].options.env.COLUMNS, "512");
 
   const prefixedInvocations = [];
   const prefixedRegistry = new TcsdHermesSkillRegistry({

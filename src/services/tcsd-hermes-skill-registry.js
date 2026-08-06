@@ -13,6 +13,7 @@ import { hashTcsdBundle } from "./tcsd-stage-catalog.js";
 const execFileAsync = promisify(execFile);
 const SNAPSHOT_SCHEMA = "tcsd-hermes-skill-snapshot/v1";
 const MANAGED_SCHEMA = "tcsd-hermes-managed-skill/v1";
+const HERMES_SKILLS_LIST_COLUMNS = "512";
 const ANSI_ESCAPE_PATTERN = /\u001B\[[0-?]*[ -/]*[@-~]/gu;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -154,7 +155,11 @@ export class TcsdHermesSkillRegistry {
           timeout: 30000,
           maxBuffer: 4 * 1024 * 1024,
           windowsHide: true,
-          env: { ...process.env, NO_COLOR: "1" }
+          env: {
+            ...process.env,
+            NO_COLOR: "1",
+            COLUMNS: HERMES_SKILLS_LIST_COLUMNS
+          }
         }
       );
     } catch (cause) {
