@@ -237,7 +237,7 @@ export const config = {
     jobStoreDir: path.join(dataDir, "tcsd-pipeline-jobs"),
     hermesProfile: String(process.env.TCSD_STAGE_HERMES_PROFILE || hermesProfile || "").trim() || "default",
     stageMaxTurns: Number(process.env.TCSD_STAGE_HERMES_MAX_TURNS || 200),
-    stageTimeoutMs: Number(process.env.TCSD_STAGE_HERMES_TIMEOUT_MS || 3600000)
+    stageTimeoutMs: Number(process.env.TCSD_STAGE_HERMES_TIMEOUT_MS || 7200000)
   },
   softwareDetailPipeline: {
     jobStoreDir: path.join(dataDir, "software-detail-pipeline-jobs"),

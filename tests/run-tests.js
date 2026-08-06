@@ -3959,7 +3959,7 @@ const tests = [
       const serverSource = await fs.readFile(new URL("../src/hermes-server.js", import.meta.url), "utf8");
 
       assert.match(configSource, /serverRequestTimeoutMs:\s*Number\(process\.env\.HERMES_SERVER_REQUEST_TIMEOUT_MS\s*\|\|\s*0\)/);
-      assert.match(configSource, /stageTimeoutMs:\s*Number\(process\.env\.TCSD_STAGE_HERMES_TIMEOUT_MS\s*\|\|\s*3600000\)/);
+      assert.match(configSource, /stageTimeoutMs:\s*Number\(process\.env\.TCSD_STAGE_HERMES_TIMEOUT_MS\s*\|\|\s*7200000\)/);
       assert.match(configSource, /stageMaxTurns:\s*Number\(process\.env\.TCSD_STAGE_HERMES_MAX_TURNS\s*\|\|\s*200\)/);
       assert.match(configSource, /TCSD_STAGE_HERMES_PROFILE\s*\|\|\s*hermesProfile/);
       assert.match(configSource, /simulink_module_description_generate:\s*Number\(\s*process\.env\.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS\s*\|\|\s*3600000\s*\)/);

@@ -213,7 +213,7 @@ export class MatlabMcpClient {
   /**
    * Send a JSON-RPC request and wait for the response.
    */
-  _sendRequest(method, params) {
+  _sendRequest(method, params, options = {}) {
     return new Promise((resolve, reject) => {
       const id = nextRequestId++;
       const message = {
@@ -222,11 +222,12 @@ export class MatlabMcpClient {
         method,
         params: params || {}
       };
+      const requestTimeoutMs = Math.max(1, Number(options.timeoutMs) || this.timeoutMs);
 
       const timeout = setTimeout(() => {
         this._pendingRequests.delete(id);
-        reject(new MatlabMcpError("TIMEOUT", `MATLAB MCP request "${method}" timed out after ${this.timeoutMs}ms`));
-      }, this.timeoutMs);
+        reject(new MatlabMcpError("TIMEOUT", `MATLAB MCP request "${method}" timed out after ${requestTimeoutMs}ms`));
+      }, requestTimeoutMs);
 
       this._pendingRequests.set(id, {
         resolve: (result) => {
@@ -305,12 +306,12 @@ export class MatlabMcpClient {
   /**
    * Call an MCP tool via JSON-RPC.
    */
-  async _callTool(toolName, args) {
+  async _callTool(toolName, args, options = {}) {
     await this._ensureInitialized();
     const result = await this._sendRequest("tools/call", {
       name: toolName,
       arguments: args
-    });
+    }, options);
     assertSuccessfulMcpToolResult(result, toolName);
 
     // Extract text content from MCP tool result
@@ -337,17 +338,17 @@ export class MatlabMcpClient {
     return result;
   }
 
-  async callTool(toolName, args = {}) {
+  async callTool(toolName, args = {}, options = {}) {
     if (this.transport === "http" && this.httpMode === "gateway") {
       return this._callToolGateway(toolName, args);
     }
-    return this._callTool(toolName, args);
+    return this._callTool(toolName, args, options);
   }
 
   /**
    * Analyze an SLX file — main entry point.
    */
-  async analyzeSlx({ absolutePath, originalName, documentType = "software_requirement" } = {}) {
+  async analyzeSlx({ absolutePath, originalName, documentType = "software_requirement" } = {}, options = {}) {
     if (!absolutePath) {
       throw new MatlabMcpError("MISSING_PATH", "SLX file absolute path is required");
     }
@@ -359,18 +360,18 @@ export class MatlabMcpClient {
       return this._analyzeSlxHttp({ absolutePath, originalName, documentType });
     }
 
-    return this._analyzeSlxStdio({ absolutePath, originalName, documentType });
+    return this._analyzeSlxStdio({ absolutePath, originalName, documentType }, options);
   }
 
   /**
    * stdio transport: call analyze_slx tool via JSON-RPC.
    */
-  async _analyzeSlxStdio({ absolutePath, documentType }) {
+  async _analyzeSlxStdio({ absolutePath, documentType }, options = {}) {
     try {
       const result = await this._callTool("analyze_slx", {
         filePath: absolutePath,
         outputFormat: "model_fact_bundle"
-      });
+      }, options);
 
       if (!result || typeof result !== "object") {
         throw new MatlabMcpError("INVALID_BUNDLE", `MATLAB MCP returned non-object result: ${JSON.stringify(result).slice(0, 200)}`);

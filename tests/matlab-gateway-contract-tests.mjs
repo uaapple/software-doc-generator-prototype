@@ -75,14 +75,17 @@ async function withGateway(run, options = {}) {
     hostRoot,
     defaultTimeoutMs: options.defaultTimeoutMs || 2000,
     maxTimeoutMs: options.maxTimeoutMs || 5000,
+    ...(options.mcpTimeoutHeadroomMs != null
+      ? { mcpTimeoutHeadroomMs: options.mcpTimeoutHeadroomMs }
+      : {}),
     createClient: () => ({
-      async callTool(name, args) {
-        calls.push({ name, args });
+      async callTool(name, args, callOptions) {
+        calls.push({ name, args, options: callOptions || {} });
         if (options.callTool) return options.callTool(name, args);
         return { isError: false, content: [{ type: "text", text: "ok" }] };
       },
-      async analyzeSlx(args) {
-        calls.push({ name: "analyze_slx", args });
+      async analyzeSlx(args, callOptions) {
+        calls.push({ name: "analyze_slx", args, options: callOptions || {} });
         if (options.analyzeSlx) return options.analyzeSlx(args);
         throw new Error("analyzeSlx was not expected");
       },
@@ -680,6 +683,78 @@ test("Gateway timeout produces a durable timed_out terminal state", async () => 
     },
     {
       callTool: () => new Promise(() => {})
+    }
+  );
+});
+
+test("evaluate jobs align the MATLAB MCP request timeout with job.timeoutMs plus headroom", async () => {
+  await withGateway(
+    async ({ calls, request }) => {
+      await request("/api/workspaces/workspace-mcp-timeout", {
+        method: "PUT",
+        body: JSON.stringify({ mappingId: "worker-data" })
+      });
+      await request("/api/workspaces/workspace-mcp-timeout/assets/code-mcp-timeout/text", {
+        method: "PUT",
+        body: JSON.stringify({
+          fileName: "probe.m",
+          content: "disp(1);"
+        })
+      });
+      await request("/api/jobs/job-mcp-timeout", {
+        method: "POST",
+        body: JSON.stringify({
+          workspaceId: "workspace-mcp-timeout",
+          operation: "evaluate_matlab_code",
+          inputAssetId: "code-mcp-timeout",
+          timeoutMs: 3000
+        })
+      });
+      const job = await waitForJob(request, "job-mcp-timeout", "workspace-mcp-timeout");
+      assert.equal(job.status, "succeeded");
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].name, "evaluate_matlab_code");
+      assert.equal(calls[0].options.timeoutMs, 3000 + 90000);
+    },
+    {
+      mcpTimeoutHeadroomMs: 90000,
+      callTool: () => ({ isError: false, content: [{ type: "text", text: "ok" }] })
+    }
+  );
+});
+
+test("analyze_slx jobs align the MATLAB MCP request timeout with job.timeoutMs plus headroom", async () => {
+  const bundle = createEmptyModelFactBundle();
+  bundle.source = { fileName: "demo.slx", modelName: "Demo" };
+  await withGateway(
+    async ({ calls, request }) => {
+      await request("/api/workspaces/workspace-slx-timeout", {
+        method: "PUT",
+        body: JSON.stringify({ mappingId: "worker-data" })
+      });
+      const form = new FormData();
+      form.append("asset", new Blob(["fake-slx"]), "demo.slx");
+      await request("/api/workspaces/workspace-slx-timeout/assets/model-slx-timeout/upload", {
+        method: "PUT",
+        body: form
+      });
+      await request("/api/jobs/job-slx-timeout", {
+        method: "POST",
+        body: JSON.stringify({
+          workspaceId: "workspace-slx-timeout",
+          operation: "analyze_slx",
+          inputAssetId: "model-slx-timeout",
+          timeoutMs: 3000
+        })
+      });
+      const job = await waitForJob(request, "job-slx-timeout", "workspace-slx-timeout");
+      assert.equal(job.status, "succeeded");
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].name, "analyze_slx");
+      assert.equal(calls[0].options.timeoutMs, 3000 + 60000);
+    },
+    {
+      analyzeSlx: () => bundle
     }
   );
 });

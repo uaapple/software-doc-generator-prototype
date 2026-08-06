@@ -117,6 +117,17 @@ export class MatlabGatewayService {
         120000
       )
     );
+    this.mcpTimeoutHeadroomMs = Math.max(
+      0,
+      Math.min(
+        600000,
+        Number(
+          options.mcpTimeoutHeadroomMs ||
+          process.env.MATLAB_GATEWAY_MCP_TIMEOUT_HEADROOM_MS ||
+          60000
+        )
+      )
+    );
     this.createClient = options.createClient || (() => createLocalMatlabClient(options));
     this.activeJobs = new Map();
     this.activeLeases = new Map();
@@ -595,6 +606,7 @@ export class MatlabGatewayService {
         reject(gatewayError("JOB_TIMEOUT", `MATLAB job timed out after ${job.timeoutMs}ms.`, 504));
       }, job.timeoutMs);
     });
+    const toolTimeoutMs = job.timeoutMs + this.mcpTimeoutHeadroomMs;
     try {
       let result;
       if (job.operation === "evaluate_matlab_code") {
@@ -603,7 +615,7 @@ export class MatlabGatewayService {
         const code = await fs.readFile(contentPath, "utf8");
         const mapped = mapContainerWorkspaceCode(code, this.mapping);
         result = await Promise.race([
-          client.callTool("evaluate_matlab_code", { code: mapped.code }),
+          client.callTool("evaluate_matlab_code", { code: mapped.code }, { timeoutMs: toolTimeoutMs }),
           timeout
         ]);
         assertSuccessfulMcpToolResult(result, "evaluate_matlab_code");
@@ -615,7 +627,7 @@ export class MatlabGatewayService {
             absolutePath: contentPath,
             originalName: asset.fileName,
             documentType: "software_requirement"
-          }),
+          }, { timeoutMs: toolTimeoutMs }),
           timeout
         ]);
         assertSuccessfulMcpToolResult(result, "analyze_slx");
@@ -634,7 +646,7 @@ export class MatlabGatewayService {
           toolArguments.model = this.assetContentPath(job.workspaceId, modelAsset);
         }
         result = await Promise.race([
-          client.callTool(job.toolName, toolArguments),
+          client.callTool(job.toolName, toolArguments, { timeoutMs: toolTimeoutMs }),
           timeout
         ]);
         assertSuccessfulMcpToolResult(result, job.toolName);

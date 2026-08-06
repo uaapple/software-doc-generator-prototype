@@ -75,7 +75,7 @@
 
 如果 `3000` 端口已经有服务在监听，脚本会直接打开当前页面，不会重复启动一个新实例。
 
-本机一键启动默认使用平台 + Hermes Agent sidecar 模式，单元测试用例生成页面可直接访问 `http://127.0.0.1:3000/unit-test-case-generation`。TCSD 使用十二个相互独立的 Hermes Agent 会话，每阶段显式调用一个原子技能，再由宿主验证候选产物并写 checkpoint；默认每阶段最多 `200` turns、`60` 分钟，可通过 `TCSD_STAGE_HERMES_MAX_TURNS`、`TCSD_STAGE_HERMES_TIMEOUT_MS` 调整，并可用 `TCSD_STAGE_HERMES_PROFILE` 覆盖通用 `HERMES_PROFILE`。该链路没有整体 Agent 或纯脚本生产 fallback；使用 `START_HERMES_AGENT=0` 或 `-NoHermesAgent` 时必须另行提供可访问的 Hermes Agent HTTP 服务。
+本机一键启动默认使用平台 + Hermes Agent sidecar 模式，单元测试用例生成页面可直接访问 `http://127.0.0.1:3000/unit-test-case-generation`。TCSD 使用十二个相互独立的 Hermes Agent 会话，每阶段显式调用一个原子技能，再由宿主验证候选产物并写 checkpoint；默认每阶段最多 `200` turns、`120` 分钟，可通过 `TCSD_STAGE_HERMES_MAX_TURNS`、`TCSD_STAGE_HERMES_TIMEOUT_MS` 调整，并可用 `TCSD_STAGE_HERMES_PROFILE` 覆盖通用 `HERMES_PROFILE`。该链路没有整体 Agent 或纯脚本生产 fallback；使用 `START_HERMES_AGENT=0` 或 `-NoHermesAgent` 时必须另行提供可访问的 Hermes Agent HTTP 服务。
 
 ## 环境变量
 
@@ -136,7 +136,7 @@
 
 如果 `3000` 端口已经有服务在监听，脚本会直接打开当前页面，不会重复启动一个新实例。
 
-本机一键启动默认使用平台 + Hermes Agent sidecar 模式，单元测试用例生成页面可直接访问 `http://127.0.0.1:3000/unit-test-case-generation`。TCSD 使用十二个相互独立的 Hermes Agent 会话，每阶段显式调用一个原子技能，再由宿主验证候选产物并写 checkpoint；默认每阶段最多 `200` turns、`60` 分钟，可通过 `TCSD_STAGE_HERMES_MAX_TURNS`、`TCSD_STAGE_HERMES_TIMEOUT_MS` 调整，并可用 `TCSD_STAGE_HERMES_PROFILE` 覆盖通用 `HERMES_PROFILE`。该链路没有整体 Agent 或纯脚本生产 fallback；使用 `START_HERMES_AGENT=0` 或 `-NoHermesAgent` 时必须另行提供可访问的 Hermes Agent HTTP 服务。
+本机一键启动默认使用平台 + Hermes Agent sidecar 模式，单元测试用例生成页面可直接访问 `http://127.0.0.1:3000/unit-test-case-generation`。TCSD 使用十二个相互独立的 Hermes Agent 会话，每阶段显式调用一个原子技能，再由宿主验证候选产物并写 checkpoint；默认每阶段最多 `200` turns、`120` 分钟，可通过 `TCSD_STAGE_HERMES_MAX_TURNS`、`TCSD_STAGE_HERMES_TIMEOUT_MS` 调整，并可用 `TCSD_STAGE_HERMES_PROFILE` 覆盖通用 `HERMES_PROFILE`。该链路没有整体 Agent 或纯脚本生产 fallback；使用 `START_HERMES_AGENT=0` 或 `-NoHermesAgent` 时必须另行提供可访问的 Hermes Agent HTTP 服务。
 
 ## UTF-8 Guard Rule
 

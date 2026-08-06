@@ -127,6 +127,7 @@
 - 任务长时间运行后 HTTP 断开：检查 request timeout、server timeout、Hermes step timeout 和 max turns。
 - Hermes 成功但平台无下载：检查 Windows Agent 是否把 `outputs/*.xlsx` 回传为 `outputFiles.contentBase64`，以及 Linux 是否物化到本地 workspace。
 - 生产项目消失：先查 `APP_DATA_DIR`、`APP_SKILLS_DIR` 是否仍指向 `/opt/software-doc-generator/prod-data` 和 `/opt/software-doc-generator/prod-skills`，不要先假设数据被删。
+- Stage 6 报 `SATK/MATLAB probe failed (TIMEOUT)`：`MATLAB MCP request "tools/call" timed out after 600000ms` 是 **Gateway 进程内部 MCP 客户端 10 分钟默认超时**先于 job 超时（1 小时）触发，不是 MATLAB 崩溃、不是模型问题、不是 DeepSeek 网络问题。`candidateCount` 较大（数百）时逐 Test 重载 MAT 基线并仿真，单次 evaluate 必然超过 10 分钟。修复：Gateway 按 `job.timeoutMs + MATLAB_GATEWAY_MCP_TIMEOUT_HEADROOM_MS` 给 `tools/call` 传 per-job 超时，外层 job timer 仍是权威边界；同时 TCSD 阶段默认超时上调为 `7200000` ms（2 小时）。诊断字段 `gatewayErrorCode/gatewayJobId/gatewayStatus/satkExitCode/timeoutSeconds/candidateCount/probePlanSha256/probeEntrySha256/probeEntryExists` 会随阶段错误详情返回，可直接用于判定是哪一层超时。
 
 ## 提交前检查
 
