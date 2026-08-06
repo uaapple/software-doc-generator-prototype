@@ -1,0 +1,115 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-06T08:09:31Z",
+  "candidateTag": "tcsd-delivery-diagnostics-production-candidate-v3-run31083630939",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "ff56c0005f43614ab1598570bc66c5574509bdef",
+  "containerBuildRevision": "ff56c0005f43614ab1598570bc66c5574509bdef",
+  "deploymentToolRevision": "ff56c0005f43614ab1598570bc66c5574509bdef",
+  "supersedesCandidate": {
+    "tag": "tcsd-delivery-diagnostics-production-candidate-v2-run30994956419",
+    "tagObject": "59636571abb87511f47984ab072c92cc48e4e3f0",
+    "peeledCommit": "77e122f7acb4b8d17d3888937a30010b7e171ebf",
+    "reason": "Production repeatedly rejected a valid TCSD skill state during Worker prepare. V3 parses ANSI/rich skill-list output by exact skill tokens and persists a safe prepare failure reason."
+  },
+  "scope": {
+    "summary": "Fix TCSD Hermes skill discovery parsing and expose a safe prepare failure subreason across Worker, Platform, persistence, and UI.",
+    "platformAction": "deploy-new-exact-ghcr-image-via-wx11p-relay",
+    "workerAction": "deploy-new-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-v8-and-verify-only",
+    "schemaCompatibility": "additive task diagnostic field only"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 31083630939,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "ff56c0005f43614ab1598570bc66c5574509bdef",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "createdAt": "2026-08-06T08:07:49Z",
+    "completedAt": "2026-08-06T08:08:31Z",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31083630939",
+    "job": {
+      "id": 92557924065,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-08-06T08:07:53Z",
+      "completedAt": "2026-08-06T08:08:31Z",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31083630939/job/92557924065",
+      "requiredSteps": [
+        { "name": "Check out exact revision", "conclusion": "success" },
+        { "name": "Run companion tests with Windows PowerShell 5.1", "conclusion": "success" },
+        { "name": "Install locked Node.js dependencies", "conclusion": "success" },
+        { "name": "Reproduce legacy native env wrapper startup", "conclusion": "success" }
+      ]
+    },
+    "jobLogSha256": "076b001dce44b6d6cb67fb0363f10221bdead0f441c51929736585ec55e502a5"
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:3a5d731510ac65a3f63aed76e49ac64056227f12cf871fa60199fe93066e779e",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:4540b773383d245b27f52daf24064a4af24f803764fd1e758588c947cf0344bc",
+      "registryIndexDigest": "sha256:4540b773383d245b27f52daf24064a4af24f803764fd1e758588c947cf0344bc",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:f4cf889f7b476aac63667acee4da66cb10580007af9b6d2d102ee31e900f410d",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:76afc670ee8edd83b01b1e57f21311f1a6a63876e7febdf793acfb5f1d72c452",
+      "registryIndexDigest": "sha256:76afc670ee8edd83b01b1e57f21311f1a6a63876e7febdf793acfb5f1d72c452",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "archiveVerifier": {
+    "path": "scripts/verify_image_archive.py",
+    "sha256": "ce20f85fa2dc8e9a6adf45fb94f15527a1197218f88d729b93260d9d6d347bb9",
+    "minimumPython": "3.8",
+    "compatibilityTest": "tests/verify-image-archive-tests.py",
+    "regularReleaseAsset": false
+  },
+  "releaseAssets": {
+    "container-release-ff56c0005f43.json": "8f6125410732a25f7710869b25f4be596b4eba5c1744f831dbb65153f578185b",
+    "scan-summary.json": "cbbc6b1f69a685fcefb76fb1b90e6479ae6784073738511d265f1aeee0fe485b",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-3a5d731510ac.sbom.spdx.json": "7696a62c169baf028e9074187ac433bfbcb67fb8f5d3fa90d4e606a67df11dd2",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-3a5d731510ac.trivy.json": "94ae292af9646ad0dbf61205d5d35dc507fee0893d97d6c748ddac05bdd41ae5",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-3a5d731510ac.trivy.json.policy.json": "d98149450901790b8547bf3cd37bbe52baca2d8a9a04143c82c80ae49a25f491",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-f4cf889f7b47.sbom.spdx.json": "d89d60a9fe903d50eec31aa0372c049869376d150a67fc8f38578c01f2fc2f63",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-f4cf889f7b47.trivy.json": "30fa5c393c8c0957072056490b41ea4d1f3c006f7d8c1272aa6992fa037fe6d5",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-f4cf889f7b47.trivy.json.policy.json": "5858097948d495a3b8712c5ba831c0c4e9a92dbc5990b34dd1c64c9014c36225"
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "linuxPlatformDistribution": "fixed-wx11p-relay; linux-direct-ghcr-not-supported-by-topology",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-delivery-diagnostics-production-candidate-v3-run31083630939",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-delivery-diagnostics-production-candidate-v3-run31083630939"
+    }
+  },
+  "rollbackAnchors": {
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:40ad3c2ac4d7dc524c2d06f8d57ab0b256e20435580508bf8d38c695f1cac00f",
+      "linuxLocalConfigImageId": "record the currently running production image ID before replacement"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:fad5091430412a4acfbc1dd7e2e7116947636e4eea0a40b56efd5bd725cd164e"
+    },
+    "nativeGateway": "existing supported v8 backup; no Gateway replacement is authorized"
+  },
+  "acceptance": {
+    "focusedNodeTests": "passed",
+    "containerReleaseTests": "passed",
+    "containerScans": "passed-with-policy-finding-count-zero",
+    "windowsPowerShell51": "passed-run-31083630939",
+    "productionDeployment": "not-performed",
+    "realTaskRedelivery": "not-performed"
+  }
+}
