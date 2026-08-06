@@ -67,6 +67,7 @@ $requiredFunctions = @(
   "Wait-GatewayHealth"
   "Test-ImageBoundaryConsistency"
   "Assert-Manifest"
+  "Assert-DeepSeekConfiguration"
 )
 $functionImport = Get-FunctionImportScriptBlock $requiredFunctions
 . $functionImport
@@ -158,6 +159,36 @@ try {
     }
     Assert-True ($accepted -eq $case.Expected) (
       "Image boundary case changed=$($case.Changed) source=$($case.Source) expected=$($case.Expected) got=$accepted"
+    )
+  }
+
+  # DeepSeek inference gate must match the authorized production model policy.
+  $ExpectedProvider = "deepseek"
+  $ExpectedModel = "deepseek-v4-flash"
+  $ExpectedBaseUrl = "https://api.deepseek.com"
+  $inferenceCases = @(
+    @{ Provider = "deepseek"; Model = "deepseek-v4-flash"; Base = "https://api.deepseek.com"; Key = "injected"; Expected = $true },
+    @{ Provider = "deepseek"; Model = "deepseek-v4-flash"; Base = "https://api.deepseek.com/"; Key = "injected"; Expected = $true },
+    @{ Provider = "deepseek"; Model = "deepseek-v4-pro"; Base = "https://api.deepseek.com"; Key = "injected"; Expected = $false },
+    @{ Provider = "glm"; Model = "deepseek-v4-flash"; Base = "https://api.deepseek.com"; Key = "injected"; Expected = $false },
+    @{ Provider = "deepseek"; Model = "deepseek-v4-flash"; Base = "https://api.deepseek.com"; Key = ""; Expected = $false },
+    @{ Provider = "deepseek"; Model = "deepseek-v4-flash"; Base = "https://other.example.com"; Key = "injected"; Expected = $false }
+  )
+  foreach ($case in $inferenceCases) {
+    $values = @{
+      HERMES_INFERENCE_PROVIDER = $case.Provider
+      HERMES_INFERENCE_MODEL = $case.Model
+      DEEPSEEK_BASE_URL = $case.Base
+      DEEPSEEK_API_KEY = $case.Key
+    }
+    try {
+      Assert-DeepSeekConfiguration $values
+      $accepted = $true
+    } catch {
+      $accepted = $false
+    }
+    Assert-True ($accepted -eq $case.Expected) (
+      "DeepSeek gate case provider=$($case.Provider) model=$($case.Model) expected=$($case.Expected) got=$accepted"
     )
   }
 

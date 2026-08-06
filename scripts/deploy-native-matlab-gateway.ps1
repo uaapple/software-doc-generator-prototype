@@ -12,7 +12,9 @@ param(
 $ErrorActionPreference = "Stop"
 $ServiceName = "SoftwareDocMatlabWorker"
 $ExpectedProvider = "deepseek"
-$ExpectedModel = "deepseek-v4-pro"
+# 部署策略门禁：ExpectedModel 必须与生产已授权的推理模型一致；
+# 模型切换由用户授权后更新本值并随 companion 发布（管理界面运行时模型选择上线后由运行时配置接管）。
+$ExpectedModel = "deepseek-v4-flash"
 $ExpectedBaseUrl = "https://api.deepseek.com"
 $modeCount = 0
 foreach ($mode in @($ValidateOnly, $ProvisionDirectories, $Rollback)) {
