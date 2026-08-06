@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -165,8 +166,94 @@ def write_matlab_entry(path: Path, code: str) -> Path:
     return path
 
 
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(api[_-]?key|authorization|bearer|password|secret|token)\b(\s*[:=]\s*|\s+)([^\s,;]+)"
+)
+
+
+def safe_diagnostic_text(value: Any, limit: int = 1200) -> str:
+    text = str(value or "").replace("\x00", "").replace("\r", "\n")
+    text = SECRET_ASSIGNMENT_RE.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]",
+        text,
+    )
+    text = re.sub(r"[A-Za-z]:[\\/][^\s,;]+", "[path]", text)
+    text = re.sub(r"(?:^|\s)/(?:[^\s,;]+/)+[^\s,;]*", " [path]", text)
+    return " ".join(text.split())[:limit]
+
+
+def safe_diagnostic_code(value: Any, fallback: str = "SATK_EVALUATION_FAILED") -> str:
+    text = str(value or "").strip()
+    return text[:120] if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", text) else fallback
+
+
+class SatkEvaluationError(RuntimeError):
+    """A redacted SATK/MATLAB failure with bounded public diagnostics."""
+
+    def __init__(self, message: str, details: dict[str, Any]):
+        super().__init__(message)
+        self.details = details
+
+
+def satk_failure(stdout: str, stderr: str, returncode: int) -> SatkEvaluationError:
+    error_code = "SATK_EVALUATION_FAILED"
+    message = "SATK/MATLAB evaluation failed without a structured error."
+    gateway_data: dict[str, Any] = {}
+    try:
+        payload = json.loads(stdout or "{}")
+    except (json.JSONDecodeError, TypeError):
+        payload = {}
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, dict):
+        error_code = safe_diagnostic_code(error.get("code"), error_code)
+        message = safe_diagnostic_text(error.get("message")) or message
+        if isinstance(error.get("data"), dict):
+            gateway_data = error["data"]
+    else:
+        result = payload.get("result") if isinstance(payload, dict) else None
+        content = result.get("content") if isinstance(result, dict) else None
+        messages = [
+            safe_diagnostic_text(item.get("text"))
+            for item in content or []
+            if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+        ]
+        if messages:
+            message = " ".join(item for item in messages if item)[:1200]
+    if message.startswith("SATK/MATLAB evaluation failed without"):
+        message = safe_diagnostic_text(stderr) or message
+    details: dict[str, Any] = {
+        "phase": "matlab_probe_evaluation",
+        "satkExitCode": int(returncode),
+        "gatewayErrorCode": error_code,
+    }
+    gateway_job_id = safe_diagnostic_code(gateway_data.get("gatewayJobId"), "")
+    gateway_status = safe_diagnostic_code(gateway_data.get("gatewayStatus"), "")
+    timeout_seconds = gateway_data.get("timeoutSeconds")
+    if gateway_job_id:
+        details["gatewayJobId"] = gateway_job_id
+    if gateway_status:
+        details["gatewayStatus"] = gateway_status
+    if isinstance(timeout_seconds, (int, float)) and 0 < timeout_seconds <= 86400:
+        details["timeoutSeconds"] = float(timeout_seconds)
+    return SatkEvaluationError(
+        f"SATK/MATLAB probe failed ({error_code}): {message}",
+        details,
+    )
+
+
 def run_satk(python: str, scripts: Path, entry: Path, root_dir: Path) -> None:
-    run([python, str(scripts / "satk_eval.py"), str(entry)], cwd=root_dir)
+    command = [python, "-B", str(scripts / "satk_eval.py"), str(entry)]
+    completed = subprocess.run(
+        command,
+        cwd=root_dir,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode != 0:
+        raise satk_failure(completed.stdout, completed.stderr, completed.returncode)
 
 
 def validate_mapping(

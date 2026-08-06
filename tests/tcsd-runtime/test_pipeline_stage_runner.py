@@ -535,6 +535,73 @@ class PipelineStageRunnerTests(unittest.TestCase):
                     context="environment gate failed",
                 )
 
+    def test_quality_satk_runner_preserves_gateway_failure_details(self):
+        response = json.dumps({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "error": {
+                "code": "MATLAB_EXECUTION_FAILED",
+                "message": "probe failed token=must-not-appear at C:/secret/model.slx",
+                "data": {
+                    "gatewayJobId": "eval-safe-job",
+                    "gatewayStatus": "failed",
+                    "timeoutSeconds": 2400,
+                },
+            },
+        })
+        completed = subprocess.CompletedProcess(
+            ["python3", "satk_eval.py", "probe.m"],
+            1,
+            stdout=response,
+            stderr="",
+        )
+        with mock.patch.object(QUALITY.subprocess, "run", return_value=completed):
+            with self.assertRaises(QUALITY.SatkEvaluationError) as raised:
+                QUALITY.run_satk(
+                    "python3",
+                    Path("/skills/tcsd-runtime/scripts"),
+                    Path("/workspace/outputs/probe.m"),
+                    Path("/workspace"),
+                )
+        self.assertNotIn("must-not-appear", str(raised.exception))
+        self.assertNotIn("C:/secret", str(raised.exception))
+        self.assertIn("token=[REDACTED]", str(raised.exception))
+        self.assertIn("[path]", str(raised.exception))
+        self.assertEqual(
+            raised.exception.details,
+            {
+                "phase": "matlab_probe_evaluation",
+                "satkExitCode": 1,
+                "gatewayErrorCode": "MATLAB_EXECUTION_FAILED",
+                "gatewayJobId": "eval-safe-job",
+                "gatewayStatus": "failed",
+                "timeoutSeconds": 2400.0,
+            },
+        )
+
+    def test_stage_runtime_error_details_are_strictly_allowlisted(self):
+        error = RuntimeError("failed")
+        error.details = {
+            "phase": "matlab_probe_evaluation",
+            "gatewayErrorCode": "MATLAB_EXECUTION_FAILED",
+            "gatewayJobId": "eval-safe-job",
+            "gatewayStatus": "failed",
+            "satkExitCode": 1,
+            "timeoutSeconds": 2400,
+            "candidateCount": 3,
+            "probeEntryExists": True,
+            "probePlanSha256": "a" * 64,
+            "probeEntrySha256": "b" * 64,
+            "token": "must-not-appear",
+            "path": "C:/secret/model.slx",
+        }
+        details = RUNNER.public_error_details(error)
+        self.assertEqual(details["gatewayJobId"], "eval-safe-job")
+        self.assertEqual(details["candidateCount"], 3)
+        self.assertEqual(details["probePlanSha256"], "a" * 64)
+        self.assertNotIn("token", details)
+        self.assertNotIn("path", details)
+
     def test_stage02_matlab_root_falls_back_to_satk_root(self):
         with mock.patch.dict(
             os.environ,

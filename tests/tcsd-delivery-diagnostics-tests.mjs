@@ -215,7 +215,21 @@ const task = {
       summary: "Authorization: Bearer stage-summary-secret private-model-content",
       error: {
         code: "safe_stage_code",
-        message: "PASSWORD=stage-error-secret private-model-content"
+        message: "SATK/MATLAB probe failed (MATLAB_EXECUTION_FAILED): state probe execution failed",
+        details: {
+          phase: "matlab_probe_evaluation",
+          gatewayErrorCode: "MATLAB_EXECUTION_FAILED",
+          gatewayJobId: "eval-safe-job",
+          gatewayStatus: "failed",
+          satkExitCode: 1,
+          timeoutSeconds: 2400,
+          candidateCount: 3,
+          probeEntryExists: true,
+          probePlanSha256: "a".repeat(64),
+          probeEntrySha256: "b".repeat(64),
+          token: "stage-error-secret",
+          path: "C:/secret/private-model.slx"
+        }
       },
       checkpoint: {
         input: { modelContent: "private-model-content" },
@@ -345,6 +359,22 @@ try {
   });
   assert.equal(initialPublic.pipeline.stages[0].checkpoint.artifacts[0].fileName, "report.json");
   assert.equal(initialPublic.pipeline.stages[0].checkpoint.artifacts[0].path, undefined);
+  assert.equal(
+    initialPublic.pipeline.stages[0].error.message,
+    "SATK/MATLAB probe failed (MATLAB_EXECUTION_FAILED): state probe execution failed"
+  );
+  assert.deepEqual(initialPublic.pipeline.stages[0].error.details, {
+    phase: "matlab_probe_evaluation",
+    gatewayErrorCode: "MATLAB_EXECUTION_FAILED",
+    gatewayJobId: "eval-safe-job",
+    gatewayStatus: "failed",
+    satkExitCode: 1,
+    timeoutSeconds: 2400,
+    candidateCount: 3,
+    probePlanSha256: "a".repeat(64),
+    probeEntrySha256: "b".repeat(64),
+    probeEntryExists: true
+  });
   const failed = await service.runTask(taskId);
   assert.equal(failed.status, "failed");
   assert.equal(failed.workerPending, false);

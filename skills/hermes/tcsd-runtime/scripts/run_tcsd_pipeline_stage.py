@@ -66,6 +66,25 @@ def hard_error_code(stage: int, error: BaseException) -> str:
     if stage == 2: return "tcsd_environment_gate_failed"
     return "tcsd_stage_runtime_failed"
 
+def public_error_details(error: BaseException) -> dict[str, Any]:
+    raw = getattr(error, "details", None)
+    if not isinstance(raw, dict): return {}
+    details: dict[str, Any] = {}
+    safe_text_keys = {"phase", "gatewayErrorCode", "gatewayJobId", "gatewayStatus"}
+    safe_number_keys = {"satkExitCode", "timeoutSeconds", "candidateCount"}
+    safe_hash_keys = {"probePlanSha256", "probeEntrySha256"}
+    for key in safe_text_keys:
+        value = str(raw.get(key) or "").strip()
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", value): details[key] = value[:160]
+    for key in safe_number_keys:
+        value = raw.get(key)
+        if isinstance(value, (int, float)) and 0 <= value <= 1000000: details[key] = value
+    for key in safe_hash_keys:
+        value = str(raw.get(key) or "").strip().lower()
+        if re.fullmatch(r"[a-f0-9]{64}", value): details[key] = value
+    if isinstance(raw.get("probeEntryExists"), bool): details["probeEntryExists"] = raw["probeEntryExists"]
+    return details
+
 PUBLIC_ERROR_LIMIT = 2000
 SECRET_ASSIGNMENT_RE = re.compile(
     r"(?i)\b(api[_-]?key|authorization|bearer|password|secret|token)\b(\s*[:=]\s*|\s+)([^\s,;]+)"
@@ -377,7 +396,18 @@ def stage_run(
             probe_results = out / f"{model}_state_probe_results.json"; probe_fixture = os.environ.get("TCSD_PIPELINE_PROBE_RESULTS_FIXTURE", "")
             if probe_fixture:
                 shutil.copy2(probe_fixture, probe_results); run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
-            else: obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json")
+            else:
+                try:
+                    obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json")
+                except quality.SatkEvaluationError as error:
+                    probe_entry = out / f"{model}_probe_mcdc_entry.m"
+                    error.details.update({
+                        "candidateCount": candidate_count,
+                        "probePlanSha256": file_sha256(plan),
+                        "probeEntryExists": probe_entry.is_file(),
+                    })
+                    if probe_entry.is_file(): error.details["probeEntrySha256"] = file_sha256(probe_entry)
+                    raise
             read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
         finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0}); return
@@ -799,6 +829,9 @@ def main() -> int:
             "message": public_error_text(error),
             "hard": not recoverable_validation,
         }
+        safe_details = public_error_details(error)
+        if safe_details:
+            error_payload["details"] = safe_details
         if recoverable_validation:
             error_payload["details"] = {
                 "validationReportPath": error.validation_report_path.resolve()

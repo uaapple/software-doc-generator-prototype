@@ -477,6 +477,27 @@ function publicExecutionMessage(status = "", code = "") {
   return "";
 }
 
+function publicStageErrorDetails(details = null) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return null;
+  const result = {};
+  for (const key of ["phase", "gatewayErrorCode", "gatewayJobId", "gatewayStatus"]) {
+    const value = safeDeliveryText(details[key], 160);
+    if (value) result[key] = value;
+  }
+  for (const key of ["satkExitCode", "timeoutSeconds", "candidateCount"]) {
+    const value = Number(details[key]);
+    if (Number.isFinite(value) && value >= 0 && value <= 1000000) result[key] = value;
+  }
+  for (const key of ["probePlanSha256", "probeEntrySha256"]) {
+    const value = String(details[key] || "").trim().toLowerCase();
+    if (/^[a-f0-9]{64}$/.test(value)) result[key] = value;
+  }
+  if (typeof details.probeEntryExists === "boolean") {
+    result.probeEntryExists = details.probeEntryExists;
+  }
+  return Object.keys(result).length ? result : null;
+}
+
 function publicInputFile(input = null) {
   if (!input || typeof input !== "object") return null;
   return {
@@ -532,6 +553,7 @@ function publicPipelineStage(stage = {}) {
   const checkpoint = stage.checkpoint && typeof stage.checkpoint === "object"
     ? stage.checkpoint
     : null;
+  const errorDetails = publicStageErrorDetails(stage.error?.details);
   return {
     index: Number(stage.index || 0) || 0,
     name: String(stage.name || "").slice(0, 160),
@@ -545,7 +567,10 @@ function publicPipelineStage(stage = {}) {
     endedAt: String(stage.endedAt || "").slice(0, 40),
     error: stage.error ? {
       code: safeDeliveryText(stage.error.code),
-      message: publicExecutionMessage("failed", stage.error.code)
+      message: errorDetails
+        ? publicDiagnosticText(stage.error.message) || publicExecutionMessage("failed", stage.error.code)
+        : publicExecutionMessage("failed", stage.error.code),
+      details: errorDetails
     } : null,
     attempts: (Array.isArray(stage.attempts) ? stage.attempts : []).slice(-20).map((attempt) => ({
       attempt: Number(attempt?.attempt || 0) || 0,

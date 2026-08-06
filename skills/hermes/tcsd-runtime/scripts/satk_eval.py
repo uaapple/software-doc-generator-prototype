@@ -387,6 +387,11 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
                     "error": {
                         "code": error.get("code") or "MATLAB_GATEWAY_JOB_FAILED",
                         "message": error.get("message") or f"MATLAB Gateway job {status}",
+                        "data": {
+                            "gatewayJobId": job_id,
+                            "gatewayStatus": status,
+                            "timeoutSeconds": timeout_s,
+                        },
                     },
                 }
             time.sleep(0.2)
@@ -402,6 +407,25 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             "error": {
                 "code": "MATLAB_GATEWAY_POLL_TIMEOUT",
                 "message": f"Timed out waiting for MATLAB Gateway after {timeout_s:g}s",
+                "data": {
+                    "gatewayJobId": job_id,
+                    "gatewayStatus": "poll_timed_out",
+                    "timeoutSeconds": timeout_s,
+                },
+            },
+        }
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "error": {
+                "code": "MATLAB_GATEWAY_REQUEST_FAILED",
+                "message": str(exc),
+                "data": {
+                    "gatewayJobId": job_id,
+                    "gatewayStatus": "request_failed",
+                    "timeoutSeconds": timeout_s,
+                },
             },
         }
     finally:
