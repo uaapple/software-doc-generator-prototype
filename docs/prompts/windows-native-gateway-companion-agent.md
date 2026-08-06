@@ -22,7 +22,7 @@ SHA-256；旧 tag/Release 保持不可变，禁止使用现场临时脚本。
 ## 固定执行顺序
 
 1. 在全新临时目录下载 v8 ZIP、manifest、scan、release JSON，逐项核对发布者
-   提供的 SHA-256。核对 companionVersion=8、source/deployment revision 等于
+   提供的 SHA-256。核对 companionVersion=9、source/deployment revision 等于
    peeled commit、6 个 managed Gateway files、1 个 deployment tool、2 个
    read-only validation inputs、`rootfsInputsChanged=false`，并复核 ZIP 内
    每项 size/SHA-256。

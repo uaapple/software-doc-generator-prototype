@@ -23,10 +23,10 @@
   ],
   "properties": {
     "schema": {
-      "const": "sdg-native-matlab-gateway-companion/v8"
+      "const": "sdg-native-matlab-gateway-companion/v9"
     },
     "companionVersion": {
-      "const": 8
+      "const": 9
     },
     "sourceRevision": {
       "type": "string",
@@ -63,7 +63,7 @@
           "pattern": "^sha256:[a-f0-9]{64}$"
         },
         "rootfsInputsChanged": {
-          "const": false
+          "type": "boolean"
         }
       }
     },
@@ -76,7 +76,10 @@
         "buildPerformed": { "const": false },
         "pushPerformed": { "const": false },
         "registryReferencesSource": {
-          "const": "previous-approved-container-release-manifest"
+          "enum": [
+            "previous-approved-container-release-manifest",
+            "this-release-container-release-manifest"
+          ]
         }
       }
     },

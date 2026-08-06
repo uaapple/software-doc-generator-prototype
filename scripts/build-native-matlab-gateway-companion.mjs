@@ -25,10 +25,14 @@ const imageRevisions = {
   platform: calculateImageRevision("platform", { cwd: rootDir }),
   worker: calculateImageRevision("worker", { cwd: rootDir })
 };
+const previousImageRevisions = config.previousImageRevisions || {};
+const rootfsInputsChanged = Object.keys(imageRevisions).some(
+  (name) => imageRevisions[name] !== previousImageRevisions[name]
+);
 for (const [name, expected] of Object.entries(config.expectedImageRevisions)) {
   if (imageRevisions[name] !== expected) {
     throw new Error(
-      `${name} image inputs changed (${imageRevisions[name]}); companion-only release cannot rebuild or replace images.`
+      `${name} image inputs do not match expectedImageRevisions (${imageRevisions[name]}).`
     );
   }
 }
@@ -37,7 +41,7 @@ run(process.execPath, ["scripts/check-container-secrets.mjs"]);
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-native-gateway-release-"));
 const packageRoot = path.join(temporaryRoot, "package");
 const payloadRoot = path.join(packageRoot, "payload");
-const assetPrefix = `native-matlab-gateway-companion-v8-${shortRevision}`;
+const assetPrefix = `native-matlab-gateway-companion-v9-${shortRevision}`;
 const scanName = `${assetPrefix}.scan.json`;
 const manifestName = `${assetPrefix}.manifest.json`;
 const assetName = `${assetPrefix}.zip`;
@@ -111,7 +115,7 @@ try {
   }
 
   const scan = {
-    schema: "sdg-native-matlab-gateway-companion-scan/v8",
+    schema: "sdg-native-matlab-gateway-companion-scan/v9",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     status: "passed",
@@ -128,7 +132,7 @@ try {
   fs.writeFileSync(path.join(packageRoot, scanName), scanBytes);
 
   const manifest = {
-    schema: "sdg-native-matlab-gateway-companion/v8",
+    schema: "sdg-native-matlab-gateway-companion/v9",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     deploymentToolRevision: revision,
@@ -138,13 +142,15 @@ try {
     nativeEnv: config.nativeEnv,
     imageRevisions: {
       ...imageRevisions,
-      rootfsInputsChanged: false
+      rootfsInputsChanged
     },
     containerImages: {
       action: "reuse",
       buildPerformed: false,
       pushPerformed: false,
-      registryReferencesSource: "previous-approved-container-release-manifest"
+      registryReferencesSource: rootfsInputsChanged
+        ? "this-release-container-release-manifest"
+        : "previous-approved-container-release-manifest"
     },
     runtimeDependencies: {
       productionBuildRequired: false,
@@ -172,7 +178,7 @@ try {
   run("zip", ["-X", "-q", "-r", assetPath, "."], { cwd: packageRoot });
 
   const release = {
-    schema: "sdg-native-matlab-gateway-companion-release/v8",
+    schema: "sdg-native-matlab-gateway-companion-release/v9",
     companionVersion: config.companionVersion,
     sourceRevision: revision,
     deploymentToolRevision: revision,

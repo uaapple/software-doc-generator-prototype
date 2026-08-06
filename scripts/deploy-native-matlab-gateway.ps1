@@ -569,8 +569,8 @@ function Assert-Manifest {
     [string]$Root
   )
   if (
-    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v8" -or
-    $Manifest.companionVersion -ne 8 -or
+    $Manifest.schema -ne "sdg-native-matlab-gateway-companion/v9" -or
+    $Manifest.companionVersion -ne 9 -or
     $Manifest.serviceName -ne $ServiceName -or
     $Manifest.sourceRevision -notmatch "^[a-f0-9]{40}$" -or
     $Manifest.sourceRevision -ne $Manifest.deploymentToolRevision -or
