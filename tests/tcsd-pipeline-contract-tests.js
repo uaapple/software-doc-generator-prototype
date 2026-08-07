@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  appendFile,
   cp,
   copyFile,
   mkdir,
@@ -548,8 +549,93 @@ assert.throws(() => parseExecutionManifest({
   await assert.rejects(
     () => executor.resolveInstalledBundles(job, 2),
     (error) =>
-      error.code === TCSD_ERROR_CODES.workerUnavailable &&
+      error.code === TCSD_ERROR_CODES.skillTreeMutated &&
       /runtime changed after the job snapshot/.test(error.message)
+  );
+}
+
+{
+  // 会话后完整性守卫：Agent 会话若修改已安装 runtime/stage 文件，宿主必须
+  // 以 tcsd_skill_tree_mutated 硬失败并记录被改文件，而不是等下一阶段才发现。
+  const workspace = await createWorkspace();
+  const catalog = new TcsdStageCatalog({ skillsDir: skillsRoot });
+  const registry = new TcsdHermesSkillRegistry({
+    command: "fake-hermes",
+    profile: "default",
+    stateDbPath: path.join(workspace.root, "hermes-profile", "state.db"),
+    skillsDir: path.join(workspace.root, "hermes-profile", "skills"),
+    catalog,
+    commandRunner: async () => ({
+      stdout: TCSD_STAGE_DEFINITIONS.map((stage) => `${stage.skillName} stage skill`).join("\n"),
+      stderr: ""
+    })
+  });
+  const snapshot = await registry.prepare();
+  const executor = new TcsdHermesStageExecutor({
+    command: "fake-hermes",
+    profile: "default",
+    commandRunner: async (command, args) => {
+      const prompt = String(
+        args.find((item) => typeof item === "string" && item.startsWith("/tcsd-stage-")) || ""
+      );
+      const manifestPath = prompt.match(/input manifest: (.+)/)?.[1]?.trim();
+      const resultPath = prompt.match(/candidate result path is: (.+)/)?.[1]?.trim();
+      assert.ok(manifestPath && resultPath);
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      workspace.jobId = manifest.jobId;
+      await writeStageResult(workspace, manifest, resultPath, {
+        initialCoverage: 90,
+        finalCoverage: 60
+      });
+      const runtimeFile = path.join(snapshot.runtime.installedPath, "scripts", "satk_eval.py");
+      await appendFile(runtimeFile, "\n# mutated by the stage agent session\n");
+      return {
+        stdout: "non-authoritative agent text claims success\nsession_id: session-mutated-1\n",
+        stderr: ""
+      };
+    },
+    usageReader: async () => ({
+      model: "fake-model-v1",
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 2,
+      sessionId: "session-mutated-1"
+    }),
+    catalog,
+    maxTurns: 200,
+    timeoutMs: 60000
+  });
+  const job = {
+    jobId: "job-mutated",
+    taskId: "task-mutated",
+    status: "等待执行",
+    stages: createStages(),
+    checkpoints: [],
+    coverage: {},
+    repair: {},
+    events: [],
+    skillSnapshot: snapshot,
+    input: {
+      workspaceDir: workspace.root,
+      outputDir: workspace.outputDir,
+      modelSlxPath: workspace.modelSlxPath,
+      modelMatPath: workspace.modelMatPath,
+      coverageThreshold: 80
+    }
+  };
+  await assert.rejects(
+    () => executor.execute(1, job.input, job, { attempt: 1 }),
+    (error) =>
+      error.code === TCSD_ERROR_CODES.skillTreeMutated &&
+      /mutated by the stage agent session/.test(error.message) &&
+      error.details?.mutatedFileCount >= 1 &&
+      error.details?.mutatedFiles?.some(
+        (item) => item.bundle === "tcsd-runtime" && item.status === "modified"
+      ) &&
+      error.details?.sessionId === "session-mutated-1"
   );
 }
 
@@ -1278,6 +1364,7 @@ async function runAgentPipeline(options = {}) {
     const definition = TCSD_STAGE_DEFINITIONS[invocation.manifest.stageIndex - 1];
     assert.equal(invocation.prompt.startsWith(`/${definition.skillName} `), true);
     assert.match(invocation.prompt, /tcsd_stage_execute/);
+    assert.match(invocation.prompt, /are immutable: never create, modify, rename, or delete any file under them/);
     assert.equal(invocation.manifest.skill.name, definition.skillName);
     assert.match(invocation.manifest.skill.bundleHash, /^[a-f0-9]{64}$/);
     assert.match(invocation.manifest.skill.skillFileHash, /^[a-f0-9]{64}$/);

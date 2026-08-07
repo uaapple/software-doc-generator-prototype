@@ -28,6 +28,46 @@ import { readJson, writeJson } from "./storage.js";
 const execFileAsync = promisify(execFile);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
+async function listBundleFilesWithHashes(bundleDir) {
+  const entries = await fs.readdir(bundleDir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name, "en"))) {
+    const absolutePath = path.join(bundleDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listBundleFilesWithHashes(absolutePath)));
+    } else if (entry.isFile()) {
+      files.push({
+        relativePath: path.relative(bundleDir, absolutePath).split(path.sep).join("/"),
+        sha256: sha256(await fs.readFile(absolutePath))
+      });
+    }
+  }
+  return files;
+}
+
+async function bundleFileDiffs(installedDir, sourceDir, bundleLabel) {
+  const [installed, source] = await Promise.all([
+    listBundleFilesWithHashes(installedDir),
+    listBundleFilesWithHashes(sourceDir)
+  ]);
+  const sourceByPath = new Map(source.map((item) => [item.relativePath, item.sha256]));
+  const installedByPath = new Map(installed.map((item) => [item.relativePath, item.sha256]));
+  const diffs = [];
+  for (const [relativePath, installedSha] of installedByPath) {
+    if (!sourceByPath.has(relativePath)) {
+      diffs.push({ bundle: bundleLabel, relativePath, status: "added" });
+    } else if (sourceByPath.get(relativePath) !== installedSha) {
+      diffs.push({ bundle: bundleLabel, relativePath, status: "modified" });
+    }
+  }
+  for (const relativePath of sourceByPath.keys()) {
+    if (!installedByPath.has(relativePath)) {
+      diffs.push({ bundle: bundleLabel, relativePath, status: "removed" });
+    }
+  }
+  return diffs;
+}
+
 function relativeToWorkspace(workspaceDir, absolutePath) {
   const relativePath = path.relative(path.resolve(workspaceDir), path.resolve(absolutePath));
   if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
@@ -235,21 +275,67 @@ export class TcsdHermesStageExecutor {
       installedSkillFileHash !== sourceSkill.skillFileHash
     ) {
       throw Object.assign(new Error("Installed TCSD skill or runtime changed after the job snapshot."), {
-        code: TCSD_ERROR_CODES.workerUnavailable,
+        code: TCSD_ERROR_CODES.skillTreeMutated,
         details: { stageIndex, skillName: sourceSkill.name }
       });
     }
     return {
       skill: {
         ...sourceSkill,
-        directory: skillDirectory
+        directory: skillDirectory,
+        sourceDirectory: sourceSkill.directory
       },
       runtime: {
         ...sourceRuntime,
         directory: runtimeDirectory,
-        installedPath: runtimeDirectory
+        installedPath: runtimeDirectory,
+        sourceDirectory: sourceRuntime.directory
       }
     };
+  }
+
+  async assertInstalledBundlesImmutable(job, stageIndex, { sessionId, attempt } = {}) {
+    const snapshot = job.skillSnapshot;
+    const diffs = [];
+    const installedStages = Array.isArray(snapshot?.stages) ? snapshot.stages : [];
+    for (let index = 1; index <= 12; index += 1) {
+      const installed = installedStages.find((item) => item.index === index);
+      if (!installed?.installedPath) continue;
+      const source = await this.catalog.describe(index);
+      diffs.push(
+        ...(await bundleFileDiffs(
+          path.resolve(installed.installedPath),
+          path.resolve(source.directory),
+          `stage-${String(index).padStart(2, "0")}`
+        ))
+      );
+    }
+    if (snapshot?.runtime?.installedPath) {
+      const source = await this.catalog.runtime();
+      diffs.push(
+        ...(await bundleFileDiffs(
+          path.resolve(snapshot.runtime.installedPath),
+          path.resolve(source.directory),
+          "tcsd-runtime"
+        ))
+      );
+    }
+    if (!diffs.length) return;
+    throw Object.assign(
+      new Error(
+        `TCSD skill tree was mutated by the stage agent session (${diffs.length} file(s)).`
+      ),
+      {
+        code: TCSD_ERROR_CODES.skillTreeMutated,
+        details: {
+          stageIndex,
+          attempt,
+          sessionId,
+          mutatedFileCount: diffs.length,
+          mutatedFiles: diffs.slice(0, 20)
+        }
+      }
+    );
   }
 
   buildPrompt({ definition, skill, runtime, manifestPath, resultPath, validationReportPath, attempt }) {
@@ -305,6 +391,7 @@ export class TcsdHermesStageExecutor {
         `The required candidate result path is: ${resultPath}`,
         `The required result schema is ${TCSD_STAGE_RESULT_SCHEMA}.`,
         "Do not edit the existing workbook or write a host checkpoint. Do not expose hidden reasoning or secrets.",
+        `The installed skills directory (${skill.directory}) and runtime directory (${runtime.directory}) are immutable: never create, modify, rename, or delete any file under them; the host verifies this after your session. Write all generated files only into the task workspace.`,
         "Your text response is non-authoritative; the host accepts only independently validated proposal, simulation, workbook, and result artifacts."
       ].join("\n");
     }
@@ -319,6 +406,7 @@ export class TcsdHermesStageExecutor {
       `The required candidate result path is: ${resultPath}`,
       `The required result schema is ${TCSD_STAGE_RESULT_SCHEMA}.`,
       "Do not write a host checkpoint. Do not expose hidden reasoning or secrets.",
+      `The installed skills directory (${skill.directory}) and runtime directory (${runtime.directory}) are immutable: never create, modify, rename, or delete any file under them; the host verifies this after your session. Write all generated files only into the task workspace.`,
       "Your text response is non-authoritative; the host will accept the stage only after independently validating the result file and artifacts."
     ].join("\n");
   }
@@ -639,6 +727,7 @@ export class TcsdHermesStageExecutor {
         details: { stageIndex, attempt }
       });
     }
+    await this.assertInstalledBundlesImmutable(job, stageIndex, { sessionId, attempt });
     const priorSessionIds = this.collectPriorSessionIds(job);
     if (priorSessionIds.has(sessionId)) {
       throw Object.assign(new Error("Hermes reused a prior TCSD stage session."), {

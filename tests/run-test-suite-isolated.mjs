@@ -66,6 +66,11 @@ const suites = [
     args: ["tests/tcsd-pipeline-contract-tests.js"]
   },
   {
+    id: "hermes-upload-relocation",
+    command: process.execPath,
+    args: ["tests/hermes-upload-relocation-tests.mjs"]
+  },
+  {
     id: "matlab-gateway-lease",
     command: process.execPath,
     args: ["tests/matlab-gateway-lease-tests.mjs"]

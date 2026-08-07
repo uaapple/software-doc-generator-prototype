@@ -23,6 +23,10 @@ import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.j
 import { TcsdHermesSkillRegistry } from "./services/tcsd-hermes-skill-registry.js";
 import { SoftwareDetailPipelineJobService, isTerminalSoftwareDetailJobStatus } from "./services/software-detail-pipeline-job-service.js";
 import { SoftwareDetailHermesStageExecutor } from "./services/software-detail-hermes-stage-executor.js";
+import {
+  assertWorkspaceOutsideManagedSession,
+  relocateUploadedWorkspace
+} from "./services/hermes-upload-relocation.js";
 import { SoftwareDetailHermesSkillRegistry } from "./services/software-detail-hermes-skill-registry.js";
 import { SoftwareDetailMatlabLeaseClient } from "./services/software-detail-matlab-lease-client.js";
 
@@ -1463,14 +1467,24 @@ export async function createHermesApp(options = {}) {
   });
 
   const startTcsdPipelineJob = async (payload = {}, options = {}) => {
-    const allowedPaths = normalizeAllowedPaths(payload.allowedPaths?.length ? payload.allowedPaths : [payload.inputArtifact?.workspaceDir]);
-    const inputArtifact = await normalizeUnitTestCaseArtifact(payload.inputArtifact || {}, allowedPaths);
+    const uploadSessionDir = String(options.uploadSessionDir || "");
+    const relocated = uploadSessionDir
+      ? await relocateUploadedWorkspace(payload, uploadSessionDir, {
+          stableBaseDir: path.join(config.dataDir, "tcsd-pipeline-workspaces")
+        })
+      : payload;
+    const allowedPaths = normalizeAllowedPaths(
+      relocated.allowedPaths?.length
+        ? relocated.allowedPaths
+        : [relocated.inputArtifact?.workspaceDir]
+    );
+    const inputArtifact = await normalizeUnitTestCaseArtifact(relocated.inputArtifact || {}, allowedPaths);
     const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
     return tcsdJobs.start({
-      taskId: payload.taskId,
-      idempotencyKey: payload.idempotencyKey || payload.taskId,
+      taskId: relocated.taskId,
+      idempotencyKey: relocated.idempotencyKey || relocated.taskId,
       ...inputArtifact,
-      uploadSessionDir: String(options.uploadSessionDir || ""),
+      uploadSessionDir,
       projectAddonCopy: addonCopy
     });
   };
@@ -1479,13 +1493,19 @@ export async function createHermesApp(options = {}) {
     payload = {},
     startOptions = {}
   ) => {
+    const uploadSessionDir = String(startOptions.uploadSessionDir || "");
+    const relocated = uploadSessionDir
+      ? await relocateUploadedWorkspace(payload, uploadSessionDir, {
+          stableBaseDir: path.join(config.dataDir, "tcsd-pipeline-workspaces")
+        })
+      : payload;
     const allowedPaths = normalizeAllowedPaths(
-      payload.allowedPaths?.length
-        ? payload.allowedPaths
-        : [payload.inputArtifact?.workspaceDir]
+      relocated.allowedPaths?.length
+        ? relocated.allowedPaths
+        : [relocated.inputArtifact?.workspaceDir]
     );
     const inputArtifact = await normalizeUnitTestCaseArtifact(
-      payload.inputArtifact || {},
+      relocated.inputArtifact || {},
       allowedPaths,
       {
         stepType: "software_detail_pipeline",
@@ -1495,24 +1515,24 @@ export async function createHermesApp(options = {}) {
     );
     const addonCopy = await copyUnitTestProjectAddon(inputArtifact);
     return softwareDetailJobs.start({
-      taskId: payload.taskId,
-      idempotencyKey: payload.idempotencyKey || payload.taskId,
+      taskId: relocated.taskId,
+      idempotencyKey: relocated.idempotencyKey || relocated.taskId,
       ...inputArtifact,
-      uploadSessionDir: String(startOptions.uploadSessionDir || ""),
+      uploadSessionDir,
       projectAddonCopy: {
         copiedFileCount: addonCopy.copiedFileCount,
         unitTestProject: addonCopy.unitTestProject
       },
-      workerId: String(payload.workerId || "").trim(),
+      workerId: String(relocated.workerId || "").trim(),
       workerSelection:
-        payload.workerSelection &&
-        typeof payload.workerSelection === "object" &&
-        !Array.isArray(payload.workerSelection)
+        relocated.workerSelection &&
+        typeof relocated.workerSelection === "object" &&
+        !Array.isArray(relocated.workerSelection)
           ? {
-              id: String(payload.workerSelection.id || payload.workerId || "").trim(),
-              label: String(payload.workerSelection.label || "").trim()
+              id: String(relocated.workerSelection.id || relocated.workerId || "").trim(),
+              label: String(relocated.workerSelection.label || "").trim()
             }
-          : { id: String(payload.workerId || "").trim(), label: "" }
+          : { id: String(relocated.workerId || "").trim(), label: "" }
     });
   };
 
@@ -1521,6 +1541,7 @@ export async function createHermesApp(options = {}) {
     if (!sessionDir || !isTerminalJobStatus(job?.status) || !isManagedUploadSession(sessionDir, uploadTempDir)) {
       return false;
     }
+    assertWorkspaceOutsideManagedSession(job, sessionDir);
     await fs.rm(sessionDir, { recursive: true, force: true });
     job.input.uploadSessionDir = "";
     job.uploadCleanedAt = now();
@@ -1537,6 +1558,7 @@ export async function createHermesApp(options = {}) {
     ) {
       return false;
     }
+    assertWorkspaceOutsideManagedSession(job, sessionDir);
     await fs.rm(sessionDir, { recursive: true, force: true });
     job.input.uploadSessionDir = "";
     job.uploadCleanedAt = now();

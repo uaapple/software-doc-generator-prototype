@@ -50,7 +50,8 @@ export const TCSD_ERROR_CODES = Object.freeze({
   pollTimeout: "tcsd_poll_timeout",
   transientNetwork: "tcsd_transient_network",
   illegalTransition: "tcsd_illegal_transition",
-  obsolete: "tcsd_pipeline_version_obsolete"
+  obsolete: "tcsd_pipeline_version_obsolete",
+  skillTreeMutated: "tcsd_skill_tree_mutated"
 });
 
 export function createStages() {

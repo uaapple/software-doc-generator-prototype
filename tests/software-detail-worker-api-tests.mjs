@@ -163,6 +163,7 @@ try {
   config.hermes.authToken = "";
   config.unitTestCase.projectAddonRoot = addonRoot;
   config.tcsdPipeline.jobStoreDir = tcsdJobStoreDir;
+  config.dataDir = root;
 
   const jobs = new FakeSoftwareDetailJobs();
   const app = await createHermesApp({ softwareDetailJobs: jobs });
@@ -221,7 +222,8 @@ try {
   assert.equal(started.schema, "software-detail-minimal-job/v1");
   assert.equal(jobs.startedInputs.length, 1);
   const retainedWorkspace = jobs.startedInputs[0].workspaceDir;
-  assert.match(path.basename(path.dirname(retainedWorkspace)), /^step-/);
+  assert.match(path.basename(path.dirname(retainedWorkspace)), /^tcsd-pipeline-workspaces$/);
+  assert.match(path.basename(retainedWorkspace), /^ws-/);
   assert.deepEqual(
     await fs.readFile(jobs.startedInputs[0].modelSlxPath),
     slxBytes
@@ -259,9 +261,18 @@ try {
   );
   assert.equal(cleanupResponse.status, 200);
   assert.equal((await cleanupResponse.json()).cleaned, true);
-  assert.equal(
+  assert.ok(
     await fs.stat(retainedWorkspace).catch(() => null),
-    null
+    "job workspace must survive upload-session cleanup"
+  );
+  assert.deepEqual(
+    await fs.readFile(path.join(retainedWorkspace, "Demo.slx")),
+    slxBytes
+  );
+  assert.ok(await fs.stat(path.join(retainedWorkspace, "init_Global.m")));
+  assert.deepEqual(
+    (await fs.readdir(uploadTempDir)).filter((name) => name.startsWith("step-")),
+    []
   );
   assert.equal(
     jobs.jobs.get(started.jobId).input.uploadSessionDir,
