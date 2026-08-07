@@ -3,12 +3,12 @@
   "companionVersion": 9,
   "legacyGatewayRevision": "464b45448cd691fe94c4c5c843efe64ccd344a68",
   "expectedImageRevisions": {
-    "platform": "sha256:96064a45e2b74d3e3c0736a096490cff8481ac746f859818123b215fc6724de6",
-    "worker": "sha256:ac22f13eb218bcbc8cddd0ec9657fdce4e8f9cce61c0a07d87bba50102ce6b89"
+    "platform": "sha256:c4d95f46b8ee93c13e86d01837872bda2fd9499a93e8721fef4422b21b89dad0",
+    "worker": "sha256:42f62ac18ffc29062d534c64eb0299bd1a90a3d0b72704eac79a85fd49703eb9"
   },
   "previousImageRevisions": {
-    "platform": "sha256:49cbfdfada8c51806248654c3e92c62be0749984440c60c00ba557ad1833794d",
-    "worker": "sha256:eb42bb1c983ec69a91727a98595e55da4f7c46aa4d45da107822be4533f3084b"
+    "platform": "sha256:96064a45e2b74d3e3c0736a096490cff8481ac746f859818123b215fc6724de6",
+    "worker": "sha256:ac22f13eb218bcbc8cddd0ec9657fdce4e8f9cce61c0a07d87bba50102ce6b89"
   },
   "serviceName": "SoftwareDocMatlabWorker",
   "installRoot": "C:\\SoftwareDocWorker",
