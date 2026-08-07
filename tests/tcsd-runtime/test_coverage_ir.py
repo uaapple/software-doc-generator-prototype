@@ -25,6 +25,65 @@ def script(name: str):
 
 
 class CoverageIrTests(unittest.TestCase):
+    def run_cli(self, *extra_args):
+        command = [
+            sys.executable,
+            "-B",
+            str(SCRIPTS / "build_coverage_ir.py"),
+            *extra_args,
+        ]
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+
+    def test_cli_structured_error_for_missing_traces(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            result = self.run_cli(
+                "--logical-traces",
+                str(Path(root) / "missing.json"),
+                "--output",
+                str(Path(root) / "ir.json"),
+            )
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stderr)
+        self.assertEqual(payload["schema"], "tcsd-deterministic-script-error/v1")
+        self.assertEqual(payload["code"], "coverage_ir_traces_missing")
+
+    def test_cli_structured_error_for_invalid_json(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            traces = Path(root) / "traces.json"
+            traces.write_text("{ not json", encoding="utf-8")
+            result = self.run_cli(
+                "--logical-traces",
+                str(traces),
+                "--output",
+                str(Path(root) / "ir.json"),
+            )
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stderr)
+        self.assertEqual(payload["code"], "coverage_ir_build_failed")
+        self.assertIn("JSONDecodeError", payload["message"])
+
+    def test_cli_structured_error_for_empty_operator_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            traces = Path(root) / "traces.json"
+            traces.write_text(json.dumps({"model": "M", "data": {"not": "operators"}}), encoding="utf-8")
+            result = self.run_cli(
+                "--logical-traces",
+                str(traces),
+                "--output",
+                str(Path(root) / "ir.json"),
+            )
+        self.assertEqual(result.returncode, 1)
+        payload = json.loads(result.stderr)
+        self.assertEqual(payload["code"], "coverage_ir_build_failed")
+        self.assertIn("no operator reports", payload["message"])
+
     def test_ir_captures_parameter_nested_logic_and_state_stimulus(self) -> None:
         coverage_ir = script("build_coverage_ir.py")
         trace = {

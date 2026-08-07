@@ -18,6 +18,20 @@ from typing import Any
 
 SCHEMA = "simulink-ut-tcsd-coverage-ir/v1"
 VALID_STATUS = {"required", "unsupported", "unresolved", "unreachable", "covered"}
+MAX_TRACE_BYTES = 16 * 1024 * 1024
+MAX_OPERATOR_COUNT = 200_000
+
+
+def structured_error(code: str, message: str, details: dict[str, Any] | None = None) -> int:
+    payload: dict[str, Any] = {
+        "schema": "tcsd-deterministic-script-error/v1",
+        "code": code,
+        "message": message,
+    }
+    if details:
+        payload["details"] = details
+    print(json.dumps(payload, ensure_ascii=False), file=sys.stderr)
+    return 1
 
 
 def load(path: str | Path) -> dict[str, Any]:
@@ -86,11 +100,21 @@ def build_ir(
     trace_payload: dict[str, Any], *, probe_payload: dict[str, Any] | None = None, evidence_obligations: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     reports = [trace_payload] if isinstance(trace_payload.get("operators"), list) else [v for v in trace_payload.values() if isinstance(v, dict) and isinstance(v.get("operators"), list)]
+    if not reports:
+        raise ValueError("logical traces contain no operator reports")
     model = str(trace_payload.get("model") or (reports[0].get("model") if reports else ""))
     planner = planner_module()
     items: list[dict[str, Any]] = []
+    operator_count = 0
     for report in reports:
-        for operator in planner.top_operators(report):
+        operators = planner.top_operators(report)
+        operator_count += len(operators)
+        if operator_count > MAX_OPERATOR_COUNT:
+            raise ValueError(
+                f"logical operator count {operator_count} exceeds the supported limit "
+                f"({MAX_OPERATOR_COUNT})"
+            )
+        for operator in operators:
             op_id = str(operator.get("id") or operator.get("sid") or operator.get("block_path"))
             # A decision is always explicit even when detailed MCDC mapping is unsupported.
             items.append(normalize_item({
@@ -140,10 +164,30 @@ def main() -> int:
     parser.add_argument("--probe-results")
     parser.add_argument("--obligations", help="probe or coverage-report-derived obligations to merge into the IR")
     args = parser.parse_args()
-    result = build_ir(
-        load(args.logical_traces), probe_payload=load(args.probe_results) if args.probe_results else None,
-        evidence_obligations=load(args.obligations) if args.obligations else None,
-    )
+    try:
+        trace_path = Path(args.logical_traces)
+        if not trace_path.is_file():
+            return structured_error("coverage_ir_traces_missing", f"logical traces file not found: {trace_path}")
+        if trace_path.stat().st_size > MAX_TRACE_BYTES:
+            return structured_error(
+                "coverage_ir_traces_too_large",
+                f"logical traces file exceeds the supported size ({trace_path.stat().st_size} > {MAX_TRACE_BYTES} bytes)",
+            )
+        trace_payload = load(trace_path)
+        if not isinstance(trace_payload, dict):
+            return structured_error("coverage_ir_traces_invalid", "logical traces must be a JSON object")
+        obligations_payload = load(args.obligations) if args.obligations else None
+        probe_payload = load(args.probe_results) if args.probe_results else None
+        result = build_ir(
+            trace_payload,
+            probe_payload=probe_payload,
+            evidence_obligations=obligations_payload,
+        )
+    except (KeyError, TypeError, ValueError, RecursionError, IndexError, MemoryError, OSError) as cause:
+        return structured_error(
+            "coverage_ir_build_failed",
+            f"{type(cause).__name__}: {cause}",
+        )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

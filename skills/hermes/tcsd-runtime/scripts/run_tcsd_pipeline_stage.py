@@ -124,7 +124,25 @@ def immutable_python_command(command: list[str]) -> list[str]:
 
 
 def run(command: list[str], cwd: Path) -> None:
-    subprocess.run(immutable_python_command(command), cwd=cwd, check=True)
+    try:
+        subprocess.run(
+            immutable_python_command(command),
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except subprocess.CalledProcessError as error:
+        detail = public_error_text(error.stderr or "")
+        if detail:
+            raise RuntimeError(
+                f"deterministic command failed (exit {error.returncode}): {detail}"
+            ) from None
+        raise RuntimeError(
+            f"deterministic command failed (exit {error.returncode})."
+        ) from None
 
 def run_satk(command: list[str], cwd: Path, *, stage: int, context: str) -> None:
     try:

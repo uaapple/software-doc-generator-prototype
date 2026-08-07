@@ -131,6 +131,19 @@ const suites = [
     args: ["tests/verify-image-archive-tests.py"]
   },
   {
+    id: "tcsd-runtime-python",
+    command: "python3",
+    args: [
+      "-m",
+      "unittest",
+      "tests.tcsd-runtime.test_coverage_ir",
+      "tests.tcsd-runtime.test_pipeline_stage_runner",
+      "tests.tcsd-runtime.test_mcdc_quality_loop",
+      "tests.tcsd-runtime.test_host_validator_bootstrap",
+      "tests.tcsd-runtime.test_validate_tcsd_workbook"
+    ]
+  },
+  {
     id: "rollback",
     command: "sh",
     args: ["tests/rollback-linux-release-tests.sh"]

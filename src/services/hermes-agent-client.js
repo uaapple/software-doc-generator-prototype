@@ -17,7 +17,10 @@ const CLI_PATH_MAX_LENGTH = 260;
 const HERMES_USAGE_QUERY_RETRIES = 5;
 const HERMES_USAGE_QUERY_RETRY_DELAY_MS = 250;
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
-const MAX_TCSD_CONTROL_RESPONSE_BYTES = 256 * 1024;
+// 完成态作业的轮询响应包含 job 全量 checkpoint/覆盖数据与 artifact base64
+// 附件；256KB 曾把已完成的 DrvMod_A05 轮询截断为 tcsd_worker_response_too_large。
+// 上限必须覆盖 50MB artifact 的 base64（×4/3）加 job JSON 开销。
+const MAX_TCSD_CONTROL_RESPONSE_BYTES_DEFAULT = 96 * 1024 * 1024;
 const MAX_TRANSFERRED_SOFTWARE_DETAIL_OUTPUT_BYTES = 50 * 1024 * 1024;
 const SOFTWARE_DETAIL_DOCX_ROLE = "detail-design-docx";
 const SOFTWARE_DETAIL_JOB_SCHEMA = "software-detail-minimal-job/v1";
@@ -2784,6 +2787,14 @@ export class HermesAgentClient {
     };
     this.apiMode = String(options.apiMode || config.hermes.apiMode || "json").trim().toLowerCase();
     this.authToken = String(options.authToken || config.hermes.authToken || "").trim();
+    this.maxControlResponseBytes = Math.max(
+      64 * 1024,
+      Number(
+        options.maxControlResponseBytes ||
+        process.env.HERMES_TCSD_MAX_CONTROL_RESPONSE_BYTES ||
+        MAX_TCSD_CONTROL_RESPONSE_BYTES_DEFAULT
+      ) || MAX_TCSD_CONTROL_RESPONSE_BYTES_DEFAULT
+    );
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs || config.hermes.timeoutMs) || config.hermes.timeoutMs);
     this.stepTimeoutMs = normalizeStepTimeoutMap(options.stepTimeoutMs || config.hermes.stepTimeoutMs || {});
     this.command = String(options.command || config.hermes.command || "hermes").trim() || "hermes";
@@ -3701,7 +3712,7 @@ export class HermesAgentClient {
           uploadManifest.files,
           headers,
           this.timeoutMs,
-          { maxResponseBytes: MAX_TCSD_CONTROL_RESPONSE_BYTES }
+          { maxResponseBytes: this.maxControlResponseBytes }
         );
       } else {
         response = await postJsonWithTimeout(
@@ -3709,7 +3720,7 @@ export class HermesAgentClient {
           payload,
           this.timeoutMs,
           headers,
-          { maxResponseBytes: MAX_TCSD_CONTROL_RESPONSE_BYTES }
+          { maxResponseBytes: this.maxControlResponseBytes }
         );
       }
     } catch (cause) {
@@ -3749,7 +3760,7 @@ export class HermesAgentClient {
         result.setEncoding("utf8");
         result.on("data", (chunk) => {
           responseBytes += Buffer.byteLength(chunk);
-          if (responseBytes > MAX_TCSD_CONTROL_RESPONSE_BYTES) {
+          if (responseBytes > this.maxControlResponseBytes) {
             rejected = true;
             result.destroy();
             reject(Object.assign(new Error("TCSD Worker response exceeded the allowed size."), {

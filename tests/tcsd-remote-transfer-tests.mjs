@@ -102,3 +102,54 @@ try {
 }
 
 console.log("TCSD remote multipart staging and artifact transfer tests passed.");
+
+// 回归：完成态大作业的轮询响应可超过旧的 256KB 上限（生产 DrvMod_A05 实测
+// 399KB 被截断为 tcsd_worker_response_too_large），默认上限须能承载。
+{
+  const bigOutput = Buffer.alloc(1024 * 1024, "x");
+  const bigWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "tcsd-remote-large-response-"));
+  const bigServer = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.setHeader("Content-Type", "application/json");
+      res.statusCode = 200;
+      res.end(JSON.stringify({
+        jobId: "large-job",
+        status: "已完成",
+        artifacts: [{
+          relativePath: "outputs/Large_Test0001_tcsd.xlsx",
+          fileName: "Large_Test0001_tcsd.xlsx",
+          kind: "tcsd_workbook",
+          encoding: "base64",
+          contentBase64: bigOutput.toString("base64")
+        }]
+      }));
+    });
+  });
+  await new Promise((resolve, reject) => {
+    bigServer.listen(0, "127.0.0.1", resolve);
+    bigServer.once("error", reject);
+  });
+  const bigAddress = bigServer.address();
+  const bigClient = new HermesAgentClient({
+    transport: "api",
+    baseURL: `http://127.0.0.1:${bigAddress.port}`,
+    authToken: "remote-worker-token",
+    timeoutMs: 10000
+  });
+  try {
+    const completed = await bigClient.getTcsdPipelineJob("large-job", {
+      localWorkspaceDir: bigWorkspace
+    });
+    assert.equal(completed.status, "已完成");
+    assert.equal(completed.artifacts[0].relativePath, "outputs/Large_Test0001_tcsd.xlsx");
+    assert.deepEqual(
+      await fs.readFile(path.join(bigWorkspace, "outputs", "Large_Test0001_tcsd.xlsx")),
+      bigOutput
+    );
+  } finally {
+    await new Promise((resolve) => bigServer.close(resolve));
+    await fs.rm(bigWorkspace, { recursive: true, force: true });
+  }
+  console.log("TCSD large completed-job poll response regression passed.");
+}

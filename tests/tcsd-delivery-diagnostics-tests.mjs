@@ -97,7 +97,8 @@ for (const responseBody of [
     const client = new HermesAgentClient({
       transport: "api",
       baseURL: `http://127.0.0.1:${port}`,
-      timeoutMs: 5000
+      timeoutMs: 5000,
+      maxControlResponseBytes: 64 * 1024
     });
     await assert.rejects(
       client.startTcsdPipelineJob({ taskId: "invalid-response-task" }),
