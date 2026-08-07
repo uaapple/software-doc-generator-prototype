@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
 import { config } from "../config.js";
 import {
   TCSD_CHECKPOINT_SCHEMA,
@@ -15,7 +13,7 @@ import {
   validateStageCheckpoint,
   validateStageResult
 } from "./tcsd-pipeline-contract.js";
-import { runHermesCommand } from "./hermes-command.js";
+import { createHermesSpawnRunner, runHermesCommand } from "./hermes-command.js";
 import {
   formatPythonCommand,
   resolvePythonInvocation,
@@ -25,8 +23,8 @@ import { TcsdHostSemanticValidator } from "./tcsd-host-semantic-validator.js";
 import { hashTcsdBundle, TcsdStageCatalog } from "./tcsd-stage-catalog.js";
 import { readJson, writeJson } from "./storage.js";
 
-const execFileAsync = promisify(execFile);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function listBundleFilesWithHashes(bundleDir) {
   const entries = await fs.readdir(bundleDir, { withFileTypes: true });
@@ -173,7 +171,17 @@ export class TcsdHermesStageExecutor {
       Number(options.timeoutMs ?? config.tcsdPipeline.stageTimeoutMs ?? 60 * 60 * 1000) || 60 * 60 * 1000
     );
     this.stateDbPath = options.stateDbPath || defaultStateDbPath(this.profile);
-    this.commandRunner = options.commandRunner || execFileAsync;
+    this.commandRunner = options.commandRunner || createHermesSpawnRunner();
+    this.watchdogStallMs = Math.max(
+      0,
+      Number(
+        options.watchdogStallMs ??
+        process.env.TCSD_STAGE_HERMES_WATCHDOG_STALL_MS ??
+        300000
+      )
+    );
+    this.watchdogGraceMs = Math.max(0, Number(options.watchdogGraceMs ?? 15000));
+    this.watchdogPollMs = Math.max(100, Number(options.watchdogPollMs ?? 10000));
     this.catalog = options.catalog || new TcsdStageCatalog();
     this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({
       pythonInvocation: this.pythonInvocation
@@ -336,6 +344,76 @@ export class TcsdHermesStageExecutor {
         }
       }
     );
+  }
+
+  /**
+   * 运行 Hermes 阶段会话；当结果文件已为 completed 且一段时间无新写入、
+   * 而 CLI 进程仍挂起（hermes chat 退出路径 futex/线程 join 竞态）时，
+   * 终止进程并按已完成的增量输出收尾，避免阶段无限停留在“正在执行”。
+   */
+  async runStageHermes({ command, args, options, resultPath, job }) {
+    const promise = runHermesCommand(this.commandRunner, command, args, options);
+    const child = promise.child || null;
+    if (!this.watchdogStallMs || !child) return promise;
+    let lastSeenMtime = 0;
+    for (;;) {
+      const settled = await Promise.race([
+        promise.then(
+          (value) => ({ kind: "ok", value }),
+          (error) => ({ kind: "error", error })
+        ),
+        sleep(this.watchdogPollMs).then(() => ({ kind: "poll" }))
+      ]);
+      if (settled.kind === "ok") return settled.value;
+      if (settled.kind === "error") throw settled.error;
+      let completed = false;
+      try {
+        const stat = await fs.stat(resultPath);
+        if (stat.mtimeMs > lastSeenMtime) lastSeenMtime = stat.mtimeMs;
+        if (lastSeenMtime > 0 && Date.now() - lastSeenMtime >= this.watchdogStallMs) {
+          const parsed = JSON.parse(await fs.readFile(resultPath, "utf8"));
+          completed =
+            parsed?.schema === TCSD_STAGE_RESULT_SCHEMA &&
+            parsed?.status === "completed";
+        }
+      } catch {
+        completed = false;
+      }
+      if (!completed) continue;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // 进程可能已退出
+      }
+      const exited = await Promise.race([
+        promise.then(() => true).catch(() => true),
+        sleep(this.watchdogGraceMs).then(() => false)
+      ]);
+      if (!exited) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // 进程可能已退出
+        }
+      }
+      const partialStdout =
+        typeof promise.stdoutSoFar === "function" ? promise.stdoutSoFar() : "";
+      const partialStderr =
+        typeof promise.stderrSoFar === "function" ? promise.stderrSoFar() : "";
+      if (Array.isArray(job.events)) {
+        const workspaceDirValue = String(job.input?.workspaceDir || "").trim();
+        job.events.push({
+          at: this.now(),
+          type: "hermes_stage_watchdog_killed_session",
+          stageIndex: options.stageIndex,
+          attempt: options.attempt,
+          ...(workspaceDirValue
+            ? { resultPath: relativeToWorkspace(path.resolve(workspaceDirValue), resultPath) }
+            : {})
+        });
+      }
+      return { stdout: partialStdout, stderr: partialStderr };
+    }
   }
 
   buildPrompt({ definition, skill, runtime, manifestPath, resultPath, validationReportPath, attempt }) {
@@ -694,11 +772,10 @@ export class TcsdHermesStageExecutor {
     const startedAt = Date.now();
     let commandResult;
     try {
-      commandResult = await runHermesCommand(
-        this.commandRunner,
-        this.command,
+      commandResult = await this.runStageHermes({
+        command: this.command,
         args,
-        {
+        options: {
           cwd: workspaceDir,
           env: {
             ...process.env,
@@ -709,9 +786,13 @@ export class TcsdHermesStageExecutor {
           },
           timeout: this.timeoutMs,
           maxBuffer: 16 * 1024 * 1024,
-          windowsHide: true
-        }
-      );
+          windowsHide: true,
+          stageIndex,
+          attempt
+        },
+        resultPath,
+        job
+      });
     } catch (cause) {
       const failedResult = await readJson(resultPath, null).catch(() => null);
       const runtimeError = stageRuntimeResultError(failedResult, stageIndex, attempt);

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 import path from "node:path";
 
 function quoteWindowsCmdArg(value = "") {
@@ -58,4 +59,74 @@ export function runHermesCommand(commandRunner, command, args, options = {}) {
     ...options,
     env: { ...(options.env || process.env), ...(invocation.env || {}) }
   });
+}
+
+/**
+ * 生成式命令 runner：与 execFileAsync 契约一致（resolve {stdout, stderr}，
+ * 非零退出 reject {code, signal, stdout, stderr}，超时 kill 后按
+ * killed/SIGTERM reject），同时暴露子进程句柄与增量输出，供阶段执行器
+ * 在 hermes chat 完成后挂起（futex/线程 join 竞态）时做看门狗收尾。
+ */
+export function createHermesSpawnRunner() {
+  return (command, args = [], options = {}) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: { ...process.env, ...(options.env || {}) },
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    let stdoutBytes = 0;
+    const maxBuffer = Number(options.maxBuffer || 16 * 1024 * 1024);
+    const stderrTailLimit = 64 * 1024;
+    child.stdout.on("data", (chunk) => {
+      stdoutBytes += chunk.length;
+      if (stdoutBytes <= maxBuffer) stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      if (Buffer.byteLength(stderr) < stderrTailLimit) stderr += chunk;
+    });
+    const promise = new Promise((resolve, reject) => {
+      let timer = null;
+      if (options.timeout) {
+        timer = setTimeout(() => {
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            // 进程可能已退出
+          }
+          reject(
+            Object.assign(
+              new Error(`Hermes stage session timed out after ${options.timeout}ms.`),
+              { killed: true, signal: "SIGTERM" }
+            )
+          );
+        }, options.timeout);
+      }
+      child.on("error", (error) => {
+        if (timer) clearTimeout(timer);
+        reject(error);
+      });
+      child.on("close", (code, signal) => {
+        if (timer) clearTimeout(timer);
+        if (code === 0) {
+          resolve({ stdout, stderr });
+        } else {
+          reject(
+            Object.assign(
+              new Error(
+                `Hermes stage session exited with code ${code}${signal ? ` (${signal})` : ""}.`
+              ),
+              { code, signal, stdout, stderr }
+            )
+          );
+        }
+      });
+    });
+    promise.child = child;
+    promise.stdoutSoFar = () => stdout;
+    promise.stderrSoFar = () => stderr;
+    return promise;
+  };
 }

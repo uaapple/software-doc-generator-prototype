@@ -595,7 +595,7 @@ assert.throws(() => parseExecutionManifest({
         stderr: ""
       };
     },
-    usageReader: async () => ({
+    usageReader: async (sessionId, _runtime, skill) => ({
       model: "fake-model-v1",
       inputTokens: 1,
       outputTokens: 1,
@@ -724,6 +724,110 @@ assert.throws(() => parseExecutionManifest({
   assert.equal(firstJob.status, "已完成", JSON.stringify(firstJob.error));
   assert.equal(secondJob.status, "已完成", JSON.stringify(secondJob.error));
   assert.equal(maxActiveHermes, 1, `TCSD jobs must run serially (maxActive=${maxActiveHermes})`);
+}
+
+{
+  // 会话挂起看门狗：result.json 已完成且停滞超阈值时，宿主终止挂起的
+  // hermes chat 进程并按成功收尾，而不是无限等待进程退出。
+  const workspace = await createWorkspace();
+  const catalog = new TcsdStageCatalog({ skillsDir: skillsRoot });
+  const registry = new TcsdHermesSkillRegistry({
+    command: "fake-hermes",
+    profile: "default",
+    stateDbPath: path.join(workspace.root, "hermes-profile", "state.db"),
+    skillsDir: path.join(workspace.root, "hermes-profile", "skills"),
+    catalog,
+    commandRunner: async () => ({
+      stdout: TCSD_STAGE_DEFINITIONS.map((stage) => `${stage.skillName} stage skill`).join("\n"),
+      stderr: ""
+    })
+  });
+  const snapshot = await registry.prepare();
+  let killed = false;
+  const hangRunner = (command, args) => {
+    const pending = new Promise(() => {});
+    pending.child = {
+      kill: () => {
+        killed = true;
+      }
+    };
+    pending.stdoutSoFar = () => "session_id: session-watchdog-1\n";
+    pending.stderrSoFar = () => "";
+    (async () => {
+      const prompt = String(
+        args.find((item) => typeof item === "string" && item.startsWith("/tcsd-stage-")) || ""
+      );
+      const manifestPath = prompt.match(/input manifest: (.+)/)?.[1]?.trim();
+      const resultPath = prompt.match(/candidate result path is: (.+)/)?.[1]?.trim();
+      assert.ok(manifestPath && resultPath);
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      workspace.jobId = manifest.jobId;
+      await writeStageResult(workspace, manifest, resultPath, {
+        initialCoverage: 90,
+        finalCoverage: 60
+      });
+    })().catch((error) => {
+      throw error;
+    });
+    return pending;
+  };
+  const executor = new TcsdHermesStageExecutor({
+    command: "fake-hermes",
+    profile: "default",
+    commandRunner: hangRunner,
+    usageReader: async (sessionId, _runtime, skill) => ({
+      model: "fake-model-v1",
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 2,
+      skillLoad: {
+        source: "hermes-state-db+skill-usage",
+        loaded: true,
+        skillName: skill.name,
+        skillFileSha256: skill.skillFileHash,
+        messageId: 1,
+        messageSha256: hash("watchdog"),
+        usageCountBefore: 0,
+        usageCountAfter: 1,
+        lastUsedAt: new Date().toISOString()
+      },
+      sessionId
+    }),
+    catalog,
+    maxTurns: 200,
+    timeoutMs: 60000,
+    watchdogStallMs: 300,
+    watchdogPollMs: 100,
+    watchdogGraceMs: 100
+  });
+  const job = {
+    jobId: "job-watchdog",
+    taskId: "task-watchdog",
+    status: "等待执行",
+    stages: createStages(),
+    checkpoints: [],
+    coverage: {},
+    repair: {},
+    events: [],
+    skillSnapshot: snapshot,
+    input: {
+      workspaceDir: workspace.root,
+      outputDir: workspace.outputDir,
+      modelSlxPath: workspace.modelSlxPath,
+      modelMatPath: workspace.modelMatPath,
+      coverageThreshold: 80
+    }
+  };
+  const checkpoint = await executor.execute(1, job.input, job, { attempt: 1 });
+  assert.equal(checkpoint.status, "completed");
+  assert.equal(killed, true, "watchdog must terminate the hung session process");
+  assert.ok(
+    job.events.some((event) => event.type === "hermes_stage_watchdog_killed_session"),
+    JSON.stringify(job.events)
+  );
 }
 
 {
