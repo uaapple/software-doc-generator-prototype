@@ -20,6 +20,7 @@ def script(name: str):
     spec = importlib.util.spec_from_file_location(name.replace(".py", ""), SCRIPTS / name)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -83,6 +84,45 @@ class CoverageIrTests(unittest.TestCase):
         payload = json.loads(result.stderr)
         self.assertEqual(payload["code"], "coverage_ir_build_failed")
         self.assertIn("no operator reports", payload["message"])
+
+    def test_no_unique_cause_pair_is_degraded_not_fatal(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        coverage_ir = script("build_coverage_ir.py")
+        trace = {
+            "model": "GenericModel",
+            "operators": [{
+                "id": "GenericModel:12",
+                "sid": "GenericModel:12",
+                "block_path": "GenericModel/Contradiction",
+                "operator": "AND",
+                "ports": [
+                    {"trace": {"kind": "root_inport", "signal": "Enable"}},
+                    {"trace": {"kind": "logic", "operator": "NOT", "inputs": [{"kind": "root_inport", "signal": "Enable"}]}},
+                ],
+            }],
+        }
+        operator = trace["operators"][0]
+        obligations, summary = planner.build_for_operator("GenericModel", operator)
+        infeasible = [
+            item for item in obligations
+            if item["status"] == "unsupported" and any("no_unique_cause_pair" in str(issue) for issue in item.get("issues", []))
+        ]
+        self.assertTrue(infeasible, f"expected infeasible condition exemptions, got {obligations}")
+        self.assertIn("no_unique_cause_pair", "; ".join(str(issue) for issue in summary["issues"]))
+        result = coverage_ir.build_ir(trace, evidence_obligations={"obligations": obligations})
+        unsupported = [
+            item for item in result["items"]
+            if item["reachability"]["status"] == "unsupported"
+        ]
+        self.assertTrue(unsupported, "Coverage IR must retain the infeasible obligations as unsupported")
+        self.assertTrue(
+            any(
+                "no_unique_cause_pair" in str(item["reachability"].get("reason") or "")
+                or any("no_unique_cause_pair" in str(issue) for issue in item["reachability"].get("issues", []))
+                for item in unsupported
+            )
+        )
+        self.assertEqual(result["summary"]["unsupported"], len(unsupported))
 
     def test_ir_captures_parameter_nested_logic_and_state_stimulus(self) -> None:
         coverage_ir = script("build_coverage_ir.py")

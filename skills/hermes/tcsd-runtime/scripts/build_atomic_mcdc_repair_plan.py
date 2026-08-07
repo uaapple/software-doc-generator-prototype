@@ -131,28 +131,33 @@ def unique_cause_pairs(ast: dict[str, Any], count: int) -> dict[int, list[tuple[
 
 def select_minimal_vectors(
     pairs: dict[int, list[tuple[tuple[bool, ...], tuple[bool, ...]]]],
-) -> tuple[list[tuple[bool, ...]], dict[int, tuple[tuple[bool, ...], tuple[bool, ...]]]]:
+) -> tuple[
+    list[tuple[bool, ...]],
+    dict[int, tuple[tuple[bool, ...], tuple[bool, ...]]],
+    list[int],
+]:
     missing = [index for index, options in pairs.items() if not options]
-    if missing:
-        raise ValueError(f"conditions have no unique-cause pair: {missing}")
+    feasible = {index: options for index, options in pairs.items() if options}
+    if not feasible:
+        return [], {}, missing
 
-    candidates = sorted({vector for options in pairs.values() for pair in options for vector in pair})
+    candidates = sorted({vector for options in feasible.values() for pair in options for vector in pair})
     best_seed: tuple[bool, ...] | None = None
     best_covered: set[int] = set()
     for vector in candidates:
-        covered = {index for index, options in pairs.items() if any(vector in pair for pair in options)}
+        covered = {index for index, options in feasible.items() if any(vector in pair for pair in options)}
         if len(covered) > len(best_covered):
             best_seed, best_covered = vector, covered
 
     selected: set[tuple[bool, ...]] = {best_seed} if best_seed is not None else set()
     chosen: dict[int, tuple[tuple[bool, ...], tuple[bool, ...]]] = {}
-    uncovered = set(pairs)
+    uncovered = set(feasible)
     while uncovered:
         best: tuple[int, tuple[tuple[bool, ...], tuple[bool, ...]]] | None = None
         best_cost = math.inf
         best_reuse = -1
         for index in sorted(uncovered):
-            for pair in pairs[index]:
+            for pair in feasible[index]:
                 cost = sum(vector not in selected for vector in pair)
                 reuse = 2 - cost
                 if cost < best_cost or (cost == best_cost and reuse > best_reuse):
@@ -164,7 +169,7 @@ def select_minimal_vectors(
         selected.update(pair)
         chosen[index] = pair
         uncovered.remove(index)
-    return sorted(selected), chosen
+    return sorted(selected), chosen, missing
 
 
 def parse_literal(raw: Any) -> float | None:
@@ -320,12 +325,29 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
         return [], {"operator_id": operator.get("id"), "condition_count": len(atoms), "issues": ["more than 12 atomic conditions; bounded planner stopped"]}
 
     pairs = unique_cause_pairs(ast, len(atoms))
-    selected, chosen = select_minimal_vectors(pairs)
+    selected, chosen, missing = select_minimal_vectors(pairs)
     if len(selected) > 2 * len(atoms) + 2:
         raise ValueError("minimal MC/DC planner exceeded the bounded 2N+2 case limit")
 
     obligations: list[dict[str, Any]] = []
     op_id = str(operator.get("id") or operator.get("sid") or "LOGIC")
+    for index in missing:
+        atom = atoms[index]
+        obligations.append(
+            {
+                "id": f"{op_id}_condition_{atom.id}_infeasible",
+                "model": model,
+                "block_path": operator.get("block_path"),
+                "sid": operator.get("sid") or operator.get("id"),
+                "operator": operator.get("operator"),
+                "coverage_class": "MCDC",
+                "status": "unsupported",
+                "required_outcome": f"no unique-cause pair available for condition {atom.id}",
+                "condition_states": {},
+                "match": {"inputs": {}, "params": {}},
+                "issues": [f"no_unique_cause_pair: condition {atom.id}"],
+            }
+        )
     for vector in selected:
         recipe = Recipe(hold_s=0.1)
         condition_states: dict[str, bool] = {}
