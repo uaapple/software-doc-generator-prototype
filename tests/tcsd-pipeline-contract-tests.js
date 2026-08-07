@@ -47,6 +47,7 @@ import {
   hashTcsdBundle,
   TcsdStageCatalog
 } from "../src/services/tcsd-stage-catalog.js";
+import { SerialGate } from "../src/services/serial-gate.js";
 import { UnitTestCaseGenerationService } from "../src/services/unit-test-case-generation-service.js";
 import { resolveHermesCommand } from "../src/services/hermes-command.js";
 import { config } from "../src/config.js";
@@ -637,6 +638,92 @@ assert.throws(() => parseExecutionManifest({
       ) &&
       error.details?.sessionId === "session-mutated-1"
   );
+}
+
+{
+  // Worker 串行门：同一 Worker 上多个 TCSD 作业必须排队执行，互不重叠。
+  const workspace = await createWorkspace();
+  const catalog = new TcsdStageCatalog({ skillsDir: skillsRoot });
+  const registry = new TcsdHermesSkillRegistry({
+    command: "fake-hermes",
+    profile: "default",
+    stateDbPath: path.join(workspace.root, "hermes-profile", "state.db"),
+    skillsDir: path.join(workspace.root, "hermes-profile", "skills"),
+    catalog,
+    commandRunner: async () => ({
+      stdout: TCSD_STAGE_DEFINITIONS.map((stage) => `${stage.skillName} stage skill`).join("\n"),
+      stderr: ""
+    })
+  });
+  const fake = createFakeHermes(workspace, {});
+  let activeHermes = 0;
+  let maxActiveHermes = 0;
+  const gatedRunner = async (command, args, options) => {
+    activeHermes += 1;
+    maxActiveHermes = Math.max(maxActiveHermes, activeHermes);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      return await fake.commandRunner(command, args, options);
+    } finally {
+      activeHermes -= 1;
+    }
+  };
+  const executor = new TcsdHermesStageExecutor({
+    command: "fake-hermes",
+    profile: "default",
+    commandRunner: gatedRunner,
+    usageReader: async (sessionId, _runtime, skill) => {
+      const stageIndex = TCSD_STAGE_DEFINITIONS.find((stage) => stage.skillName === skill.name)?.index;
+      return {
+        model: "fake-model-v1",
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 120,
+        skillLoad: {
+          source: "hermes-state-db+skill-usage",
+          loaded: true,
+          skillName: skill.name,
+          skillFileSha256: skill.skillFileHash,
+          messageId: Number(sessionId.match(/\d+/)?.[0] || 1),
+          messageSha256: hash(`slash-skill-message:${sessionId}:${skill.skillFileHash}`),
+          usageCountBefore: 0,
+          usageCountAfter: 1,
+          lastUsedAt: new Date().toISOString()
+        },
+        sessionId
+      };
+    },
+    catalog,
+    maxTurns: 200,
+    timeoutMs: 3600000
+  });
+  const service = new TcsdPipelineJobService({
+    jobDir: path.join(workspace.root, "jobs"),
+    prepareJob: () => registry.prepare(),
+    executor: (stageIndex, input, job, execution) => executor.execute(stageIndex, input, job, execution),
+    checkpointValidator: (checkpoint, context, job) => executor.validateCheckpoint(checkpoint, context, job),
+    runGate: new SerialGate({ concurrency: 1 })
+  });
+  const inputFor = (taskId) => ({
+    taskId,
+    workspaceDir: workspace.root,
+    outputDir: workspace.outputDir,
+    modelSlxPath: workspace.modelSlxPath,
+    modelMatPath: workspace.modelMatPath,
+    coverageThreshold: 80
+  });
+  const first = await service.start(inputFor("serial-task-a"));
+  const second = await service.start(inputFor("serial-task-b"));
+  await service.running.get(first.jobId);
+  await service.running.get(second.jobId);
+  const firstJob = await service.get(first.jobId);
+  const secondJob = await service.get(second.jobId);
+  assert.equal(firstJob.status, "已完成", JSON.stringify(firstJob.error));
+  assert.equal(secondJob.status, "已完成", JSON.stringify(secondJob.error));
+  assert.equal(maxActiveHermes, 1, `TCSD jobs must run serially (maxActive=${maxActiveHermes})`);
 }
 
 {

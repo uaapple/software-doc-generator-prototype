@@ -27,6 +27,7 @@ import {
   assertWorkspaceOutsideManagedSession,
   relocateUploadedWorkspace
 } from "./services/hermes-upload-relocation.js";
+import { SerialGate } from "./services/serial-gate.js";
 import { SoftwareDetailHermesSkillRegistry } from "./services/software-detail-hermes-skill-registry.js";
 import { SoftwareDetailMatlabLeaseClient } from "./services/software-detail-matlab-lease-client.js";
 
@@ -1402,11 +1403,15 @@ export async function createHermesApp(options = {}) {
     stateDbPath: tcsdStageExecutor.stateDbPath,
     catalog: tcsdStageExecutor.catalog
   });
+  const pipelineRunGate = new SerialGate({
+    concurrency: Math.max(1, Number(config.hermes?.taskConcurrency || 1) || 1)
+  });
   const tcsdJobs = new TcsdPipelineJobService({
     jobDir: config.tcsdPipeline?.jobStoreDir || path.join(config.dataDir, "tcsd-pipeline-jobs"),
     prepareJob: () => tcsdSkillRegistry.prepare(),
     executor: (stageIndex, input, job, options) => tcsdStageExecutor.execute(stageIndex, input, job, options),
-    checkpointValidator: (checkpoint, context, job) => tcsdStageExecutor.validateCheckpoint(checkpoint, context, job)
+    checkpointValidator: (checkpoint, context, job) => tcsdStageExecutor.validateCheckpoint(checkpoint, context, job),
+    runGate: pipelineRunGate
   });
   await tcsdJobs.expireStaleJobs(Date.now() - 7 * 24 * 60 * 60 * 1000);
   await tcsdJobs.recoverAll();
@@ -1450,7 +1455,8 @@ export async function createHermesApp(options = {}) {
         path.join(config.dataDir, "software-detail-pipeline-jobs"),
       prepareJob: prepareSoftwareDetailSkills,
       executor: softwareDetailStageExecutor,
-      leaseClient: softwareDetailLeaseClient
+      leaseClient: softwareDetailLeaseClient,
+      runGate: pipelineRunGate
     });
   await softwareDetailJobs.failNonTerminalJobsOnStartup();
 

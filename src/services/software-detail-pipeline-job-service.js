@@ -440,6 +440,7 @@ export class SoftwareDetailPipelineJobService {
     this.prepareJob = options.prepareJob || null;
     this.idFactory = options.idFactory || randomUUID;
     this.now = options.now || (() => new Date().toISOString());
+    this.runGate = options.runGate || null;
     this.running = new Map();
     this.starting = new Map();
   }
@@ -1121,55 +1122,61 @@ export class SoftwareDetailPipelineJobService {
 
   async run(jobId) {
     if (this.running.has(jobId)) return this.running.get(jobId);
-    const promise = (async () => {
-      const job = await this.get(jobId);
-      if (!job || isTerminal(job.status)) return job;
-      try {
-        for (const definition of listSoftwareDetailStages()) {
-          const stage = job.stages.find((item) => item.id === definition.id);
-          if (stage.status === "completed") continue;
-          if (stage.status !== "pending") {
-            throw serviceError(
-              "software_detail_restart_resume_unsupported",
-              "Software-detail automatic stage resume is not supported.",
-              { stageId: definition.id }
-            );
-          }
-          await this.executeStage(job, definition);
-        }
-        job.status = "completed";
-        job.completedAt = this.now();
-        await this.save(job);
-        return job;
-      } catch (cause) {
-        const stage = job.stages.find((item) => item.status === "running");
-        const error = safeError(cause, stage?.id || "");
-        if (stage) {
-          stage.status = "failed";
-          stage.endedAt = this.now();
-          stage.error = error;
-          stage.attempts = [
-            ...(stage.attempts || []),
-            {
-              attempt: stage.attempt,
-              status: "failed",
-              sessionId: String(cause?.details?.sessionId || ""),
-              endedAt: stage.endedAt,
-              error
-            }
-          ];
-        }
-        job.status = "failed";
-        job.error = error;
-        await this.closeLease(job, { required: false });
-        await this.save(job);
-        return job;
-      } finally {
-        this.running.delete(jobId);
-      }
-    })();
+    const execute = () => this.runUnserialized(jobId);
+    const promise = this.runGate ? this.runGate.run(execute) : execute();
     this.running.set(jobId, promise);
+    promise
+      .catch(() => {})
+      .finally(() => {
+        if (this.running.get(jobId) === promise) this.running.delete(jobId);
+      });
     return promise;
+  }
+
+  async runUnserialized(jobId) {
+    const job = await this.get(jobId);
+    if (!job || isTerminal(job.status)) return job;
+    try {
+      for (const definition of listSoftwareDetailStages()) {
+        const stage = job.stages.find((item) => item.id === definition.id);
+        if (stage.status === "completed") continue;
+        if (stage.status !== "pending") {
+          throw serviceError(
+            "software_detail_restart_resume_unsupported",
+            "Software-detail automatic stage resume is not supported.",
+            { stageId: definition.id }
+          );
+        }
+        await this.executeStage(job, definition);
+      }
+      job.status = "completed";
+      job.completedAt = this.now();
+      await this.save(job);
+      return job;
+    } catch (cause) {
+      const stage = job.stages.find((item) => item.status === "running");
+      const error = safeError(cause, stage?.id || "");
+      if (stage) {
+        stage.status = "failed";
+        stage.endedAt = this.now();
+        stage.error = error;
+        stage.attempts = [
+          ...(stage.attempts || []),
+          {
+            attempt: stage.attempt,
+            status: "failed",
+            sessionId: String(cause?.details?.sessionId || ""),
+            endedAt: stage.endedAt,
+            error
+          }
+        ];
+      }
+      job.status = "failed";
+      job.error = error;
+      await this.closeLease(job, { required: false });
+      await this.save(job);
+      return job;
+    }
   }
 }
 

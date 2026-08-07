@@ -44,6 +44,7 @@ export class TcsdPipelineJobService {
     this.executor = options.executor;
     this.prepareJob = options.prepareJob || null;
     this.checkpointValidator = options.checkpointValidator || validateStageCheckpoint;
+    this.runGate = options.runGate || null;
     this.running = new Map();
     this.starting = new Map();
   }
@@ -397,72 +398,78 @@ export class TcsdPipelineJobService {
 
   async run(jobId) {
     if (this.running.has(jobId)) return this.running.get(jobId);
-    const promise = (async () => {
-      let job = await this.get(jobId);
-      if (!job || isTerminalJobStatus(job.status)) return job;
-      job = await this.recoverJob(job);
-      if (isTerminalJobStatus(job.status)) return job;
-      try {
-        for (let index = 1; index <= 12; index += 1) {
-          const stage = job.stages[index - 1];
-          if (["已完成", "已跳过", "部分完成"].includes(stage.status) && await this.verifiedCheckpoint(job, index)) {
-            continue;
-          }
-          if (stage.status !== "等待执行") {
-            stage.status = "等待执行";
-            await this.save(job);
-          }
-          const checkpoint = await this.executeStage(job, index);
-          this.applyCheckpoint(job, checkpoint);
-          const status = checkpoint.status === "skipped"
-            ? "已跳过"
-            : checkpoint.status === "partial"
-              ? "部分完成"
-              : "已完成";
-          const summary = checkpoint.summary || checkpoint.skipReason || "阶段证据已验证。";
-          job.checkpoints = [
-            ...job.checkpoints.filter((item) => item.stageIndex !== index),
-            {
-              stageIndex: index,
-              path: checkpointFor(job, index),
-              verifiedAt: now(),
-              schema: checkpoint.schema,
-              sessionId: checkpoint.agent.sessionId,
-              skillName: checkpoint.skill.name,
-              bundleHash: checkpoint.skill.bundleHash
-            }
-          ];
-          await this.setStage(job, index, status, {
-            summary,
-            skipReason: checkpoint.skipReason || "",
-            checkpoint
-          });
-        }
-        const finalCoverage = job.coverage.final || job.coverage.initial;
-        job.completion ||= coverageCompletion(
-          finalCoverage || {},
-          job.stages.some((stage) => stage.status === "部分完成"),
-          Number(job.input.coverageThreshold || 80)
-        );
-        job.status = job.completion === "partial" ? "部分完成" : "已完成";
-        await this.event(job, "completed", { completion: job.completion });
-        return job;
-      } catch (error) {
-        const current = job.stages.find((stage) => stage.status === "正在执行" || stage.status === "等待执行");
-        const normalized = publicError(error);
-        if (current) {
-          if (current.status === "等待执行") current.status = "正在执行";
-          await this.setStage(job, current.index, "失败", { summary: normalized.message, error: normalized });
-        }
-        job.status = "失败";
-        job.error = normalized;
-        await this.save(job);
-        return job;
-      } finally {
-        this.running.delete(jobId);
-      }
-    })();
+    const execute = () => this.runUnserialized(jobId);
+    const promise = this.runGate ? this.runGate.run(execute) : execute();
     this.running.set(jobId, promise);
+    promise
+      .catch(() => {})
+      .finally(() => {
+        if (this.running.get(jobId) === promise) this.running.delete(jobId);
+      });
     return promise;
+  }
+
+  async runUnserialized(jobId) {
+    let job = await this.get(jobId);
+    if (!job || isTerminalJobStatus(job.status)) return job;
+    job = await this.recoverJob(job);
+    if (isTerminalJobStatus(job.status)) return job;
+    try {
+      for (let index = 1; index <= 12; index += 1) {
+        const stage = job.stages[index - 1];
+        if (["已完成", "已跳过", "部分完成"].includes(stage.status) && await this.verifiedCheckpoint(job, index)) {
+          continue;
+        }
+        if (stage.status !== "等待执行") {
+          stage.status = "等待执行";
+          await this.save(job);
+        }
+        const checkpoint = await this.executeStage(job, index);
+        this.applyCheckpoint(job, checkpoint);
+        const status = checkpoint.status === "skipped"
+          ? "已跳过"
+          : checkpoint.status === "partial"
+            ? "部分完成"
+            : "已完成";
+        const summary = checkpoint.summary || checkpoint.skipReason || "阶段证据已验证。";
+        job.checkpoints = [
+          ...job.checkpoints.filter((item) => item.stageIndex !== index),
+          {
+            stageIndex: index,
+            path: checkpointFor(job, index),
+            verifiedAt: now(),
+            schema: checkpoint.schema,
+            sessionId: checkpoint.agent.sessionId,
+            skillName: checkpoint.skill.name,
+            bundleHash: checkpoint.skill.bundleHash
+          }
+        ];
+        await this.setStage(job, index, status, {
+          summary,
+          skipReason: checkpoint.skipReason || "",
+          checkpoint
+        });
+      }
+      const finalCoverage = job.coverage.final || job.coverage.initial;
+      job.completion ||= coverageCompletion(
+        finalCoverage || {},
+        job.stages.some((stage) => stage.status === "部分完成"),
+        Number(job.input.coverageThreshold || 80)
+      );
+      job.status = job.completion === "partial" ? "部分完成" : "已完成";
+      await this.event(job, "completed", { completion: job.completion });
+      return job;
+    } catch (error) {
+      const current = job.stages.find((stage) => stage.status === "正在执行" || stage.status === "等待执行");
+      const normalized = publicError(error);
+      if (current) {
+        if (current.status === "等待执行") current.status = "正在执行";
+        await this.setStage(job, current.index, "失败", { summary: normalized.message, error: normalized });
+      }
+      job.status = "失败";
+      job.error = normalized;
+      await this.save(job);
+      return job;
+    }
   }
 }

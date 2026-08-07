@@ -71,6 +71,11 @@ const suites = [
     args: ["tests/hermes-upload-relocation-tests.mjs"]
   },
   {
+    id: "serial-gate",
+    command: process.execPath,
+    args: ["tests/serial-gate-tests.mjs"]
+  },
+  {
     id: "matlab-gateway-lease",
     command: process.execPath,
     args: ["tests/matlab-gateway-lease-tests.mjs"]
