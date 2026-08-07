@@ -1,0 +1,147 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-07T10:10:00Z",
+  "candidateTag": "tcsd-worker-hardening-production-candidate-v3-run31153982591",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "a89fea7f6a5882bf914e14e19785933d501ed2d1",
+  "containerBuildRevision": "a89fea7f6a5882bf914e14e19785933d501ed2d1",
+  "deploymentToolRevision": "a89fea7f6a5882bf914e14e19785933d501ed2d1",
+  "supersedesCandidate": {
+    "tag": "tcsd-worker-hardening-production-candidate-v2-run31150614228",
+    "tagObject": "56a8b893d5bfcc2a1f8756521ef36675e6dce7fa",
+    "peeledCommit": "03cc31eb3d7b7b33e6e5cbcabec93063beb93132",
+    "reason": "v4 硬化镜像上两个任务暴露两个新缺陷：(1) 完成态大作业轮询响应超过 256KB 被截断（DrvMod_A05 399KB，tcsd_worker_response_too_large）；(2) build_coverage_ir.py 对大 trace 输入退出 1 且原因丢失。本候选修复两者。"
+  },
+  "scope": {
+    "summary": "轮询响应上限 256KB 上调至 96MB（可覆盖 50MB artifact base64，HERMES_TCSD_MAX_CONTROL_RESPONSE_BYTES 可调）；确定性脚本 run() 捕获 stderr 并携带脱敏错误尾部；build_coverage_ir.py 输出结构化错误（tcsd-deterministic-script-error/v1）并增加输入规模/结构守卫。",
+    "platformAction": "deploy-new-exact-ghcr-image-via-wx11p-relay",
+    "workerAction": "deploy-new-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-v9-and-verify-only（受管 Gateway 文件未变）",
+    "schemaCompatibility": "no task schema changes; existing tasks remain readable"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 31153982591,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "a89fea7f6a5882bf914e14e19785933d501ed2d1",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31153982591",
+    "job": {
+      "id": 92789384526,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31153982591/job/92789384526",
+      "requiredSteps": [
+        {
+          "name": "Check out exact revision",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run companion tests with Windows PowerShell 5.1",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked Node.js dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Reproduce legacy native env wrapper startup",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "jobLogSha256": "2ad358d3366c0ccf48646547bad1ed85863c6256468f2918f42c00ed4fbfd4ae"
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:1461c4dd9ad85d4c94a11df0e2b01d282b5d8a1cae4a5dd6f779536ce876cce6",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:5557c8edd50064020a50e8f87edbd0e2bf76b8cfb1bb22841756b3d14c7f6886",
+      "registryIndexDigest": "sha256:5557c8edd50064020a50e8f87edbd0e2bf76b8cfb1bb22841756b3d14c7f6886",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:3d3faf74ba4a45565937615eb76a68012c4a6baf5464416814ec293dc0ba7e6a",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:1681fd06dfb906e80ceac0952e04e5a945b40e472d4999609f47164159445c16",
+      "registryIndexDigest": "sha256:1681fd06dfb906e80ceac0952e04e5a945b40e472d4999609f47164159445c16",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "reuse-v9-and-verify-only",
+    "companionVersion": 9,
+    "sourceRevision": "a89fea7f6a5882bf914e14e19785933d501ed2d1",
+    "asset": "native-matlab-gateway-companion-v9-a89fea7f6a58.zip",
+    "assetSha256": "c0458005fb7c0ea9a6720f49e8817f34a3c77bd4077c2717f14f7245587725b6",
+    "releaseManifest": "native-matlab-gateway-companion-v9-a89fea7f6a58.release.json",
+    "releaseManifestSha256": "5e733ca6c11cd3c2769c2eff658f7ce8ee506f4888e90786641ee1be2658ad26",
+    "manifest": "native-matlab-gateway-companion-v9-a89fea7f6a58.manifest.json",
+    "manifestSha256": "1010d57b7a986a9da824b42e6a26561c5ba6c7b4025d075520ac0062e19b84aa",
+    "requiredReadiness": [
+      "health HTTP 200",
+      "activeJobs=0",
+      "activeLeases=0",
+      "授权路径确认 /version 与 /capabilities 仍为 v9",
+      "受管 Gateway 文件与已部署 v9 一致，只做 ValidateOnly"
+    ]
+  },
+  "releaseAssets": {
+    "container-release-a89fea7f6a58.json": "f168d1068e344cc2997b6e58de580be7ea4b3c66ee48c8d52e62ac9938b8548c",
+    "scan-summary.json": "ee688a45bc1afb5fbb352c48c3ed055f6cb524ebef5f895dc3c61ff279e98ea2",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-1461c4dd9ad8.sbom.spdx.json": "1df39c940e70af993a41d73bc2c1a95cafeb1e3c78fba4cf9908d6647348bfcc",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-1461c4dd9ad8.trivy.json": "605f832a3e16985cfbd74b4ecdaaa839bcbc1d452d89766d5447fb7ea29b04d0",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-1461c4dd9ad8.trivy.json.policy.json": "bc8b3b17c4edf0018bd23b0eb5f1c7358dbb2def1ba2173fb755abc7dc5f1720",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-3d3faf74ba4a.sbom.spdx.json": "8df729a057037eac9ef9a1ce8e643574d7c7484c6eb66f8b84ffce0b93c87d85",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-3d3faf74ba4a.trivy.json": "54502a99cdc37df42cf4faa94f3c25e58f8712d9764fed8b5583d3067570a1eb",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-3d3faf74ba4a.trivy.json.policy.json": "733094f6c5c904db4db5f6dd3f5a3309a3d10c3272fb4ca1f9cbaac457791f78",
+    "native-matlab-gateway-companion-v9-a89fea7f6a58.zip": "c0458005fb7c0ea9a6720f49e8817f34a3c77bd4077c2717f14f7245587725b6",
+    "native-matlab-gateway-companion-v9-a89fea7f6a58.manifest.json": "1010d57b7a986a9da824b42e6a26561c5ba6c7b4025d075520ac0062e19b84aa",
+    "native-matlab-gateway-companion-v9-a89fea7f6a58.release.json": "5e733ca6c11cd3c2769c2eff658f7ce8ee506f4888e90786641ee1be2658ad26",
+    "native-matlab-gateway-companion-v9-a89fea7f6a58.scan.json": "760b07186cdf4eaeef5c749653a0d32b79f23b5a63c0f5177876e93e2f7c462d"
+  },
+  "archiveVerifier": {
+    "path": "scripts/verify_image_archive.py",
+    "sha256": "ce20f85fa2dc8e9a6adf45fb94f15527a1197218f88d729b93260d9d6d347bb9",
+    "minimumPython": "3.8",
+    "compatibilityTest": "tests/verify-image-archive-tests.py",
+    "regularReleaseAsset": false
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "linuxPlatformDistribution": "fixed-wx11p-relay; linux-direct-ghcr-not-supported-by-topology",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-worker-hardening-production-candidate-v3-run31153982591",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-worker-hardening-production-candidate-v3-run31153982591"
+    }
+  },
+  "rollbackAnchors": {
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:b21bb31da3e8586e07d084d5309a3ce57e5b0f890699f1d3f57ae034b38d3cdb",
+      "linuxLocalConfigImageId": "sha256:b21bb31da3e8586e07d084d5309a3ce57e5b0f890699f1d3f57ae034b38d3cdb"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:22ca0abae07010f736ad24e2e1b7e3123bee1dbc83789383b0017b1d67534086"
+    },
+    "nativeGateway": "已部署 v9 保持不变；失败回滚不涉及 Gateway"
+  },
+  "acceptance": {
+    "largePollResponse": "passed-1MB-completed-job-poll-regression",
+    "coverageIrStructuredErrors": "passed-cli-error-tests",
+    "deterministicCommandStderrCapture": "passed-runtime-tests",
+    "containerReleaseTests": "passed",
+    "containerScans": "passed-with-policy-finding-count-zero",
+    "windowsPowerShell51": "passed-run-31153982591",
+    "productionDeployment": "not-performed",
+    "realTaskAcceptance": "pending-user"
+  }
+}
