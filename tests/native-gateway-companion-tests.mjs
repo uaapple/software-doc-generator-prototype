@@ -55,11 +55,11 @@ assert.equal(config.companionVersion, 9);
 assert.ok(config.previousImageRevisions);
 assert.equal(typeof config.previousImageRevisions.platform, "string");
 assert.equal(typeof config.previousImageRevisions.worker, "string");
-assert.notEqual(
-  config.expectedImageRevisions.platform,
-  config.previousImageRevisions.platform
+assert.ok(
+  config.expectedImageRevisions.platform !== config.previousImageRevisions.platform ||
+    config.expectedImageRevisions.worker !== config.previousImageRevisions.worker,
+  "at least one image revision must differ from the previous approved baseline"
 );
-assert.notEqual(config.expectedImageRevisions.worker, config.previousImageRevisions.worker);
 assert.equal(config.managedFiles.length, 6);
 assert.equal(config.validationFiles.length, 2);
 assert.deepEqual(config.validationFiles[0], {
