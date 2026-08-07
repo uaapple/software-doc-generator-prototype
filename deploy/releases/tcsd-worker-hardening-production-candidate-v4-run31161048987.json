@@ -1,0 +1,145 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-07T11:00:00Z",
+  "candidateTag": "tcsd-worker-hardening-production-candidate-v4-run31161048987",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "23b906f12f578d5ef839231f3e768e462b4ed78a",
+  "containerBuildRevision": "23b906f12f578d5ef839231f3e768e462b4ed78a",
+  "deploymentToolRevision": "23b906f12f578d5ef839231f3e768e462b4ed78a",
+  "supersedesCandidate": {
+    "tag": "tcsd-worker-hardening-production-candidate-v3-run31153982591",
+    "tagObject": "515ebcf42b5371947e00843e517544f3d251dc76",
+    "peeledCommit": "1351339d63aa407f516060cf36982840521de1c2",
+    "reason": "v3 部署后 A31 重跑（b92350e9）Stage 5 结构化错误确认根因：build_coverage_ir.py 内 select_minimal_vectors 对无唯一因果对的条件（[0,1,2,3]）抛 ValueError 导致整体失败。本候选将其降级为 unsupported 豁免（reason no_unique_cause_pair），任务可完成并保留豁免记录。"
+  },
+  "scope": {
+    "summary": "MC/DC 唯一因果对不可行的条件不再使 Coverage IR 构建失败：select_minimal_vectors 返回 missing 清单，build_for_operator 为每个不可行条件生成 unsupported 豁免义务并计入 summary.issues；IR 保留 unsupported 项与统计。",
+    "platformAction": "deploy-new-exact-ghcr-image-via-wx11p-relay（平台镜像输入未变，revision 与 v6 相同；registry digest 因构建上下文含 skills/hermes 变化）",
+    "workerAction": "deploy-new-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-v9-and-verify-only（受管 Gateway 文件未变）",
+    "schemaCompatibility": "no task schema changes; Coverage IR 沿用既有 unsupported 状态语义"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 31161048987,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "23b906f12f578d5ef839231f3e768e462b4ed78a",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31161048987",
+    "job": {
+      "id": 92811225346,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31161048987/job/92811225346",
+      "requiredSteps": [
+        {
+          "name": "Check out exact revision",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run companion tests with Windows PowerShell 5.1",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked Node.js dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Reproduce legacy native env wrapper startup",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "jobLogSha256": "b26d294da7ba9fb3cf1245d966e09982d6e3a3d3124ac36f92d9febd4208f35a"
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:1461c4dd9ad85d4c94a11df0e2b01d282b5d8a1cae4a5dd6f779536ce876cce6",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:ba04f7e33a0a54907648626b50ef757915c341c1b09849c59cf488329dab759d",
+      "registryIndexDigest": "sha256:ba04f7e33a0a54907648626b50ef757915c341c1b09849c59cf488329dab759d",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:4f24bd08d1fb5c5fc3751c1340c1cdcb9c60dbfc1bb09d901e42a7797277bd5f",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:6f0e03b351a4cc37c3c0bacb7cc58718f94d7b146e2f8611e7be2e72db9e58be",
+      "registryIndexDigest": "sha256:6f0e03b351a4cc37c3c0bacb7cc58718f94d7b146e2f8611e7be2e72db9e58be",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "reuse-v9-and-verify-only",
+    "companionVersion": 9,
+    "sourceRevision": "23b906f12f578d5ef839231f3e768e462b4ed78a",
+    "asset": "native-matlab-gateway-companion-v9-23b906f12f57.zip",
+    "assetSha256": "1912bf53c6d4cf632822a848ba8b65830bff142cc8a1d4ddf1d551866cbb1275",
+    "releaseManifest": "native-matlab-gateway-companion-v9-23b906f12f57.release.json",
+    "releaseManifestSha256": "835d87ec6e69c0cedd43a12287466ed159ab3a9ca56129c8ff8888bf5c758b53",
+    "manifest": "native-matlab-gateway-companion-v9-23b906f12f57.manifest.json",
+    "manifestSha256": "569a4fda889c59c8f465170194b9b2e5aadb5c92b2efad194ff8037eff5ef73d",
+    "requiredReadiness": [
+      "health HTTP 200",
+      "activeJobs=0",
+      "activeLeases=0",
+      "授权路径确认 /version 与 /capabilities 仍为 v9",
+      "受管 Gateway 文件与已部署 v9 一致，只做 ValidateOnly"
+    ]
+  },
+  "releaseAssets": {
+    "container-release-23b906f12f57.json": "7445465174ed480ea65b1990bc48e0286154c51480ba1a19845f113ec7b56e54",
+    "scan-summary.json": "5b13327c9c9aeddd9b27dcdfab03c25e1d70246df4222ca8c6a4c41429c8f3e8",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-1461c4dd9ad8.sbom.spdx.json": "b01751fb8d0a015b25d071a5b92d9fbb9a93d3d847234d4a9821c7aa25bb9060",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-1461c4dd9ad8.trivy.json": "5e660d286688e388b0c44edd66bcebb0554923bd2e6f56ab67871ca850c2361b",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-1461c4dd9ad8.trivy.json.policy.json": "bc8b3b17c4edf0018bd23b0eb5f1c7358dbb2def1ba2173fb755abc7dc5f1720",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f24bd08d1fb.sbom.spdx.json": "9eb9c30b4b2aae4a2972e36a315152c87d936ee9e06006b9820a8cded54c366e",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f24bd08d1fb.trivy.json": "65c8832c3f928497d256b18fcad0ec5d82c772f8767328c40d7984b5634890ef",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-4f24bd08d1fb.trivy.json.policy.json": "92d4bc1f5fd4e22f9ea3da49865f2ffa77b62a80fc65ae7767ca3836870948ac",
+    "native-matlab-gateway-companion-v9-23b906f12f57.zip": "1912bf53c6d4cf632822a848ba8b65830bff142cc8a1d4ddf1d551866cbb1275",
+    "native-matlab-gateway-companion-v9-23b906f12f57.manifest.json": "569a4fda889c59c8f465170194b9b2e5aadb5c92b2efad194ff8037eff5ef73d",
+    "native-matlab-gateway-companion-v9-23b906f12f57.release.json": "835d87ec6e69c0cedd43a12287466ed159ab3a9ca56129c8ff8888bf5c758b53",
+    "native-matlab-gateway-companion-v9-23b906f12f57.scan.json": "bc1b4b86e5d49cba1242bbca90a4d54f19bba888759c5c48ea087f97704ae3a5"
+  },
+  "archiveVerifier": {
+    "path": "scripts/verify_image_archive.py",
+    "sha256": "ce20f85fa2dc8e9a6adf45fb94f15527a1197218f88d729b93260d9d6d347bb9",
+    "minimumPython": "3.8",
+    "compatibilityTest": "tests/verify-image-archive-tests.py",
+    "regularReleaseAsset": false
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "linuxPlatformDistribution": "fixed-wx11p-relay; linux-direct-ghcr-not-supported-by-topology",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-worker-hardening-production-candidate-v4-run31161048987",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-worker-hardening-production-candidate-v4-run31161048987"
+    }
+  },
+  "rollbackAnchors": {
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:5557c8edd50064020a50e8f87edbd0e2bf76b8cfb1bb22841756b3d14c7f6886",
+      "linuxLocalConfigImageId": "sha256:2d4107cb7152"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:1681fd06dfb906e80ceac0952e04e5a945b40e472d4999609f47164159445c16"
+    },
+    "nativeGateway": "已部署 v9 保持不变；失败回滚不涉及 Gateway"
+  },
+  "acceptance": {
+    "mcdcInfeasibleDegradation": "passed-planner-and-ir-regression-tests",
+    "containerReleaseTests": "passed",
+    "containerScans": "passed-with-policy-finding-count-zero",
+    "windowsPowerShell51": "passed-run-31161048987",
+    "productionDeployment": "not-performed",
+    "realTaskAcceptance": "pending-user"
+  }
+}
