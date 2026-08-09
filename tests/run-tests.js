@@ -11562,6 +11562,58 @@ const tests = [
     }
   },
   {
+    name: "UnitTestCaseGenerationService keeps Worker waiting jobs queued until execution starts",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        let workerStatus = "等待执行";
+        const service = new UnitTestCaseGenerationService({
+          remotePollWindowMs: 0,
+          hermesAgentClient: {
+            async startTcsdPipelineJob() {
+              return {
+                schema: "tcsd-agent-stage-pipeline/v2",
+                jobId: "worker-queued-job",
+                status: workerStatus
+              };
+            },
+            async getTcsdPipelineJob() {
+              return {
+                schema: "tcsd-agent-stage-pipeline/v2",
+                jobId: "worker-queued-job",
+                status: workerStatus,
+                stages: [],
+                checkpoints: [],
+                updatedAt: new Date().toISOString()
+              };
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Queued.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Queued.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
+
+        const queued = await service.runTask(task.id);
+        assert.equal(queued.status, "queued");
+        assert.equal(queued.workerPending, false);
+        assert.equal(queued.workerDelivery.state, "queued");
+        assert.equal(queued.pipeline.status, "等待执行");
+        assert.equal(queued.progress.stage, "queued");
+
+        workerStatus = "正在执行";
+        const running = await service.reconcileTask(task.id);
+        assert.equal(running.status, "running");
+        assert.equal(running.workerPending, false);
+        assert.equal(running.workerDelivery.state, "accepted");
+        assert.equal(running.pipeline.status, "正在执行");
+        assert.equal(running.progress.stage, "running");
+      });
+    }
+  },
+  {
     name: "UnitTestCaseGenerationService keeps the selected Worker for staged job start and reconciliation",
     run: async () => {
       await withTempConfig(async (tempDir) => {

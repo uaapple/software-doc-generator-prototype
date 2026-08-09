@@ -349,7 +349,7 @@ Linux release 在切换前必须先对旧 release 执行 `scripts/rollback-linux
 
 本功能新增顶层页面 `/unit-test-case-generation`，平台端接收 1 个 `.slx`、1 个 `.mat`、可选 1 个模型初始化 `.m` 脚本和 1 个项目编号，在 `data/unit-test-case-generation/tasks/<taskId>/workspace` 下创建隔离 workspace，并在创建任务时固化所选 Windows Worker。平台端通过该 Worker 对应的 Hermes Client 创建和轮询十二阶段 job，只登记项目、任务和下载 `workspace/outputs/*.xlsx`；上传的模型、MAT 数据、初始化脚本、项目登记 JSON 和生成的 Excel 都属于运行态数据，不进入 release 分支。
 
-TCSD 生产入口固定为 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`，共享作业协议为 `tcsd-agent-stage-pipeline/v2`。Linux 平台只创建、轮询和对账远端 job；Windows Hermes Agent 持久化 job 与阶段事件，并通过 `TcsdHermesStageExecutor` 为十二个阶段分别启动一个全新的 Hermes session。旧整体 Agent step 和平台直接运行 Python 的生产入口已经删除，不存在双轨或 fallback。
+TCSD 生产入口固定为 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`，共享作业协议为 `tcsd-agent-stage-pipeline/v2`。Linux 平台只创建、轮询和对账远端 job；Windows Hermes Agent 持久化 job 与阶段事件，并通过 `TcsdHermesStageExecutor` 为十二个阶段分别启动一个全新的 Hermes session。Worker 的 FIFO 串行门返回 `等待执行` 时，Platform 必须继续展示 `queued/排队中`，只有 Worker job 真正进入 `正在执行` 后才能展示 `running/运行中`；Worker 已接收排队不等于 Worker 不可用。旧整体 Agent step 和平台直接运行 Python 的生产入口已经删除，不存在双轨或 fallback。
 
 十二个 `skills/hermes/tcsd-stage-*` 目录各自只包含一个原子 `SKILL.md` 与发现元数据。Windows 任务启动前由 `TcsdHermesSkillRegistry` 把它们安装到所选 Hermes profile 的 `skills/tcsd/<skill-name>`，把共享 runtime 安装到相邻的 `skills/tcsd/tcsd-runtime`，然后真实执行 `hermes [-p <profile>] skills list`；缺少任一名称、目录、版本、SKILL.md hash 或 bundle hash时，任务 fail-closed。可以在发布后运行：
 

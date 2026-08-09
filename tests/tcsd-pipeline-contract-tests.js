@@ -2027,17 +2027,12 @@ for (const options of [
     uploadTempDir: path.join(root, "incoming")
   });
   try {
-    let calls = 0;
     const client = {
       async startTcsdPipelineJob() {
         return { jobId: "job-1", status: "正在执行", schema: TCSD_PIPELINE_SCHEMA };
       },
       async getTcsdPipelineJob() {
-        calls += 1;
-        if (calls === 1 || calls === 3) {
-          throw Object.assign(new Error("temporary"), { code: TCSD_ERROR_CODES.workerUnavailable });
-        }
-        return { jobId: "job-1", schema: TCSD_PIPELINE_SCHEMA, status: "正在执行", stages: [] };
+        throw Object.assign(new Error("temporary"), { code: TCSD_ERROR_CODES.workerUnavailable });
       }
     };
     const service = new UnitTestCaseGenerationService({

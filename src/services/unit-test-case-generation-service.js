@@ -412,6 +412,10 @@ function buildProgress(status = "queued", message = "") {
   };
 }
 
+function isQueuedWorkerPipelineStatus(status = "") {
+  return ["等待执行", "queued", "pending"].includes(String(status || "").trim());
+}
+
 function clipTaskMessage(value = "", maxLength = 1800) {
   const text = String(value || "").trim();
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
@@ -1186,6 +1190,7 @@ export class UnitTestCaseGenerationService {
   async syncPipelineJob(taskId, job) {
     const task = await this.readTask(taskId);
     if (!task) return null;
+    const workerQueued = isQueuedWorkerPipelineStatus(job.status);
     task.pipeline = {
       jobId: job.jobId,
       schema: job.schema,
@@ -1198,18 +1203,33 @@ export class UnitTestCaseGenerationService {
       error: job.error || null,
       updatedAt: job.updatedAt || now()
     };
-    task.status = job.status === "失败" ? "failed" : job.status === "部分完成" ? "partial" : job.status === "已完成" ? "completed" : "running";
+    task.status = job.status === "失败"
+      ? "failed"
+      : job.status === "部分完成"
+        ? "partial"
+        : job.status === "已完成"
+          ? "completed"
+          : workerQueued
+            ? "queued"
+            : "running";
     task.workerPending = false;
     task.workerDelivery = {
       ...(task.workerDelivery || {}),
-      state: "accepted",
+      state: workerQueued ? "queued" : "accepted",
       retryable: false,
       workerJobId: String(job.jobId || "").trim(),
       ...(safeDeliveryText(job.deliveryCorrelationId) ? { correlationId: safeDeliveryText(job.deliveryCorrelationId) } : {}),
       acceptedAt: task.workerDelivery?.acceptedAt || now(),
       lastSuccessAt: now()
     };
-    task.progress = buildProgress(task.status, job.stages?.find((stage) => stage.status === "正在执行")?.name || job.error?.message || "正在同步 TCSD 十二阶段进度。");
+    task.progress = buildProgress(
+      task.status,
+      workerQueued
+        ? "Windows Worker 已接收任务，正在等待前序任务结束。"
+        : job.stages?.find((stage) => stage.status === "正在执行")?.name ||
+          job.error?.message ||
+          "正在同步 TCSD 十二阶段进度。"
+    );
     task.updatedAt = now();
     await this.saveTask(task);
     return task;
@@ -1235,23 +1255,41 @@ export class UnitTestCaseGenerationService {
     await this.syncPipelineJob(taskId, job);
     const deadline = Date.now() + this.remotePollWindowMs;
     let delayMs = 1000;
+    // 新建 job 的 202 响应本身就是一次成功状态；恢复已有 job 时则必须等到
+    // 本轮首次 GET 成功后，才能声明 Worker 状态同步正常。
+    let lastPollSucceeded = !existingJobId;
     while (Date.now() < deadline) {
       try {
         job = await hermesAgentClient.getTcsdPipelineJob(started.jobId, {
           localWorkspaceDir: task.workspace?.directory || ""
         });
+        lastPollSucceeded = true;
         await this.syncPipelineJob(taskId, job);
         if (["已完成", "部分完成", "失败"].includes(job.status)) break;
         delayMs = 1000;
       } catch (error) {
         // A temporary network break is not a MATLAB failure; retain the last confirmed job state.
         if (error.code === "tcsd_job_not_found" || error?.retryable === false) throw error;
+        lastPollSucceeded = false;
         delayMs = Math.min(15000, Math.round(delayMs * 1.8));
       }
       await this.sleep(delayMs);
     }
     if (!job || !["已完成", "部分完成", "失败"].includes(job.status)) {
-      const pending = await this.readTask(taskId); pending.status = "running"; pending.workerPending = true; pending.progress = buildProgress("running", "Windows 作业仍在执行，平台将在后台继续同步。"); pending.updatedAt = now(); await this.saveTask(pending);
+      const pending = await this.readTask(taskId);
+      const workerQueued = isQueuedWorkerPipelineStatus(job?.status);
+      pending.status = workerQueued ? "queued" : "running";
+      pending.workerPending = !lastPollSucceeded;
+      pending.progress = buildProgress(
+        pending.status,
+        workerQueued
+          ? "Windows Worker 已接收任务，正在等待前序任务结束。"
+          : lastPollSucceeded
+            ? "Windows 作业仍在执行，平台将在后台继续同步。"
+            : "Windows Worker 状态同步暂时中断，平台将在后台继续重试。"
+      );
+      pending.updatedAt = now();
+      await this.saveTask(pending);
       return { status: "pending", jobId: started.jobId };
     }
     if (job.status === "失败") {
@@ -1277,9 +1315,6 @@ export class UnitTestCaseGenerationService {
     if (!task) {
       throw createHttpError("任务不存在。", 404, "unit_test_case_task_not_found");
     }
-    await this.markRunning(taskId);
-    task = await this.readTask(taskId);
-
     try {
       const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
       task.workerProfile = publicUnitTestWorkerProfile(workerProfile);
