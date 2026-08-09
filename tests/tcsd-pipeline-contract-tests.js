@@ -831,6 +831,137 @@ assert.throws(() => parseExecutionManifest({
 }
 
 {
+  // 无 result 且所有可观察活动均停滞时，不再等待完整阶段超时。
+  const stalledRoot = await mkdtemp(path.join(os.tmpdir(), "tcsd-stalled-watchdog-"));
+  const resultPath = path.join(stalledRoot, "result.json");
+  let killed = false;
+  const hangRunner = () => {
+    const pending = new Promise(() => {});
+    pending.child = {
+      kill: () => {
+        killed = true;
+      }
+    };
+    pending.stdoutSoFar = () => "session_id: session-stalled-1\n";
+    pending.stderrSoFar = () => "";
+    return pending;
+  };
+  const executor = new TcsdHermesStageExecutor({
+    command: "fake-hermes",
+    commandRunner: hangRunner,
+    watchdogStallMs: 0,
+    watchdogPollMs: 50,
+    watchdogGraceMs: 20,
+    noResultStallMs: 200,
+    noResultPollMs: 50
+  });
+  const job = {
+    input: { workspaceDir: stalledRoot },
+    events: []
+  };
+  await assert.rejects(
+    () => executor.runStageHermes({
+      command: "fake-hermes",
+      args: [],
+      options: { stageIndex: 10, attempt: 1 },
+      resultPath,
+      activityPaths: [stalledRoot],
+      job
+    }),
+    (error) => error.code === TCSD_ERROR_CODES.stalled
+  );
+  assert.equal(killed, true);
+  assert.ok(
+    job.events.some((event) => event.type === "hermes_stage_watchdog_stalled_session"),
+    JSON.stringify(job.events)
+  );
+}
+
+{
+  // 首次停滞只消耗一次 attempt，并由作业服务以全新 session 自动重试。
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), "tcsd-stalled-retry-"));
+  let executions = 0;
+  const service = new TcsdPipelineJobService({
+    jobDir,
+    executor: async () => {
+      executions += 1;
+      if (executions === 1) {
+        throw Object.assign(new Error("stalled"), {
+          code: TCSD_ERROR_CODES.stalled,
+          details: { stageIndex: 10, attempt: 1, stallThresholdMs: 200 }
+        });
+      }
+    }
+  });
+  service.verifiedCheckpoint = async () => ({
+    status: "completed",
+    agent: {
+      sessionId: "session-stalled-retry-2",
+      profile: "default",
+      model: "fake-model",
+      tokenUsage: null
+    }
+  });
+  const job = {
+    jobId: "job-stalled-retry",
+    taskId: "task-stalled-retry",
+    status: "等待执行",
+    stages: createStages(),
+    checkpoints: [],
+    events: [],
+    input: {}
+  };
+  const checkpoint = await service.executeStage(job, 10);
+  assert.equal(checkpoint.status, "completed");
+  assert.equal(executions, 2);
+  assert.equal(job.stages[9].attempt, 2);
+  assert.deepEqual(
+    job.stages[9].attempts.map((attempt) => attempt.status),
+    ["failed", "completed"]
+  );
+}
+
+{
+  // 阶段文件仍在推进时不得被无结果看门狗误杀。
+  const activeRoot = await mkdtemp(path.join(os.tmpdir(), "tcsd-active-watchdog-"));
+  const progressPath = path.join(activeRoot, "progress.json");
+  let killed = false;
+  const activeRunner = () => {
+    const pending = new Promise((resolve) => {
+      setTimeout(() => resolve({ stdout: "session_id: session-active-1\n", stderr: "" }), 320);
+    });
+    pending.child = {
+      kill: () => {
+        killed = true;
+      }
+    };
+    pending.stdoutSoFar = () => "session_id: session-active-1\n";
+    pending.stderrSoFar = () => "";
+    setTimeout(() => writeFile(progressPath, "{\"progress\":1}\n"), 150);
+    return pending;
+  };
+  const executor = new TcsdHermesStageExecutor({
+    command: "fake-hermes",
+    commandRunner: activeRunner,
+    watchdogStallMs: 0,
+    watchdogPollMs: 50,
+    watchdogGraceMs: 20,
+    noResultStallMs: 200,
+    noResultPollMs: 50
+  });
+  const result = await executor.runStageHermes({
+    command: "fake-hermes",
+    args: [],
+    options: { stageIndex: 10, attempt: 1 },
+    resultPath: path.join(activeRoot, "result.json"),
+    activityPaths: [activeRoot],
+    job: { input: { workspaceDir: activeRoot }, events: [] }
+  });
+  assert.match(result.stdout, /session-active-1/);
+  assert.equal(killed, false);
+}
+
+{
   const skillDirs = (await readdir(skillsRoot, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory() && entry.name.startsWith("tcsd-stage-"))
     .map((entry) => entry.name)

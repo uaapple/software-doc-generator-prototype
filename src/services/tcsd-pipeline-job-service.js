@@ -379,10 +379,15 @@ export class TcsdPipelineJobService {
       } catch (error) {
         const normalized = publicError(error);
         this.recordAttempt(stage, error, error.code === TCSD_ERROR_CODES.validation ? "validation_failed" : "failed");
-        if (error.code === TCSD_ERROR_CODES.validation && stage.attempt < 2) {
-          validationReportPath = error.details?.validationReportPath || validationReportPath;
+        const retryable = [TCSD_ERROR_CODES.validation, TCSD_ERROR_CODES.stalled].includes(error.code);
+        if (retryable && stage.attempt < 2) {
+          if (error.code === TCSD_ERROR_CODES.validation) {
+            validationReportPath = error.details?.validationReportPath || validationReportPath;
+          }
           await this.setStage(job, index, "等待执行", {
-            summary: "宿主确定性校验失败，将使用新 session 自动修复一次。",
+            summary: error.code === TCSD_ERROR_CODES.stalled
+              ? "Hermes 会话长时间无结果且无可观察进展，将使用新 session 自动重试一次。"
+              : "宿主确定性校验失败，将使用新 session 自动修复一次。",
             error: normalized
           });
           continue;

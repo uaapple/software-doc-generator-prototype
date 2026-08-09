@@ -26,6 +26,37 @@ import { readJson, writeJson } from "./storage.js";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+async function activityFingerprint(paths = []) {
+  let latestMtimeMs = 0;
+  let fileCount = 0;
+  let totalBytes = 0;
+  async function visit(targetPath) {
+    let stat;
+    try {
+      stat = await fs.lstat(targetPath);
+    } catch (cause) {
+      if (cause?.code === "ENOENT") return;
+      throw cause;
+    }
+    latestMtimeMs = Math.max(latestMtimeMs, stat.mtimeMs || 0);
+    if (stat.isFile()) {
+      fileCount += 1;
+      totalBytes += stat.size;
+      return;
+    }
+    if (!stat.isDirectory()) return;
+    const entries = await fs.readdir(targetPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      await visit(path.join(targetPath, entry.name));
+    }
+  }
+  for (const targetPath of [...new Set(paths.filter(Boolean).map((value) => path.resolve(value)))]) {
+    await visit(targetPath);
+  }
+  return `${latestMtimeMs}:${fileCount}:${totalBytes}`;
+}
+
 async function listBundleFilesWithHashes(bundleDir) {
   const entries = await fs.readdir(bundleDir, { withFileTypes: true });
   const files = [];
@@ -108,6 +139,7 @@ async function readSkillUsageRecord(usageFile, skillName) {
 }
 
 function publicRuntimeError(cause, stageIndex, timeoutMs) {
+  if (cause?.code === TCSD_ERROR_CODES.stalled) return cause;
   if (cause?.killed || cause?.signal === "SIGTERM" || cause?.code === "ETIMEDOUT") {
     return Object.assign(new Error(`TCSD stage ${stageIndex} Hermes session timed out after ${timeoutMs}ms`), {
       code: TCSD_ERROR_CODES.timeout,
@@ -182,6 +214,18 @@ export class TcsdHermesStageExecutor {
     );
     this.watchdogGraceMs = Math.max(0, Number(options.watchdogGraceMs ?? 15000));
     this.watchdogPollMs = Math.max(100, Number(options.watchdogPollMs ?? 10000));
+    this.noResultStallMs = Math.max(
+      0,
+      Number(
+        options.noResultStallMs ??
+        process.env.TCSD_STAGE_HERMES_NO_RESULT_STALL_MS ??
+        1800000
+      )
+    );
+    this.noResultPollMs = Math.max(
+      this.watchdogPollMs,
+      Number(options.noResultPollMs ?? 30000)
+    );
     this.catalog = options.catalog || new TcsdStageCatalog();
     this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({
       pythonInvocation: this.pythonInvocation
@@ -350,12 +394,18 @@ export class TcsdHermesStageExecutor {
    * 运行 Hermes 阶段会话；当结果文件已为 completed 且一段时间无新写入、
    * 而 CLI 进程仍挂起（hermes chat 退出路径 futex/线程 join 竞态）时，
    * 终止进程并按已完成的增量输出收尾，避免阶段无限停留在“正在执行”。
+   * 尚无结果且输出、阶段文件和 Hermes 状态库长时间均无变化时，终止
+   * 停滞会话并返回可识别错误，由作业服务使用全新 session 自动重试一次。
    */
-  async runStageHermes({ command, args, options, resultPath, job }) {
+  async runStageHermes({ command, args, options, resultPath, activityPaths = [], job }) {
     const promise = runHermesCommand(this.commandRunner, command, args, options);
     const child = promise.child || null;
-    if (!this.watchdogStallMs || !child) return promise;
+    if ((!this.watchdogStallMs && !this.noResultStallMs) || !child) return promise;
     let lastSeenMtime = 0;
+    let lastOutputSize = 0;
+    let lastActivityFingerprint = "";
+    let lastActivityAt = Date.now();
+    let nextActivityScanAt = 0;
     for (;;) {
       const settled = await Promise.race([
         promise.then(
@@ -366,11 +416,28 @@ export class TcsdHermesStageExecutor {
       ]);
       if (settled.kind === "ok") return settled.value;
       if (settled.kind === "error") throw settled.error;
+      const partialStdout =
+        typeof promise.stdoutSoFar === "function" ? promise.stdoutSoFar() : "";
+      const partialStderr =
+        typeof promise.stderrSoFar === "function" ? promise.stderrSoFar() : "";
+      const outputSize = Buffer.byteLength(partialStdout) + Buffer.byteLength(partialStderr);
+      if (outputSize !== lastOutputSize) {
+        lastOutputSize = outputSize;
+        lastActivityAt = Date.now();
+      }
+      if (this.noResultStallMs && Date.now() >= nextActivityScanAt) {
+        const fingerprint = await activityFingerprint(activityPaths);
+        if (lastActivityFingerprint && fingerprint !== lastActivityFingerprint) {
+          lastActivityAt = Date.now();
+        }
+        lastActivityFingerprint = fingerprint;
+        nextActivityScanAt = Date.now() + this.noResultPollMs;
+      }
       let completed = false;
       try {
         const stat = await fs.stat(resultPath);
         if (stat.mtimeMs > lastSeenMtime) lastSeenMtime = stat.mtimeMs;
-        if (lastSeenMtime > 0 && Date.now() - lastSeenMtime >= this.watchdogStallMs) {
+        if (this.watchdogStallMs && lastSeenMtime > 0 && Date.now() - lastSeenMtime >= this.watchdogStallMs) {
           const parsed = JSON.parse(await fs.readFile(resultPath, "utf8"));
           completed =
             parsed?.schema === TCSD_STAGE_RESULT_SCHEMA &&
@@ -379,7 +446,11 @@ export class TcsdHermesStageExecutor {
       } catch {
         completed = false;
       }
-      if (!completed) continue;
+      const stalled =
+        !completed &&
+        this.noResultStallMs > 0 &&
+        Date.now() - lastActivityAt >= this.noResultStallMs;
+      if (!completed && !stalled) continue;
       try {
         child.kill("SIGTERM");
       } catch {
@@ -396,21 +467,41 @@ export class TcsdHermesStageExecutor {
           // 进程可能已退出
         }
       }
-      const partialStdout =
-        typeof promise.stdoutSoFar === "function" ? promise.stdoutSoFar() : "";
-      const partialStderr =
-        typeof promise.stderrSoFar === "function" ? promise.stderrSoFar() : "";
       if (Array.isArray(job.events)) {
         const workspaceDirValue = String(job.input?.workspaceDir || "").trim();
         job.events.push({
           at: this.now(),
-          type: "hermes_stage_watchdog_killed_session",
+          type: stalled
+            ? "hermes_stage_watchdog_stalled_session"
+            : "hermes_stage_watchdog_killed_session",
           stageIndex: options.stageIndex,
           attempt: options.attempt,
+          ...(stalled
+            ? {
+                inactivityMs: Date.now() - lastActivityAt,
+                stallThresholdMs: this.noResultStallMs
+              }
+            : {}),
           ...(workspaceDirValue
             ? { resultPath: relativeToWorkspace(path.resolve(workspaceDirValue), resultPath) }
             : {})
         });
+      }
+      if (stalled) {
+        throw Object.assign(
+          new Error(
+            `TCSD stage ${options.stageIndex} Hermes session made no observable progress for ${this.noResultStallMs}ms.`
+          ),
+          {
+            code: TCSD_ERROR_CODES.stalled,
+            details: {
+              stageIndex: options.stageIndex,
+              attempt: options.attempt,
+              inactivityMs: Date.now() - lastActivityAt,
+              stallThresholdMs: this.noResultStallMs
+            }
+          }
+        );
       }
       return { stdout: partialStdout, stderr: partialStderr };
     }
@@ -791,6 +882,12 @@ export class TcsdHermesStageExecutor {
           attempt
         },
         resultPath,
+        activityPaths: [
+          outputDir,
+          this.stateDbPath,
+          `${this.stateDbPath}-wal`,
+          `${this.stateDbPath}-shm`
+        ],
         job
       });
     } catch (cause) {

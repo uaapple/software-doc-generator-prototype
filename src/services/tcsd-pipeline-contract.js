@@ -47,6 +47,7 @@ export const TCSD_ERROR_CODES = Object.freeze({
   sessionReuse: "tcsd_stage_session_reused",
   input: "tcsd_input_invalid",
   timeout: "tcsd_stage_timeout",
+  stalled: "tcsd_stage_stalled",
   pollTimeout: "tcsd_poll_timeout",
   transientNetwork: "tcsd_transient_network",
   illegalTransition: "tcsd_illegal_transition",
