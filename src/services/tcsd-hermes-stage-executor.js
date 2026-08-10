@@ -232,7 +232,38 @@ export class TcsdHermesStageExecutor {
     });
     this.usageReader = options.usageReader ||
       ((sessionId, runtime, skill, invocation) => this.readSessionUsage(sessionId, runtime, skill, invocation));
+    this.sessionIdResolver = options.sessionIdResolver ||
+      ((runtime, prompt, skill) => this.resolveSessionId(runtime, prompt, skill));
     this.now = options.now || (() => new Date().toISOString());
+  }
+
+  async resolveSessionId(runtime, prompt, skill) {
+    const script = path.join(runtime.directory, "scripts", "resolve_hermes_session.py");
+    const { stdout = "" } = await runPythonCommand(
+      this.commandRunner,
+      this.pythonInvocation,
+      [
+        "-B",
+        script,
+        "--state-db",
+        this.stateDbPath,
+        "--expected-skill-name",
+        skill.name,
+        "--expected-prompt-sha256",
+        sha256(prompt)
+      ],
+      {
+        cwd: runtime.directory,
+        timeout: 10000,
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+        env: { ...process.env, NO_COLOR: "1" }
+      }
+    );
+    const resolved = JSON.parse(String(stdout || "").trim());
+    const sessionId = String(resolved?.sessionId || "").trim();
+    if (!sessionId) throw new Error("Hermes state database did not resolve a session ID");
+    return sessionId;
   }
 
   async readSessionUsage(sessionId, runtime, skill, invocation) {
@@ -397,7 +428,7 @@ export class TcsdHermesStageExecutor {
    * 尚无结果且输出、阶段文件和 Hermes 状态库长时间均无变化时，终止
    * 停滞会话并返回可识别错误，由作业服务使用全新 session 自动重试一次。
    */
-  async runStageHermes({ command, args, options, resultPath, activityPaths = [], job }) {
+  async runStageHermes({ command, args, options, resultPath, activityPaths = [], recoverSessionId, job }) {
     const promise = runHermesCommand(this.commandRunner, command, args, options);
     const child = promise.child || null;
     if ((!this.watchdogStallMs && !this.noResultStallMs) || !child) return promise;
@@ -451,6 +482,14 @@ export class TcsdHermesStageExecutor {
         this.noResultStallMs > 0 &&
         Date.now() - lastActivityAt >= this.noResultStallMs;
       if (!completed && !stalled) continue;
+      let recoveredSessionId = parseSessionId(`${partialStdout}\n${partialStderr}`);
+      if (!recoveredSessionId && completed && typeof recoverSessionId === "function") {
+        try {
+          recoveredSessionId = String(await recoverSessionId()).trim();
+        } catch {
+          recoveredSessionId = "";
+        }
+      }
       try {
         child.kill("SIGTERM");
       } catch {
@@ -484,7 +523,8 @@ export class TcsdHermesStageExecutor {
             : {}),
           ...(workspaceDirValue
             ? { resultPath: relativeToWorkspace(path.resolve(workspaceDirValue), resultPath) }
-            : {})
+            : {}),
+          ...(recoveredSessionId ? { sessionId: recoveredSessionId, sessionIdRecovered: true } : {})
         });
       }
       if (stalled) {
@@ -503,7 +543,7 @@ export class TcsdHermesStageExecutor {
           }
         );
       }
-      return { stdout: partialStdout, stderr: partialStderr };
+      return { stdout: partialStdout, stderr: partialStderr, sessionId: recoveredSessionId };
     }
   }
 
@@ -888,6 +928,7 @@ export class TcsdHermesStageExecutor {
           `${this.stateDbPath}-wal`,
           `${this.stateDbPath}-shm`
         ],
+        recoverSessionId: () => this.sessionIdResolver(runtime, prompt, skill),
         job
       });
     } catch (cause) {
@@ -898,7 +939,14 @@ export class TcsdHermesStageExecutor {
     }
     const stdout = String(commandResult?.stdout || "");
     const stderr = String(commandResult?.stderr || "");
-    const sessionId = parseSessionId(`${stdout}\n${stderr}`);
+    let sessionId = String(commandResult?.sessionId || "").trim() || parseSessionId(`${stdout}\n${stderr}`);
+    if (!sessionId) {
+      try {
+        sessionId = String(await this.sessionIdResolver(runtime, prompt, skill)).trim();
+      } catch {
+        sessionId = "";
+      }
+    }
     if (!sessionId) {
       throw Object.assign(new Error("Hermes stage session did not report a session_id."), {
         code: TCSD_ERROR_CODES.telemetry,

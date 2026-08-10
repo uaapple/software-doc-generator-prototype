@@ -16,6 +16,7 @@ RUNTIME = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runt
 SCRIPT = RUNTIME / "scripts" / "run_tcsd_pipeline_stage.py"
 QUALITY_LOOP = RUNTIME / "scripts" / "run_tcsd_quality_loop.py"
 SESSION_READER = RUNTIME / "scripts" / "read_hermes_session.py"
+SESSION_RESOLVER = RUNTIME / "scripts" / "resolve_hermes_session.py"
 SATK_SCRIPT = RUNTIME / "scripts" / "satk_eval.py"
 REPAIR_SCRIPT = RUNTIME / "scripts" / "validate_agent_coverage_repair.py"
 SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
@@ -37,6 +38,36 @@ REPAIR_SPEC.loader.exec_module(REPAIR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_session_resolver_uses_exact_prompt_hash_without_exposing_prompt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            database = Path(temp) / "state.db"
+            prompt = "/tcsd-stage-10-repair-coverage unique manifest path"
+            with sqlite3.connect(database) as connection:
+                connection.execute(
+                    "create table messages (id integer primary key, session_id text, role text, content text)"
+                )
+                connection.execute(
+                    "insert into messages values (1, ?, 'user', ?)",
+                    ("session-stage10", prompt),
+                )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SESSION_RESOLVER),
+                    "--state-db",
+                    str(database),
+                    "--expected-skill-name",
+                    "tcsd-stage-10-repair-coverage",
+                    "--expected-prompt-sha256",
+                    hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(json.loads(completed.stdout), {"sessionId": "session-stage10"})
+            self.assertNotIn(prompt, completed.stdout)
+
     def test_agent_proposal_validation_failure_is_recoverable(self):
         error = RUNNER.RecoverableStageValidationError(
             "invalid proposal",

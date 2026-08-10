@@ -744,6 +744,7 @@ assert.throws(() => parseExecutionManifest({
   });
   const snapshot = await registry.prepare();
   let killed = false;
+  let resolvedSession = false;
   const hangRunner = (command, args) => {
     const pending = new Promise(() => {});
     pending.child = {
@@ -751,7 +752,7 @@ assert.throws(() => parseExecutionManifest({
         killed = true;
       }
     };
-    pending.stdoutSoFar = () => "session_id: session-watchdog-1\n";
+    pending.stdoutSoFar = () => "";
     pending.stderrSoFar = () => "";
     (async () => {
       const prompt = String(
@@ -775,6 +776,10 @@ assert.throws(() => parseExecutionManifest({
     command: "fake-hermes",
     profile: "default",
     commandRunner: hangRunner,
+    sessionIdResolver: async () => {
+      resolvedSession = true;
+      return "session-watchdog-1";
+    },
     usageReader: async (sessionId, _runtime, skill) => ({
       model: "fake-model-v1",
       inputTokens: 1,
@@ -824,8 +829,13 @@ assert.throws(() => parseExecutionManifest({
   const checkpoint = await executor.execute(1, job.input, job, { attempt: 1 });
   assert.equal(checkpoint.status, "completed");
   assert.equal(killed, true, "watchdog must terminate the hung session process");
+  assert.equal(resolvedSession, true, "watchdog must recover session identity before terminating Hermes");
   assert.ok(
-    job.events.some((event) => event.type === "hermes_stage_watchdog_killed_session"),
+    job.events.some((event) =>
+      event.type === "hermes_stage_watchdog_killed_session" &&
+      event.sessionId === "session-watchdog-1" &&
+      event.sessionIdRecovered === true
+    ),
     JSON.stringify(job.events)
   );
 }

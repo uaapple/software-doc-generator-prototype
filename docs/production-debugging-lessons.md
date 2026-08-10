@@ -129,6 +129,7 @@
 - 生产项目消失：先查 `APP_DATA_DIR`、`APP_SKILLS_DIR` 是否仍指向 `/opt/software-doc-generator/prod-data` 和 `/opt/software-doc-generator/prod-skills`，不要先假设数据被删。
 - Stage 6 报 `SATK/MATLAB probe failed (TIMEOUT)`：`MATLAB MCP request "tools/call" timed out after 600000ms` 是 **Gateway 进程内部 MCP 客户端 10 分钟默认超时**先于 job 超时（1 小时）触发，不是 MATLAB 崩溃、不是模型问题、不是 DeepSeek 网络问题。`candidateCount` 较大（数百）时逐 Test 重载 MAT 基线并仿真，单次 evaluate 必然超过 10 分钟。修复：Gateway 按 `job.timeoutMs + MATLAB_GATEWAY_MCP_TIMEOUT_HEADROOM_MS` 给 `tools/call` 传 per-job 超时，外层 job timer 仍是权威边界；同时 TCSD 阶段默认超时上调为 `7200000` ms（2 小时）。诊断字段 `gatewayErrorCode/gatewayJobId/gatewayStatus/satkExitCode/timeoutSeconds/candidateCount/probePlanSha256/probeEntrySha256/probeEntryExists` 会随阶段错误详情返回，可直接用于判定是哪一层超时。
 - Stage 6 报 `SATK/MATLAB probe failed (JOB_TIMEOUT)` 且 `gatewayStatus=timed_out`：这是 Gateway evaluate job 自身的预算耗尽，与上述 MCP 内层超时不同。Stage 6 按 `600 + candidateCount * 5` 秒计算 evaluate 预算，最低 600 秒、最高 3600 秒；显式 `SATK_GATEWAY_TIMEOUT_SECONDS` 可提高下限但不能突破 1 小时安全上限。比如 422 个候选获得 2710 秒预算，整个阶段仍受 `TCSD_STAGE_HERMES_TIMEOUT_MS` 总预算约束。
+- 阶段已有合法 `result.json`，约 5 分钟后却报 `tcsd_stage_telemetry_unavailable / session_id`：通常是结果完成看门狗终止了仍未退出的 `hermes chat`，而 CLI 尚未来得及在 stdout 打印 session ID。Worker 会在终止前使用本次唯一 prompt SHA-256 从 Hermes state DB 只读恢复 session ID，并在终止后再兜底恢复；仍保留 session 唯一性、token 与技能加载证据硬门禁，不把真实遥测缺失静默当成功。
 
 ## 提交前检查
 
