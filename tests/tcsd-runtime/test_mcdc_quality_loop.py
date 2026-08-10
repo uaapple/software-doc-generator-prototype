@@ -55,14 +55,13 @@ class McdcQualityLoopTests(unittest.TestCase):
             ],
         }
 
-        plan = planner.build_plan(trace, max_candidates=6, max_steps=8, sample_time=0.01)
+        plan = planner.build_plan(trace, max_candidates=6, sample_time=0.01)
 
         self.assertEqual(plan["summary"]["target_count"], 1)
         self.assertEqual(plan["summary"]["candidate_count"], 6)
         self.assertTrue(plan["targets"][0]["bounded"])
         for test in plan["tests"]:
             self.assertEqual(test["init_values"]["Request"], 1)
-            self.assertLessEqual(len(test["steps"]), 8)
             self.assertIn(test["target"]["transition"], {"0->1", "1->0"})
         self.assertTrue(any(step["delay_s"] > 0.25 for test in plan["tests"] for step in test["steps"]))
 
@@ -77,11 +76,49 @@ class McdcQualityLoopTests(unittest.TestCase):
             }],
         }
 
-        plan = planner.build_plan(trace, max_candidates=32, max_steps=8, sample_time=0.01)
+        plan = planner.build_plan(trace, max_candidates=32, sample_time=0.01)
 
         self.assertEqual(plan["summary"]["candidate_count"], 0)
         self.assertEqual(plan["targets"][0]["status"], "unsupported_semantics")
         self.assertIn("lookup_table", plan["targets"][0]["unsupported_semantics"])
+
+    def test_state_probe_planner_builds_dedicated_rising_and_falling_edge_sequences(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        for block_name, expected_pattern, start, end in (
+            ("EdgeRising", "rising-edge", 0, 1),
+            ("EdgeFalling", "falling-edge", 1, 0),
+        ):
+            with self.subTest(block_name=block_name):
+                trace = {
+                    "model": "GenericEdge",
+                    "operators": [{
+                        "id": f"GenericEdge:{block_name}",
+                        "operator": "AND",
+                        "ports": [
+                            {
+                                "index": 1,
+                                "trace": {
+                                    "kind": "subsystem",
+                                    "name": block_name,
+                                    "source": {"kind": "root_inport", "signal": "EdgeInput"},
+                                },
+                            },
+                            {"index": 2, "trace": {"kind": "root_inport", "signal": "Enable"}},
+                        ],
+                    }],
+                }
+
+                plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
+
+                self.assertEqual(plan["summary"]["candidate_count"], 1)
+                self.assertEqual(plan["targets"][0]["pattern_type"], expected_pattern)
+                candidate = plan["tests"][0]
+                self.assertEqual(candidate["init_values"], {"Enable": 1, "EdgeInput": start})
+                self.assertEqual(len(candidate["steps"]), 4)
+                self.assertEqual(candidate["steps"][1]["input_updates"], {"EdgeInput": end})
+                self.assertEqual(candidate["steps"][3]["input_updates"], {"EdgeInput": start})
+                self.assertEqual(candidate["evidence_step"], 2)
+                self.assertEqual(candidate["target"]["pattern_type"], expected_pattern)
 
     def test_probe_obligation_preserves_full_state_stimulus(self) -> None:
         builder = load_script_module("build_probe_mcdc_obligations.py")

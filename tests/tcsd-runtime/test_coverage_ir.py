@@ -124,6 +124,75 @@ class CoverageIrTests(unittest.TestCase):
         )
         self.assertEqual(result["summary"]["unsupported"], len(unsupported))
 
+    def test_wide_and_uses_one_all_true_baseline_plus_one_toggle_per_input(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        operator = {
+            "id": "GenericModel:WideAnd",
+            "sid": "GenericModel:WideAnd",
+            "block_path": "GenericModel/WideAnd",
+            "operator": "AND",
+            "ports": [
+                {"trace": {"kind": "root_inport", "signal": f"Input{index}"}}
+                for index in range(1, 9)
+            ],
+        }
+
+        obligations, _ = planner.build_for_operator("GenericModel", operator)
+        sensitization = [
+            item for item in obligations
+            if item.get("pattern_type") == "and_sensitization" and item.get("status") == "required"
+        ]
+
+        self.assertEqual(len(sensitization), 9)
+        vectors = {item["control_recipe"]["condition_vector"] for item in sensitization}
+        self.assertIn("TTTTTTTT", vectors)
+        self.assertEqual(sum(vector.count("F") == 1 for vector in vectors), 8)
+
+    def test_resolved_symbolic_comparator_emits_below_equal_above_recipes(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        coverage_ir = script("build_coverage_ir.py")
+        trace = {
+            "model": "GenericModel",
+            "operators": [{
+                "id": "GenericModel:CompareAnd",
+                "sid": "GenericModel:CompareAnd",
+                "block_path": "GenericModel/CompareAnd",
+                "operator": "AND",
+                "ports": [
+                    {"trace": {
+                        "kind": "relational",
+                        "operator": ">",
+                        "path": "GenericModel/VoltageGreaterThanLimit",
+                        "inputs": [
+                            {"kind": "root_inport", "signal": "InputVoltage"},
+                            {"kind": "constant", "value": "Limit_C", "resolvedValue": 320},
+                        ],
+                    }},
+                    {"trace": {"kind": "root_inport", "signal": "Enable"}},
+                ],
+            }],
+        }
+
+        obligations, _ = planner.build_for_operator("GenericModel", trace["operators"][0])
+        boundaries = [item for item in obligations if item.get("pattern_type") == "simple_comparator_boundary"]
+        self.assertEqual(
+            [item["control_recipe"]["boundary_position"] for item in boundaries],
+            ["below", "equal", "above"],
+        )
+        self.assertEqual(
+            [item["control_recipe"]["stimulus_value"] for item in boundaries],
+            [319, 320, 321],
+        )
+        self.assertTrue(all(item["control_recipe"]["threshold"] == 320 for item in boundaries))
+        self.assertTrue(all(item["control_recipe"]["threshold_expression"] == "Limit_C" for item in boundaries))
+        self.assertTrue(all(item["control_recipe"]["threshold_source"] == "resolved_workspace_symbol" for item in boundaries))
+
+        result = coverage_ir.build_ir(trace)
+        ir_boundaries = [item for item in result["items"] if item.get("patternType") == "simple_comparator_boundary"]
+        self.assertEqual(len(ir_boundaries), 3)
+        readiness = result["summary"]["executionReadiness"]
+        self.assertGreaterEqual(readiness["executableTargetCount"], 3)
+
     def test_ir_captures_parameter_nested_logic_and_state_stimulus(self) -> None:
         coverage_ir = script("build_coverage_ir.py")
         trace = {

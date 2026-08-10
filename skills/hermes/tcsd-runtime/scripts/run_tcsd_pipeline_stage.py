@@ -433,8 +433,15 @@ def stage_run(
         run([sys.executable, str(scripts()/"derive_logical_mcdc_mappings.py"), "--traces", str(traces), "--output", str(mapping)], root)
         run([sys.executable, str(scripts()/"build_logical_mcdc_obligations.py"), "--logical-operators", str(mapping), "--output", str(obligations), "--allow-unresolved"], root)
         run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--obligations", str(obligations), "--output", str(coverage_ir)], root)
+        ir_summary = read_json(coverage_ir).get("summary", {})
         state.update({"mapping": str(mapping), "obligations": str(obligations), "coverageIr": str(coverage_ir)}); save_state(job, state)
-        finish(job, stage, summary="Condition、Decision 与 MC/DC 覆盖目标已形成 Coverage IR。", artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir)]); return
+        finish(
+            job,
+            stage,
+            summary="条件、判定与修正条件/判定覆盖目标已形成，并完成首轮可执行性统计。",
+            artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir)],
+            evidence={"executionReadiness": ir_summary.get("executionReadiness", {})},
+        ); return
     if stage == 6:
         plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
         probe_artifacts = [artifact(root, plan)]; candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))
@@ -461,8 +468,9 @@ def stage_run(
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)
-        spec, workbook, _ = quality.synthesize_ir_once(python=sys.executable, scripts=scripts(), root_dir=root, template=scripts().parent/"assets"/"templates"/"tcsd_template.xlsx", model=model, spec=spec, workbook=workbook, interface_json=interface, coverage_ir=coverage_ir, iteration=0)
-        quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface); state.update({"spec": str(spec), "workbook": str(workbook)}); save_state(job, state)
+        spec, workbook, synthesis = quality.synthesize_ir_once(python=sys.executable, scripts=scripts(), root_dir=root, template=scripts().parent/"assets"/"templates"/"tcsd_template.xlsx", model=model, spec=spec, workbook=workbook, interface_json=interface, coverage_ir=coverage_ir, iteration=0)
+        synthesis_report = out / f"{model}_coverage_ir_synthesis_iter0.json"
+        quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface); state.update({"spec": str(spec), "workbook": str(workbook), "initialSynthesis": str(synthesis_report)}); save_state(job, state)
         planning_obligations = out / f"{model}_planning_obligations_snapshot.json"
         planning_assessment = out / f"{model}_planning_mapping_assessment.json"
         shutil.copy2(obligations, planning_obligations)
@@ -475,6 +483,13 @@ def stage_run(
             report=planning_assessment,
         )
         assessment = planning_mapping_assessment(assessment, planning_obligations, root)
+        assessment["generation"] = {
+            "plannedCandidateCount": int(synthesis.get("planned_candidate_count") or 0),
+            "actualAddedCount": int(synthesis.get("added") or 0),
+            "duplicateSkippedCount": int(synthesis.get("duplicate_skipped_count") or 0),
+            "controlConflictSkippedCount": int(synthesis.get("control_conflict_skipped_count") or 0),
+            "unresolvedThresholdSkippedCount": int(synthesis.get("unresolved_threshold_skipped_count") or 0),
+        }
         write_json(planning_assessment, assessment)
         finish(
             job,
@@ -483,6 +498,7 @@ def stage_run(
             artifacts=[
                 artifact(root, spec),
                 artifact(root, workbook, "xlsx", "workbook"),
+                artifact(root, synthesis_report, "json", "initial-case-synthesis"),
                 artifact(root, planning_obligations, "json", "planning-obligations"),
                 artifact(root, planning_assessment, "json", "planning-mapping-assessment"),
             ],
@@ -490,6 +506,7 @@ def stage_run(
                 "planningMappingAssessment": str(planning_assessment.relative_to(root)),
                 "mappingAuthority": "planning",
                 "supersededByStage": 9,
+                "initialCaseGeneration": assessment["generation"],
             },
         ); return
     workbook = Path(state["workbook"]); spec = Path(state["spec"]); threshold = float(inp.get("coverageThreshold", 80))

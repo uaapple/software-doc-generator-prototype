@@ -74,6 +74,25 @@ def planner_module() -> Any:
     return module
 
 
+def contains_temporal_trace(node: Any) -> bool:
+    if isinstance(node, dict):
+        kind = str(node.get("kind") or "").lower()
+        labels = " ".join(
+            str(node.get(key) or "")
+            for key in ("name", "maskType", "referenceBlock", "semantic", "blockType")
+        ).lower()
+        compact = "".join(character for character in labels if character.isalnum())
+        if kind == "stateful" or any(
+            token in compact
+            for token in ("edgerising", "edgefalling", "risingedge", "fallingedge")
+        ):
+            return True
+        return any(contains_temporal_trace(value) for value in node.values())
+    if isinstance(node, list):
+        return any(contains_temporal_trace(value) for value in node)
+    return False
+
+
 def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> dict[str, Any]:
     status = str(item.get("status") or "required").lower()
     if status not in VALID_STATUS:
@@ -89,6 +108,9 @@ def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> 
         "controller": {"direct_inputs": norm_map(match.get("inputs")), "parameters": norm_map(match.get("params"))},
         "nested_logic": item.get("condition_states") or item.get("operator_inputs") or {},
         "sensitization_context": item.get("sensitization_context") or {},
+        "patternType": item.get("pattern_type") or "",
+        "controlRecipe": item.get("control_recipe") if isinstance(item.get("control_recipe"), dict) else {},
+        "detectorEvidence": item.get("detector_evidence") if isinstance(item.get("detector_evidence"), dict) else {},
         "stimulus": norm_stimulus(item.get("stimulus")),
         "reachability": {"status": status, "reason": item.get("reason"), "issues": item.get("issues") or []},
         "simulation_evidence": evidence if isinstance(evidence, dict) else {},
@@ -124,8 +146,10 @@ def build_ir(
             }, "Decision", model=model))
             planned, summary = planner.build_for_operator(model, operator)
             for obligation in planned:
-                items.append(normalize_item(obligation, "MCDC", model=model))
-                for condition, desired in (obligation.get("condition_states") or {}).items():
+                obligation_class = str(obligation.get("coverage_class") or "MCDC")
+                items.append(normalize_item(obligation, obligation_class, model=model))
+                condition_states = (obligation.get("condition_states") or {}) if obligation_class == "MCDC" else {}
+                for condition, desired in condition_states.items():
                     items.append(normalize_item({
                         "id": f"{obligation['id']}_{condition}", "model": model,
                         "block_path": operator.get("block_path"), "sid": operator.get("sid"),
@@ -154,7 +178,52 @@ def build_ir(
     # Stable ID ordering makes output independent of traversal/dict order.
     unique = {item["id"]: item for item in items}
     values = [unique[key] for key in sorted(unique)]
-    return {"schema": SCHEMA, "model": model, "items": values, "summary": {status: sum(item["reachability"]["status"] == status for item in values) for status in sorted(VALID_STATUS)}}
+    status_summary = {
+        status: sum(item["reachability"]["status"] == status for item in values)
+        for status in sorted(VALID_STATUS)
+    }
+    executable = [
+        item for item in values
+        if item["reachability"]["status"] == "required"
+        and (
+            item["controller"]["direct_inputs"]
+            or item["controller"]["parameters"]
+            or item["stimulus"]["steps"]
+        )
+    ]
+    issue_text = {
+        item["id"]: " ".join(str(value) for value in item["reachability"].get("issues", []))
+        for item in values
+    }
+    readiness = {
+        "totalTargetCount": len(values),
+        "executableTargetCount": len(executable),
+        "missingRootControlPathCount": sum(
+            item["reachability"]["status"] == "unresolved"
+            and any(token in issue_text[item["id"]].lower() for token in ("controller", "root input", "mapping"))
+            for item in values
+        ),
+        "unresolvedThresholdCount": sum(
+            item["reachability"]["status"] == "unresolved"
+            and any(token in issue_text[item["id"]].lower() for token in ("threshold", "constant value", "resolved"))
+            for item in values
+        ),
+        "temporalStateTargetCount": sum(
+            contains_temporal_trace(port.get("trace"))
+            for report in reports
+            for operator in report.get("operators", [])
+            if isinstance(operator, dict)
+            for port in operator.get("ports", [])
+            if isinstance(port, dict)
+        ),
+        "unsupportedTargetCount": status_summary.get("unsupported", 0),
+    }
+    return {
+        "schema": SCHEMA,
+        "model": model,
+        "items": values,
+        "summary": {**status_summary, "executionReadiness": readiness},
+    }
 
 
 def main() -> int:

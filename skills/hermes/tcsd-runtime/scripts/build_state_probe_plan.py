@@ -155,7 +155,40 @@ def normalize_param_values(params: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, sample_time: float) -> dict[str, Any]:
+def edge_pattern(node: dict[str, Any]) -> str:
+    labels = " ".join(
+        str(node.get(key) or "")
+        for key in ("name", "maskType", "referenceBlock", "semantic", "blockType")
+    ).lower()
+    compact = re.sub(r"[^a-z0-9]+", "", labels)
+    rising_tokens = ("edgerising", "risingedge", "detectrise", "detectincrease")
+    falling_tokens = ("edgefalling", "fallingedge", "detectfall", "detectdecrease")
+    if any(token in compact for token in rising_tokens):
+        return "rising-edge"
+    if any(token in compact for token in falling_tokens):
+        return "falling-edge"
+    source = node.get("source")
+    if isinstance(source, dict):
+        detected = edge_pattern(source)
+        if detected:
+            return detected
+    for child in child_traces(node):
+        detected = edge_pattern(child)
+        if detected:
+            return detected
+    return ""
+
+
+def edge_steps(*, control: str, start: int, end: int, sample_time: float) -> list[dict[str, Any]]:
+    return [
+        {"index": 1, "delay_s": sample_time, "input_updates": {}, "param_updates": {}},
+        {"index": 2, "delay_s": sample_time, "input_updates": {control: end}, "param_updates": {}},
+        {"index": 3, "delay_s": sample_time, "input_updates": {}, "param_updates": {}},
+        {"index": 4, "delay_s": sample_time, "input_updates": {control: start}, "param_updates": {}},
+    ]
+
+
+def build_plan(report: dict[str, Any], max_candidates: int, sample_time: float) -> dict[str, Any]:
     tests: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -170,7 +203,8 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             index = int(port.get("index") or 0)
             trace = port.get("trace") if isinstance(port.get("trace"), dict) else {}
             deps = collect_dependencies(trace)
-            if not deps.stateful and not deps.unsupported:
+            pattern = edge_pattern(trace)
+            if not deps.stateful and not deps.unsupported and not pattern:
                 continue
             sibling_inputs: dict[str, Any] = {}
             sibling_params: dict[str, Any] = {}
@@ -189,6 +223,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                 "root_inputs": sorted(deps.inputs),
                 "parameters": sorted(deps.params),
                 "unsupported_semantics": sorted(deps.unsupported),
+                "pattern_type": pattern or "generic-state-timing",
                 "candidate_count": 0,
                 "status": "planned",
             }
@@ -197,6 +232,46 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                 targets.append(target)
                 continue
             param_values = normalize_param_values(deps.params)
+            if pattern in {"rising-edge", "falling-edge"}:
+                start, end = (0, 1) if pattern == "rising-edge" else (1, 0)
+                for control in sorted(deps.inputs):
+                    if target["candidate_count"] >= max_candidates:
+                        break
+                    key = json.dumps([op_id, index, pattern, control, sibling_inputs, sibling_params, param_values], sort_keys=True)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    init_values = dict(sibling_inputs)
+                    init_values.update({name: 0 for name in deps.inputs})
+                    init_values[control] = start
+                    init_params = dict(sibling_params)
+                    init_params.update(param_values)
+                    test_id = f"STATE_PROBE_{len(tests) + 1:04d}"
+                    tests.append(
+                        {
+                            "row": len(tests) + 1,
+                            "test_id": test_id,
+                            "init_values": init_values,
+                            "init_params": init_params,
+                            "steps": edge_steps(control=control, start=start, end=end, sample_time=sample_time),
+                            "evidence_step": 2,
+                            "target": {
+                                "operator_id": op_id,
+                                "port_index": index,
+                                "pattern_type": pattern,
+                                "control_input": control,
+                                "transition": f"{start}->{end}",
+                                "hold_s": sample_time,
+                            },
+                        }
+                    )
+                    target["candidate_count"] += 1
+                if target["candidate_count"] >= max_candidates:
+                    target["bounded"] = True
+                if not target["candidate_count"]:
+                    target["status"] = "candidate_exhausted"
+                targets.append(target)
+                continue
             holds = hold_candidates(deps, sample_time)
             for control in sorted(deps.inputs):
                 for start, end in ((0, 1), (1, 0)):
@@ -215,7 +290,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                         steps = [
                             {"index": 1, "delay_s": sample_time, "input_updates": {control: end}, "param_updates": {}},
                             {"index": 2, "delay_s": hold, "input_updates": {}, "param_updates": {}},
-                        ][:max_steps]
+                        ]
                         test_id = f"STATE_PROBE_{len(tests) + 1:04d}"
                         tests.append(
                             {
@@ -246,7 +321,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
     return {
         "schema": "simulink-ut-state-probe-plan/v1",
         "model": report.get("model"),
-        "limits": {"max_candidates_per_port": max_candidates, "max_steps_per_candidate": max_steps},
+        "limits": {"max_candidates_per_port": max_candidates},
         "targets": targets,
         "tests": tests,
         "summary": {
@@ -262,14 +337,13 @@ def main() -> int:
     parser.add_argument("--traces", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--max-candidates-per-port", type=int, default=32)
-    parser.add_argument("--max-steps-per-candidate", type=int, default=8)
     parser.add_argument("--sample-time", type=float, default=0.01)
     args = parser.parse_args()
     payload = json.loads(Path(args.traces).read_text(encoding="utf-8"))
     items = reports(payload)
     if len(items) != 1:
         raise SystemExit("state probe planner requires one model-specific logical trace")
-    plan = build_plan(items[0], max(1, args.max_candidates_per_port), max(1, args.max_steps_per_candidate), max(1e-6, args.sample_time))
+    plan = build_plan(items[0], max(1, args.max_candidates_per_port), max(1e-6, args.sample_time))
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")

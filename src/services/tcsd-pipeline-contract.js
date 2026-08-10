@@ -17,12 +17,12 @@ export const TCSD_STAGE_DEFINITIONS = Object.freeze([
   ["检查 MATLAB 与模型工具环境", "tcsd-stage-02-check-environment"],
   ["初始化模型工作区", "tcsd-stage-03-initialize-workspace"],
   ["加载模型并提取输入输出接口", "tcsd-stage-04-extract-interface"],
-  ["分析条件、判定与 MC/DC 覆盖目标", "tcsd-stage-05-analyze-coverage"],
-  ["生成并验证状态及时序刺激", "tcsd-stage-06-validate-state-probes"],
-  ["生成并校验首版测试用例", "tcsd-stage-07-build-initial-cases"],
+  ["分析条件、判定与 MC/DC 覆盖目标", "tcsd-stage-05-analyze-coverage", "1.2.0"],
+  ["生成并验证状态及时序刺激", "tcsd-stage-06-validate-state-probes", "1.2.0"],
+  ["生成并校验首版测试用例", "tcsd-stage-07-build-initial-cases", "1.2.0"],
   ["运行模型仿真并回填期望值", "tcsd-stage-08-simulate-backfill"],
   ["采集首轮覆盖率", "tcsd-stage-09-collect-coverage"],
-  ["根据覆盖率修正测试用例", "tcsd-stage-10-repair-coverage", "1.3.0"],
+  ["根据覆盖率修正测试用例", "tcsd-stage-10-repair-coverage", "1.4.0"],
   ["运行最终仿真与覆盖率检查", "tcsd-stage-11-final-validation"],
   ["整理任务产物并清理运行环境", "tcsd-stage-12-package-cleanup"]
 ].map(([name, skillName, skillVersion = "1.1.0"], offset) => Object.freeze({

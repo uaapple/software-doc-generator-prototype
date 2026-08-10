@@ -227,6 +227,8 @@ node.path = blockPath;
 node.sid = logic_id(blockPath);
 node.blockType = safe_param(blockPath, 'BlockType');
 node.name = safe_param(blockPath, 'Name');
+node.maskType = safe_param(blockPath, 'MaskType');
+node.referenceBlock = safe_param(blockPath, 'ReferenceBlock');
 node.outport = double(srcPortNumber);
 end
 

@@ -131,6 +131,8 @@ def build_brief(
     trace_path: str,
     interface_path: str,
     threshold: float,
+    coverage_ir: dict[str, Any] | None = None,
+    initial_synthesis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     records = coverage_records(coverage)
     record = records.get(model)
@@ -186,6 +188,28 @@ def build_brief(
 
     elements: dict[tuple[str, str], dict[str, str]] = {}
     trace_elements(traces, elements)
+    coverage_ir = coverage_ir if isinstance(coverage_ir, dict) else {}
+    initial_synthesis = initial_synthesis if isinstance(initial_synthesis, dict) else {}
+    attempted: list[dict[str, Any]] = []
+    for item in coverage_ir.get("items", []):
+        if not isinstance(item, dict) or (item.get("reachability") or {}).get("status") != "required":
+            continue
+        controller = item.get("controller") if isinstance(item.get("controller"), dict) else {}
+        stimulus = item.get("stimulus") if isinstance(item.get("stimulus"), dict) else {}
+        if not (controller.get("direct_inputs") or controller.get("parameters") or stimulus.get("steps")):
+            continue
+        attempted.append(
+            {
+                "id": str(item.get("id") or ""),
+                "coverage_class": str(item.get("coverage_class") or ""),
+                "block": item.get("block") if isinstance(item.get("block"), dict) else {},
+                "required_outcome": item.get("required_outcome"),
+                "pattern_type": item.get("patternType") or "",
+                "controller": controller,
+                "stimulus": stimulus,
+            }
+        )
+    attempted = attempted[:256]
     return {
         "schema": BRIEF_SCHEMA,
         "jobId": job_id,
@@ -195,6 +219,26 @@ def build_brief(
         "metricDeficits": deficits,
         "coverageTargets": targets,
         "modelElementIndex": sorted(elements.values(), key=lambda item: (item["path"], item["sid"])),
+        "priorPlanning": {
+            "stage5ExecutionReadiness": (coverage_ir.get("summary") or {}).get("executionReadiness", {}),
+            "stage7InitialGeneration": {
+                "plannedCandidateCount": int(initial_synthesis.get("planned_candidate_count") or 0),
+                "actualAddedCount": int(initial_synthesis.get("added") or 0),
+                "duplicateSkippedCount": int(initial_synthesis.get("duplicate_skipped_count") or 0),
+                "controlConflictSkippedCount": int(initial_synthesis.get("control_conflict_skipped_count") or 0),
+                "unresolvedThresholdSkippedCount": int(initial_synthesis.get("unresolved_threshold_skipped_count") or 0),
+            },
+            "attemptedTargets": attempted,
+            "doNotRepeatIdenticalControllers": [
+                {
+                    "id": item["id"],
+                    "controller": item["controller"],
+                    "stimulus": item["stimulus"],
+                }
+                for item in attempted
+            ],
+            "measuredRemainingTargets": targets,
+        },
         "evidence": {
             "coverageReport": coverage_report_path,
             "logicalTraces": trace_path,
@@ -203,8 +247,8 @@ def build_brief(
         },
         "guardrails": {
             "maxCandidateTests": 16,
-            "maxStepsPerTest": 8,
             "stepCountSemantics": "stimulus_action_entries",
+            "actionStepCountLimit": None,
             "simulationSamplePeriodsDoNotCountAsSteps": True,
             "longHoldAsSingleActionAllowed": True,
             "parametersOnlyInInitialization": True,
@@ -262,7 +306,6 @@ def validate_proposal(
     if not isinstance(tests, list) or not isinstance(unresolved, list):
         raise ValueError("coverage repair proposal tests/unresolved must be arrays")
     max_tests = int(brief.get("guardrails", {}).get("maxCandidateTests") or 16)
-    max_steps = int(brief.get("guardrails", {}).get("maxStepsPerTest") or 8)
     if len(tests) > max_tests:
         raise ValueError("coverage repair proposal exceeds the bounded candidate limit")
     if brief.get("repairRequired") and not tests and not unresolved:
@@ -334,8 +377,8 @@ def validate_proposal(
         if unknown_inputs:
             raise ValueError(f"{item_id} uses unknown root inputs: {sorted(unknown_inputs)}")
         steps = stimulus.get("steps")
-        if not isinstance(steps, list) or not 1 <= len(steps) <= max_steps:
-            raise ValueError(f"{item_id} must contain 1..{max_steps} ordered action steps")
+        if not isinstance(steps, list) or not steps:
+            raise ValueError(f"{item_id} must contain at least one ordered action step")
         normalized_steps: list[dict[str, Any]] = []
         cumulative_delay = 0.0
         for index, step in enumerate(steps, 1):
@@ -409,10 +452,9 @@ def validate_proposal(
             evidence=evidence,
             guardrails=guardrails,
         ):
-            max_steps = int(guardrails.get("maxStepsPerTest") or 8)
             raise ValueError(
                 "state_sequence_not_constructible incorrectly treats simulation sample periods as "
-                f"TCSD action steps: maxStepsPerTest={max_steps} counts only stimulus.steps entries. "
+                "TCSD action steps. There is no per-test action-step count limit; "
                 "Encode the finite counter/timer hold as one positive delay_s action, then let the "
                 "deterministic host validate it by simulation."
             )
@@ -477,6 +519,7 @@ def main() -> int:
         traces_path = Path(args.logical_traces)
         ir_path = Path(args.coverage_ir)
         interface_path = Path(args.interface)
+        synthesis_path = ir_path.with_name(ir_path.name.replace("_coverage_ir.json", "_coverage_ir_synthesis_iter0.json"))
         brief = build_brief(
             job_id=args.job_id,
             model=args.model,
@@ -487,6 +530,8 @@ def main() -> int:
             trace_path=str(traces_path),
             interface_path=str(interface_path),
             threshold=args.threshold,
+            coverage_ir=read_json(ir_path),
+            initial_synthesis=read_json(synthesis_path) if synthesis_path.is_file() else {},
         )
         write_json(Path(args.output), brief)
         print(json.dumps({"output": args.output, "deficits": len(brief["metricDeficits"])}, ensure_ascii=False))

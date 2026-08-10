@@ -74,11 +74,15 @@ def synthesize(spec: dict[str, Any], ir: dict[str, Any], *, max_new_tests: int =
     for item in sorted(ir.get("items", []), key=lambda value: str(value.get("id"))):
         if added >= max_new_tests:
             break
-        if item.get("coverage_class") not in {"Decision", "MCDC"}:
+        if item.get("coverage_class") not in {"Condition", "Decision", "MCDC"}:
             continue
         reachability = item.get("reachability") if isinstance(item.get("reachability"), dict) else {}
         if reachability.get("status") != "required":
-            skipped.append({"id": str(item.get("id")), "reason": str(reachability.get("status") or "unresolved")})
+            issue_text = " ".join(str(value) for value in reachability.get("issues", []))
+            reason = str(reachability.get("status") or "unresolved")
+            if "threshold" in issue_text.lower():
+                reason = "unresolved_threshold"
+            skipped.append({"id": str(item.get("id")), "reason": reason})
             continue
         key = signature(item)
         if key in seen:
@@ -107,14 +111,33 @@ def synthesize(spec: dict[str, Any], ir: dict[str, Any], *, max_new_tests: int =
     return spec, skipped
 
 
-def synthesis_report(*, input_count: int, result: dict[str, Any], skipped: list[dict[str, str]]) -> dict[str, Any]:
+def synthesis_report(
+    *,
+    input_count: int,
+    result: dict[str, Any],
+    skipped: list[dict[str, str]],
+    planned_candidate_count: int,
+) -> dict[str, Any]:
     output_count = len(result.get("tests", []))
+    skipped_by_reason: dict[str, int] = {}
+    for item in skipped:
+        reason = str(item.get("reason") or "unknown")
+        skipped_by_reason[reason] = skipped_by_reason.get(reason, 0) + 1
     return {
         "schema": "simulink-ut-tcsd-coverage-ir-synthesis/v1",
         "input_test_count": input_count,
         "output_test_count": output_count,
+        "planned_candidate_count": planned_candidate_count,
         "added": output_count - input_count,
         "skipped": skipped,
+        "skipped_by_reason": skipped_by_reason,
+        "duplicate_skipped_count": sum(
+            count for reason, count in skipped_by_reason.items() if reason.startswith("duplicate")
+        ),
+        "control_conflict_skipped_count": skipped_by_reason.get("unresolved_controller", 0),
+        "unresolved_threshold_skipped_count": sum(
+            count for reason, count in skipped_by_reason.items() if "threshold" in reason
+        ),
         "deduplication_basis": "controller direct_inputs + parameters + full temporal stimulus",
     }
 
@@ -131,7 +154,24 @@ def main() -> int:
     input_count = len(spec.get("tests", []))
     ir = json.loads(Path(args.coverage_ir).read_text(encoding="utf-8"))
     result, skipped = synthesize(spec, ir, max_new_tests=args.max_new_tests)
-    report = synthesis_report(input_count=input_count, result=result, skipped=skipped)
+    planned_candidate_count = sum(
+        1
+        for item in ir.get("items", [])
+        if isinstance(item, dict)
+        and item.get("coverage_class") in {"Condition", "Decision", "MCDC"}
+        and (item.get("reachability") or {}).get("status") == "required"
+        and (
+            (item.get("controller") or {}).get("direct_inputs")
+            or (item.get("controller") or {}).get("parameters")
+            or (item.get("stimulus") or {}).get("steps")
+        )
+    )
+    report = synthesis_report(
+        input_count=input_count,
+        result=result,
+        skipped=skipped,
+        planned_candidate_count=planned_candidate_count,
+    )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

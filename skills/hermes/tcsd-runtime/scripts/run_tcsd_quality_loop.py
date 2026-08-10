@@ -477,8 +477,6 @@ def build_state_probe_plan(
             str(plan),
             "--max-candidates-per-port",
             "32",
-            "--max-steps-per-candidate",
-            "8",
         ],
         cwd=root_dir,
     )

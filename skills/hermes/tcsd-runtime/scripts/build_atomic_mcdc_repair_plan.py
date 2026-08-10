@@ -187,6 +187,20 @@ def symbolic_constant(node: dict[str, Any]) -> str | None:
     return value if IDENTIFIER_RE.match(value) else None
 
 
+def resolved_constant(node: dict[str, Any]) -> tuple[float, str, str] | None:
+    node = unwrap(node)
+    if str(node.get("kind") or "").lower() != "constant":
+        return None
+    expression = str(node.get("value") or "").strip()
+    literal = parse_literal(expression)
+    if literal is not None:
+        return literal, "model_literal", expression
+    resolved = parse_literal(node.get("resolvedValue"))
+    if resolved is None:
+        return None
+    return resolved, "resolved_workspace_symbol", expression
+
+
 def direct_root(node: dict[str, Any]) -> str | None:
     node = unwrap(node)
     if str(node.get("kind") or "").lower() == "root_inport":
@@ -199,6 +213,60 @@ def contains_kind(node: dict[str, Any], expected: set[str]) -> bool:
     if str(node.get("kind") or "").lower() in expected:
         return True
     return any(contains_kind(item, expected) for item in children(node))
+
+
+def relational_controller(node: dict[str, Any]) -> dict[str, Any] | None:
+    terms = children(node)
+    if len(terms) != 2:
+        return None
+    left_root, right_root = direct_root(terms[0]), direct_root(terms[1])
+    left_constant, right_constant = resolved_constant(terms[0]), resolved_constant(terms[1])
+    if left_root and right_constant:
+        threshold, source, expression = right_constant
+        return {
+            "root_input": left_root,
+            "root_on_left": True,
+            "threshold": threshold,
+            "threshold_source": source,
+            "threshold_expression": expression,
+            "operator": str(node.get("operator") or "").strip(),
+        }
+    if right_root and left_constant:
+        threshold, source, expression = left_constant
+        return {
+            "root_input": right_root,
+            "root_on_left": False,
+            "threshold": threshold,
+            "threshold_source": source,
+            "threshold_expression": expression,
+            "operator": str(node.get("operator") or "").strip(),
+        }
+    return None
+
+
+def comparison_result(operator: str, left: float, right: float) -> bool:
+    if operator == ">":
+        return left > right
+    if operator == ">=":
+        return left >= right
+    if operator == "<":
+        return left < right
+    if operator == "<=":
+        return left <= right
+    if operator == "==":
+        return math.isclose(left, right, rel_tol=0.0, abs_tol=1e-12)
+    if operator == "~=":
+        return not math.isclose(left, right, rel_tol=0.0, abs_tol=1e-12)
+    raise ValueError(f"unsupported relational operator {operator!r}")
+
+
+def boundary_values(threshold: float) -> list[tuple[str, float]]:
+    delta = 1.0 if float(threshold).is_integer() else max(0.001, abs(threshold) * 0.01)
+    return [
+        ("below", threshold - delta),
+        ("equal", threshold),
+        ("above", threshold + delta),
+    ]
 
 
 def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
@@ -224,6 +292,18 @@ def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
             hold_s=0.02,
             strategy="parameter_threshold_vs_nonnegative_stateful_value",
         )
+    controller = relational_controller(node)
+    if controller:
+        root = str(controller["root_input"])
+        threshold = float(controller["threshold"])
+        root_on_left = bool(controller["root_on_left"])
+        operator = str(controller["operator"])
+        candidates = boundary_values(threshold)
+        for _, value in candidates:
+            left, right = (value, threshold) if root_on_left else (threshold, value)
+            if comparison_result(operator, left, right) == desired:
+                return Recipe(inputs={root: value}, strategy="root_input_resolved_boundary")
+        return Recipe(issues=[f"relational operator {operator!r} has no safe boundary value for {desired}"])
     if left_root and right_literal is not None:
         delta = max(1.0, abs(right_literal) * 0.01)
         if op in {">", ">="}:
@@ -250,7 +330,7 @@ def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
         else:
             return Recipe(issues=[f"unsupported relational operator {op!r}"])
         return Recipe(inputs={right_root: value}, strategy="root_input_boundary")
-    return Recipe(issues=["relational condition lacks a safe executable controller mapping"])
+    return Recipe(issues=["comparison threshold is unresolved or lacks a safe root-input controller mapping"])
 
 
 def atom_recipe(atom: Atom, desired: bool) -> Recipe:
@@ -374,9 +454,84 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
                 "match": {"inputs": recipe.inputs, "params": recipe.params},
                 "hold_s": recipe.hold_s,
                 "mapping_strategies": strategies,
+                "pattern_type": f"{str(operator.get('operator') or '').lower()}_sensitization",
+                "control_recipe": {
+                    "kind": "logical_sensitization",
+                    "operator": str(operator.get("operator") or "").upper(),
+                    "condition_vector": label,
+                },
                 "issues": recipe.issues,
             }
         )
+
+    for atom_index, atom in enumerate(atoms):
+        node = unwrap(atom.source)
+        if atom.kind != "relational" or atom_index not in chosen:
+            continue
+        controller = relational_controller(node)
+        if not controller or controller["operator"] not in {">", ">=", "<", "<=", "=="}:
+            continue
+        pair = chosen[atom_index]
+        for position, value in boundary_values(float(controller["threshold"])):
+            left, right = (
+                (value, float(controller["threshold"]))
+                if controller["root_on_left"]
+                else (float(controller["threshold"]), value)
+            )
+            desired = comparison_result(str(controller["operator"]), left, right)
+            vector = next((candidate for candidate in pair if candidate[atom_index] == desired), None)
+            if vector is None:
+                continue
+            recipe = Recipe(hold_s=0.1)
+            strategies: dict[str, str] = {}
+            for index, atom_desired in enumerate(vector):
+                candidate_atom = atoms[index]
+                if index == atom_index:
+                    candidate_recipe = Recipe(
+                        inputs={str(controller["root_input"]): value},
+                        strategy="simple_comparator_boundary",
+                    )
+                else:
+                    candidate_recipe = atom_recipe(candidate_atom, atom_desired)
+                strategies[candidate_atom.id] = candidate_recipe.strategy
+                merge_recipe(recipe, candidate_recipe, candidate_atom.id)
+            status = "required" if recipe.resolved else "unresolved"
+            obligations.append(
+                {
+                    "id": f"{op_id}_condition_{atom.id}_boundary_{position}",
+                    "model": model,
+                    "block_path": operator.get("block_path"),
+                    "sid": operator.get("sid") or operator.get("id"),
+                    "operator": operator.get("operator"),
+                    "coverage_class": "Condition",
+                    "status": status,
+                    "required_outcome": (
+                        f"{atom.id} boundary {position}: "
+                        f"{controller['root_input']}={value:g}, condition={str(desired).lower()}"
+                    ),
+                    "condition_states": {atoms[index].id: state for index, state in enumerate(vector)},
+                    "match": {"inputs": recipe.inputs, "params": recipe.params},
+                    "hold_s": recipe.hold_s,
+                    "mapping_strategies": strategies,
+                    "pattern_type": "simple_comparator_boundary",
+                    "control_recipe": {
+                        "kind": "simple_comparator_boundary",
+                        "root_input": controller["root_input"],
+                        "operator": controller["operator"],
+                        "threshold": controller["threshold"],
+                        "threshold_expression": controller["threshold_expression"],
+                        "threshold_source": controller["threshold_source"],
+                        "boundary_position": position,
+                        "stimulus_value": value,
+                    },
+                    "detector_evidence": {
+                        "relational_path": node.get("path"),
+                        "relational_sid": node.get("sid"),
+                        "threshold_resolved": True,
+                    },
+                    "issues": recipe.issues,
+                }
+            )
 
     condition_pairs = []
     for index, pair in sorted(chosen.items()):

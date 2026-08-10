@@ -62,12 +62,12 @@ MERGE_HEAD peeled = a882c1e22c9fa10bfd761ec6a3487899ee988d0a
 | 02 | 检查 MATLAB 与模型工具环境 | `tcsd-stage-02-check-environment` | Python 依赖、workspace I/O、MATLAB/SATK nonce canary |
 | 03 | 初始化模型工作区 | `tcsd-stage-03-initialize-workspace` | 初始化脚本、MAT、数据字典和支持包证据 |
 | 04 | 加载模型并提取输入输出接口 | `tcsd-stage-04-extract-interface` | 根 Inport/Outport、参数、类型与模型接口 JSON |
-| 05 | 分析条件、判定与 MC/DC 覆盖目标 | `tcsd-stage-05-analyze-coverage` | 逻辑追踪、Coverage IR、MC/DC obligation |
-| 06 | 生成并验证状态及时序刺激 | `tcsd-stage-06-validate-state-probes` | 状态 Probe 计划、真实观察、多步骤 stimulus |
-| 07 | 生成并校验首版测试用例 | `tcsd-stage-07-build-initial-cases` | 首版 TCSD workbook、静态规划诊断 |
+| 05 | 分析条件、判定与 MC/DC 覆盖目标 | `tcsd-stage-05-analyze-coverage` `1.2.0` | 与门/或门敏化配方、简单比较器边界值、覆盖目标及可执行性统计 |
+| 06 | 生成并验证状态及时序刺激 | `tcsd-stage-06-validate-state-probes` `1.2.0` | 状态及时序探针计划、上升沿/下降沿专用序列、真实观察、多步骤刺激 |
+| 07 | 生成并校验首版测试用例 | `tcsd-stage-07-build-initial-cases` `1.2.0` | 首版测试工作簿、基础配方生成统计、静态规划诊断 |
 | 08 | 运行模型仿真并回填期望值 | `tcsd-stage-08-simulate-backfill` | 实际仿真结果、`expValue` 回填与逐项校验 |
 | 09 | 采集首轮覆盖率 | `tcsd-stage-09-collect-coverage` | 实测 Condition、Decision、MC/DC |
-| 10 | 根据覆盖率修正测试用例 | `tcsd-stage-10-repair-coverage` `1.3.0` | 局部上游切片、定向候选、最多一轮修正 |
+| 10 | 根据覆盖率修正测试用例 | `tcsd-stage-10-repair-coverage` `1.4.0` | 局部上游切片、定向候选、最多一轮修正 |
 | 11 | 运行最终仿真与覆盖率检查 | `tcsd-stage-11-final-validation` | 最终仿真、覆盖率与标准命名 workbook |
 | 12 | 整理任务产物并清理运行环境 | `tcsd-stage-12-package-cleanup` | 宿主生成 execution manifest、清理证据、最终下载产物 |
 
@@ -79,7 +79,7 @@ MERGE_HEAD peeled = a882c1e22c9fa10bfd761ec6a3487899ee988d0a
 2. 每阶段有独立输入、结果、checkpoint、Hermes session、技能版本/hash、token usage 和错误归属。
 3. 阶段 2 不再只检查可执行文件是否存在，而是实际执行 MATLAB/SATK nonce canary。
 4. 有状态或时序 MC/DC 条件使用“初始化—触发—保持—跨越阈值—观察”的多步骤刺激。
-5. `maxStepsPerTest` 表示 TCSD 动作条目数，不是 Simulink sample period 数；长时间保持可以是一个动作。
+5. 单个测试用例不再限制最多 8 个操作步骤；有证据支持的状态和时序序列可以保留全部必要步骤。仿真采样次数不属于操作步骤，有限时长的连续保持仍应合并成一个带正值 `delay_s` 的等待操作。
 6. 第 9 阶段的实测覆盖率是覆盖率权威来源，静态 obligation 匹配只作为规划提示。
 7. 首轮三项覆盖率均达到 80% 时直接结束；否则只修正一轮，修正后的结果作为最终结果，不要求强行达到 80%。
 8. 只有候选产物的确定性校验失败才允许一次新的 Agent 修复 session；Stage 10 的错误 repair proposal（包括把 sample hit、计数器更新或长保持误当成 TCSD action step）也归入该可修复门禁，并把结构化失败报告交给新 session。环境、Hermes、MATLAB、超时等硬错误不重试。

@@ -592,7 +592,7 @@ export class TcsdHermesStageExecutor {
         prepareCommand,
         `Read the resulting authoritative coverage repair brief at: ${repairBriefPath}`,
         "Inspect only the uncovered target block and its local upstream model slice.",
-        "The maxStepsPerTest limit counts JSON stimulus.steps action entries only; it does not count Simulink solver steps, sample hits, counter increments, or Unit Delay updates.",
+        "There is no per-test limit on JSON stimulus.steps action entries. Preserve every ordered action required by the evidenced state or timing sequence.",
         "A finite hold spanning many sample periods is one action step: compute the justified duration and encode it as one positive delay_s instead of declaring the sequence unconstructible.",
         `Write the required Agent repair proposal to: ${repairProposalPath}`,
         "Then run this exact deterministic apply command:",

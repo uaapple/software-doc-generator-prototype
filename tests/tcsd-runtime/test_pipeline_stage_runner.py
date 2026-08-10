@@ -38,6 +38,63 @@ REPAIR_SPEC.loader.exec_module(REPAIR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_stage10_brief_carries_prior_planning_and_avoids_identical_retries(self):
+        brief = REPAIR.build_brief(
+            job_id="job-generic",
+            model="GenericModel",
+            coverage={
+                "models": {
+                    "GenericModel": {
+                        "condition": {"covered": 1, "total": 2, "percent": 50},
+                        "decision": {"covered": 1, "total": 2, "percent": 50},
+                        "mcdc": {"covered": 1, "total": 2, "percent": 50},
+                        "items": [{
+                            "id": "remaining",
+                            "coverage_class": "Condition",
+                            "block_path": "GenericModel/Compare",
+                            "missing_outcomes": ["equal boundary"],
+                        }],
+                    },
+                },
+            },
+            traces={"model": "GenericModel", "operators": []},
+            coverage_ir_path="coverage-ir.json",
+            coverage_report_path="coverage.json",
+            trace_path="traces.json",
+            interface_path="interface.json",
+            threshold=80,
+            coverage_ir={
+                "summary": {"executionReadiness": {"totalTargetCount": 3, "executableTargetCount": 3}},
+                "items": [{
+                    "id": "compare-equal",
+                    "coverage_class": "Condition",
+                    "block": {"path": "GenericModel/Compare", "sid": "GenericModel:1"},
+                    "required_outcome": "equal boundary",
+                    "patternType": "simple_comparator_boundary",
+                    "controller": {"direct_inputs": {"InputVoltage": 320}, "parameters": {}},
+                    "stimulus": {"steps": []},
+                    "reachability": {"status": "required"},
+                }],
+            },
+            initial_synthesis={
+                "planned_candidate_count": 3,
+                "added": 3,
+                "duplicate_skipped_count": 0,
+                "control_conflict_skipped_count": 0,
+                "unresolved_threshold_skipped_count": 0,
+            },
+        )
+
+        prior = brief["priorPlanning"]
+        self.assertEqual(prior["stage5ExecutionReadiness"]["executableTargetCount"], 3)
+        self.assertEqual(prior["stage7InitialGeneration"]["actualAddedCount"], 3)
+        self.assertEqual(prior["attemptedTargets"][0]["pattern_type"], "simple_comparator_boundary")
+        self.assertEqual(
+            prior["doNotRepeatIdenticalControllers"][0]["controller"]["direct_inputs"],
+            {"InputVoltage": 320},
+        )
+        self.assertEqual(prior["measuredRemainingTargets"][0]["id"], "remaining")
+
     def test_session_resolver_uses_exact_prompt_hash_without_exposing_prompt(self):
         with tempfile.TemporaryDirectory() as temp:
             database = Path(temp) / "state.db"
@@ -255,7 +312,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }],
             "guardrails": {
                 "maxCandidateTests": 16,
-                "maxStepsPerTest": 8,
                 "parametersOnlyInInitialization": True,
                 "analyzeOnlyTargetUpstreamSlice": True,
                 "fullRootInputEnumerationForbidden": True,
@@ -301,6 +357,18 @@ class PipelineStageRunnerTests(unittest.TestCase):
         self.assertEqual(ir["items"][0]["analysis"]["cumulative_wait_s"], 0.4)
         self.assertEqual(ir["items"][0]["controller"]["parameters"], {"Bypass": 0, "WaitThreshold": 3})
 
+        proposal["tests"][0]["stimulus"]["steps"] = [
+            {"delay_s": 0.01, "input_updates": {"Enable": index % 2}, "param_updates": {}}
+            for index in range(12)
+        ]
+        proposal["tests"][0]["stimulus"]["evidence_step"] = 12
+        unlimited_ir, _ = REPAIR.validate_proposal(
+            proposal,
+            brief,
+            {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
+        )
+        self.assertEqual(len(unlimited_ir["items"][0]["stimulus"]["steps"]), 12)
+
         proposal["tests"][0]["required_outcome"] = "unmeasured true branch"
         with self.assertRaisesRegex(ValueError, "measured missing outcome"):
             REPAIR.validate_proposal(
@@ -327,7 +395,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
             "coverageTargets": [],
             "guardrails": {
                 "maxCandidateTests": 16,
-                "maxStepsPerTest": 8,
                 "stepCountSemantics": "stimulus_action_entries",
                 "simulationSamplePeriodsDoNotCountAsSteps": True,
                 "longHoldAsSingleActionAllowed": True,
@@ -375,7 +442,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }],
             "guardrails": {
                 "maxCandidateTests": 16,
-                "maxStepsPerTest": 8,
                 "stepCountSemantics": "stimulus_action_entries",
                 "simulationSamplePeriodsDoNotCountAsSteps": True,
                 "longHoldAsSingleActionAllowed": True,
@@ -430,7 +496,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }],
             "guardrails": {
                 "maxCandidateTests": 16,
-                "maxStepsPerTest": 8,
                 "stepCountSemantics": "stimulus_action_entries",
                 "simulationSamplePeriodsDoNotCountAsSteps": True,
                 "longHoldAsSingleActionAllowed": True,
