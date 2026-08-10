@@ -579,6 +579,38 @@ class PipelineStageRunnerTests(unittest.TestCase):
             },
         )
 
+    def test_quality_satk_runner_injects_stage_probe_timeout(self):
+        completed = subprocess.CompletedProcess(
+            ["python3", "satk_eval.py", "probe.m"],
+            0,
+            stdout="",
+            stderr="",
+        )
+        with mock.patch.object(QUALITY.subprocess, "run", return_value=completed) as run_mock:
+            QUALITY.run_satk(
+                "python3",
+                Path("/skills/tcsd-runtime/scripts"),
+                Path("/workspace/outputs/probe.m"),
+                Path("/workspace"),
+                gateway_timeout_seconds=2710,
+            )
+        self.assertEqual(
+            run_mock.call_args.kwargs["env"]["SATK_GATEWAY_TIMEOUT_SECONDS"],
+            "2710",
+        )
+
+    def test_stage6_probe_timeout_scales_with_candidates_and_is_bounded(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(RUNNER.stage6_probe_timeout_seconds(0), 600)
+            self.assertEqual(RUNNER.stage6_probe_timeout_seconds(422), 2710)
+            self.assertEqual(RUNNER.stage6_probe_timeout_seconds(1000), 3600)
+        with mock.patch.dict(
+            os.environ,
+            {"SATK_GATEWAY_TIMEOUT_SECONDS": "3000"},
+            clear=True,
+        ):
+            self.assertEqual(RUNNER.stage6_probe_timeout_seconds(100), 3000)
+
     def test_stage_runtime_error_details_are_strictly_allowlisted(self):
         error = RuntimeError("failed")
         error.details = {

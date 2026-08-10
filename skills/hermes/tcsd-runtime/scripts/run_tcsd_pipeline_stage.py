@@ -8,6 +8,9 @@ from typing import Any
 
 INPUT_SCHEMA = "tcsd-agent-stage-input/v1"
 RESULT_SCHEMA = "tcsd-agent-stage-result/v1"
+STAGE6_PROBE_TIMEOUT_BASE_SECONDS = 600
+STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS = 5
+STAGE6_PROBE_TIMEOUT_MAX_SECONDS = 3600
 
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path); module = importlib.util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module); return module
@@ -15,6 +18,17 @@ def load_module(name: str, path: Path):
 def read_json(path: Path) -> dict[str, Any]: return json.loads(path.read_text(encoding="utf-8"))
 def write_json(path: Path, value: Any) -> None: path.parent.mkdir(parents=True, exist_ok=True); path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 def file_sha256(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()
+def stage6_probe_timeout_seconds(candidate_count: int) -> int:
+    configured = os.environ.get("SATK_GATEWAY_TIMEOUT_SECONDS", "").strip()
+    configured_floor = STAGE6_PROBE_TIMEOUT_BASE_SECONDS
+    if configured:
+        try:
+            configured_floor = max(1, int(float(configured)))
+        except ValueError:
+            configured_floor = STAGE6_PROBE_TIMEOUT_BASE_SECONDS
+    adaptive = STAGE6_PROBE_TIMEOUT_BASE_SECONDS + max(0, candidate_count) * STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS
+    return min(STAGE6_PROBE_TIMEOUT_MAX_SECONDS, max(configured_floor, adaptive))
+
 def planning_mapping_assessment(raw: dict[str, Any], obligations: Path, root: Path) -> dict[str, Any]:
     assessment = dict(raw)
     raw_status = str(assessment.pop("status", "failed"))
@@ -410,13 +424,14 @@ def stage_run(
     if stage == 6:
         plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
         probe_artifacts = [artifact(root, plan)]; candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))
+        probe_timeout_seconds = stage6_probe_timeout_seconds(candidate_count)
         if candidate_count > 0:
             probe_results = out / f"{model}_state_probe_results.json"; probe_fixture = os.environ.get("TCSD_PIPELINE_PROBE_RESULTS_FIXTURE", "")
             if probe_fixture:
                 shutil.copy2(probe_fixture, probe_results); run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
             else:
                 try:
-                    obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json")
+                    obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json", gateway_timeout_seconds=probe_timeout_seconds)
                 except quality.SatkEvaluationError as error:
                     probe_entry = out / f"{model}_probe_mcdc_entry.m"
                     error.details.update({
@@ -428,7 +443,7 @@ def stage_run(
                     raise
             read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
-        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0}); return
+        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0, "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None}); return
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)

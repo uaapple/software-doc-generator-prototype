@@ -241,11 +241,23 @@ def satk_failure(stdout: str, stderr: str, returncode: int) -> SatkEvaluationErr
     )
 
 
-def run_satk(python: str, scripts: Path, entry: Path, root_dir: Path) -> None:
+def run_satk(
+    python: str,
+    scripts: Path,
+    entry: Path,
+    root_dir: Path,
+    *,
+    gateway_timeout_seconds: int | None = None,
+) -> None:
     command = [python, "-B", str(scripts / "satk_eval.py"), str(entry)]
+    environ = None
+    if gateway_timeout_seconds is not None:
+        environ = dict(os.environ)
+        environ["SATK_GATEWAY_TIMEOUT_SECONDS"] = str(gateway_timeout_seconds)
     completed = subprocess.run(
         command,
         cwd=root_dir,
+        env=environ,
         check=False,
         capture_output=True,
         text=True,
@@ -513,6 +525,7 @@ def run_probe(
     coverage_threshold: float,
     case_json: Path | None = None,
     output_name: str = "logic_probe_results.json",
+    gateway_timeout_seconds: int | None = None,
 ) -> tuple[Path, Path | None]:
     probe_results = root_dir / "outputs" / output_name
     coverage_json = root_dir / "outputs" / f"{model}_coverage_summary.json"
@@ -541,7 +554,13 @@ def run_probe(
             ]
         ),
     )
-    run_satk(python, scripts, entry, root_dir)
+    run_satk(
+        python,
+        scripts,
+        entry,
+        root_dir,
+        gateway_timeout_seconds=gateway_timeout_seconds,
+    )
     obligations = root_dir / "outputs" / f"{model}_coverage_obligations.json"
     cmd = [
         python,
