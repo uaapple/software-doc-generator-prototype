@@ -642,6 +642,93 @@ class PipelineStageRunnerTests(unittest.TestCase):
         ):
             self.assertEqual(RUNNER.stage6_probe_timeout_seconds(100), 3000)
 
+    def test_stage11_probe_timeout_scales_with_final_cases_and_is_bounded(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(RUNNER.stage11_probe_timeout_seconds(0), 600)
+            self.assertEqual(RUNNER.stage11_probe_timeout_seconds(38), 1740)
+            self.assertEqual(RUNNER.stage11_probe_timeout_seconds(100), 3600)
+        with mock.patch.dict(
+            os.environ,
+            {"SATK_GATEWAY_TIMEOUT_SECONDS": "2400"},
+            clear=True,
+        ):
+            self.assertEqual(RUNNER.stage11_probe_timeout_seconds(38), 2400)
+
+    def test_stage11_passes_case_scaled_timeout_to_final_coverage_probe(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            output = root / "outputs"
+            output.mkdir()
+            model = root / "GenericModel.slx"
+            mat = root / "GenericModel.mat"
+            workbook = output / "GenericModel_Test0001_tcsd.xlsx"
+            spec = output / "GenericModel_tcsd_spec.json"
+            model.write_bytes(b"slx")
+            mat.write_bytes(b"mat")
+            Workbook().save(workbook)
+            RUNNER.write_json(spec, {"tests": []})
+            RUNNER.write_json(output / "GenericModel_interface.json", {"outputs": []})
+            RUNNER.write_json(
+                output / ".tcsd-runtime" / "runner-state.json",
+                {
+                    "repairApplied": True,
+                    "workbook": str(workbook),
+                    "spec": str(spec),
+                },
+            )
+            result_path = output / ".tcsd-results" / "stage-11.json"
+            job = {
+                "jobId": "job-stage11-timeout",
+                "_stageResultPath": str(result_path),
+                "input": {
+                    "workspaceDir": str(root),
+                    "outputDir": str(output),
+                    "modelSlxPath": str(model),
+                    "modelMatPath": str(mat),
+                    "projectInitScripts": [],
+                    "coverageThreshold": 80,
+                },
+            }
+            quality = mock.Mock()
+
+            def extract_cases(**_kwargs):
+                cases = output / "GenericModel_cases.json"
+                RUNNER.write_json(cases, {"tests": [{"test_id": index} for index in range(38)]})
+                return cases
+
+            def simulate_and_backfill(**_kwargs):
+                simulation = output / "GenericModel_final_simulation_results.json"
+                RUNNER.write_json(simulation, {"tests": []})
+                return simulation
+
+            def run_probe(**_kwargs):
+                obligations = output / "GenericModel_coverage_obligations.json"
+                coverage = output / "GenericModel_coverage_summary.json"
+                RUNNER.write_json(obligations, {"obligations": []})
+                RUNNER.write_json(coverage, {})
+                return obligations, coverage
+
+            quality.extract_cases.side_effect = extract_cases
+            quality.simulate_and_backfill.side_effect = simulate_and_backfill
+            quality.run_probe.side_effect = run_probe
+            with (
+                mock.patch.object(RUNNER, "load_module", return_value=quality),
+                mock.patch.object(
+                    RUNNER,
+                    "simulation_backfill_evidence",
+                    return_value={"workbookBackfillCount": 1266},
+                ),
+                mock.patch.dict(os.environ, {}, clear=True),
+            ):
+                RUNNER.stage_run(11, job)
+            self.assertEqual(
+                quality.run_probe.call_args.kwargs["gateway_timeout_seconds"],
+                1740,
+            )
+            result = RUNNER.read_json(result_path)
+            self.assertEqual(result["evidence"]["caseCount"], 38)
+            self.assertEqual(result["evidence"]["probeTimeoutSeconds"], 1740)
+
     def test_stage_runtime_error_details_are_strictly_allowlisted(self):
         error = RuntimeError("failed")
         error.details = {
@@ -652,6 +739,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             "satkExitCode": 1,
             "timeoutSeconds": 2400,
             "candidateCount": 3,
+            "caseCount": 38,
             "probeEntryExists": True,
             "probePlanSha256": "a" * 64,
             "probeEntrySha256": "b" * 64,
@@ -661,6 +749,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
         details = RUNNER.public_error_details(error)
         self.assertEqual(details["gatewayJobId"], "eval-safe-job")
         self.assertEqual(details["candidateCount"], 3)
+        self.assertEqual(details["caseCount"], 38)
         self.assertEqual(details["probePlanSha256"], "a" * 64)
         self.assertNotIn("token", details)
         self.assertNotIn("path", details)

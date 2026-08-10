@@ -225,6 +225,7 @@ const task = {
           satkExitCode: 1,
           timeoutSeconds: 2400,
           candidateCount: 3,
+          caseCount: 38,
           probeEntryExists: true,
           probePlanSha256: "a".repeat(64),
           probeEntrySha256: "b".repeat(64),
@@ -372,6 +373,7 @@ try {
     satkExitCode: 1,
     timeoutSeconds: 2400,
     candidateCount: 3,
+    caseCount: 38,
     probePlanSha256: "a".repeat(64),
     probeEntrySha256: "b".repeat(64),
     probeEntryExists: true

@@ -488,7 +488,7 @@ function publicStageErrorDetails(details = null) {
     const value = safeDeliveryText(details[key], 160);
     if (value) result[key] = value;
   }
-  for (const key of ["satkExitCode", "timeoutSeconds", "candidateCount"]) {
+  for (const key of ["satkExitCode", "timeoutSeconds", "candidateCount", "caseCount"]) {
     const value = Number(details[key]);
     if (Number.isFinite(value) && value >= 0 && value <= 1000000) result[key] = value;
   }

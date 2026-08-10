@@ -17,3 +17,4 @@ Execute only stage 11 from the manifest named in the prompt.
 6. Accept only the runtime-written `tcsd-agent-stage-result/v1`; never write a host checkpoint.
 
 Treat MATLAB/SATK timeout or simulation failure as a hard error.
+The host runtime sizes the final coverage-probe timeout from the extracted final test-case count; preserve that timeout and do not submit a second probe from the Agent session.

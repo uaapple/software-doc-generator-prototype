@@ -11,6 +11,9 @@ RESULT_SCHEMA = "tcsd-agent-stage-result/v1"
 STAGE6_PROBE_TIMEOUT_BASE_SECONDS = 600
 STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS = 5
 STAGE6_PROBE_TIMEOUT_MAX_SECONDS = 3600
+STAGE11_PROBE_TIMEOUT_BASE_SECONDS = 600
+STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS = 30
+STAGE11_PROBE_TIMEOUT_MAX_SECONDS = 3600
 
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path); module = importlib.util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module); return module
@@ -28,6 +31,17 @@ def stage6_probe_timeout_seconds(candidate_count: int) -> int:
             configured_floor = STAGE6_PROBE_TIMEOUT_BASE_SECONDS
     adaptive = STAGE6_PROBE_TIMEOUT_BASE_SECONDS + max(0, candidate_count) * STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS
     return min(STAGE6_PROBE_TIMEOUT_MAX_SECONDS, max(configured_floor, adaptive))
+
+def stage11_probe_timeout_seconds(case_count: int) -> int:
+    configured = os.environ.get("SATK_GATEWAY_TIMEOUT_SECONDS", "").strip()
+    configured_floor = STAGE11_PROBE_TIMEOUT_BASE_SECONDS
+    if configured:
+        try:
+            configured_floor = max(1, int(float(configured)))
+        except ValueError:
+            configured_floor = STAGE11_PROBE_TIMEOUT_BASE_SECONDS
+    adaptive = STAGE11_PROBE_TIMEOUT_BASE_SECONDS + max(0, case_count) * STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS
+    return min(STAGE11_PROBE_TIMEOUT_MAX_SECONDS, max(configured_floor, adaptive))
 
 def planning_mapping_assessment(raw: dict[str, Any], obligations: Path, root: Path) -> dict[str, Any]:
     assessment = dict(raw)
@@ -85,7 +99,7 @@ def public_error_details(error: BaseException) -> dict[str, Any]:
     if not isinstance(raw, dict): return {}
     details: dict[str, Any] = {}
     safe_text_keys = {"phase", "gatewayErrorCode", "gatewayJobId", "gatewayStatus"}
-    safe_number_keys = {"satkExitCode", "timeoutSeconds", "candidateCount"}
+    safe_number_keys = {"satkExitCode", "timeoutSeconds", "candidateCount", "caseCount"}
     safe_hash_keys = {"probePlanSha256", "probeEntrySha256"}
     for key in safe_text_keys:
         value = str(raw.get(key) or "").strip()
@@ -806,8 +820,14 @@ def stage_run(
     final_cov=out/f"{model}_final_coverage_summary.json"
     if stage == 11:
         if not state.get("repairApplied"): finish(job,stage,status="skipped",summary="修正未实际应用，引用首轮仿真与覆盖率。",skipReason="修正未实际应用，引用首轮结果。",artifacts=[]); return
-        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface,result_name=f"{model}_final_simulation_results.json"); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
-        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=final_report,evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],**backfill}); return
+        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); case_count=len(read_json(cases).get("tests",[])); probe_timeout_seconds=stage11_probe_timeout_seconds(case_count); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface,result_name=f"{model}_final_simulation_results.json"); backfill=simulation_backfill_evidence(read_json(sim),workbook)
+        try:
+            ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold,gateway_timeout_seconds=probe_timeout_seconds)
+        except quality.SatkEvaluationError as error:
+            error.details["caseCount"] = case_count
+            raise
+        final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
+        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=final_report,evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],"caseCount":case_count,"probeTimeoutSeconds":probe_timeout_seconds,**backfill}); return
     if stage == 12:
         cleanup=out/f"{model}_tcsd_cleanup.json"
         owned_candidates=[out/".tcsd-runtime"/"stage04_interface.m",out/".tcsd-runtime"/"job.json",out/f"{model}_probe_mcdc_entry.m",out/f"{model}_simulate_mcdc_entry.m"]; removed=[]

@@ -378,6 +378,8 @@ Gateway 网络恢复边界固定为：仅 `GET`、`PUT`、`DELETE` 遇到网络�
 
 十二个中文阶段及其职责固定为输入校验、环境检查、工作区初始化、接口提取、覆盖目标分析、状态 Probe、首版用例、仿真回填、首轮覆盖率、Coverage IR 修正、最终验证和产物/清理。Windows 继续使用 `SATK_MATLAB_SESSION_MODE=new`，每次 MATLAB/SATK 调用自包含，不依赖上一 session 的 base workspace。`unsupported`、`unresolved`、有证据的 `unreachable` 或最终覆盖不足以“部分完成”保留，不得伪装成完全达标。
 
+Stage 6 状态 Probe 和 Stage 11 最终覆盖率 Probe 都由宿主 runtime 根据工作量设置 Gateway job timeout，不得回退为固定 600 秒。Stage 6 按 `600 + 5 * candidateCount` 秒计算；Stage 11 按 `600 + 30 * caseCount` 秒计算；两者都把有效 `SATK_GATEWAY_TIMEOUT_SECONDS` 当作最低预算并封顶 3600 秒，与 Gateway 默认最大 job timeout 一致。真实超时仍是硬失败，不在同一 Agent session 内盲目重试。Stage 11 成功证据记录 `caseCount` / `probeTimeoutSeconds`，失败详情也保留安全的 `caseCount`，便于区分容量问题与 MATLAB 执行故障。
+
 部署边界如下：
 
 - `release/linux-prod` 包含页面、任务创建/轮询、V2 状态同步和十二阶段追溯展示；明确排除 `tcsd-stage-*` 与 `tcsd-runtime`。
