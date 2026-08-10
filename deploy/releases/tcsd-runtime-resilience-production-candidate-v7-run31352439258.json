@@ -1,0 +1,130 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-10T03:27:39Z",
+  "candidateTag": "tcsd-runtime-resilience-production-candidate-v7-run31352439258",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "38dcdd1a8102d105fabd7cee1ad1ff0ef64918c1",
+  "containerBuildRevision": "38dcdd1a8102d105fabd7cee1ad1ff0ef64918c1",
+  "deploymentToolRevision": "38dcdd1a8102d105fabd7cee1ad1ff0ef64918c1",
+  "supersedesCandidate": {
+    "tag": "tcsd-worker-hardening-production-candidate-v6-run31336738582",
+    "tagObject": "05d795b3af7e4aef59756b6b9bec7c1f388de7e2",
+    "peeledCommit": "370469323ef1cecd9d2921bb08d096644275f843",
+    "reason": "v6 之后补齐三项生产缺陷：Worker 等待作业在 Platform 保持排队状态；Stage 6 Gateway evaluate job 按候选规模获得 10 至 60 分钟自适应预算；completed-result 看门狗在终止 Hermes 前后从 state DB 恢复唯一 session ID，避免已完成阶段误报遥测缺失。"
+  },
+  "scope": {
+    "summary": "Platform 正确展示 Worker FIFO 排队状态；Stage 6 按 600 + candidateCount * 5 秒计算 evaluate 预算（上限 3600 秒）；看门狗使用本次唯一 prompt SHA-256 从 Hermes state DB 只读恢复 session ID，并继续执行 session 唯一性、token、技能加载和宿主校验硬门禁。",
+    "platformAction": "deploy-new-exact-ghcr-image-via-wx11p-relay",
+    "workerAction": "deploy-new-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-deployed-v9-and-validate-only（受管 Gateway 文件未变）",
+    "schemaCompatibility": "no task schema migration; 新增可选 probeTimeoutSeconds 和 watchdog session recovery event fields"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 31352439258,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "38dcdd1a8102d105fabd7cee1ad1ff0ef64918c1",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31352439258",
+    "job": {
+      "id": 93345641917,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31352439258/job/93345641917",
+      "requiredSteps": [
+        { "name": "Check out exact revision", "conclusion": "success" },
+        { "name": "Run companion tests with Windows PowerShell 5.1", "conclusion": "success" },
+        { "name": "Install locked Node.js dependencies", "conclusion": "success" },
+        { "name": "Reproduce legacy native env wrapper startup", "conclusion": "success" }
+      ]
+    },
+    "jobLogSha256": "95a1784942472e5a281cae926ac58c8874b636eade24ffbe3cb5765b0e035cf7"
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:464b940487275942ffc500ae218649567d219b6720dc1a04866b4c75a34b04f6",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:52e906128a5f598bee6fd35b531c63b32e3e6cbf126075636aff014d6f4e2e4d",
+      "registryIndexDigest": "sha256:52e906128a5f598bee6fd35b531c63b32e3e6cbf126075636aff014d6f4e2e4d",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:f2153b1242dcc5b5e0a6dc08cf43bb4b9a56ea1b53b72fc81293dffa5b7e2384",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:a15067a859510d29bc80a6692b80a6da88c4d46cde8c127e07a512ae1597f3af",
+      "registryIndexDigest": "sha256:a15067a859510d29bc80a6692b80a6da88c4d46cde8c127e07a512ae1597f3af",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "reuse-deployed-v9-and-validate-only",
+    "companionVersion": 9,
+    "releaseAssetIncluded": false,
+    "reason": "本候选未修改任何 Native Gateway companion 受管文件；生产端仅使用现有受支持 v9 脚本执行 ValidateOnly 和 readiness。",
+    "requiredReadiness": [
+      "health HTTP 200",
+      "activeJobs=0",
+      "activeLeases=0",
+      "授权路径确认 /version 与 /capabilities 仍为 v9",
+      "不得重新部署或生成新 Gateway backup"
+    ]
+  },
+  "releaseAssets": {
+    "container-release-38dcdd1a8102.json": "84b8a610da96ba154fc76f0c5e4879a0560a35ec5eace3991243c89711c5437d",
+    "scan-summary.json": "5f19d5b5835403fb193520fe987efe077b99cff758d7fe86ba64b9042381396f",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-464b94048727.sbom.spdx.json": "33cfac128f34251b0f20b58b5d70fbcf2a88439c016df0ed0f3fbb56ad87efdb",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-464b94048727.trivy.json": "edf64aa67981dabb26a436a010d43f0a13b5d92412db58a8a668a39ccffbb1a5",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-464b94048727.trivy.json.policy.json": "2862983419ef9b192fba00d1033fe68dec7b9d8617d24f72d161301bd896a6f7",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-f2153b1242dc.sbom.spdx.json": "9572cfd9c74227cf414a6f0b94b09066b34fff17477c566232ff970cc00436e5",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-f2153b1242dc.trivy.json": "2d7f95e692fe19264ee3f6308c0216d189e0458b67e0ac7630c5a8c4ec0879ae",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-f2153b1242dc.trivy.json.policy.json": "3a173e3e553383a4a5380a307de2732450af9485e05ee3e189fb6d52682ece10"
+  },
+  "archiveVerifier": {
+    "path": "scripts/verify_image_archive.py",
+    "sha256": "ce20f85fa2dc8e9a6adf45fb94f15527a1197218f88d729b93260d9d6d347bb9",
+    "minimumPython": "3.8",
+    "compatibilityTest": "tests/verify-image-archive-tests.py",
+    "regularReleaseAsset": false
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "linuxPlatformDistribution": "fixed-wx11p-relay; linux-direct-ghcr-not-supported-by-topology",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-runtime-resilience-production-candidate-v7-run31352439258",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-runtime-resilience-production-candidate-v7-run31352439258"
+    }
+  },
+  "rollbackAnchors": {
+    "expectedCurrentProductionCandidate": "tcsd-worker-hardening-production-candidate-v5-run31163584308",
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:436d72ef8f15e22ee811491b6f45758cfc8896eaa01603074da876e84dda6efc",
+      "imageRevision": "sha256:6edc53a7f901ccd52aa354616beca57c9c6a1ffeb3e753d226266bb5e96b2938",
+      "linuxLocalConfigImageId": "record-actual-before-switch"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:e88d57e406664505bfd80486c03b6cd87624cdbbce199e44259d80e573e11550",
+      "imageRevision": "sha256:a1aac8000415ed71edac7712fcb513a9946b36d33e887d7366969c1c558866b3"
+    },
+    "nativeGateway": "已部署 v9 保持不变；失败回滚不涉及 Gateway",
+    "rule": "部署前以生产容器实际 inspect 结果为权威；若与上述预期不一致，记录实际精确 digest/image ID 作为回滚锚点，不得用历史值覆盖实际状态。"
+  },
+  "acceptance": {
+    "platformQueuedStateMapping": "passed-unit-and-main-suite",
+    "stage6AdaptiveGatewayTimeout": "passed-422-candidate-and-upper-bound-tests",
+    "watchdogSessionRecovery": "passed-no-stdout-state-db-resolution-and-contract-tests",
+    "mainTestSuite": "passed-194-core-46-slx-63-python-and-all-container-contract-suites",
+    "containerScans": "passed-with-policy-finding-count-zero; grype-not-installed-non-blocking",
+    "windowsPowerShell51": "passed-run-31352439258",
+    "productionDeployment": "not-performed",
+    "realTaskAcceptance": "pending-user"
+  }
+}
