@@ -13,6 +13,13 @@ from typing import Any
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
 DEFAULT_HOLDS = (0.1, 1.0, 5.0)
+TEST_FIELDS = {
+    "row", "test_id", "init_values", "init_params", "steps", "evidence_step", "target",
+}
+TARGET_FIELDS = {
+    "operator_id", "port_index", "pattern_type", "control_input", "transition", "hold_s",
+}
+STEP_FIELDS = {"index", "delay_s", "input_updates", "param_updates"}
 
 
 @dataclass
@@ -188,6 +195,39 @@ def edge_steps(*, control: str, start: int, end: int, sample_time: float) -> lis
     ]
 
 
+def validate_test_schema(tests: list[dict[str, Any]]) -> None:
+    for index, test in enumerate(tests, start=1):
+        fields = set(test)
+        if fields != TEST_FIELDS:
+            raise ValueError(
+                f"state probe test {index} fields differ from the required schema: "
+                f"missing={sorted(TEST_FIELDS - fields)}, extra={sorted(fields - TEST_FIELDS)}"
+            )
+        target = test.get("target")
+        if not isinstance(target, dict):
+            raise ValueError(f"state probe test {index} target must be an object")
+        target_fields = set(target)
+        if target_fields != TARGET_FIELDS:
+            raise ValueError(
+                f"state probe test {index} target fields differ from the required schema: "
+                f"missing={sorted(TARGET_FIELDS - target_fields)}, "
+                f"extra={sorted(target_fields - TARGET_FIELDS)}"
+            )
+        steps = test.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise ValueError(f"state probe test {index} steps must be a non-empty array")
+        for step_index, step in enumerate(steps, start=1):
+            if not isinstance(step, dict):
+                raise ValueError(f"state probe test {index} step {step_index} must be an object")
+            step_fields = set(step)
+            if step_fields != STEP_FIELDS:
+                raise ValueError(
+                    f"state probe test {index} step {step_index} fields differ from the required schema: "
+                    f"missing={sorted(STEP_FIELDS - step_fields)}, "
+                    f"extra={sorted(step_fields - STEP_FIELDS)}"
+                )
+
+
 def build_plan(report: dict[str, Any], max_candidates: int, sample_time: float) -> dict[str, Any]:
     tests: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
@@ -299,9 +339,11 @@ def build_plan(report: dict[str, Any], max_candidates: int, sample_time: float) 
                                 "init_values": init_values,
                                 "init_params": init_params,
                                 "steps": steps,
+                                "evidence_step": 2,
                                 "target": {
                                     "operator_id": op_id,
                                     "port_index": index,
+                                    "pattern_type": "generic-state-timing",
                                     "control_input": control,
                                     "transition": f"{start}->{end}",
                                     "hold_s": hold,
@@ -318,6 +360,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, sample_time: float) 
             if not target["candidate_count"]:
                 target["status"] = "candidate_exhausted"
             targets.append(target)
+    validate_test_schema(tests)
     return {
         "schema": "simulink-ut-state-probe-plan/v1",
         "model": report.get("model"),

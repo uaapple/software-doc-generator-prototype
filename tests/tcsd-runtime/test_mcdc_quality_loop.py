@@ -62,8 +62,82 @@ class McdcQualityLoopTests(unittest.TestCase):
         self.assertTrue(plan["targets"][0]["bounded"])
         for test in plan["tests"]:
             self.assertEqual(test["init_values"]["Request"], 1)
+            self.assertEqual(test["evidence_step"], 2)
+            self.assertEqual(test["target"]["pattern_type"], "generic-state-timing")
             self.assertIn(test["target"]["transition"], {"0->1", "1->0"})
         self.assertTrue(any(step["delay_s"] > 0.25 for test in plan["tests"] for step in test["steps"]))
+
+    def test_state_probe_planner_keeps_edge_and_generic_test_fields_identical(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "model": "MixedStateModel",
+            "operators": [{
+                "id": "MixedStateModel:1",
+                "operator": "AND",
+                "ports": [
+                    {
+                        "index": 1,
+                        "trace": {
+                            "kind": "subsystem",
+                            "name": "EdgeRising",
+                            "source": {"kind": "root_inport", "signal": "EdgeInput"},
+                        },
+                    },
+                    {
+                        "index": 2,
+                        "trace": {
+                            "kind": "relational",
+                            "operator": ">",
+                            "inputs": [
+                                {
+                                    "trace": {
+                                        "kind": "stateful",
+                                        "inputs": [{"trace": {"kind": "root_inport", "signal": "TimerEnable"}}],
+                                    }
+                                },
+                                {"trace": {"kind": "constant", "value": "Wait_C", "resolvedValue": 0.25}},
+                            ],
+                        },
+                    },
+                ],
+            }],
+        }
+
+        plan = planner.build_plan(trace, max_candidates=4, sample_time=0.01)
+
+        pattern_types = {test["target"]["pattern_type"] for test in plan["tests"]}
+        self.assertEqual(pattern_types, {"rising-edge", "generic-state-timing"})
+        self.assertEqual(len({frozenset(test) for test in plan["tests"]}), 1)
+        self.assertEqual(len({frozenset(test["target"]) for test in plan["tests"]}), 1)
+        self.assertEqual(
+            len({frozenset(step) for test in plan["tests"] for step in test["steps"]}),
+            1,
+        )
+        self.assertTrue(all(test["evidence_step"] == 2 for test in plan["tests"]))
+
+    def test_state_probe_planner_rejects_inconsistent_test_fields_before_matlab(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        valid = {
+            "row": 1,
+            "test_id": "STATE_PROBE_0001",
+            "init_values": {},
+            "init_params": {},
+            "steps": [{"index": 1, "delay_s": 0.01, "input_updates": {}, "param_updates": {}}],
+            "evidence_step": 1,
+            "target": {
+                "operator_id": "Model:1",
+                "port_index": 1,
+                "pattern_type": "generic-state-timing",
+                "control_input": "Enable",
+                "transition": "0->1",
+                "hold_s": 0.01,
+            },
+        }
+        invalid = dict(valid)
+        invalid.pop("evidence_step")
+
+        with self.assertRaisesRegex(ValueError, "fields differ from the required schema"):
+            planner.validate_test_schema([valid, invalid])
 
     def test_state_probe_planner_reports_unsupported_semantics_without_guessing(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")
