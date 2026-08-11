@@ -48,6 +48,23 @@ class JsonResponse:
 
 
 class SatkGatewayTests(unittest.TestCase):
+    def test_worker_rejects_matlab_chinese_error_text_wrapped_as_success(self):
+        response = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": "\n".join([
+                "TCSD_PROJECT_INIT_SCRIPTS_EXECUTED=init_Global.m",
+                "错误使用 compiled_input_metadata (第 707 行)",
+                "变量 'MissingCalibration_C' 不存在。",
+            ]),
+        }
+        self.assertTrue(SATK.mcp_response_failed(response))
+        self.assertFalse(SATK.mcp_response_failed({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": "TCSD_PROJECT_INIT_SCRIPTS_EXECUTED=init_Global.m\nSimulation completed.",
+        }))
+
     def test_direct_mcp_command_derives_display_mode_without_changing_session_mode(self):
         command = SATK.build_server_command(
             Path("/opt/matlab-mcp-server"),

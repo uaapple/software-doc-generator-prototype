@@ -7,6 +7,7 @@ import json
 import hashlib
 import os
 import platform
+import re
 import shutil
 import signal
 import subprocess
@@ -293,7 +294,23 @@ def mcp_response_failed(message: dict) -> bool:
     if "error" in message:
         return True
     result = message.get("result")
-    return isinstance(result, dict) and result.get("isError") is True
+    if isinstance(result, dict) and result.get("isError") is True:
+        return True
+    if isinstance(result, str):
+        text = result
+    elif isinstance(result, dict) and isinstance(result.get("content"), list):
+        text = "\n".join(
+            str(item.get("text") or "")
+            for item in result["content"]
+            if isinstance(item, dict) and item.get("type") == "text"
+        )
+    else:
+        text = ""
+    normalized = text.strip()
+    return bool(
+        re.search(r"^(?:error\b|failed\s+to\b|failure\b|unable\s+to\b|cannot\b)", normalized, re.IGNORECASE)
+        or re.search(r"(?:^|\r?\n)\s*(?:error\s+using\b|error\s+in\b|错误使用|出错)\s*", normalized, re.IGNORECASE)
+    )
 
 
 def mirror_runtime_matlab_scripts(code: str, *, environ=None) -> str:
