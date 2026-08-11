@@ -19,6 +19,7 @@ SESSION_READER = RUNTIME / "scripts" / "read_hermes_session.py"
 SESSION_RESOLVER = RUNTIME / "scripts" / "resolve_hermes_session.py"
 SATK_SCRIPT = RUNTIME / "scripts" / "satk_eval.py"
 REPAIR_SCRIPT = RUNTIME / "scripts" / "validate_agent_coverage_repair.py"
+HOST_VALIDATOR_SCRIPT = RUNTIME / "scripts" / "host_validate_tcsd_stage.py"
 SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
 RUNNER = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
@@ -35,9 +36,96 @@ REPAIR_SPEC = importlib.util.spec_from_file_location("validate_agent_coverage_re
 REPAIR = importlib.util.module_from_spec(REPAIR_SPEC)
 assert REPAIR_SPEC.loader
 REPAIR_SPEC.loader.exec_module(REPAIR)
+HOST_VALIDATOR_SPEC = importlib.util.spec_from_file_location("host_validate_tcsd_stage", HOST_VALIDATOR_SCRIPT)
+HOST_VALIDATOR = importlib.util.module_from_spec(HOST_VALIDATOR_SPEC)
+assert HOST_VALIDATOR_SPEC.loader
+HOST_VALIDATOR_SPEC.loader.exec_module(HOST_VALIDATOR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_stage10_host_rebuild_uses_the_same_prior_planning_inputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "outputs"
+            output.mkdir()
+            coverage_path = output / "GenericModel_initial_coverage_summary.json"
+            traces_path = output / "GenericModel_logical_traces.json"
+            coverage_ir_path = output / "GenericModel_coverage_ir.json"
+            synthesis_path = output / "GenericModel_coverage_ir_synthesis_iter0.json"
+            interface_path = output / "GenericModel_interface.json"
+            coverage = {
+                "models": {
+                    "GenericModel": {
+                        "condition": {"covered": 1, "total": 2, "percent": 50},
+                        "decision": {"covered": 1, "total": 2, "percent": 50},
+                        "mcdc": {"covered": 1, "total": 2, "percent": 50},
+                        "items": [{
+                            "id": "remaining",
+                            "coverage_class": "Condition",
+                            "block_path": "GenericModel/Compare",
+                            "missing_outcomes": ["equal boundary"],
+                        }],
+                    },
+                },
+            }
+            traces = {"model": "GenericModel", "operators": []}
+            coverage_ir = {
+                "summary": {"executionReadiness": {"totalTargetCount": 3, "executableTargetCount": 1}},
+                "items": [{
+                    "id": "compare-equal",
+                    "coverage_class": "Condition",
+                    "block": {"path": "GenericModel/Compare", "sid": "GenericModel:1"},
+                    "required_outcome": "equal boundary",
+                    "patternType": "simple_comparator_boundary",
+                    "controller": {"direct_inputs": {"InputVoltage": 320}, "parameters": {}},
+                    "stimulus": {"steps": []},
+                    "reachability": {"status": "required"},
+                }],
+            }
+            synthesis = {
+                "planned_candidate_count": 3,
+                "added": 1,
+                "duplicate_skipped_count": 2,
+                "control_conflict_skipped_count": 0,
+                "unresolved_threshold_skipped_count": 0,
+            }
+            interface = {"schema": "tcsd-model-interface/v1", "inputs": ["InputVoltage"], "outputs": ["Output"]}
+            for path, value in (
+                (coverage_path, coverage),
+                (traces_path, traces),
+                (coverage_ir_path, coverage_ir),
+                (synthesis_path, synthesis),
+                (interface_path, interface),
+            ):
+                path.write_text(json.dumps(value), encoding="utf-8")
+            brief = REPAIR.build_brief(
+                job_id="job-generic",
+                model="GenericModel",
+                coverage=coverage,
+                traces=traces,
+                coverage_ir_path=str(coverage_ir_path),
+                coverage_report_path=str(coverage_path),
+                trace_path=str(traces_path),
+                interface_path=str(interface_path),
+                threshold=80.0,
+                coverage_ir=coverage_ir,
+                initial_synthesis=synthesis,
+            )
+            request = {
+                "jobId": "job-generic",
+                "workspaceDir": str(root),
+                "coverageThreshold": 80.0,
+            }
+
+            self.maxDiff = None
+            self.assertEqual(HOST_VALIDATOR.rebuild_repair_brief(request, brief), brief)
+            HOST_VALIDATOR.validate_repair_brief(request, brief)
+
+            tampered = json.loads(json.dumps(brief))
+            tampered["priorPlanning"]["stage7InitialGeneration"]["actualAddedCount"] = 2
+            with self.assertRaisesRegex(ValueError, "does not match host-rebuilt"):
+                HOST_VALIDATOR.validate_repair_brief(request, tampered)
+
     def test_stage10_brief_carries_prior_planning_and_avoids_identical_retries(self):
         brief = REPAIR.build_brief(
             job_id="job-generic",

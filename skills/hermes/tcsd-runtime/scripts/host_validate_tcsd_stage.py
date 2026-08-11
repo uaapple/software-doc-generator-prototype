@@ -573,11 +573,7 @@ def validate_coverage(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
-    _, brief = find_json_schema(request, BRIEF_SCHEMA)
-    _, proposal = find_json_schema(request, PROPOSAL_SCHEMA)
-    _, validation = find_json_schema(request, VALIDATION_SCHEMA)
-    _, repair_ir = find_json_schema(request, IR_SCHEMA)
+def rebuild_repair_brief(request: dict[str, Any], brief: dict[str, Any]) -> dict[str, Any]:
     root = Path(request["workspaceDir"])
     evidence = brief.get("evidence") if isinstance(brief.get("evidence"), dict) else {}
     coverage_ref = str(evidence.get("coverageReport") or "")
@@ -586,9 +582,12 @@ def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
     interface_ref = str(evidence.get("modelInterface") or "")
     coverage_path = resolve_workspace_path(root, coverage_ref, "stage 10 source coverage report")
     traces_path = resolve_workspace_path(root, traces_ref, "stage 10 source logical traces")
-    resolve_workspace_path(root, coverage_ir_ref, "stage 10 source Coverage IR")
-    interface_path = resolve_workspace_path(root, interface_ref, "stage 10 source model interface")
-    expected_brief = build_brief(
+    coverage_ir_path = resolve_workspace_path(root, coverage_ir_ref, "stage 10 source Coverage IR")
+    resolve_workspace_path(root, interface_ref, "stage 10 source model interface")
+    synthesis_path = coverage_ir_path.with_name(
+        coverage_ir_path.name.replace("_coverage_ir.json", "_coverage_ir_synthesis_iter0.json")
+    )
+    return build_brief(
         job_id=str(request.get("jobId") or ""),
         model=str(brief.get("model") or ""),
         coverage=read_json(coverage_path),
@@ -598,9 +597,26 @@ def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
         trace_path=traces_ref,
         interface_path=interface_ref,
         threshold=float(request.get("coverageThreshold") or 80),
+        coverage_ir=read_json(coverage_ir_path),
+        initial_synthesis=read_json(synthesis_path) if synthesis_path.is_file() else {},
     )
+
+
+def validate_repair_brief(request: dict[str, Any], brief: dict[str, Any]) -> None:
+    expected_brief = rebuild_repair_brief(request, brief)
     if canonical(brief) != canonical(expected_brief):
         raise ValueError("Agent repair brief does not match host-rebuilt measured coverage deficits")
+
+
+def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
+    _, brief = find_json_schema(request, BRIEF_SCHEMA)
+    _, proposal = find_json_schema(request, PROPOSAL_SCHEMA)
+    _, validation = find_json_schema(request, VALIDATION_SCHEMA)
+    _, repair_ir = find_json_schema(request, IR_SCHEMA)
+    validate_repair_brief(request, brief)
+    root = Path(request["workspaceDir"])
+    evidence = brief.get("evidence") if isinstance(brief.get("evidence"), dict) else {}
+    interface_ref = str(evidence.get("modelInterface") or "")
     interface_path = resolve_workspace_path(
         root,
         str(request.get("interfacePath") or ""),
