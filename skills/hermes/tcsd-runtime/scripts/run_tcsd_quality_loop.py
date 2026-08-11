@@ -491,22 +491,25 @@ def extract_cases(
     model: str,
     workbook: Path,
     interface_json: Path,
+    coverage_ir: Path | None = None,
 ) -> Path:
     inputs = ",".join(load_interface_inputs(interface_json))
     case_json = root_dir / "outputs" / f"{model}_cases_mcdc.json"
-    run(
-        [
-            python,
-            str(scripts / "extract_tcsd_cases.py"),
-            "--workbook",
-            str(workbook),
-            "--inputs",
-            inputs,
-            "--output",
-            str(case_json),
-        ],
-        cwd=root_dir,
-    )
+    command = [
+        python,
+        str(scripts / "extract_tcsd_cases.py"),
+        "--workbook",
+        str(workbook),
+        "--model",
+        model,
+        "--inputs",
+        inputs,
+        "--output",
+        str(case_json),
+    ]
+    if coverage_ir is not None:
+        command.extend(["--coverage-ir", str(coverage_ir)])
+    run(command, cwd=root_dir)
     return case_json
 
 
@@ -524,6 +527,7 @@ def run_probe(
     case_json: Path | None = None,
     output_name: str = "logic_probe_results.json",
     gateway_timeout_seconds: int | None = None,
+    build_obligations: bool = True,
 ) -> tuple[Path, Path | None]:
     probe_results = root_dir / "outputs" / output_name
     coverage_json = root_dir / "outputs" / f"{model}_coverage_summary.json"
@@ -575,7 +579,8 @@ def run_probe(
     logical_mappings = root_dir / "outputs" / f"{model}_logical_operators.json"
     if logical_mappings.exists():
         cmd.extend(["--logical-mappings", str(logical_mappings)])
-    run(cmd, cwd=root_dir, check=False)
+    if build_obligations:
+        run(cmd, cwd=root_dir, check=False)
     return obligations, coverage_json if collect_coverage else None
 
 

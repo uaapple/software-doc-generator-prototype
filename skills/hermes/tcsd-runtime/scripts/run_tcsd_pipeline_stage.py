@@ -283,6 +283,37 @@ def simulation_backfill_evidence(simulation: dict[str, Any], workbook: Path) -> 
         "caseOutputCounts": case_outputs,
         "backfillItems": matched,
     }
+
+
+def initial_recipe_probe_evidence(cases: dict[str, Any], probe: dict[str, Any], model: str) -> dict[str, Any]:
+    tests = cases.get("tests") if isinstance(cases.get("tests"), list) else []
+    targeted = {
+        str(test.get("test_id")): test.get("target")
+        for test in tests
+        if isinstance(test, dict)
+        and isinstance(test.get("target"), dict)
+        and test["target"].get("expected_vector")
+    }
+    report = probe.get(model, probe) if isinstance(probe, dict) else {}
+    observations = report.get("observations") if isinstance(report, dict) else []
+    observations = observations if isinstance(observations, list) else []
+    matched = {
+        str(item.get("test_id"))
+        for item in observations
+        if isinstance(item, dict) and item.get("prediction_status") == "matched_prediction"
+    }
+    failed = sorted(test_id for test_id in targeted if test_id not in matched)
+    if failed:
+        raise RuntimeError(
+            "initial coverage recipe probe did not observe the planned logical vector for Test cases: "
+            + ", ".join(failed)
+        )
+    return {
+        "plannedCandidateCount": len(targeted),
+        "verifiedCandidateCount": len(targeted),
+        "observationCount": len(observations),
+        "failedCandidateCount": 0,
+    }
 def coverage_meets(report: dict[str, Any], threshold: float) -> bool:
     records = report.get("models", report)
     valid = [record for record in records.values() if isinstance(record, dict) and all(key in record for key in ("condition", "decision", "mcdc"))]
@@ -470,7 +501,55 @@ def stage_run(
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)
         spec, workbook, synthesis = quality.synthesize_ir_once(python=sys.executable, scripts=scripts(), root_dir=root, template=scripts().parent/"assets"/"templates"/"tcsd_template.xlsx", model=model, spec=spec, workbook=workbook, interface_json=interface, coverage_ir=coverage_ir, iteration=0)
         synthesis_report = out / f"{model}_coverage_ir_synthesis_iter0.json"
-        quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface); state.update({"spec": str(spec), "workbook": str(workbook), "initialSynthesis": str(synthesis_report)}); save_state(job, state)
+        quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface)
+        verification_results = out / f"{model}_initial_recipe_probe_results.json"
+        verification_artifacts = []
+        if int(synthesis.get("added") or 0) > 0:
+            verification_cases = quality.extract_cases(
+                python=sys.executable,
+                scripts=scripts(),
+                root_dir=root,
+                model=model,
+                workbook=workbook,
+                interface_json=interface,
+                coverage_ir=coverage_ir,
+            )
+            quality.run_probe(
+                python=sys.executable,
+                scripts=scripts(),
+                root_dir=root,
+                model=model,
+                mat_file=inp["modelMatPath"],
+                init_scripts=inp.get("projectInitScripts", []),
+                unreachable_overrides="",
+                collect_coverage=False,
+                coverage_threshold=float(inp.get("coverageThreshold", 80)),
+                case_json=verification_cases,
+                output_name=verification_results.name,
+                build_obligations=False,
+            )
+            probe_evidence = initial_recipe_probe_evidence(
+                read_json(verification_cases),
+                read_json(verification_results),
+                model,
+            )
+            probe_evidence["unverifiedCandidateCount"] = max(
+                0,
+                int(synthesis.get("added") or 0) - int(probe_evidence["plannedCandidateCount"]),
+            )
+            verification_artifacts = [
+                artifact(root, verification_cases, "json", "initial-recipe-cases"),
+                artifact(root, verification_results, "json", "initial-recipe-probe"),
+            ]
+        else:
+            probe_evidence = {
+                "plannedCandidateCount": 0,
+                "verifiedCandidateCount": 0,
+                "observationCount": 0,
+                "failedCandidateCount": 0,
+                "unverifiedCandidateCount": 0,
+            }
+        state.update({"spec": str(spec), "workbook": str(workbook), "initialSynthesis": str(synthesis_report)}); save_state(job, state)
         planning_obligations = out / f"{model}_planning_obligations_snapshot.json"
         planning_assessment = out / f"{model}_planning_mapping_assessment.json"
         shutil.copy2(obligations, planning_obligations)
@@ -501,12 +580,14 @@ def stage_run(
                 artifact(root, synthesis_report, "json", "initial-case-synthesis"),
                 artifact(root, planning_obligations, "json", "planning-obligations"),
                 artifact(root, planning_assessment, "json", "planning-mapping-assessment"),
+                *verification_artifacts,
             ],
             evidence={
                 "planningMappingAssessment": str(planning_assessment.relative_to(root)),
                 "mappingAuthority": "planning",
                 "supersededByStage": 9,
                 "initialCaseGeneration": assessment["generation"],
+                "initialRecipeProbe": probe_evidence,
             },
         ); return
     workbook = Path(state["workbook"]); spec = Path(state["spec"]); threshold = float(inp.get("coverageThreshold", 80))

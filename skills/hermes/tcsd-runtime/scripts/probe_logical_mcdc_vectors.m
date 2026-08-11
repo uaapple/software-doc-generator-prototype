@@ -387,7 +387,7 @@ end
 
 function status = prediction_status(target, vectors)
 status = 'not_predicted';
-if isempty(fieldnames(target)) || ~isfield(target, 'operator_id') || ~isfield(target, 'port_index')
+if isempty(fieldnames(target)) || ~isfield(target, 'operator_id')
     return;
 end
 fields = fieldnames(vectors);
@@ -395,6 +395,20 @@ for i = 1:numel(fields)
     vector = vectors.(fields{i});
     if ~strcmp(char(string(vector.id)), char(string(target.operator_id))) || ~vector.ok
         continue;
+    end
+    if isfield(target, 'expected_vector') && ~isempty(target.expected_vector)
+        expectedVector = logical(target.expected_vector(:)');
+        actualVector = logical(vector.values(:)');
+        if isequal(actualVector, expectedVector)
+            status = 'matched_prediction';
+        else
+            status = 'simulation_mismatch';
+        end
+        return;
+    end
+    if ~isfield(target, 'port_index')
+        status = 'target_unavailable';
+        return;
     end
     portIndex = double(target.port_index);
     if portIndex < 1 || portIndex > numel(vector.values)

@@ -67,6 +67,7 @@ PROBE_PLAN_SCHEMA = "simulink-ut-state-probe-plan/v1"
 PROBE_RESULT_SCHEMA = "simulink-ut-logical-mcdc-probe/v2"
 REPAIR_CANDIDATE_SCHEMA = "tcsd-repair-candidate-validation/v1"
 SYNTHESIS_SCHEMA = "simulink-ut-tcsd-coverage-ir-synthesis/v1"
+EXTRACTED_CASES_SCHEMA = "tcsd-extracted-cases/v1"
 
 
 def self_check() -> dict[str, Any]:
@@ -481,6 +482,35 @@ def validate_workbook_stage(request: dict[str, Any], require_exp_values: bool) -
     }
 
 
+def validate_initial_recipe_probe(request: dict[str, Any]) -> dict[str, Any]:
+    _, synthesis = find_json_schema(request, SYNTHESIS_SCHEMA)
+    added = int(synthesis.get("added") or 0)
+    claimed = request.get("evidence") if isinstance(request.get("evidence"), dict) else {}
+    claimed_probe = claimed.get("initialRecipeProbe") if isinstance(claimed.get("initialRecipeProbe"), dict) else {}
+    if added <= 0:
+        expected = {
+            "plannedCandidateCount": 0,
+            "verifiedCandidateCount": 0,
+            "observationCount": 0,
+            "failedCandidateCount": 0,
+            "unverifiedCandidateCount": 0,
+        }
+    else:
+        _, cases = find_json_schema(request, EXTRACTED_CASES_SCHEMA)
+        _, probe = find_json_schema(request, PROBE_RESULT_SCHEMA)
+        model = str(cases.get("model") or "")
+        if not model:
+            raise ValueError("initial recipe cases did not record the model name")
+        expected = pipeline_stage_module.initial_recipe_probe_evidence(cases, probe, model)
+        expected["unverifiedCandidateCount"] = max(
+            0,
+            added - int(expected["plannedCandidateCount"]),
+        )
+    if canonical(claimed_probe) != canonical(expected):
+        raise ValueError("initial recipe probe evidence does not match host-parsed observations")
+    return {"initialRecipeProbe": expected}
+
+
 def validate_simulation(request: dict[str, Any]) -> dict[str, Any]:
     workbook = find_workbook(request)
     simulation_path, simulation = find_json_schema(request, SIMULATION_SCHEMA)
@@ -687,6 +717,7 @@ def validate(request: dict[str, Any]) -> dict[str, Any]:
         details.update(validate_probe(request))
     elif stage == 7:
         details.update(validate_workbook_stage(request, require_exp_values=False))
+        details.update(validate_initial_recipe_probe(request))
     elif stage == 8:
         details.update(validate_workbook_stage(request, require_exp_values=True))
         details.update(validate_simulation(request))

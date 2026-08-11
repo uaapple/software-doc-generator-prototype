@@ -198,7 +198,8 @@ def resolved_constant(node: dict[str, Any]) -> tuple[float, str, str] | None:
     resolved = parse_literal(node.get("resolvedValue"))
     if resolved is None:
         return None
-    return resolved, "resolved_workspace_symbol", expression
+    source = str(node.get("resolvedSource") or "resolved_workspace_symbol")
+    return resolved, source, expression
 
 
 def direct_root(node: dict[str, Any]) -> str | None:
@@ -206,6 +207,65 @@ def direct_root(node: dict[str, Any]) -> str | None:
     if str(node.get("kind") or "").lower() == "root_inport":
         return str(node.get("signal") or node.get("name") or "").strip() or None
     return None
+
+
+def resolved_block_parameter(node: dict[str, Any], name: str) -> tuple[float, str] | None:
+    params = node.get("params") if isinstance(node.get("params"), dict) else {}
+    value = parse_literal(params.get(f"{name}Resolved"))
+    if value is None:
+        value = parse_literal(params.get(name))
+    if value is None:
+        return None
+    return value, str(params.get(f"{name}ResolvedSource") or "model_parameter")
+
+
+def affine_root_controller(node: dict[str, Any]) -> dict[str, Any] | None:
+    node = unwrap(node)
+    kind = str(node.get("kind") or "").lower()
+    if kind == "root_inport":
+        root = direct_root(node)
+        if not root:
+            return None
+        return {
+            "root_input": root,
+            "scale": 1.0,
+            "offset": 0.0,
+            "data_type": str(node.get("dataType") or ""),
+            "chain": [],
+        }
+    if kind != "block":
+        return None
+    semantic = str(node.get("semantic") or node.get("blockType") or "").lower()
+    nested = children(node)
+    if len(nested) != 1:
+        return None
+    upstream = affine_root_controller(nested[0])
+    if not upstream:
+        return None
+    chain = list(upstream["chain"])
+    if semantic == "gain":
+        resolved = resolved_block_parameter(node, "Gain")
+        if not resolved or math.isclose(resolved[0], 0.0, rel_tol=0.0, abs_tol=1e-15):
+            return None
+        gain, source = resolved
+        upstream["scale"] *= gain
+        upstream["offset"] *= gain
+        chain.append({"kind": "gain", "path": node.get("path"), "value": gain, "source": source})
+    elif semantic == "bias":
+        resolved = resolved_block_parameter(node, "Bias")
+        if not resolved:
+            return None
+        bias, source = resolved
+        upstream["offset"] += bias
+        chain.append({"kind": "bias", "path": node.get("path"), "value": bias, "source": source})
+    elif semantic == "datatypeconversion":
+        params = node.get("params") if isinstance(node.get("params"), dict) else {}
+        output_type = str(params.get("OutDataTypeStr") or "")
+        chain.append({"kind": "data_type_conversion", "path": node.get("path"), "dataType": output_type})
+    else:
+        return None
+    upstream["chain"] = chain
+    return upstream
 
 
 def contains_kind(node: dict[str, Any], expected: set[str]) -> bool:
@@ -219,24 +279,28 @@ def relational_controller(node: dict[str, Any]) -> dict[str, Any] | None:
     terms = children(node)
     if len(terms) != 2:
         return None
-    left_root, right_root = direct_root(terms[0]), direct_root(terms[1])
+    left_affine, right_affine = affine_root_controller(terms[0]), affine_root_controller(terms[1])
     left_constant, right_constant = resolved_constant(terms[0]), resolved_constant(terms[1])
-    if left_root and right_constant:
+    if left_affine and right_constant:
         threshold, source, expression = right_constant
+        root_boundary = (threshold - float(left_affine["offset"])) / float(left_affine["scale"])
         return {
-            "root_input": left_root,
+            **left_affine,
             "root_on_left": True,
             "threshold": threshold,
+            "root_boundary": root_boundary,
             "threshold_source": source,
             "threshold_expression": expression,
             "operator": str(node.get("operator") or "").strip(),
         }
-    if right_root and left_constant:
+    if right_affine and left_constant:
         threshold, source, expression = left_constant
+        root_boundary = (threshold - float(right_affine["offset"])) / float(right_affine["scale"])
         return {
-            "root_input": right_root,
+            **right_affine,
             "root_on_left": False,
             "threshold": threshold,
+            "root_boundary": root_boundary,
             "threshold_source": source,
             "threshold_expression": expression,
             "operator": str(node.get("operator") or "").strip(),
@@ -260,13 +324,59 @@ def comparison_result(operator: str, left: float, right: float) -> bool:
     raise ValueError(f"unsupported relational operator {operator!r}")
 
 
-def boundary_values(threshold: float) -> list[tuple[str, float]]:
-    delta = 1.0 if float(threshold).is_integer() else max(0.001, abs(threshold) * 0.01)
-    return [
+def numeric_domain(data_type: str) -> tuple[float | None, float | None, float | None]:
+    compact = str(data_type or "").strip().lower().replace(" ", "")
+    if compact in {"boolean", "bool"}:
+        return 0.0, 1.0, 1.0
+    integer = re.fullmatch(r"(u?)int(8|16|32|64)", compact)
+    if integer:
+        unsigned, bits = bool(integer.group(1)), int(integer.group(2))
+        return (0.0, float(2**bits - 1), 1.0) if unsigned else (
+            float(-(2 ** (bits - 1))),
+            float(2 ** (bits - 1) - 1),
+            1.0,
+        )
+    fixed = re.fullmatch(r"fixdt\((0|1),(\d+),([^,()]+)(?:,([^,()]+))?\)", compact)
+    if fixed:
+        signed, bits = fixed.group(1) == "1", int(fixed.group(2))
+        third, fourth = fixed.group(3), fixed.group(4)
+        if fourth is None and re.fullmatch(r"\d+", third):
+            step = 2.0 ** (-int(third))
+            bias = 0.0
+        else:
+            step = parse_literal(third)
+            bias = parse_literal(fourth or 0)
+            if step is None or bias is None or step <= 0:
+                return None, None, None
+        raw_min = -(2 ** (bits - 1)) if signed else 0
+        raw_max = 2 ** (bits - 1) - 1 if signed else 2**bits - 1
+        return raw_min * step + bias, raw_max * step + bias, step
+    return None, None, None
+
+
+def boundary_values(threshold: float, data_type: str = "") -> list[tuple[str, float]]:
+    minimum, maximum, type_step = numeric_domain(data_type)
+    delta = type_step or (1.0 if float(threshold).is_integer() else max(0.001, abs(threshold) * 0.01))
+    raw = [
         ("below", threshold - delta),
         ("equal", threshold),
         ("above", threshold + delta),
     ]
+    values: list[tuple[str, float]] = []
+    for position, value in raw:
+        if minimum is not None and value < minimum - 1e-12:
+            continue
+        if maximum is not None and value > maximum + 1e-12:
+            continue
+        if not any(math.isclose(value, prior, rel_tol=0.0, abs_tol=1e-12) for _, prior in values):
+            values.append((position, value))
+    return values
+
+
+def controller_comparison_values(controller: dict[str, Any], root_value: float) -> tuple[float, float]:
+    transformed = float(controller["scale"]) * root_value + float(controller["offset"])
+    threshold = float(controller["threshold"])
+    return (transformed, threshold) if controller["root_on_left"] else (threshold, transformed)
 
 
 def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
@@ -295,14 +405,13 @@ def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
     controller = relational_controller(node)
     if controller:
         root = str(controller["root_input"])
-        threshold = float(controller["threshold"])
-        root_on_left = bool(controller["root_on_left"])
         operator = str(controller["operator"])
-        candidates = boundary_values(threshold)
+        candidates = boundary_values(float(controller["root_boundary"]), str(controller.get("data_type") or ""))
         for _, value in candidates:
-            left, right = (value, threshold) if root_on_left else (threshold, value)
+            left, right = controller_comparison_values(controller, value)
             if comparison_result(operator, left, right) == desired:
-                return Recipe(inputs={root: value}, strategy="root_input_resolved_boundary")
+                strategy = "root_input_resolved_boundary" if not controller.get("chain") else "affine_root_input_resolved_boundary"
+                return Recipe(inputs={root: value}, strategy=strategy)
         return Recipe(issues=[f"relational operator {operator!r} has no safe boundary value for {desired}"])
     if left_root and right_literal is not None:
         delta = max(1.0, abs(right_literal) * 0.01)
@@ -405,6 +514,10 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
         return [], {"operator_id": operator.get("id"), "condition_count": len(atoms), "issues": ["more than 12 atomic conditions; bounded planner stopped"]}
 
     pairs = unique_cause_pairs(ast, len(atoms))
+    probe_vector_compatible = all(
+        isinstance(child, dict) and child.get("kind") == "atom"
+        for child in ast.get("children", [])
+    ) and len(ast.get("children", [])) == len(atoms)
     selected, chosen, missing = select_minimal_vectors(pairs)
     if len(selected) > 2 * len(atoms) + 2:
         raise ValueError("minimal MC/DC planner exceeded the bounded 2N+2 case limit")
@@ -459,6 +572,7 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
                     "kind": "logical_sensitization",
                     "operator": str(operator.get("operator") or "").upper(),
                     "condition_vector": label,
+                    "probe_vector_compatible": probe_vector_compatible,
                 },
                 "issues": recipe.issues,
             }
@@ -472,12 +586,8 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
         if not controller or controller["operator"] not in {">", ">=", "<", "<=", "=="}:
             continue
         pair = chosen[atom_index]
-        for position, value in boundary_values(float(controller["threshold"])):
-            left, right = (
-                (value, float(controller["threshold"]))
-                if controller["root_on_left"]
-                else (float(controller["threshold"]), value)
-            )
+        for position, value in boundary_values(float(controller["root_boundary"]), str(controller.get("data_type") or "")):
+            left, right = controller_comparison_values(controller, value)
             desired = comparison_result(str(controller["operator"]), left, right)
             vector = next((candidate for candidate in pair if candidate[atom_index] == desired), None)
             if vector is None:
@@ -519,8 +629,12 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
                         "root_input": controller["root_input"],
                         "operator": controller["operator"],
                         "threshold": controller["threshold"],
+                        "root_boundary": controller["root_boundary"],
                         "threshold_expression": controller["threshold_expression"],
                         "threshold_source": controller["threshold_source"],
+                        "data_type": controller.get("data_type") or "",
+                        "control_chain": controller.get("chain") or [],
+                        "probe_vector_compatible": probe_vector_compatible,
                         "boundary_position": position,
                         "stimulus_value": value,
                     },

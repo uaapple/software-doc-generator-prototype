@@ -183,7 +183,7 @@ switch node.blockType
     case 'Constant'
         node.kind = 'constant';
         node.value = safe_param(blockPath, 'Value');
-        node.resolvedValue = resolve_expression(node.value);
+        [node.resolvedValue, node.resolvedSource] = resolve_expression_with_source(node.value, blockPath);
     case 'RelationalOperator'
         node.kind = 'relational';
         node.operator = safe_param(blockPath, 'Operator');
@@ -196,12 +196,12 @@ switch node.blockType
         node.kind = 'switch';
         node.criteria = safe_param(blockPath, 'Criteria');
         node.threshold = safe_param(blockPath, 'Threshold');
-        node.resolvedThreshold = resolve_expression(node.threshold);
+        [node.resolvedThreshold, node.resolvedThresholdSource] = resolve_expression_with_source(node.threshold, blockPath);
         node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
     case {'UnitDelay', 'Delay', 'Memory'}
         node.kind = 'stateful';
         node.initialCondition = safe_param(blockPath, 'InitialCondition');
-        node.resolvedInitialCondition = resolve_expression(node.initialCondition);
+        [node.resolvedInitialCondition, node.resolvedInitialConditionSource] = resolve_expression_with_source(node.initialCondition, blockPath);
         node.delayLength = safe_param(blockPath, 'DelayLength');
         node.sampleTime = safe_param(blockPath, 'SampleTime');
         node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
@@ -297,6 +297,8 @@ names = {};
 switch blockType
     case 'Gain'
         names = {'Gain'};
+    case 'Bias'
+        names = {'Bias'};
     case {'Sum', 'Product'}
         names = {'Inputs'};
     case 'DataTypeConversion'
@@ -308,7 +310,8 @@ switch blockType
 end
 for i = 1:numel(names)
     params.(names{i}) = safe_param(blockPath, names{i});
-    params.([names{i} 'Resolved']) = resolve_expression(params.(names{i}));
+    [params.([names{i} 'Resolved']), params.([names{i} 'ResolvedSource'])] = ...
+        resolve_expression_with_source(params.(names{i}), blockPath);
 end
 end
 
@@ -320,34 +323,68 @@ end
 end
 
 function value = resolve_expression(expression)
+[value, ~] = resolve_expression_with_source(expression, '');
+end
+
+function [value, source] = resolve_expression_with_source(expression, blockPath)
 value = [];
+source = '';
 text = strtrim(char(string(expression)));
 if isempty(text)
     return;
 end
+number = str2double(text);
+if ~isnan(number)
+    value = number;
+    source = 'model_literal';
+    return;
+elseif strcmpi(text, 'true')
+    value = true;
+    source = 'model_literal';
+    return;
+elseif strcmpi(text, 'false')
+    value = false;
+    source = 'model_literal';
+    return;
+end
+if ~isempty(blockPath)
+    try
+        raw = slResolve(text, blockPath);
+        [value, ok] = normalize_resolved_value(raw);
+        if ok
+            source = 'model_context';
+            return;
+        end
+    catch
+    end
+end
 try
     raw = evalin('base', text);
-    if isobject(raw) && isprop(raw, 'Value')
-        raw = raw.Value;
-    end
-    if isnumeric(raw) || islogical(raw)
-        if isscalar(raw)
-            value = double(raw);
-        elseif numel(raw) <= 32
-            value = double(raw);
-        end
-    elseif ischar(raw) || (isstring(raw) && isscalar(raw))
-        value = char(string(raw));
+    [value, ok] = normalize_resolved_value(raw);
+    if ok
+        source = 'base_workspace';
     end
 catch
-    number = str2double(text);
-    if ~isnan(number)
-        value = number;
-    elseif strcmpi(text, 'true')
-        value = true;
-    elseif strcmpi(text, 'false')
-        value = false;
+end
+end
+
+function [value, ok] = normalize_resolved_value(raw)
+value = [];
+ok = false;
+if isobject(raw) && isprop(raw, 'Value')
+    raw = raw.Value;
+end
+if isnumeric(raw) || islogical(raw)
+    if isscalar(raw)
+        value = double(raw);
+        ok = true;
+    elseif numel(raw) <= 32
+        value = double(raw);
+        ok = true;
     end
+elseif ischar(raw) || (isstring(raw) && isscalar(raw))
+    value = char(string(raw));
+    ok = true;
 end
 end
 

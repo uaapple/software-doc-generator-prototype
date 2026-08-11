@@ -932,6 +932,72 @@ assert.throws(() => parseExecutionManifest({
 }
 
 {
+  // 第十阶段失败尝试不得把已修改的 runner-state 泄漏给第二次会话。
+  const root = await mkdtemp(path.join(os.tmpdir(), "tcsd-stage10-state-rollback-"));
+  const outputDir = path.join(root, "outputs");
+  const runtimeDir = path.join(outputDir, ".tcsd-runtime");
+  const statePath = path.join(runtimeDir, "runner-state.json");
+  await mkdir(runtimeDir, { recursive: true });
+  const baselineState = { workbook: "outputs/original.xlsx", spec: "original.json", repairApplied: false };
+  await writeFile(statePath, JSON.stringify(baselineState));
+  let executions = 0;
+  let secondAttemptInput = null;
+  const service = new TcsdPipelineJobService({
+    jobDir: path.join(root, "jobs"),
+    executor: async () => {
+      executions += 1;
+      const current = JSON.parse(await readFile(statePath, "utf8"));
+      if (executions === 1) {
+        await writeFile(statePath, JSON.stringify({
+          workbook: "outputs/rejected-iter1.xlsx",
+          spec: "rejected-iter1.json",
+          repairApplied: true
+        }));
+        throw Object.assign(new Error("host validation rejected attempt 1"), {
+          code: TCSD_ERROR_CODES.validation,
+          details: { stageIndex: 10, validationReportPath: "attempt-1-validation.json" }
+        });
+      }
+      secondAttemptInput = current;
+      await writeFile(statePath, JSON.stringify({
+        workbook: "outputs/accepted-iter1.xlsx",
+        spec: "accepted-iter1.json",
+        repairApplied: true
+      }));
+    }
+  });
+  service.verifiedCheckpoint = async () => ({
+    status: "completed",
+    agent: {
+      sessionId: "session-stage10-state-rollback-2",
+      profile: "default",
+      model: "fake-model",
+      tokenUsage: null
+    }
+  });
+  const job = {
+    jobId: "job-stage10-state-rollback",
+    taskId: "task-stage10-state-rollback",
+    status: "等待执行",
+    stages: createStages(),
+    checkpoints: [],
+    events: [],
+    input: { outputDir }
+  };
+  await service.executeStage(job, 10);
+  assert.equal(executions, 2);
+  assert.deepEqual(secondAttemptInput, baselineState);
+  assert.deepEqual(
+    JSON.parse(await readFile(statePath, "utf8")),
+    {
+      workbook: "outputs/accepted-iter1.xlsx",
+      spec: "accepted-iter1.json",
+      repairApplied: true
+    }
+  );
+}
+
+{
   // 阶段文件仍在推进时不得被无结果看门狗误杀。
   const activeRoot = await mkdtemp(path.join(os.tmpdir(), "tcsd-active-watchdog-"));
   const progressPath = path.join(activeRoot, "progress.json");
@@ -1228,6 +1294,7 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
     if (options.blankWorkbook) await copyFile(template, workbook);
     const planningObligations = path.join(workspace.outputDir, "planning-obligations.json");
     const planningAssessment = path.join(workspace.outputDir, "planning-mapping-assessment.json");
+    const synthesisReport = path.join(workspace.outputDir, "initial-synthesis.json");
     await writeFile(planningObligations, JSON.stringify({
       schema: "simulink-ut-logical-mcdc-obligations/v1",
       obligations: []
@@ -1249,15 +1316,31 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
         reason: "contract fixture"
       }
     }));
+    await writeFile(synthesisReport, JSON.stringify({
+      schema: "simulink-ut-tcsd-coverage-ir-synthesis/v1",
+      input_test_count: 1,
+      output_test_count: 1,
+      planned_candidate_count: 0,
+      added: 0,
+      skipped: []
+    }));
     result.artifacts.push(
       { path: rel(workspace.root, workbook), kind: "xlsx", role: "workbook" },
+      { path: rel(workspace.root, synthesisReport), kind: "json", role: "initial-case-synthesis" },
       { path: rel(workspace.root, planningObligations), kind: "json", role: "planning-obligations" },
       { path: rel(workspace.root, planningAssessment), kind: "json", role: "planning-mapping-assessment" }
     );
     result.evidence = {
       planningMappingAssessment: rel(workspace.root, planningAssessment),
       mappingAuthority: "planning",
-      supersededByStage: 9
+      supersededByStage: 9,
+      initialRecipeProbe: {
+        plannedCandidateCount: 0,
+        verifiedCandidateCount: 0,
+        observationCount: 0,
+        failedCandidateCount: 0,
+        unverifiedCandidateCount: 0
+      }
     };
   }
   if (stage === 8) {

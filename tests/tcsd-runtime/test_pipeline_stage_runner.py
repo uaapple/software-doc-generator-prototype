@@ -43,6 +43,155 @@ HOST_VALIDATOR_SPEC.loader.exec_module(HOST_VALIDATOR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_initial_recipe_probe_requires_every_planned_vector_to_be_observed(self):
+        cases = {
+            "schema": "tcsd-extracted-cases/v1",
+            "model": "GenericModel",
+            "tests": [
+                {"test_id": "TC_001", "target": {}},
+                {
+                    "test_id": "TC_002",
+                    "target": {
+                        "coverage_item_id": "GenericModel:Gate_atomic_TF",
+                        "operator_id": "GenericModel:Gate",
+                        "expected_vector": [True, False],
+                    },
+                },
+            ],
+        }
+        probe = {
+            "GenericModel": {
+                "schema": "simulink-ut-logical-mcdc-probe/v2",
+                "observations": [
+                    {"test_id": "TC_001", "prediction_status": "not_predicted"},
+                    {"test_id": "TC_002", "prediction_status": "matched_prediction"},
+                ],
+            },
+        }
+        self.assertEqual(
+            RUNNER.initial_recipe_probe_evidence(cases, probe, "GenericModel"),
+            {
+                "plannedCandidateCount": 1,
+                "verifiedCandidateCount": 1,
+                "observationCount": 2,
+                "failedCandidateCount": 0,
+            },
+        )
+        probe["GenericModel"]["observations"][1]["prediction_status"] = "simulation_mismatch"
+        with self.assertRaisesRegex(RuntimeError, "TC_002"):
+            RUNNER.initial_recipe_probe_evidence(cases, probe, "GenericModel")
+
+    def test_case_extraction_attaches_coverage_vector_targets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workbook = root / "cases.xlsx"
+            output = root / "cases.json"
+            coverage_ir = root / "coverage-ir.json"
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "TCSD"
+            for column, value in enumerate(
+                ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action"],
+                start=1,
+            ):
+                ws.cell(1, column).value = value
+            ws.cell(2, 1).value = "TC_002"
+            ws.cell(2, 2).value = "Boundary"
+            ws.cell(2, 3).value = "Test"
+            ws.cell(2, 5).value = "MC/DC supplemental case for GenericModel:Gate_atomic_TF; target"
+            ws.cell(2, 6).value = "Input=1;"
+            ws.cell(2, 7).value = "[+0.1s]"
+            wb.save(workbook)
+            coverage_ir.write_text(json.dumps({
+                "items": [{
+                    "id": "GenericModel:Gate_atomic_TF",
+                    "block": {"sid": "GenericModel:Gate"},
+                    "controlRecipe": {"condition_vector": "TF", "probe_vector_compatible": True},
+                }],
+            }), encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(RUNTIME / "scripts" / "extract_tcsd_cases.py"),
+                    "--workbook",
+                    str(workbook),
+                    "--model",
+                    "GenericModel",
+                    "--inputs",
+                    "Input",
+                    "--coverage-ir",
+                    str(coverage_ir),
+                    "--output",
+                    str(output),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            extracted = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(extracted["schema"], "tcsd-extracted-cases/v1")
+            self.assertEqual(extracted["model"], "GenericModel")
+            self.assertEqual(extracted["tests"][0]["target"], {
+                "coverage_item_id": "GenericModel:Gate_atomic_TF",
+                "operator_id": "GenericModel:Gate",
+                "expected_vector": [True, False],
+            })
+
+    def test_host_rebuilds_initial_recipe_probe_evidence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            synthesis_path = root / "synthesis.json"
+            cases_path = root / "cases.json"
+            probe_path = root / "probe.json"
+            synthesis_path.write_text(json.dumps({
+                "schema": "simulink-ut-tcsd-coverage-ir-synthesis/v1",
+                "added": 1,
+            }), encoding="utf-8")
+            cases_path.write_text(json.dumps({
+                "schema": "tcsd-extracted-cases/v1",
+                "model": "GenericModel",
+                "tests": [{
+                    "test_id": "TC_002",
+                    "target": {
+                        "coverage_item_id": "GenericModel:Gate_atomic_TF",
+                        "operator_id": "GenericModel:Gate",
+                        "expected_vector": [True, False],
+                    },
+                }],
+            }), encoding="utf-8")
+            probe_path.write_text(json.dumps({
+                "schema": "simulink-ut-logical-mcdc-probe/v2",
+                "model": "GenericModel",
+                "observations": [{
+                    "test_id": "TC_002",
+                    "prediction_status": "matched_prediction",
+                }],
+            }), encoding="utf-8")
+            expected = {
+                "plannedCandidateCount": 1,
+                "verifiedCandidateCount": 1,
+                "observationCount": 1,
+                "failedCandidateCount": 0,
+                "unverifiedCandidateCount": 0,
+            }
+            request = {
+                "workspaceDir": str(root),
+                "artifacts": [
+                    {"path": synthesis_path.name, "kind": "json"},
+                    {"path": cases_path.name, "kind": "json"},
+                    {"path": probe_path.name, "kind": "json"},
+                ],
+                "evidence": {"initialRecipeProbe": expected},
+            }
+            self.assertEqual(
+                HOST_VALIDATOR.validate_initial_recipe_probe(request),
+                {"initialRecipeProbe": expected},
+            )
+            request["evidence"]["initialRecipeProbe"]["verifiedCandidateCount"] = 0
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                HOST_VALIDATOR.validate_initial_recipe_probe(request)
+
     def test_stage10_host_rebuild_uses_the_same_prior_planning_inputs(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

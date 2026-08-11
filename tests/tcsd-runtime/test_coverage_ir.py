@@ -193,6 +193,56 @@ class CoverageIrTests(unittest.TestCase):
         readiness = result["summary"]["executionReadiness"]
         self.assertGreaterEqual(readiness["executableTargetCount"], 3)
 
+    def test_affine_root_chain_resolves_gain_bias_and_data_conversion_boundary(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        operator = {
+            "id": "GenericModel:AffineAnd",
+            "sid": "GenericModel:AffineAnd",
+            "block_path": "GenericModel/AffineAnd",
+            "operator": "AND",
+            "ports": [
+                {"trace": {
+                    "kind": "relational",
+                    "operator": ">=",
+                    "path": "GenericModel/AffineCompare",
+                    "inputs": [
+                        {"kind": "block", "semantic": "datatypeconversion", "path": "GenericModel/Convert", "params": {"OutDataTypeStr": "double"}, "inputs": [
+                            {"kind": "block", "semantic": "bias", "path": "GenericModel/Bias", "params": {"Bias": "Offset_C", "BiasResolved": 10, "BiasResolvedSource": "model_context"}, "inputs": [
+                                {"kind": "block", "semantic": "gain", "path": "GenericModel/Gain", "params": {"Gain": "Gain_C", "GainResolved": 2, "GainResolvedSource": "model_context"}, "inputs": [
+                                    {"kind": "root_inport", "signal": "InputVoltage", "dataType": "double"},
+                                ]},
+                            ]},
+                        ]},
+                        {"kind": "constant", "value": "Limit_C", "resolvedValue": 100, "resolvedSource": "model_context"},
+                    ],
+                }},
+                {"trace": {"kind": "root_inport", "signal": "Enable"}},
+            ],
+        }
+
+        obligations, _ = planner.build_for_operator("GenericModel", operator)
+        boundaries = [item for item in obligations if item.get("pattern_type") == "simple_comparator_boundary"]
+        self.assertEqual(
+            [item["control_recipe"]["stimulus_value"] for item in boundaries],
+            [44, 45, 46],
+        )
+        self.assertTrue(all(item["control_recipe"]["root_boundary"] == 45 for item in boundaries))
+        self.assertTrue(all(item["control_recipe"]["threshold_source"] == "model_context" for item in boundaries))
+        self.assertEqual(
+            [entry["kind"] for entry in boundaries[0]["control_recipe"]["control_chain"]],
+            ["gain", "bias", "data_type_conversion"],
+        )
+        required = [item for item in boundaries if item["status"] == "required"]
+        self.assertEqual(len(required), 3)
+
+    def test_boundary_values_respect_integer_and_fixed_point_domains(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        self.assertEqual(planner.boundary_values(0, "uint8"), [("equal", 0), ("above", 1)])
+        self.assertEqual(
+            planner.boundary_values(1.0, "fixdt(1,16,8)"),
+            [("below", 0.99609375), ("equal", 1.0), ("above", 1.00390625)],
+        )
+
     def test_ir_captures_parameter_nested_logic_and_state_stimulus(self) -> None:
         coverage_ir = script("build_coverage_ir.py")
         trace = {

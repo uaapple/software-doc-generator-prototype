@@ -21,6 +21,11 @@ const checkpointFor = (job, index) => path.join(
   ".tcsd-checkpoints",
   `stage-${String(index).padStart(2, "0")}.json`
 );
+const runnerStateFor = (job) => path.join(
+  job.input.outputDir,
+  ".tcsd-runtime",
+  "runner-state.json"
+);
 
 function publicError(error = {}) {
   return {
@@ -360,11 +365,41 @@ export class TcsdPipelineJobService {
     ];
   }
 
+  async captureAttemptState(job, index) {
+    if (index !== 10 || !String(job.input?.outputDir || "").trim()) return null;
+    const targetPath = runnerStateFor(job);
+    try {
+      const [bytes, stat] = await Promise.all([
+        fs.readFile(targetPath),
+        fs.stat(targetPath)
+      ]);
+      return { targetPath, existed: true, bytes, mode: stat.mode };
+    } catch (cause) {
+      if (cause?.code === "ENOENT") {
+        return { targetPath, existed: false, bytes: null, mode: null };
+      }
+      throw cause;
+    }
+  }
+
+  async restoreAttemptState(snapshot) {
+    if (!snapshot) return;
+    if (!snapshot.existed) {
+      await fs.rm(snapshot.targetPath, { force: true });
+      return;
+    }
+    const tempPath = `${snapshot.targetPath}.restore-${process.pid}-${Date.now()}-${randomUUID()}`;
+    await fs.mkdir(path.dirname(snapshot.targetPath), { recursive: true });
+    await fs.writeFile(tempPath, snapshot.bytes, { mode: snapshot.mode });
+    await fs.rename(tempPath, snapshot.targetPath);
+  }
+
   async executeStage(job, index) {
     const stage = job.stages[index - 1];
     let validationReportPath = stage.attempts?.at(-1)?.validationReportPath || "";
     while (stage.attempt < 2) {
       const nextAttempt = stage.attempt + 1;
+      const attemptState = await this.captureAttemptState(job, index);
       await this.setStage(job, index, "正在执行", {
         summary: nextAttempt === 1 ? "正在启动独立 Hermes Agent 会话。" : "正在启动一次独立验证修复会话。"
       });
@@ -379,6 +414,14 @@ export class TcsdPipelineJobService {
       } catch (error) {
         const normalized = publicError(error);
         this.recordAttempt(stage, error, error.code === TCSD_ERROR_CODES.validation ? "validation_failed" : "failed");
+        try {
+          await this.restoreAttemptState(attemptState);
+        } catch (restoreError) {
+          throw Object.assign(new Error(`第 ${index} 阶段失败尝试的运行状态无法恢复：${restoreError.message}`), {
+            code: TCSD_ERROR_CODES.stage,
+            details: { stageIndex: index, attempt: stage.attempt, stateRestoreFailed: true }
+          });
+        }
         const retryable = [TCSD_ERROR_CODES.validation, TCSD_ERROR_CODES.stalled].includes(error.code);
         if (retryable && stage.attempt < 2) {
           if (error.code === TCSD_ERROR_CODES.validation) {
