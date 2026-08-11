@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runtime"
 SCRIPTS = ROOT / "scripts"
@@ -23,6 +24,66 @@ def load_script_module(script_name: str):
 
 
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_simulation_rejects_a_successful_gateway_call_without_result_artifact(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "outputs").mkdir()
+            with mock.patch.object(quality, "run_satk", return_value=None):
+                with self.assertRaises(quality.SatkEvaluationError) as raised:
+                    quality.simulate_and_backfill(
+                        python=sys.executable,
+                        scripts=SCRIPTS,
+                        root_dir=root,
+                        model="GenericModel",
+                        workbook=root / "outputs" / "cases.xlsx",
+                        case_json=root / "outputs" / "cases.json",
+                        mat_file="values.mat",
+                        outputs="Result",
+                        exclude_outputs="",
+                        interface_json=root / "outputs" / "interface.json",
+                    )
+            self.assertEqual(
+                raised.exception.details["gatewayErrorCode"],
+                "MATLAB_RESULT_ARTIFACT_MISSING",
+            )
+            self.assertEqual(raised.exception.details["phase"], "matlab_case_simulation")
+
+    def test_simulation_surfaces_captured_matlab_identifier(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outputs = root / "outputs"
+            outputs.mkdir()
+
+            def failed_satk(*_args, **_kwargs):
+                (outputs / "GenericModel_sim_results_mcdc.error.json").write_text(
+                    json.dumps({
+                        "schema": "tcsd-matlab-simulation-error/v1",
+                        "identifier": "Simulink:Engine:ModelError",
+                        "message": "The model simulation failed.",
+                    }),
+                    encoding="utf-8",
+                )
+                raise quality.SatkEvaluationError("gateway failure", {"phase": "matlab_probe_evaluation"})
+
+            with mock.patch.object(quality, "run_satk", side_effect=failed_satk):
+                with self.assertRaises(quality.SatkEvaluationError) as raised:
+                    quality.simulate_and_backfill(
+                        python=sys.executable,
+                        scripts=SCRIPTS,
+                        root_dir=root,
+                        model="GenericModel",
+                        workbook=outputs / "cases.xlsx",
+                        case_json=outputs / "cases.json",
+                        mat_file="values.mat",
+                        outputs="Result",
+                        exclude_outputs="",
+                        interface_json=outputs / "interface.json",
+                    )
+            self.assertEqual(raised.exception.details["gatewayErrorCode"], "Simulink:Engine:ModelError")
+            self.assertIn("model simulation failed", str(raised.exception).lower())
+
     def test_state_probe_planner_builds_bounded_timing_sequences_without_model_names(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")
         trace = {

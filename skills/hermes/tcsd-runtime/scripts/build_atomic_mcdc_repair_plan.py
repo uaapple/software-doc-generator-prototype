@@ -74,6 +74,14 @@ def atom_key(node: dict[str, Any]) -> str:
         return f"root:{node.get('signal') or node.get('name')}"
     if kind == "constant":
         return f"constant:{node.get('value')}"
+    if kind == "membership":
+        return "membership:" + json.dumps(
+            {
+                "root": node.get("root_input"),
+                "values": node.get("values") or [],
+            },
+            sort_keys=True,
+        )
     return f"{kind}:{node.get('sid') or node.get('path') or json.dumps(node, sort_keys=True)}"
 
 
@@ -85,6 +93,8 @@ def atom_label(node: dict[str, Any]) -> str:
         return str(node.get("value") or "constant")
     if kind == "relational":
         return str(node.get("path") or node.get("name") or node.get("sid") or "relational")
+    if kind == "membership":
+        return f"{node.get('root_input') or 'root input'} in resolved value set"
     return str(node.get("path") or node.get("name") or node.get("sid") or kind)
 
 
@@ -93,6 +103,12 @@ def build_ast(node: dict[str, Any], atoms: list[Atom], by_key: dict[str, int]) -
     kind = str(node.get("kind") or "").lower()
     operator = str(node.get("operator") or "").upper()
     nested = children(node)
+    if kind == "logic" and operator == "OR":
+        membership = membership_controller(node)
+        if membership:
+            node = {"kind": "membership", **membership}
+            kind = "membership"
+            nested = []
     if kind == "logic" and operator in {"AND", "OR", "NOT"} and nested:
         return {"kind": "logic", "operator": operator, "children": [build_ast(item, atoms, by_key) for item in nested]}
 
@@ -308,6 +324,109 @@ def relational_controller(node: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def membership_controller(node: dict[str, Any]) -> dict[str, Any] | None:
+    node = unwrap(node)
+    if str(node.get("kind") or "").lower() != "logic" or str(node.get("operator") or "").upper() != "OR":
+        return None
+    controllers: list[dict[str, Any]] = []
+    for term in children(node):
+        term = unwrap(term)
+        if str(term.get("kind") or "").lower() != "relational":
+            return None
+        controller = relational_controller(term)
+        if not controller or controller.get("operator") != "==" or controller.get("chain"):
+            return None
+        controllers.append(controller)
+    if len(controllers) < 2:
+        return None
+    roots = {str(item.get("root_input") or "") for item in controllers}
+    if len(roots) != 1 or "" in roots:
+        return None
+    values = sorted({float(item["root_boundary"]) for item in controllers})
+    if len(values) != len(controllers):
+        return None
+    return {
+        "root_input": next(iter(roots)),
+        "values": values,
+        "data_type": str(controllers[0].get("data_type") or ""),
+        "value_sources": [
+            {
+                "value": float(item["root_boundary"]),
+                "expression": item.get("threshold_expression"),
+                "source": item.get("threshold_source"),
+            }
+            for item in controllers
+        ],
+        "path": node.get("path"),
+        "sid": node.get("sid"),
+    }
+
+
+def mux_root_inputs(node: dict[str, Any]) -> list[dict[str, Any]] | None:
+    node = unwrap(node)
+    if (
+        str(node.get("kind") or "").lower() != "block"
+        or str(node.get("semantic") or node.get("blockType") or "").lower() != "mux"
+    ):
+        return None
+    controllers: list[dict[str, Any]] = []
+    for term in children(node):
+        controller = affine_root_controller(term)
+        if not controller or controller.get("chain"):
+            return None
+        controllers.append(controller)
+    return controllers or None
+
+
+def mux_relational_recipe(node: dict[str, Any], desired: bool) -> Recipe | None:
+    operator = str(node.get("operator") or "").strip()
+    if operator not in {"==", "~="}:
+        return None
+    terms = children(node)
+    if len(terms) != 2:
+        return None
+    left_mux, right_mux = mux_root_inputs(terms[0]), mux_root_inputs(terms[1])
+    left_constant, right_constant = resolved_constant(terms[0]), resolved_constant(terms[1])
+    if left_mux and right_constant:
+        controllers, threshold = left_mux, float(right_constant[0])
+    elif right_mux and left_constant:
+        controllers, threshold = right_mux, float(left_constant[0])
+    else:
+        return None
+    wants_equal = desired if operator == "==" else not desired
+    assignments = {str(item["root_input"]): threshold for item in controllers}
+    if not wants_equal:
+        first = controllers[0]
+        alternate = next(
+            (value for _, value in boundary_values(threshold, str(first.get("data_type") or "")) if not math.isclose(value, threshold, rel_tol=0.0, abs_tol=1e-12)),
+            None,
+        )
+        if alternate is None:
+            return Recipe(issues=["mux comparison has no safe non-equal root-input value"])
+        assignments[str(first["root_input"])] = alternate
+    return Recipe(inputs=assignments, strategy="mux_root_input_equality")
+
+
+def membership_recipe(node: dict[str, Any], desired: bool) -> Recipe:
+    root = str(node.get("root_input") or "")
+    values = [float(value) for value in node.get("values") or []]
+    if not root or not values:
+        return Recipe(issues=["membership condition has no resolved root input or values"])
+    if desired:
+        return Recipe(inputs={root: values[0]}, strategy="root_input_membership")
+    minimum, maximum, step = numeric_domain(str(node.get("data_type") or ""))
+    delta = step or 1.0
+    candidates = [max(values) + delta, min(values) - delta, 0.0]
+    for candidate in candidates:
+        if minimum is not None and candidate < minimum - 1e-12:
+            continue
+        if maximum is not None and candidate > maximum + 1e-12:
+            continue
+        if all(not math.isclose(candidate, value, rel_tol=0.0, abs_tol=1e-12) for value in values):
+            return Recipe(inputs={root: candidate}, strategy="root_input_membership")
+    return Recipe(issues=["membership condition has no safe value outside the resolved set"])
+
+
 def comparison_result(operator: str, left: float, right: float) -> bool:
     if operator == ">":
         return left > right
@@ -390,6 +509,10 @@ def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
     left_literal = parse_literal(unwrap(terms[0]).get("value")) if str(unwrap(terms[0]).get("kind") or "").lower() == "constant" else None
     right_literal = parse_literal(unwrap(terms[1]).get("value")) if str(unwrap(terms[1]).get("kind") or "").lower() == "constant" else None
 
+    mux_recipe = mux_relational_recipe(node, desired)
+    if mux_recipe is not None:
+        return mux_recipe
+
     if right_param and op in {">", ">="} and contains_kind(terms[0], {"stateful", "switch", "minmax"}):
         return Recipe(
             params={right_param: 0 if desired else 1},
@@ -454,6 +577,8 @@ def atom_recipe(atom: Atom, desired: bool) -> Recipe:
         return Recipe(issues=[f"literal constant {value!r} is not controllable"])
     if atom.kind == "relational":
         return relational_recipe(node, desired)
+    if atom.kind == "membership":
+        return membership_recipe(node, desired)
     return Recipe(issues=[f"unsupported atomic condition kind {atom.kind!r}"])
 
 

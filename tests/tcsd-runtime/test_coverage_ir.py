@@ -243,6 +243,64 @@ class CoverageIrTests(unittest.TestCase):
             [("below", 0.99609375), ("equal", 1.0), ("above", 1.00390625)],
         )
 
+    def test_nested_membership_and_mux_comparison_produce_conflict_free_recipes(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+
+        def root(name: str) -> dict:
+            return {"kind": "subsystem_inport", "source": {"kind": "root_inport", "signal": name}}
+
+        def constant(expression: str, value: float | None = None) -> dict:
+            result = {"kind": "constant", "value": expression}
+            if value is not None:
+                result.update({"resolvedValue": value, "resolvedSource": "model_context"})
+            return result
+
+        def relational(operator: str, left: dict, right: dict) -> dict:
+            return {"kind": "relational", "operator": operator, "inputs": [left, right]}
+
+        gear_membership = {
+            "kind": "logic",
+            "operator": "OR",
+            "inputs": [
+                relational("==", root("Gear"), constant("Drive_C", 1)),
+                relational("==", root("Gear"), constant("Reverse_C", 5)),
+            ],
+        }
+        mode_mux = {
+            "kind": "block",
+            "semantic": "mux",
+            "inputs": [root("FrontMode"), root("RearMode"), root("FrontMode"), root("RearMode")],
+        }
+        operator = {
+            "id": "GenericModel:TopOr",
+            "sid": "GenericModel:TopOr",
+            "block_path": "GenericModel/TopOr",
+            "operator": "OR",
+            "ports": [
+                {"trace": {"kind": "logic", "operator": "AND", "inputs": [
+                    constant("BypassA_C"), relational("~=", mode_mux, constant("TorqueMode_C", 4)),
+                ]}},
+                {"trace": {"kind": "logic", "operator": "NOT", "inputs": relational("==", root("HvState"), constant("Ready_C", 90))}},
+                {"trace": {"kind": "logic", "operator": "AND", "inputs": [
+                    {"kind": "logic", "operator": "NOT", "inputs": gear_membership}, constant("BypassB_C"),
+                ]}},
+            ],
+        }
+
+        obligations, summary = planner.build_for_operator("GenericModel", operator)
+
+        self.assertTrue(obligations)
+        self.assertTrue(all(item["status"] == "required" for item in obligations))
+        self.assertEqual(summary["issues"], [])
+        self.assertTrue(any(
+            item["match"]["inputs"].get("Gear") in {1, 5, 6}
+            for item in obligations
+        ))
+        self.assertTrue(any(
+            {"FrontMode", "RearMode"}.issubset(item["match"]["inputs"])
+            for item in obligations
+        ))
+
     def test_ir_captures_parameter_nested_logic_and_state_stimulus(self) -> None:
         coverage_ir = script("build_coverage_ir.py")
         trace = {

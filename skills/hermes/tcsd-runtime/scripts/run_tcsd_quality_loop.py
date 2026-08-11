@@ -268,6 +268,38 @@ def run_satk(
         raise satk_failure(completed.stdout, completed.stderr, completed.returncode)
 
 
+def require_matlab_artifact(path: Path, *, phase: str) -> None:
+    if path.is_file() and path.stat().st_size > 0:
+        return
+    raise SatkEvaluationError(
+        f"MATLAB evaluation completed without the required {phase} artifact.",
+        {
+            "phase": phase,
+            "gatewayErrorCode": "MATLAB_RESULT_ARTIFACT_MISSING",
+            "artifactFileName": path.name,
+        },
+    )
+
+
+def simulation_failure(error_path: Path) -> SatkEvaluationError | None:
+    if not error_path.is_file():
+        return None
+    try:
+        payload = load_json(error_path)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        payload = {}
+    identifier = safe_diagnostic_code(payload.get("identifier"), "MATLAB_SIMULATION_FAILED")
+    message = safe_diagnostic_text(payload.get("message")) or "MATLAB simulation failed without a readable diagnostic."
+    return SatkEvaluationError(
+        f"MATLAB simulation failed ({identifier}): {message}",
+        {
+            "phase": "matlab_case_simulation",
+            "gatewayErrorCode": identifier,
+            "diagnosticArtifactFileName": error_path.name,
+        },
+    )
+
+
 def validate_mapping(
     *,
     python: str,
@@ -563,6 +595,7 @@ def run_probe(
         root_dir,
         gateway_timeout_seconds=gateway_timeout_seconds,
     )
+    require_matlab_artifact(probe_results, phase="matlab_probe_evaluation")
     obligations = root_dir / "outputs" / f"{model}_coverage_obligations.json"
     cmd = [
         python,
@@ -613,20 +646,45 @@ def simulate_and_backfill(
     result_name: str = "",
 ) -> Path:
     result_json = root_dir / "outputs" / (result_name or f"{model}_sim_results_mcdc.json")
+    error_json = result_json.with_suffix(".error.json")
+    result_json.unlink(missing_ok=True)
+    error_json.unlink(missing_ok=True)
     entry = write_matlab_entry(
         root_dir / "outputs" / f"{model}_simulate_mcdc_entry.m",
         "\n".join(
             [
                 f"rootDir = {matlab_string(str(root_dir))};",
                 f"addpath({matlab_string(str(scripts))});",
+                f"diagnosticJson = {matlab_string(str(error_json))};",
+                "try",
                 (
-                    f"simulate_tcsd_cases(rootDir, {matlab_string(model)}, {matlab_string(mat_file)}, "
+                    f"  simulate_tcsd_cases(rootDir, {matlab_string(model)}, {matlab_string(mat_file)}, "
                     f"{matlab_string(str(case_json))}, {matlab_string(str(result_json))});"
                 ),
+                "catch err",
+                "  diagnostic = struct('schema', 'tcsd-matlab-simulation-error/v1', "
+                "'identifier', char(string(err.identifier)), 'message', char(string(err.message)));",
+                "  fid = fopen(diagnosticJson, 'w');",
+                "  if fid >= 0",
+                "    fprintf(fid, '%s', jsonencode(diagnostic, PrettyPrint=true));",
+                "    fclose(fid);",
+                "  end",
+                "  rethrow(err);",
+                "end",
             ]
         ),
     )
-    run_satk(python, scripts, entry, root_dir)
+    try:
+        run_satk(python, scripts, entry, root_dir)
+    except SatkEvaluationError as cause:
+        captured = simulation_failure(error_json)
+        if captured:
+            raise captured from cause
+        raise
+    captured = simulation_failure(error_json)
+    if captured:
+        raise captured
+    require_matlab_artifact(result_json, phase="matlab_case_simulation")
     cmd = [
         python,
         str(scripts / "backfill_expected_outputs.py"),
