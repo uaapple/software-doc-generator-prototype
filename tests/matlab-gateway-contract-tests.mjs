@@ -469,6 +469,45 @@ test("Gateway treats resolved MCP failure text as a failed job", async () => {
   );
 });
 
+test("Gateway rejects MATLAB Chinese error stacks after initialization output", async () => {
+  await withGateway(
+    async ({ request }) => {
+      const workspaceId = "workspace-matlab-chinese-failure";
+      await request(`/api/workspaces/${workspaceId}`, {
+        method: "PUT",
+        body: JSON.stringify({ mappingId: "worker-data" })
+      });
+      await request(`/api/workspaces/${workspaceId}/assets/code/text`, {
+        method: "PUT",
+        body: JSON.stringify({
+          fileName: "failure.m",
+          content: "disp('/var/lib/sdg/data/failure');"
+        })
+      });
+      await request("/api/jobs/job-matlab-chinese-failure", {
+        method: "POST",
+        body: JSON.stringify({
+          workspaceId,
+          operation: "evaluate_matlab_code",
+          inputAssetId: "code"
+        })
+      });
+      const job = await waitForJob(request, "job-matlab-chinese-failure", workspaceId);
+      assert.equal(job.status, "failed");
+      assert.equal(job.error.code, "MCP_TOOL_REPORTED_FAILURE");
+      assert.equal(job.error.details.category, "tool_reported_failure");
+      assert.match(job.error.details.stderrSummary, /错误使用/);
+    },
+    {
+      callTool: () => [
+        "TCSD_PROJECT_INIT_SCRIPTS_EXECUTED=init_Global.m",
+        "错误使用 compiled_input_metadata (第 707 行)",
+        "变量 'MissingCalibration_C' 不存在。"
+      ].join("\n")
+    }
+  );
+});
+
 test("HTTP gateway client uses ID-only analyze and allowlisted tool jobs without stdio fallback", async () => {
   const bundle = createEmptyModelFactBundle();
   bundle.source = { fileName: "demo.slx", modelName: "Demo" };

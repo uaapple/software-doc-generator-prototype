@@ -737,9 +737,10 @@ export function assertSuccessfulMcpToolResult(result, toolName = "") {
     : Array.isArray(result?.content)
       ? result.content.find((item) => item?.type === "text" && item.text)?.text || ""
       : "";
-  const failureText = /^(?:error\b|failed\s+to\b|failure\b|unable\s+to\b|cannot\b)/i.test(
-    String(text || "").trim()
-  );
+  const normalizedText = String(text || "").trim();
+  const failureText =
+    /^(?:error\b|failed\s+to\b|failure\b|unable\s+to\b|cannot\b)/iu.test(normalizedText) ||
+    /(?:^|\r?\n)\s*(?:error\s+using\b|error\s+in\b|错误使用|出错)\s*/iu.test(normalizedText);
   if (result?.isError !== true && !structuredError && !failureText) return result;
   const summary = sanitizeMcpDiagnostic(
     structuredError?.message || structuredError?.code || text || "MCP tool reported failure."
