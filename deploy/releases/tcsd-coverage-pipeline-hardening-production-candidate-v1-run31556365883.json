@@ -1,0 +1,122 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-12T02:24:00Z",
+  "candidateTag": "tcsd-coverage-pipeline-hardening-production-candidate-v1-run31556365883",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "b86d651717458ecda16f73e98e57cc6518ebbdf0",
+  "containerBuildRevision": "b86d651717458ecda16f73e98e57cc6518ebbdf0",
+  "deploymentToolRevision": "b86d651717458ecda16f73e98e57cc6518ebbdf0",
+  "supersedesCandidate": {
+    "tag": "tcsd-initial-coverage-recipes-production-candidate-v1-run31443230029",
+    "tagObject": "44dd99168546a3a1d70b56837fa0cd155e2dd8b7",
+    "peeledCommit": "a35ef732198cadfbe594b5b3b9c2a524d61ecf13",
+    "reason": "在首轮覆盖用例配方候选基础上，补齐覆盖修正宿主复核输入与失败尝试隔离，增强复杂比较条件的首轮用例生成和 MATLAB 中文错误识别；缺失标定量候选降级跳过；第六阶段限制候选规模、分批执行并持久化诊断证据。"
+  },
+  "scope": {
+    "summary": "覆盖率流水线加固：修正尝试从干净状态开始，宿主复核使用完整输入；复杂比较条件可生成首轮边界用例；缺失标定量只跳过相关候选；第六阶段全局候选最多 384 个、单目标最多 8 个、每批最多 64 个，并保留批次清单和结构化失败证据。",
+    "platformAction": "deploy-new-exact-ghcr-image-via-wx11p-relay",
+    "workerAction": "deploy-new-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-deployed-v9-and-validate-only（受管 Gateway 文件未变）",
+    "schemaCompatibility": "任务主数据结构不迁移；阶段证据、覆盖修正输入和第六阶段批次诊断只增加可选字段，旧任务仍可读。"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 31556365883,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "b86d651717458ecda16f73e98e57cc6518ebbdf0",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31556365883",
+    "job": {
+      "id": 93989510100,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31556365883/job/93989510100",
+      "requiredSteps": [
+        { "name": "Check out exact revision", "conclusion": "success" },
+        { "name": "Run companion tests with Windows PowerShell 5.1", "conclusion": "success" },
+        { "name": "Install locked Node.js dependencies", "conclusion": "success" },
+        { "name": "Reproduce legacy native env wrapper startup", "conclusion": "success" }
+      ]
+    },
+    "jobLogSha256": "254e6df08a85f36b094ddbbbd83b8e2a5d3fe346bd2417f32d92e54a411d5047"
+  },
+  "images": {
+    "platform": {
+      "imageRevision": "sha256:2be876648ce25f6ea98fe6e86202db1b9c4d6132f2c8ad45d30074d0aa2c3002",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:aca6caab6b8ae1fc3e4da078b6ff853c4bfa77a92d1ad753c2c59eb694289cdd",
+      "registryIndexDigest": "sha256:aca6caab6b8ae1fc3e4da078b6ff853c4bfa77a92d1ad753c2c59eb694289cdd",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "imageRevision": "sha256:60bcda63673fffebcb11445d0a465f3a1fef5cb56362c0f2d90bf153110bb285",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:3669afd629eb6bc3674bf539d0111ea503a8d7f4b31f3a1dcc9e4962a2f7b57e",
+      "registryIndexDigest": "sha256:3669afd629eb6bc3674bf539d0111ea503a8d7f4b31f3a1dcc9e4962a2f7b57e",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "reuse-deployed-v9-and-validate-only",
+    "companionVersion": 9,
+    "releaseAssetIncluded": false,
+    "reason": "本候选未修改任何 Native Gateway companion 受管文件；生产端继续使用现有受支持 v9 脚本执行 ValidateOnly 和就绪检查。"
+  },
+  "releaseAssets": {
+    "container-release-b86d65171745.json": "12cb98a2a9c06c3de30893060f171400b2e31940b425b6b24dd07503d2e9a099",
+    "scan-summary.json": "2d310a348e1a32a4d511bbf83ab0edfe86bcd2fce3120103b682102e97f60c71",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-2be876648ce2.sbom.spdx.json": "0276c16755a1d42fdf559d609569e3f6715a4446277141d303b276d444c85cd1",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-2be876648ce2.trivy.json": "aac63605f9ce7c19d188e18f595a8659872d3d74e94ae1c8373f8683f606ff0e",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-2be876648ce2.trivy.json.policy.json": "9dc64eaf428894ceb01d7eced53148487879434094546f31209849a85917245c",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-60bcda63673f.sbom.spdx.json": "0ed7e6a7d5c13ffd7910418dc6445a8742a139de0be0fc459d75420bc0366f20",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-60bcda63673f.trivy.json": "c40c19afc292d5e1f3d0fd55cb19d7acb04cdec88993adc7ab3955a06fe2280c",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-60bcda63673f.trivy.json.policy.json": "44a2d8355f83ccb06c67526066afaee484d91bac2a35b592c267dc0ab7137ee1"
+  },
+  "archiveVerifier": {
+    "path": "scripts/verify_image_archive.py",
+    "sha256": "ce20f85fa2dc8e9a6adf45fb94f15527a1197218f88d729b93260d9d6d347bb9",
+    "minimumPython": "3.8",
+    "regularReleaseAsset": false
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "linuxPlatformDistribution": "fixed-wx11p-relay; linux-direct-ghcr-not-supported-by-topology",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-coverage-pipeline-hardening-production-candidate-v1-run31556365883",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-coverage-pipeline-hardening-production-candidate-v1-run31556365883"
+    }
+  },
+  "rollbackAnchors": {
+    "expectedCurrentProductionCandidate": "tcsd-initial-coverage-recipes-production-candidate-v1-run31443230029",
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:316ad0b866ebbeeec934e8e677eac83421bd7f1bb79c5ef7da2e886439129702",
+      "imageRevision": "sha256:039f8ba8969844c8ba546638f0932159b3980b883e85041021000fb7b3fa5f96",
+      "linuxLocalConfigImageId": "record-actual-before-switch"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:6b99e5c069489f5a24d57f843f4ca4d4774da8c80bc30e7ff5dd563ef9e55c57",
+      "imageRevision": "sha256:90f50e1c95c8bf5c3ce1e348cf0969483b8b48e8ae00bfb4e01c0e3744c4d515"
+    },
+    "nativeGateway": "已部署 v9 保持不变；失败回滚不涉及 Gateway。",
+    "rule": "部署前以生产容器实际 inspect 结果为权威；若与上述预期不一致，记录实际精确 digest/image ID 作为回滚锚点，不得用历史值覆盖实际状态。"
+  },
+  "acceptance": {
+    "targetedRuntimeTests": "passed-64-python-tests-on-effective-source-tree",
+    "mainJavaScriptTests": "passed-194-core-and-46-slx-tests; remaining local aggregate stopped because host Python lacks openpyxl",
+    "containerReleaseChecks": "passed-container-static-config-production-boundary-transfer-and-pipeline-contract-checks",
+    "localRealTask": "A04_TqOutLim completed all 12 stages with 15 final tests; final condition 85.714%, decision 88.462%, MCDC 69.565%; task honestly ended partial because MCDC remained below threshold",
+    "containerScans": "passed-syft-trivy-for-both-images; grype unavailable; policy-failures-zero",
+    "windowsPowerShell51": "passed-run-31556365883",
+    "productionDeployment": "not-performed",
+    "productionRealTaskAcceptance": "pending-user"
+  }
+}
