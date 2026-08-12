@@ -24,6 +24,153 @@ def load_script_module(script_name: str):
 
 
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_state_probe_global_limit_distributes_candidates_across_targets(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        tests = []
+        targets = []
+        for operator in ("Model:1", "Model:2"):
+            targets.append({"operator_id": operator, "port_index": 1, "candidate_count": 4})
+            for index in range(4):
+                tests.append({
+                    "row": len(tests) + 1,
+                    "test_id": f"OLD_{len(tests) + 1}",
+                    "target": {"operator_id": operator, "port_index": 1},
+                })
+        limited, truncated = planner.limit_candidates(tests, targets, 4)
+        self.assertEqual(truncated, 4)
+        self.assertEqual(
+            [item["target"]["operator_id"] for item in limited],
+            ["Model:1", "Model:2", "Model:1", "Model:2"],
+        )
+        self.assertEqual([item["test_id"] for item in limited], [
+            "STATE_PROBE_0001", "STATE_PROBE_0002", "STATE_PROBE_0003", "STATE_PROBE_0004",
+        ])
+        self.assertTrue(all(item["candidate_count"] == 2 for item in targets))
+        self.assertTrue(all(item["truncated_candidate_count"] == 2 for item in targets))
+
+    def test_probe_batches_merge_results_and_write_manifest(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outputs = root / "outputs"
+            outputs.mkdir()
+            cases = outputs / "GenericModel_state_probe_plan.json"
+            cases.write_text(json.dumps({
+                "schema": "simulink-ut-state-probe-plan/v1",
+                "model": "GenericModel",
+                "tests": [{"test_id": f"STATE_PROBE_{index:04d}"} for index in range(1, 6)],
+            }), encoding="utf-8")
+
+            def fake_probe(**kwargs):
+                batch = json.loads(Path(kwargs["case_json"]).read_text(encoding="utf-8"))
+                result = outputs / kwargs["output_name"]
+                result.write_text(json.dumps({
+                    "GenericModel": {
+                        "schema": "simulink-ut-logical-mcdc-probe/v2",
+                        "model": "GenericModel",
+                        "observations": [
+                            {"test_id": item["test_id"], "prediction_status": "observed"}
+                            for item in batch["tests"]
+                        ],
+                        "skipped_tests": [],
+                    },
+                }), encoding="utf-8")
+                return outputs / "GenericModel_coverage_obligations.json", None
+
+            def fake_obligations(**_kwargs):
+                path = outputs / "GenericModel_coverage_obligations.json"
+                path.write_text('{"obligations":[]}', encoding="utf-8")
+                return path
+
+            with (
+                mock.patch.object(quality, "run_probe", side_effect=fake_probe),
+                mock.patch.object(quality, "build_probe_obligations", side_effect=fake_obligations),
+            ):
+                obligations, manifest = quality.run_probe_batched(
+                    python=sys.executable,
+                    scripts=SCRIPTS,
+                    root_dir=root,
+                    model="GenericModel",
+                    mat_file="values.mat",
+                    init_scripts=[],
+                    unreachable_overrides="",
+                    coverage_threshold=80,
+                    case_json=cases,
+                    output_name="GenericModel_state_probe_results.json",
+                    batch_size=2,
+                )
+            merged = json.loads((outputs / "GenericModel_state_probe_results.json").read_text(encoding="utf-8"))
+            report = merged["GenericModel"]
+            self.assertEqual(report["batch_count"], 3)
+            self.assertEqual(len(report["observations"]), 5)
+            manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(manifest_data["status"], "completed")
+            self.assertEqual([item["candidateCount"] for item in manifest_data["batches"]], [2, 2, 1])
+            self.assertTrue(obligations.is_file())
+
+    def test_probe_batch_failure_records_exact_batch(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outputs = root / "outputs"
+            outputs.mkdir()
+            cases = outputs / "GenericModel_state_probe_plan.json"
+            cases.write_text(json.dumps({
+                "schema": "simulink-ut-state-probe-plan/v1",
+                "model": "GenericModel",
+                "tests": [{"test_id": f"STATE_PROBE_{index:04d}"} for index in range(1, 5)],
+            }), encoding="utf-8")
+            calls = 0
+
+            def fail_second_batch(**kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise quality.SatkEvaluationError("failed", {
+                        "gatewayErrorCode": "MATLAB:UndefinedFunction",
+                        "diagnosticArtifactFileName": "batch-002.error.json",
+                    })
+                result = outputs / kwargs["output_name"]
+                result.write_text(json.dumps({
+                    "GenericModel": {
+                        "schema": "simulink-ut-logical-mcdc-probe/v2",
+                        "observations": [],
+                    },
+                }), encoding="utf-8")
+                return outputs / "unused.json", None
+
+            with mock.patch.object(quality, "run_probe", side_effect=fail_second_batch):
+                with self.assertRaises(quality.SatkEvaluationError) as raised:
+                    quality.run_probe_batched(
+                        python=sys.executable,
+                        scripts=SCRIPTS,
+                        root_dir=root,
+                        model="GenericModel",
+                        mat_file="values.mat",
+                        init_scripts=[],
+                        unreachable_overrides="",
+                        coverage_threshold=80,
+                        case_json=cases,
+                        output_name="GenericModel_state_probe_results.json",
+                        batch_size=2,
+                    )
+            self.assertEqual(raised.exception.details["batchIndex"], 2)
+            self.assertEqual(raised.exception.details["batchStart"], 3)
+            self.assertEqual(raised.exception.details["batchEnd"], 4)
+            manifest = json.loads((outputs / "GenericModel_probe_batch_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual(manifest["batches"][-1]["diagnosticArtifactFileName"], "batch-002.error.json")
+
+    def test_satk_failure_recovers_last_json_object_after_prefix_output(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        error = quality.satk_failure(
+            'gateway warning\n{"error":{"code":"MATLAB_EXECUTION_FAILED","message":"probe failed","data":{"gatewayJobId":"eval-safe","gatewayStatus":"failed","timeoutSeconds":900}}}',
+            "",
+            1,
+        )
+        self.assertEqual(error.details["gatewayErrorCode"], "MATLAB_EXECUTION_FAILED")
+        self.assertEqual(error.details["gatewayJobId"], "eval-safe")
+
     def test_probe_passes_candidate_only_missing_resource_skip_allowlist(self) -> None:
         quality = load_script_module("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as td:

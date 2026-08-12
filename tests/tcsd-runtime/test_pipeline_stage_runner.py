@@ -1175,6 +1175,12 @@ class PipelineStageRunnerTests(unittest.TestCase):
             "timeoutSeconds": 2400,
             "candidateCount": 3,
             "caseCount": 38,
+            "batchIndex": 2,
+            "batchCount": 6,
+            "batchCandidateCount": 64,
+            "batchStart": 65,
+            "batchEnd": 128,
+            "diagnosticArtifactFileName": "GenericModel_state_probe_batch_002_results.error.json",
             "probeEntryExists": True,
             "probePlanSha256": "a" * 64,
             "probeEntrySha256": "b" * 64,
@@ -1185,6 +1191,12 @@ class PipelineStageRunnerTests(unittest.TestCase):
         self.assertEqual(details["gatewayJobId"], "eval-safe-job")
         self.assertEqual(details["candidateCount"], 3)
         self.assertEqual(details["caseCount"], 38)
+        self.assertEqual(details["batchIndex"], 2)
+        self.assertEqual(details["batchEnd"], 128)
+        self.assertEqual(
+            details["diagnosticArtifactFileName"],
+            "GenericModel_state_probe_batch_002_results.error.json",
+        )
         self.assertEqual(details["probePlanSha256"], "a" * 64)
         self.assertNotIn("token", details)
         self.assertNotIn("path", details)

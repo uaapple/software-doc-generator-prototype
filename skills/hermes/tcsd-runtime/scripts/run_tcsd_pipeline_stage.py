@@ -11,6 +11,9 @@ RESULT_SCHEMA = "tcsd-agent-stage-result/v1"
 STAGE6_PROBE_TIMEOUT_BASE_SECONDS = 600
 STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS = 5
 STAGE6_PROBE_TIMEOUT_MAX_SECONDS = 3600
+STAGE6_PROBE_BATCH_SIZE = 64
+STAGE6_MAX_CANDIDATES_PER_TARGET = 8
+STAGE6_MAX_TOTAL_CANDIDATES = 384
 STAGE11_PROBE_TIMEOUT_BASE_SECONDS = 600
 STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS = 30
 STAGE11_PROBE_TIMEOUT_MAX_SECONDS = 3600
@@ -98,8 +101,14 @@ def public_error_details(error: BaseException) -> dict[str, Any]:
     raw = getattr(error, "details", None)
     if not isinstance(raw, dict): return {}
     details: dict[str, Any] = {}
-    safe_text_keys = {"phase", "gatewayErrorCode", "gatewayJobId", "gatewayStatus"}
-    safe_number_keys = {"satkExitCode", "timeoutSeconds", "candidateCount", "caseCount"}
+    safe_text_keys = {
+        "phase", "gatewayErrorCode", "gatewayJobId", "gatewayStatus",
+        "diagnosticArtifactFileName",
+    }
+    safe_number_keys = {
+        "satkExitCode", "timeoutSeconds", "candidateCount", "caseCount",
+        "batchIndex", "batchCount", "batchCandidateCount", "batchStart", "batchEnd",
+    }
     safe_hash_keys = {"probePlanSha256", "probeEntrySha256"}
     for key in safe_text_keys:
         value = str(raw.get(key) or "").strip()
@@ -547,16 +556,43 @@ def stage_run(
             evidence={"executionReadiness": ir_summary.get("executionReadiness", {})},
         ); return
     if stage == 6:
-        plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
+        plan = out / f"{model}_state_probe_plan.json"; run([
+            sys.executable,
+            str(scripts() / "build_state_probe_plan.py"),
+            "--traces",
+            str(traces),
+            "--output",
+            str(plan),
+            "--max-candidates-per-port",
+            str(STAGE6_MAX_CANDIDATES_PER_TARGET),
+            "--max-total-candidates",
+            str(STAGE6_MAX_TOTAL_CANDIDATES),
+        ], root); plan_data = read_json(plan)
         probe_artifacts = [artifact(root, plan)]; candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))
-        probe_timeout_seconds = stage6_probe_timeout_seconds(candidate_count)
+        probe_timeout_seconds = stage6_probe_timeout_seconds(min(candidate_count, STAGE6_PROBE_BATCH_SIZE))
+        probe_batch_count = math.ceil(candidate_count / STAGE6_PROBE_BATCH_SIZE) if candidate_count else 0
         if candidate_count > 0:
             probe_results = out / f"{model}_state_probe_results.json"; probe_fixture = os.environ.get("TCSD_PIPELINE_PROBE_RESULTS_FIXTURE", "")
             if probe_fixture:
                 shutil.copy2(probe_fixture, probe_results); run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
             else:
                 try:
-                    obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json", gateway_timeout_seconds=probe_timeout_seconds)
+                    obligations, batch_manifest = quality.run_probe_batched(
+                        python=sys.executable,
+                        scripts=scripts(),
+                        root_dir=root,
+                        model=model,
+                        mat_file=inp["modelMatPath"],
+                        init_scripts=inp.get("projectInitScripts", []),
+                        unreachable_overrides="",
+                        coverage_threshold=float(inp.get("coverageThreshold", 80)),
+                        case_json=plan,
+                        output_name=f"{model}_state_probe_results.json",
+                        batch_size=STAGE6_PROBE_BATCH_SIZE,
+                        gateway_timeout_seconds=probe_timeout_seconds,
+                        manifest_name=f"{model}_state_probe_batch_manifest.json",
+                    )
+                    probe_artifacts.append(artifact(root, batch_manifest, "json", "state-probe-batches"))
                 except quality.SatkEvaluationError as error:
                     probe_entry = out / f"{model}_probe_mcdc_entry.m"
                     error.details.update({
@@ -568,7 +604,14 @@ def stage_run(
                     raise
             read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
-        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0, "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None}); return
+        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={
+            "candidateCount": candidate_count,
+            "truncatedCandidateCount": int(plan_data.get("summary", {}).get("truncated_candidate_count") or 0),
+            "probeExecuted": candidate_count > 0,
+            "probeBatchSize": STAGE6_PROBE_BATCH_SIZE if candidate_count > 0 else None,
+            "probeBatchCount": probe_batch_count,
+            "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None,
+        }); return
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)

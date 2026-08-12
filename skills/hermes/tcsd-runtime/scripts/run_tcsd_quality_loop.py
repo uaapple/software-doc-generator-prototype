@@ -9,6 +9,7 @@ steps, keeping expensive operations opt-in and bounded.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -187,6 +188,26 @@ def safe_diagnostic_code(value: Any, fallback: str = "SATK_EVALUATION_FAILED") -
     return text[:120] if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", text) else fallback
 
 
+def parse_last_json_object(value: Any) -> dict[str, Any]:
+    text = str(value or "")
+    try:
+        payload = json.loads(text or "{}")
+        return payload if isinstance(payload, dict) else {}
+    except (json.JSONDecodeError, TypeError):
+        pass
+    decoder = json.JSONDecoder()
+    for offset in range(len(text) - 1, -1, -1):
+        if text[offset] != "{":
+            continue
+        try:
+            payload, consumed = decoder.raw_decode(text[offset:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and not text[offset + consumed:].strip():
+            return payload
+    return {}
+
+
 class SatkEvaluationError(RuntimeError):
     """A redacted SATK/MATLAB failure with bounded public diagnostics."""
 
@@ -199,10 +220,7 @@ def satk_failure(stdout: str, stderr: str, returncode: int) -> SatkEvaluationErr
     error_code = "SATK_EVALUATION_FAILED"
     message = "SATK/MATLAB evaluation failed without a structured error."
     gateway_data: dict[str, Any] = {}
-    try:
-        payload = json.loads(stdout or "{}")
-    except (json.JSONDecodeError, TypeError):
-        payload = {}
+    payload = parse_last_json_object(stdout)
     error = payload.get("error") if isinstance(payload, dict) else None
     if isinstance(error, dict):
         error_code = safe_diagnostic_code(error.get("code"), error_code)
@@ -266,6 +284,41 @@ def run_satk(
     )
     if completed.returncode != 0:
         raise satk_failure(completed.stdout, completed.stderr, completed.returncode)
+
+
+def probe_failure(error_path: Path, fallback: SatkEvaluationError) -> SatkEvaluationError:
+    if error_path.is_file():
+        try:
+            payload = load_json(error_path)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            payload = {}
+    else:
+        payload = {}
+    identifier = safe_diagnostic_code(
+        payload.get("identifier"),
+        str(fallback.details.get("gatewayErrorCode") or "MATLAB_PROBE_FAILED"),
+    )
+    message = safe_diagnostic_text(payload.get("message")) or safe_diagnostic_text(fallback)
+    if not error_path.is_file():
+        error_path.write_text(
+            json.dumps({
+                "schema": "tcsd-matlab-probe-error/v1",
+                "source": "satk-runner",
+                "identifier": identifier,
+                "message": message,
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    details = dict(fallback.details)
+    details.update({
+        "phase": "matlab_probe_evaluation",
+        "gatewayErrorCode": identifier,
+        "diagnosticArtifactFileName": error_path.name,
+    })
+    return SatkEvaluationError(
+        f"SATK/MATLAB probe failed ({identifier}): {message}",
+        details,
+    )
 
 
 def require_matlab_artifact(path: Path, *, phase: str) -> None:
@@ -563,6 +616,8 @@ def run_probe(
     skip_missing_external_resource_test_ids: list[str] | None = None,
 ) -> tuple[Path, Path | None]:
     probe_results = root_dir / "outputs" / output_name
+    probe_error = probe_results.with_suffix(".error.json")
+    probe_error.unlink(missing_ok=True)
     coverage_json = root_dir / "outputs" / f"{model}_coverage_summary.json"
     coverage_data = root_dir / "outputs" / f"{model}_coverage.cvd"
     coverage_html = root_dir / "outputs" / f"{model}_coverage.html"
@@ -587,22 +642,38 @@ def run_probe(
             [
                 f"rootDir = {matlab_string(str(root_dir))};",
                 f"addpath({matlab_string(str(scripts))});",
+                f"diagnosticJson = {matlab_string(str(probe_error))};",
+                "if exist(diagnosticJson, 'file'), delete(diagnosticJson); end",
+                "try",
                 (
-                    f"probe_logical_mcdc_vectors(rootDir, {matlab_cell([model])}, "
+                    f"  probe_logical_mcdc_vectors(rootDir, {matlab_cell([model])}, "
                     f"{matlab_string(mat_file)}, 'InitScripts', {matlab_cell(init_scripts)}, "
                     f"'OutputJson', {matlab_string(str(probe_results))}{case_arg}"
                     f"{coverage_args}{skippable_test_arg});"
                 ),
+                "catch ME",
+                (
+                    "  p = struct('schema','tcsd-matlab-probe-error/v1',"
+                    "'source','matlab','identifier',char(string(ME.identifier)),"
+                    "'message',char(string(ME.message)));"
+                ),
+                "  fid = fopen(diagnosticJson, 'w');",
+                "  if fid >= 0, fprintf(fid, '%s', jsonencode(p, PrettyPrint=true)); fclose(fid); end",
+                "  rethrow(ME);",
+                "end",
             ]
         ),
     )
-    run_satk(
-        python,
-        scripts,
-        entry,
-        root_dir,
-        gateway_timeout_seconds=gateway_timeout_seconds,
-    )
+    try:
+        run_satk(
+            python,
+            scripts,
+            entry,
+            root_dir,
+            gateway_timeout_seconds=gateway_timeout_seconds,
+        )
+    except SatkEvaluationError as error:
+        raise probe_failure(probe_error, error) from None
     require_matlab_artifact(probe_results, phase="matlab_probe_evaluation")
     obligations = root_dir / "outputs" / f"{model}_coverage_obligations.json"
     cmd = [
@@ -623,6 +694,194 @@ def run_probe(
     if build_obligations:
         run(cmd, cwd=root_dir, check=False)
     return obligations, coverage_json if collect_coverage else None
+
+
+def probe_report(payload: dict[str, Any], model: str) -> dict[str, Any]:
+    direct = payload.get(model) if isinstance(payload.get(model), dict) else None
+    if direct and direct.get("schema") == "simulink-ut-logical-mcdc-probe/v2":
+        return direct
+    if payload.get("schema") == "simulink-ut-logical-mcdc-probe/v2":
+        return payload
+    matches = [
+        value for value in payload.values()
+        if isinstance(value, dict) and value.get("schema") == "simulink-ut-logical-mcdc-probe/v2"
+    ]
+    if len(matches) != 1:
+        raise RuntimeError("MATLAB probe batch did not return exactly one model report")
+    return matches[0]
+
+
+def merge_probe_batches(
+    payloads: list[dict[str, Any]], model: str, case_json: Path
+) -> dict[str, Any]:
+    reports = [probe_report(payload, model) for payload in payloads]
+    if not reports:
+        raise RuntimeError("MATLAB probe batching produced no reports")
+    merged = dict(reports[0])
+    merged["case_json"] = str(case_json)
+    merged["observations"] = [
+        observation
+        for report in reports
+        for observation in (report.get("observations") or [])
+        if isinstance(observation, dict)
+    ]
+    merged["skipped_tests"] = [
+        skipped
+        for report in reports
+        for skipped in (report.get("skipped_tests") or [])
+        if isinstance(skipped, dict)
+    ]
+    merged["batch_count"] = len(reports)
+    return {model: merged}
+
+
+def build_probe_obligations(
+    *,
+    python: str,
+    scripts: Path,
+    root_dir: Path,
+    model: str,
+    probe_results: Path,
+    unreachable_overrides: str,
+) -> Path:
+    obligations = root_dir / "outputs" / f"{model}_coverage_obligations.json"
+    command = [
+        python,
+        str(scripts / "build_probe_mcdc_obligations.py"),
+        "--probe-results",
+        str(probe_results),
+        "--model",
+        model,
+        "--output-dir",
+        str(root_dir / "outputs"),
+    ]
+    if unreachable_overrides:
+        command.extend(["--unreachable-overrides", unreachable_overrides])
+    logical_mappings = root_dir / "outputs" / f"{model}_logical_operators.json"
+    if logical_mappings.exists():
+        command.extend(["--logical-mappings", str(logical_mappings)])
+    run(command, cwd=root_dir, check=False)
+    return obligations
+
+
+def run_probe_batched(
+    *,
+    python: str,
+    scripts: Path,
+    root_dir: Path,
+    model: str,
+    mat_file: str,
+    init_scripts: list[str],
+    unreachable_overrides: str,
+    coverage_threshold: float,
+    case_json: Path,
+    output_name: str,
+    batch_size: int,
+    gateway_timeout_seconds: int | None = None,
+    manifest_name: str | None = None,
+) -> tuple[Path, Path]:
+    payload = load_json(case_json)
+    tests = payload.get("tests") if isinstance(payload.get("tests"), list) else []
+    if not tests:
+        raise RuntimeError("MATLAB probe batching requires at least one candidate")
+    bounded_batch_size = max(1, int(batch_size))
+    batches = [tests[index:index + bounded_batch_size] for index in range(0, len(tests), bounded_batch_size)]
+    outputs = root_dir / "outputs"
+    final_results = outputs / output_name
+    manifest = outputs / (manifest_name or f"{model}_probe_batch_manifest.json")
+    records: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
+    for batch_index, batch_tests in enumerate(batches, start=1):
+        batch_case = outputs / f"{model}_state_probe_batch_{batch_index:03d}_cases.json"
+        batch_result_name = f"{model}_state_probe_batch_{batch_index:03d}_results.json"
+        batch_case.write_text(
+            json.dumps({**payload, "tests": batch_tests}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        record = {
+            "batchIndex": batch_index,
+            "candidateStart": (batch_index - 1) * bounded_batch_size + 1,
+            "candidateEnd": (batch_index - 1) * bounded_batch_size + len(batch_tests),
+            "candidateCount": len(batch_tests),
+            "firstTestId": str(batch_tests[0].get("test_id") or ""),
+            "lastTestId": str(batch_tests[-1].get("test_id") or ""),
+            "caseFileName": batch_case.name,
+            "caseSha256": hashlib.sha256(batch_case.read_bytes()).hexdigest(),
+            "status": "running",
+        }
+        try:
+            run_probe(
+                python=python,
+                scripts=scripts,
+                root_dir=root_dir,
+                model=model,
+                mat_file=mat_file,
+                init_scripts=init_scripts,
+                unreachable_overrides=unreachable_overrides,
+                collect_coverage=False,
+                coverage_threshold=coverage_threshold,
+                case_json=batch_case,
+                output_name=batch_result_name,
+                gateway_timeout_seconds=gateway_timeout_seconds,
+                build_obligations=False,
+            )
+        except SatkEvaluationError as error:
+            record.update({
+                "status": "failed",
+                "errorCode": str(error.details.get("gatewayErrorCode") or "SATK_EVALUATION_FAILED"),
+                "diagnosticArtifactFileName": str(error.details.get("diagnosticArtifactFileName") or ""),
+            })
+            records.append(record)
+            manifest.write_text(json.dumps({
+                "schema": "tcsd-probe-batch-manifest/v1",
+                "model": model,
+                "status": "failed",
+                "candidateCount": len(tests),
+                "batchSize": bounded_batch_size,
+                "batchCount": len(batches),
+                "batches": records,
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            error.details.update({
+                "batchIndex": batch_index,
+                "batchCount": len(batches),
+                "batchCandidateCount": len(batch_tests),
+                "batchStart": record["candidateStart"],
+                "batchEnd": record["candidateEnd"],
+            })
+            raise
+        result_path = outputs / batch_result_name
+        result_payload = load_json(result_path)
+        results.append(result_payload)
+        record.update({
+            "status": "completed",
+            "resultFileName": result_path.name,
+            "resultSha256": hashlib.sha256(result_path.read_bytes()).hexdigest(),
+        })
+        records.append(record)
+    final_results.write_text(
+        json.dumps(merge_probe_batches(results, model, case_json), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    manifest.write_text(json.dumps({
+        "schema": "tcsd-probe-batch-manifest/v1",
+        "model": model,
+        "status": "completed",
+        "candidateCount": len(tests),
+        "batchSize": bounded_batch_size,
+        "batchCount": len(batches),
+        "batches": records,
+        "mergedResultFileName": final_results.name,
+        "mergedResultSha256": hashlib.sha256(final_results.read_bytes()).hexdigest(),
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    obligations = build_probe_obligations(
+        python=python,
+        scripts=scripts,
+        root_dir=root_dir,
+        model=model,
+        probe_results=final_results,
+        unreachable_overrides=unreachable_overrides,
+    )
+    return obligations, manifest
 
 
 def coverage_below_target(path: Path) -> bool:

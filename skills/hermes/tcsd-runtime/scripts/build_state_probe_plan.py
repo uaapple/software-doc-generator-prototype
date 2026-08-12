@@ -13,6 +13,8 @@ from typing import Any
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
 DEFAULT_HOLDS = (0.1, 1.0, 5.0)
+DEFAULT_MAX_CANDIDATES_PER_TARGET = 8
+DEFAULT_MAX_TOTAL_CANDIDATES = 384
 TEST_FIELDS = {
     "row", "test_id", "init_values", "init_params", "steps", "evidence_step", "target",
 }
@@ -228,7 +230,59 @@ def validate_test_schema(tests: list[dict[str, Any]]) -> None:
                 )
 
 
-def build_plan(report: dict[str, Any], max_candidates: int, sample_time: float) -> dict[str, Any]:
+def limit_candidates(
+    tests: list[dict[str, Any]],
+    targets: list[dict[str, Any]],
+    max_total_candidates: int,
+) -> tuple[list[dict[str, Any]], int]:
+    if len(tests) <= max_total_candidates:
+        return tests, 0
+    groups: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for test in tests:
+        target = test.get("target") if isinstance(test.get("target"), dict) else {}
+        key = (str(target.get("operator_id") or ""), int(target.get("port_index") or 0))
+        groups.setdefault(key, []).append(test)
+    selected: list[dict[str, Any]] = []
+    depth = 0
+    while len(selected) < max_total_candidates:
+        added = False
+        for values in groups.values():
+            if depth < len(values):
+                selected.append(values[depth])
+                added = True
+                if len(selected) >= max_total_candidates:
+                    break
+        if not added:
+            break
+        depth += 1
+    selected_counts: dict[tuple[str, int], int] = {}
+    for index, test in enumerate(selected, start=1):
+        target = test["target"]
+        key = (str(target.get("operator_id") or ""), int(target.get("port_index") or 0))
+        selected_counts[key] = selected_counts.get(key, 0) + 1
+        test["row"] = index
+        test["test_id"] = f"STATE_PROBE_{index:04d}"
+    for target in targets:
+        key = (str(target.get("operator_id") or ""), int(target.get("port_index") or 0))
+        original_count = int(target.get("candidate_count") or 0)
+        retained_count = selected_counts.get(key, 0)
+        target["candidate_count"] = retained_count
+        if retained_count < original_count:
+            target["bounded"] = True
+            target["truncated_candidate_count"] = (
+                int(target.get("truncated_candidate_count") or 0)
+                + original_count
+                - retained_count
+            )
+    return selected, len(tests) - len(selected)
+
+
+def build_plan(
+    report: dict[str, Any],
+    max_candidates: int,
+    sample_time: float,
+    max_total_candidates: int = DEFAULT_MAX_TOTAL_CANDIDATES,
+) -> dict[str, Any]:
     tests: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -273,6 +327,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, sample_time: float) 
                 continue
             param_values = normalize_param_values(deps.params)
             if pattern in {"rising-edge", "falling-edge"}:
+                potential_candidate_count = len(deps.inputs)
                 start, end = (0, 1) if pattern == "rising-edge" else (1, 0)
                 for control in sorted(deps.inputs):
                     if target["candidate_count"] >= max_candidates:
@@ -308,14 +363,19 @@ def build_plan(report: dict[str, Any], max_candidates: int, sample_time: float) 
                     target["candidate_count"] += 1
                 if target["candidate_count"] >= max_candidates:
                     target["bounded"] = True
+                if potential_candidate_count > target["candidate_count"]:
+                    target["truncated_candidate_count"] = (
+                        potential_candidate_count - target["candidate_count"]
+                    )
                 if not target["candidate_count"]:
                     target["status"] = "candidate_exhausted"
                 targets.append(target)
                 continue
             holds = hold_candidates(deps, sample_time)
+            potential_candidate_count = len(deps.inputs) * 2 * len(holds)
             for control in sorted(deps.inputs):
-                for start, end in ((0, 1), (1, 0)):
-                    for hold in holds:
+                for hold in holds:
+                    for start, end in ((0, 1), (1, 0)):
                         if target["candidate_count"] >= max_candidates:
                             break
                         key = json.dumps([op_id, index, control, start, end, hold, sibling_inputs, sibling_params, param_values], sort_keys=True)
@@ -351,25 +411,40 @@ def build_plan(report: dict[str, Any], max_candidates: int, sample_time: float) 
                             }
                         )
                         target["candidate_count"] += 1
-                    if target["candidate_count"] >= max_candidates:
-                        break
                 if target["candidate_count"] >= max_candidates:
                     break
             if target["candidate_count"] >= max_candidates:
                 target["bounded"] = True
+            if potential_candidate_count > target["candidate_count"]:
+                target["truncated_candidate_count"] = (
+                    potential_candidate_count - target["candidate_count"]
+                )
             if not target["candidate_count"]:
                 target["status"] = "candidate_exhausted"
             targets.append(target)
+    tests, truncated_count = limit_candidates(
+        tests,
+        targets,
+        max(1, max_total_candidates),
+    )
     validate_test_schema(tests)
     return {
         "schema": "simulink-ut-state-probe-plan/v1",
         "model": report.get("model"),
-        "limits": {"max_candidates_per_port": max_candidates},
+        "limits": {
+            "max_candidates_per_port": max_candidates,
+            "max_total_candidates": max(1, max_total_candidates),
+        },
         "targets": targets,
         "tests": tests,
         "summary": {
             "target_count": len(targets),
             "candidate_count": len(tests),
+            "truncated_candidate_count": sum(
+                int(item.get("truncated_candidate_count") or 0)
+                for item in targets
+            ),
+            "global_truncated_candidate_count": truncated_count,
             "unplanned_count": sum(1 for item in targets if item["status"] != "planned"),
         },
     }
@@ -379,14 +454,28 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--traces", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--max-candidates-per-port", type=int, default=32)
+    parser.add_argument(
+        "--max-candidates-per-port",
+        type=int,
+        default=DEFAULT_MAX_CANDIDATES_PER_TARGET,
+    )
+    parser.add_argument(
+        "--max-total-candidates",
+        type=int,
+        default=DEFAULT_MAX_TOTAL_CANDIDATES,
+    )
     parser.add_argument("--sample-time", type=float, default=0.01)
     args = parser.parse_args()
     payload = json.loads(Path(args.traces).read_text(encoding="utf-8"))
     items = reports(payload)
     if len(items) != 1:
         raise SystemExit("state probe planner requires one model-specific logical trace")
-    plan = build_plan(items[0], max(1, args.max_candidates_per_port), max(1e-6, args.sample_time))
+    plan = build_plan(
+        items[0],
+        max(1, args.max_candidates_per_port),
+        max(1e-6, args.sample_time),
+        max(1, args.max_total_candidates),
+    )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
