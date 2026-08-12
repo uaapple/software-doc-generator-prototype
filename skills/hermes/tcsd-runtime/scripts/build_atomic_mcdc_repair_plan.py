@@ -20,6 +20,7 @@ from typing import Any
 
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
+MAX_ATOMIC_CONDITIONS = 16
 
 
 @dataclass
@@ -443,6 +444,178 @@ def comparison_result(operator: str, left: float, right: float) -> bool:
     raise ValueError(f"unsupported relational operator {operator!r}")
 
 
+def resolved_scalar_value(node: dict[str, Any]) -> float | None:
+    resolved = resolved_constant(node)
+    return float(resolved[0]) if resolved else None
+
+
+def switch_leaf_values(node: dict[str, Any]) -> list[float]:
+    """Return bounded scalar values that a traced Switch tree can emit."""
+    node = unwrap(node)
+    kind = str(node.get("kind") or "").lower()
+    if kind == "constant":
+        value = resolved_scalar_value(node)
+        return [value] if value is not None else []
+    if kind != "switch":
+        return []
+    terms = children(node)
+    if len(terms) != 3:
+        return []
+    values = switch_leaf_values(terms[0]) + switch_leaf_values(terms[2])
+    return sorted(set(values))[:32]
+
+
+def combine_recipe_options(
+    groups: list[tuple[list[Recipe], str]],
+    *,
+    limit: int = 32,
+) -> list[Recipe]:
+    results: list[Recipe] = []
+
+    def search(index: int, current: Recipe) -> None:
+        if len(results) >= limit:
+            return
+        if index >= len(groups):
+            results.append(current)
+            return
+        options, where = groups[index]
+        for option in options:
+            merged = Recipe(
+                inputs=dict(current.inputs),
+                params=dict(current.params),
+                hold_s=current.hold_s,
+                strategy=current.strategy,
+                issues=list(current.issues),
+            )
+            merge_recipe(merged, option, where)
+            if not merged.issues:
+                search(index + 1, merged)
+
+    search(0, Recipe())
+    return results
+
+
+def boolean_node_recipe(node: dict[str, Any], desired: bool) -> Recipe:
+    """Drive a traced Boolean controller to the requested state."""
+    options = boolean_node_recipe_options(node, desired)
+    return options[0] if options else Recipe(issues=["Boolean switch controller has no conflict-free recipe"])
+
+
+def boolean_node_recipe_options(node: dict[str, Any], desired: bool) -> list[Recipe]:
+    """Return bounded alternative recipes for a Boolean controller."""
+    node = unwrap(node)
+    kind = str(node.get("kind") or "").lower()
+    if kind == "root_inport":
+        name = direct_root(node)
+        return [Recipe(inputs={name: int(desired)}, strategy="switch_root_control")] if name else []
+    if kind == "constant":
+        expression = str(node.get("value") or "").strip()
+        if IDENTIFIER_RE.match(expression):
+            return [Recipe(params={expression: int(desired)}, strategy="switch_parameter_control")]
+        value = resolved_scalar_value(node)
+        return [Recipe(strategy="fixed_switch_control")] if value is not None and bool(value) == desired else []
+    if kind == "relational":
+        return [item for item in relational_recipe_options(node, desired) if not item.issues]
+    if kind == "switch":
+        return switch_value_recipe_options(node, float(int(desired)))
+    if kind != "logic":
+        return []
+    operator = str(node.get("operator") or "").upper()
+    terms = children(node)
+    if operator == "NOT" and len(terms) == 1:
+        return boolean_node_recipe_options(terms[0], not desired)
+    if operator not in {"AND", "OR"} or not terms:
+        return []
+    target_all = desired if operator == "AND" else not desired
+    if target_all:
+        return combine_recipe_options([
+            (boolean_node_recipe_options(term, desired), f"{operator} controller {index}")
+            for index, term in enumerate(terms, 1)
+        ])
+    sensitized = True if operator == "AND" else False
+    results: list[Recipe] = []
+    for changed_index in range(len(terms)):
+        groups = []
+        for index, term in enumerate(terms):
+            state = desired if index == changed_index else sensitized
+            groups.append((boolean_node_recipe_options(term, state), f"{operator} controller {index + 1}"))
+        for candidate in combine_recipe_options(groups, limit=32 - len(results)):
+            candidate.strategy = "switch_logical_sensitization"
+            results.append(candidate)
+            if len(results) >= 32:
+                return results
+    return results
+
+
+def switch_value_recipe(node: dict[str, Any], desired_value: float) -> Recipe:
+    """Select a Switch branch that deterministically emits desired_value."""
+    options = switch_value_recipe_options(node, desired_value)
+    return options[0] if options else Recipe(issues=[f"Switch tree cannot emit requested value {desired_value:g}"])
+
+
+def switch_value_recipe_options(node: dict[str, Any], desired_value: float) -> list[Recipe]:
+    """Return bounded alternative Switch branch-selection recipes."""
+    node = unwrap(node)
+    if str(node.get("kind") or "").lower() == "constant":
+        value = resolved_scalar_value(node)
+        return [Recipe(strategy="fixed_switch_branch")] if value is not None and math.isclose(value, desired_value, rel_tol=0.0, abs_tol=1e-12) else []
+    if str(node.get("kind") or "").lower() != "switch":
+        return []
+    terms = children(node)
+    if len(terms) != 3:
+        return []
+    criteria = str(node.get("criteria") or "u2 ~= 0").replace(" ", "")
+    if criteria not in {"u2~=0", "u2>0"}:
+        return []
+    results: list[Recipe] = []
+    for branch_index, control_state in ((0, True), (2, False)):
+        groups = [
+            (switch_value_recipe_options(terms[branch_index], desired_value), "switch data branch"),
+            (boolean_node_recipe_options(terms[1], control_state), "switch control"),
+        ]
+        for candidate in combine_recipe_options(groups, limit=32 - len(results)):
+            candidate.strategy = "switch_branch_selection"
+            results.append(candidate)
+            if len(results) >= 32:
+                return results
+    return results
+
+
+def switch_relational_recipe_options(node: dict[str, Any], desired: bool) -> list[Recipe] | None:
+    terms = children(node)
+    if len(terms) != 2:
+        return None
+    left_kind = str(unwrap(terms[0]).get("kind") or "").lower()
+    right_kind = str(unwrap(terms[1]).get("kind") or "").lower()
+    left_constant, right_constant = resolved_scalar_value(terms[0]), resolved_scalar_value(terms[1])
+    if left_kind == "switch" and right_constant is not None:
+        switch_node, threshold, switch_on_left = terms[0], right_constant, True
+    elif right_kind == "switch" and left_constant is not None:
+        switch_node, threshold, switch_on_left = terms[1], left_constant, False
+    else:
+        return None
+    operator = str(node.get("operator") or "").strip()
+    results: list[Recipe] = []
+    for value in switch_leaf_values(switch_node):
+        left, right = (value, threshold) if switch_on_left else (threshold, value)
+        if comparison_result(operator, left, right) == desired:
+            for recipe in switch_value_recipe_options(switch_node, value):
+                recipe.strategy = "switch_output_comparison"
+                results.append(recipe)
+                if len(results) >= 32:
+                    return results
+    return results
+
+
+def switch_relational_recipe(node: dict[str, Any], desired: bool) -> Recipe | None:
+    options = switch_relational_recipe_options(node, desired)
+    if options is None:
+        return None
+    return options[0] if options else Recipe(issues=[
+        f"Switch output has no branch value satisfying {str(node.get('operator') or '').strip()!r}={desired}"
+    ])
+
+
 def numeric_domain(data_type: str) -> tuple[float | None, float | None, float | None]:
     compact = str(data_type or "").strip().lower().replace(" ", "")
     if compact in {"boolean", "bool"}:
@@ -512,6 +685,9 @@ def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
     mux_recipe = mux_relational_recipe(node, desired)
     if mux_recipe is not None:
         return mux_recipe
+    switch_recipe = switch_relational_recipe(node, desired)
+    if switch_recipe is not None:
+        return switch_recipe
 
     if right_param and op in {">", ">="} and contains_kind(terms[0], {"stateful", "switch", "minmax"}):
         return Recipe(
@@ -565,6 +741,38 @@ def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
     return Recipe(issues=["comparison threshold is unresolved or lacks a safe root-input controller mapping"])
 
 
+def relational_recipe_options(
+    node: dict[str, Any],
+    desired: bool,
+    shared_values: dict[str, list[float]] | None = None,
+) -> list[Recipe]:
+    """Return bounded alternatives so shared root-input constraints can agree."""
+    switch_options = switch_relational_recipe_options(node, desired)
+    if switch_options is not None:
+        return switch_options or [switch_relational_recipe(node, desired)]
+    controller = relational_controller(node)
+    if not controller:
+        return [relational_recipe(node, desired)]
+    root = str(controller["root_input"])
+    operator = str(controller["operator"])
+    strategy = "root_input_resolved_boundary" if not controller.get("chain") else "affine_root_input_resolved_boundary"
+    values = list((shared_values or {}).get(root, []))
+    if not values:
+        values = [
+            value
+            for _, value in boundary_values(
+                float(controller["root_boundary"]),
+                str(controller.get("data_type") or ""),
+            )
+        ]
+    options = []
+    for value in values:
+        left, right = controller_comparison_values(controller, value)
+        if comparison_result(operator, left, right) == desired:
+            options.append(Recipe(inputs={root: value}, strategy=strategy))
+    return options or [relational_recipe(node, desired)]
+
+
 def atom_recipe(atom: Atom, desired: bool) -> Recipe:
     node = unwrap(atom.source)
     if atom.kind == "root_inport":
@@ -582,6 +790,16 @@ def atom_recipe(atom: Atom, desired: bool) -> Recipe:
     return Recipe(issues=[f"unsupported atomic condition kind {atom.kind!r}"])
 
 
+def atom_recipe_options(
+    atom: Atom,
+    desired: bool,
+    shared_values: dict[str, list[float]] | None = None,
+) -> list[Recipe]:
+    if atom.kind == "relational":
+        return relational_recipe_options(unwrap(atom.source), desired, shared_values)
+    return [atom_recipe(atom, desired)]
+
+
 def merge_recipe(target: Recipe, source: Recipe, where: str) -> None:
     target.hold_s = max(target.hold_s, source.hold_s)
     target.issues.extend(source.issues)
@@ -592,6 +810,59 @@ def merge_recipe(target: Recipe, source: Recipe, where: str) -> None:
                 target.issues.append(f"{where}: conflicting {category} value for {key}")
             else:
                 destination[key] = value
+
+
+def solve_vector_recipe(atoms: list[Atom], vector: tuple[bool, ...]) -> tuple[Recipe, dict[str, str]]:
+    shared_values: dict[str, list[float]] = {}
+    for atom in atoms:
+        if atom.kind != "relational":
+            continue
+        controller = relational_controller(unwrap(atom.source))
+        if not controller:
+            continue
+        root = str(controller["root_input"])
+        for _, value in boundary_values(
+            float(controller["root_boundary"]),
+            str(controller.get("data_type") or ""),
+        ):
+            if value not in shared_values.setdefault(root, []):
+                shared_values[root].append(value)
+    candidates = [
+        (index, atom, atom_recipe_options(atom, vector[index], shared_values))
+        for index, atom in enumerate(atoms)
+    ]
+    candidates.sort(key=lambda item: (len(item[2]), item[0]))
+
+    def search(position: int, current: Recipe, strategies: dict[str, str]) -> tuple[Recipe, dict[str, str]] | None:
+        if position >= len(candidates):
+            return current, strategies
+        _, atom, options = candidates[position]
+        for option in options:
+            merged = Recipe(
+                inputs=dict(current.inputs),
+                params=dict(current.params),
+                hold_s=current.hold_s,
+                strategy=current.strategy,
+                issues=list(current.issues),
+            )
+            merge_recipe(merged, option, atom.id)
+            if merged.issues:
+                continue
+            result = search(position + 1, merged, {**strategies, atom.id: option.strategy})
+            if result is not None:
+                return result
+        return None
+
+    result = search(0, Recipe(), {})
+    if result is not None:
+        return result
+    fallback = Recipe()
+    strategies: dict[str, str] = {}
+    for index, atom in enumerate(atoms):
+        option = atom_recipe(atom, vector[index])
+        strategies[atom.id] = option.strategy
+        merge_recipe(fallback, option, atom.id)
+    return fallback, strategies
 
 
 def reports(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -635,8 +906,15 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
     ast = build_ast(root, atoms, {})
     if not atoms:
         return [], {"operator_id": operator.get("id"), "condition_count": 0, "issues": ["no atomic conditions"]}
-    if len(atoms) > 12:
-        return [], {"operator_id": operator.get("id"), "condition_count": len(atoms), "issues": ["more than 12 atomic conditions; bounded planner stopped"]}
+    if len(atoms) > MAX_ATOMIC_CONDITIONS:
+        return [], {
+            "operator_id": operator.get("id"),
+            "block_path": operator.get("block_path"),
+            "condition_count": len(atoms),
+            "issues": [
+                f"more than {MAX_ATOMIC_CONDITIONS} atomic conditions; bounded planner stopped"
+            ],
+        }
 
     pairs = unique_cause_pairs(ast, len(atoms))
     probe_vector_compatible = all(
@@ -649,6 +927,19 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
 
     obligations: list[dict[str, Any]] = []
     op_id = str(operator.get("id") or operator.get("sid") or "LOGIC")
+    pair_memberships: dict[tuple[bool, ...], list[dict[str, Any]]] = {}
+    for condition_index, pair in sorted(chosen.items()):
+        pair_id = f"{op_id}_pair_{atoms[condition_index].id}"
+        false_vector, true_vector = sorted(pair, key=lambda vector: vector[condition_index])
+        descriptor = {
+            "pair_id": pair_id,
+            "condition_id": atoms[condition_index].id,
+            "condition_label": atoms[condition_index].label,
+            "false_vector": vector_label(false_vector),
+            "true_vector": vector_label(true_vector),
+        }
+        for vector in pair:
+            pair_memberships.setdefault(vector, []).append(descriptor)
     for index in missing:
         atom = atoms[index]
         obligations.append(
@@ -667,16 +958,13 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
             }
         )
     for vector in selected:
-        recipe = Recipe(hold_s=0.1)
+        recipe, strategies = solve_vector_recipe(atoms, vector)
         condition_states: dict[str, bool] = {}
-        strategies: dict[str, str] = {}
         for index, desired in enumerate(vector):
             atom = atoms[index]
             condition_states[atom.id] = desired
-            item_recipe = atom_recipe(atom, desired)
-            strategies[atom.id] = item_recipe.strategy
-            merge_recipe(recipe, item_recipe, atom.id)
         label = vector_label(vector)
+        top_level_vector = vector_label(tuple(evaluate(child, vector) for child in ast.get("children", [])))
         status = "required" if recipe.resolved else "unresolved"
         obligations.append(
             {
@@ -697,8 +985,10 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
                     "kind": "logical_sensitization",
                     "operator": str(operator.get("operator") or "").upper(),
                     "condition_vector": label,
+                    "operator_input_vector": top_level_vector,
                     "probe_vector_compatible": probe_vector_compatible,
                 },
+                "mcdc_pairs": pair_memberships.get(vector, []),
                 "issues": recipe.issues,
             }
         )
@@ -774,11 +1064,13 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
 
     condition_pairs = []
     for index, pair in sorted(chosen.items()):
+        false_vector, true_vector = sorted(pair, key=lambda vector: vector[index])
         condition_pairs.append(
             {
+                "pair_id": f"{op_id}_pair_{atoms[index].id}",
                 "condition_id": atoms[index].id,
                 "condition_label": atoms[index].label,
-                "false_true_pair": [vector_label(pair[0]), vector_label(pair[1])],
+                "false_true_pair": [vector_label(false_vector), vector_label(true_vector)],
             }
         )
     summary = {

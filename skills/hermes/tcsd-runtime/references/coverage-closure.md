@@ -167,3 +167,18 @@ Use the bundled scripts to reduce repeated manual repair work:
 8. Treat unresolved probe vectors as mapping failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason. Treat any actual Condition/Decision/MC/DC metric below the target (80% by default) as the trigger for one report-guided repair pass, not as a hard final-delivery failure.
 
 The default mapping gate remains `missing_count = 0` and `unresolved_count = 0`; `unreachable_count > 0` is acceptable only when every item has a specific model/probe reason. The coverage target is Condition/Decision/MC/DC each at least 80%. If the first report misses that target, repair once and then deliver the final measured result while explicitly reporting any metric still below 80%.
+# 覆盖组合快速实验
+
+在修改正式十二阶段流程前，可以直接复用既有任务的逻辑追踪、覆盖中间结果和基线用例，运行确定性覆盖组合实验：
+
+```bash
+python3 scripts/analyze_mcdc_strategy_experiment.py \
+  --logical-traces <model>_logical_traces.json \
+  --legacy-coverage-ir <model>_coverage_ir.json \
+  --baseline-cases <model>_cases_mcdc.json \
+  --verification-cases pair-verification-cases.json \
+  --max-verification-pairs 3 \
+  --output strategy-experiment.json
+```
+
+实验工具直接调用正式的原子条件 MC/DC 规划核心，不维护第二套策略实现。输出必须区分：旧策略已有的完整测试对、新策略新增的完整可执行测试对、仍不可执行的条件与原因。生成的少量验证用例可以交给 `probe_logical_mcdc_vectors.m` 做定向 MATLAB 仿真；只有实际逻辑端口向量与预测一致，才可将对应策略接入正式阶段。

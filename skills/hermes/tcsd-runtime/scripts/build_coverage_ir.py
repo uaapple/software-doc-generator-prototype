@@ -110,6 +110,7 @@ def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> 
         "sensitization_context": item.get("sensitization_context") or {},
         "patternType": item.get("pattern_type") or "",
         "controlRecipe": item.get("control_recipe") if isinstance(item.get("control_recipe"), dict) else {},
+        "mcdcPairs": item.get("mcdc_pairs") if isinstance(item.get("mcdc_pairs"), list) else [],
         "detectorEvidence": item.get("detector_evidence") if isinstance(item.get("detector_evidence"), dict) else {},
         "stimulus": norm_stimulus(item.get("stimulus")),
         "reachability": {"status": status, "reason": item.get("reason"), "issues": item.get("issues") or []},

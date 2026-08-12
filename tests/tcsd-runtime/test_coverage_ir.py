@@ -148,6 +148,141 @@ class CoverageIrTests(unittest.TestCase):
         self.assertIn("TTTTTTTT", vectors)
         self.assertEqual(sum(vector.count("F") == 1 for vector in vectors), 8)
 
+    def test_sixteen_condition_and_retains_executable_pair_membership(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        coverage_ir = script("build_coverage_ir.py")
+        operator = {
+            "id": "GenericModel:WideAnd16",
+            "sid": "GenericModel:WideAnd16",
+            "block_path": "GenericModel/WideAnd16",
+            "operator": "AND",
+            "ports": [
+                {"trace": {"kind": "root_inport", "signal": f"Input{index}"}}
+                for index in range(1, 17)
+            ],
+        }
+
+        obligations, summary = planner.build_for_operator("GenericModel", operator)
+
+        self.assertEqual(summary["condition_count"], 16)
+        self.assertEqual(summary["emitted_vector_count"], 17)
+        self.assertEqual(len(summary["pairs"]), 16)
+        required = [item for item in obligations if item.get("status") == "required"]
+        self.assertEqual(len(required), 17)
+        self.assertTrue(all(
+            len(item["control_recipe"]["operator_input_vector"]) == 16
+            for item in required
+        ))
+        memberships = {
+            pair["pair_id"]
+            for item in required
+            for pair in item.get("mcdc_pairs", [])
+        }
+        self.assertEqual(len(memberships), 16)
+        for pair in summary["pairs"]:
+            members = [
+                item for item in required
+                if any(value["pair_id"] == pair["pair_id"] for value in item.get("mcdc_pairs", []))
+            ]
+            self.assertEqual(len(members), 2)
+
+        ir = coverage_ir.build_ir({"model": "GenericModel", "operators": [operator]})
+        ir_pairs = {
+            pair["pair_id"]
+            for item in ir["items"]
+            for pair in item.get("mcdcPairs", [])
+        }
+        self.assertEqual(len(ir_pairs), 16)
+
+    def test_strategy_experiment_emits_minimal_pair_verification_cases(self) -> None:
+        experiment = script("analyze_mcdc_strategy_experiment.py")
+        traces = {
+            "model": "GenericModel",
+            "operators": [{
+                "id": "GenericModel:WideAnd",
+                "sid": "GenericModel:WideAnd",
+                "block_path": "GenericModel/WideAnd",
+                "operator": "AND",
+                "ports": [
+                    {"trace": {"kind": "root_inport", "signal": "Input1"}},
+                    {"trace": {"kind": "root_inport", "signal": "Input2"}},
+                ],
+            }],
+        }
+        result = experiment.run_experiment(traces, {"items": []})
+
+        self.assertEqual(result["summary"]["executablePairCount"], 2)
+        self.assertEqual(result["summary"]["newlyDesignedExecutablePairCount"], 2)
+        cases = experiment.verification_cases(
+            result,
+            {"tests": [{"init_values": {"Input1": 0, "Input2": 0}}]},
+            max_pairs=2,
+        )
+        self.assertEqual(cases["experiment"]["selectedPairCount"], 2)
+        self.assertEqual(cases["experiment"]["testCount"], 3)
+        expected = {
+            tuple(test["target"]["expected_vector"])
+            for test in cases["tests"]
+        }
+        self.assertEqual(expected, {(True, True), (False, True), (True, False)})
+
+    def test_switch_output_comparison_selects_branch_and_root_control(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        switch = {
+            "kind": "switch",
+            "criteria": "u2 ~= 0",
+            "inputs": [
+                {"kind": "constant", "value": "2", "resolvedValue": 2},
+                {"kind": "root_inport", "signal": "SelectHigh"},
+                {"kind": "constant", "value": "1", "resolvedValue": 1},
+            ],
+        }
+        comparison = {
+            "kind": "relational",
+            "operator": "==",
+            "inputs": [
+                switch,
+                {"kind": "constant", "value": "1", "resolvedValue": 1},
+            ],
+        }
+
+        true_recipe = planner.relational_recipe(comparison, True)
+        false_recipe = planner.relational_recipe(comparison, False)
+
+        self.assertEqual(true_recipe.inputs, {"SelectHigh": 0})
+        self.assertEqual(false_recipe.inputs, {"SelectHigh": 1})
+        self.assertEqual(true_recipe.issues, [])
+        self.assertEqual(false_recipe.issues, [])
+
+    def test_shared_root_comparisons_are_solved_jointly(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        shared = {"kind": "root_inport", "signal": "State"}
+        operator = {
+            "id": "GenericModel:RangeAnd",
+            "sid": "GenericModel:RangeAnd",
+            "block_path": "GenericModel/RangeAnd",
+            "operator": "AND",
+            "ports": [
+                {"trace": {"kind": "relational", "operator": ">=", "inputs": [
+                    shared, {"kind": "constant", "value": "89", "resolvedValue": 89},
+                ]}},
+                {"trace": {"kind": "relational", "operator": "<=", "inputs": [
+                    shared, {"kind": "constant", "value": "90", "resolvedValue": 90},
+                ]}},
+            ],
+        }
+
+        obligations, summary = planner.build_for_operator("GenericModel", operator)
+        required = [item for item in obligations if item.get("coverage_class") == "MCDC" and item.get("status") == "required"]
+
+        self.assertEqual(len(summary["pairs"]), 2)
+        self.assertEqual(len(required), 3)
+        values = {item["control_recipe"]["condition_vector"]: item["match"]["inputs"]["State"] for item in required}
+        self.assertLess(values["FT"], 89)
+        self.assertGreater(values["TF"], 90)
+        self.assertGreaterEqual(values["TT"], 89)
+        self.assertLessEqual(values["TT"], 90)
+
     def test_resolved_symbolic_comparator_emits_below_equal_above_recipes(self) -> None:
         planner = script("build_atomic_mcdc_repair_plan.py")
         coverage_ir = script("build_coverage_ir.py")
