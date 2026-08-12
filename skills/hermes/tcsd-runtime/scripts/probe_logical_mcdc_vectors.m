@@ -25,6 +25,8 @@ for m = 1:numel(modelNames)
     modelName = modelNames{m};
     close_foreign_loaded_model(modelName, rootDir);
     load_system(fullfile(rootDir, [modelName '.slx']));
+    [temporaryFallbacks, fallbackNames] = provision_missing_constant_annotations(modelName);
+    fallbackCleanup = onCleanup(@() clear_temporary_base_variables(fallbackNames));
     if exist('configure_tcsd_sim_config', 'file') == 2
         configure_tcsd_sim_config(modelName, rootDir);
     end
@@ -38,6 +40,17 @@ for m = 1:numel(modelNames)
     aggregateCoverage = [];
     tests = normalize_struct_array(spec.tests);
     for testIndex = 1:numel(tests)
+        [skipForFallback, fallbackResource] = test_uses_temporary_fallback(tests(testIndex), fallbackNames);
+        if skipForFallback
+            skippedTests(end + 1) = struct( ... %#ok<AGROW>
+                'row', tests(testIndex).row, ...
+                'test_id', char(string(tests(testIndex).test_id)), ...
+                'reason', 'missing_external_resource', ...
+                'resource', fallbackResource, ...
+                'expected_source', 'task_mat_or_project_initialization', ...
+                'matlab_identifier', 'TCSD:TemporaryModelAnnotationFallback');
+            continue;
+        end
         try
             [obs, testCoverage] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex), rootDir, matFileName, ~isempty(opts.CoverageJson));
         catch ME
@@ -76,6 +89,7 @@ for m = 1:numel(modelNames)
     report.probes = probes;
     report.observations = observations;
     report.skipped_tests = skippedTests;
+    report.temporary_model_annotation_fallbacks = temporaryFallbacks;
     allReports.(matlab.lang.makeValidName(modelName)) = report;
     if ~isempty(aggregateCoverage)
         coverageReports.(matlab.lang.makeValidName(modelName)) = coverage_summary(aggregateCoverage, modelName, numel(tests), opts.CoverageThreshold);
@@ -87,6 +101,8 @@ for m = 1:numel(modelNames)
         end
     end
     bdclose(modelName);
+    clear fallbackCleanup;
+    clear_temporary_base_variables(fallbackNames);
 end
 write_json(opts.OutputJson, allReports);
 if ~isempty(opts.CoverageJson)
@@ -94,6 +110,84 @@ if ~isempty(opts.CoverageJson)
 end
 clear cleanupObj;
 local_cleanup(modelNames, oldDir, oldPath);
+end
+
+function [fallbacks, names] = provision_missing_constant_annotations(modelName)
+fallbacks = struct('resource', {}, 'block_path', {}, 'source', {});
+names = {};
+blocks = find_system(modelName, 'LookUnderMasks', 'all', 'FollowLinks', 'on', 'BlockType', 'Constant');
+for i = 1:numel(blocks)
+    expression = strtrim(char(string(get_param(blocks{i}, 'Value'))));
+    if isempty(regexp(expression, '^[A-Za-z_]\w*$', 'once'))
+        continue;
+    end
+    if evalin('base', sprintf('exist(''%s'', ''var'') == 1', expression))
+        continue;
+    end
+    [value, source] = numeric_annotation_value(blocks{i});
+    if isempty(source)
+        continue;
+    end
+    assignin('base', expression, value);
+    names{end + 1} = expression; %#ok<AGROW>
+    fallbacks(end + 1) = struct( ... %#ok<AGROW>
+        'resource', expression, ...
+        'block_path', blocks{i}, ...
+        'source', source);
+end
+names = unique(names, 'stable');
+end
+
+function [value, source] = numeric_annotation_value(blockPath)
+value = [];
+source = '';
+fields = {'AttributesFormatString', 'Description'};
+sources = {'model_attributes_format', 'model_description'};
+for i = 1:numel(fields)
+    try
+        text = strtrim(char(string(get_param(blockPath, fields{i}))));
+    catch
+        text = '';
+    end
+    token = regexp(text, '^\[\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*\]$', 'tokens', 'once');
+    if isempty(token)
+        continue;
+    end
+    candidate = str2double(token{1});
+    if isfinite(candidate)
+        value = candidate;
+        source = sources{i};
+        return;
+    end
+end
+end
+
+function [matched, resource] = test_uses_temporary_fallback(test, fallbackNames)
+matched = false;
+resource = '';
+if isempty(fallbackNames) || ~isstruct(test) || ~isfield(test, 'target') || ~isstruct(test.target)
+    return;
+end
+if ~isfield(test.target, 'external_resources')
+    return;
+end
+resources = normalize_cellstr(test.target.external_resources);
+for i = 1:numel(resources)
+    if any(strcmp(resources{i}, fallbackNames))
+        matched = true;
+        resource = resources{i};
+        return;
+    end
+end
+end
+
+function clear_temporary_base_variables(names)
+for i = 1:numel(names)
+    try
+        evalin('base', sprintf('clear(''%s'')', names{i}));
+    catch
+    end
+end
 end
 
 function opts = parse_options(varargin)
