@@ -479,6 +479,7 @@ def synthesize_ir_once(
     interface_json: Path,
     coverage_ir: Path,
     iteration: int,
+    max_new_tests: int = 50,
 ) -> tuple[Path, Path, dict[str, Any]]:
     """Run the sole bounded repair synthesizer from the persisted Coverage IR.
 
@@ -500,6 +501,8 @@ def synthesize_ir_once(
             str(next_spec),
             "--report-json",
             str(synthesis_report),
+            "--max-new-tests",
+            str(max_new_tests),
         ],
         cwd=root_dir,
     )

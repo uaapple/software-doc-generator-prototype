@@ -765,6 +765,8 @@ def relational_recipe_options(
                 str(controller.get("data_type") or ""),
             )
         ]
+    if operator in {"==", "~="} and float(controller["root_boundary"]) >= 0:
+        values.sort(key=lambda value: (value < 0, abs(value - float(controller["root_boundary"])), value))
     options = []
     for value in values:
         left, right = controller_comparison_values(controller, value)

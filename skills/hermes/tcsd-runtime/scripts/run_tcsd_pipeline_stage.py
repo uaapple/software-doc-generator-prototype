@@ -17,6 +17,7 @@ STAGE6_MAX_TOTAL_CANDIDATES = 384
 STAGE11_PROBE_TIMEOUT_BASE_SECONDS = 600
 STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS = 30
 STAGE11_PROBE_TIMEOUT_MAX_SECONDS = 3600
+STAGE7_MAX_INITIAL_TESTS = 100
 
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path); module = importlib.util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module); return module
@@ -545,7 +546,7 @@ def stage_run(
     if stage == 5:
         run([sys.executable, str(scripts()/"derive_logical_mcdc_mappings.py"), "--traces", str(traces), "--output", str(mapping)], root)
         run([sys.executable, str(scripts()/"build_logical_mcdc_obligations.py"), "--logical-operators", str(mapping), "--output", str(obligations), "--allow-unresolved"], root)
-        run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--obligations", str(obligations), "--output", str(coverage_ir)], root)
+        run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--obligations", str(obligations), "--include-nested-operators", "--output", str(coverage_ir)], root)
         ir_summary = read_json(coverage_ir).get("summary", {})
         state.update({"mapping": str(mapping), "obligations": str(obligations), "coverageIr": str(coverage_ir)}); save_state(job, state)
         finish(
@@ -602,7 +603,7 @@ def stage_run(
                     })
                     if probe_entry.is_file(): error.details["probeEntrySha256"] = file_sha256(probe_entry)
                     raise
-            read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
+            read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--include-nested-operators", "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
         finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={
             "candidateCount": candidate_count,
@@ -615,7 +616,19 @@ def stage_run(
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)
-        spec, workbook, synthesis = quality.synthesize_ir_once(python=sys.executable, scripts=scripts(), root_dir=root, template=scripts().parent/"assets"/"templates"/"tcsd_template.xlsx", model=model, spec=spec, workbook=workbook, interface_json=interface, coverage_ir=coverage_ir, iteration=0)
+        spec, workbook, synthesis = quality.synthesize_ir_once(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            template=scripts().parent / "assets" / "templates" / "tcsd_template.xlsx",
+            model=model,
+            spec=spec,
+            workbook=workbook,
+            interface_json=interface,
+            coverage_ir=coverage_ir,
+            iteration=0,
+            max_new_tests=STAGE7_MAX_INITIAL_TESTS,
+        )
         synthesis_report = out / f"{model}_coverage_ir_synthesis_iter0.json"
         quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface)
         verification_results = out / f"{model}_initial_recipe_probe_results.json"

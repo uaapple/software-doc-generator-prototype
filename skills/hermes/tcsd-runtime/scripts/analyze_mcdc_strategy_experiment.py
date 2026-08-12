@@ -57,7 +57,13 @@ def legacy_vectors(ir: dict[str, Any]) -> dict[str, set[str]]:
     return result
 
 
-def run_experiment(traces: dict[str, Any], legacy_ir: dict[str, Any] | None = None) -> dict[str, Any]:
+def run_experiment(
+    traces: dict[str, Any],
+    legacy_ir: dict[str, Any] | None = None,
+    *,
+    all_operators: bool = False,
+    operator_ids: set[str] | None = None,
+) -> dict[str, Any]:
     planner = planner_module()
     matched = planner.reports(traces)
     if len(matched) != 1:
@@ -74,7 +80,13 @@ def run_experiment(traces: dict[str, Any], legacy_ir: dict[str, Any] | None = No
         "legacyCompletePairCount": 0,
         "newlyDesignedExecutablePairCount": 0,
     }
-    for operator in planner.top_operators(report):
+    selected_operators = list(report.get("operators", [])) if all_operators or operator_ids else planner.top_operators(report)
+    if operator_ids:
+        selected_operators = [
+            operator for operator in selected_operators
+            if str(operator.get("id") or operator.get("sid") or "") in operator_ids
+        ]
+    for operator in selected_operators:
         obligations, summary = planner.build_for_operator(model, operator)
         by_vector = {
             vector_from_outcome(item.get("required_outcome")): item
@@ -203,10 +215,14 @@ def main() -> int:
     parser.add_argument("--baseline-cases")
     parser.add_argument("--verification-cases")
     parser.add_argument("--max-verification-pairs", type=int, default=3)
+    parser.add_argument("--all-operators", action="store_true")
+    parser.add_argument("--operator-id", action="append", default=[])
     args = parser.parse_args()
     result = run_experiment(
         load(args.logical_traces),
         load(args.legacy_coverage_ir) if args.legacy_coverage_ir else None,
+        all_operators=args.all_operators,
+        operator_ids=set(args.operator_id),
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

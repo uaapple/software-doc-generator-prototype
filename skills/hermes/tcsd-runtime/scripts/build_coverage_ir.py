@@ -120,7 +120,9 @@ def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> 
 
 
 def build_ir(
-    trace_payload: dict[str, Any], *, probe_payload: dict[str, Any] | None = None, evidence_obligations: dict[str, Any] | None = None
+    trace_payload: dict[str, Any], *, probe_payload: dict[str, Any] | None = None,
+    evidence_obligations: dict[str, Any] | None = None,
+    include_nested_operators: bool = False,
 ) -> dict[str, Any]:
     reports = [trace_payload] if isinstance(trace_payload.get("operators"), list) else [v for v in trace_payload.values() if isinstance(v, dict) and isinstance(v.get("operators"), list)]
     if not reports:
@@ -130,7 +132,16 @@ def build_ir(
     items: list[dict[str, Any]] = []
     operator_count = 0
     for report in reports:
-        operators = planner.top_operators(report)
+        top = planner.top_operators(report)
+        if include_nested_operators:
+            top_ids = {str(item.get("id") or item.get("sid") or "") for item in top}
+            nested = [
+                item for item in report.get("operators", [])
+                if str(item.get("id") or item.get("sid") or "") not in top_ids
+            ]
+            operators = [*top, *nested]
+        else:
+            operators = top
         operator_count += len(operators)
         if operator_count > MAX_OPERATOR_COUNT:
             raise ValueError(
@@ -138,6 +149,9 @@ def build_ir(
                 f"({MAX_OPERATOR_COUNT})"
             )
         for operator in operators:
+            operator_start = len(items)
+            operator_id = str(operator.get("id") or operator.get("sid") or "")
+            planning_tier = "top" if operator_id in {str(item.get("id") or item.get("sid") or "") for item in top} else "nested"
             op_id = str(operator.get("id") or operator.get("sid") or operator.get("block_path"))
             # A decision is always explicit even when detailed MCDC mapping is unsupported.
             items.append(normalize_item({
@@ -163,6 +177,8 @@ def build_ir(
                     "id": f"{op_id}_analysis", "model": model, "block_path": operator.get("block_path"),
                     "sid": operator.get("sid"), "status": "unsupported", "reason": "; ".join(summary["issues"]),
                 }, "MCDC", model=model))
+            for planned_item in items[operator_start:]:
+                planned_item["planningTier"] = planning_tier
     if probe_payload:
         for item in items:
             evidence = probe_payload.get(model, probe_payload).get("observations", []) if isinstance(probe_payload.get(model, probe_payload), dict) else []
@@ -233,6 +249,7 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--probe-results")
     parser.add_argument("--obligations", help="probe or coverage-report-derived obligations to merge into the IR")
+    parser.add_argument("--include-nested-operators", action="store_true")
     args = parser.parse_args()
     try:
         trace_path = Path(args.logical_traces)
@@ -252,6 +269,7 @@ def main() -> int:
             trace_payload,
             probe_payload=probe_payload,
             evidence_obligations=obligations_payload,
+            include_nested_operators=args.include_nested_operators,
         )
     except (KeyError, TypeError, ValueError, RecursionError, IndexError, MemoryError, OSError) as cause:
         return structured_error(

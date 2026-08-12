@@ -226,6 +226,55 @@ class CoverageIrTests(unittest.TestCase):
         }
         self.assertEqual(expected, {(True, True), (False, True), (True, False)})
 
+    def test_strategy_experiment_can_select_nested_operator(self) -> None:
+        experiment = script("analyze_mcdc_strategy_experiment.py")
+        nested = {
+            "id": "GenericModel:Nested",
+            "sid": "GenericModel:Nested",
+            "block_path": "GenericModel/Nested",
+            "operator": "OR",
+            "ports": [
+                {"trace": {"kind": "root_inport", "signal": "NestedA"}},
+                {"trace": {"kind": "root_inport", "signal": "NestedB"}},
+            ],
+        }
+        top = {
+            "id": "GenericModel:Top",
+            "sid": "GenericModel:Top",
+            "block_path": "GenericModel/Top",
+            "operator": "AND",
+            "ports": [
+                {"trace": {"kind": "logic", "operator": "OR", "sid": "GenericModel:Nested", "inputs": [
+                    {"kind": "root_inport", "signal": "NestedA"},
+                    {"kind": "root_inport", "signal": "NestedB"},
+                ]}},
+                {"trace": {"kind": "root_inport", "signal": "Enable"}},
+            ],
+        }
+        traces = {"model": "GenericModel", "operators": [nested, top]}
+
+        default_result = experiment.run_experiment(traces)
+        selected_result = experiment.run_experiment(
+            traces,
+            all_operators=True,
+            operator_ids={"GenericModel:Nested"},
+        )
+
+        self.assertEqual([item["operatorId"] for item in default_result["decisions"]], ["GenericModel:Top"])
+        self.assertEqual([item["operatorId"] for item in selected_result["decisions"]], ["GenericModel:Nested"])
+
+        nested_ir = script("build_coverage_ir.py").build_ir(
+            traces,
+            include_nested_operators=True,
+        )
+        block_paths = {
+            item["block"]["path"]
+            for item in nested_ir["items"]
+            if item["coverage_class"] == "MCDC"
+        }
+        self.assertIn("GenericModel/Nested", block_paths)
+        self.assertIn("GenericModel/Top", block_paths)
+
     def test_switch_output_comparison_selects_branch_and_root_control(self) -> None:
         planner = script("build_atomic_mcdc_repair_plan.py")
         switch = {
@@ -282,6 +331,54 @@ class CoverageIrTests(unittest.TestCase):
         self.assertGreater(values["TF"], 90)
         self.assertGreaterEqual(values["TT"], 89)
         self.assertLessEqual(values["TT"], 90)
+
+    def test_zero_equality_prefers_nonnegative_distinct_value(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        node = {
+            "kind": "relational",
+            "operator": "==",
+            "inputs": [
+                {"kind": "root_inport", "signal": "Mode", "dataType": "Inherit: auto"},
+                {"kind": "constant", "value": "0", "resolvedValue": 0},
+            ],
+        }
+
+        false_options = planner.relational_recipe_options(node, False)
+
+        self.assertGreaterEqual(false_options[0].inputs["Mode"], 0)
+        self.assertNotEqual(false_options[0].inputs["Mode"], 0)
+
+    def test_pair_first_synthesis_prioritizes_complete_pairs_across_blocks(self) -> None:
+        synthesis = script("synthesize_tcsd_from_coverage_ir.py")
+
+        def vector_item(block: str, vector: str, pair_id: str, tier: str) -> dict:
+            return {
+                "id": f"{block}_{vector}",
+                "coverage_class": "MCDC",
+                "block": {"path": block},
+                "required_outcome": f"atomic_condition_vector={vector}; output=true",
+                "controller": {"direct_inputs": {f"{block}_{vector}": 1}, "parameters": {}},
+                "stimulus": {"steps": []},
+                "reachability": {"status": "required"},
+                "planningTier": tier,
+                "mcdcPairs": [{
+                    "pair_id": pair_id,
+                    "false_vector": "F",
+                    "true_vector": "T",
+                }],
+            }
+
+        ir = {"items": [
+            vector_item("Nested", "F", "nested-pair", "nested"),
+            vector_item("Nested", "T", "nested-pair", "nested"),
+            vector_item("Top", "F", "top-pair", "top"),
+            vector_item("Top", "T", "top-pair", "top"),
+        ]}
+
+        ordered, report = synthesis.pair_first_items(ir)
+
+        self.assertEqual([item["block"]["path"] for item in ordered[:2]], ["Top", "Top"])
+        self.assertEqual(report["complete_pair_count"], 2)
 
     def test_resolved_symbolic_comparator_emits_below_equal_above_recipes(self) -> None:
         planner = script("build_atomic_mcdc_repair_plan.py")
@@ -487,6 +584,28 @@ class CoverageIrTests(unittest.TestCase):
         self.assertEqual(len(result["tests"]), 1)
         self.assertEqual(skipped, [{"id": "covered", "reason": "duplicate_existing_test"}])
 
+    def test_synthesis_soft_budget_does_not_cut_an_mcdc_pair_in_half(self) -> None:
+        synthesis = script("synthesize_tcsd_from_coverage_ir.py")
+        pair = {"pair_id": "pair-1", "false_vector": "F", "true_vector": "T"}
+        ir = {"items": [
+            {
+                "id": f"member-{vector}",
+                "coverage_class": "MCDC",
+                "block": {"path": "M/G"},
+                "required_outcome": f"atomic_condition_vector={vector}; output={str(vector == 'T').lower()}",
+                "controller": {"direct_inputs": {"Enable": int(vector == "T")}, "parameters": {}},
+                "stimulus": {"steps": []},
+                "reachability": {"status": "required"},
+                "planningTier": "top",
+                "mcdcPairs": [pair],
+            }
+            for vector in ("F", "T")
+        ]}
+
+        result, _ = synthesis.synthesize({"tests": []}, ir, max_new_tests=1)
+
+        self.assertEqual(len(result["tests"]), 2)
+
     def test_quality_loop_dispatches_repair_through_coverage_ir_synthesizer(self) -> None:
         loop = script("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as raw:
@@ -511,9 +630,10 @@ class CoverageIrTests(unittest.TestCase):
                 result_spec, result_workbook, report = loop.synthesize_ir_once(
                     python=sys.executable, scripts=SCRIPTS, root_dir=root, template=root / "template.xlsx",
                     model="GenericModel", spec=spec_path, workbook=workbook, interface_json=root / "interface.json",
-                    coverage_ir=ir_path, iteration=1,
+                    coverage_ir=ir_path, iteration=1, max_new_tests=100,
                 )
             self.assertIn("synthesize_tcsd_from_coverage_ir.py", commands[0][1])
+            self.assertEqual(commands[0][commands[0].index("--max-new-tests") + 1], "100")
             self.assertEqual(result_spec, spec_path)
             self.assertEqual(result_workbook, workbook)
             self.assertEqual(report["added"], 0)

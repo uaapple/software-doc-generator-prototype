@@ -43,6 +43,9 @@ HOST_VALIDATOR_SPEC.loader.exec_module(HOST_VALIDATOR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_stage7_initial_generation_budget_is_one_hundred(self):
+        self.assertEqual(RUNNER.STAGE7_MAX_INITIAL_TESTS, 100)
+
     def test_stage7_skips_only_candidate_cases_with_missing_external_resources(self):
         probe = {
             "GenericModel": {

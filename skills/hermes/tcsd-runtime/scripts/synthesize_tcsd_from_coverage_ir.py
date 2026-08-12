@@ -36,6 +36,18 @@ def signature(item: dict[str, Any]) -> str:
     return json.dumps({"inputs": controller.get("direct_inputs", {}), "params": controller.get("parameters", {}), "stimulus": item.get("stimulus", {})}, sort_keys=True, default=str)
 
 
+def member_pair_ids(item: dict[str, Any]) -> set[str]:
+    outcome = str(item.get("required_outcome") or "")
+    vector = outcome.split("atomic_condition_vector=", 1)[1].split(";", 1)[0] if "atomic_condition_vector=" in outcome else ""
+    return {
+        str(pair.get("pair_id"))
+        for pair in item.get("mcdcPairs", [])
+        if isinstance(pair, dict)
+        and pair.get("pair_id")
+        and vector in {pair.get("false_vector"), pair.get("true_vector")}
+    }
+
+
 def obligation_for_item(item: dict[str, Any]) -> dict[str, Any]:
     controller = item.get("controller") if isinstance(item.get("controller"), dict) else {}
     stimulus = item.get("stimulus") if isinstance(item.get("stimulus"), dict) else {}
@@ -62,6 +74,89 @@ def spec_snapshots(spec: dict[str, Any]) -> list[dict[str, Any]]:
     return snapshots
 
 
+def pair_first_items(ir: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Order executable items by complete MC/DC pair value, never file name."""
+    items = [item for item in ir.get("items", []) if isinstance(item, dict)]
+    executable = {
+        str(item.get("id")): item
+        for item in items
+        if item.get("coverage_class") == "MCDC"
+        and (item.get("reachability") or {}).get("status") == "required"
+        and item.get("mcdcPairs")
+        and (
+            (item.get("controller") or {}).get("direct_inputs")
+            or (item.get("controller") or {}).get("parameters")
+            or (item.get("stimulus") or {}).get("steps")
+        )
+    }
+    pair_members: dict[str, dict[str, dict[str, Any]]] = {}
+    pair_meta: dict[str, dict[str, Any]] = {}
+    for item in executable.values():
+        outcome = str(item.get("required_outcome") or "")
+        vector = outcome.split("atomic_condition_vector=", 1)[1].split(";", 1)[0] if "atomic_condition_vector=" in outcome else ""
+        for pair in item.get("mcdcPairs", []):
+            pair_id = str(pair.get("pair_id") or "")
+            if not pair_id or vector not in {pair.get("false_vector"), pair.get("true_vector")}:
+                continue
+            pair_members.setdefault(pair_id, {})[vector] = item
+            pair_meta[pair_id] = pair
+
+    complete: list[tuple[str, list[dict[str, Any]]]] = []
+    for pair_id, members in pair_members.items():
+        pair = pair_meta[pair_id]
+        vectors = [str(pair.get("false_vector") or ""), str(pair.get("true_vector") or "")]
+        if all(vector in members for vector in vectors):
+            complete.append((pair_id, [members[vector] for vector in vectors]))
+
+    by_block: dict[str, list[tuple[str, list[dict[str, Any]]]]] = {}
+    for pair in complete:
+        block = str((pair[1][0].get("block") or {}).get("path") or "")
+        by_block.setdefault(block, []).append(pair)
+
+    def block_key(value: tuple[str, list[tuple[str, list[dict[str, Any]]]]]) -> tuple[Any, ...]:
+        block, pairs = value
+        unique = {signature(item) for _, members in pairs for item in members}
+        tier = min(0 if item.get("planningTier") == "top" else 1 for _, members in pairs for item in members)
+        efficiency = len(pairs) / max(1, len(unique))
+        return (tier, -efficiency, block)
+
+    ordered: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    pair_count = 0
+    for _, pairs in sorted(by_block.items(), key=block_key):
+        remaining = list(pairs)
+        block_signatures: set[str] = set()
+        while remaining:
+            pair_id, members = min(
+                remaining,
+                key=lambda pair: (
+                    sum(signature(item) not in block_signatures for item in pair[1]),
+                    pair[0],
+                ),
+            )
+            remaining.remove((pair_id, members))
+            for item in members:
+                block_signatures.add(signature(item))
+                identity = str(item.get("id"))
+                if identity not in seen_ids:
+                    ordered.append(item)
+                    seen_ids.add(identity)
+            pair_count += 1
+
+    for item in sorted(items, key=lambda value: (
+        0 if value.get("coverage_class") == "MCDC" else 1,
+        str(value.get("id")),
+    )):
+        identity = str(item.get("id"))
+        if identity not in seen_ids:
+            ordered.append(item)
+            seen_ids.add(identity)
+    return ordered, {
+        "complete_pair_count": pair_count,
+        "pair_first_item_count": sum(bool(item.get("mcdcPairs")) for item in ordered[:len(seen_ids)]),
+    }
+
+
 def synthesize(spec: dict[str, Any], ir: dict[str, Any], *, max_new_tests: int = 50) -> tuple[dict[str, Any], list[dict[str, str]]]:
     augment = augment_module()
     base = augment.baseline_initialization(spec, None)
@@ -71,8 +166,19 @@ def synthesize(spec: dict[str, Any], ir: dict[str, Any], *, max_new_tests: int =
     snapshots = spec_snapshots(spec)
     index = augment.next_test_index(spec)
     added = 0
-    for item in sorted(ir.get("items", []), key=lambda value: str(value.get("id"))):
-        if added >= max_new_tests:
+    last_selected_pair_ids: set[str] = set()
+    closing_pair_ids: set[str] | None = None
+    ordered_items, _ = pair_first_items(ir)
+    for item in ordered_items:
+        item_pair_ids = member_pair_ids(item)
+        if added >= max_new_tests and closing_pair_ids is None:
+            # The configured budget is a soft ceiling.  Preserve the MC/DC
+            # meaning of the last selected vector by also admitting its
+            # missing counterpart(s), without opening new pair chains.
+            closing_pair_ids = set(last_selected_pair_ids)
+        if closing_pair_ids is not None and not item_pair_ids.intersection(closing_pair_ids):
+            continue
+        if added >= max_new_tests and not closing_pair_ids:
             break
         if item.get("coverage_class") not in {"Condition", "Decision", "MCDC"}:
             continue
@@ -106,6 +212,8 @@ def synthesize(spec: dict[str, Any], ir: dict[str, Any], *, max_new_tests: int =
         spec.setdefault("tests", []).append(augment.build_test(index, obligation, augment.merge_initialization(base, inputs, params)))
         existing.add(f"TC_{index:03d}")
         seen.add(key)
+        if closing_pair_ids is None:
+            last_selected_pair_ids = item_pair_ids
         index += 1
         added += 1
     return spec, skipped
