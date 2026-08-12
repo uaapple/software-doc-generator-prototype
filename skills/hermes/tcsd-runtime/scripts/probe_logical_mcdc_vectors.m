@@ -34,10 +34,27 @@ for m = 1:numel(modelNames)
     caseJson = resolve_case_json(rootDir, modelName, opts.CaseSuffix, opts.CaseJson);
     spec = jsondecode(fileread(caseJson));
     observations = struct('row', {}, 'test_id', {}, 'step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {});
+    skippedTests = struct('row', {}, 'test_id', {}, 'reason', {}, 'resource', {}, 'expected_source', {}, 'matlab_identifier', {});
     aggregateCoverage = [];
     tests = normalize_struct_array(spec.tests);
     for testIndex = 1:numel(tests)
-        [obs, testCoverage] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex), rootDir, matFileName, ~isempty(opts.CoverageJson));
+        try
+            [obs, testCoverage] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex), rootDir, matFileName, ~isempty(opts.CoverageJson));
+        catch ME
+            [isMissingResource, resourceName, matlabIdentifier] = missing_external_resource(ME);
+            testId = char(string(tests(testIndex).test_id));
+            if isMissingResource && ismember(testId, opts.SkipMissingExternalResourceTestIds)
+                skippedTests(end + 1) = struct( ... %#ok<AGROW>
+                    'row', tests(testIndex).row, ...
+                    'test_id', testId, ...
+                    'reason', 'missing_external_resource', ...
+                    'resource', resourceName, ...
+                    'expected_source', 'task_mat_or_project_initialization', ...
+                    'matlab_identifier', matlabIdentifier);
+                continue;
+            end
+            rethrow(ME);
+        end
         if ~isempty(testCoverage)
             if isempty(aggregateCoverage)
                 aggregateCoverage = testCoverage;
@@ -58,6 +75,7 @@ for m = 1:numel(modelNames)
     report.case_json = caseJson;
     report.probes = probes;
     report.observations = observations;
+    report.skipped_tests = skippedTests;
     allReports.(matlab.lang.makeValidName(modelName)) = report;
     if ~isempty(aggregateCoverage)
         coverageReports.(matlab.lang.makeValidName(modelName)) = coverage_summary(aggregateCoverage, modelName, numel(tests), opts.CoverageThreshold);
@@ -88,6 +106,7 @@ opts.CoverageJson = '';
 opts.CoverageDataFile = '';
 opts.CoverageHtml = '';
 opts.CoverageThreshold = 80;
+opts.SkipMissingExternalResourceTestIds = {};
 idx = 1;
 while idx <= numel(varargin)
     key = char(string(varargin{idx}));
@@ -112,11 +131,44 @@ while idx <= numel(varargin)
             opts.CoverageHtml = char(string(value));
         case 'coveragethreshold'
             opts.CoverageThreshold = double(value);
+        case 'skipmissingexternalresourcetestids'
+            opts.SkipMissingExternalResourceTestIds = normalize_cellstr(value);
     end
     idx = idx + 2;
 end
 if isempty(opts.OutputJson)
     opts.OutputJson = fullfile(pwd, 'outputs', 'logic_probe_results.json');
+end
+end
+
+function [matched, resourceName, matlabIdentifier] = missing_external_resource(exception)
+matched = false;
+resourceName = '';
+matlabIdentifier = char(string(exception.identifier));
+queue = {exception};
+while ~isempty(queue)
+    current = queue{1};
+    queue(1) = [];
+    message = char(string(current.message));
+    patterns = {
+        '(?i)unrecognized function or variable\s+''([A-Za-z_]\w*)''', ...
+        '(?i)undefined function or variable\s+''([A-Za-z_]\w*)''', ...
+        '无法识别函数或变量\s*''([A-Za-z_]\w*)''', ...
+        '变量\s*''([A-Za-z_]\w*)''\s*未定义'
+    };
+    for i = 1:numel(patterns)
+        token = regexp(message, patterns{i}, 'tokens', 'once');
+        if ~isempty(token)
+            matched = true;
+            resourceName = token{1};
+            matlabIdentifier = char(string(current.identifier));
+            return;
+        end
+    end
+    causes = current.cause;
+    for i = 1:numel(causes)
+        queue{end + 1} = causes{i}; %#ok<AGROW>
+    end
 end
 end
 

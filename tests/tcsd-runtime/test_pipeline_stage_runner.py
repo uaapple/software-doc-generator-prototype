@@ -43,6 +43,57 @@ HOST_VALIDATOR_SPEC.loader.exec_module(HOST_VALIDATOR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def test_stage7_skips_only_candidate_cases_with_missing_external_resources(self):
+        probe = {
+            "GenericModel": {
+                "skipped_tests": [{
+                    "row": 7,
+                    "test_id": "TC_002",
+                    "reason": "missing_external_resource",
+                    "resource": "Calibration_C",
+                    "expected_source": "task_mat_or_project_initialization",
+                    "matlab_identifier": "MATLAB:UndefinedFunction",
+                }],
+            },
+        }
+        skips = RUNNER.initial_recipe_missing_resource_skips(
+            probe,
+            "GenericModel",
+            {"TC_002"},
+        )
+        self.assertEqual(skips[0]["resource"], "Calibration_C")
+        self.assertEqual(skips[0]["expectedSource"], "task_mat_or_project_initialization")
+        spec = {
+            "tests": [
+                {"id": "TC_001", "name": "baseline"},
+                {"id": "TC_002", "name": "candidate"},
+                {"id": "TC_003", "name": "unaffected candidate"},
+            ],
+        }
+        pruned = RUNNER.remove_initial_recipe_tests(spec, {"TC_002"})
+        self.assertEqual([item["id"] for item in pruned["tests"]], ["TC_001", "TC_003"])
+        synthesis = RUNNER.record_initial_recipe_resource_skips(
+            {
+                "input_test_count": 1,
+                "output_test_count": 3,
+                "added": 2,
+                "skipped": [],
+                "skipped_by_reason": {},
+            },
+            skips,
+            2,
+        )
+        self.assertEqual(synthesis["added"], 1)
+        self.assertEqual(synthesis["missing_external_resource_skipped_count"], 1)
+        self.assertEqual(synthesis["missing_external_resources"], ["Calibration_C"])
+
+        with self.assertRaisesRegex(RuntimeError, "non-candidate"):
+            RUNNER.initial_recipe_missing_resource_skips(
+                probe,
+                "GenericModel",
+                {"TC_003"},
+            )
+
     def test_initial_recipe_probe_requires_every_planned_vector_to_be_observed(self):
         cases = {
             "schema": "tcsd-extracted-cases/v1",
@@ -190,6 +241,88 @@ class PipelineStageRunnerTests(unittest.TestCase):
             )
             request["evidence"]["initialRecipeProbe"]["verifiedCandidateCount"] = 0
             with self.assertRaisesRegex(ValueError, "does not match"):
+                HOST_VALIDATOR.validate_initial_recipe_probe(request)
+
+    def test_host_validates_initial_recipe_missing_resource_evidence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            synthesis_path = root / "synthesis.json"
+            cases_path = root / "cases.json"
+            probe_path = root / "probe.json"
+            gaps_path = root / "gaps.json"
+            synthesis_path.write_text(json.dumps({
+                "schema": "simulink-ut-tcsd-coverage-ir-synthesis/v1",
+                "added": 1,
+                "missing_external_resource_skipped_count": 1,
+                "skipped": [{
+                    "id": "TC_002",
+                    "reason": "missing_external_resource",
+                    "resource": "Calibration_C",
+                    "expected_source": "task_mat_or_project_initialization",
+                }],
+            }), encoding="utf-8")
+            cases_path.write_text(json.dumps({
+                "schema": "tcsd-extracted-cases/v1",
+                "model": "GenericModel",
+                "tests": [{
+                    "test_id": "TC_003",
+                    "target": {
+                        "operator_id": "GenericModel:Gate",
+                        "expected_vector": [True, False],
+                    },
+                }],
+            }), encoding="utf-8")
+            probe_path.write_text(json.dumps({
+                "GenericModel": {
+                    "schema": "simulink-ut-logical-mcdc-probe/v2",
+                    "model": "GenericModel",
+                    "observations": [{
+                        "test_id": "TC_003",
+                        "prediction_status": "matched_prediction",
+                    }],
+                    "skipped_tests": [{
+                        "test_id": "TC_002",
+                        "reason": "missing_external_resource",
+                        "resource": "Calibration_C",
+                        "expected_source": "task_mat_or_project_initialization",
+                    }],
+                },
+            }), encoding="utf-8")
+            gaps_path.write_text(json.dumps({
+                "schema": "tcsd-initial-recipe-resource-gaps/v1",
+                "skippedCandidateCount": 1,
+                "items": [{
+                    "testId": "TC_002",
+                    "reason": "missing_external_resource",
+                    "resource": "Calibration_C",
+                    "expectedSource": "task_mat_or_project_initialization",
+                }],
+            }), encoding="utf-8")
+            request = {
+                "workspaceDir": str(root),
+                "artifacts": [
+                    {"path": path.name, "kind": "json"}
+                    for path in (synthesis_path, cases_path, probe_path, gaps_path)
+                ],
+                "evidence": {
+                    "initialRecipeProbe": {
+                        "plannedCandidateCount": 1,
+                        "verifiedCandidateCount": 1,
+                        "observationCount": 1,
+                        "failedCandidateCount": 0,
+                        "unverifiedCandidateCount": 0,
+                    },
+                },
+            }
+            details = HOST_VALIDATOR.validate_initial_recipe_probe(request)
+            self.assertEqual(details["initialRecipeResourceGaps"], {
+                "skippedCandidateCount": 1,
+                "resources": ["Calibration_C"],
+            })
+            tampered = json.loads(gaps_path.read_text(encoding="utf-8"))
+            tampered["items"][0]["resource"] = "Other_C"
+            gaps_path.write_text(json.dumps(tampered), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "internally inconsistent"):
                 HOST_VALIDATOR.validate_initial_recipe_probe(request)
 
     def test_stage10_host_rebuild_uses_the_same_prior_planning_inputs(self):

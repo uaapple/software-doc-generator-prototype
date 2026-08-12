@@ -314,6 +314,79 @@ def initial_recipe_probe_evidence(cases: dict[str, Any], probe: dict[str, Any], 
         "observationCount": len(observations),
         "failedCandidateCount": 0,
     }
+
+
+def initial_recipe_missing_resource_skips(
+    probe: dict[str, Any], model: str, skippable_test_ids: set[str]
+) -> list[dict[str, Any]]:
+    report = probe.get(model, probe) if isinstance(probe, dict) else {}
+    raw = report.get("skipped_tests") if isinstance(report, dict) else []
+    raw = raw if isinstance(raw, list) else []
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict) or item.get("reason") != "missing_external_resource":
+            continue
+        test_id = str(item.get("test_id") or "")
+        resource = str(item.get("resource") or "")
+        if test_id not in skippable_test_ids:
+            raise RuntimeError(f"MATLAB attempted to skip a non-candidate Test case: {test_id or '<missing>'}")
+        if not re.fullmatch(r"[A-Za-z_]\w*", resource):
+            raise RuntimeError(f"MATLAB reported an invalid missing external resource for Test case {test_id}")
+        if test_id in seen:
+            continue
+        seen.add(test_id)
+        result.append({
+            "testId": test_id,
+            "row": int(item.get("row") or 0),
+            "reason": "missing_external_resource",
+            "resource": resource,
+            "expectedSource": "task_mat_or_project_initialization",
+            "matlabIdentifier": str(item.get("matlab_identifier") or ""),
+        })
+    return result
+
+
+def remove_initial_recipe_tests(spec: dict[str, Any], skipped_test_ids: set[str]) -> dict[str, Any]:
+    tests = spec.get("tests") if isinstance(spec.get("tests"), list) else []
+    return {
+        **spec,
+        "tests": [
+            test for test in tests
+            if not isinstance(test, dict) or str(test.get("id") or "") not in skipped_test_ids
+        ],
+    }
+
+
+def record_initial_recipe_resource_skips(
+    synthesis: dict[str, Any], skips: list[dict[str, Any]], remaining_test_count: int
+) -> dict[str, Any]:
+    result = dict(synthesis)
+    skipped = list(result.get("skipped") or [])
+    skipped.extend({
+        "id": item["testId"],
+        "reason": item["reason"],
+        "resource": item["resource"],
+        "expected_source": item["expectedSource"],
+    } for item in skips)
+    skipped_by_reason = dict(result.get("skipped_by_reason") or {})
+    skipped_by_reason["missing_external_resource"] = (
+        int(skipped_by_reason.get("missing_external_resource") or 0) + len(skips)
+    )
+    input_count = int(result.get("input_test_count") or 0)
+    result.update({
+        "output_test_count": remaining_test_count,
+        "added": max(0, remaining_test_count - input_count),
+        "skipped": skipped,
+        "skipped_by_reason": skipped_by_reason,
+        "missing_external_resource_skipped_count": len(skips),
+        "missing_external_resources": sorted({
+            item["resource"] for item in skips
+        }),
+    })
+    return result
+
+
 def coverage_meets(report: dict[str, Any], threshold: float) -> bool:
     records = report.get("models", report)
     valid = [record for record in records.values() if isinstance(record, dict) and all(key in record for key in ("condition", "decision", "mcdc"))]
@@ -503,8 +576,17 @@ def stage_run(
         synthesis_report = out / f"{model}_coverage_ir_synthesis_iter0.json"
         quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface)
         verification_results = out / f"{model}_initial_recipe_probe_results.json"
+        resource_gaps = out / f"{model}_initial_recipe_resource_gaps.json"
         verification_artifacts = []
         if int(synthesis.get("added") or 0) > 0:
+            synthesized_spec = read_json(spec)
+            synthesized_tests = synthesized_spec.get("tests") if isinstance(synthesized_spec.get("tests"), list) else []
+            input_test_count = int(synthesis.get("input_test_count") or 0)
+            skippable_test_ids = {
+                str(test.get("id") or "")
+                for test in synthesized_tests[input_test_count:]
+                if isinstance(test, dict) and test.get("id")
+            }
             verification_cases = quality.extract_cases(
                 python=sys.executable,
                 scripts=scripts(),
@@ -527,12 +609,71 @@ def stage_run(
                 case_json=verification_cases,
                 output_name=verification_results.name,
                 build_obligations=False,
+                skip_missing_external_resource_test_ids=sorted(skippable_test_ids),
             )
-            probe_evidence = initial_recipe_probe_evidence(
-                read_json(verification_cases),
-                read_json(verification_results),
+            probe_payload = read_json(verification_results)
+            missing_resource_skips = initial_recipe_missing_resource_skips(
+                probe_payload,
                 model,
+                skippable_test_ids,
             )
+            if missing_resource_skips:
+                skipped_test_ids = {item["testId"] for item in missing_resource_skips}
+                synthesized_spec = remove_initial_recipe_tests(synthesized_spec, skipped_test_ids)
+                write_json(spec, synthesized_spec)
+                run([
+                    sys.executable,
+                    str(scripts() / "build_tcsd_from_json.py"),
+                    "--template",
+                    str(scripts().parent / "assets" / "templates" / "tcsd_template.xlsx"),
+                    "--spec",
+                    str(spec),
+                    "--output",
+                    str(workbook),
+                    "--interface-json",
+                    str(interface),
+                ], root)
+                quality.validate_workbook(
+                    python=sys.executable,
+                    scripts=scripts(),
+                    root_dir=root,
+                    workbook=workbook,
+                    interface_json=interface,
+                )
+                verification_cases = quality.extract_cases(
+                    python=sys.executable,
+                    scripts=scripts(),
+                    root_dir=root,
+                    model=model,
+                    workbook=workbook,
+                    interface_json=interface,
+                    coverage_ir=coverage_ir,
+                )
+                synthesis = record_initial_recipe_resource_skips(
+                    synthesis,
+                    missing_resource_skips,
+                    len(synthesized_spec["tests"]),
+                )
+                write_json(synthesis_report, synthesis)
+                write_json(resource_gaps, {
+                    "schema": "tcsd-initial-recipe-resource-gaps/v1",
+                    "model": model,
+                    "skippedCandidateCount": len(missing_resource_skips),
+                    "items": missing_resource_skips,
+                })
+            if int(synthesis.get("added") or 0) > 0:
+                probe_evidence = initial_recipe_probe_evidence(
+                    read_json(verification_cases),
+                    probe_payload,
+                    model,
+                )
+            else:
+                probe_evidence = {
+                    "plannedCandidateCount": 0,
+                    "verifiedCandidateCount": 0,
+                    "observationCount": 0,
+                    "failedCandidateCount": 0,
+                }
             probe_evidence["unverifiedCandidateCount"] = max(
                 0,
                 int(synthesis.get("added") or 0) - int(probe_evidence["plannedCandidateCount"]),
@@ -541,6 +682,10 @@ def stage_run(
                 artifact(root, verification_cases, "json", "initial-recipe-cases"),
                 artifact(root, verification_results, "json", "initial-recipe-probe"),
             ]
+            if resource_gaps.is_file():
+                verification_artifacts.append(
+                    artifact(root, resource_gaps, "json", "initial-recipe-resource-gaps")
+                )
         else:
             probe_evidence = {
                 "plannedCandidateCount": 0,
@@ -568,6 +713,7 @@ def stage_run(
             "duplicateSkippedCount": int(synthesis.get("duplicate_skipped_count") or 0),
             "controlConflictSkippedCount": int(synthesis.get("control_conflict_skipped_count") or 0),
             "unresolvedThresholdSkippedCount": int(synthesis.get("unresolved_threshold_skipped_count") or 0),
+            "missingExternalResourceSkippedCount": int(synthesis.get("missing_external_resource_skipped_count") or 0),
         }
         write_json(planning_assessment, assessment)
         finish(

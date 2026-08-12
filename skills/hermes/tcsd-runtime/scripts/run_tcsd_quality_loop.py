@@ -560,6 +560,7 @@ def run_probe(
     output_name: str = "logic_probe_results.json",
     gateway_timeout_seconds: int | None = None,
     build_obligations: bool = True,
+    skip_missing_external_resource_test_ids: list[str] | None = None,
 ) -> tuple[Path, Path | None]:
     probe_results = root_dir / "outputs" / output_name
     coverage_json = root_dir / "outputs" / f"{model}_coverage_summary.json"
@@ -574,6 +575,12 @@ def run_probe(
             f", 'CoverageThreshold', {coverage_threshold:g}"
         )
     case_arg = f", 'CaseJson', {matlab_string(str(case_json))}" if case_json is not None else ""
+    skippable_test_arg = ""
+    if skip_missing_external_resource_test_ids:
+        skippable_test_arg = (
+            ", 'SkipMissingExternalResourceTestIds', "
+            + matlab_cell(skip_missing_external_resource_test_ids)
+        )
     entry = write_matlab_entry(
         root_dir / "outputs" / f"{model}_probe_mcdc_entry.m",
         "\n".join(
@@ -583,7 +590,8 @@ def run_probe(
                 (
                     f"probe_logical_mcdc_vectors(rootDir, {matlab_cell([model])}, "
                     f"{matlab_string(mat_file)}, 'InitScripts', {matlab_cell(init_scripts)}, "
-                    f"'OutputJson', {matlab_string(str(probe_results))}{case_arg}{coverage_args});"
+                    f"'OutputJson', {matlab_string(str(probe_results))}{case_arg}"
+                    f"{coverage_args}{skippable_test_arg});"
                 ),
             ]
         ),

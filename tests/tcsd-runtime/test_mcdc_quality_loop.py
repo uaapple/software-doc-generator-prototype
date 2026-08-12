@@ -24,6 +24,42 @@ def load_script_module(script_name: str):
 
 
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_probe_passes_candidate_only_missing_resource_skip_allowlist(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outputs = root / "outputs"
+            outputs.mkdir()
+
+            def successful_satk(*_args, **_kwargs):
+                (outputs / "initial-probe.json").write_text("{}", encoding="utf-8")
+
+            with mock.patch.object(quality, "run_satk", side_effect=successful_satk):
+                quality.run_probe(
+                    python=sys.executable,
+                    scripts=SCRIPTS,
+                    root_dir=root,
+                    model="GenericModel",
+                    mat_file="values.mat",
+                    init_scripts=[],
+                    unreachable_overrides="",
+                    collect_coverage=False,
+                    coverage_threshold=80,
+                    case_json=outputs / "cases.json",
+                    output_name="initial-probe.json",
+                    build_obligations=False,
+                    skip_missing_external_resource_test_ids=["TC_002", "TC_003"],
+                )
+            entry = (outputs / "GenericModel_probe_mcdc_entry.m").read_text(encoding="utf-8")
+            self.assertIn("'SkipMissingExternalResourceTestIds', {'TC_002', 'TC_003'}", entry)
+
+    def test_matlab_probe_records_missing_external_resource_without_leaking_messages(self) -> None:
+        source = (SCRIPTS / "probe_logical_mcdc_vectors.m").read_text(encoding="utf-8")
+        self.assertIn("missing_external_resource", source)
+        self.assertIn("task_mat_or_project_initialization", source)
+        self.assertIn("ismember(testId, opts.SkipMissingExternalResourceTestIds)", source)
+        self.assertNotIn("'message', message", source)
+
     def test_simulation_rejects_a_successful_gateway_call_without_result_artifact(self) -> None:
         quality = load_script_module("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as td:

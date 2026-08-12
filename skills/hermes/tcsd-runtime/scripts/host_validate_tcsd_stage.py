@@ -68,6 +68,7 @@ PROBE_RESULT_SCHEMA = "simulink-ut-logical-mcdc-probe/v2"
 REPAIR_CANDIDATE_SCHEMA = "tcsd-repair-candidate-validation/v1"
 SYNTHESIS_SCHEMA = "simulink-ut-tcsd-coverage-ir-synthesis/v1"
 EXTRACTED_CASES_SCHEMA = "tcsd-extracted-cases/v1"
+INITIAL_RECIPE_RESOURCE_GAPS_SCHEMA = "tcsd-initial-recipe-resource-gaps/v1"
 
 
 def self_check() -> dict[str, Any]:
@@ -332,6 +333,13 @@ def probe_reports(payload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def find_probe_result(request: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    for _, path, value in json_artifacts(request):
+        if probe_reports(value):
+            return path, value
+    raise ValueError(f"required semantic artifact schema is missing: {PROBE_RESULT_SCHEMA}")
+
+
 def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
     _, plan = find_json_schema(request, PROBE_PLAN_SCHEMA)
     tests = plan.get("tests")
@@ -485,6 +493,7 @@ def validate_workbook_stage(request: dict[str, Any], require_exp_values: bool) -
 def validate_initial_recipe_probe(request: dict[str, Any]) -> dict[str, Any]:
     _, synthesis = find_json_schema(request, SYNTHESIS_SCHEMA)
     added = int(synthesis.get("added") or 0)
+    missing_resource_count = int(synthesis.get("missing_external_resource_skipped_count") or 0)
     claimed = request.get("evidence") if isinstance(request.get("evidence"), dict) else {}
     claimed_probe = claimed.get("initialRecipeProbe") if isinstance(claimed.get("initialRecipeProbe"), dict) else {}
     if added <= 0:
@@ -497,7 +506,7 @@ def validate_initial_recipe_probe(request: dict[str, Any]) -> dict[str, Any]:
         }
     else:
         _, cases = find_json_schema(request, EXTRACTED_CASES_SCHEMA)
-        _, probe = find_json_schema(request, PROBE_RESULT_SCHEMA)
+        _, probe = find_probe_result(request)
         model = str(cases.get("model") or "")
         if not model:
             raise ValueError("initial recipe cases did not record the model name")
@@ -508,7 +517,56 @@ def validate_initial_recipe_probe(request: dict[str, Any]) -> dict[str, Any]:
         )
     if canonical(claimed_probe) != canonical(expected):
         raise ValueError("initial recipe probe evidence does not match host-parsed observations")
-    return {"initialRecipeProbe": expected}
+    details: dict[str, Any] = {"initialRecipeProbe": expected}
+    if missing_resource_count > 0:
+        _, probe = find_probe_result(request)
+        _, gaps = find_json_schema(request, INITIAL_RECIPE_RESOURCE_GAPS_SCHEMA)
+        reports = probe_reports(probe)
+        probe_skips = [
+            {
+                "testId": str(item.get("test_id") or ""),
+                "resource": str(item.get("resource") or ""),
+                "reason": str(item.get("reason") or ""),
+                "expectedSource": str(item.get("expected_source") or ""),
+            }
+            for report in reports
+            for item in (report.get("skipped_tests") or [])
+            if isinstance(item, dict) and item.get("reason") == "missing_external_resource"
+        ]
+        gap_items = [
+            {
+                "testId": str(item.get("testId") or ""),
+                "resource": str(item.get("resource") or ""),
+                "reason": str(item.get("reason") or ""),
+                "expectedSource": str(item.get("expectedSource") or ""),
+            }
+            for item in (gaps.get("items") or [])
+            if isinstance(item, dict)
+        ]
+        synthesis_skips = [
+            {
+                "testId": str(item.get("id") or ""),
+                "resource": str(item.get("resource") or ""),
+                "reason": str(item.get("reason") or ""),
+                "expectedSource": str(item.get("expected_source") or ""),
+            }
+            for item in (synthesis.get("skipped") or [])
+            if isinstance(item, dict) and item.get("reason") == "missing_external_resource"
+        ]
+        if (
+            missing_resource_count != len(gap_items)
+            or int(gaps.get("skippedCandidateCount") or 0) != len(gap_items)
+            or canonical(sorted(probe_skips, key=lambda item: item["testId"]))
+            != canonical(sorted(gap_items, key=lambda item: item["testId"]))
+            or canonical(sorted(synthesis_skips, key=lambda item: item["testId"]))
+            != canonical(sorted(gap_items, key=lambda item: item["testId"]))
+        ):
+            raise ValueError("initial recipe missing-resource evidence is internally inconsistent")
+        details["initialRecipeResourceGaps"] = {
+            "skippedCandidateCount": len(gap_items),
+            "resources": sorted({item["resource"] for item in gap_items}),
+        }
+    return details
 
 
 def validate_simulation(request: dict[str, Any]) -> dict[str, Any]:
