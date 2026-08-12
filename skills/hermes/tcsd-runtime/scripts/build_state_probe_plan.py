@@ -20,7 +20,6 @@ TEST_FIELDS = {
 }
 TARGET_FIELDS = {
     "operator_id", "port_index", "pattern_type", "control_input", "transition", "hold_s",
-    "external_resources",
 }
 STEP_FIELDS = {"index", "delay_s", "input_updates", "param_updates"}
 
@@ -358,7 +357,6 @@ def build_plan(
                                 "control_input": control,
                                 "transition": f"{start}->{end}",
                                 "hold_s": sample_time,
-                                "external_resources": sorted(deps.params),
                             },
                         }
                     )
@@ -409,7 +407,6 @@ def build_plan(
                                     "control_input": control,
                                     "transition": f"{start}->{end}",
                                     "hold_s": hold,
-                                    "external_resources": sorted(deps.params),
                                 },
                             }
                         )

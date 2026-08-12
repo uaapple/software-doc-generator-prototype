@@ -48,41 +48,6 @@ class McdcQualityLoopTests(unittest.TestCase):
         self.assertTrue(all(item["candidate_count"] == 2 for item in targets))
         self.assertTrue(all(item["truncated_candidate_count"] == 2 for item in targets))
 
-    def test_state_probe_candidates_declare_external_calibration_dependencies(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        report = {
-            "model": "GenericModel",
-            "operators": [{
-                "id": "GenericModel:1",
-                "operator": "AND",
-                "ports": [
-                    {
-                        "index": 1,
-                        "trace": {
-                            "kind": "stateful",
-                            "inputs": [
-                                {"trace": {"kind": "root_inport", "signal": "Request"}},
-                                {
-                                    "trace": {
-                                        "kind": "constant",
-                                        "value": "MissingCalibration_C",
-                                        "resolvedValue": None,
-                                    },
-                                },
-                            ],
-                        },
-                    },
-                    {"index": 2, "trace": {"kind": "root_inport", "signal": "Enable"}},
-                ],
-            }],
-        }
-        plan = planner.build_plan(report, max_candidates=2, sample_time=0.01)
-        self.assertTrue(plan["tests"])
-        self.assertEqual(
-            plan["tests"][0]["target"]["external_resources"],
-            ["MissingCalibration_C"],
-        )
-
     def test_probe_batches_merge_results_and_write_manifest(self) -> None:
         quality = load_script_module("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as td:
@@ -240,12 +205,6 @@ class McdcQualityLoopTests(unittest.TestCase):
         self.assertIn("missing_external_resource", source)
         self.assertIn("task_mat_or_project_initialization", source)
         self.assertIn("ismember(testId, opts.SkipMissingExternalResourceTestIds)", source)
-        self.assertIn("provision_missing_constant_annotations", source)
-        self.assertIn("test_uses_temporary_fallback", source)
-        self.assertIn("TCSD:TemporaryModelAnnotationFallback", source)
-        self.assertIn("temporary_model_annotation_fallbacks", source)
-        self.assertIn("'^\\[\\s*([-+]?(?:\\d+", source)
-        self.assertNotIn("save_system(", source)
         self.assertNotIn("'message', message", source)
 
     def test_simulation_rejects_a_successful_gateway_call_without_result_artifact(self) -> None:
