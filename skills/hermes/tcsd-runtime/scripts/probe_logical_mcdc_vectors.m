@@ -394,6 +394,7 @@ for k = 1:numel(inputNames)
     end
     ds{k} = ts;
 end
+[ds, ~] = append_root_execution_control_inputs(ds, modelName, t);
 externalInputVar = 'tc_sd_external_input_ds';
 in = Simulink.SimulationInput(modelName);
 in = in.setVariable(externalInputVar, ds);

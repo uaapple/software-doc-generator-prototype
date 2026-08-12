@@ -1454,12 +1454,30 @@ class PipelineStageRunnerTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             RUNNER.validate_interface({"schema": "tcsd-model-interface/v1", "inputs": "OnlyInput", "outputs": ["OnlyOutput"]})
 
+    def test_execution_controls_are_separate_from_business_inputs(self):
+        interface = RUNNER.validate_interface({
+            "schema": "tcsd-model-interface/v1",
+            "inputs": ["BusinessInput"],
+            "outputs": ["Output"],
+            "executionControls": [{
+                "name": "Enable",
+                "type": "enable",
+                "defaultPolicy": "enabled",
+            }],
+        })
+        spec = RUNNER.initial_spec(interface, "GenericModel")
+        self.assertEqual(interface["inputs"], ["BusinessInput"])
+        self.assertEqual(interface["executionControls"][0]["name"], "Enable")
+        self.assertNotIn("Enable=", spec["tests"][0]["initialization"])
+
     def test_stage_four_initializes_its_new_session_before_tracing(self):
         code = RUNNER.stage4_matlab_code(root=Path("C:/job"), scripts_dir=Path("C:/skill/scripts"), interface=Path("C:/job/outputs/interface.json"), model="GenericModel", mat_name="GenericModel.mat", init_scripts=["project_init.m"])
         setup = code.index("setup_ut_support(rootDir,initScripts)")
         trace = code.index("trace_logical_mcdc")
         self.assertIn("initScripts={'project_init.m'}", code)
         self.assertIn("'WorkspaceInitialized',true", code)
+        self.assertIn("'BlockType','EnablePort'", code)
+        self.assertIn("p.executionControls=controls", code)
         self.assertLess(setup, trace)
 
     def test_simulation_backfill_requires_matching_real_result_counts(self):

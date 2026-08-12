@@ -1,13 +1,14 @@
 ---
 name: tcsd-stage-04-extract-interface
 metadata:
-  version: "1.1.0"
-description: Load the initialized Simulink model and extract its root Inport, Outport, and logical trace evidence for TCSD stage 4. Use only when a tcsd_stage_execute prompt explicitly requests interface extraction with a tcsd-agent-stage-input/v1 manifest.
+  version: "1.2.0"
+description: Load the initialized Simulink model and extract its root business Inport, Outport, root execution-control metadata, and logical trace evidence for TCSD stage 4. Use only when a tcsd_stage_execute prompt explicitly requests interface extraction with a tcsd-agent-stage-input/v1 manifest.
 ---
 
 # Extract the Model Interface
 
 Execute only stage 4 from the manifest named in the prompt.
+Keep root EnablePort and TriggerPort metadata separate from business `inputs`. They participate in Simulink execution but must not become ordinary TCSD workbook assignments.
 
 1. Require the manifest `stageIndex` to equal `4` and inspect any host validation report.
 2. Invoke the exact shared `tcsd-runtime/scripts/run_tcsd_pipeline_stage.py` command from the prompt.

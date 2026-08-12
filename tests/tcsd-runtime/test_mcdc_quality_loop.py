@@ -24,6 +24,26 @@ def load_script_module(script_name: str):
 
 
 class McdcQualityLoopTests(unittest.TestCase):
+    def test_all_matlab_execution_paths_append_root_execution_controls(self) -> None:
+        for script_name in (
+            "simulate_tcsd_cases.m",
+            "probe_logical_mcdc_vectors.m",
+            "collect_mcdc_coverage_feedback.m",
+        ):
+            source = (SCRIPTS / script_name).read_text(encoding="utf-8")
+            self.assertIn(
+                "append_root_execution_control_inputs(ds, modelName, t)",
+                source,
+                script_name,
+            )
+
+    def test_root_execution_control_helper_enables_but_does_not_guess_triggers(self) -> None:
+        source = (SCRIPTS / "append_root_execution_control_inputs.m").read_text(encoding="utf-8")
+        self.assertIn("'BlockType', 'EnablePort'", source)
+        self.assertIn("timeseries(ones(numel(time), 1), time)", source)
+        self.assertIn("'BlockType', 'TriggerPort'", source)
+        self.assertIn("tcsd:UnsupportedRootTriggerPort", source)
+
     def test_state_probe_global_limit_distributes_candidates_across_targets(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")
         tests = []

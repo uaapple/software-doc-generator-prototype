@@ -208,7 +208,7 @@ def matlab_cell(items: list[str]) -> str: return "{" + ",".join("'" + item.repla
 def matlab_string(value: str) -> str: return "'" + value.replace("'", "''") + "'"
 def stage4_matlab_code(*, root: Path, scripts_dir: Path, interface: Path, model: str, mat_name: str, init_scripts: list[str]) -> str:
     root_m = str(root).replace("'", "''"); scripts_m = str(scripts_dir).replace("'", "''"); interface_m = str(interface).replace("'", "''"); model_m = model.replace("'", "''"); mat_m = mat_name.replace("'", "''")
-    return f"rootDir='{root_m}'; model='{model_m}'; initScripts={matlab_cell(init_scripts)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); load_system(fullfile(rootDir,'{model_m}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); inputNames=reshape(cellstr(string(get_param(ins,'Name'))),1,[]); outputNames=reshape(cellstr(string(get_param(outs,'Name'))),1,[]); p=struct('schema','tcsd-model-interface/v1','inputs',{{inputNames}},'outputs',{{outputNames}}); fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_m}','WorkspaceInitialized',true); bdclose(model);"
+    return f"rootDir='{root_m}'; model='{model_m}'; initScripts={matlab_cell(init_scripts)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); load_system(fullfile(rootDir,'{model_m}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); inputNames=reshape(cellstr(string(get_param(ins,'Name'))),1,[]); outputNames=reshape(cellstr(string(get_param(outs,'Name'))),1,[]); controls={{}}; ens=find_system(model,'SearchDepth',1,'BlockType','EnablePort'); for k=1:numel(ens), controls{{end+1}}=struct('name',char(string(get_param(ens{{k}},'Name'))),'type','enable','defaultPolicy','enabled'); end; trs=find_system(model,'SearchDepth',1,'BlockType','TriggerPort'); for k=1:numel(trs), controls{{end+1}}=struct('name',char(string(get_param(trs{{k}},'Name'))),'type','trigger','defaultPolicy','unsupported'); end; p=struct('schema','tcsd-model-interface/v1','inputs',{{inputNames}},'outputs',{{outputNames}}); p.executionControls=controls; fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_m}','WorkspaceInitialized',true); bdclose(model);"
 def interface_names(values: Any) -> list[str]:
     if values is None: return []
     if isinstance(values, (str, int, float)): values = [values]
@@ -217,6 +217,14 @@ def interface_names(values: Any) -> list[str]:
 def validate_interface(value: dict[str, Any]) -> dict[str, Any]:
     if value.get("schema") != "tcsd-model-interface/v1": raise RuntimeError("model interface schema is invalid")
     if not all(isinstance(value.get(key), list) and all(isinstance(name, str) and name for name in value[key]) for key in ("inputs", "outputs")): raise RuntimeError("model interface inputs/outputs must be string arrays")
+    controls = value.get("executionControls", [])
+    if not isinstance(controls, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("name"), str) and item["name"]
+        and item.get("type") in {"enable", "trigger"}
+        and isinstance(item.get("defaultPolicy"), str) and item["defaultPolicy"]
+        for item in controls
+    ): raise RuntimeError("model interface executionControls are invalid")
     return value
 def initial_spec(interface: dict[str, Any], model: str) -> dict[str, Any]:
     root = interface.get("rootPorts", interface); inputs = root.get("inputs", []); outputs_ = root.get("outputs", [])
