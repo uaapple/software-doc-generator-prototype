@@ -39,7 +39,8 @@ const STATUS_LABELS = {
   running: "运行中",
   completed: "已完成",
   partial: "部分完成",
-  failed: "失败"
+  failed: "失败",
+  cancelled: "已取消"
 };
 
 function escapeHtml(value = "") {
@@ -603,14 +604,19 @@ async function deleteTask(taskId = "") {
   }
   const task = state.tasks.find((item) => item.id === taskId);
   const taskName = task?.inputs?.modelSlx?.originalName || "这条生成任务";
-  const confirmed = window.confirm(`确认删除 ${taskName}？\n这会清除该任务上传文件、workspace 和生成产物。`);
+  const active = task && isActiveStatus(task.status);
+  const confirmed = window.confirm(
+    active
+      ? `确认终止并删除 ${taskName}？\n系统会先停止 Worker 中的实际作业，确认释放执行队列后，再清除任务文件和产物。`
+      : `确认删除 ${taskName}？\n这会清除该任务上传文件、workspace 和生成产物。`
+  );
   if (!confirmed) {
     return;
   }
 
   state.deletingTaskIds.add(taskId);
   renderTaskList();
-  setStatus("正在删除任务并清理产物。", "busy");
+  setStatus(active ? "正在终止 Worker 作业，确认停止后删除任务。" : "正在删除任务并清理产物。", "busy");
   try {
     await requestJson(`/api/unit-test-case-generation/tasks/${encodeURIComponent(taskId)}`, {
       method: "DELETE"

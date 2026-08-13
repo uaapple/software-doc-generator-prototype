@@ -95,6 +95,43 @@ assert.deepEqual(
     args: ["/d", "/s", "/c", "\"C:\\Hermes Runtime\\hermes.cmd\" skills list"]
   }
 );
+
+{
+  const root = await mkdtemp(path.join(os.tmpdir(), "tcsd-cancel-"));
+  const jobDir = path.join(root, "jobs");
+  let releaseRunning = null;
+  let runningStarted = null;
+  const runningStartedPromise = new Promise((resolve) => { runningStarted = resolve; });
+  const runningPromise = new Promise((resolve) => { releaseRunning = resolve; });
+  let cancelCalls = 0;
+  const service = new TcsdPipelineJobService({
+    jobDir,
+    prepareJob: async () => ({}),
+    executor: async () => {
+      runningStarted();
+      await runningPromise;
+    },
+    cancelExecution: async () => {
+      cancelCalls += 1;
+      releaseRunning();
+      return { requested: true, stopped: true };
+    },
+    runGate: new SerialGate({ concurrency: 1 })
+  });
+  const job = await service.start({
+    taskId: "cancel-running-task",
+    workspaceDir: root,
+    outputDir: path.join(root, "outputs")
+  });
+  await runningStartedPromise;
+  const cancelled = await service.cancel(job.jobId);
+  await service.running.get(job.jobId);
+  const stored = await service.get(job.jobId);
+  assert.equal(cancelCalls, 1);
+  assert.equal(cancelled.executionStopped, true);
+  assert.equal(stored.status, "已取消");
+  assert.equal(stored.stages[0].status, "已取消");
+}
 {
   const hermesCommand = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\hermes.cmd";
   const venvPython = "C:\\SoftwareDocWorker\\runtime\\hermes-agent\\venv\\Scripts\\python.exe";

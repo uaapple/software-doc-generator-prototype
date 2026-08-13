@@ -34,7 +34,7 @@ export const TCSD_STAGE_DEFINITIONS = Object.freeze([
 })));
 
 export const TCSD_STAGE_NAMES = TCSD_STAGE_DEFINITIONS.map((stage) => stage.name);
-export const TCSD_RUN_STATES = ["等待执行", "正在执行", "已完成", "部分完成", "已跳过", "失败"];
+export const TCSD_RUN_STATES = ["等待执行", "正在执行", "已完成", "部分完成", "已跳过", "失败", "已取消"];
 export const TCSD_ERROR_CODES = Object.freeze({
   workerUnavailable: "tcsd_worker_unavailable",
   jobNotFound: "tcsd_job_not_found",
@@ -48,6 +48,7 @@ export const TCSD_ERROR_CODES = Object.freeze({
   input: "tcsd_input_invalid",
   timeout: "tcsd_stage_timeout",
   stalled: "tcsd_stage_stalled",
+  cancelled: "tcsd_job_cancelled",
   pollTimeout: "tcsd_poll_timeout",
   transientNetwork: "tcsd_transient_network",
   illegalTransition: "tcsd_illegal_transition",
@@ -71,13 +72,13 @@ export function createStages() {
 }
 
 export function isTerminalJobStatus(status = "") {
-  return ["已完成", "部分完成", "失败"].includes(status);
+  return ["已完成", "部分完成", "失败", "已取消"].includes(status);
 }
 
 export function canTransition(from = "", to = "") {
   return from === to ||
-    (from === "等待执行" && ["正在执行", "已跳过", "失败"].includes(to)) ||
-    (from === "正在执行" && ["已完成", "部分完成", "已跳过", "失败", "等待执行"].includes(to));
+    (from === "等待执行" && ["正在执行", "已跳过", "失败", "已取消"].includes(to)) ||
+    (from === "正在执行" && ["已完成", "部分完成", "已跳过", "失败", "等待执行", "已取消"].includes(to));
 }
 
 function contractError(message, details = {}, code = TCSD_ERROR_CODES.checkpoint) {

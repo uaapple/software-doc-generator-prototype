@@ -204,6 +204,7 @@ export class TcsdHermesStageExecutor {
     );
     this.stateDbPath = options.stateDbPath || defaultStateDbPath(this.profile);
     this.commandRunner = options.commandRunner || createHermesSpawnRunner();
+    this.activeSessions = new Map();
     this.watchdogStallMs = Math.max(
       0,
       Number(
@@ -431,7 +432,17 @@ export class TcsdHermesStageExecutor {
   async runStageHermes({ command, args, options, resultPath, activityPaths = [], recoverSessionId, job }) {
     const promise = runHermesCommand(this.commandRunner, command, args, options);
     const child = promise.child || null;
-    if ((!this.watchdogStallMs && !this.noResultStallMs) || !child) return promise;
+    const jobId = String(job?.jobId || "").trim();
+    if (jobId && child) this.activeSessions.set(jobId, { promise, child, job });
+    const clearActiveSession = () => {
+      if (jobId && this.activeSessions.get(jobId)?.promise === promise) {
+        this.activeSessions.delete(jobId);
+      }
+    };
+    if ((!this.watchdogStallMs && !this.noResultStallMs) || !child) {
+      return promise.finally(clearActiveSession);
+    }
+    try {
     let lastSeenMtime = 0;
     let lastOutputSize = 0;
     let lastActivityFingerprint = "";
@@ -490,18 +501,16 @@ export class TcsdHermesStageExecutor {
           recoveredSessionId = "";
         }
       }
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // 进程可能已退出
-      }
+      if (typeof promise.terminate === "function") promise.terminate("SIGTERM");
+      else child.kill("SIGTERM");
       const exited = await Promise.race([
         promise.then(() => true).catch(() => true),
         sleep(this.watchdogGraceMs).then(() => false)
       ]);
       if (!exited) {
         try {
-          child.kill("SIGKILL");
+          if (typeof promise.terminate === "function") promise.terminate("SIGKILL");
+          else child.kill("SIGKILL");
         } catch {
           // 进程可能已退出
         }
@@ -545,6 +554,86 @@ export class TcsdHermesStageExecutor {
       }
       return { stdout: partialStdout, stderr: partialStderr, sessionId: recoveredSessionId };
     }
+    } finally {
+      clearActiveSession();
+    }
+  }
+
+  async cancel(jobId = "", job = null) {
+    const normalizedJobId = String(jobId || "").trim();
+    const active = this.activeSessions.get(normalizedJobId);
+    const gatewayCancellation = await this.cancelActiveGatewayJob(active?.job || job).catch(() => ({
+      present: true,
+      cancelled: false
+    }));
+    if (!active) {
+      return {
+        requested: gatewayCancellation.present,
+        stopped: !gatewayCancellation.present || gatewayCancellation.cancelled
+      };
+    }
+    const terminate = (signal) => {
+      if (typeof active.promise.terminate === "function") return active.promise.terminate(signal);
+      try {
+        return active.child.kill(signal);
+      } catch {
+        return false;
+      }
+    };
+    terminate("SIGTERM");
+    const exited = await Promise.race([
+      active.promise.then(() => true).catch(() => true),
+      sleep(this.watchdogGraceMs).then(() => false)
+    ]);
+    if (!exited) {
+      terminate("SIGKILL");
+      const killed = await Promise.race([
+        active.promise.then(() => true).catch(() => true),
+        sleep(this.watchdogGraceMs).then(() => false)
+      ]);
+      return {
+        requested: true,
+        stopped: killed && (!gatewayCancellation.present || gatewayCancellation.cancelled)
+      };
+    }
+    return {
+      requested: true,
+      stopped: !gatewayCancellation.present || gatewayCancellation.cancelled
+    };
+  }
+
+  async cancelActiveGatewayJob(job = {}) {
+    const outputDir = String(job?.input?.outputDir || "").trim();
+    if (!outputDir) return { present: false, cancelled: false };
+    const markerPath = path.join(outputDir, ".tcsd-runtime", "active-gateway-job.json");
+    const marker = await readJson(markerPath, null);
+    if (
+      marker?.schema !== "tcsd-active-gateway-job/v1" ||
+      String(marker.ownerJobId || "") !== String(job.jobId || "") ||
+      !/^[A-Za-z0-9._-]{1,200}$/.test(String(marker.workspaceId || "")) ||
+      !/^[A-Za-z0-9._-]{1,200}$/.test(String(marker.jobId || ""))
+    ) {
+      return { present: false, cancelled: false };
+    }
+    const baseUrl = String(process.env.SATK_GATEWAY_URL || "").trim().replace(/\/+$/, "");
+    if (!baseUrl) return { present: true, cancelled: false };
+    const headers = { "Content-Type": "application/json" };
+    const authToken = String(process.env.MATLAB_MCP_AUTH_TOKEN || "").trim();
+    const evaluateToken = String(process.env.MATLAB_GATEWAY_EVALUATE_TOKEN || "").trim();
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    if (evaluateToken) {
+      headers["X-SDG-Evaluate-Token"] = evaluateToken;
+      headers["X-SDG-Gateway-Caller"] = "tcsd-runtime";
+    }
+    const response = await fetch(`${baseUrl}/api/jobs/${encodeURIComponent(marker.jobId)}/cancel`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ workspaceId: marker.workspaceId }),
+      signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok && response.status !== 404) return { present: true, cancelled: false };
+    await fs.rm(markerPath, { force: true }).catch(() => {});
+    return { present: true, cancelled: true };
   }
 
   buildPrompt({ definition, skill, runtime, manifestPath, resultPath, validationReportPath, attempt }) {
@@ -912,6 +1001,7 @@ export class TcsdHermesStageExecutor {
             ...process.env,
             NO_COLOR: "1",
             TCSD_JOB_ID: job.jobId,
+            TCSD_OUTPUT_DIR: outputDir,
             TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
             SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
           },

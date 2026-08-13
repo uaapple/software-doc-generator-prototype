@@ -11670,6 +11670,70 @@ const tests = [
     }
   },
   {
+    name: "UnitTestCaseGenerationService cancels the Worker job before deleting an active task",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const cancelledJobIds = [];
+        const service = new UnitTestCaseGenerationService({
+          hermesAgentClient: {
+            async cancelTcsdPipelineJob(jobId) {
+              cancelledJobIds.push(jobId);
+              return { jobId, status: "已取消", cancelled: true, executionStopped: true };
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Cancel.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Cancel.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
+        const running = await service.readTask(task.id);
+        running.status = "running";
+        running.pipeline = { jobId: "worker-active-job", status: "正在执行" };
+        running.workerDelivery = { state: "accepted", workerJobId: "worker-active-job" };
+        await service.saveTask(running);
+
+        const deleted = await service.deleteTask(task.id);
+        assert.deepEqual(cancelledJobIds, ["worker-active-job"]);
+        assert.equal(deleted.workerCancelled, true);
+        assert.equal(await service.getTask(task.id), null);
+      });
+    }
+  },
+  {
+    name: "UnitTestCaseGenerationService retains an active task when Worker cancellation is unconfirmed",
+    run: async () => {
+      await withTempConfig(async (tempDir) => {
+        const service = new UnitTestCaseGenerationService({
+          hermesAgentClient: {
+            async cancelTcsdPipelineJob(jobId) {
+              return { jobId, status: "已取消", cancelled: true, executionStopped: false };
+            }
+          }
+        });
+        const task = await service.createTask(
+          {
+            modelSlx: [await createMockUploadFile(tempDir, "Keep.slx", "slx")],
+            modelMat: [await createMockUploadFile(tempDir, "Keep.mat", "mat")]
+          },
+          { unitTestProjectId: "01" }
+        );
+        const running = await service.readTask(task.id);
+        running.status = "running";
+        running.pipeline = { jobId: "worker-unconfirmed-job", status: "正在执行" };
+        await service.saveTask(running);
+
+        await assert.rejects(
+          () => service.deleteTask(task.id),
+          (error) => error?.code === "tcsd_worker_cancel_unconfirmed"
+        );
+        assert.equal((await service.getTask(task.id))?.status, "running");
+      });
+    }
+  },
+  {
     name: "UnitTestCaseGenerationService records Hermes failures",
     run: async () => {
       await withTempConfig(async (tempDir) => {

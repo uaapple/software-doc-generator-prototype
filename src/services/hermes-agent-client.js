@@ -3790,6 +3790,45 @@ export class HermesAgentClient {
     return materializeTcsdPipelineArtifacts(body, options.localWorkspaceDir || "");
   }
 
+  async cancelTcsdPipelineJob(jobId = "") {
+    const target = new URL(`${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}/cancel`);
+    const transport = target.protocol === "https:" ? https : http;
+    let response;
+    try {
+      response = await new Promise((resolve, reject) => {
+        const request = transport.request(target, {
+          method: "POST",
+          timeout: this.timeoutMs,
+          headers: { ...this._authHeaders(), "Content-Type": "application/json" }
+        }, (result) => {
+          let text = "";
+          result.setEncoding("utf8");
+          result.on("data", (chunk) => { text += chunk; });
+          result.on("end", () => resolve({
+            ok: result.statusCode >= 200 && result.statusCode < 300,
+            status: result.statusCode,
+            text
+          }));
+        });
+        request.on("timeout", () => request.destroy(new Error("TCSD Worker 取消作业超时。")));
+        request.on("error", reject);
+        request.end("{}");
+      });
+    } catch (cause) {
+      throw createTcsdTransportError({ operation: "cancel", cause });
+    }
+    const body = parseJsonObject(response.text);
+    if (!response.ok) throw createTcsdTransportError({ operation: "cancel", response });
+    if (!body || safeRemoteCode(body.jobId) !== safeRemoteCode(jobId) || body.executionStopped !== true) {
+      throw Object.assign(new Error("TCSD Worker 未确认作业已停止。"), {
+        code: "tcsd_worker_cancel_unconfirmed",
+        statusCode: 502,
+        retryable: true
+      });
+    }
+    return body;
+  }
+
   async cleanupTcsdPipelineUpload(jobId = "") {
     const target = new URL(
       `${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}/upload-session`

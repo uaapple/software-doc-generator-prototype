@@ -350,6 +350,12 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
     workspace_route = f"/api/workspaces/{urllib.parse.quote(workspace_id)}"
     job_route = f"/api/jobs/{urllib.parse.quote(job_id)}"
     query = urllib.parse.urlencode({"workspaceId": workspace_id})
+    owner_job_id = str(values.get("TCSD_JOB_ID") or "").strip()
+    active_job_marker = None
+    if owner_job_id:
+        output_dir = str(values.get("TCSD_OUTPUT_DIR") or "").strip()
+        if output_dir:
+            active_job_marker = Path(output_dir) / ".tcsd-runtime" / "active-gateway-job.json"
     created = False
     try:
         gateway_request(
@@ -365,6 +371,20 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             payload={"fileName": code_file.name, "content": code},
             environ=values,
         )
+        if active_job_marker is not None:
+            active_job_marker.parent.mkdir(parents=True, exist_ok=True)
+            active_job_marker.write_text(
+                json.dumps(
+                    {
+                        "schema": "tcsd-active-gateway-job/v1",
+                        "ownerJobId": owner_job_id,
+                        "workspaceId": workspace_id,
+                        "jobId": job_id,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
         gateway_request(
             "POST",
             job_route,
@@ -446,6 +466,11 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             },
         }
     finally:
+        if active_job_marker is not None:
+            try:
+                active_job_marker.unlink(missing_ok=True)
+            except OSError:
+                pass
         if created:
             try:
                 gateway_request("DELETE", workspace_route, environ=values)

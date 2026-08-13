@@ -69,10 +69,12 @@ export function runHermesCommand(commandRunner, command, args, options = {}) {
  */
 export function createHermesSpawnRunner() {
   return (command, args = [], options = {}) => {
+    const useProcessGroup = process.platform !== "win32";
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...process.env, ...(options.env || {}) },
       windowsHide: true,
+      detached: useProcessGroup,
       stdio: ["ignore", "pipe", "pipe"]
     });
     let stdout = "";
@@ -80,6 +82,29 @@ export function createHermesSpawnRunner() {
     let stdoutBytes = 0;
     const maxBuffer = Number(options.maxBuffer || 16 * 1024 * 1024);
     const stderrTailLimit = 64 * 1024;
+    const terminate = (signal = "SIGTERM") => {
+      if (child.exitCode !== null || child.signalCode) return false;
+      try {
+        if (process.platform === "win32" && Number.isInteger(child.pid)) {
+          const force = signal === "SIGKILL" ? ["/F"] : [];
+          spawn("taskkill", ["/PID", String(child.pid), "/T", ...force], {
+            windowsHide: true,
+            stdio: "ignore"
+          });
+        } else if (useProcessGroup && Number.isInteger(child.pid)) {
+          process.kill(-child.pid, signal);
+        } else {
+          child.kill(signal);
+        }
+        return true;
+      } catch {
+        try {
+          return child.kill(signal);
+        } catch {
+          return false;
+        }
+      }
+    };
     child.stdout.on("data", (chunk) => {
       stdoutBytes += chunk.length;
       if (stdoutBytes <= maxBuffer) stdout += chunk;
@@ -91,11 +116,7 @@ export function createHermesSpawnRunner() {
       let timer = null;
       if (options.timeout) {
         timer = setTimeout(() => {
-          try {
-            child.kill("SIGTERM");
-          } catch {
-            // 进程可能已退出
-          }
+          terminate("SIGTERM");
           reject(
             Object.assign(
               new Error(`Hermes stage session timed out after ${options.timeout}ms.`),
@@ -125,6 +146,7 @@ export function createHermesSpawnRunner() {
       });
     });
     promise.child = child;
+    promise.terminate = terminate;
     promise.stdoutSoFar = () => stdout;
     promise.stderrSoFar = () => stderr;
     return promise;

@@ -76,6 +76,11 @@ const suites = [
     args: ["tests/serial-gate-tests.mjs"]
   },
   {
+    id: "tcsd-job-cancellation",
+    command: process.execPath,
+    args: ["tests/tcsd-job-cancellation-tests.mjs"]
+  },
+  {
     id: "matlab-gateway-lease",
     command: process.execPath,
     args: ["tests/matlab-gateway-lease-tests.mjs"]

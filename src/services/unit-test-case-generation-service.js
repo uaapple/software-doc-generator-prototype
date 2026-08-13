@@ -714,6 +714,7 @@ export class UnitTestCaseGenerationService {
       ? options.hermesAgentClientFactory
       : null;
     this.deletedTaskIds = new Set();
+    this.deletingTaskIds = new Set();
     this.deliveryRuns = new Map();
     this.remotePollWindowMs = Number(options.remotePollWindowMs ?? config.unitTestCase?.remotePollWindowMs ?? 5 * 60 * 1000);
     this.sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
@@ -878,20 +879,44 @@ export class UnitTestCaseGenerationService {
   }
 
   async deleteTask(taskId = "") {
-    const task = await this.readTask(taskId);
-    if (!task) {
-      throw createHttpError("任务不存在。", 404, "unit_test_case_task_not_found");
+    const normalizedTaskId = String(taskId || "").trim();
+    let task = await this.readTask(normalizedTaskId);
+    if (!task) throw createHttpError("任务不存在。", 404, "unit_test_case_task_not_found");
+    this.deletingTaskIds.add(task.id);
+    try {
+      let workerJobId = String(task.pipeline?.jobId || task.workerDelivery?.workerJobId || "").trim();
+      const deliveryRun = this.deliveryRuns.get(task.id);
+      if (["queued", "running"].includes(task.status) && !workerJobId && deliveryRun) {
+        await deliveryRun.catch(() => {});
+        task = await this.readTask(normalizedTaskId) || task;
+        workerJobId = String(task.pipeline?.jobId || task.workerDelivery?.workerJobId || "").trim();
+      }
+      if (["queued", "running"].includes(task.status) && workerJobId) {
+        const workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
+        const client = this.getHermesAgentClientForWorker(workerProfile);
+        if (typeof client?.cancelTcsdPipelineJob !== "function") {
+          throw createHttpError("当前 Worker 不支持安全取消，任务未删除。", 409, "tcsd_worker_cancel_unsupported");
+        }
+        const cancellation = await client.cancelTcsdPipelineJob(workerJobId);
+        if (cancellation?.executionStopped !== true) {
+          throw createHttpError("Worker 尚未确认任务停止，平台记录未删除。", 409, "tcsd_worker_cancel_unconfirmed");
+        }
+      }
+      this.deletedTaskIds.add(task.id);
+      const taskDir = this.getTaskDir(task.id);
+      await fs.rm(taskDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      return {
+        deleted: true,
+        taskId: task.id,
+        status: task.status || "",
+        removedArtifacts: Array.isArray(task.artifacts) ? task.artifacts.length : 0,
+        removedWorkspace: true,
+        workerJobId: workerJobId || null,
+        workerCancelled: Boolean(workerJobId && ["queued", "running"].includes(task.status))
+      };
+    } finally {
+      this.deletingTaskIds.delete(task.id);
     }
-    this.deletedTaskIds.add(task.id);
-    const taskDir = this.getTaskDir(task.id);
-    await fs.rm(taskDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
-    return {
-      deleted: true,
-      taskId: task.id,
-      status: task.status || "",
-      removedArtifacts: Array.isArray(task.artifacts) ? task.artifacts.length : 0,
-      removedWorkspace: true
-    };
   }
 
   validateUploadFiles(files = {}) {
@@ -1191,6 +1216,7 @@ export class UnitTestCaseGenerationService {
     const task = await this.readTask(taskId);
     if (!task) return null;
     const workerQueued = isQueuedWorkerPipelineStatus(job.status);
+    const workerCancelled = job.status === "已取消";
     task.pipeline = {
       jobId: job.jobId,
       schema: job.schema,
@@ -1203,7 +1229,9 @@ export class UnitTestCaseGenerationService {
       error: job.error || null,
       updatedAt: job.updatedAt || now()
     };
-    task.status = job.status === "失败"
+    task.status = workerCancelled
+      ? "cancelled"
+      : job.status === "失败"
       ? "failed"
       : job.status === "部分完成"
         ? "partial"
@@ -1215,7 +1243,7 @@ export class UnitTestCaseGenerationService {
     task.workerPending = false;
     task.workerDelivery = {
       ...(task.workerDelivery || {}),
-      state: workerQueued ? "queued" : "accepted",
+      state: workerCancelled ? "cancelled" : workerQueued ? "queued" : "accepted",
       retryable: false,
       workerJobId: String(job.jobId || "").trim(),
       ...(safeDeliveryText(job.deliveryCorrelationId) ? { correlationId: safeDeliveryText(job.deliveryCorrelationId) } : {}),
@@ -1224,7 +1252,9 @@ export class UnitTestCaseGenerationService {
     };
     task.progress = buildProgress(
       task.status,
-      workerQueued
+      workerCancelled
+        ? "Worker 作业已取消。"
+        : workerQueued
         ? "Windows Worker 已接收任务，正在等待前序任务结束。"
         : job.stages?.find((stage) => stage.status === "正在执行")?.name ||
           job.error?.message ||
@@ -1253,19 +1283,27 @@ export class UnitTestCaseGenerationService {
         });
     let job = { ...started, stages: [] };
     await this.syncPipelineJob(taskId, job);
+    if (this.deletingTaskIds.has(taskId)) {
+      await hermesAgentClient.cancelTcsdPipelineJob(started.jobId);
+      return { status: "cancelled", jobId: started.jobId };
+    }
     const deadline = Date.now() + this.remotePollWindowMs;
     let delayMs = 1000;
     // 新建 job 的 202 响应本身就是一次成功状态；恢复已有 job 时则必须等到
     // 本轮首次 GET 成功后，才能声明 Worker 状态同步正常。
     let lastPollSucceeded = !existingJobId;
     while (Date.now() < deadline) {
+      if (this.deletingTaskIds.has(taskId)) {
+        await hermesAgentClient.cancelTcsdPipelineJob(started.jobId);
+        return { status: "cancelled", jobId: started.jobId };
+      }
       try {
         job = await hermesAgentClient.getTcsdPipelineJob(started.jobId, {
           localWorkspaceDir: task.workspace?.directory || ""
         });
         lastPollSucceeded = true;
         await this.syncPipelineJob(taskId, job);
-        if (["已完成", "部分完成", "失败"].includes(job.status)) break;
+        if (["已完成", "部分完成", "失败", "已取消"].includes(job.status)) break;
         delayMs = 1000;
       } catch (error) {
         // A temporary network break is not a MATLAB failure; retain the last confirmed job state.
@@ -1275,7 +1313,7 @@ export class UnitTestCaseGenerationService {
       }
       await this.sleep(delayMs);
     }
-    if (!job || !["已完成", "部分完成", "失败"].includes(job.status)) {
+    if (!job || !["已完成", "部分完成", "失败", "已取消"].includes(job.status)) {
       const pending = await this.readTask(taskId);
       const workerQueued = isQueuedWorkerPipelineStatus(job?.status);
       pending.status = workerQueued ? "queued" : "running";
@@ -1296,6 +1334,7 @@ export class UnitTestCaseGenerationService {
       await this.cleanupRemotePipelineUpload(hermesAgentClient, job.jobId);
       throw createHttpError(job.error?.message || "TCSD 阶段执行失败。", 502, job.error?.code || "tcsd_stage_failed");
     }
+    if (job.status === "已取消") return { status: "cancelled", jobId: job.jobId };
     return { status: "succeeded", artifact: { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [], warnings: [] }, metrics: { pipelineJobId: job.jobId }, pipelineJob: job };
   }
 
@@ -1320,6 +1359,7 @@ export class UnitTestCaseGenerationService {
       task.workerProfile = publicUnitTestWorkerProfile(workerProfile);
       await this.saveTask(task);
       const result = await this.runRemotePipeline(taskId, task, workerProfile);
+      if (result?.status === "cancelled") return this.getTask(taskId);
       if (result?.status === "pending") return this.getTask(taskId);
       const artifact = result?.artifact || {};
       if (result?.status && result.status !== "succeeded") {
@@ -1619,6 +1659,9 @@ export class UnitTestCaseGenerationService {
         const failed = await this.failTask(taskId, createHttpError(job.error?.message || "Windows 阶段执行失败。", 502, job.error?.code || "tcsd_stage_failed"));
         await this.cleanupRemotePipelineUpload(hermesAgentClient, job.jobId);
         return failed;
+      }
+      if (job.status === "已取消") {
+        return this.getTask(taskId);
       }
       if (["已完成", "部分完成"].includes(job.status)) {
         const completed = await this.completeTask(taskId, { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [] }, { metrics: { pipelineJobId: job.jobId } });

@@ -1410,6 +1410,7 @@ export async function createHermesApp(options = {}) {
     jobDir: config.tcsdPipeline?.jobStoreDir || path.join(config.dataDir, "tcsd-pipeline-jobs"),
     prepareJob: () => tcsdSkillRegistry.prepare(),
     executor: (stageIndex, input, job, options) => tcsdStageExecutor.execute(stageIndex, input, job, options),
+    cancelExecution: (jobId, job) => tcsdStageExecutor.cancel(jobId, job),
     checkpointValidator: (checkpoint, context, job) => tcsdStageExecutor.validateCheckpoint(checkpoint, context, job),
     runGate: pipelineRunGate
   });
@@ -1683,6 +1684,24 @@ export async function createHermesApp(options = {}) {
       );
       return res.json({ ...job, artifacts: transferred.outputFiles || [] });
     } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post("/internal/tcsd-pipeline/jobs/:jobId/cancel", requireHermesAuth, async (req, res, next) => {
+    try {
+      const result = await tcsdJobs.cancel(req.params.jobId);
+      return res.json({
+        jobId: result.job.jobId,
+        status: result.job.status,
+        cancelled: result.cancelled,
+        alreadyTerminal: result.alreadyTerminal,
+        executionStopped: result.executionStopped
+      });
+    } catch (error) {
+      if (error?.code === TCSD_ERROR_CODES.jobNotFound) {
+        return res.status(404).json({ error: error.message, code: error.code });
+      }
       return next(error);
     }
   });

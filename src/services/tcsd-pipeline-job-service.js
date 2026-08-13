@@ -50,8 +50,10 @@ export class TcsdPipelineJobService {
     this.prepareJob = options.prepareJob || null;
     this.checkpointValidator = options.checkpointValidator || validateStageCheckpoint;
     this.runGate = options.runGate || null;
+    this.cancelExecution = options.cancelExecution || null;
     this.running = new Map();
     this.starting = new Map();
+    this.cancelled = new Set();
   }
 
   async get(jobId) {
@@ -194,11 +196,11 @@ export class TcsdPipelineJobService {
       stage.attempt += 1;
       stage.error = null;
     }
-    if (["已完成", "部分完成", "已跳过", "失败"].includes(status) || (previous === "正在执行" && status === "等待执行")) {
+    if (["已完成", "部分完成", "已跳过", "失败", "已取消"].includes(status) || (previous === "正在执行" && status === "等待执行")) {
       stage.endedAt = now();
     }
     Object.assign(stage, details);
-    job.status = status === "失败" ? "失败" : "正在执行";
+    job.status = status === "失败" ? "失败" : status === "已取消" ? "已取消" : "正在执行";
     await this.event(job, "stage", {
       stageIndex: index,
       stageName: stage.name,
@@ -404,14 +406,19 @@ export class TcsdPipelineJobService {
         summary: nextAttempt === 1 ? "正在启动独立 Hermes Agent 会话。" : "正在启动一次独立验证修复会话。"
       });
       try {
+        if (this.cancelled.has(job.jobId)) throw this.cancelledError(job.jobId);
         await this.executor(index, job.input, job, {
           attempt: stage.attempt,
           validationReportPath
         });
+        if (this.cancelled.has(job.jobId)) throw this.cancelledError(job.jobId);
         const checkpoint = await this.verifiedCheckpoint(job, index, { throwOnInvalid: true });
         this.recordAttempt(stage, checkpoint, "completed");
         return checkpoint;
       } catch (error) {
+        if (this.cancelled.has(job.jobId) || error?.code === TCSD_ERROR_CODES.cancelled) {
+          throw this.cancelledError(job.jobId);
+        }
         const normalized = publicError(error);
         this.recordAttempt(stage, error, error.code === TCSD_ERROR_CODES.validation ? "validation_failed" : "failed");
         try {
@@ -453,6 +460,7 @@ export class TcsdPipelineJobService {
       .catch(() => {})
       .finally(() => {
         if (this.running.get(jobId) === promise) this.running.delete(jobId);
+        this.cancelled.delete(jobId);
       });
     return promise;
   }
@@ -464,6 +472,7 @@ export class TcsdPipelineJobService {
     if (isTerminalJobStatus(job.status)) return job;
     try {
       for (let index = 1; index <= 12; index += 1) {
+        if (this.cancelled.has(jobId)) return this.get(jobId);
         const stage = job.stages[index - 1];
         if (["已完成", "已跳过", "部分完成"].includes(stage.status) && await this.verifiedCheckpoint(job, index)) {
           continue;
@@ -508,6 +517,9 @@ export class TcsdPipelineJobService {
       await this.event(job, "completed", { completion: job.completion });
       return job;
     } catch (error) {
+      if (this.cancelled.has(jobId) || error?.code === TCSD_ERROR_CODES.cancelled) {
+        return this.get(jobId);
+      }
       const current = job.stages.find((stage) => stage.status === "正在执行" || stage.status === "等待执行");
       const normalized = publicError(error);
       if (current) {
@@ -519,5 +531,49 @@ export class TcsdPipelineJobService {
       await this.save(job);
       return job;
     }
+  }
+
+  cancelledError(jobId = "") {
+    return Object.assign(new Error("TCSD 作业已由用户取消。"), {
+      code: TCSD_ERROR_CODES.cancelled,
+      details: { jobId }
+    });
+  }
+
+  async cancel(jobId = "") {
+    const normalizedJobId = String(jobId || "").trim();
+    const job = await this.get(normalizedJobId);
+    if (!job) {
+      throw Object.assign(new Error("TCSD 作业不存在。"), { code: TCSD_ERROR_CODES.jobNotFound });
+    }
+    if (isTerminalJobStatus(job.status)) {
+      let executionStopped = true;
+      if (job.status === "已取消" && this.running.has(normalizedJobId) && typeof this.cancelExecution === "function") {
+        const stopResult = await this.cancelExecution(normalizedJobId, job);
+        executionStopped = stopResult?.stopped !== false;
+      }
+      return { job, cancelled: job.status === "已取消", alreadyTerminal: true, executionStopped };
+    }
+    this.cancelled.add(normalizedJobId);
+    const current = job.stages?.find((stage) => ["正在执行", "等待执行"].includes(stage.status));
+    if (current) {
+      current.status = "已取消";
+      current.endedAt = now();
+      current.summary = "任务已由用户取消。";
+      current.error = publicError(this.cancelledError(normalizedJobId));
+    }
+    job.status = "已取消";
+    job.cancelledAt = now();
+    job.error = publicError(this.cancelledError(normalizedJobId));
+    await this.event(job, "cancelled", { stageIndex: current?.index || null });
+    const stopResult = typeof this.cancelExecution === "function"
+      ? await this.cancelExecution(normalizedJobId, job)
+      : { requested: false, stopped: !this.running.has(normalizedJobId) };
+    return {
+      job: await this.get(normalizedJobId),
+      cancelled: true,
+      alreadyTerminal: false,
+      executionStopped: stopResult?.stopped !== false
+    };
   }
 }
