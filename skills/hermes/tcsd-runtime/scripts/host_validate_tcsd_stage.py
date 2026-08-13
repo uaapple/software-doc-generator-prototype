@@ -797,6 +797,34 @@ def validate_repair_brief(request: dict[str, Any], brief: dict[str, Any]) -> Non
         raise ValueError("Agent repair brief does not match host-rebuilt measured coverage deficits")
 
 
+def validate_unapplied_repair_outcome(
+    *,
+    reason: str,
+    accepted: int,
+    unresolved: int,
+    added: int,
+    synthesis: dict[str, Any] | None,
+    candidate: dict[str, Any] | None,
+) -> None:
+    if reason == "agent_reported_specific_unresolved_deficits" and (accepted != 0 or unresolved < 1):
+        raise ValueError("unresolved stage 10 result lacks specific unresolved deficit evidence")
+    if reason == "agent_candidates_duplicate_existing_tests" and (accepted < 1 or not synthesis or added != 0):
+        raise ValueError("duplicate stage 10 result lacks deterministic deduplication evidence")
+    if reason == "agent_candidate_simulation_failed" and (
+        accepted < 1 or not isinstance(candidate, dict) or candidate.get("passed") is not False
+    ):
+        raise ValueError("failed stage 10 candidate lacks deterministic simulation failure evidence")
+    if reason == "mcdc_delta_no_new_independent_effect_pair" and (
+        accepted < 1
+        or added < 1
+        or not isinstance(candidate, dict)
+        or candidate.get("passed") is not False
+        or str(candidate.get("reason") or "") != reason
+        or int(candidate.get("newIndependentEffectPairCount") or 0) != 0
+    ):
+        raise ValueError("rejected stage 10 MC/DC candidate lacks zero-delta judge evidence")
+
+
 def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
     _, brief = find_json_schema(request, BRIEF_SCHEMA)
     _, proposal = find_json_schema(request, PROPOSAL_SCHEMA)
@@ -837,6 +865,7 @@ def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
         "agent_reported_specific_unresolved_deficits",
         "agent_candidates_duplicate_existing_tests",
         "agent_candidate_simulation_failed",
+        "mcdc_delta_no_new_independent_effect_pair",
     }
     if reason not in allowed_reasons:
         raise ValueError("stage 10 repair reason is not a specific validated outcome")
@@ -848,14 +877,14 @@ def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
     else:
         workbook_details = {}
         simulation_details = {}
-        if reason == "agent_reported_specific_unresolved_deficits" and (accepted != 0 or unresolved < 1):
-            raise ValueError("unresolved stage 10 result lacks specific unresolved deficit evidence")
-        if reason == "agent_candidates_duplicate_existing_tests" and (accepted < 1 or not synthesis or added != 0):
-            raise ValueError("duplicate stage 10 result lacks deterministic deduplication evidence")
-        if reason == "agent_candidate_simulation_failed" and (
-            accepted < 1 or not isinstance(candidate, dict) or candidate.get("passed") is not False
-        ):
-            raise ValueError("failed stage 10 candidate lacks deterministic simulation failure evidence")
+        validate_unapplied_repair_outcome(
+            reason=reason,
+            accepted=accepted,
+            unresolved=unresolved,
+            added=added,
+            synthesis=synthesis,
+            candidate=candidate,
+        )
     return {
         "proposalItemCount": int(validation.get("proposalItemCount") or 0),
         "acceptedCandidateCount": accepted,

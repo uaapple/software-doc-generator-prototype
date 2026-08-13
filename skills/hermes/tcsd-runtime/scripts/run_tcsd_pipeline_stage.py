@@ -25,6 +25,9 @@ def load_module(name: str, path: Path):
 def read_json(path: Path) -> dict[str, Any]: return json.loads(path.read_text(encoding="utf-8"))
 def write_json(path: Path, value: Any) -> None: path.parent.mkdir(parents=True, exist_ok=True); path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 def file_sha256(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()
+def should_finish_stage10_partial_after_mcdc_delta(attempt: int, report: dict[str, Any]) -> bool:
+    return attempt >= 2 and report.get("passed") is not True
+
 def stage6_probe_timeout_seconds(candidate_count: int) -> int:
     configured = os.environ.get("SATK_GATEWAY_TIMEOUT_SECONDS", "").strip()
     configured_floor = STAGE6_PROBE_TIMEOUT_BASE_SECONDS
@@ -1286,6 +1289,73 @@ def stage_run(
             if completed_delta.returncode != 0 or delta_report.get("passed") is not True:
                 if not coverage_delta.is_file():
                     raise RuntimeError("MC/DC coverage delta judge did not write its report")
+                if should_finish_stage10_partial_after_mcdc_delta(
+                    int(job.get("_stageAttempt") or 1), delta_report
+                ):
+                    reason = "mcdc_delta_no_new_independent_effect_pair"
+                    write_json(
+                        candidate_diagnostic,
+                        {
+                            "schema": "tcsd-repair-candidate-validation/v1",
+                            "jobId": job["jobId"],
+                            "passed": False,
+                            "candidateCount": added,
+                            "simulationResult": str(candidate_simulation.relative_to(root)),
+                            "coverageResult": str(candidate_coverage.relative_to(root)),
+                            "mcdcDelta": str(coverage_delta.relative_to(root)),
+                            "reason": reason,
+                            "newIndependentEffectPairCount": int(
+                                delta_report.get("newIndependentEffectPairCount") or 0
+                            ),
+                            "backfill": backfill,
+                        },
+                    )
+                    state.update(
+                        {
+                            "repairAttempted": True,
+                            "repairApplied": False,
+                            "repairReason": reason,
+                            "repairEvidence": str(coverage_delta),
+                        }
+                    )
+                    save_state(job, state)
+                    finish(
+                        job,
+                        stage,
+                        status="partial",
+                        summary=(
+                            "两轮 Agent 修正候选均未形成新的 MC/DC 独立影响对；"
+                            "宿主已拒绝无效候选并保留首轮工作簿。"
+                        ),
+                        artifacts=[
+                            *repair_artifacts,
+                            artifact(root, candidate_diagnostic),
+                            artifact(root, candidate_coverage, "json", "candidate-coverage"),
+                            artifact(root, coverage_delta, "json", "mcdc-coverage-delta"),
+                            artifact(root, candidate_simulation),
+                        ],
+                        repair={
+                            "required": True,
+                            "attempted": True,
+                            "applied": False,
+                            "passes": 0,
+                            "reason": reason,
+                            "evidence": str(coverage_delta.relative_to(root)),
+                        },
+                        evidence={
+                            **evidence,
+                            "candidateValidation": str(candidate_diagnostic.relative_to(root)),
+                            "candidateSimulation": str(candidate_simulation.relative_to(root)),
+                            "candidateCoverage": str(candidate_coverage.relative_to(root)),
+                            "mcdcDelta": str(coverage_delta.relative_to(root)),
+                            "mcdcMode": str(delta_report.get("mcdcMode") or ""),
+                            "newIndependentEffectPairCount": int(
+                                delta_report.get("newIndependentEffectPairCount") or 0
+                            ),
+                            "candidateValidationPassed": False,
+                        },
+                    )
+                    return
                 raise RecoverableStageValidationError(
                     "Agent coverage repair did not add the required MC/DC independent-effect pairs.",
                     coverage_delta,

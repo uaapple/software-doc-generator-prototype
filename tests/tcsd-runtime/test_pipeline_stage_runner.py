@@ -709,6 +709,57 @@ class PipelineStageRunnerTests(unittest.TestCase):
             "tcsd_stage_validation_failed",
         )
 
+    def test_stage10_mcdc_delta_failure_retries_once_then_finishes_partial(self):
+        failed_report = {
+            "schema": "tcsd-mcdc-coverage-delta/v1",
+            "passed": False,
+            "newIndependentEffectPairCount": 0,
+        }
+        self.assertFalse(
+            RUNNER.should_finish_stage10_partial_after_mcdc_delta(1, failed_report)
+        )
+        self.assertTrue(
+            RUNNER.should_finish_stage10_partial_after_mcdc_delta(2, failed_report)
+        )
+        self.assertFalse(
+            RUNNER.should_finish_stage10_partial_after_mcdc_delta(
+                2, {**failed_report, "passed": True}
+            )
+        )
+
+    def test_stage10_host_validator_accepts_zero_delta_partial_evidence(self):
+        synthesis = {"schema": HOST_VALIDATOR.SYNTHESIS_SCHEMA, "added": 2}
+        candidate = {
+            "schema": HOST_VALIDATOR.REPAIR_CANDIDATE_SCHEMA,
+            "passed": False,
+            "reason": "mcdc_delta_no_new_independent_effect_pair",
+            "newIndependentEffectPairCount": 0,
+        }
+        repair = {
+            "required": True,
+            "attempted": True,
+            "applied": False,
+            "passes": 0,
+            "reason": "mcdc_delta_no_new_independent_effect_pair",
+        }
+        HOST_VALIDATOR.validate_unapplied_repair_outcome(
+            reason=repair["reason"],
+            accepted=2,
+            unresolved=0,
+            added=2,
+            synthesis=synthesis,
+            candidate=candidate,
+        )
+        with self.assertRaisesRegex(ValueError, "zero-delta judge evidence"):
+            HOST_VALIDATOR.validate_unapplied_repair_outcome(
+                reason=repair["reason"],
+                accepted=2,
+                unresolved=0,
+                added=2,
+                synthesis=synthesis,
+                candidate={**candidate, "newIndependentEffectPairCount": 1},
+            )
+
     def test_stage10_validator_crash_cannot_reuse_stale_attempt_outputs(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
