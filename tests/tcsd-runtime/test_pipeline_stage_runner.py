@@ -1649,7 +1649,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }
             (output / "GenericModel_logical_traces.json").write_text(json.dumps(trace), encoding="utf-8")
             probe = {"GenericModel": {"schema": "simulink-ut-logical-mcdc-probe/v2", "model": "GenericModel", "probes": [{"id": "GenericModel:1", "sid": "GenericModel:1", "block_path": "GenericModel/Decision", "operator": "AND", "port_names": ["u1", "u2"]}], "observations": []}}
-            for index, label in enumerate(("TT", "FT", "TF"), 1):
+            for index, label in enumerate(("TT",), 1):
                 probe["GenericModel"]["observations"].append({"test_id": f"STATE_PROBE_{index:04d}", "row": index, "step_index": 2, "time_s": 0.1, "inputs": {"Enable": int(label[0] == "T"), "Request": int(label[1] == "T")}, "params": {}, "vectors": {"decision": {"id": "GenericModel:1", "label": label, "ok": True}}, "stimulus": {"initial_inputs": {"Enable": 0, "Request": 1}, "initial_params": {}, "steps": [{"index": 1, "delay_s": 0.01, "input_updates": {"Enable": 1}, "param_updates": {}}, {"index": 2, "delay_s": 0.1, "input_updates": {}, "param_updates": {}}], "evidence_step": 2}, "prediction_status": "observed"})
             probe_fixture = root / "probe-results.json"; probe_fixture.write_text(json.dumps(probe), encoding="utf-8")
             job = {"jobId": "job-cli", "resources": {"ownerJobId": "job-cli"}, "input": {"workspaceDir": str(root), "outputDir": str(output), "modelSlxPath": str(model), "modelMatPath": str(mat), "coverageThreshold": 80}}
@@ -1685,7 +1685,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             self.assertEqual(result["schema"], "tcsd-agent-stage-result/v1")
             self.assertTrue(result["evidence"]["probeExecuted"])
             self.assertFalse((output / ".tcsd-checkpoints").exists())
-            self.assertEqual(after["summary"]["unresolved_count"], 0)
+            self.assertGreater(after["summary"]["unresolved_count"], 0)
 
     def test_coverage_threshold_uses_all_three_metrics_for_every_model(self):
         report = {"M1": {"condition": {"percent": 90}, "decision": {"percent": 90}, "mcdc": {"percent": 79}}}

@@ -677,7 +677,15 @@ def stage_run(
         if candidate_count > 0:
             probe_results = out / f"{model}_state_probe_results.json"; probe_fixture = os.environ.get("TCSD_PIPELINE_PROBE_RESULTS_FIXTURE", "")
             if probe_fixture:
-                shutil.copy2(probe_fixture, probe_results); run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
+                shutil.copy2(probe_fixture, probe_results)
+                obligations = quality.build_probe_obligations(
+                    python=sys.executable,
+                    scripts=scripts(),
+                    root_dir=root,
+                    model=model,
+                    probe_results=probe_results,
+                    unreachable_overrides="",
+                )
             else:
                 try:
                     primary_results = out / f"{model}_state_probe_results_primary.json"
@@ -745,7 +753,6 @@ def stage_run(
                     )
                     final_classification_path = out / f"{model}_state_probe_classification.json"
                     write_json(final_classification_path, final_classification)
-                    run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
                     probe_artifacts.extend([
                         artifact(root, primary_results, "json", "state-probe-primary"),
                         artifact(root, primary_classification_path, "json", "state-probe-classification"),
