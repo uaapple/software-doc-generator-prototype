@@ -229,9 +229,17 @@ def validate_interface(value: dict[str, Any]) -> dict[str, Any]:
 def initial_spec(interface: dict[str, Any], model: str) -> dict[str, Any]:
     root = interface.get("rootPorts", interface); inputs = root.get("inputs", []); outputs_ = root.get("outputs", [])
     input_names, output_names = interface_names(inputs), interface_names(outputs_)
+    enabled_controls = [
+        str(item["name"])
+        for item in interface.get("executionControls", [])
+        if isinstance(item, dict)
+        and item.get("type") == "enable"
+        and item.get("defaultPolicy") == "enabled"
+    ]
+    control_initialization = "\n".join(f"{name}=1;" for name in enabled_controls)
     initialization = "\n".join(f"{name}=0;" for name in input_names)
     action = "\n".join(["[+0.01s]", *(f"{name}=0;" for name in input_names), "[+0.1s]"])
-    return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线"}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action}]}
+    return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线", "initialization_1": control_initialization}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action}]}
 STEP_MARKER_RE = re.compile(r"^\s*\[\+")
 EXP_VALUE_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*expValue\(\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*\)\s*;?\s*$")
 def workbook_steps(action: str) -> list[dict[str, Any]]:

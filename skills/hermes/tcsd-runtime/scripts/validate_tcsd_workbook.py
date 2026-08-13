@@ -64,6 +64,21 @@ def load_interface_names(
     return root_inputs, root_outputs
 
 
+def load_interface_execution_controls(interface_json: str | None = None) -> dict[str, str]:
+    if not interface_json:
+        return {}
+    data = json.loads(Path(interface_json).read_text(encoding="utf-8"))
+    controls: dict[str, str] = {}
+    for item in data.get("executionControls", []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        policy = str(item.get("defaultPolicy") or "").strip()
+        if name and policy:
+            controls[name] = policy
+    return controls
+
+
 def header_index(ws, header: str, fallback: int) -> int:
     for col in range(1, ws.max_column + 1):
         if str(ws.cell(1, col).value or "").strip() == header:
@@ -113,6 +128,7 @@ def scan_cell(
     test_id: str,
     root_inputs: set[str],
     root_outputs: set[str],
+    execution_controls: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], int, int, int]:
     errors: list[dict[str, Any]] = []
     input_assignment_count = 0
@@ -149,7 +165,7 @@ def scan_cell(
         vector_match = VECTOR_ASSIGN_RE.match(line)
         if vector_match:
             signal = vector_match.group(1)
-            if signal not in root_inputs:
+            if signal not in root_inputs and signal not in (execution_controls or set()):
                 errors.append(
                     error_record("unknown_input_assignment", ws_title, cell, row, test_id, signal, line)
                 )
@@ -163,7 +179,7 @@ def scan_cell(
         if index_match:
             input_assignment_count += 1
             signal = index_match.group(1)
-            if signal not in root_inputs:
+            if signal not in root_inputs and signal not in (execution_controls or set()):
                 errors.append(
                     error_record("unknown_input_assignment", ws_title, cell, row, test_id, signal, line)
                 )
@@ -173,7 +189,7 @@ def scan_cell(
         if assign_match:
             input_assignment_count += 1
             signal = assign_match.group(1)
-            if signal not in root_inputs:
+            if signal not in root_inputs and signal not in (execution_controls or set()):
                 errors.append(
                     error_record("unknown_input_assignment", ws_title, cell, row, test_id, signal, line)
                 )
@@ -196,6 +212,7 @@ def validate_workbook(
     root_outputs: set[str],
     *,
     require_exp_values: bool = False,
+    execution_controls: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     workbook = Path(workbook)
     errors: list[dict[str, Any]] = []
@@ -223,6 +240,7 @@ def validate_workbook(
     test_count = 0
     test_ids: set[str] = set()
     test_exp_value_counts: list[dict[str, Any]] = []
+    enabled_control_values: dict[str, str] = {}
 
     for row in range(1, ws.max_row + 1):
         row_type = str(ws.cell(row, type_col).value or "").strip()
@@ -263,11 +281,19 @@ def validate_workbook(
                 test_id=test_id,
                 root_inputs=root_inputs,
                 root_outputs=root_outputs,
+                execution_controls=set((execution_controls or {}).keys()),
             )
             errors.extend(cell_errors)
             input_assignment_count += input_seen
             parameter_assignment_count += parameter_seen
             exp_count += exp_seen
+
+        if row_type == "TestGroup":
+            for col in (init_col,):
+                for raw in str(ws.cell(row, col).value or "").splitlines():
+                    match = ASSIGN_RE.match(raw.strip())
+                    if match and match.group(1) in (execution_controls or {}):
+                        enabled_control_values[match.group(1)] = raw.split("=", 1)[1].strip().rstrip(";").strip()
 
         if row_type == "Test":
             test_exp_count = count_valid_action_exp_values(
@@ -312,6 +338,16 @@ def validate_workbook(
 
     if test_count == 0:
         errors.append({"code": "missing_test_cases", "workbook": str(workbook)})
+    for name, policy in (execution_controls or {}).items():
+        if policy == "enabled" and enabled_control_values.get(name) not in {"1", "1.0", "true", "True"}:
+            errors.append(
+                {
+                    "code": "missing_enabled_execution_control_initialization",
+                    "workbook": str(workbook),
+                    "signal": name,
+                    "expected": f"{name}=1;",
+                }
+            )
     missing_exp_value_test_cases = [
         item for item in test_exp_value_counts if item["exp_value_count"] < 1
     ]
@@ -386,11 +422,13 @@ def main() -> int:
     args = parser.parse_args()
 
     root_inputs, root_outputs = load_interface_names(args.interface_json, args.inputs, args.outputs)
+    execution_controls = load_interface_execution_controls(args.interface_json)
     report = validate_workbook(
         args.workbook,
         root_inputs,
         root_outputs,
         require_exp_values=args.require_exp_values,
+        execution_controls=execution_controls,
     )
     if args.report_json:
         Path(args.report_json).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -153,6 +153,15 @@ def load_interface_inputs(path: Path) -> list[str]:
     return [str(item) for item in inputs or []]
 
 
+def load_interface_execution_controls(path: Path) -> list[str]:
+    data = load_json(path)
+    return [
+        str(item.get("name"))
+        for item in data.get("executionControls", [])
+        if isinstance(item, dict) and item.get("name")
+    ]
+
+
 def matlab_string(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
@@ -582,6 +591,7 @@ def extract_cases(
     coverage_ir: Path | None = None,
 ) -> Path:
     inputs = ",".join(load_interface_inputs(interface_json))
+    execution_controls = ",".join(load_interface_execution_controls(interface_json))
     case_json = root_dir / "outputs" / f"{model}_cases_mcdc.json"
     command = [
         python,
@@ -592,6 +602,8 @@ def extract_cases(
         model,
         "--inputs",
         inputs,
+        "--execution-controls",
+        execution_controls,
         "--output",
         str(case_json),
     ]

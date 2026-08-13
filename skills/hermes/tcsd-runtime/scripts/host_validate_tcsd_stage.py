@@ -57,6 +57,7 @@ VALIDATION_SCHEMA = coverage_repair_module.VALIDATION_SCHEMA
 build_brief = coverage_repair_module.build_brief
 validate_proposal = coverage_repair_module.validate_proposal
 load_interface_names = workbook_validation_module.load_interface_names
+load_interface_execution_controls = workbook_validation_module.load_interface_execution_controls
 validate_workbook = workbook_validation_module.validate_workbook
 
 
@@ -443,11 +444,13 @@ def validate_workbook_stage(request: dict[str, Any], require_exp_values: bool) -
         "model interface",
     )
     root_inputs, root_outputs = load_interface_names(str(interface_path))
+    execution_controls = load_interface_execution_controls(str(interface_path))
     report = validate_workbook(
         workbook,
         root_inputs,
         root_outputs,
         require_exp_values=require_exp_values,
+        execution_controls=execution_controls,
     )
     template_path = Path(str(request.get("templatePath") or "")).resolve()
     if template_path.is_file() and hashlib.sha256(workbook.read_bytes()).digest() == hashlib.sha256(template_path.read_bytes()).digest():

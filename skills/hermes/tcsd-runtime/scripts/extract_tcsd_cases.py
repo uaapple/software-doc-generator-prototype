@@ -48,6 +48,7 @@ def parse_assignments(
     text: str,
     input_names: set[str],
     context: str,
+    execution_control_names: set[str] | None = None,
 ) -> tuple[dict[str, object], dict[str, object], list[dict[str, str]]]:
     inputs: dict[str, object] = {}
     params: dict[str, object] = {}
@@ -71,6 +72,8 @@ def parse_assignments(
         if assign_match:
             if assign_match.group(1) in input_names:
                 inputs[assign_match.group(1)] = parse_value(assign_match.group(2))
+            elif assign_match.group(1) in (execution_control_names or set()):
+                continue
             else:
                 unknowns.append(unknown_assignment(context, assign_match.group(1), line))
     return inputs, params, unknowns
@@ -100,6 +103,7 @@ def parse_steps(
     input_names: set[str],
     row: int,
     test_id: str,
+    execution_control_names: set[str] | None = None,
 ) -> tuple[list[dict], list[dict[str, str]]]:
     steps: list[dict] = []
     unknowns: list[dict[str, str]] = []
@@ -119,7 +123,9 @@ def parse_steps(
         if current is None:
             continue
         context = f"row {row} test {test_id} action step {len(steps) + 1}"
-        inputs, params, line_unknowns = parse_assignments(raw, input_names, context)
+        inputs, params, line_unknowns = parse_assignments(
+            raw, input_names, context, execution_control_names
+        )
         unknowns.extend(line_unknowns)
         current["input_updates"].update(inputs)
         current["param_updates"].update(params)
@@ -135,6 +141,7 @@ def main() -> int:
     parser.add_argument("--workbook", required=True)
     parser.add_argument("--model", default="")
     parser.add_argument("--inputs", required=True, help="Comma-separated root input names")
+    parser.add_argument("--execution-controls", default="", help="Comma-separated root execution-control names")
     parser.add_argument("--output", required=True)
     parser.add_argument("--coverage-ir")
     parser.add_argument(
@@ -145,6 +152,9 @@ def main() -> int:
     args = parser.parse_args()
 
     input_names = {name.strip() for name in args.inputs.split(",") if name.strip()}
+    execution_control_names = {
+        name.strip() for name in args.execution_controls.split(",") if name.strip()
+    }
     coverage_items: dict[str, dict] = {}
     if args.coverage_ir:
         coverage_ir = json.loads(Path(args.coverage_ir).read_text(encoding="utf-8"))
@@ -163,7 +173,12 @@ def main() -> int:
             continue
         for offset in range(0, 2):
             context = f"row {row + offset} TestGroup initialization"
-            inputs, params, unknowns = parse_assignments(ws.cell(row + offset, 6).value or "", input_names, context)
+            inputs, params, unknowns = parse_assignments(
+                ws.cell(row + offset, 6).value or "",
+                input_names,
+                context,
+                execution_control_names,
+            )
             unknown_assignments.extend(unknowns)
             group_inputs.update(inputs)
             group_params.update(params)
@@ -175,10 +190,21 @@ def main() -> int:
             continue
         test_id = ws.cell(row, 1).value
         context = f"row {row} test {test_id} initialization"
-        test_inputs, test_params, unknowns = parse_assignments(ws.cell(row, 6).value or "", input_names, context)
+        test_inputs, test_params, unknowns = parse_assignments(
+            ws.cell(row, 6).value or "",
+            input_names,
+            context,
+            execution_control_names,
+        )
         unknown_assignments.extend(unknowns)
         init_inputs, init_params = merge_assignments(group_inputs, group_params, test_inputs, test_params)
-        steps, step_unknowns = parse_steps(ws.cell(row, 7).value or "", input_names, row, str(test_id or ""))
+        steps, step_unknowns = parse_steps(
+            ws.cell(row, 7).value or "",
+            input_names,
+            row,
+            str(test_id or ""),
+            execution_control_names,
+        )
         unknown_assignments.extend(step_unknowns)
         description = str(ws.cell(row, 5).value or "")
         target: dict[str, object] = {}

@@ -1469,6 +1469,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
         self.assertEqual(interface["inputs"], ["BusinessInput"])
         self.assertEqual(interface["executionControls"][0]["name"], "Enable")
         self.assertNotIn("Enable=", spec["tests"][0]["initialization"])
+        self.assertEqual(spec["test_group"]["initialization_1"], "Enable=1;")
 
     def test_stage_four_initializes_its_new_session_before_tracing(self):
         code = RUNNER.stage4_matlab_code(root=Path("C:/job"), scripts_dir=Path("C:/skill/scripts"), interface=Path("C:/job/outputs/interface.json"), model="GenericModel", mat_name="GenericModel.mat", init_scripts=["project_init.m"])

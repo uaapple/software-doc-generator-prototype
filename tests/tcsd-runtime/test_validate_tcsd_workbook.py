@@ -21,6 +21,41 @@ SPEC.loader.exec_module(VALIDATOR)
 
 
 class ValidateTcsdWorkbookTests(unittest.TestCase):
+    def test_enabled_execution_control_must_be_explicitly_initialized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workbook_path = Path(directory) / "enabled-control.xlsx"
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "TCSD"
+            sheet.append([
+                "TestID", "Name", "Type", "Requirement ID", "Test Case Description",
+                "Initialization", "Action",
+            ])
+            sheet.append(["TG_001", "Group", "TestGroup", "", "", "Enable=1;", ""])
+            sheet.append(["TC_001", "Case", "Test", "", "", "InputA=0;", "[+0.1s]"])
+            workbook.save(workbook_path)
+
+            passed = VALIDATOR.validate_workbook(
+                workbook_path,
+                {"InputA"},
+                set(),
+                execution_controls={"Enable": "enabled"},
+            )
+            self.assertEqual(passed["status"], "passed")
+
+            sheet["F2"] = "Enable=0;"
+            workbook.save(workbook_path)
+            failed = VALIDATOR.validate_workbook(
+                workbook_path,
+                {"InputA"},
+                set(),
+                execution_controls={"Enable": "enabled"},
+            )
+            self.assertIn(
+                "missing_enabled_execution_control_initialization",
+                {item["code"] for item in failed["errors"]},
+            )
+
     def test_require_exp_values_reports_each_test_without_an_expectation(self):
         with tempfile.TemporaryDirectory() as directory:
             workbook_path = Path(directory) / "mixed-oracles.xlsx"

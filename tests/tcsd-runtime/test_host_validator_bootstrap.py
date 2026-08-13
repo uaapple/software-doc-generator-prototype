@@ -66,6 +66,7 @@ def write_stub_runtime(directory: Path, *, include_runner: bool = True) -> Path:
     )
     (directory / "validate_tcsd_workbook.py").write_text(
         "def load_interface_names(*args, **kwargs): return [], []\n"
+        "def load_interface_execution_controls(*args, **kwargs): return {}\n"
         "def validate_workbook(*args, **kwargs): return {}\n",
         encoding="utf-8",
     )
@@ -97,6 +98,7 @@ class HostValidatorBootstrapTests(unittest.TestCase):
                 mock.patch.object(validator, "find_workbook", return_value=workbook),
                 mock.patch.object(validator, "resolve_workspace_path", return_value=root / "interface.json"),
                 mock.patch.object(validator, "load_interface_names", return_value=({"Input"}, {"Output"})),
+                mock.patch.object(validator, "load_interface_execution_controls", return_value={}),
                 mock.patch.object(validator, "validate_workbook", return_value=report),
                 mock.patch.object(validator, "count_action_steps", return_value=2),
             ):
