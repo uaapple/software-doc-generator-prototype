@@ -43,6 +43,99 @@ HOST_VALIDATOR_SPEC.loader.exec_module(HOST_VALIDATOR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
+    def stage6_validation_request(self, root, *, end_vector=None):
+        plan = {
+            "schema": "simulink-ut-state-probe-plan/v1",
+            "model": "GenericModel",
+            "targets": [{
+                "operator_id": "GenericModel:1",
+                "port_index": 1,
+                "status": "planned",
+            }],
+            "tests": [{
+                "test_id": "STATE_PROBE_0001",
+                "steps": [{"index": 1}, {"index": 2}],
+                "evidence_step": 2,
+                "target": {
+                    "operator_id": "GenericModel:1",
+                    "port_index": 1,
+                    "expected_target_transition": "0->1",
+                },
+            }],
+            "backup_tests": [],
+            "summary": {"candidate_count": 1},
+        }
+        observations = [{
+            "test_id": "STATE_PROBE_0001",
+            "step_index": 1,
+            "inputs": {"Input": 0},
+            "vectors": {"target": {"id": "GenericModel:1", "ok": True, "values": [False]}},
+            "prediction_status": "observed",
+        }, {
+            "test_id": "STATE_PROBE_0001",
+            "step_index": 2,
+            "inputs": {"Input": 1},
+            "vectors": (
+                {"target": {"id": "GenericModel:1", "ok": True, "values": [end_vector]}}
+                if end_vector is not None else {}
+            ),
+            "prediction_status": "observed",
+        }]
+        results = {
+            "GenericModel": {
+                "schema": "simulink-ut-logical-mcdc-probe/v2",
+                "observations": observations,
+                "skipped_tests": [],
+            },
+        }
+        classification = HOST_VALIDATOR.state_probe_classifier_module.classify_targets(plan, results)
+        paths = {}
+        for name, payload in (("plan", plan), ("results", results), ("classification", classification)):
+            path = Path(root) / f"{name}.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            paths[name] = path
+        request = {
+            "workspaceDir": str(root),
+            "artifacts": [
+                {"path": paths["plan"].name, "kind": "json", "role": "evidence"},
+                {"path": paths["results"].name, "kind": "json", "role": "evidence"},
+                {"path": paths["classification"].name, "kind": "json", "role": "state-probe-classification"},
+            ],
+            "evidence": {
+                "candidateCount": 1,
+                "probeExecuted": True,
+                "strictSuccessTargetCount": int(classification["statusCounts"].get("strict_success") or 0),
+                "causalTransitionTargetCount": int(classification["statusCounts"].get("direction_unverified") or 0),
+                "noTransitionTargetCount": int(classification["statusCounts"].get("no_transition") or 0),
+                "observationMissingTargetCount": int(classification["statusCounts"].get("observation_missing") or 0),
+                "unplannedTargetCount": int(classification["statusCounts"].get("unplanned") or 0),
+                "expectedDirectionConflictTargetCount": int(classification["expectedDirectionConflictTargetCount"]),
+                "simulationMismatchTargetCount": int(classification["simulationMismatchTargetCount"]),
+            },
+        }
+        return request
+
+    def test_stage6_host_accepts_observation_missing_as_unresolved_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            details = HOST_VALIDATOR.validate_probe(self.stage6_validation_request(temp))
+        self.assertEqual(details["statusCounts"], {"observation_missing": 1})
+        self.assertEqual(details["unresolvedTargetCount"], 1)
+
+    def test_stage6_host_still_rejects_expected_direction_conflicts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            request = self.stage6_validation_request(temp, end_vector=False)
+            plan_path = Path(temp) / "plan.json"
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            results_path = Path(temp) / "results.json"
+            results = json.loads(results_path.read_text(encoding="utf-8"))
+            results["GenericModel"]["observations"][0]["vectors"]["target"]["values"] = [True]
+            results_path.write_text(json.dumps(results), encoding="utf-8")
+            classification = HOST_VALIDATOR.state_probe_classifier_module.classify_targets(plan, results)
+            (Path(temp) / "classification.json").write_text(json.dumps(classification), encoding="utf-8")
+            request["evidence"]["expectedDirectionConflictTargetCount"] = 1
+            with self.assertRaisesRegex(ValueError, "planned-direction conflict"):
+                HOST_VALIDATOR.validate_probe(request)
+
     def test_stage7_initial_generation_budget_is_one_hundred(self):
         self.assertEqual(RUNNER.STAGE7_MAX_INITIAL_TESTS, 100)
 

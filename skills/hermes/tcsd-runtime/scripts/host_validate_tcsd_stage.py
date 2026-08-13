@@ -29,6 +29,7 @@ try:
     from openpyxl import load_workbook
 
     import run_tcsd_pipeline_stage as pipeline_stage_module
+    import classify_state_probe_targets as state_probe_classifier_module
     import validate_agent_coverage_repair as coverage_repair_module
     import validate_tcsd_workbook as workbook_validation_module
 except ModuleNotFoundError as error:
@@ -66,6 +67,7 @@ SIMULATION_SCHEMA = "tcsd-simulation-result/v1"
 ENVIRONMENT_SCHEMA = "tcsd-environment-gate/v2"
 PROBE_PLAN_SCHEMA = "simulink-ut-state-probe-plan/v1"
 PROBE_RESULT_SCHEMA = "simulink-ut-logical-mcdc-probe/v2"
+PROBE_CLASSIFICATION_SCHEMA = "tcsd-state-probe-target-classification/v1"
 REPAIR_CANDIDATE_SCHEMA = "tcsd-repair-candidate-validation/v1"
 SYNTHESIS_SCHEMA = "simulink-ut-tcsd-coverage-ir-synthesis/v1"
 EXTRACTED_CASES_SCHEMA = "tcsd-extracted-cases/v1"
@@ -76,6 +78,7 @@ INITIAL_RECIPE_VALIDATION_GAPS_SCHEMA = "tcsd-initial-recipe-validation-gaps/v1"
 def self_check() -> dict[str, Any]:
     local_modules = {
         "run_tcsd_pipeline_stage": pipeline_stage_module,
+        "classify_state_probe_targets": state_probe_classifier_module,
         "validate_agent_coverage_repair": coverage_repair_module,
         "validate_tcsd_workbook": workbook_validation_module,
     }
@@ -372,11 +375,34 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
         return {"candidateCount": 0, "probeExecuted": False, "observationCount": 0}
     if evidence.get("probeExecuted") is not True:
         raise ValueError("Probe candidates exist but probeExecuted is not true")
-    reports: list[dict[str, Any]] = []
-    for _, _, payload in json_artifacts(request):
-        reports.extend(probe_reports(payload))
+    final_result_payload = None
+    final_classification = None
+    secondary_plan = None
+    for artifact, _, payload in json_artifacts(request):
+        role = str(artifact.get("role") or "")
+        if role == "evidence" and probe_reports(payload):
+            final_result_payload = payload
+        if payload.get("schema") == PROBE_CLASSIFICATION_SCHEMA:
+            final_classification = payload
+        if role == "state-probe-secondary-plan" and payload.get("schema") == PROBE_PLAN_SCHEMA:
+            secondary_plan = payload
+    reports = probe_reports(final_result_payload or {})
     if not reports:
-        raise ValueError("Probe candidates exist but no actual Probe result is present")
+        raise ValueError("Probe candidates exist but no final actual Probe result is present")
+    if isinstance(secondary_plan, dict):
+        for test in secondary_plan.get("tests") or []:
+            if not isinstance(test, dict):
+                raise ValueError("state Probe secondary plan contains an invalid candidate")
+            test_id = str(test.get("test_id") or "")
+            steps = test.get("steps")
+            indices = {
+                int(step.get("index") or 0)
+                for step in steps
+                if isinstance(step, dict) and int(step.get("index") or 0) > 0
+            } if isinstance(steps, list) else set()
+            if not test_id or not indices or test_id in planned:
+                raise ValueError("state Probe secondary plan contains an invalid candidate")
+            planned[test_id] = indices
     observed: dict[str, set[int]] = {}
     observation_count = 0
     for report in reports:
@@ -388,32 +414,58 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
                 continue
             test_id = str(observation.get("test_id") or "")
             step_index = int(observation.get("step_index") or 0)
-            vectors = observation.get("vectors")
-            valid_vectors = [
-                vector
-                for vector in vectors.values()
-                if isinstance(vectors, dict)
-                and isinstance(vector, dict)
-                and vector.get("ok") is True
-                and isinstance(vector.get("values"), list)
-            ] if isinstance(vectors, dict) else []
             if (
                 test_id not in planned
                 or step_index not in planned[test_id]
                 or not isinstance(observation.get("inputs"), dict)
-                or not valid_vectors
-                or observation.get("prediction_status") in {"target_unavailable", "simulation_mismatch"}
             ):
-                raise ValueError("Probe observation is missing executed values or contradicts its planned target")
+                raise ValueError("Probe observation identity or executed inputs do not match the plan")
             observed.setdefault(test_id, set()).add(step_index)
             observation_count += 1
-    for test_id, indices in planned.items():
-        if observed.get(test_id) != indices:
-            raise ValueError(f"Probe candidate {test_id} was not observed for every planned step")
+
+    if not isinstance(final_classification, dict):
+        raise ValueError("state Probe target classification is missing")
+    classification_plan = json.loads(json.dumps(plan))
+    if isinstance(secondary_plan, dict):
+        classification_plan["tests"] = [
+            *(plan.get("tests") or []),
+            *(secondary_plan.get("tests") or []),
+        ]
+        classification_plan["backup_tests"] = []
+    recomputed = state_probe_classifier_module.classify_targets(
+        classification_plan,
+        final_result_payload or {},
+    )
+    if canonical(final_classification) != canonical(recomputed):
+        raise ValueError("state Probe target classification does not match host-recomputed observations")
+    expected_direction_conflicts = int(recomputed.get("expectedDirectionConflictTargetCount") or 0)
+    simulation_mismatches = int(recomputed.get("simulationMismatchTargetCount") or 0)
+    if expected_direction_conflicts or simulation_mismatches:
+        raise ValueError("state Probe contains a planned-direction conflict or simulation mismatch")
+    status_counts = recomputed.get("statusCounts") if isinstance(recomputed.get("statusCounts"), dict) else {}
+    for status, evidence_key in (
+        ("strict_success", "strictSuccessTargetCount"),
+        ("direction_unverified", "causalTransitionTargetCount"),
+        ("no_transition", "noTransitionTargetCount"),
+        ("observation_missing", "observationMissingTargetCount"),
+        ("unplanned", "unplannedTargetCount"),
+    ):
+        if int(evidence.get(evidence_key) or 0) != int(status_counts.get(status) or 0):
+            raise ValueError(f"Agent {status} count does not match host-recomputed observations")
+    if int(evidence.get("expectedDirectionConflictTargetCount") or 0) != expected_direction_conflicts:
+        raise ValueError("Agent expected-direction conflict count does not match host-recomputed observations")
+    if int(evidence.get("simulationMismatchTargetCount") or 0) != simulation_mismatches:
+        raise ValueError("Agent simulation-mismatch count does not match host-recomputed observations")
     return {
         "candidateCount": candidate_count,
         "probeExecuted": True,
         "observationCount": observation_count,
+        "targetCount": int(recomputed.get("targetCount") or 0),
+        "statusCounts": status_counts,
+        "unresolvedTargetCount": sum(
+            int(status_counts.get(status) or 0)
+            for status in ("no_transition", "observation_missing", "not_executed", "unplanned", "resource_missing")
+        ),
     }
 
 

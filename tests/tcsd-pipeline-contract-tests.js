@@ -470,6 +470,7 @@ assert.throws(() => parseExecutionManifest({
   await cp(path.join(skillsRoot, stageDefinition.skillName), sourceStage, { recursive: true });
   await mkdir(path.join(sourceRuntime, "scripts"), { recursive: true });
   for (const scriptName of [
+    "classify_state_probe_targets.py",
     "host_validate_tcsd_stage.py",
     "run_tcsd_pipeline_stage.py",
     "validate_agent_coverage_repair.py",
@@ -1306,26 +1307,89 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
   if (stage === 6) {
     const planPath = path.join(workspace.outputDir, "state-probe-plan.json");
     const reportPath = path.join(workspace.outputDir, "state-probe-results.json");
+    const classificationPath = path.join(workspace.outputDir, "state-probe-classification.json");
     await writeFile(planPath, JSON.stringify({
       schema: "simulink-ut-state-probe-plan/v1",
+      model: "GenericModel",
       summary: { candidate_count: 1 },
-      tests: [{ test_id: "STATE_PROBE_0001", steps: [{ index: 1 }] }]
+      targets: [{ operator_id: "GenericModel:1", port_index: 1, status: "planned" }],
+      backup_tests: [],
+      tests: [{
+        test_id: "STATE_PROBE_0001",
+        steps: [{ index: 1 }, { index: 2 }],
+        evidence_step: 2,
+        target: {
+          operator_id: "GenericModel:1",
+          port_index: 1,
+          expected_target_transition: "0->1"
+        }
+      }]
     }));
-    result.artifacts.push({ path: rel(workspace.root, planPath), kind: "json", role: "probe-plan" });
+    result.artifacts.push({ path: rel(workspace.root, planPath), kind: "json", role: "evidence" });
     if (!options.unexecutedProbe) {
       await writeFile(reportPath, JSON.stringify({
-        schema: "simulink-ut-logical-mcdc-probe/v2",
-        observations: [{
-          test_id: "STATE_PROBE_0001",
-          step_index: 1,
-          inputs: { Input: 1 },
-          vectors: { decision: { ok: true, values: [true] } },
-          prediction_status: "observed"
+        GenericModel: {
+          schema: "simulink-ut-logical-mcdc-probe/v2",
+          observations: [{
+            test_id: "STATE_PROBE_0001",
+            step_index: 1,
+            inputs: { Input: 0 },
+            vectors: { decision: { id: "GenericModel:1", ok: true, values: [false] } },
+            prediction_status: "observed"
+          }, {
+            test_id: "STATE_PROBE_0001",
+            step_index: 2,
+            inputs: { Input: 1 },
+            vectors: { decision: { id: "GenericModel:1", ok: true, values: [true] } },
+            prediction_status: "observed"
+          }],
+          skipped_tests: []
+        }
+      }));
+      await writeFile(classificationPath, JSON.stringify({
+        schema: "tcsd-state-probe-target-classification/v1",
+        model: "GenericModel",
+        targetCount: 1,
+        statusCounts: { strict_success: 1 },
+        causalOnlyReasonCounts: {},
+        expectedDirectionConflictTargetCount: 0,
+        simulationMismatchTargetCount: 0,
+        targets: [{
+          targetKey: "GenericModel:1#1",
+          operatorId: "GenericModel:1",
+          portIndex: 1,
+          status: "strict_success",
+          observedTargetTransitions: ["0->1"],
+          strictSuccessCount: 1,
+          causalTransitionCount: 1,
+          noTransitionCount: 0,
+          validObservationCount: 2,
+          missingObservationCount: 0,
+          planConflictCount: 0,
+          expectedDirectionConflictCount: 0,
+          simulationMismatchCount: 0,
+          resourceGaps: [],
+          executedCandidateCount: 1,
+          needsSecondPass: false,
+          causalOnlyReason: ""
         }]
       }));
-      result.artifacts.push({ path: rel(workspace.root, reportPath), kind: "json", role: "probe-result" });
+      result.artifacts.push(
+        { path: rel(workspace.root, reportPath), kind: "json", role: "evidence" },
+        { path: rel(workspace.root, classificationPath), kind: "json", role: "state-probe-classification" }
+      );
     }
-    result.evidence = { candidateCount: 1, probeExecuted: !options.unexecutedProbe };
+    result.evidence = {
+      candidateCount: 1,
+      probeExecuted: !options.unexecutedProbe,
+      strictSuccessTargetCount: options.unexecutedProbe ? 0 : 1,
+      causalTransitionTargetCount: 0,
+      noTransitionTargetCount: 0,
+      observationMissingTargetCount: 0,
+      unplannedTargetCount: 0,
+      expectedDirectionConflictTargetCount: 0,
+      simulationMismatchTargetCount: 0
+    };
   }
   const workbook = path.join(workspace.outputDir, "GenericModel_Test0001_tcsd.xlsx");
   if (stage === 7) {

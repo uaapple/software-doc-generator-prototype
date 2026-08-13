@@ -787,8 +787,15 @@ def stage_run(
             "secondPassCandidateCount": second_count if candidate_count > 0 and not probe_fixture else 0,
             "strictSuccessTargetCount": int(final_status_counts.get("strict_success") or 0),
             "causalTransitionTargetCount": int(final_status_counts.get("direction_unverified") or 0),
+            "noTransitionTargetCount": int(final_status_counts.get("no_transition") or 0),
+            "observationMissingTargetCount": int(final_status_counts.get("observation_missing") or 0),
+            "unplannedTargetCount": int(final_status_counts.get("unplanned") or 0),
             "expectedDirectionConflictTargetCount": (
                 int(final_classification.get("expectedDirectionConflictTargetCount") or 0)
+                if candidate_count > 0 and not probe_fixture else 0
+            ),
+            "simulationMismatchTargetCount": (
+                int(final_classification.get("simulationMismatchTargetCount") or 0)
                 if candidate_count > 0 and not probe_fixture else 0
             ),
             "causalOnlyReasonCounts": (

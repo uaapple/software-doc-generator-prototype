@@ -50,6 +50,10 @@ def write_stub_runtime(directory: Path, *, include_runner: bool = True) -> Path:
             "def simulation_backfill_evidence(*args, **kwargs):\n    return {}\n",
             encoding="utf-8",
         )
+    (directory / "classify_state_probe_targets.py").write_text(
+        "def classify_targets(*args, **kwargs):\n    return {}\n",
+        encoding="utf-8",
+    )
     (directory / "validate_agent_coverage_repair.py").write_text(
         "\n".join(
             [
@@ -142,6 +146,7 @@ class HostValidatorBootstrapTests(unittest.TestCase):
             self.assertEqual(
                 report["localModules"],
                 [
+                    "classify_state_probe_targets",
                     "run_tcsd_pipeline_stage",
                     "validate_agent_coverage_repair",
                     "validate_tcsd_workbook",
