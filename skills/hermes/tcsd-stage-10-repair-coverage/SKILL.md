@@ -1,7 +1,7 @@
 ---
 name: tcsd-stage-10-repair-coverage
 metadata:
-  version: "1.4.0"
+  version: "1.5.0"
 description: Analyze measured Condition, Decision, and MC/DC deficits, inspect only each target block's local upstream model slice, propose focused temporal TCSD cases, and submit them to deterministic host validation for the single bounded stage-10 repair pass. Use only when a tcsd_stage_execute prompt explicitly requests stage 10 with a tcsd-agent-stage-input/v1 manifest.
 ---
 
@@ -40,6 +40,14 @@ Both prompt commands invoke the shared `tcsd-runtime/scripts/run_tcsd_pipeline_s
    Never use a generic “no candidate” reason and never mark an item unreachable without structural or simulation evidence.
    `state_sequence_not_constructible` requires a structural obstacle such as an uncontrollable reset, an unavailable transition, or a bounded action sequence that cannot preserve the required state. A large but finite number of sample periods is not such an obstacle when it can be represented by one justified wait.
 10. Run the exact **apply command**. The deterministic runtime owns schema validation, root-input checks, parameter placement, ordered-step checks, deduplication, workbook conversion, candidate simulation, `expValue` backfill, and the authoritative result file.
-11. Never edit the existing workbook directly, never write the host checkpoint, and never claim coverage closure from rationale alone. Stage 11 performs the final measured simulation and coverage collection.
+11. The host evaluates MC/DC in explicit `Masking` mode. A runnable candidate is not accepted merely because its outputs were backfilled. The full candidate suite is measured once and compared with the stage-9 baseline. When the proposal contains MC/DC targets, the suite must add at least one `achieved=false` to `achieved=true` independent-effect pair in `mcdcinfo`; an already-covered target needs no replacement but cannot make a zero-gain suite pass.
+12. On a validation retry, read `tcsd-mcdc-coverage-delta/v1`. Repair only targets whose `reasonCode` is one of:
+    - `target_condition_not_toggled`;
+    - `decision_not_toggled`;
+    - `other_conditions_not_held`;
+    - `effect_masked`;
+    - `complementary_vector_missing`.
+    Do not resubmit an unchanged stimulus. Targets marked `independent_effect_pair_added` or `already_covered_before_candidate_suite` require no replacement.
+13. Never edit the existing workbook directly, never write the host checkpoint, and never claim coverage closure from rationale alone. Stage 11 performs the final measured simulation and coverage collection.
 
 The host may retry deterministic validation in a fresh session. Re-read the repair brief and validation report, repair only the reported defect, and keep the total coverage repair pass bounded to one.

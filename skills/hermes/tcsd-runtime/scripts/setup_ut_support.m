@@ -1,4 +1,4 @@
-function setup_ut_support(rootDir, initScripts)
+function executedScripts = setup_ut_support(rootDir, initScripts)
 if nargin < 2
     initScripts = {};
 end
@@ -10,7 +10,7 @@ scriptDir = fileparts(mfilename('fullpath'));
 restore_matlab_mcp_core_path();
 restore_satk_tools_path();
 add_workspace_support_paths(rootDir, scriptDir);
-run_project_init_scripts(rootDir, initScripts);
+executedScripts = run_project_init_scripts(rootDir, initScripts);
 end
 
 function add_workspace_support_paths(rootDir, scriptDir)
@@ -51,7 +51,7 @@ for i = 1:numel(parts)
 end
 end
 
-function run_project_init_scripts(rootDir, initScripts)
+function executedScripts = run_project_init_scripts(rootDir, initScripts)
 discoveredScripts = discover_project_init_scripts(rootDir);
 environmentScripts = split_init_script_list(getenv('TCSD_PROJECT_INIT_SCRIPTS'));
 explicitScripts = normalize_init_scripts(initScripts);
@@ -175,6 +175,7 @@ fileName = [name ext];
 excludedNames = {
     'setup_ut_support.m'
     'simulate_tcsd_cases.m'
+    'configure_tcsd_coverage_observation_model.m'
     'collect_mcdc_coverage_feedback.m'
     'configure_tcsd_sim_config.m'
     'cast_input_for_simulink_ut.m'

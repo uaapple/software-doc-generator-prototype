@@ -28,6 +28,8 @@ Stage 10 is intentionally split into a reasoning boundary and a deterministic bo
 4. The existing IR synthesizer performs full-stimulus deduplication and appends accepted candidates without replacing functional Tests.
 5. The deterministic runtime builds the candidate workbook and runs simulation/backfill before accepting the repair. Stage 11 then runs the authoritative final simulation and coverage collection.
 
+The coverage judge uses explicit `Masking` mode. It reuses the candidate suite simulation to collect coverage once, compares the resulting suite-level `mcdcinfo` state with the stage-9 baseline, and accepts only newly achieved independent-effect pairs. The baseline and candidate evidence must declare the same model checksum, MC/DC mode, and loaded `ITKLib.slx` path. Per-test coverage runs are forbidden in this path.
+
 An empty deterministic candidate set is not enough to end Stage 10. The Agent must either produce a host-valid candidate or record one of the specific structural/probe reasons allowed by the Stage 10 proposal schema.
 
 ## Coverage Feedback Script

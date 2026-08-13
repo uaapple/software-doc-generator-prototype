@@ -1251,8 +1251,45 @@ def stage_run(
                 exclude_outputs="",
                 interface_json=interface,
                 result_name=f"{model}_repair_candidate_simulation.json",
+                collect_coverage=True,
+                coverage_threshold=threshold,
+                mcdc_mode="Masking",
+                coverage_result_name=f"{model}_repair_candidate_coverage_summary.json",
+                init_scripts=inp.get("projectInitScripts", []),
             )
             backfill = simulation_backfill_evidence(read_json(candidate_simulation), next_book)
+            candidate_coverage = out / f"{model}_repair_candidate_coverage_summary.json"
+            coverage_delta = out / f"{model}_repair_candidate_mcdc_delta.json"
+            completed_delta = subprocess.run(
+                [
+                    sys.executable,
+                    str(scripts() / "judge_mcdc_coverage_delta.py"),
+                    "--baseline",
+                    str(initial_cov),
+                    "--candidate",
+                    str(candidate_coverage),
+                    "--repair-ir",
+                    str(proposal_ir),
+                    "--model",
+                    model,
+                    "--output",
+                    str(coverage_delta),
+                ],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            delta_report = read_json(coverage_delta) if coverage_delta.is_file() else {}
+            if completed_delta.returncode != 0 or delta_report.get("passed") is not True:
+                if not coverage_delta.is_file():
+                    raise RuntimeError("MC/DC coverage delta judge did not write its report")
+                raise RecoverableStageValidationError(
+                    "Agent coverage repair did not add the required MC/DC independent-effect pairs.",
+                    coverage_delta,
+                )
             write_json(
                 candidate_diagnostic,
                 {
@@ -1261,9 +1298,13 @@ def stage_run(
                     "passed": True,
                     "candidateCount": added,
                     "simulationResult": str(candidate_simulation.relative_to(root)),
+                    "coverageResult": str(candidate_coverage.relative_to(root)),
+                    "mcdcDelta": str(coverage_delta.relative_to(root)),
                     "backfill": backfill,
                 },
             )
+        except RecoverableStageValidationError:
+            raise
         except Exception as error:
             reason = "agent_candidate_simulation_failed"
             write_json(
@@ -1308,6 +1349,10 @@ def stage_run(
             {
                 "candidateValidation": str(candidate_diagnostic.relative_to(root)),
                 "candidateSimulation": str(candidate_simulation.relative_to(root)),
+                "candidateCoverage": str(candidate_coverage.relative_to(root)),
+                "mcdcDelta": str(coverage_delta.relative_to(root)),
+                "mcdcMode": str(delta_report.get("mcdcMode") or ""),
+                "newIndependentEffectPairCount": int(delta_report.get("newIndependentEffectPairCount") or 0),
                 "simulationResult": str(candidate_simulation.relative_to(root)),
                 "candidateValidationPassed": True,
                 "expValueCount": backfill["workbookBackfillCount"],
@@ -1333,6 +1378,8 @@ def stage_run(
             artifacts=[
                 *repair_artifacts,
                 artifact(root, candidate_diagnostic),
+                artifact(root, candidate_coverage, "json", "candidate-coverage"),
+                artifact(root, coverage_delta, "json", "mcdc-coverage-delta"),
                 artifact(root, next_book, "xlsx", "workbook"),
                 artifact(root, candidate_simulation),
             ],

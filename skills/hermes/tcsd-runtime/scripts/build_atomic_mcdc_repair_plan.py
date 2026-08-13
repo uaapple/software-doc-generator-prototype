@@ -146,6 +146,41 @@ def unique_cause_pairs(ast: dict[str, Any], count: int) -> dict[int, list[tuple[
     return pairs
 
 
+def masked_value(ast: dict[str, Any], values: tuple[bool, ...], target_index: int) -> bool | None:
+    """Evaluate while treating the target condition as unknown.
+
+    ``None`` means the enclosing expression still depends on the target. A
+    concrete Boolean means another branch masks the target for this vector.
+    """
+    if ast["kind"] == "atom":
+        return None if int(ast["index"]) == target_index else values[int(ast["index"])]
+    op = ast["operator"]
+    children = [masked_value(child, values, target_index) for child in ast["children"]]
+    if op == "NOT":
+        return None if children[0] is None else not children[0]
+    if op == "AND":
+        if any(value is False for value in children):
+            return False
+        return None if any(value is None for value in children) else True
+    if any(value is True for value in children):
+        return True
+    return None if any(value is None for value in children) else False
+
+
+def masking_pairs(ast: dict[str, Any], count: int) -> dict[int, list[tuple[tuple[bool, ...], tuple[bool, ...]]]]:
+    all_vectors = list(itertools.product((False, True), repeat=count))
+    outputs = {vector: evaluate(ast, vector) for vector in all_vectors}
+    pairs: dict[int, list[tuple[tuple[bool, ...], tuple[bool, ...]]]] = {i: [] for i in range(count)}
+    for index in range(count):
+        false_vectors = [vector for vector in all_vectors if not vector[index] and masked_value(ast, vector, index) is None]
+        true_vectors = [vector for vector in all_vectors if vector[index] and masked_value(ast, vector, index) is None]
+        for false_vector in false_vectors:
+            for true_vector in true_vectors:
+                if outputs[false_vector] != outputs[true_vector]:
+                    pairs[index].append((false_vector, true_vector))
+    return pairs
+
+
 def select_minimal_vectors(
     pairs: dict[int, list[tuple[tuple[bool, ...], tuple[bool, ...]]]],
 ) -> tuple[
@@ -995,7 +1030,7 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
             ],
         }
 
-    pairs = unique_cause_pairs(ast, len(atoms))
+    pairs = masking_pairs(ast, len(atoms))
     probe_vector_compatible = all(
         isinstance(child, dict) and child.get("kind") == "atom"
         for child in ast.get("children", [])
@@ -1030,10 +1065,10 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
                 "operator": operator.get("operator"),
                 "coverage_class": "MCDC",
                 "status": "unsupported",
-                "required_outcome": f"no unique-cause pair available for condition {atom.id}",
+                "required_outcome": f"no masking pair available for condition {atom.id}",
                 "condition_states": {},
                 "match": {"inputs": {}, "params": {}},
-                "issues": [f"no_unique_cause_pair: condition {atom.id}"],
+                "issues": [f"no_masking_pair: condition {atom.id}"],
             }
         )
     for vector in selected:
@@ -1188,7 +1223,8 @@ def main() -> int:
     result = {
         "schema": "simulink-ut-atomic-mcdc-repair-plan/v1",
         "model": model,
-        "generation_mode": "minimal_unique_cause",
+        "generation_mode": "minimal_masking_mcdc",
+        "mcdc_mode": "Masking",
         "summary": {
             "decision_count": len(decisions),
             "obligation_count": len(obligations),

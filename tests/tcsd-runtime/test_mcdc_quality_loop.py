@@ -227,6 +227,19 @@ class McdcQualityLoopTests(unittest.TestCase):
         self.assertIn("ismember(testId, opts.SkipMissingExternalResourceTestIds)", source)
         self.assertNotIn("'message', message", source)
 
+    def test_stage_9_10_and_11_share_one_coverage_model_preparation(self) -> None:
+        probe = (SCRIPTS / "probe_logical_mcdc_vectors.m").read_text(encoding="utf-8")
+        candidate = (SCRIPTS / "simulate_tcsd_cases.m").read_text(encoding="utf-8")
+        shared = (SCRIPTS / "configure_tcsd_coverage_observation_model.m").read_text(encoding="utf-8")
+
+        self.assertIn("configure_tcsd_coverage_observation_model(modelName)", probe)
+        self.assertIn("configure_tcsd_coverage_observation_model(modelName)", candidate)
+        self.assertIn("add_to_workspace_probe", shared)
+        self.assertNotIn("function probes = configure_logic_probes", probe)
+        self.assertIn("set_param(modelName, 'CovMcdcMode', 'Masking')", probe)
+        self.assertIn("summary.mcdc_items = collect_all_mcdc_items", probe)
+        self.assertIn("summary.items = collect_coverage_items", candidate)
+
     def test_simulation_rejects_a_successful_gateway_call_without_result_artifact(self) -> None:
         quality = load_script_module("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as td:
@@ -933,7 +946,7 @@ class McdcQualityLoopTests(unittest.TestCase):
                 ],
             }
             plan = {
-                "generation_mode": "minimal_unique_cause",
+                "generation_mode": "minimal_masking_mcdc",
                 "summary": {"decisions": [{"condition_count": 2, "max_allowed_vectors": 6}]},
                 "obligations": [
                     {

@@ -926,11 +926,32 @@ def simulate_and_backfill(
     exclude_outputs: str,
     interface_json: Path,
     result_name: str = "",
+    collect_coverage: bool = False,
+    coverage_threshold: float = 80,
+    mcdc_mode: str = "",
+    coverage_result_name: str = "",
+    init_scripts: list[str] | None = None,
 ) -> Path:
     result_json = root_dir / "outputs" / (result_name or f"{model}_sim_results_mcdc.json")
     error_json = result_json.with_suffix(".error.json")
     result_json.unlink(missing_ok=True)
     error_json.unlink(missing_ok=True)
+    coverage_json = root_dir / "outputs" / (
+        coverage_result_name or f"{model}_candidate_coverage_summary.json"
+    )
+    coverage_data = root_dir / "outputs" / f"{model}_candidate_coverage.cvt"
+    if collect_coverage:
+        coverage_json.unlink(missing_ok=True)
+        coverage_data.unlink(missing_ok=True)
+    coverage_args = ""
+    if collect_coverage:
+        coverage_args = (
+            f", 'CoverageDataFile', {matlab_string(str(coverage_data))}"
+            f", 'CoverageJson', {matlab_string(str(coverage_json))}"
+            f", 'CoverageThreshold', {coverage_threshold:g}"
+            f", 'McdcMode', {matlab_string(mcdc_mode)}"
+            f", 'InitScripts', {matlab_cell(init_scripts or [])}"
+        )
     entry = write_matlab_entry(
         root_dir / "outputs" / f"{model}_simulate_mcdc_entry.m",
         "\n".join(
@@ -941,7 +962,8 @@ def simulate_and_backfill(
                 "try",
                 (
                     f"  simulate_tcsd_cases(rootDir, {matlab_string(model)}, {matlab_string(mat_file)}, "
-                    f"{matlab_string(str(case_json))}, {matlab_string(str(result_json))});"
+                    f"{matlab_string(str(case_json))}, {matlab_string(str(result_json))}"
+                    f"{coverage_args});"
                 ),
                 "catch err",
                 "  diagnostic = struct('schema', 'tcsd-matlab-simulation-error/v1', "
@@ -967,6 +989,9 @@ def simulate_and_backfill(
     if captured:
         raise captured
     require_matlab_artifact(result_json, phase="matlab_case_simulation")
+    if collect_coverage:
+        require_matlab_artifact(coverage_json, phase="matlab_candidate_coverage")
+        require_matlab_artifact(coverage_data, phase="matlab_candidate_coverage")
     cmd = [
         python,
         str(scripts / "backfill_expected_outputs.py"),

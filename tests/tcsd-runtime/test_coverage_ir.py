@@ -85,7 +85,7 @@ class CoverageIrTests(unittest.TestCase):
         self.assertEqual(payload["code"], "coverage_ir_build_failed")
         self.assertIn("no operator reports", payload["message"])
 
-    def test_no_unique_cause_pair_is_degraded_not_fatal(self) -> None:
+    def test_no_masking_pair_is_degraded_not_fatal(self) -> None:
         planner = script("build_atomic_mcdc_repair_plan.py")
         coverage_ir = script("build_coverage_ir.py")
         trace = {
@@ -105,10 +105,10 @@ class CoverageIrTests(unittest.TestCase):
         obligations, summary = planner.build_for_operator("GenericModel", operator)
         infeasible = [
             item for item in obligations
-            if item["status"] == "unsupported" and any("no_unique_cause_pair" in str(issue) for issue in item.get("issues", []))
+            if item["status"] == "unsupported" and any("no_masking_pair" in str(issue) for issue in item.get("issues", []))
         ]
         self.assertTrue(infeasible, f"expected infeasible condition exemptions, got {obligations}")
-        self.assertIn("no_unique_cause_pair", "; ".join(str(issue) for issue in summary["issues"]))
+        self.assertIn("no_masking_pair", "; ".join(str(issue) for issue in summary["issues"]))
         result = coverage_ir.build_ir(trace, evidence_obligations={"obligations": obligations})
         unsupported = [
             item for item in result["items"]
@@ -117,8 +117,8 @@ class CoverageIrTests(unittest.TestCase):
         self.assertTrue(unsupported, "Coverage IR must retain the infeasible obligations as unsupported")
         self.assertTrue(
             any(
-                "no_unique_cause_pair" in str(item["reachability"].get("reason") or "")
-                or any("no_unique_cause_pair" in str(issue) for issue in item["reachability"].get("issues", []))
+                "no_masking_pair" in str(item["reachability"].get("reason") or "")
+                or any("no_masking_pair" in str(issue) for issue in item["reachability"].get("issues", []))
                 for item in unsupported
             )
         )
