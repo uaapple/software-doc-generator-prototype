@@ -70,6 +70,7 @@ REPAIR_CANDIDATE_SCHEMA = "tcsd-repair-candidate-validation/v1"
 SYNTHESIS_SCHEMA = "simulink-ut-tcsd-coverage-ir-synthesis/v1"
 EXTRACTED_CASES_SCHEMA = "tcsd-extracted-cases/v1"
 INITIAL_RECIPE_RESOURCE_GAPS_SCHEMA = "tcsd-initial-recipe-resource-gaps/v1"
+INITIAL_RECIPE_VALIDATION_GAPS_SCHEMA = "tcsd-initial-recipe-validation-gaps/v1"
 
 
 def self_check() -> dict[str, Any]:
@@ -497,9 +498,10 @@ def validate_initial_recipe_probe(request: dict[str, Any]) -> dict[str, Any]:
     _, synthesis = find_json_schema(request, SYNTHESIS_SCHEMA)
     added = int(synthesis.get("added") or 0)
     missing_resource_count = int(synthesis.get("missing_external_resource_skipped_count") or 0)
+    validation_failure_count = int(synthesis.get("simulation_mismatch_skipped_count") or 0)
     claimed = request.get("evidence") if isinstance(request.get("evidence"), dict) else {}
     claimed_probe = claimed.get("initialRecipeProbe") if isinstance(claimed.get("initialRecipeProbe"), dict) else {}
-    if added <= 0:
+    if added <= 0 and validation_failure_count <= 0:
         expected = {
             "plannedCandidateCount": 0,
             "verifiedCandidateCount": 0,
@@ -516,7 +518,7 @@ def validate_initial_recipe_probe(request: dict[str, Any]) -> dict[str, Any]:
         expected = pipeline_stage_module.initial_recipe_probe_evidence(cases, probe, model)
         expected["unverifiedCandidateCount"] = max(
             0,
-            added - int(expected["plannedCandidateCount"]),
+            added - int(expected["verifiedCandidateCount"]),
         )
     if canonical(claimed_probe) != canonical(expected):
         raise ValueError("initial recipe probe evidence does not match host-parsed observations")
@@ -568,6 +570,50 @@ def validate_initial_recipe_probe(request: dict[str, Any]) -> dict[str, Any]:
         details["initialRecipeResourceGaps"] = {
             "skippedCandidateCount": len(gap_items),
             "resources": sorted({item["resource"] for item in gap_items}),
+        }
+    if validation_failure_count > 0:
+        _, cases = find_json_schema(request, EXTRACTED_CASES_SCHEMA)
+        _, probe = find_probe_result(request)
+        _, gaps = find_json_schema(request, INITIAL_RECIPE_VALIDATION_GAPS_SCHEMA)
+        model = str(cases.get("model") or "")
+        targeted_ids = {
+            str(item.get("test_id") or "")
+            for item in (cases.get("tests") or [])
+            if isinstance(item, dict) and isinstance(item.get("target"), dict)
+        }
+        expected_failures = pipeline_stage_module.initial_recipe_validation_failures(
+            cases,
+            probe,
+            model,
+            targeted_ids,
+        )
+        gap_items = [item for item in (gaps.get("items") or []) if isinstance(item, dict)]
+        synthesis_items = [
+            {
+                "testId": str(item.get("id") or ""),
+                "reason": str(item.get("reason") or ""),
+                "coverageItemId": str(item.get("coverage_item_id") or ""),
+                "operatorId": str(item.get("operator_id") or ""),
+                "expectedVector": list(item.get("expected_vector") or []),
+                "observedVectors": list(item.get("observed_vectors") or []),
+                "handoffStage": int(item.get("handoff_stage") or 0),
+            }
+            for item in (synthesis.get("skipped") or [])
+            if isinstance(item, dict) and item.get("reason") == "simulation_mismatch"
+        ]
+        sort_key = lambda item: str(item.get("testId") or "")
+        if (
+            validation_failure_count != len(expected_failures)
+            or int(gaps.get("skippedCandidateCount") or 0) != len(expected_failures)
+            or int(gaps.get("handoffStage") or 0) != 10
+            or canonical(sorted(gap_items, key=sort_key)) != canonical(sorted(expected_failures, key=sort_key))
+            or canonical(sorted(synthesis_items, key=sort_key)) != canonical(sorted(expected_failures, key=sort_key))
+        ):
+            raise ValueError("initial recipe simulation-mismatch evidence is internally inconsistent")
+        details["initialRecipeValidationGaps"] = {
+            "skippedCandidateCount": len(expected_failures),
+            "handoffStage": 10,
+            "coverageItemIds": sorted({item["coverageItemId"] for item in expected_failures}),
         }
     return details
 

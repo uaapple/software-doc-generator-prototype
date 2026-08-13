@@ -303,6 +303,44 @@ class CoverageIrTests(unittest.TestCase):
         self.assertEqual(true_recipe.issues, [])
         self.assertEqual(false_recipe.issues, [])
 
+    def test_delayed_switch_comparison_drives_selected_root_value(self) -> None:
+        planner = script("build_atomic_mcdc_repair_plan.py")
+        delayed_switch = {
+            "kind": "stateful",
+            "blockType": "Delay",
+            "delayLength": "2",
+            "inputs": [{"trace": {
+                "kind": "switch",
+                "criteria": "u2 ~= 0",
+                "inputs": [
+                    {"trace": {"kind": "root_inport", "signal": "TargetTorque"}},
+                    {"trace": {
+                        "kind": "constant",
+                        "value": "UseTarget_C",
+                        "resolvedValue": 0,
+                    }},
+                    {"trace": {"kind": "root_inport", "signal": "BusTorque"}},
+                ],
+            }}],
+        }
+        comparison = {
+            "kind": "relational",
+            "operator": ">",
+            "inputs": [
+                delayed_switch,
+                {"kind": "constant", "value": "PositiveThreshold_C", "resolvedValue": 5},
+            ],
+        }
+
+        true_options = planner.relational_recipe_options(comparison, True)
+        false_options = planner.relational_recipe_options(comparison, False)
+
+        self.assertTrue(any(item.inputs.get("TargetTorque", 0) > 5 and item.params.get("UseTarget_C") == 1 for item in true_options))
+        self.assertTrue(any(item.inputs.get("BusTorque", 0) > 5 and item.params.get("UseTarget_C") == 0 for item in true_options))
+        self.assertTrue(all(item.hold_s >= 1.0 for item in true_options))
+        self.assertTrue(any(item.inputs.get("TargetTorque", 99) <= 5 for item in false_options))
+        self.assertTrue(all("PositiveThreshold_C" not in item.params for item in true_options + false_options))
+
     def test_shared_root_comparisons_are_solved_jointly(self) -> None:
         planner = script("build_atomic_mcdc_repair_plan.py")
         shared = {"kind": "root_inport", "signal": "State"}

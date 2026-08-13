@@ -323,23 +323,75 @@ def initial_recipe_probe_evidence(cases: dict[str, Any], probe: dict[str, Any], 
     report = probe.get(model, probe) if isinstance(probe, dict) else {}
     observations = report.get("observations") if isinstance(report, dict) else []
     observations = observations if isinstance(observations, list) else []
+    skipped_ids = {
+        str(item.get("test_id") or "")
+        for item in (report.get("skipped_tests") or [])
+        if isinstance(item, dict) and item.get("reason") == "missing_external_resource"
+    }
+    targeted = {
+        test_id: target for test_id, target in targeted.items()
+        if test_id not in skipped_ids
+    }
     matched = {
         str(item.get("test_id"))
         for item in observations
         if isinstance(item, dict) and item.get("prediction_status") == "matched_prediction"
     }
     failed = sorted(test_id for test_id in targeted if test_id not in matched)
-    if failed:
-        raise RuntimeError(
-            "initial coverage recipe probe did not observe the planned logical vector for Test cases: "
-            + ", ".join(failed)
-        )
     return {
         "plannedCandidateCount": len(targeted),
-        "verifiedCandidateCount": len(targeted),
+        "verifiedCandidateCount": len(targeted) - len(failed),
         "observationCount": len(observations),
-        "failedCandidateCount": 0,
+        "failedCandidateCount": len(failed),
     }
+
+
+def initial_recipe_validation_failures(
+    cases: dict[str, Any], probe: dict[str, Any], model: str, skippable_test_ids: set[str]
+) -> list[dict[str, Any]]:
+    tests = cases.get("tests") if isinstance(cases.get("tests"), list) else []
+    targeted = {
+        str(test.get("test_id")): test.get("target")
+        for test in tests
+        if isinstance(test, dict)
+        and isinstance(test.get("target"), dict)
+        and test["target"].get("expected_vector")
+    }
+    report = probe.get(model, probe) if isinstance(probe, dict) else {}
+    observations = report.get("observations") if isinstance(report, dict) else []
+    observations = observations if isinstance(observations, list) else []
+    skipped_ids = {
+        str(item.get("test_id") or "")
+        for item in (report.get("skipped_tests") or [])
+        if isinstance(item, dict) and item.get("reason") == "missing_external_resource"
+    }
+    result: list[dict[str, Any]] = []
+    for test_id, target in targeted.items():
+        if test_id in skipped_ids:
+            continue
+        relevant = [item for item in observations if isinstance(item, dict) and str(item.get("test_id") or "") == test_id]
+        if any(item.get("prediction_status") == "matched_prediction" for item in relevant):
+            continue
+        if test_id not in skippable_test_ids:
+            raise RuntimeError(f"MATLAB contradicted a non-candidate Test case: {test_id or '<missing>'}")
+        labels = sorted({
+            str(vector.get("label") or "")
+            for item in relevant
+            for vector in ((item.get("vectors") or {}).values() if isinstance(item.get("vectors"), dict) else [])
+            if isinstance(vector, dict)
+            and str(vector.get("id") or "") == str(target.get("operator_id") or "")
+            and vector.get("label")
+        })
+        result.append({
+            "testId": test_id,
+            "reason": "simulation_mismatch",
+            "coverageItemId": str(target.get("coverage_item_id") or ""),
+            "operatorId": str(target.get("operator_id") or ""),
+            "expectedVector": list(target.get("expected_vector") or []),
+            "observedVectors": labels,
+            "handoffStage": 10,
+        })
+    return result
 
 
 def initial_recipe_missing_resource_skips(
@@ -409,6 +461,35 @@ def record_initial_recipe_resource_skips(
         "missing_external_resources": sorted({
             item["resource"] for item in skips
         }),
+    })
+    return result
+
+
+def record_initial_recipe_validation_failures(
+    synthesis: dict[str, Any], failures: list[dict[str, Any]], remaining_test_count: int
+) -> dict[str, Any]:
+    result = dict(synthesis)
+    skipped = list(result.get("skipped") or [])
+    skipped.extend({
+        "id": item["testId"],
+        "reason": item["reason"],
+        "coverage_item_id": item["coverageItemId"],
+        "operator_id": item["operatorId"],
+        "expected_vector": item["expectedVector"],
+        "observed_vectors": item["observedVectors"],
+        "handoff_stage": item["handoffStage"],
+    } for item in failures)
+    skipped_by_reason = dict(result.get("skipped_by_reason") or {})
+    skipped_by_reason["simulation_mismatch"] = (
+        int(skipped_by_reason.get("simulation_mismatch") or 0) + len(failures)
+    )
+    input_count = int(result.get("input_test_count") or 0)
+    result.update({
+        "output_test_count": remaining_test_count,
+        "added": max(0, remaining_test_count - input_count),
+        "skipped": skipped,
+        "skipped_by_reason": skipped_by_reason,
+        "simulation_mismatch_skipped_count": len(failures),
     })
     return result
 
@@ -649,6 +730,7 @@ def stage_run(
         quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface)
         verification_results = out / f"{model}_initial_recipe_probe_results.json"
         resource_gaps = out / f"{model}_initial_recipe_resource_gaps.json"
+        validation_gaps = out / f"{model}_initial_recipe_validation_gaps.json"
         verification_artifacts = []
         if int(synthesis.get("added") or 0) > 0:
             synthesized_spec = read_json(spec)
@@ -733,22 +815,56 @@ def stage_run(
                     "skippedCandidateCount": len(missing_resource_skips),
                     "items": missing_resource_skips,
                 })
-            if int(synthesis.get("added") or 0) > 0:
-                probe_evidence = initial_recipe_probe_evidence(
-                    read_json(verification_cases),
-                    probe_payload,
-                    model,
+            validation_failures = initial_recipe_validation_failures(
+                read_json(verification_cases),
+                probe_payload,
+                model,
+                skippable_test_ids,
+            )
+            if validation_failures:
+                failed_test_ids = {item["testId"] for item in validation_failures}
+                synthesized_spec = remove_initial_recipe_tests(synthesized_spec, failed_test_ids)
+                write_json(spec, synthesized_spec)
+                run([
+                    sys.executable,
+                    str(scripts() / "build_tcsd_from_json.py"),
+                    "--template",
+                    str(scripts().parent / "assets" / "templates" / "tcsd_template.xlsx"),
+                    "--spec",
+                    str(spec),
+                    "--output",
+                    str(workbook),
+                    "--interface-json",
+                    str(interface),
+                ], root)
+                quality.validate_workbook(
+                    python=sys.executable,
+                    scripts=scripts(),
+                    root_dir=root,
+                    workbook=workbook,
+                    interface_json=interface,
                 )
-            else:
-                probe_evidence = {
-                    "plannedCandidateCount": 0,
-                    "verifiedCandidateCount": 0,
-                    "observationCount": 0,
-                    "failedCandidateCount": 0,
-                }
+                synthesis = record_initial_recipe_validation_failures(
+                    synthesis,
+                    validation_failures,
+                    len(synthesized_spec["tests"]),
+                )
+                write_json(synthesis_report, synthesis)
+                write_json(validation_gaps, {
+                    "schema": "tcsd-initial-recipe-validation-gaps/v1",
+                    "model": model,
+                    "skippedCandidateCount": len(validation_failures),
+                    "handoffStage": 10,
+                    "items": validation_failures,
+                })
+            probe_evidence = initial_recipe_probe_evidence(
+                read_json(verification_cases),
+                probe_payload,
+                model,
+            )
             probe_evidence["unverifiedCandidateCount"] = max(
                 0,
-                int(synthesis.get("added") or 0) - int(probe_evidence["plannedCandidateCount"]),
+                int(synthesis.get("added") or 0) - int(probe_evidence["verifiedCandidateCount"]),
             )
             verification_artifacts = [
                 artifact(root, verification_cases, "json", "initial-recipe-cases"),
@@ -757,6 +873,10 @@ def stage_run(
             if resource_gaps.is_file():
                 verification_artifacts.append(
                     artifact(root, resource_gaps, "json", "initial-recipe-resource-gaps")
+                )
+            if validation_gaps.is_file():
+                verification_artifacts.append(
+                    artifact(root, validation_gaps, "json", "initial-recipe-validation-gaps")
                 )
         else:
             probe_evidence = {
@@ -786,6 +906,7 @@ def stage_run(
             "controlConflictSkippedCount": int(synthesis.get("control_conflict_skipped_count") or 0),
             "unresolvedThresholdSkippedCount": int(synthesis.get("unresolved_threshold_skipped_count") or 0),
             "missingExternalResourceSkippedCount": int(synthesis.get("missing_external_resource_skipped_count") or 0),
+            "simulationMismatchSkippedCount": int(synthesis.get("simulation_mismatch_skipped_count") or 0),
         }
         write_json(planning_assessment, assessment)
         finish(

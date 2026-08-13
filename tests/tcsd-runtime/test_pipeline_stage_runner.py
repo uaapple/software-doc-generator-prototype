@@ -132,8 +132,26 @@ class PipelineStageRunnerTests(unittest.TestCase):
             },
         )
         probe["GenericModel"]["observations"][1]["prediction_status"] = "simulation_mismatch"
-        with self.assertRaisesRegex(RuntimeError, "TC_002"):
-            RUNNER.initial_recipe_probe_evidence(cases, probe, "GenericModel")
+        self.assertEqual(
+            RUNNER.initial_recipe_probe_evidence(cases, probe, "GenericModel"),
+            {
+                "plannedCandidateCount": 1,
+                "verifiedCandidateCount": 0,
+                "observationCount": 2,
+                "failedCandidateCount": 1,
+            },
+        )
+        failures = RUNNER.initial_recipe_validation_failures(
+            cases,
+            probe,
+            "GenericModel",
+            {"TC_002"},
+        )
+        self.assertEqual(failures[0]["testId"], "TC_002")
+        self.assertEqual(failures[0]["handoffStage"], 10)
+        self.assertEqual(failures[0]["reason"], "simulation_mismatch")
+        with self.assertRaisesRegex(RuntimeError, "non-candidate"):
+            RUNNER.initial_recipe_validation_failures(cases, probe, "GenericModel", set())
 
     def test_case_extraction_attaches_coverage_vector_targets(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -324,6 +342,96 @@ class PipelineStageRunnerTests(unittest.TestCase):
             })
             tampered = json.loads(gaps_path.read_text(encoding="utf-8"))
             tampered["items"][0]["resource"] = "Other_C"
+            gaps_path.write_text(json.dumps(tampered), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "internally inconsistent"):
+                HOST_VALIDATOR.validate_initial_recipe_probe(request)
+
+    def test_host_validates_initial_recipe_simulation_mismatch_handoff(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            synthesis_path = root / "synthesis.json"
+            cases_path = root / "cases.json"
+            probe_path = root / "probe.json"
+            gaps_path = root / "validation-gaps.json"
+            failure = {
+                "testId": "TC_002",
+                "reason": "simulation_mismatch",
+                "coverageItemId": "GenericModel:Gate_atomic_TF",
+                "operatorId": "GenericModel:Gate",
+                "expectedVector": [True, False],
+                "observedVectors": ["TT"],
+                "handoffStage": 10,
+            }
+            synthesis_path.write_text(json.dumps({
+                "schema": "simulink-ut-tcsd-coverage-ir-synthesis/v1",
+                "added": 0,
+                "simulation_mismatch_skipped_count": 1,
+                "skipped": [{
+                    "id": failure["testId"],
+                    "reason": failure["reason"],
+                    "coverage_item_id": failure["coverageItemId"],
+                    "operator_id": failure["operatorId"],
+                    "expected_vector": failure["expectedVector"],
+                    "observed_vectors": failure["observedVectors"],
+                    "handoff_stage": failure["handoffStage"],
+                }],
+            }), encoding="utf-8")
+            cases_path.write_text(json.dumps({
+                "schema": "tcsd-extracted-cases/v1",
+                "model": "GenericModel",
+                "tests": [{
+                    "test_id": "TC_002",
+                    "target": {
+                        "coverage_item_id": failure["coverageItemId"],
+                        "operator_id": failure["operatorId"],
+                        "expected_vector": failure["expectedVector"],
+                    },
+                }],
+            }), encoding="utf-8")
+            probe_path.write_text(json.dumps({
+                "schema": "simulink-ut-logical-mcdc-probe/v2",
+                "model": "GenericModel",
+                "observations": [{
+                    "test_id": "TC_002",
+                    "prediction_status": "simulation_mismatch",
+                    "vectors": {
+                        "GenericModel_Gate": {
+                            "id": "GenericModel:Gate",
+                            "label": "TT",
+                        },
+                    },
+                }],
+            }), encoding="utf-8")
+            gaps_path.write_text(json.dumps({
+                "schema": "tcsd-initial-recipe-validation-gaps/v1",
+                "skippedCandidateCount": 1,
+                "handoffStage": 10,
+                "items": [failure],
+            }), encoding="utf-8")
+            expected_probe = {
+                "plannedCandidateCount": 1,
+                "verifiedCandidateCount": 0,
+                "observationCount": 1,
+                "failedCandidateCount": 1,
+                "unverifiedCandidateCount": 0,
+            }
+            request = {
+                "workspaceDir": str(root),
+                "artifacts": [
+                    {"path": path.name, "kind": "json"}
+                    for path in (synthesis_path, cases_path, probe_path, gaps_path)
+                ],
+                "evidence": {"initialRecipeProbe": expected_probe},
+            }
+            details = HOST_VALIDATOR.validate_initial_recipe_probe(request)
+            self.assertEqual(details["initialRecipeProbe"], expected_probe)
+            self.assertEqual(details["initialRecipeValidationGaps"], {
+                "skippedCandidateCount": 1,
+                "handoffStage": 10,
+                "coverageItemIds": [failure["coverageItemId"]],
+            })
+            tampered = json.loads(gaps_path.read_text(encoding="utf-8"))
+            tampered["items"][0]["observedVectors"] = ["FF"]
             gaps_path.write_text(json.dumps(tampered), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "internally inconsistent"):
                 HOST_VALIDATOR.validate_initial_recipe_probe(request)

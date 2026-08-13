@@ -616,6 +616,86 @@ def switch_relational_recipe(node: dict[str, Any], desired: bool) -> Recipe | No
     ])
 
 
+def numeric_value_recipe_options(node: dict[str, Any], desired_value: float) -> list[Recipe]:
+    """Drive a traced numeric signal to a requested value through supported stateful paths."""
+    node = unwrap(node)
+    kind = str(node.get("kind") or "").lower()
+    root = direct_root(node)
+    if root:
+        return [Recipe(inputs={root: desired_value}, strategy="numeric_root_input")]
+    if kind == "constant":
+        value = resolved_scalar_value(node)
+        return [Recipe(strategy="fixed_numeric_value")] if value is not None and math.isclose(
+            value, desired_value, rel_tol=0.0, abs_tol=1e-12
+        ) else []
+    if kind == "switch":
+        terms = children(node)
+        criteria = str(node.get("criteria") or "u2 ~= 0").replace(" ", "")
+        if len(terms) != 3 or criteria not in {"u2~=0", "u2>0"}:
+            return []
+        results: list[Recipe] = []
+        for branch_index, control_state in ((0, True), (2, False)):
+            groups = [
+                (numeric_value_recipe_options(terms[branch_index], desired_value), "switch data branch"),
+                (boolean_node_recipe_options(terms[1], control_state), "switch control"),
+            ]
+            for candidate in combine_recipe_options(groups, limit=32 - len(results)):
+                candidate.strategy = "numeric_switch_branch_selection"
+                results.append(candidate)
+                if len(results) >= 32:
+                    return results
+        return results
+    if kind == "stateful":
+        terms = children(node)
+        if not terms:
+            return []
+        results = numeric_value_recipe_options(terms[0], desired_value)
+        delay_length = parse_literal(node.get("delayLength")) or 1.0
+        for candidate in results:
+            # Inherited sample times cannot be converted safely here. One second
+            # is a bounded warm-up that comfortably covers the short control
+            # delays used by the supported TCSD models.
+            candidate.hold_s = max(candidate.hold_s, 1.0 if delay_length > 0 else 0.1)
+            candidate.strategy = "stateful_numeric_control_path"
+        return results
+    controller = affine_root_controller(node)
+    if controller and not math.isclose(float(controller["scale"]), 0.0, rel_tol=0.0, abs_tol=1e-15):
+        root_value = (desired_value - float(controller["offset"])) / float(controller["scale"])
+        return [Recipe(
+            inputs={str(controller["root_input"]): root_value},
+            strategy="affine_numeric_control_path",
+        )]
+    return []
+
+
+def traced_numeric_relational_recipe_options(node: dict[str, Any], desired: bool) -> list[Recipe] | None:
+    """Solve comparisons whose numeric operand is behind a Switch or state block."""
+    terms = children(node)
+    if len(terms) != 2:
+        return None
+    left_constant, right_constant = resolved_scalar_value(terms[0]), resolved_scalar_value(terms[1])
+    left_dynamic = contains_kind(terms[0], {"stateful", "switch"})
+    right_dynamic = contains_kind(terms[1], {"stateful", "switch"})
+    if left_dynamic and right_constant is not None:
+        dynamic, threshold, dynamic_on_left = terms[0], right_constant, True
+    elif right_dynamic and left_constant is not None:
+        dynamic, threshold, dynamic_on_left = terms[1], left_constant, False
+    else:
+        return None
+    operator = str(node.get("operator") or "").strip()
+    results: list[Recipe] = []
+    for _, value in boundary_values(threshold):
+        left, right = (value, threshold) if dynamic_on_left else (threshold, value)
+        if comparison_result(operator, left, right) != desired:
+            continue
+        for candidate in numeric_value_recipe_options(dynamic, value):
+            candidate.strategy = "traced_numeric_relational_control"
+            results.append(candidate)
+            if len(results) >= 32:
+                return results
+    return results
+
+
 def numeric_domain(data_type: str) -> tuple[float | None, float | None, float | None]:
     compact = str(data_type or "").strip().lower().replace(" ", "")
     if compact in {"boolean", "bool"}:
@@ -689,18 +769,12 @@ def relational_recipe(node: dict[str, Any], desired: bool) -> Recipe:
     if switch_recipe is not None:
         return switch_recipe
 
-    if right_param and op in {">", ">="} and contains_kind(terms[0], {"stateful", "switch", "minmax"}):
-        return Recipe(
-            params={right_param: 0 if desired else 1},
-            hold_s=0.02,
-            strategy="nonnegative_stateful_value_vs_parameter_threshold",
-        )
-    if left_param and op in {"<", "<="} and contains_kind(terms[1], {"stateful", "switch", "minmax"}):
-        return Recipe(
-            params={left_param: 0 if desired else 1},
-            hold_s=0.02,
-            strategy="parameter_threshold_vs_nonnegative_stateful_value",
-        )
+    traced_recipe_options = traced_numeric_relational_recipe_options(node, desired)
+    if traced_recipe_options is not None:
+        return traced_recipe_options[0] if traced_recipe_options else Recipe(issues=[
+            "stateful or switched comparison lacks a safe numeric root-input control path"
+        ])
+
     controller = relational_controller(node)
     if controller:
         root = str(controller["root_input"])
@@ -750,6 +824,9 @@ def relational_recipe_options(
     switch_options = switch_relational_recipe_options(node, desired)
     if switch_options is not None:
         return switch_options or [switch_relational_recipe(node, desired)]
+    traced_options = traced_numeric_relational_recipe_options(node, desired)
+    if traced_options is not None:
+        return traced_options or [relational_recipe(node, desired)]
     controller = relational_controller(node)
     if not controller:
         return [relational_recipe(node, desired)]
