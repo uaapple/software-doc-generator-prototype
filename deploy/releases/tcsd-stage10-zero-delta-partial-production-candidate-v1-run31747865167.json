@@ -1,0 +1,116 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-14T06:08:00+08:00",
+  "candidateTag": "tcsd-stage10-zero-delta-partial-production-candidate-v1-run31747865167",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "7464d215751cc6759ea5bf984fecf7faaa550eb8",
+  "containerBuildRevision": "7464d215751cc6759ea5bf984fecf7faaa550eb8",
+  "deploymentToolRevision": "7464d215751cc6759ea5bf984fecf7faaa550eb8",
+  "supersedesCandidate": {
+    "tag": "tcsd-mcdc-delta-judge-production-candidate-v1-run31744220121",
+    "tagObject": "439ad957dd1bcf987af36fbeccf7ae44132ef1f1",
+    "peeledCommit": "88ec348a2189d28e28993675cf7fc9306d082c8d",
+    "reason": "保留 MC/DC 增量裁判严格性；第十阶段两轮候选均无新增独立影响对时，拒绝无效候选、保留首轮工作簿并以部分完成继续后续收官，不再使整项任务失败。"
+  },
+  "scope": {
+    "summary": "第十阶段零增量快速修复：第一次零增量仍使用新会话重试；第二次仍无新增 MC/DC 独立影响对时形成可审计的部分完成证据，宿主接受该明确结果并继续第十一、十二阶段。",
+    "platformAction": "reuse-current-exact-image-no-switch",
+    "workerAction": "deploy-new-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-deployed-v9-and-validate-only",
+    "schemaCompatibility": "只追加第十阶段 repair reason 和部分完成证据；旧任务、旧阶段结果与现有 Platform 协议保持兼容。"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 31747865167,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "7464d215751cc6759ea5bf984fecf7faaa550eb8",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31747865167",
+    "job": {
+      "id": 94606605413,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/31747865167/job/94606605413",
+      "requiredSteps": [
+        {"name": "Check out exact revision", "conclusion": "success"},
+        {"name": "Run companion tests with Windows PowerShell 5.1", "conclusion": "success"},
+        {"name": "Install locked Node.js dependencies", "conclusion": "success"},
+        {"name": "Reproduce legacy native env wrapper startup", "conclusion": "success"}
+      ]
+    },
+    "runMetadataSha256": "0938b12c3adc96f1dc057f376362eea189f37084aa0386151abd870dd85b83ff",
+    "jobLogSha256": "5406424a0f7b7f9157a7b0a3333bb4ea0621568f583cf22c1b80a13ae5b743fe"
+  },
+  "images": {
+    "platform": {
+      "action": "reuse",
+      "imageRevision": "sha256:b3f97031a2e4567ba6df5b9097516aea0cb2a1f82e417bb3563ba12a98ca6e9a",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:347d821c9a3be13ab921e0cafea0569f3f6f00ea8af3e040b2e7ec4a319aaefd",
+      "registryIndexDigest": "sha256:347d821c9a3be13ab921e0cafea0569f3f6f00ea8af3e040b2e7ec4a319aaefd",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "action": "deploy",
+      "imageRevision": "sha256:956428f3d6876f09016fbd2715b1c3d43914ee62c9b26049ffb1db836ef6cfab",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:9981a0395d3045ddf5e80eb4d3744d94060fd8145ca06f4d92505510f8d31a06",
+      "registryIndexDigest": "sha256:9981a0395d3045ddf5e80eb4d3744d94060fd8145ca06f4d92505510f8d31a06",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "reuse-deployed-v9-and-validate-only",
+    "companionVersion": 9,
+    "releaseAssetIncluded": false,
+    "reason": "本候选未修改 Gateway 受管文件。"
+  },
+  "releaseAssets": {
+    "container-release-7464d215751c-worker-only.json": "31ee15bc4a66afc28a9506411a61cf37ce83361d192fa1cb532d4877157deb67",
+    "scan-summary.json": "9c0ea490a436d05934792c91d0e307f8a92647405f6c60b46c1e5af4227f964f",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-b3f97031a2e4.sbom.spdx.json": "958063088c5be89cf276afbb50a8ab81912e643e529da85abad9ee5717c59dd1",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-b3f97031a2e4.trivy.json": "03f674aa94f8afa2c4c2413189f0b3d41e24ddcac0dd4e34707e4548424deffa",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-b3f97031a2e4.trivy.json.policy.json": "7e0e05b3a23b7fd89fd76e39f946c2c221f43cfbe1b6e7a48a005f932eddead6",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-956428f3d687.sbom.spdx.json": "eb77a7bb8406e8ea1cb58b7846de649ad5b26a84ca67c8697fdec4e50f1df0c4",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-956428f3d687.trivy.json": "59b0180eaf179992f9b4f731d37c4b71af1cfa6dac5b1866a2bf2a8f694a7e0a",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-956428f3d687.trivy.json.policy.json": "67d3dcea73ac84affabebca7cd8101c03b4811c1f60479bf16fa412b8c435419"
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "platformDistribution": "not-required-platform-unchanged",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-stage10-zero-delta-partial-production-candidate-v1-run31747865167",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-stage10-zero-delta-partial-production-candidate-v1-run31747865167"
+    }
+  },
+  "rollbackAnchors": {
+    "expectedCurrentProductionCandidate": "tcsd-mcdc-delta-judge-production-candidate-v1-run31744220121",
+    "platform": "保持当前精确镜像，不切换",
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:1c928620a622e0e2ac42366145a44e69413e2261c56e6f60835d7f423cc3fba2",
+      "imageRevision": "sha256:9eac503ae06ce6cae3914915b58b51f2c41c63cc5593e624a55f3838adc30a6a"
+    },
+    "nativeGateway": "保持已部署 v9，不切换",
+    "rule": "部署前以生产实际 inspect 为权威；若 Worker 实际值不同，记录实际精确 digest 作为回滚锚点。"
+  },
+  "acceptance": {
+    "mainJavaScriptTests": "passed-196-core-and-46-slx-tests",
+    "tcsdContractTests": "passed-contract-orchestration-recovery-serial-gate-and-cancellation",
+    "targetedRuntimeTests": "passed-118-python-tests-including-zero-delta-partial-and-host-validation",
+    "compatibilityTests": "passed-software-detail-nine-stage-and-full-http-tests",
+    "containerReleaseChecks": "passed-container-static-production-boundary-transfer-secret-and-policy-checks",
+    "containerScans": "worker-syft-trivy-passed-policy-findings-zero-secrets-zero; platform-evidence-reused-from-superseded-candidate",
+    "windowsPowerShell51": "passed-run-31747865167-job-94606605413",
+    "productionDeployment": "not-performed",
+    "productionRealTaskAcceptance": "pending-user"
+  }
+}
