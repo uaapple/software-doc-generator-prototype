@@ -19,7 +19,8 @@ TEST_FIELDS = {
     "row", "test_id", "init_values", "init_params", "steps", "evidence_step", "target",
 }
 TARGET_FIELDS = {
-    "operator_id", "port_index", "pattern_type", "control_input", "transition", "hold_s",
+    "operator_id", "port_index", "pattern_type", "control_input",
+    "control_transition", "expected_target_transition", "hold_s",
 }
 STEP_FIELDS = {"index", "delay_s", "input_updates", "param_updates"}
 
@@ -28,14 +29,16 @@ STEP_FIELDS = {"index", "delay_s", "input_updates", "param_updates"}
 class Dependencies:
     inputs: set[str] = field(default_factory=set)
     params: dict[str, Any] = field(default_factory=dict)
-    thresholds: list[float] = field(default_factory=list)
+    temporal_thresholds: list[float] = field(default_factory=list)
+    value_thresholds: list[float] = field(default_factory=list)
     stateful: bool = False
     unsupported: set[str] = field(default_factory=set)
 
     def merge(self, other: "Dependencies") -> None:
         self.inputs.update(other.inputs)
         self.params.update(other.params)
-        self.thresholds.extend(other.thresholds)
+        self.temporal_thresholds.extend(other.temporal_thresholds)
+        self.value_thresholds.extend(other.value_thresholds)
         self.stateful = self.stateful or other.stateful
         self.unsupported.update(other.unsupported)
 
@@ -65,6 +68,17 @@ def numeric(value: Any) -> float | None:
         return None
 
 
+def temporal_constant(node: dict[str, Any]) -> bool:
+    labels = " ".join(
+        str(node.get(key) or "")
+        for key in ("name", "value", "semantic", "blockType", "maskType", "referenceBlock")
+    ).lower()
+    compact = re.sub(r"[^a-z0-9]+", "", labels)
+    return any(token in compact for token in (
+        "delay", "dly", "timer", "duration", "debounce", "holdtime", "waittime", "turnon", "turnoff"
+    )) or bool(re.search(r"(?:^|_)ti(?:_|$)|ti_c$", labels))
+
+
 def collect_dependencies(node: dict[str, Any]) -> Dependencies:
     result = Dependencies()
     kind = str(node.get("kind") or "").lower()
@@ -79,7 +93,10 @@ def collect_dependencies(node: dict[str, Any]) -> Dependencies:
         if resolved is None:
             resolved = numeric(raw)
         if resolved is not None:
-            result.thresholds.append(resolved)
+            if temporal_constant(node):
+                result.temporal_thresholds.append(resolved)
+            else:
+                result.value_thresholds.append(resolved)
         if IDENTIFIER_RE.match(raw) and numeric(raw) is None:
             result.params[raw] = node.get("resolvedValue")
         return result
@@ -146,13 +163,186 @@ def reports(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def hold_candidates(deps: Dependencies, sample_time: float) -> list[float]:
-    values = set(DEFAULT_HOLDS)
     margin = max(2.0 * sample_time, 0.02)
-    for threshold in deps.thresholds:
+    thresholds = sorted({value for value in deps.temporal_thresholds if value > 0})
+    if not thresholds:
+        return [round(max(sample_time, value), 9) for value in DEFAULT_HOLDS]
+    primary = min(60.0, max(thresholds) + margin)
+    values = [primary]
+    for threshold in reversed(thresholds):
         if threshold > 0:
-            values.add(threshold + margin)
-            values.add(max(sample_time, threshold - margin))
-    return sorted(round(min(max(value, sample_time), 60.0), 9) for value in values if value > 0)
+            values.extend([threshold + margin, max(sample_time, threshold - margin)])
+    result: list[float] = []
+    for value in values:
+        normalized = round(min(max(value, sample_time), 60.0), 9)
+        if normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def potential_impact_counts(coverage_ir: dict[str, Any] | None) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in (coverage_ir or {}).get("items", []):
+        if not isinstance(item, dict):
+            continue
+        reachability = item.get("reachability") if isinstance(item.get("reachability"), dict) else {}
+        if reachability.get("status") in {"unsupported", "unreachable"}:
+            continue
+        block = item.get("block") if isinstance(item.get("block"), dict) else {}
+        operator_id = str(block.get("sid") or item.get("operator_id") or "").strip()
+        if operator_id:
+            counts[operator_id] = counts.get(operator_id, 0) + 1
+    return counts
+
+
+def priority_record(
+    *, operator_id: str, deps: Dependencies, pattern: str, impact_counts: dict[str, int]
+) -> dict[str, Any]:
+    impact = int(impact_counts.get(operator_id, 0))
+    unique_path = len(deps.inputs) == 1
+    threshold_known = bool(deps.temporal_thresholds)
+    value_threshold_known = bool(deps.value_thresholds)
+    if not deps.unsupported and (pattern or threshold_known) and unique_path:
+        confidence = "high"
+    elif not deps.unsupported and (pattern or threshold_known or deps.stateful):
+        confidence = "medium"
+    else:
+        confidence = "low"
+    score = impact * 100 + (20 if unique_path else 0) + (10 if threshold_known else 0) + (5 if pattern else 0)
+    return {
+        "potential_impact_count": impact,
+        "unique_control_path": unique_path,
+        "temporal_threshold_known": threshold_known,
+        "value_threshold_known": value_threshold_known,
+        "derivation_confidence": confidence,
+        "priority_score": score,
+    }
+
+
+def generic_steps(
+    *, control: str, end: float, hold: float, sample_time: float
+) -> list[dict[str, Any]]:
+    return [
+        {"index": 1, "delay_s": sample_time, "input_updates": {}, "param_updates": {}},
+        {"index": 2, "delay_s": sample_time, "input_updates": {control: end}, "param_updates": {}},
+        {"index": 3, "delay_s": hold, "input_updates": {}, "param_updates": {}},
+    ]
+
+
+def stimulus_transitions(deps: Dependencies) -> list[tuple[float, float]]:
+    thresholds = sorted({value for value in deps.value_thresholds if math.isfinite(value)})
+    if not thresholds:
+        return [(0, 1), (1, 0)]
+    scale = max(1.0, max(abs(value) for value in thresholds))
+    margin = max(1.0, scale * 0.05)
+    values: list[float] = [0.0]
+    for threshold in thresholds:
+        values.extend([threshold + margin, threshold - margin])
+    normalized: list[float] = []
+    for value in values:
+        candidate = round(value, 9)
+        if candidate not in normalized:
+            normalized.append(candidate)
+    transitions: list[tuple[float, float]] = []
+    for end in normalized[1:]:
+        transitions.append((0.0, end))
+        transitions.append((end, 0.0))
+    return transitions or [(0, 1), (1, 0)]
+
+
+def trace_value(
+    node: dict[str, Any],
+    *,
+    inputs: dict[str, Any],
+    params: dict[str, Any],
+    settled: bool,
+) -> Any:
+    kind = str(node.get("kind") or "").lower()
+    if kind == "root_inport":
+        return inputs.get(str(node.get("signal") or node.get("name") or "").strip())
+    if kind == "constant":
+        raw = str(node.get("value") or "").strip()
+        return params.get(raw, node.get("resolvedValue", numeric(raw)))
+    if kind == "stateful":
+        if not settled:
+            return numeric(node.get("resolvedInitialCondition", node.get("initialCondition")))
+        children = child_traces(node)
+        return trace_value(children[0], inputs=inputs, params=params, settled=settled) if children else None
+    source = node.get("source")
+    if isinstance(source, dict) and kind in {
+        "subsystem_inport", "subsystem_outport", "subsystem", "from", "goto", "datatypeconversion"
+    }:
+        return trace_value(source, inputs=inputs, params=params, settled=settled)
+    children = child_traces(node)
+    values = [trace_value(child, inputs=inputs, params=params, settled=settled) for child in children]
+    if any(value is None for value in values):
+        return None
+    if kind == "abs" and len(values) == 1:
+        return abs(float(values[0]))
+    if kind == "relational" and len(values) == 2:
+        left, right = values
+        return {
+            ">": left > right,
+            ">=": left >= right,
+            "<": left < right,
+            "<=": left <= right,
+            "==": left == right,
+            "~=": left != right,
+            "!=": left != right,
+        }.get(str(node.get("operator") or ""))
+    if kind == "logic":
+        operator = str(node.get("operator") or "").upper()
+        if operator == "NOT" and len(values) == 1:
+            return not bool(values[0])
+        if operator == "AND":
+            return all(bool(value) for value in values)
+        if operator == "OR":
+            return any(bool(value) for value in values)
+    if kind == "switch" and len(values) >= 3:
+        criteria = str(node.get("criteria") or "")
+        threshold = numeric(node.get("resolvedThreshold", node.get("threshold"))) or 0
+        control = float(values[1])
+        selected = control != 0 if "~= 0" in criteria else control >= threshold
+        return values[0] if selected else values[2]
+    if kind == "block":
+        semantic = str(node.get("semantic") or "").lower()
+        block_type = str(node.get("blockType") or "").lower()
+        if semantic == "sum" or block_type == "sum":
+            signs = str((node.get("params") or {}).get("Inputs") or "+" * len(values))
+            total = 0.0
+            for index, value in enumerate(values):
+                total += (-1 if index < len(signs) and signs[index] == "-" else 1) * float(value)
+            return total
+        if semantic == "product" or block_type == "product":
+            modes = str((node.get("params") or {}).get("Inputs") or "*" * len(values))
+            total = 1.0
+            for index, value in enumerate(values):
+                if index < len(modes) and modes[index] == "/":
+                    if float(value) == 0:
+                        return None
+                    total /= float(value)
+                else:
+                    total *= float(value)
+            return total
+        if semantic == "datatypeconversion" and len(values) == 1:
+            return values[0]
+    if len(values) == 1 and kind in {"subsystem_inport", "subsystem_outport", "subsystem", "from", "goto", "datatypeconversion"}:
+        return values[0]
+    return None
+
+
+def expected_target_transition(
+    trace: dict[str, Any],
+    *,
+    initial_inputs: dict[str, Any],
+    final_inputs: dict[str, Any],
+    params: dict[str, Any],
+) -> str:
+    start = trace_value(trace, inputs=initial_inputs, params=params, settled=False)
+    end = trace_value(trace, inputs=final_inputs, params=params, settled=True)
+    if not isinstance(start, bool) or not isinstance(end, bool) or start == end:
+        return ""
+    return f"{int(start)}->{int(end)}"
 
 
 def normalize_param_values(params: dict[str, Any]) -> dict[str, Any]:
@@ -194,6 +384,17 @@ def edge_steps(*, control: str, start: int, end: int, sample_time: float) -> lis
         {"index": 2, "delay_s": sample_time, "input_updates": {control: end}, "param_updates": {}},
         {"index": 3, "delay_s": sample_time, "input_updates": {}, "param_updates": {}},
         {"index": 4, "delay_s": sample_time, "input_updates": {control: start}, "param_updates": {}},
+    ]
+
+
+def joint_edge_steps(
+    *, controls: list[str], start: int, end: int, sample_time: float
+) -> list[dict[str, Any]]:
+    return [
+        {"index": 1, "delay_s": sample_time, "input_updates": {}, "param_updates": {}},
+        {"index": 2, "delay_s": sample_time, "input_updates": {name: end for name in controls}, "param_updates": {}},
+        {"index": 3, "delay_s": sample_time, "input_updates": {}, "param_updates": {}},
+        {"index": 4, "delay_s": sample_time, "input_updates": {name: start for name in controls}, "param_updates": {}},
     ]
 
 
@@ -282,10 +483,62 @@ def build_plan(
     max_candidates: int,
     sample_time: float,
     max_total_candidates: int = DEFAULT_MAX_TOTAL_CANDIDATES,
+    coverage_ir: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    tests: list[dict[str, Any]] = []
+    primary_tests: list[dict[str, Any]] = []
+    backup_tests: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
     seen: set[str] = set()
+    impact_counts = potential_impact_counts(coverage_ir)
+
+    def append_candidates(target: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
+        if not candidates:
+            target["status"] = "candidate_exhausted"
+            targets.append(target)
+            return
+        candidates.sort(
+            key=lambda candidate: (
+                0 if str((candidate.get("target") or {}).get("expected_target_transition") or "") else 1,
+            )
+        )
+        primary = candidates[0]
+        strict_candidate_count = sum(
+            1 for candidate in candidates
+            if str((candidate.get("target") or {}).get("expected_target_transition") or "")
+        )
+        primary_is_strict = bool(str((primary.get("target") or {}).get("expected_target_transition") or ""))
+        if strict_candidate_count and not primary_is_strict:
+            raise ValueError(
+                f"state probe target {target.get('operator_id')}#{target.get('port_index')} "
+                "has a provable candidate but did not select it as primary"
+            )
+        primary["row"] = len(primary_tests) + 1
+        primary["test_id"] = f"STATE_PROBE_PRIMARY_{len(primary_tests) + 1:04d}"
+        primary_tests.append(primary)
+        for candidate in candidates[1:max_candidates]:
+            candidate["row"] = len(backup_tests) + 1
+            candidate["test_id"] = f"STATE_PROBE_BACKUP_{len(backup_tests) + 1:04d}"
+            backup_tests.append(candidate)
+        target["candidate_count"] = 1
+        target["primary_candidate_count"] = 1
+        target["backup_candidate_count"] = min(max(0, len(candidates) - 1), max(0, max_candidates - 1))
+        target["available_candidate_count"] = len(candidates)
+        target["strict_candidate_count"] = strict_candidate_count
+        target["primary_preflight_status"] = "strict" if primary_is_strict else "causal_only"
+        target["causal_only_reason"] = (
+            ""
+            if primary_is_strict
+            else (
+                "unsupported_evaluator_structure"
+                if target.get("value_threshold_known")
+                else "missing_threshold_evidence"
+            )
+        )
+        if len(candidates) > max_candidates:
+            target["bounded"] = True
+            target["truncated_candidate_count"] = len(candidates) - max_candidates
+        targets.append(target)
+
     for operator in report.get("operators", []):
         if not isinstance(operator, dict):
             continue
@@ -320,18 +573,49 @@ def build_plan(
                 "pattern_type": pattern or "generic-state-timing",
                 "candidate_count": 0,
                 "status": "planned",
+                **priority_record(
+                    operator_id=op_id,
+                    deps=deps,
+                    pattern=pattern,
+                    impact_counts=impact_counts,
+                ),
             }
             if not deps.inputs:
                 target["status"] = "unsupported_semantics" if deps.unsupported else "candidate_exhausted"
                 targets.append(target)
                 continue
             param_values = normalize_param_values(deps.params)
+            candidates: list[dict[str, Any]] = []
             if pattern in {"rising-edge", "falling-edge"}:
-                potential_candidate_count = len(deps.inputs)
                 start, end = (0, 1) if pattern == "rising-edge" else (1, 0)
+                edge_direction_is_provable = len(deps.inputs) == 1 and not deps.unsupported
+                controls = sorted(deps.inputs)
+                if len(controls) > 1:
+                    init_values = dict(sibling_inputs)
+                    init_values.update({name: start for name in controls})
+                    candidates.append({
+                        "row": 0,
+                        "test_id": "",
+                        "init_values": init_values,
+                        "init_params": {**sibling_params, **param_values},
+                        "steps": joint_edge_steps(
+                            controls=controls,
+                            start=start,
+                            end=end,
+                            sample_time=sample_time,
+                        ),
+                        "evidence_step": 2,
+                        "target": {
+                            "operator_id": op_id,
+                            "port_index": index,
+                            "pattern_type": pattern,
+                            "control_input": ",".join(controls),
+                            "control_transition": f"all:{start}->{end}",
+                            "expected_target_transition": "",
+                            "hold_s": sample_time,
+                        },
+                    })
                 for control in sorted(deps.inputs):
-                    if target["candidate_count"] >= max_candidates:
-                        break
                     key = json.dumps([op_id, index, pattern, control, sibling_inputs, sibling_params, param_values], sort_keys=True)
                     if key in seen:
                         continue
@@ -341,11 +625,10 @@ def build_plan(
                     init_values[control] = start
                     init_params = dict(sibling_params)
                     init_params.update(param_values)
-                    test_id = f"STATE_PROBE_{len(tests) + 1:04d}"
-                    tests.append(
+                    candidates.append(
                         {
-                            "row": len(tests) + 1,
-                            "test_id": test_id,
+                            "row": 0,
+                            "test_id": "",
                             "init_values": init_values,
                             "init_params": init_params,
                             "steps": edge_steps(control=control, start=start, end=end, sample_time=sample_time),
@@ -355,97 +638,114 @@ def build_plan(
                                 "port_index": index,
                                 "pattern_type": pattern,
                                 "control_input": control,
-                                "transition": f"{start}->{end}",
+                                "control_transition": f"{start}->{end}",
+                                "expected_target_transition": (
+                                    ("0->1" if pattern == "rising-edge" else "1->0")
+                                    if edge_direction_is_provable
+                                    else ""
+                                ),
                                 "hold_s": sample_time,
                             },
                         }
                     )
-                    target["candidate_count"] += 1
-                if target["candidate_count"] >= max_candidates:
-                    target["bounded"] = True
-                if potential_candidate_count > target["candidate_count"]:
-                    target["truncated_candidate_count"] = (
-                        potential_candidate_count - target["candidate_count"]
-                    )
-                if not target["candidate_count"]:
-                    target["status"] = "candidate_exhausted"
-                targets.append(target)
+                append_candidates(target, candidates)
                 continue
             holds = hold_candidates(deps, sample_time)
-            potential_candidate_count = len(deps.inputs) * 2 * len(holds)
-            for control in sorted(deps.inputs):
-                for hold in holds:
-                    for start, end in ((0, 1), (1, 0)):
-                        if target["candidate_count"] >= max_candidates:
-                            break
-                        key = json.dumps([op_id, index, control, start, end, hold, sibling_inputs, sibling_params, param_values], sort_keys=True)
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        init_values = dict(sibling_inputs)
-                        init_values.update({name: 0 for name in deps.inputs})
-                        init_values[control] = start
-                        init_params = dict(sibling_params)
-                        init_params.update(param_values)
-                        steps = [
-                            {"index": 1, "delay_s": sample_time, "input_updates": {control: end}, "param_updates": {}},
-                            {"index": 2, "delay_s": hold, "input_updates": {}, "param_updates": {}},
-                        ]
-                        test_id = f"STATE_PROBE_{len(tests) + 1:04d}"
-                        tests.append(
-                            {
-                                "row": len(tests) + 1,
-                                "test_id": test_id,
+            controls = sorted(deps.inputs)
+            for hold in holds:
+                for context_value in (0, 1):
+                    for control in controls:
+                        for start, end in stimulus_transitions(deps):
+                            key = json.dumps(
+                                [op_id, index, context_value, control, start, end, hold,
+                                 sibling_inputs, sibling_params, param_values],
+                                sort_keys=True,
+                            )
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            init_values = dict(sibling_inputs)
+                            init_values.update({name: context_value for name in deps.inputs})
+                            init_values[control] = start
+                            init_params = dict(sibling_params)
+                            init_params.update(param_values)
+                            final_inputs = dict(init_values)
+                            final_inputs[control] = end
+                            expected_transition = expected_target_transition(
+                                trace,
+                                initial_inputs=init_values,
+                                final_inputs=final_inputs,
+                                params=init_params,
+                            )
+                            steps = generic_steps(
+                                control=control,
+                                end=end,
+                                hold=hold,
+                                sample_time=sample_time,
+                            )
+                            candidates.append({
+                                "row": 0,
+                                "test_id": "",
                                 "init_values": init_values,
                                 "init_params": init_params,
                                 "steps": steps,
-                                "evidence_step": 2,
+                                "evidence_step": 3,
                                 "target": {
                                     "operator_id": op_id,
                                     "port_index": index,
                                     "pattern_type": "generic-state-timing",
                                     "control_input": control,
-                                    "transition": f"{start}->{end}",
+                                    "control_transition": f"{start}->{end}",
+                                    "expected_target_transition": expected_transition,
                                     "hold_s": hold,
                                 },
-                            }
-                        )
-                        target["candidate_count"] += 1
-                if target["candidate_count"] >= max_candidates:
-                    break
-            if target["candidate_count"] >= max_candidates:
-                target["bounded"] = True
-            if potential_candidate_count > target["candidate_count"]:
-                target["truncated_candidate_count"] = (
-                    potential_candidate_count - target["candidate_count"]
-                )
-            if not target["candidate_count"]:
-                target["status"] = "candidate_exhausted"
-            targets.append(target)
-    tests, truncated_count = limit_candidates(
-        tests,
+                            })
+            append_candidates(target, candidates)
+    # 每个可规划目标的主候选是最低保障，不能再被全局数量上限裁掉。
+    # 全局上限只约束后续追加候选；主候选数量超过上限时如实记录扩容。
+    required_primary_count = len(primary_tests)
+    effective_primary_budget = max(max(1, max_total_candidates), required_primary_count)
+    primary_tests, truncated_count = limit_candidates(
+        primary_tests,
         targets,
-        max(1, max_total_candidates),
+        effective_primary_budget,
     )
-    validate_test_schema(tests)
+    validate_test_schema(primary_tests)
+    validate_test_schema(backup_tests)
     return {
         "schema": "simulink-ut-state-probe-plan/v1",
         "model": report.get("model"),
         "limits": {
             "max_candidates_per_port": max_candidates,
             "max_total_candidates": max(1, max_total_candidates),
+            "effective_primary_budget": effective_primary_budget,
         },
         "targets": targets,
-        "tests": tests,
+        "tests": primary_tests,
+        "backup_tests": backup_tests,
         "summary": {
             "target_count": len(targets),
-            "candidate_count": len(tests),
+            "candidate_count": len(primary_tests),
+            "primary_candidate_count": len(primary_tests),
+            "backup_candidate_count": len(backup_tests),
             "truncated_candidate_count": sum(
                 int(item.get("truncated_candidate_count") or 0)
                 for item in targets
             ),
             "global_truncated_candidate_count": truncated_count,
+            "primary_budget_expanded": required_primary_count > max(1, max_total_candidates),
             "unplanned_count": sum(1 for item in targets if item["status"] != "planned"),
+            "strict_primary_count": sum(
+                1 for item in targets if item.get("primary_preflight_status") == "strict"
+            ),
+            "causal_only_primary_count": sum(
+                1 for item in targets if item.get("primary_preflight_status") == "causal_only"
+            ),
+            "preflight_failure_count": sum(
+                1 for item in targets
+                if int(item.get("strict_candidate_count") or 0) > 0
+                and item.get("primary_preflight_status") != "strict"
+            ),
         },
     }
 
@@ -465,6 +765,7 @@ def main() -> int:
         default=DEFAULT_MAX_TOTAL_CANDIDATES,
     )
     parser.add_argument("--sample-time", type=float, default=0.01)
+    parser.add_argument("--coverage-ir", default="")
     args = parser.parse_args()
     payload = json.loads(Path(args.traces).read_text(encoding="utf-8"))
     items = reports(payload)
@@ -475,6 +776,7 @@ def main() -> int:
         max(1, args.max_candidates_per_port),
         max(1e-6, args.sample_time),
         max(1, args.max_total_candidates),
+        json.loads(Path(args.coverage_ir).read_text(encoding="utf-8")) if args.coverage_ir else None,
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

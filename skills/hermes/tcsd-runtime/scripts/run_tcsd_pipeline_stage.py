@@ -509,6 +509,9 @@ def stage_run(
 ) -> None:
     root, out, model, state = workspace(job), outputs(job), model_name(job), load_state(job); inp = job["input"]; out.mkdir(parents=True, exist_ok=True)
     quality = load_module("tcsd_quality", scripts() / "run_tcsd_quality_loop.py")
+    state_classifier = load_module(
+        "tcsd_state_classifier", scripts() / "classify_state_probe_targets.py"
+    )
     if stage == 1:
         required = [ensure_within(root, Path(inp["modelSlxPath"]), "modelSlxPath"), ensure_within(root, Path(inp["modelMatPath"]), "modelMatPath")]
         required.extend(ensure_within(root, root / item, "projectInitScript") for item in inp.get("projectInitScripts", []))
@@ -659,6 +662,8 @@ def stage_run(
             str(scripts() / "build_state_probe_plan.py"),
             "--traces",
             str(traces),
+            "--coverage-ir",
+            str(coverage_ir),
             "--output",
             str(plan),
             "--max-candidates-per-port",
@@ -675,6 +680,7 @@ def stage_run(
                 shutil.copy2(probe_fixture, probe_results); run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
             else:
                 try:
+                    primary_results = out / f"{model}_state_probe_results_primary.json"
                     obligations, batch_manifest = quality.run_probe_batched(
                         python=sys.executable,
                         scripts=scripts(),
@@ -685,12 +691,67 @@ def stage_run(
                         unreachable_overrides="",
                         coverage_threshold=float(inp.get("coverageThreshold", 80)),
                         case_json=plan,
-                        output_name=f"{model}_state_probe_results.json",
+                        output_name=primary_results.name,
                         batch_size=STAGE6_PROBE_BATCH_SIZE,
                         gateway_timeout_seconds=probe_timeout_seconds,
-                        manifest_name=f"{model}_state_probe_batch_manifest.json",
+                        manifest_name=f"{model}_state_probe_batch_manifest_primary.json",
                     )
                     probe_artifacts.append(artifact(root, batch_manifest, "json", "state-probe-batches"))
+                    primary_classification = state_classifier.classify_targets(
+                        plan_data, read_json(primary_results)
+                    )
+                    primary_classification_path = out / f"{model}_state_probe_classification_primary.json"
+                    write_json(primary_classification_path, primary_classification)
+                    second_plan_data = state_classifier.second_pass_plan(
+                        plan_data, primary_classification
+                    )
+                    second_plan = out / f"{model}_state_probe_plan_secondary.json"
+                    write_json(second_plan, second_plan_data)
+                    second_results = out / f"{model}_state_probe_results_secondary.json"
+                    second_count = len(second_plan_data.get("tests") or [])
+                    if second_count:
+                        _, second_manifest = quality.run_probe_batched(
+                            python=sys.executable,
+                            scripts=scripts(),
+                            root_dir=root,
+                            model=model,
+                            mat_file=inp["modelMatPath"],
+                            init_scripts=inp.get("projectInitScripts", []),
+                            unreachable_overrides="",
+                            coverage_threshold=float(inp.get("coverageThreshold", 80)),
+                            case_json=second_plan,
+                            output_name=second_results.name,
+                            batch_size=STAGE6_PROBE_BATCH_SIZE,
+                            gateway_timeout_seconds=stage6_probe_timeout_seconds(
+                                min(second_count, STAGE6_PROBE_BATCH_SIZE)
+                            ),
+                            manifest_name=f"{model}_state_probe_batch_manifest_secondary.json",
+                        )
+                        probe_artifacts.append(artifact(root, second_manifest, "json", "state-probe-batches"))
+                        probe_artifacts.append(
+                            artifact(root, second_results, "json", "state-probe-secondary")
+                        )
+                        merged_plan, merged_results = state_classifier.merge_passes(
+                            plan_data,
+                            read_json(primary_results),
+                            second_plan_data,
+                            read_json(second_results),
+                        )
+                    else:
+                        merged_plan, merged_results = plan_data, read_json(primary_results)
+                    write_json(probe_results, merged_results)
+                    final_classification = state_classifier.classify_targets(
+                        merged_plan, merged_results
+                    )
+                    final_classification_path = out / f"{model}_state_probe_classification.json"
+                    write_json(final_classification_path, final_classification)
+                    run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
+                    probe_artifacts.extend([
+                        artifact(root, primary_results, "json", "state-probe-primary"),
+                        artifact(root, primary_classification_path, "json", "state-probe-classification"),
+                        artifact(root, second_plan, "json", "state-probe-secondary-plan"),
+                        artifact(root, final_classification_path, "json", "state-probe-classification"),
+                    ])
                 except quality.SatkEvaluationError as error:
                     probe_entry = out / f"{model}_probe_mcdc_entry.m"
                     error.details.update({
@@ -702,6 +763,11 @@ def stage_run(
                     raise
             read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--include-nested-operators", "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
+        final_status_counts = (
+            final_classification.get("statusCounts", {})
+            if candidate_count > 0 and not probe_fixture
+            else {}
+        )
         finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={
             "candidateCount": candidate_count,
             "truncatedCandidateCount": int(plan_data.get("summary", {}).get("truncated_candidate_count") or 0),
@@ -709,6 +775,19 @@ def stage_run(
             "probeBatchSize": STAGE6_PROBE_BATCH_SIZE if candidate_count > 0 else None,
             "probeBatchCount": probe_batch_count,
             "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None,
+            "strictPrimaryCount": int(plan_data.get("summary", {}).get("strict_primary_count") or 0),
+            "causalOnlyPrimaryCount": int(plan_data.get("summary", {}).get("causal_only_primary_count") or 0),
+            "secondPassCandidateCount": second_count if candidate_count > 0 and not probe_fixture else 0,
+            "strictSuccessTargetCount": int(final_status_counts.get("strict_success") or 0),
+            "causalTransitionTargetCount": int(final_status_counts.get("direction_unverified") or 0),
+            "expectedDirectionConflictTargetCount": (
+                int(final_classification.get("expectedDirectionConflictTargetCount") or 0)
+                if candidate_count > 0 and not probe_fixture else 0
+            ),
+            "causalOnlyReasonCounts": (
+                final_classification.get("causalOnlyReasonCounts", {})
+                if candidate_count > 0 and not probe_fixture else {}
+            ),
         }); return
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
@@ -1280,6 +1359,7 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--result", required=True)
     parser.add_argument("--stage10-mode", choices=("auto", "prepare", "apply"), default="auto")
+    parser.add_argument("--stage6-mode", choices=("execute", "verify-host"), default="execute")
     parser.add_argument("--repair-brief", default="")
     parser.add_argument("--repair-proposal", default="")
     args = parser.parse_args()
@@ -1292,6 +1372,16 @@ def main() -> int:
     job["_stageAttempt"] = int(manifest.get("attempt") or 1)
     result_path = ensure_within(workspace(job), Path(args.result), "resultPath")
     job["_stageResultPath"] = str(result_path)
+    if stage == 6 and args.stage6_mode == "verify-host":
+        result = read_json(result_path)
+        if (
+            result.get("schema") != RESULT_SCHEMA
+            or result.get("jobId") != job["jobId"]
+            or result.get("stageIndex") != 6
+            or result.get("status") not in {"completed", "partial", "skipped"}
+        ):
+            raise RuntimeError("host-prepared stage 6 result is unavailable or invalid")
+        return 0
     if args.repair_brief:
         ensure_within(workspace(job), Path(args.repair_brief), "repairBriefPath")
     if args.repair_proposal:

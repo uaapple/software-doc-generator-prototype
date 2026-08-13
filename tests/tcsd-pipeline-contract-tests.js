@@ -709,6 +709,7 @@ assert.throws(() => parseExecutionManifest({
     command: "fake-hermes",
     profile: "default",
     commandRunner: gatedRunner,
+    hostStageRunner: createFakeHostStageRunner(workspace),
     usageReader: async (sessionId, _runtime, skill) => {
       const stageIndex = TCSD_STAGE_DEFINITIONS.find((stage) => stage.skillName === skill.name)?.index;
       return {
@@ -1733,6 +1734,17 @@ function createFakeHermes(workspace, options = {}) {
   return { invocations, commandRunner, attemptByStage };
 }
 
+function createFakeHostStageRunner(workspace, options = {}) {
+  return async (_command, args) => {
+    const manifestPath = args[args.indexOf("--manifest") + 1];
+    const resultPath = args[args.indexOf("--result") + 1];
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    assert.equal(manifest.stageIndex, 6);
+    await writeStageResult(workspace, manifest, resultPath, options);
+    return { stdout: "host stage 6 completed\n", stderr: "" };
+  };
+}
+
 async function runAgentPipeline(options = {}) {
   const workspace = await createWorkspace();
   const fake = createFakeHermes(workspace, options);
@@ -1752,6 +1764,7 @@ async function runAgentPipeline(options = {}) {
     command: "fake-hermes",
     profile: "worker-profile",
     commandRunner: fake.commandRunner,
+    hostStageRunner: createFakeHostStageRunner(workspace, options),
     usageReader: async (sessionId, _runtime, skill) => {
       const stageIndex = TCSD_STAGE_DEFINITIONS.find((stage) => stage.skillName === skill.name)?.index;
       const omitSkillLoad = Number(options.missingSkillLoadStage) === stageIndex;

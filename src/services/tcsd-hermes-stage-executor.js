@@ -204,6 +204,7 @@ export class TcsdHermesStageExecutor {
     );
     this.stateDbPath = options.stateDbPath || defaultStateDbPath(this.profile);
     this.commandRunner = options.commandRunner || createHermesSpawnRunner();
+    this.hostStageRunner = options.hostStageRunner || createHermesSpawnRunner();
     this.activeSessions = new Map();
     this.watchdogStallMs = Math.max(
       0,
@@ -652,6 +653,24 @@ export class TcsdHermesStageExecutor {
       "--result",
       resultPath
     ]);
+    if (definition.index === 6) {
+      return [
+        `/${definition.skillName} You are executing the generic Hermes step tcsd_stage_execute.`,
+        `Load and execute only the slash-invoked ${definition.skillName} skill.`,
+        `Execute only stage ${definition.index}: ${definition.name}.`,
+        `Read the authoritative input manifest: ${manifestPath}`,
+        ...repairLines,
+        "The Worker host has already completed the deterministic MATLAB probe batches.",
+        "Do not start MATLAB, SATK, a Gateway job, or another probe process.",
+        "Invoke this exact verification command:",
+        `${runtimeCommand} --stage6-mode verify-host`,
+        `The required candidate result path is: ${resultPath}`,
+        `The required result schema is ${TCSD_STAGE_RESULT_SCHEMA}.`,
+        "Do not edit the host-prepared result or artifacts. Do not write a host checkpoint or expose secrets.",
+        `The installed skills directory (${skill.directory}) and runtime directory (${runtime.directory}) are immutable: never create, modify, rename, or delete any file under them.`,
+        "Your text response is non-authoritative; the host independently validates all result artifacts."
+      ].join("\n");
+    }
     if (definition.index === 10) {
       const repairBriefPath = path.join(path.dirname(resultPath), "repair-brief.json");
       const repairProposalPath = path.join(path.dirname(resultPath), "repair-proposal.json");
@@ -976,6 +995,48 @@ export class TcsdHermesStageExecutor {
       }
     };
     await writeJson(manifestPath, manifest);
+    if (stageIndex === 6) {
+      const hostPromise = runPythonCommand(
+        this.hostStageRunner,
+        this.pythonInvocation,
+        [
+          "-B",
+          path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py"),
+          "--manifest",
+          manifestPath,
+          "--result",
+          resultPath
+        ],
+        {
+          cwd: workspaceDir,
+          env: {
+            ...process.env,
+            NO_COLOR: "1",
+            TCSD_JOB_ID: job.jobId,
+            TCSD_OUTPUT_DIR: outputDir,
+            TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
+            SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
+          },
+          timeout: this.timeoutMs,
+          maxBuffer: 16 * 1024 * 1024,
+          windowsHide: true
+        }
+      );
+      const child = hostPromise.child || null;
+      if (child) this.activeSessions.set(job.jobId, { promise: hostPromise, child, job });
+      try {
+        await hostPromise;
+      } catch (cause) {
+        const failedResult = await readJson(resultPath, null).catch(() => null);
+        const runtimeError = stageRuntimeResultError(failedResult, stageIndex, attempt);
+        if (runtimeError) throw runtimeError;
+        throw publicRuntimeError(cause, stageIndex, this.timeoutMs);
+      } finally {
+        if (this.activeSessions.get(job.jobId)?.promise === hostPromise) {
+          this.activeSessions.delete(job.jobId);
+        }
+      }
+    }
     const prompt = this.buildPrompt({
       definition,
       skill,

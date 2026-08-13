@@ -309,7 +309,7 @@ class McdcQualityLoopTests(unittest.TestCase):
                                             "inputs": [{"trace": {"kind": "root_inport", "signal": "TimerEnable"}}],
                                         }
                                     },
-                                    {"trace": {"kind": "constant", "value": "Wait_C", "resolvedValue": 0.25}},
+                                    {"trace": {"kind": "constant", "value": "WaitTime_C", "resolvedValue": 0.25}},
                                 ],
                             },
                         },
@@ -322,14 +322,264 @@ class McdcQualityLoopTests(unittest.TestCase):
         plan = planner.build_plan(trace, max_candidates=6, sample_time=0.01)
 
         self.assertEqual(plan["summary"]["target_count"], 1)
-        self.assertEqual(plan["summary"]["candidate_count"], 6)
-        self.assertTrue(plan["targets"][0]["bounded"])
-        for test in plan["tests"]:
+        self.assertEqual(plan["summary"]["candidate_count"], 1)
+        self.assertEqual(plan["summary"]["backup_candidate_count"], 5)
+        self.assertEqual(plan["targets"][0]["available_candidate_count"], 8)
+        for test in [*plan["tests"], *plan["backup_tests"]]:
             self.assertEqual(test["init_values"]["Request"], 1)
-            self.assertEqual(test["evidence_step"], 2)
+            self.assertEqual(test["evidence_step"], 3)
             self.assertEqual(test["target"]["pattern_type"], "generic-state-timing")
-            self.assertIn(test["target"]["transition"], {"0->1", "1->0"})
+            self.assertIn(test["target"]["control_transition"], {"0->1", "1->0"})
+            self.assertIn(test["target"]["expected_target_transition"], {"", "0->1", "1->0"})
         self.assertTrue(any(step["delay_s"] > 0.25 for test in plan["tests"] for step in test["steps"]))
+
+    def test_state_probe_planner_does_not_treat_unrelated_numeric_constants_as_time(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "kind": "stateful",
+            "inputs": [
+                {"trace": {"kind": "root_inport", "signal": "Enable"}},
+                {"trace": {"kind": "constant", "value": "TorqueLimit_C", "resolvedValue": 3000}},
+            ],
+        }
+        deps = planner.collect_dependencies(trace)
+        self.assertEqual(deps.temporal_thresholds, [])
+        self.assertEqual(deps.value_thresholds, [3000])
+        self.assertEqual(planner.hold_candidates(deps, 0.01), [0.1, 1.0, 5.0])
+        self.assertIn((0.0, 3150.0), planner.stimulus_transitions(deps))
+
+    def test_state_probe_planner_derives_target_transition_from_relational_threshold(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "model": "ThresholdModel",
+            "operators": [{
+                "id": "ThresholdModel:1",
+                "operator": "AND",
+                "ports": [{
+                    "index": 1,
+                    "trace": {
+                        "kind": "relational",
+                        "operator": ">",
+                        "inputs": [
+                            {
+                                "trace": {
+                                    "kind": "stateful",
+                                    "initialCondition": "0",
+                                    "resolvedInitialCondition": 0,
+                                    "inputs": [{"trace": {"kind": "root_inport", "signal": "Torque"}}],
+                                }
+                            },
+                            {"trace": {"kind": "constant", "value": "TorqueLimit_C", "resolvedValue": 40}},
+                        ],
+                    },
+                }],
+            }],
+        }
+        plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
+        primary = plan["tests"][0]
+        self.assertGreater(primary["steps"][1]["input_updates"]["Torque"], 40)
+        self.assertEqual(primary["target"]["expected_target_transition"], "0->1")
+
+    def test_state_probe_primary_prefers_provable_target_transition(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "model": "ThresholdModel",
+            "operators": [{
+                "id": "ThresholdModel:1",
+                "operator": "AND",
+                "ports": [{
+                    "index": 1,
+                    "trace": {
+                        "kind": "relational",
+                        "operator": ">",
+                        "inputs": [
+                            {"trace": {"kind": "stateful", "initialCondition": "0", "resolvedInitialCondition": 0, "inputs": [
+                                {"trace": {"kind": "root_inport", "signal": "Torque"}}
+                            ]}},
+                            {"trace": {"kind": "constant", "value": "TorqueLimit_C", "resolvedValue": 40}},
+                        ],
+                    },
+                }],
+            }],
+        }
+        plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
+        self.assertEqual(plan["tests"][0]["target"]["expected_target_transition"], "0->1")
+        self.assertNotEqual(plan["tests"][0]["steps"][1]["input_updates"]["Torque"], 1)
+        self.assertEqual(plan["targets"][0]["primary_preflight_status"], "strict")
+        self.assertGreater(plan["targets"][0]["strict_candidate_count"], 0)
+        self.assertEqual(plan["summary"]["preflight_failure_count"], 0)
+
+    def test_state_probe_preflight_marks_unprovable_path_as_causal_only(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "model": "OpaqueModel",
+            "operators": [{
+                "id": "OpaqueModel:1",
+                "operator": "AND",
+                "ports": [{
+                    "index": 1,
+                    "trace": {
+                        "kind": "stateful",
+                        "inputs": [{"trace": {"kind": "root_inport", "signal": "Enable"}}],
+                    },
+                }],
+            }],
+        }
+        plan = planner.build_plan(trace, max_candidates=4, sample_time=0.01)
+        self.assertEqual(plan["targets"][0]["primary_preflight_status"], "causal_only")
+        self.assertEqual(plan["targets"][0]["strict_candidate_count"], 0)
+        self.assertEqual(plan["targets"][0]["causal_only_reason"], "missing_threshold_evidence")
+        self.assertEqual(plan["summary"]["strict_primary_count"], 0)
+        self.assertEqual(plan["summary"]["causal_only_primary_count"], 1)
+
+    def test_state_probe_primary_budget_never_drops_a_planned_target(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        operators = []
+        for index in range(3):
+            operators.append({
+                "id": f"Model:{index + 1}",
+                "operator": "AND",
+                "ports": [{
+                    "index": 1,
+                    "trace": {
+                        "kind": "stateful",
+                        "inputs": [{"trace": {"kind": "root_inport", "signal": f"Enable{index + 1}"}}],
+                    },
+                }],
+            })
+        plan = planner.build_plan(
+            {"model": "Model", "operators": operators},
+            max_candidates=2,
+            sample_time=0.01,
+            max_total_candidates=1,
+        )
+        self.assertEqual(plan["summary"]["candidate_count"], 3)
+        self.assertTrue(plan["summary"]["primary_budget_expanded"])
+        self.assertEqual(plan["limits"]["effective_primary_budget"], 3)
+
+    def test_target_classifier_selects_opposite_and_longer_second_pass_candidate(self) -> None:
+        classifier = load_script_module("classify_state_probe_targets.py")
+        target = {"operator_id": "Model:1", "port_index": 1}
+        plan = {
+            "model": "Model",
+            "targets": [{**target, "status": "planned"}],
+            "tests": [{"test_id": "PRIMARY", "evidence_step": 3, "target": {**target, "control_transition": "0->1", "expected_target_transition": "0->1", "hold_s": 0.1}}],
+            "backup_tests": [
+                {"test_id": "SHORT", "target": {**target, "control_transition": "1->0", "expected_target_transition": "1->0", "hold_s": 1.0}},
+                {"test_id": "LONG", "target": {**target, "control_transition": "1->0", "expected_target_transition": "1->0", "hold_s": 5.0}},
+                {"test_id": "WRONG", "target": {**target, "control_transition": "0->1", "expected_target_transition": "0->1", "hold_s": 5.0}},
+            ],
+            "summary": {},
+        }
+        results = {"Model": {"observations": [{
+            "test_id": "PRIMARY",
+            "prediction_status": "observed",
+            "step_index": 1,
+            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [True]}},
+        }, {
+            "test_id": "PRIMARY",
+            "prediction_status": "observed",
+            "step_index": 3,
+            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [True]}},
+        }]}}
+        classification = classifier.classify_targets(plan, results)
+        self.assertEqual(classification["statusCounts"], {"no_transition": 1})
+        second = classifier.second_pass_plan(plan, classification)
+        self.assertEqual(len(second["tests"]), 1)
+        self.assertEqual(second["tests"][0]["target"]["control_transition"], "1->0")
+        self.assertEqual(second["tests"][0]["target"]["expected_target_transition"], "1->0")
+        self.assertEqual(second["tests"][0]["target"]["hold_s"], 5.0)
+        self.assertEqual(second["selection_records"][0]["reason"], "missing_target_direction")
+
+    def test_target_classifier_does_not_spend_second_pass_on_unprovable_backup(self) -> None:
+        classifier = load_script_module("classify_state_probe_targets.py")
+        target = {"operator_id": "Model:1", "port_index": 1}
+        plan = {
+            "model": "Model",
+            "targets": [{**target, "status": "planned"}],
+            "tests": [{
+                "test_id": "PRIMARY",
+                "evidence_step": 3,
+                "target": {**target, "control_transition": "0->1", "expected_target_transition": ""},
+            }],
+            "backup_tests": [{
+                "test_id": "WEAK_BACKUP",
+                "target": {**target, "control_transition": "1->0", "expected_target_transition": "", "hold_s": 5.0},
+            }],
+            "summary": {},
+        }
+        results = {"Model": {"observations": [{
+            "test_id": "PRIMARY",
+            "step_index": 1,
+            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [False]}},
+        }, {
+            "test_id": "PRIMARY",
+            "step_index": 3,
+            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [False]}},
+        }]}}
+        classification = classifier.classify_targets(plan, results)
+        second = classifier.second_pass_plan(plan, classification)
+        self.assertEqual(second["tests"], [])
+        self.assertEqual(second["summary"]["second_pass_target_count"], 1)
+        self.assertEqual(second["summary"]["second_pass_candidate_count"], 0)
+        self.assertEqual(second["summary"]["second_pass_unplanned_count"], 1)
+
+    def test_target_classifier_reports_expected_direction_conflict_separately(self) -> None:
+        classifier = load_script_module("classify_state_probe_targets.py")
+        target = {"operator_id": "Model:1", "port_index": 1}
+        plan = {
+            "model": "Model",
+            "targets": [{**target, "status": "planned"}],
+            "tests": [{
+                "test_id": "P1",
+                "evidence_step": 2,
+                "target": {**target, "expected_target_transition": "0->1"},
+            }],
+            "backup_tests": [],
+        }
+        results = {"Model": {"observations": [{
+            "test_id": "P1",
+            "step_index": 1,
+            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [True]}},
+        }, {
+            "test_id": "P1",
+            "step_index": 2,
+            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [False]}},
+        }]}}
+        classification = classifier.classify_targets(plan, results)
+        self.assertEqual(classification["statusCounts"], {"plan_conflict": 1})
+        self.assertEqual(classification["expectedDirectionConflictTargetCount"], 1)
+        self.assertEqual(classification["simulationMismatchTargetCount"], 0)
+        self.assertEqual(classification["targets"][0]["expectedDirectionConflictCount"], 1)
+
+    def test_target_classifier_merges_two_passes_before_target_classification(self) -> None:
+        classifier = load_script_module("classify_state_probe_targets.py")
+        target = {"operator_id": "Model:1", "port_index": 1}
+        primary_plan = {
+            "model": "Model",
+            "targets": [{**target, "status": "planned"}],
+            "tests": [{"test_id": "P1", "evidence_step": 2, "target": {**target, "expected_target_transition": "0->1"}}],
+            "backup_tests": [],
+            "summary": {},
+        }
+        second_plan = {
+            "model": "Model",
+            "tests": [{"test_id": "S1", "evidence_step": 2, "target": {**target, "expected_target_transition": "1->0"}}],
+        }
+        primary_results = {"Model": {"observations": [
+            {"test_id": "P1", "step_index": 1, "vectors": {"v": {"id": "Model:1", "ok": True, "values": [False]}}},
+            {"test_id": "P1", "step_index": 2, "vectors": {"v": {"id": "Model:1", "ok": True, "values": [False]}}},
+        ]}}
+        second_results = {"Model": {"observations": [
+            {"test_id": "S1", "step_index": 1, "vectors": {"v": {"id": "Model:1", "ok": True, "values": [True]}}},
+            {"test_id": "S1", "step_index": 2, "vectors": {"v": {"id": "Model:1", "ok": True, "values": [False]}}},
+        ]}}
+        merged_plan, merged_results = classifier.merge_passes(
+            primary_plan, primary_results, second_plan, second_results
+        )
+        classification = classifier.classify_targets(merged_plan, merged_results)
+        self.assertEqual(classification["statusCounts"], {"strict_success": 1})
+        self.assertEqual(merged_plan["summary"]["total_executed_candidate_count"], 2)
 
     def test_state_probe_planner_keeps_edge_and_generic_test_fields_identical(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")
@@ -377,7 +627,10 @@ class McdcQualityLoopTests(unittest.TestCase):
             len({frozenset(step) for test in plan["tests"] for step in test["steps"]}),
             1,
         )
-        self.assertTrue(all(test["evidence_step"] == 2 for test in plan["tests"]))
+        self.assertEqual(
+            {test["target"]["pattern_type"]: test["evidence_step"] for test in plan["tests"]},
+            {"rising-edge": 2, "generic-state-timing": 3},
+        )
 
     def test_state_probe_planner_rejects_inconsistent_test_fields_before_matlab(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")
@@ -393,7 +646,8 @@ class McdcQualityLoopTests(unittest.TestCase):
                 "port_index": 1,
                 "pattern_type": "generic-state-timing",
                 "control_input": "Enable",
-                "transition": "0->1",
+                "control_transition": "0->1",
+                "expected_target_transition": "",
                 "hold_s": 0.01,
             },
         }
@@ -457,6 +711,32 @@ class McdcQualityLoopTests(unittest.TestCase):
                 self.assertEqual(candidate["steps"][3]["input_updates"], {"EdgeInput": start})
                 self.assertEqual(candidate["evidence_step"], 2)
                 self.assertEqual(candidate["target"]["pattern_type"], expected_pattern)
+                self.assertEqual(candidate["target"]["expected_target_transition"], f"{start}->{end}")
+
+    def test_state_probe_planner_does_not_claim_edge_direction_for_ambiguous_control_path(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "model": "AmbiguousEdge",
+            "operators": [{
+                "id": "AmbiguousEdge:1",
+                "operator": "AND",
+                "ports": [{
+                    "index": 1,
+                    "trace": {
+                        "kind": "subsystem",
+                        "name": "EdgeRising",
+                        "inputs": [
+                            {"trace": {"kind": "root_inport", "signal": "A"}},
+                            {"trace": {"kind": "root_inport", "signal": "B"}},
+                        ],
+                    },
+                }],
+            }],
+        }
+        plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
+        self.assertTrue(plan["tests"])
+        self.assertTrue(all(not test["target"]["expected_target_transition"] for test in plan["tests"]))
+        self.assertEqual(plan["targets"][0]["primary_preflight_status"], "causal_only")
 
     def test_probe_obligation_preserves_full_state_stimulus(self) -> None:
         builder = load_script_module("build_probe_mcdc_obligations.py")
