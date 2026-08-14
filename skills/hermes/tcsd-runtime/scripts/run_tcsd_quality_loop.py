@@ -634,7 +634,7 @@ def run_probe(
     probe_error = probe_results.with_suffix(".error.json")
     probe_error.unlink(missing_ok=True)
     coverage_json = root_dir / "outputs" / f"{model}_coverage_summary.json"
-    coverage_data = root_dir / "outputs" / f"{model}_coverage.cvd"
+    coverage_data = root_dir / "outputs" / f"{model}_coverage.cvt"
     coverage_html = root_dir / "outputs" / f"{model}_coverage.html"
     coverage_args = ""
     if collect_coverage:

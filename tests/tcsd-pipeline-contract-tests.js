@@ -1803,6 +1803,11 @@ function createFakeHostStageRunner(workspace, options = {}) {
     const manifestPath = args[args.indexOf("--manifest") + 1];
     const resultPath = args[args.indexOf("--result") + 1];
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    if (manifest.stageIndex === 10) {
+      assert.equal(args.includes("--stage10-mode"), true);
+      assert.equal(args[args.indexOf("--stage10-mode") + 1], "prepare");
+      return { stdout: "host stage 10 preparation completed\n", stderr: "" };
+    }
     assert.equal(manifest.stageIndex, 6);
     await writeStageResult(workspace, manifest, resultPath, options);
     return { stdout: "host stage 6 completed\n", stderr: "" };
@@ -1899,8 +1904,8 @@ async function runAgentPipeline(options = {}) {
     assert.match(invocation.manifest.skill.skillFileHash, /^[a-f0-9]{64}$/);
   }
   const stage10Invocation = fake.invocations.find((item) => item.manifest.stageIndex === 10);
-  assert.match(stage10Invocation.prompt, /Run this exact prepare command first:/);
-  assert.match(stage10Invocation.prompt, /--stage10-mode prepare/);
+  assert.match(stage10Invocation.prompt, /Worker host has already run the bounded Simulink Design Verifier pass/);
+  assert.doesNotMatch(stage10Invocation.prompt, /--stage10-mode prepare/);
   assert.match(stage10Invocation.prompt, /repair-proposal\.json/);
   assert.match(stage10Invocation.prompt, /--stage10-mode apply/);
   assert.match(stage10Invocation.prompt, /Inspect only the uncovered target block and its local upstream model slice/);

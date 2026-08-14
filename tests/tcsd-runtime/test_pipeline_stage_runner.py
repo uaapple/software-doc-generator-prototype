@@ -549,6 +549,9 @@ class PipelineStageRunnerTests(unittest.TestCase):
                             "id": "remaining",
                             "coverage_class": "Condition",
                             "block_path": "GenericModel/Compare",
+                            "covered": 1,
+                            "total": 2,
+                            "percent": 50,
                             "missing_outcomes": ["equal boundary"],
                         }],
                     },
@@ -626,6 +629,9 @@ class PipelineStageRunnerTests(unittest.TestCase):
                             "id": "remaining",
                             "coverage_class": "Condition",
                             "block_path": "GenericModel/Compare",
+                            "covered": 1,
+                            "total": 2,
+                            "percent": 50,
                             "missing_outcomes": ["equal boundary"],
                         }],
                     },
@@ -690,6 +696,15 @@ class PipelineStageRunnerTests(unittest.TestCase):
                         "percent": 50,
                         "missing_outcomes": ["C2 independent effect"],
                         "description": json.dumps({"condition": [{"text": "C2", "achieved": False}]}),
+                    }, {
+                        "id": "already-covered-mcdc",
+                        "coverage_class": "MCDC",
+                        "block_path": "GenericModel/AlreadyCovered",
+                        "sid": "99",
+                        "covered": 2,
+                        "total": 2,
+                        "percent": 100,
+                        "description": json.dumps({"condition": [{"text": "C1", "achieved": True}]}),
                     }],
                 },
             },
@@ -757,6 +772,8 @@ class PipelineStageRunnerTests(unittest.TestCase):
         )
 
         self.assertEqual(brief["coverageContext"]["mcdcMode"], "Masking")
+        self.assertEqual(len(brief["coverageTargets"]), 1)
+        self.assertEqual(brief["coverageTargets"][0]["id"], "missing-mcdc")
         guidance = brief["complexTargetGuidance"][0]
         self.assertEqual(guidance["rootInputs"], ["InputVoltage"])
         self.assertEqual(guidance["statefulElements"][0]["sampleTime"], "0.01")
@@ -902,8 +919,11 @@ class PipelineStageRunnerTests(unittest.TestCase):
                     "schema": "tcsd-coverage-report/v1",
                     "models": {
                         "GenericModel": {
-                            metric: {"percent": 50}
-                            for metric in ("condition", "decision", "mcdc")
+                            "mcdc_mode": "Masking",
+                            **{
+                                metric: {"percent": 50}
+                                for metric in ("condition", "decision", "mcdc")
+                            },
                         },
                     },
                 },

@@ -674,13 +674,6 @@ export class TcsdHermesStageExecutor {
     if (definition.index === 10) {
       const repairBriefPath = path.join(path.dirname(resultPath), "repair-brief.json");
       const repairProposalPath = path.join(path.dirname(resultPath), "repair-proposal.json");
-      const prepareCommand = [
-        runtimeCommand,
-        "--stage10-mode",
-        "prepare",
-        "--repair-brief",
-        `"${repairBriefPath}"`
-      ].join(" ");
       const applyCommand = [
         runtimeCommand,
         "--stage10-mode",
@@ -696,9 +689,9 @@ export class TcsdHermesStageExecutor {
         `Execute only stage ${definition.index}: ${definition.name}.`,
         `Read the authoritative input manifest: ${manifestPath}`,
         ...repairLines,
-        "Run this exact prepare command first:",
-        prepareCommand,
+        "The Worker host has already run the bounded Simulink Design Verifier pass and prepared the remaining measured coverage gaps.",
         `Read the resulting authoritative coverage repair brief at: ${repairBriefPath}`,
+        `If ${resultPath} already contains a completed or skipped host result, do not modify it and finish this session without creating a proposal.`,
         "Inspect only the uncovered target block and its local upstream model slice.",
         "There is no per-test limit on JSON stimulus.steps action entries. Preserve every ordered action required by the evidenced state or timing sequence.",
         "A finite hold spanning many sample periods is one action step: compute the justified duration and encode it as one positive delay_s instead of declaring the sequence unconstructible.",
@@ -1006,6 +999,53 @@ export class TcsdHermesStageExecutor {
           manifestPath,
           "--result",
           resultPath
+        ],
+        {
+          cwd: workspaceDir,
+          env: {
+            ...process.env,
+            NO_COLOR: "1",
+            TCSD_JOB_ID: job.jobId,
+            TCSD_OUTPUT_DIR: outputDir,
+            TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
+            SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
+          },
+          timeout: this.timeoutMs,
+          maxBuffer: 16 * 1024 * 1024,
+          windowsHide: true
+        }
+      );
+      const child = hostPromise.child || null;
+      if (child) this.activeSessions.set(job.jobId, { promise: hostPromise, child, job });
+      try {
+        await hostPromise;
+      } catch (cause) {
+        const failedResult = await readJson(resultPath, null).catch(() => null);
+        const runtimeError = stageRuntimeResultError(failedResult, stageIndex, attempt);
+        if (runtimeError) throw runtimeError;
+        throw publicRuntimeError(cause, stageIndex, this.timeoutMs);
+      } finally {
+        if (this.activeSessions.get(job.jobId)?.promise === hostPromise) {
+          this.activeSessions.delete(job.jobId);
+        }
+      }
+    }
+    if (stageIndex === 10) {
+      const repairBriefPath = path.join(attemptDir, "repair-brief.json");
+      const hostPromise = runPythonCommand(
+        this.hostStageRunner,
+        this.pythonInvocation,
+        [
+          "-B",
+          path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py"),
+          "--manifest",
+          manifestPath,
+          "--result",
+          resultPath,
+          "--stage10-mode",
+          "prepare",
+          "--repair-brief",
+          repairBriefPath
         ],
         {
           cwd: workspaceDir,

@@ -245,6 +245,21 @@ def normalized_detail(item: dict[str, Any], model: str, coverage_class: str, ind
     missing = item.get("missing_outcomes")
     if not isinstance(missing, list):
         missing = []
+    if not missing and coverage_class == "MCDC":
+        description = item.get("description")
+        if isinstance(description, str):
+            try:
+                description = json.loads(description)
+            except json.JSONDecodeError:
+                description = {}
+        conditions = description.get("condition") if isinstance(description, dict) else []
+        if isinstance(conditions, dict):
+            conditions = [conditions]
+        missing = [
+            f"{str(condition.get('text') or '条件')}: independent effect not demonstrated"
+            for condition in conditions or []
+            if isinstance(condition, dict) and condition.get("achieved") is not True
+        ]
     return {
         "id": str(item.get("id") or f"{model}:{coverage_class}:{index}"),
         "model": model,
@@ -306,7 +321,9 @@ def build_brief(
         if not isinstance(item, dict):
             continue
         coverage_class = metric_name(item.get("coverage_class") or item.get("metric"))
-        if coverage_class in deficit_classes:
+        covered = float(item.get("covered") or 0)
+        total = float(item.get("total") or 0)
+        if coverage_class in deficit_classes and total > 0 and covered < total:
             targets.append(normalized_detail(item, model, coverage_class, index))
     for coverage_class in sorted(deficit_classes):
         if not any(target["coverage_class"] == coverage_class for target in targets):
