@@ -124,11 +124,11 @@ def build_ir(
     evidence_obligations: dict[str, Any] | None = None,
     include_nested_operators: bool = False,
 ) -> dict[str, Any]:
-    reports = [trace_payload] if isinstance(trace_payload.get("operators"), list) else [v for v in trace_payload.values() if isinstance(v, dict) and isinstance(v.get("operators"), list)]
+    planner = planner_module()
+    reports = planner.reports(trace_payload)
     if not reports:
         raise ValueError("logical traces contain no operator reports")
     model = str(trace_payload.get("model") or (reports[0].get("model") if reports else ""))
-    planner = planner_module()
     items: list[dict[str, Any]] = []
     operator_count = 0
     for report in reports:
@@ -136,7 +136,7 @@ def build_ir(
         if include_nested_operators:
             top_ids = {str(item.get("id") or item.get("sid") or "") for item in top}
             nested = [
-                item for item in report.get("operators", [])
+                item for item in planner.operator_records(report)
                 if str(item.get("id") or item.get("sid") or "") not in top_ids
             ]
             operators = [*top, *nested]
@@ -228,7 +228,7 @@ def build_ir(
         "temporalStateTargetCount": sum(
             contains_temporal_trace(port.get("trace"))
             for report in reports
-            for operator in report.get("operators", [])
+            for operator in planner.operator_records(report)
             if isinstance(operator, dict)
             for port in operator.get("ports", [])
             if isinstance(port, dict)

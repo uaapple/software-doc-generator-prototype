@@ -157,9 +157,20 @@ def static_state(node: dict[str, Any], desired: bool) -> tuple[dict[str, Any], d
 
 
 def reports(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    if isinstance(payload.get("operators"), list):
+    if isinstance(payload.get("operators"), (list, dict)):
         return [payload]
-    return [item for item in payload.values() if isinstance(item, dict) and isinstance(item.get("operators"), list)]
+    return [
+        item
+        for item in payload.values()
+        if isinstance(item, dict) and isinstance(item.get("operators"), (list, dict))
+    ]
+
+
+def operator_records(report: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = report.get("operators")
+    if isinstance(raw, dict):
+        return [raw]
+    return [item for item in (raw or []) if isinstance(item, dict)]
 
 
 def hold_candidates(deps: Dependencies, sample_time: float) -> list[float]:
@@ -543,7 +554,7 @@ def build_plan(
             target["truncated_candidate_count"] = len(candidates) - max_candidates
         targets.append(target)
 
-    for operator in report.get("operators", []):
+    for operator in operator_records(report):
         if not isinstance(operator, dict):
             continue
         op_id = str(operator.get("id") or operator.get("sid") or operator.get("block_path") or "")

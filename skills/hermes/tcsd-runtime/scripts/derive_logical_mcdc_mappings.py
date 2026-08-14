@@ -133,16 +133,25 @@ def derive_state(node: dict[str, Any], desired: bool, where: str) -> State:
 
 
 def reports_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    if isinstance(payload.get("operators"), list):
+    if isinstance(payload.get("operators"), (list, dict)):
         return [payload]
-    return [value for value in payload.values() if isinstance(value, dict) and isinstance(value.get("operators"), list)]
+    return [
+        value
+        for value in payload.values()
+        if isinstance(value, dict) and isinstance(value.get("operators"), (list, dict))
+    ]
+
+
+def operator_records(report: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = report.get("operators")
+    if isinstance(raw, dict):
+        return [raw]
+    return [item for item in (raw or []) if isinstance(item, dict)]
 
 
 def derive_report(report: dict[str, Any]) -> dict[str, Any]:
     operators = []
-    for op_index, operator in enumerate(report.get("operators", []), 1):
-        if not isinstance(operator, dict):
-            continue
+    for op_index, operator in enumerate(operator_records(report), 1):
         mapped = {
             "id": operator.get("id") or operator.get("sid") or f"LOGIC_{op_index:03d}",
             "block_path": operator.get("block_path"),

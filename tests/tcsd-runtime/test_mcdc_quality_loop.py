@@ -1233,6 +1233,38 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertEqual(port["true_inputs"], {"HvOnFail": 0})
             self.assertEqual(port["false_inputs"], {"HvOnFail": 1})
 
+    def test_trace_adapter_accepts_single_operator_object_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            trace = {
+                "schema": "simulink-ut-logical-mcdc-trace/v1",
+                "model": "GenericModel",
+                "operator_count": 1,
+                "operators": {
+                    "id": "GenericModel:7",
+                    "operator": "AND",
+                    "ports": [{
+                        "index": 1,
+                        "trace": {"kind": "root_inport", "signal": "Enable"},
+                    }],
+                },
+            }
+            (work / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "derive_logical_mcdc_mappings.py"),
+                    "--traces",
+                    str(work / "trace.json"),
+                    "--output",
+                    str(work / "mapping.json"),
+                ],
+                check=True,
+            )
+            mapping = json.loads((work / "mapping.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(mapping["operators"]), 1)
+            self.assertEqual(mapping["operators"][0]["ports"][0]["true_inputs"], {"Enable": 1})
+
     def test_backfill_keeps_later_stable_steps_after_unstable_step(self) -> None:
         backfill = load_script_module("backfill_expected_outputs.py")
         action = "\n".join(

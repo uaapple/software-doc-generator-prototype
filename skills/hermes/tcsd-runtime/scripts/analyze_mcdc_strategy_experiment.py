@@ -80,7 +80,7 @@ def run_experiment(
         "legacyCompletePairCount": 0,
         "newlyDesignedExecutablePairCount": 0,
     }
-    selected_operators = list(report.get("operators", [])) if all_operators or operator_ids else planner.top_operators(report)
+    selected_operators = planner.operator_records(report) if all_operators or operator_ids else planner.top_operators(report)
     if operator_ids:
         selected_operators = [
             operator for operator in selected_operators

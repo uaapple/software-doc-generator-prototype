@@ -102,7 +102,8 @@ def trace_operator_for_target(traces: dict[str, Any], target: dict[str, Any]) ->
     block = target.get("block") if isinstance(target.get("block"), dict) else {}
     path = str(block.get("path") or "")
     sid = str(block.get("sid") or "")
-    operators = traces.get("operators") if isinstance(traces.get("operators"), list) else []
+    raw_operators = traces.get("operators")
+    operators = [raw_operators] if isinstance(raw_operators, dict) else raw_operators if isinstance(raw_operators, list) else []
     matches = [
         item
         for item in operators
@@ -183,7 +184,8 @@ def operator_evidence(operator: dict[str, Any] | None) -> dict[str, list[dict[st
 def collect_complex_target_guidance(
     targets: list[dict[str, Any]], traces: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    operators = traces.get("operators") if isinstance(traces.get("operators"), list) else []
+    raw_operators = traces.get("operators")
+    operators = [raw_operators] if isinstance(raw_operators, dict) else raw_operators if isinstance(raw_operators, list) else []
     guidance: list[dict[str, Any]] = []
     for target in targets:
         operator = trace_operator_for_target(traces, target)
