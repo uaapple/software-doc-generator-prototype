@@ -67,7 +67,7 @@ MERGE_HEAD peeled = a882c1e22c9fa10bfd761ec6a3487899ee988d0a
 | 07 | 生成并校验首版测试用例 | `tcsd-stage-07-build-initial-cases` `1.2.0` | 首版测试工作簿、基础配方生成统计、静态规划诊断 |
 | 08 | 运行模型仿真并回填期望值 | `tcsd-stage-08-simulate-backfill` | 实际仿真结果、`expValue` 回填与逐项校验 |
 | 09 | 采集首轮覆盖率 | `tcsd-stage-09-collect-coverage` | 实测 Condition、Decision、MC/DC |
-| 10 | 根据覆盖率修正测试用例 | `tcsd-stage-10-repair-coverage` `1.4.0` | 局部上游切片、定向候选、最多一轮修正 |
+| 10 | 根据覆盖率修正测试用例 | `tcsd-stage-10-repair-coverage` `1.6.0` | 提供残余目标的根输入、阈值、状态与同构路径证据；局部定向设计并按实测 MC/DC 增量裁决 |
 | 11 | 运行最终仿真与覆盖率检查 | `tcsd-stage-11-final-validation` | 最终仿真、覆盖率与标准命名 workbook |
 | 12 | 整理任务产物并清理运行环境 | `tcsd-stage-12-package-cleanup` | 宿主生成 execution manifest、清理证据、最终下载产物 |
 

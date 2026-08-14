@@ -669,6 +669,111 @@ class PipelineStageRunnerTests(unittest.TestCase):
         )
         self.assertEqual(prior["measuredRemainingTargets"][0]["id"], "remaining")
 
+    def test_stage10_brief_exposes_bounded_complex_target_guidance(self):
+        coverage = {
+            "models": {
+                "GenericModel": {
+                    "condition": {"covered": 2, "total": 2, "percent": 100},
+                    "decision": {"covered": 2, "total": 2, "percent": 100},
+                    "mcdc": {"covered": 1, "total": 2, "percent": 50},
+                    "mcdc_mode": "Masking",
+                    "model_checksum": "[1,2,3,4]",
+                    "support_library_path": "/workspace/ITKLib.slx",
+                    "initialization_scripts": ["init_Global.m"],
+                    "items": [{
+                        "id": "missing-mcdc",
+                        "coverage_class": "MCDC",
+                        "block_path": "GenericModel/DebCnt1/Logic",
+                        "sid": "10:20",
+                        "covered": 1,
+                        "total": 2,
+                        "percent": 50,
+                        "missing_outcomes": ["C2 independent effect"],
+                        "description": json.dumps({"condition": [{"text": "C2", "achieved": False}]}),
+                    }],
+                },
+            },
+        }
+        traces = {
+            "model": "GenericModel",
+            "operators": [{
+                "id": "GenericModel:10:20",
+                "block_path": "GenericModel/DebCnt1/Logic",
+                "sid": "GenericModel:10:20",
+                "referenceBlock": "ITKLib/TimeCounter/DebCnt/Logic",
+                "ports": [{
+                    "trace": {
+                        "path": "GenericModel/DebCnt1/Delay",
+                        "sid": "GenericModel:10:21",
+                        "kind": "stateful",
+                        "blockType": "UnitDelay",
+                        "resolvedInitialCondition": 0,
+                        "sampleTime": "0.01",
+                        "inputs": {
+                            "trace": {
+                                "path": "GenericModel/Input",
+                                "sid": "GenericModel:1",
+                                "isRootInput": True,
+                                "signal": "InputVoltage",
+                            },
+                        },
+                    },
+                }],
+            }, {
+                "id": "GenericModel:11:20",
+                "block_path": "GenericModel/DebCnt2/Logic",
+                "sid": "GenericModel:11:20",
+                "referenceBlock": "ITKLib/TimeCounter/DebCnt/Logic",
+                "ports": [{
+                    "trace": {
+                        "path": "GenericModel/DebCnt2/Delay",
+                        "sid": "GenericModel:11:21",
+                        "kind": "stateful",
+                        "blockType": "UnitDelay",
+                        "resolvedInitialCondition": 0,
+                        "sampleTime": "0.01",
+                        "inputs": {
+                            "trace": {
+                                "path": "GenericModel/PeerInput",
+                                "sid": "GenericModel:2",
+                                "isRootInput": True,
+                                "signal": "PeerInputVoltage",
+                            },
+                        },
+                    },
+                }],
+            }],
+        }
+        brief = REPAIR.build_brief(
+            job_id="job-guidance",
+            model="GenericModel",
+            coverage=coverage,
+            traces=traces,
+            coverage_ir_path="coverage-ir.json",
+            coverage_report_path="coverage.json",
+            trace_path="traces.json",
+            interface_path="interface.json",
+            threshold=80,
+        )
+
+        self.assertEqual(brief["coverageContext"]["mcdcMode"], "Masking")
+        guidance = brief["complexTargetGuidance"][0]
+        self.assertEqual(guidance["rootInputs"], ["InputVoltage"])
+        self.assertEqual(guidance["statefulElements"][0]["sampleTime"], "0.01")
+        self.assertEqual(guidance["structuralPeers"], [{
+            "path": "GenericModel/DebCnt2/Logic",
+            "sid": "GenericModel:11:20",
+            "rootInputs": ["PeerInputVoltage"],
+            "statefulElements": [{
+                "path": "GenericModel/DebCnt2/Delay",
+                "sid": "GenericModel:11:21",
+                "kind": "stateful",
+                "initialCondition": 0,
+                "sampleTime": "0.01",
+            }],
+            "thresholds": [],
+        }])
+
     def test_session_resolver_uses_exact_prompt_hash_without_exposing_prompt(self):
         with tempfile.TemporaryDirectory() as temp:
             database = Path(temp) / "state.db"

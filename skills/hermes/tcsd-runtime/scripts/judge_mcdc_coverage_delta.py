@@ -127,6 +127,13 @@ def count_value(item: dict[str, Any] | None, *names: str) -> float:
     return 0
 
 
+def metric_covered(record: dict[str, Any], name: str) -> float:
+    metric = record.get(name)
+    if not isinstance(metric, dict):
+        return 0
+    return count_value(metric, "covered")
+
+
 def classify_failure(
     *,
     mode: str,
@@ -235,17 +242,30 @@ def judge(*, baseline: dict[str, Any], candidate: dict[str, Any], repair_ir: dic
         results.append(result)
 
     gained = [result for result in results if result["newIndependentEffectPair"]]
+    before_global_mcdc = metric_covered(before, "mcdc")
+    after_global_mcdc = metric_covered(after, "mcdc")
+    global_mcdc_delta = after_global_mcdc - before_global_mcdc
     # A suite with MC/DC targets must add at least one new independent-effect
-    # pair. Targets already achieved by another candidate in the same suite do
-    # not require a replacement, but cannot make a zero-gain suite pass.
-    passed = (not results) or (
-        bool(gained)
-        and all(
-            result["newIndependentEffectPair"]
-            or result["reasonCode"] == "already_covered_before_candidate_suite"
-            for result in results
-        )
+    # pair at its declared target or add MC/DC coverage elsewhere in the same
+    # measured model. The latter preserves useful incidental contributions
+    # while still rejecting a suite with no measured MC/DC gain.
+    target_gain_passed = bool(gained) and all(
+        result["newIndependentEffectPair"]
+        or result["reasonCode"] == "already_covered_before_candidate_suite"
+        for result in results
     )
+    global_gain_passed = global_mcdc_delta > 0
+    passed = (not results) or target_gain_passed or global_gain_passed
+    accepted_ids = [result["candidateId"] for result in gained]
+    if global_gain_passed and not accepted_ids:
+        accepted_ids = [result["candidateId"] for result in results]
+    acceptance_reason = "not_applicable"
+    if target_gain_passed:
+        acceptance_reason = "declared_target_independent_effect_pair_added"
+    elif global_gain_passed:
+        acceptance_reason = "suite_added_global_mcdc_coverage"
+    elif results:
+        acceptance_reason = "no_measured_mcdc_gain"
     return {
         "schema": SCHEMA,
         "model": model,
@@ -257,8 +277,12 @@ def judge(*, baseline: dict[str, Any], candidate: dict[str, Any], repair_ir: dic
         "applicable": bool(results),
         "targetCount": len(results),
         "newIndependentEffectPairCount": len(gained),
+        "globalMcdcCoveredBefore": before_global_mcdc,
+        "globalMcdcCoveredAfter": after_global_mcdc,
+        "globalMcdcCoveredDelta": global_mcdc_delta,
         "passed": passed,
-        "acceptedCandidateIds": [result["candidateId"] for result in gained],
+        "acceptanceReason": acceptance_reason,
+        "acceptedCandidateIds": accepted_ids,
         "results": results,
     }
 

@@ -22,7 +22,7 @@ export const TCSD_STAGE_DEFINITIONS = Object.freeze([
   ["生成并校验首版测试用例", "tcsd-stage-07-build-initial-cases", "1.2.2"],
   ["运行模型仿真并回填期望值", "tcsd-stage-08-simulate-backfill"],
   ["采集首轮覆盖率", "tcsd-stage-09-collect-coverage"],
-  ["根据覆盖率修正测试用例", "tcsd-stage-10-repair-coverage", "1.5.0"],
+  ["根据覆盖率修正测试用例", "tcsd-stage-10-repair-coverage", "1.6.0"],
   ["运行最终仿真与覆盖率检查", "tcsd-stage-11-final-validation"],
   ["整理任务产物并清理运行环境", "tcsd-stage-12-package-cleanup"]
 ].map(([name, skillName, skillVersion = "1.1.0"], offset) => Object.freeze({

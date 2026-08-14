@@ -21,13 +21,23 @@ def description(*, achieved: bool, true: str = "TT", false: str = "FT") -> str:
     return json.dumps({"text": "C1 && C2", "condition": [{"text": "C1 (In1)", "achieved": achieved, "trueRslt": true, "falseRslt": false}]})
 
 
-def report(*, achieved: bool, mode: str = "Masking", checksum: str = "same", library: str = "/workspace/ITKLib.slx"):
+def report(
+    *,
+    achieved: bool,
+    mode: str = "Masking",
+    checksum: str = "same",
+    library: str = "/workspace/ITKLib.slx",
+    global_covered: int | None = None,
+):
     import json
+    if global_covered is None:
+        global_covered = 1 if achieved else 0
     return {"models": {"M": {
         "mcdc_mode": mode,
         "model_checksum": checksum,
         "support_library_path": library,
         "initialization_scripts": [],
+        "mcdc": {"covered": global_covered, "total": 2, "percent": global_covered * 50},
         "mcdc_items": [
             {"coverage_class": "MCDC", "block_path": "M/Logic", "sid": "7", "description": description(achieved=achieved)},
         ],
@@ -65,6 +75,19 @@ class McdcCoverageDeltaTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["newIndependentEffectPairCount"], 0)
         self.assertEqual(result["results"][0]["reasonCode"], "already_covered_before_candidate_suite")
+
+    def test_accepts_suite_with_global_mcdc_gain_when_declared_target_is_unchanged(self):
+        result = JUDGE.judge(
+            baseline=report(achieved=False, global_covered=0),
+            candidate=report(achieved=False, global_covered=1),
+            repair_ir=repair_ir(),
+            model="M",
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["newIndependentEffectPairCount"], 0)
+        self.assertEqual(result["globalMcdcCoveredDelta"], 1)
+        self.assertEqual(result["acceptanceReason"], "suite_added_global_mcdc_coverage")
+        self.assertEqual(result["acceptedCandidateIds"], ["candidate-c1"])
 
     def test_non_mcdc_repair_is_not_blocked_by_mcdc_judge(self):
         proposal = repair_ir()

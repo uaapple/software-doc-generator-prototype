@@ -89,6 +89,145 @@ def trace_elements(value: Any, found: dict[tuple[str, str], dict[str, str]]) -> 
             trace_elements(child, found)
 
 
+def decoded_json(value: Any) -> Any:
+    if not isinstance(value, str) or not value.strip():
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def trace_operator_for_target(traces: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:
+    block = target.get("block") if isinstance(target.get("block"), dict) else {}
+    path = str(block.get("path") or "")
+    sid = str(block.get("sid") or "")
+    operators = traces.get("operators") if isinstance(traces.get("operators"), list) else []
+    matches = [
+        item
+        for item in operators
+        if isinstance(item, dict)
+        and ((path and str(item.get("block_path") or "") == path) or (sid and str(item.get("sid") or "").endswith(sid)))
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def trace_shape(value: Any) -> Any:
+    """Return a path-independent structural signature for a logical trace."""
+    if isinstance(value, list):
+        return tuple(trace_shape(child) for child in value)
+    if not isinstance(value, dict):
+        return None
+    if value.get("isRootInput") is True:
+        return ("root_input",)
+    if "trace" in value and set(value).issubset({"index", "trace"}):
+        return trace_shape(value.get("trace"))
+    kind = str(value.get("kind") or value.get("blockType") or "")
+    semantic = str(value.get("operator") or value.get("semantic") or "")
+    children = tuple(
+        (key, trace_shape(value.get(key)))
+        for key in ("inputs", "source")
+        if key in value
+    )
+    return (kind, semantic, children)
+
+
+def operator_evidence(operator: dict[str, Any] | None) -> dict[str, list[dict[str, Any]] | list[str]]:
+    roots: set[str] = set()
+    stateful: dict[tuple[str, str], dict[str, Any]] = {}
+    thresholds: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            if value.get("isRootInput") is True:
+                name = str(value.get("signal") or value.get("name") or "").strip()
+                if name:
+                    roots.add(name)
+            kind = str(value.get("kind") or "")
+            block_type = str(value.get("blockType") or "")
+            path = str(value.get("path") or "")
+            sid = str(value.get("sid") or "")
+            if kind in {"stateful", "delay"} or block_type in {"Delay", "UnitDelay", "Memory"}:
+                stateful[(path, sid)] = {
+                    "path": path,
+                    "sid": sid,
+                    "kind": kind or block_type,
+                    "initialCondition": value.get("resolvedInitialCondition", value.get("initialCondition")),
+                    "sampleTime": value.get("sampleTime"),
+                }
+            resolved_threshold = value.get("resolvedThreshold")
+            resolved_value = value.get("resolvedValue")
+            if resolved_threshold is not None or (kind == "constant" and resolved_value is not None):
+                thresholds[(path, sid)] = {
+                    "path": path,
+                    "sid": sid,
+                    "operator": value.get("operator"),
+                    "value": resolved_threshold if resolved_threshold is not None else resolved_value,
+                    "source": value.get("resolvedThresholdSource", value.get("resolvedSource", "")),
+                }
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    if operator:
+        visit(operator)
+    return {
+        "rootInputs": sorted(roots),
+        "statefulElements": sorted(stateful.values(), key=lambda item: (item["path"], item["sid"])),
+        "thresholds": sorted(thresholds.values(), key=lambda item: (item["path"], item["sid"])),
+    }
+
+
+def collect_complex_target_guidance(
+    targets: list[dict[str, Any]], traces: dict[str, Any]
+) -> list[dict[str, Any]]:
+    operators = traces.get("operators") if isinstance(traces.get("operators"), list) else []
+    guidance: list[dict[str, Any]] = []
+    for target in targets:
+        operator = trace_operator_for_target(traces, target)
+        evidence = operator_evidence(operator)
+        signature = (
+            str((operator or {}).get("operator") or ""),
+            trace_shape((operator or {}).get("ports")),
+        )
+        peers = []
+        if operator:
+            for item in operators:
+                if not isinstance(item, dict) or item is operator:
+                    continue
+                peer_signature = (str(item.get("operator") or ""), trace_shape(item.get("ports")))
+                if peer_signature != signature:
+                    continue
+                peer_evidence = operator_evidence(item)
+                peers.append(
+                    {
+                        "path": str(item.get("block_path") or ""),
+                        "sid": str(item.get("sid") or ""),
+                        **peer_evidence,
+                    }
+                )
+                if len(peers) >= 8:
+                    break
+        guidance.append(
+            {
+                "targetId": target.get("id"),
+                "coverageClass": target.get("coverage_class"),
+                "block": target.get("block"),
+                "missingOutcomes": target.get("missing_outcomes", []),
+                "measuredDescription": decoded_json(target.get("description")),
+                **evidence,
+                "structuralPeers": peers,
+                "agentTask": (
+                    "只设计该目标的有界时序刺激；按上游延时、阈值、锁存、恢复和复位顺序计算保持时间，"
+                    "不得重新枚举整个模型。"
+                ),
+            }
+        )
+    return guidance
+
+
 def metric_name(raw: Any) -> str:
     normalized = str(raw or "").strip().lower()
     return {
@@ -210,6 +349,7 @@ def build_brief(
             }
         )
     attempted = attempted[:256]
+    complex_guidance = collect_complex_target_guidance(targets[:64], traces)
     return {
         "schema": BRIEF_SCHEMA,
         "jobId": job_id,
@@ -218,6 +358,13 @@ def build_brief(
         "coverageThreshold": threshold,
         "metricDeficits": deficits,
         "coverageTargets": targets,
+        "coverageContext": {
+            "mcdcMode": str(record.get("mcdc_mode") or record.get("mcdcMode") or ""),
+            "modelChecksum": str(record.get("model_checksum") or record.get("modelChecksum") or ""),
+            "supportLibraryPath": str(record.get("support_library_path") or record.get("supportLibraryPath") or ""),
+            "initializationScripts": record.get("initialization_scripts", []),
+        },
+        "complexTargetGuidance": complex_guidance,
         "modelElementIndex": sorted(elements.values(), key=lambda item: (item["path"], item["sid"])),
         "priorPlanning": {
             "stage5ExecutionReadiness": (coverage_ir.get("summary") or {}).get("executionReadiness", {}),
