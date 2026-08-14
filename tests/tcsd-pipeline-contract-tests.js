@@ -1653,8 +1653,7 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
   }
   if (stage === 11 && (
     initialPercent >= 80 ||
-    options.skipFinalAfterRepair ||
-    options.noApplicableRepair
+    options.skipFinalAfterRepair
   )) {
     result.status = "skipped";
     result.summary = "未应用修正，无需重复最终验证。";
@@ -1674,16 +1673,17 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
         ]
       }]
     }));
+    const observedFinalPercent = options.noApplicableRepair ? initialPercent : finalPercent;
     await writeFile(coveragePath, JSON.stringify({
       schema: "tcsd-coverage-report/v1",
-      models: coverage(finalPercent)
+      models: coverage(observedFinalPercent)
     }));
     result.artifacts.push(
       { path: rel(workspace.root, workbook), kind: "xlsx", role: "workbook" },
       { path: rel(workspace.root, simulation), kind: "json", role: "simulation" },
       { path: rel(workspace.root, coveragePath), kind: "json", role: "coverage" }
     );
-    result.coverage = { schema: "tcsd-coverage-report/v1", models: coverage(finalPercent) };
+    result.coverage = { schema: "tcsd-coverage-report/v1", models: coverage(observedFinalPercent) };
     result.evidence = {
       simulationResult: rel(workspace.root, simulation),
       expValueCount: 1,
@@ -1694,6 +1694,7 @@ async function writeStageResult(workspace, manifest, resultPath, options = {}) {
       caseOutputCounts: { "3:TC_001": { Output: 1 } },
       backfillItems: [{ row: 3, testId: "TC_001", step: 1, output: "Output", value: 1 }]
     };
+    if (options.noApplicableRepair) result.evidence.coverageReusedFromStage9 = true;
   }
   if (stage === 12) {
     const cleanup = path.join(workspace.outputDir, "cleanup.json");
@@ -2073,13 +2074,14 @@ for (const [options, stageIndex, label] of [
   assert.equal(job.repair.attempted, true);
   assert.equal(job.repair.applied, false);
   assert.equal(job.repair.passes, 0);
-  assert.equal(job.stages[10].status, "已跳过");
+  assert.equal(job.stages[10].status, "已完成");
+  assert.equal(job.stages[10].checkpoint.evidence.coverageReusedFromStage9, true);
   assert.equal(job.coverage.final.aggregate.mcdc.percent, 50);
   assert.deepEqual(
     job.coverage.final,
     job.stages[11].checkpoint.executionManifest.coverage.final
   );
-  assert.equal(job.stages[11].checkpoint.executionManifest.oracle.sourceStageIndex, 8);
+  assert.equal(job.stages[11].checkpoint.executionManifest.oracle.sourceStageIndex, 11);
   assert.equal(job.stages[11].checkpoint.executionManifest.oracle.testCaseCount, 1);
   assert.equal(job.stages[11].checkpoint.executionManifest.oracle.expValueCount, 1);
   assert.deepEqual(job.stages[11].checkpoint.executionManifest.oracle.testsWithoutExpectedValues, []);

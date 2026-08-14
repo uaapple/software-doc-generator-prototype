@@ -582,11 +582,15 @@ export async function validateStageResult(raw = {}, context = {}) {
   }
   if (context.stageIndex === 11) {
     const repairApplied = context.pipelineState?.repair?.applied === true;
+    const reusedStage9Coverage = raw.evidence?.coverageReusedFromStage9 === true;
     if (repairApplied && raw.status === "skipped") {
       throw contractError("第 10 阶段已应用修正，第 11 阶段不得跳过最终仿真与覆盖率");
     }
-    if (!repairApplied && raw.status !== "skipped") {
-      throw contractError("第 10 阶段未应用修正，第 11 阶段应明确跳过");
+    if (!repairApplied && raw.status !== "skipped" && !reusedStage9Coverage) {
+      throw contractError("第 10 阶段未应用修正，第 11 阶段必须明确跳过或复用第 9 阶段覆盖率");
+    }
+    if (repairApplied && reusedStage9Coverage) {
+      throw contractError("第 10 阶段已应用修正，第 11 阶段不得复用第 9 阶段覆盖率");
     }
   }
   if (context.stageIndex === 11 && raw.status !== "skipped") {
