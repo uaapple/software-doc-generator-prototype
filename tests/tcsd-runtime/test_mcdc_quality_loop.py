@@ -181,6 +181,84 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertEqual(manifest["status"], "failed")
             self.assertEqual(manifest["batches"][-1]["diagnosticArtifactFileName"], "batch-002.error.json")
 
+    def test_final_coverage_batches_preserve_each_batch_and_merge_once(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outputs = root / "outputs"
+            outputs.mkdir()
+            cases = outputs / "GenericModel_cases.json"
+            cases.write_text(json.dumps({
+                "schema": "simulink-ut-cases/v1",
+                "model": "GenericModel",
+                "tests": [{"test_id": f"TC_{index:03d}"} for index in range(1, 6)],
+            }), encoding="utf-8")
+            call_count = 0
+
+            def fake_probe(**kwargs):
+                nonlocal call_count
+                call_count += 1
+                batch = json.loads(Path(kwargs["case_json"]).read_text(encoding="utf-8"))
+                result = outputs / kwargs["output_name"]
+                result.write_text(json.dumps({
+                    "GenericModel": {
+                        "schema": "simulink-ut-logical-mcdc-probe/v2",
+                        "model": "GenericModel",
+                        "observations": [
+                            {"test_id": item["test_id"], "prediction_status": "observed"}
+                            for item in batch["tests"]
+                        ],
+                        "skipped_tests": [],
+                    },
+                }), encoding="utf-8")
+                (outputs / "GenericModel_coverage.cvt").write_bytes(f"coverage-{call_count}".encode())
+                (outputs / "GenericModel_coverage_summary.json").write_text(
+                    '{"GenericModel":{"condition":{"covered":1,"total":2}}}',
+                    encoding="utf-8",
+                )
+                return outputs / "GenericModel_coverage_obligations.json", outputs / "GenericModel_coverage_summary.json"
+
+            def fake_merge(*_args, **_kwargs):
+                (outputs / "GenericModel_final_coverage.cvt").write_bytes(b"merged")
+                (outputs / "GenericModel_final_coverage.json").write_text(
+                    '{"GenericModel":{"condition":{"covered":2,"total":2}}}',
+                    encoding="utf-8",
+                )
+
+            def fake_obligations(**_kwargs):
+                path = outputs / "GenericModel_coverage_obligations.json"
+                path.write_text('{"obligations":[]}', encoding="utf-8")
+                return path
+
+            with (
+                mock.patch.object(quality, "run_probe", side_effect=fake_probe),
+                mock.patch.object(quality, "run_satk", side_effect=fake_merge) as merge_mock,
+                mock.patch.object(quality, "build_probe_obligations", side_effect=fake_obligations),
+            ):
+                obligations, coverage_json, coverage_data, manifest = quality.run_coverage_probe_batched(
+                    python=sys.executable,
+                    scripts=SCRIPTS,
+                    root_dir=root,
+                    model="GenericModel",
+                    mat_file="values.mat",
+                    init_scripts=[],
+                    unreachable_overrides="",
+                    coverage_threshold=80,
+                    case_json=cases,
+                    batch_size=2,
+                    gateway_timeout_seconds=1200,
+                    mcdc_mode="Masking",
+                )
+            manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(manifest_data["batchCount"], 3)
+            self.assertEqual([item["caseCount"] for item in manifest_data["batches"]], [2, 2, 1])
+            self.assertTrue(all(item["status"] == "completed" for item in manifest_data["batches"]))
+            self.assertEqual(call_count, 3)
+            merge_mock.assert_called_once()
+            self.assertTrue(obligations.is_file())
+            self.assertTrue(coverage_json.is_file())
+            self.assertTrue(coverage_data.is_file())
+
     def test_satk_failure_recovers_last_json_object_after_prefix_output(self) -> None:
         quality = load_script_module("run_tcsd_quality_loop.py")
         error = quality.satk_failure(
@@ -392,6 +470,45 @@ class McdcQualityLoopTests(unittest.TestCase):
         primary = plan["tests"][0]
         self.assertGreater(primary["steps"][1]["input_updates"]["Torque"], 40)
         self.assertEqual(primary["target"]["expected_target_transition"], "0->1")
+
+    def test_atomic_planner_folds_abs_and_opposite_constant_thresholds(self) -> None:
+        planner = load_script_module("build_atomic_mcdc_repair_plan.py")
+        absolute = {
+            "kind": "abs",
+            "inputs": [{"trace": {"kind": "constant", "value": "-0.001"}}],
+        }
+        opposite = {
+            "kind": "subsystem",
+            "name": "Opposite1",
+            "maskType": "Opposite",
+            "source": {"kind": "unresolved_subsystem_outport"},
+            "inputs": [{"trace": {"kind": "constant", "value": "0.001"}}],
+        }
+
+        self.assertEqual(planner.resolved_constant(absolute)[0], 0.001)
+        self.assertEqual(planner.resolved_constant(opposite)[0], -0.001)
+        for threshold, expected in ((absolute, 0.001), (opposite, -0.001)):
+            relation = {
+                "kind": "relational",
+                "operator": "<=",
+                "inputs": [
+                    {"trace": {"kind": "root_inport", "signal": "Distance"}},
+                    {"trace": threshold},
+                ],
+            }
+            controller = planner.relational_controller(relation)
+            self.assertIsNotNone(controller)
+            self.assertEqual(controller["root_input"], "Distance")
+            self.assertEqual(controller["root_boundary"], expected)
+
+    def test_atomic_planner_accepts_matlab_scalar_operator_encoding(self) -> None:
+        planner = load_script_module("build_atomic_mcdc_repair_plan.py")
+        report = {
+            "model": "SingleOperator",
+            "operators": {"id": "SingleOperator:1", "operator": "AND", "ports": []},
+        }
+        self.assertEqual(planner.reports(report), [report])
+        self.assertEqual(len(planner.top_operators(report)), 1)
 
     def test_state_probe_primary_prefers_provable_target_transition(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")
@@ -725,6 +842,37 @@ class McdcQualityLoopTests(unittest.TestCase):
                 self.assertEqual(candidate["evidence_step"], 2)
                 self.assertEqual(candidate["target"]["pattern_type"], expected_pattern)
                 self.assertEqual(candidate["target"]["expected_target_transition"], f"{start}->{end}")
+
+    def test_state_probe_planner_evaluates_inverted_falling_edge_target_direction(self) -> None:
+        planner = load_script_module("build_state_probe_plan.py")
+        trace = {
+            "model": "InvertedFallingEdge",
+            "operators": [{
+                "id": "InvertedFallingEdge:1",
+                "operator": "AND",
+                "ports": [{
+                    "index": 1,
+                    "trace": {
+                        "kind": "logic",
+                        "operator": "NOT",
+                        "inputs": [{
+                            "trace": {
+                                "kind": "subsystem",
+                                "name": "EdgeFalling",
+                                "source": {"kind": "root_inport", "signal": "EdgeInput"},
+                            }
+                        }],
+                    },
+                }],
+            }],
+        }
+
+        plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
+
+        self.assertEqual(plan["summary"]["candidate_count"], 1)
+        candidate = plan["tests"][0]
+        self.assertEqual(candidate["target"]["control_transition"], "1->0")
+        self.assertEqual(candidate["target"]["expected_target_transition"], "0->1")
 
     def test_state_probe_planner_does_not_claim_edge_direction_for_ambiguous_control_path(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")

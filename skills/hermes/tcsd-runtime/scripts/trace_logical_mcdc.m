@@ -172,6 +172,7 @@ switch node.blockType
     case 'SubSystem'
         node.kind = 'subsystem';
         node.source = trace_subsystem_outport(blockPath, srcPortNumber, rootNames, depth, seen);
+        node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
     case 'From'
         node.kind = 'from';
         node.gotoTag = safe_param(blockPath, 'GotoTag');

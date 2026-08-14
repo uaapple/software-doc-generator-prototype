@@ -17,6 +17,7 @@ STAGE6_MAX_TOTAL_CANDIDATES = 384
 STAGE11_PROBE_TIMEOUT_BASE_SECONDS = 600
 STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS = 30
 STAGE11_PROBE_TIMEOUT_MAX_SECONDS = 3600
+STAGE11_PROBE_BATCH_SIZE = 20
 STAGE7_MAX_INITIAL_TESTS = 100
 
 def load_module(name: str, path: Path):
@@ -1780,14 +1781,126 @@ def stage_run(
         return
     final_cov=out/f"{model}_final_coverage_summary.json"
     if stage == 11:
-        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); case_count=len(read_json(cases).get("tests",[])); probe_timeout_seconds=stage11_probe_timeout_seconds(case_count); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface,result_name=f"{model}_final_simulation_results.json"); backfill=simulation_backfill_evidence(read_json(sim),workbook)
-        try:
-            ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold,gateway_timeout_seconds=probe_timeout_seconds)
-        except quality.SatkEvaluationError as error:
-            error.details["caseCount"] = case_count
-            raise
-        final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
-        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=final_report,evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],"caseCount":case_count,"probeTimeoutSeconds":probe_timeout_seconds,**backfill}); return
+        workbook = Path(state["workbook"])
+        cases = quality.extract_cases(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            model=model,
+            workbook=workbook,
+            interface_json=interface,
+        )
+        case_count = len(read_json(cases).get("tests", []))
+        batch_size = min(STAGE11_PROBE_BATCH_SIZE, max(1, case_count))
+        probe_timeout_seconds = stage11_probe_timeout_seconds(batch_size)
+        sim = quality.simulate_and_backfill(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            model=model,
+            workbook=workbook,
+            case_json=cases,
+            mat_file=inp["modelMatPath"],
+            outputs=",".join(read_json(interface).get("outputs", [])),
+            exclude_outputs="",
+            interface_json=interface,
+            result_name=f"{model}_final_simulation_results.json",
+        )
+        backfill = simulation_backfill_evidence(read_json(sim), workbook)
+        coverage_reused = not bool(state.get("repairApplied")) and bool(state.get("currentCoverage"))
+        batch_manifest: Path | None = None
+        final_coverage_data: Path | None = None
+        if coverage_reused:
+            final_report = read_json(Path(state["currentCoverage"]))
+            ob = Path(state["obligations"])
+            current_data = state.get("currentCoverageData")
+            final_coverage_data = Path(current_data) if current_data else None
+            batch_count = 0
+        else:
+            current_report = Path(state.get("currentCoverage") or state["initialCoverage"])
+            current_mcdc_mode = str(
+                coverage_record(read_json(current_report), model).get("mcdc_mode") or ""
+            ).strip()
+            if current_mcdc_mode not in {"Masking", "UniqueCause"}:
+                raise RuntimeError("stage 11 coverage mode is missing or unsupported")
+            try:
+                if case_count > STAGE11_PROBE_BATCH_SIZE:
+                    ob, cov, final_coverage_data, batch_manifest = quality.run_coverage_probe_batched(
+                        python=sys.executable,
+                        scripts=scripts(),
+                        root_dir=root,
+                        model=model,
+                        mat_file=inp["modelMatPath"],
+                        init_scripts=inp.get("projectInitScripts", []),
+                        unreachable_overrides="",
+                        coverage_threshold=threshold,
+                        case_json=cases,
+                        batch_size=STAGE11_PROBE_BATCH_SIZE,
+                        gateway_timeout_seconds=probe_timeout_seconds,
+                        mcdc_mode=current_mcdc_mode,
+                    )
+                    batch_count = math.ceil(case_count / STAGE11_PROBE_BATCH_SIZE)
+                else:
+                    ob, cov = quality.run_probe(
+                        python=sys.executable,
+                        scripts=scripts(),
+                        root_dir=root,
+                        model=model,
+                        mat_file=inp["modelMatPath"],
+                        init_scripts=inp.get("projectInitScripts", []),
+                        unreachable_overrides="",
+                        collect_coverage=True,
+                        coverage_threshold=threshold,
+                        case_json=cases,
+                        gateway_timeout_seconds=probe_timeout_seconds,
+                    )
+                    generic_data = out / f"{model}_coverage.cvt"
+                    final_coverage_data = out / f"{model}_final_coverage.cvt"
+                    shutil.copyfile(generic_data, final_coverage_data)
+                    batch_count = 1
+            except quality.SatkEvaluationError as error:
+                error.details["caseCount"] = case_count
+                raise
+            final_report = {"schema": "tcsd-coverage-report/v1", "models": read_json(cov)}
+        write_json(final_cov, final_report)
+        state.update({
+            "finalSimulation": str(sim),
+            "finalCoverage": str(final_cov),
+            "finalCoverageData": str(final_coverage_data) if final_coverage_data else "",
+            "finalBackfillEvidence": backfill,
+            "obligations": str(ob),
+        })
+        save_state(job, state)
+        artifacts = [
+            artifact(root, workbook, "xlsx", "workbook"),
+            artifact(root, sim),
+            artifact(root, final_cov),
+        ]
+        if batch_manifest is not None:
+            artifacts.append(artifact(root, batch_manifest, "json", "final-coverage-batches"))
+        if final_coverage_data is not None:
+            artifacts.append(artifact(root, final_coverage_data, "cvt", "coverage-data"))
+        finish(
+            job,
+            stage,
+            summary="修正后最终仿真、回填与覆盖率检查已完成。",
+            artifacts=artifacts,
+            coverage=final_report,
+            evidence={
+                "simulationResult": str(sim.relative_to(root)),
+                "expValueCount": backfill["workbookBackfillCount"],
+                "caseCount": case_count,
+                "probeTimeoutSeconds": probe_timeout_seconds,
+                "coverageBatchSize": batch_size,
+                "coverageBatchCount": batch_count,
+                "coverageReusedFromStage9": coverage_reused,
+                "coverageBatchManifest": (
+                    str(batch_manifest.relative_to(root)) if batch_manifest is not None else ""
+                ),
+                **backfill,
+            },
+        )
+        return
     if stage == 12:
         cleanup=out/f"{model}_tcsd_cleanup.json"
         owned_candidates=[out/".tcsd-runtime"/"stage04_interface.m",out/".tcsd-runtime"/"job.json",out/f"{model}_probe_mcdc_entry.m",out/f"{model}_simulate_mcdc_entry.m"]; removed=[]

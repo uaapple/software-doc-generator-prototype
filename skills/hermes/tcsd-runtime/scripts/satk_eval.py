@@ -478,6 +478,72 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
                 pass
 
 
+def gateway_failure_budget_path(*, environ=None) -> Path | None:
+    values = os.environ if environ is None else environ
+    if str(values.get("TCSD_STAGE_INDEX") or "").strip() != "10":
+        return None
+    output_dir = str(values.get("TCSD_OUTPUT_DIR") or "").strip()
+    job_id = str(values.get("TCSD_JOB_ID") or "").strip()
+    attempt = str(values.get("TCSD_STAGE_ATTEMPT") or "1").strip() or "1"
+    if not output_dir or not job_id:
+        return None
+    return Path(output_dir) / ".tcsd-runtime" / f"gateway-failure-budget-stage-10-attempt-{attempt}.json"
+
+
+def gateway_failure_limit(*, environ=None) -> int:
+    values = os.environ if environ is None else environ
+    try:
+        return max(1, int(values.get("TCSD_STAGE10_GATEWAY_FAILURE_LIMIT") or 3))
+    except (TypeError, ValueError):
+        return 3
+
+
+def read_gateway_failure_count(path: Path | None) -> int:
+    if path is None:
+        return 0
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return max(0, int(payload.get("consecutiveFailureCount") or 0))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return 0
+
+
+def write_gateway_failure_count(path: Path | None, count: int, code: str) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    temporary.write_text(
+        json.dumps(
+            {
+                "schema": "tcsd-stage10-gateway-failure-budget/v1",
+                "consecutiveFailureCount": max(0, int(count)),
+                "lastErrorCode": str(code or "MATLAB_GATEWAY_JOB_FAILED"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def gateway_budget_exhausted_result(count: int, limit: int) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {
+            "code": "MATLAB_GATEWAY_FAILURE_BUDGET_EXHAUSTED",
+            "message": f"Stage 10 stopped Gateway evaluation after {count} consecutive failures.",
+            "data": {
+                "gatewayStatus": "failure_budget_exhausted",
+                "consecutiveFailureCount": count,
+                "failureLimit": limit,
+            },
+        },
+    }
+
+
 def process_rows() -> list[tuple[int, str]]:
     if platform.system() == "Windows":
         return windows_process_rows()
@@ -613,6 +679,12 @@ def main() -> int:
 
     code_file = Path(sys.argv[1])
     if gateway_url():
+        budget_path = gateway_failure_budget_path()
+        failure_limit = gateway_failure_limit()
+        failure_count = read_gateway_failure_count(budget_path)
+        if failure_count >= failure_limit:
+            print(json.dumps(gateway_budget_exhausted_result(failure_count, failure_limit), ensure_ascii=False, indent=2))
+            return 1
         try:
             result = evaluate_over_gateway(code_file)
         except (OSError, RuntimeError, ValueError) as exc:
@@ -624,6 +696,15 @@ def main() -> int:
                     "message": str(exc),
                 },
             }
+        if mcp_response_failed(result):
+            error = result.get("error") if isinstance(result.get("error"), dict) else {}
+            write_gateway_failure_count(
+                budget_path,
+                failure_count + 1,
+                str(error.get("code") or "MATLAB_GATEWAY_JOB_FAILED"),
+            )
+        elif budget_path is not None:
+            write_gateway_failure_count(budget_path, 0, "")
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if mcp_response_failed(result) else 0
 

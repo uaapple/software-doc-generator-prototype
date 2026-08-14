@@ -121,7 +121,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
         self.assertEqual(details["statusCounts"], {"observation_missing": 1})
         self.assertEqual(details["unresolvedTargetCount"], 1)
 
-    def test_stage6_host_still_rejects_expected_direction_conflicts(self):
+    def test_stage6_host_records_expected_direction_conflicts_as_unresolved(self):
         with tempfile.TemporaryDirectory() as temp:
             request = self.stage6_validation_request(temp, end_vector=False)
             plan_path = Path(temp) / "plan.json"
@@ -133,8 +133,29 @@ class PipelineStageRunnerTests(unittest.TestCase):
             classification = HOST_VALIDATOR.state_probe_classifier_module.classify_targets(plan, results)
             (Path(temp) / "classification.json").write_text(json.dumps(classification), encoding="utf-8")
             request["evidence"]["expectedDirectionConflictTargetCount"] = 1
-            with self.assertRaisesRegex(ValueError, "planned-direction conflict"):
-                HOST_VALIDATOR.validate_probe(request)
+            request["evidence"]["noTransitionTargetCount"] = 0
+            details = HOST_VALIDATOR.validate_probe(request)
+            self.assertEqual(details["statusCounts"], {"plan_conflict": 1})
+            self.assertEqual(details["unresolvedTargetCount"], 0)
+
+    def test_stage6_host_still_rejects_simulation_mismatches(self):
+        with tempfile.TemporaryDirectory() as temp:
+            request = self.stage6_validation_request(temp, end_vector=True)
+            classification_path = Path(temp) / "classification.json"
+            classification = json.loads(classification_path.read_text(encoding="utf-8"))
+            classification["simulationMismatchTargetCount"] = 1
+            classification["targets"][0]["status"] = "simulation_mismatch"
+            classification["targets"][0]["simulationMismatchCount"] = 1
+            classification_path.write_text(json.dumps(classification), encoding="utf-8")
+            request["evidence"]["strictSuccessTargetCount"] = 0
+            request["evidence"]["simulationMismatchTargetCount"] = 1
+            with mock.patch.object(
+                HOST_VALIDATOR.state_probe_classifier_module,
+                "classify_targets",
+                return_value=classification,
+            ):
+                with self.assertRaisesRegex(ValueError, "simulation mismatch"):
+                    HOST_VALIDATOR.validate_probe(request)
 
     def test_stage7_initial_generation_budget_is_one_hundred(self):
         self.assertEqual(RUNNER.STAGE7_MAX_INITIAL_TESTS, 100)
@@ -1445,6 +1466,23 @@ class PipelineStageRunnerTests(unittest.TestCase):
             "2710",
         )
 
+    def test_stage10_gateway_failure_budget_is_bounded_and_attempt_scoped(self):
+        with tempfile.TemporaryDirectory() as temp:
+            values = {
+                "TCSD_STAGE_INDEX": "10",
+                "TCSD_STAGE_ATTEMPT": "2",
+                "TCSD_JOB_ID": "job-gateway-budget",
+                "TCSD_OUTPUT_DIR": temp,
+            }
+            path = SATK.gateway_failure_budget_path(environ=values)
+            self.assertEqual(path.name, "gateway-failure-budget-stage-10-attempt-2.json")
+            self.assertEqual(SATK.gateway_failure_limit(environ=values), 3)
+            SATK.write_gateway_failure_count(path, 3, "MCP_TOOL_REPORTED_FAILURE")
+            self.assertEqual(SATK.read_gateway_failure_count(path), 3)
+            result = SATK.gateway_budget_exhausted_result(3, 3)
+            self.assertEqual(result["error"]["code"], "MATLAB_GATEWAY_FAILURE_BUDGET_EXHAUSTED")
+            self.assertNotIn("job-gateway-budget", json.dumps(result))
+
     def test_stage6_probe_timeout_scales_with_candidates_and_is_bounded(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(RUNNER.stage6_probe_timeout_seconds(0), 600)
@@ -1469,7 +1507,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
         ):
             self.assertEqual(RUNNER.stage11_probe_timeout_seconds(38), 2400)
 
-    def test_stage11_passes_case_scaled_timeout_to_final_coverage_probe(self):
+    def test_stage11_batches_final_coverage_probe_with_per_batch_timeout(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
             output = root / "outputs"
@@ -1483,12 +1521,18 @@ class PipelineStageRunnerTests(unittest.TestCase):
             Workbook().save(workbook)
             RUNNER.write_json(spec, {"tests": []})
             RUNNER.write_json(output / "GenericModel_interface.json", {"outputs": []})
+            initial_coverage = output / "GenericModel_initial_coverage_summary.json"
+            RUNNER.write_json(initial_coverage, {
+                "schema": "tcsd-coverage-report/v1",
+                "models": {"GenericModel": {"mcdc_mode": "Masking"}},
+            })
             RUNNER.write_json(
                 output / ".tcsd-runtime" / "runner-state.json",
                 {
                     "repairApplied": True,
                     "workbook": str(workbook),
                     "spec": str(spec),
+                    "initialCoverage": str(initial_coverage),
                 },
             )
             result_path = output / ".tcsd-results" / "stage-11.json"
@@ -1516,16 +1560,20 @@ class PipelineStageRunnerTests(unittest.TestCase):
                 RUNNER.write_json(simulation, {"tests": []})
                 return simulation
 
-            def run_probe(**_kwargs):
+            def run_coverage_probe_batched(**_kwargs):
                 obligations = output / "GenericModel_coverage_obligations.json"
-                coverage = output / "GenericModel_coverage_summary.json"
+                coverage = output / "GenericModel_final_coverage.json"
+                coverage_data = output / "GenericModel_final_coverage.cvt"
+                manifest = output / "GenericModel_final_coverage_batch_manifest.json"
                 RUNNER.write_json(obligations, {"obligations": []})
-                RUNNER.write_json(coverage, {})
-                return obligations, coverage
+                RUNNER.write_json(coverage, {"GenericModel": {"mcdc_mode": "Masking"}})
+                coverage_data.write_bytes(b"coverage")
+                RUNNER.write_json(manifest, {"batchCount": 2})
+                return obligations, coverage, coverage_data, manifest
 
             quality.extract_cases.side_effect = extract_cases
             quality.simulate_and_backfill.side_effect = simulate_and_backfill
-            quality.run_probe.side_effect = run_probe
+            quality.run_coverage_probe_batched.side_effect = run_coverage_probe_batched
             with (
                 mock.patch.object(RUNNER, "load_module", return_value=quality),
                 mock.patch.object(
@@ -1537,12 +1585,15 @@ class PipelineStageRunnerTests(unittest.TestCase):
             ):
                 RUNNER.stage_run(11, job)
             self.assertEqual(
-                quality.run_probe.call_args.kwargs["gateway_timeout_seconds"],
-                1740,
+                quality.run_coverage_probe_batched.call_args.kwargs["gateway_timeout_seconds"],
+                1200,
             )
             result = RUNNER.read_json(result_path)
             self.assertEqual(result["evidence"]["caseCount"], 38)
-            self.assertEqual(result["evidence"]["probeTimeoutSeconds"], 1740)
+            self.assertEqual(result["evidence"]["probeTimeoutSeconds"], 1200)
+            self.assertEqual(result["evidence"]["coverageBatchSize"], 20)
+            self.assertEqual(result["evidence"]["coverageBatchCount"], 2)
+            self.assertFalse(result["evidence"]["coverageReusedFromStage9"])
 
     def test_stage_runtime_error_details_are_strictly_allowlisted(self):
         error = RuntimeError("failed")

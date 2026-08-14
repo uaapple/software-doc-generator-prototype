@@ -440,8 +440,8 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("state Probe target classification does not match host-recomputed observations")
     expected_direction_conflicts = int(recomputed.get("expectedDirectionConflictTargetCount") or 0)
     simulation_mismatches = int(recomputed.get("simulationMismatchTargetCount") or 0)
-    if expected_direction_conflicts or simulation_mismatches:
-        raise ValueError("state Probe contains a planned-direction conflict or simulation mismatch")
+    if simulation_mismatches:
+        raise ValueError("state Probe contains a simulation mismatch")
     status_counts = recomputed.get("statusCounts") if isinstance(recomputed.get("statusCounts"), dict) else {}
     for status, evidence_key in (
         ("strict_success", "strictSuccessTargetCount"),

@@ -63,12 +63,12 @@ MERGE_HEAD peeled = a882c1e22c9fa10bfd761ec6a3487899ee988d0a
 | 03 | 初始化模型工作区 | `tcsd-stage-03-initialize-workspace` | 初始化脚本、MAT、数据字典和支持包证据 |
 | 04 | 加载模型并提取输入输出接口 | `tcsd-stage-04-extract-interface` | 根 Inport/Outport、参数、类型与模型接口 JSON |
 | 05 | 分析条件、判定与 MC/DC 覆盖目标 | `tcsd-stage-05-analyze-coverage` `1.2.0` | 与门/或门敏化配方、简单比较器边界值、覆盖目标及可执行性统计 |
-| 06 | 生成并验证状态及时序刺激 | `tcsd-stage-06-validate-state-probes` `1.2.0` | 状态及时序探针计划、上升沿/下降沿专用序列、真实观察、多步骤刺激 |
+| 06 | 生成并验证状态及时序刺激 | `tcsd-stage-06-validate-state-probes` `1.4.0` | 状态及时序探针计划、上升沿/下降沿专用序列、按追踪表达式求值的目标方向、真实观察与可审计未解析目标 |
 | 07 | 生成并校验首版测试用例 | `tcsd-stage-07-build-initial-cases` `1.2.0` | 首版测试工作簿、基础配方生成统计、静态规划诊断 |
 | 08 | 运行模型仿真并回填期望值 | `tcsd-stage-08-simulate-backfill` | 实际仿真结果、`expValue` 回填与逐项校验 |
 | 09 | 采集首轮覆盖率 | `tcsd-stage-09-collect-coverage` | 实测 Condition、Decision、MC/DC |
-| 10 | 根据覆盖率修正测试用例 | `tcsd-stage-10-repair-coverage` `1.7.0` | 宿主先用第九阶段覆盖数据运行一次有界的 Simulink Design Verifier 补缺并按合并覆盖增量验收；Agent 只处理剩余精确目标，按对称通道、分级阈值、延时计算和状态交互设计定向刺激；无增量时部分完成并继续最终测量 |
-| 11 | 运行最终仿真与覆盖率检查 | `tcsd-stage-11-final-validation` | 最终仿真、覆盖率与标准命名 workbook |
+| 10 | 根据覆盖率修正测试用例 | `tcsd-stage-10-repair-coverage` `1.8.0` | 宿主先用第九阶段覆盖数据运行一次有界的 Simulink Design Verifier 补缺并按合并覆盖增量验收；Agent 只处理剩余精确目标；同一尝试连续 3 次 Gateway 评估失败后快速降级，无增量或验证失败时保留当前最佳工作簿 |
+| 11 | 运行最终仿真与覆盖率检查 | `tcsd-stage-11-final-validation` `1.2.0` | 最终仿真与期望值回填；覆盖率按每批 20 条用例有界采集并合并原始覆盖数据；记录每批范围、超时和哈希 |
 | 12 | 整理任务产物并清理运行环境 | `tcsd-stage-12-package-cleanup` | 宿主生成 execution manifest、清理证据、最终下载产物 |
 
 每个阶段启动全新的 Hermes session，prompt 以相应 `/tcsd-stage-xx-*` 精确调用开头。Agent 文本不作为完成证据；宿主必须重新解析阶段结果和产物，成功后才写入 checkpoint。

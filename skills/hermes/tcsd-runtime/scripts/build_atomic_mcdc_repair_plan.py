@@ -240,7 +240,32 @@ def symbolic_constant(node: dict[str, Any]) -> str | None:
 
 
 def resolved_constant(node: dict[str, Any]) -> tuple[float, str, str] | None:
-    node = unwrap(node)
+    kind = str(node.get("kind") or "").lower()
+    labels = " ".join(
+        str(node.get(key) or "")
+        for key in ("name", "maskType", "referenceBlock", "semantic", "blockType")
+    ).lower()
+    compact = re.sub(r"[^a-z0-9]+", "", labels)
+    nested = children(node)
+    source = node.get("source") if isinstance(node.get("source"), dict) else None
+    operands = ([source] if source is not None else []) + nested
+    if kind == "abs" and len(operands) == 1:
+        resolved = resolved_constant(operands[0])
+        if resolved is None:
+            return None
+        value, source_name, expression = resolved
+        return abs(value), f"abs({source_name})", f"abs({expression})"
+    if "opposite" in compact:
+        for operand in operands:
+            resolved = resolved_constant(operand)
+            if resolved is not None:
+                value, source_name, expression = resolved
+                return -value, f"opposite({source_name})", f"-({expression})"
+        return None
+    unwrapped = unwrap(node)
+    if unwrapped is not node:
+        return resolved_constant(unwrapped)
+    node = unwrapped
     if str(node.get("kind") or "").lower() != "constant":
         return None
     expression = str(node.get("value") or "").strip()
@@ -980,9 +1005,19 @@ def solve_vector_recipe(atoms: list[Atom], vector: tuple[bool, ...]) -> tuple[Re
 
 
 def reports(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    if isinstance(payload.get("operators"), list):
+    if isinstance(payload.get("operators"), (list, dict)):
         return [payload]
-    return [item for item in payload.values() if isinstance(item, dict) and isinstance(item.get("operators"), list)]
+    return [
+        item for item in payload.values()
+        if isinstance(item, dict) and isinstance(item.get("operators"), (list, dict))
+    ]
+
+
+def operator_records(report: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = report.get("operators")
+    if isinstance(raw, dict):
+        return [raw]
+    return [item for item in (raw or []) if isinstance(item, dict)]
 
 
 def referenced_logic_ids(node: dict[str, Any], found: set[str]) -> None:
@@ -997,13 +1032,14 @@ def referenced_logic_ids(node: dict[str, Any], found: set[str]) -> None:
 
 def top_operators(report: dict[str, Any]) -> list[dict[str, Any]]:
     referenced: set[str] = set()
-    for operator in report.get("operators", []):
+    operators = operator_records(report)
+    for operator in operators:
         for port in operator.get("ports", []):
             trace = port.get("trace") if isinstance(port, dict) else None
             if isinstance(trace, dict):
                 referenced_logic_ids(trace, referenced)
-    result = [operator for operator in report.get("operators", []) if str(operator.get("sid") or operator.get("id") or "") not in referenced]
-    return result or list(report.get("operators", []))
+    result = [operator for operator in operators if str(operator.get("sid") or operator.get("id") or "") not in referenced]
+    return result or operators
 
 
 def vector_label(vector: tuple[bool, ...]) -> str:

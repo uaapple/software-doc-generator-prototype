@@ -340,6 +340,10 @@ def expected_target_transition(
 ) -> str:
     start = trace_value(trace, inputs=initial_inputs, params=params, settled=False)
     end = trace_value(trace, inputs=final_inputs, params=params, settled=True)
+    if not isinstance(start, bool) and isinstance(start, (int, float)) and start in {0, 1}:
+        start = bool(start)
+    if not isinstance(end, bool) and isinstance(end, (int, float)) and end in {0, 1}:
+        end = bool(end)
     if not isinstance(start, bool) or not isinstance(end, bool) or start == end:
         return ""
     return f"{int(start)}->{int(end)}"
@@ -588,7 +592,6 @@ def build_plan(
             candidates: list[dict[str, Any]] = []
             if pattern in {"rising-edge", "falling-edge"}:
                 start, end = (0, 1) if pattern == "rising-edge" else (1, 0)
-                edge_direction_is_provable = len(deps.inputs) == 1 and not deps.unsupported
                 controls = sorted(deps.inputs)
                 if len(controls) > 1:
                     init_values = dict(sibling_inputs)
@@ -625,6 +628,14 @@ def build_plan(
                     init_values[control] = start
                     init_params = dict(sibling_params)
                     init_params.update(param_values)
+                    final_inputs = dict(init_values)
+                    final_inputs[control] = end
+                    target_transition = expected_target_transition(
+                        trace,
+                        initial_inputs=init_values,
+                        final_inputs=final_inputs,
+                        params=init_params,
+                    )
                     candidates.append(
                         {
                             "row": 0,
@@ -639,11 +650,7 @@ def build_plan(
                                 "pattern_type": pattern,
                                 "control_input": control,
                                 "control_transition": f"{start}->{end}",
-                                "expected_target_transition": (
-                                    ("0->1" if pattern == "rising-edge" else "1->0")
-                                    if edge_direction_is_provable
-                                    else ""
-                                ),
+                                "expected_target_transition": target_transition,
                                 "hold_s": sample_time,
                             },
                         }

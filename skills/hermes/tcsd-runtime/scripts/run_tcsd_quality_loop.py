@@ -899,6 +899,161 @@ def run_probe_batched(
     return obligations, manifest
 
 
+def run_coverage_probe_batched(
+    *,
+    python: str,
+    scripts: Path,
+    root_dir: Path,
+    model: str,
+    mat_file: str,
+    init_scripts: list[str],
+    unreachable_overrides: str,
+    coverage_threshold: float,
+    case_json: Path,
+    batch_size: int,
+    gateway_timeout_seconds: int,
+    mcdc_mode: str,
+) -> tuple[Path, Path, Path, Path]:
+    payload = load_json(case_json)
+    tests = payload.get("tests") if isinstance(payload.get("tests"), list) else []
+    if not tests:
+        raise RuntimeError("Final coverage batching requires at least one test case")
+    bounded_batch_size = max(1, int(batch_size))
+    batches = [tests[index:index + bounded_batch_size] for index in range(0, len(tests), bounded_batch_size)]
+    outputs = root_dir / "outputs"
+    records: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
+    coverage_data_files: list[Path] = []
+    manifest = outputs / f"{model}_final_coverage_batch_manifest.json"
+    for batch_index, batch_tests in enumerate(batches, start=1):
+        batch_case = outputs / f"{model}_final_coverage_batch_{batch_index:03d}_cases.json"
+        batch_result_name = f"{model}_final_coverage_batch_{batch_index:03d}_results.json"
+        batch_case.write_text(
+            json.dumps({**payload, "tests": batch_tests}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        record = {
+            "batchIndex": batch_index,
+            "caseStart": (batch_index - 1) * bounded_batch_size + 1,
+            "caseEnd": (batch_index - 1) * bounded_batch_size + len(batch_tests),
+            "caseCount": len(batch_tests),
+            "caseFileName": batch_case.name,
+            "caseSha256": hashlib.sha256(batch_case.read_bytes()).hexdigest(),
+            "timeoutSeconds": int(gateway_timeout_seconds),
+            "status": "running",
+        }
+        try:
+            run_probe(
+                python=python,
+                scripts=scripts,
+                root_dir=root_dir,
+                model=model,
+                mat_file=mat_file,
+                init_scripts=init_scripts,
+                unreachable_overrides=unreachable_overrides,
+                collect_coverage=True,
+                coverage_threshold=coverage_threshold,
+                case_json=batch_case,
+                output_name=batch_result_name,
+                gateway_timeout_seconds=gateway_timeout_seconds,
+                build_obligations=False,
+            )
+        except SatkEvaluationError as error:
+            record.update({
+                "status": "failed",
+                "errorCode": str(error.details.get("gatewayErrorCode") or "SATK_EVALUATION_FAILED"),
+                "diagnosticArtifactFileName": str(error.details.get("diagnosticArtifactFileName") or ""),
+            })
+            records.append(record)
+            manifest.write_text(json.dumps({
+                "schema": "tcsd-final-coverage-batch-manifest/v1",
+                "model": model,
+                "status": "failed",
+                "caseCount": len(tests),
+                "batchSize": bounded_batch_size,
+                "batchCount": len(batches),
+                "batches": records,
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            error.details.update({
+                "batchIndex": batch_index,
+                "batchCount": len(batches),
+                "batchCandidateCount": len(batch_tests),
+                "batchStart": record["caseStart"],
+                "batchEnd": record["caseEnd"],
+            })
+            raise
+        result_path = outputs / batch_result_name
+        generic_coverage_data = outputs / f"{model}_coverage.cvt"
+        generic_coverage_json = outputs / f"{model}_coverage_summary.json"
+        batch_coverage_data = outputs / f"{model}_final_coverage_batch_{batch_index:03d}.cvt"
+        batch_coverage_json = outputs / f"{model}_final_coverage_batch_{batch_index:03d}.json"
+        require_matlab_artifact(generic_coverage_data, phase="final_coverage_batch")
+        require_matlab_artifact(generic_coverage_json, phase="final_coverage_batch")
+        shutil.copyfile(generic_coverage_data, batch_coverage_data)
+        shutil.copyfile(generic_coverage_json, batch_coverage_json)
+        coverage_data_files.append(batch_coverage_data)
+        results.append(load_json(result_path))
+        record.update({
+            "status": "completed",
+            "resultFileName": result_path.name,
+            "resultSha256": hashlib.sha256(result_path.read_bytes()).hexdigest(),
+            "coverageDataFileName": batch_coverage_data.name,
+            "coverageDataSha256": hashlib.sha256(batch_coverage_data.read_bytes()).hexdigest(),
+        })
+        records.append(record)
+    merged_results = outputs / f"{model}_final_coverage_probe_results.json"
+    merged_results.write_text(
+        json.dumps(merge_probe_batches(results, model, case_json), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    final_coverage_data = outputs / f"{model}_final_coverage.cvt"
+    final_coverage_json = outputs / f"{model}_final_coverage.json"
+    merge_entry = outputs / ".tcsd-runtime" / f"{model}_final_coverage_merge_entry.m"
+    write_matlab_entry(
+        merge_entry,
+        "\n".join([
+            f"addpath({matlab_string(str(scripts))});",
+            (
+                f"merge_tcsd_coverage_many({matlab_string(str(root_dir))},{matlab_string(model)},"
+                f"{matlab_cell([str(path) for path in coverage_data_files])},"
+                f"{matlab_string(str(final_coverage_data))},{matlab_string(str(final_coverage_json))},"
+                f"'InitScripts',{matlab_cell(init_scripts)},'MatFile',{matlab_string(mat_file)},"
+                f"'McdcMode',{matlab_string(mcdc_mode)},'Threshold',{coverage_threshold:g});"
+            ),
+        ]),
+    )
+    run_satk(
+        python,
+        scripts,
+        merge_entry,
+        root_dir,
+        gateway_timeout_seconds=min(900, max(600, int(gateway_timeout_seconds))),
+    )
+    require_matlab_artifact(final_coverage_data, phase="final_coverage_merge")
+    require_matlab_artifact(final_coverage_json, phase="final_coverage_merge")
+    obligations = build_probe_obligations(
+        python=python,
+        scripts=scripts,
+        root_dir=root_dir,
+        model=model,
+        probe_results=merged_results,
+        unreachable_overrides=unreachable_overrides,
+    )
+    manifest.write_text(json.dumps({
+        "schema": "tcsd-final-coverage-batch-manifest/v1",
+        "model": model,
+        "status": "completed",
+        "caseCount": len(tests),
+        "batchSize": bounded_batch_size,
+        "batchCount": len(batches),
+        "batches": records,
+        "mergedCoverageDataFileName": final_coverage_data.name,
+        "mergedCoverageDataSha256": hashlib.sha256(final_coverage_data.read_bytes()).hexdigest(),
+        "mergedCoverageJsonFileName": final_coverage_json.name,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    return obligations, final_coverage_json, final_coverage_data, manifest
+
+
 def coverage_below_target(path: Path) -> bool:
     report = load_json(path)
     if not report:

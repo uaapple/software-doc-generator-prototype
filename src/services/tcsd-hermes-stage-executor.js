@@ -1008,6 +1008,8 @@ export class TcsdHermesStageExecutor {
             TCSD_JOB_ID: job.jobId,
             TCSD_OUTPUT_DIR: outputDir,
             TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
+            TCSD_STAGE_INDEX: String(stageIndex),
+            TCSD_STAGE_ATTEMPT: String(attempt),
             SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
           },
           timeout: this.timeoutMs,
@@ -1055,6 +1057,8 @@ export class TcsdHermesStageExecutor {
             TCSD_JOB_ID: job.jobId,
             TCSD_OUTPUT_DIR: outputDir,
             TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
+            TCSD_STAGE_INDEX: String(stageIndex),
+            TCSD_STAGE_ATTEMPT: String(attempt),
             SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
           },
           timeout: this.timeoutMs,
@@ -1104,6 +1108,8 @@ export class TcsdHermesStageExecutor {
             TCSD_JOB_ID: job.jobId,
             TCSD_OUTPUT_DIR: outputDir,
             TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
+            TCSD_STAGE_INDEX: String(stageIndex),
+            TCSD_STAGE_ATTEMPT: String(attempt),
             SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
           },
           timeout: this.timeoutMs,

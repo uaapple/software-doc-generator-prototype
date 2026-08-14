@@ -378,7 +378,7 @@ Gateway 网络恢复边界固定为：仅 `GET`、`PUT`、`DELETE` 遇到网络�
 
 十二个中文阶段及其职责固定为输入校验、环境检查、工作区初始化、接口提取、覆盖目标分析、状态 Probe、首版用例、仿真回填、首轮覆盖率、Coverage IR 修正、最终验证和产物/清理。Windows 继续使用 `SATK_MATLAB_SESSION_MODE=new`，每次 MATLAB/SATK 调用自包含，不依赖上一 session 的 base workspace。`unsupported`、`unresolved`、有证据的 `unreachable` 或最终覆盖不足以“部分完成”保留，不得伪装成完全达标。
 
-Stage 6 状态 Probe 和 Stage 11 最终覆盖率 Probe 都由宿主 runtime 根据工作量设置 Gateway job timeout，不得回退为固定 600 秒。Stage 6 按 `600 + 5 * candidateCount` 秒计算；Stage 11 按 `600 + 30 * caseCount` 秒计算；两者都把有效 `SATK_GATEWAY_TIMEOUT_SECONDS` 当作最低预算并封顶 3600 秒，与 Gateway 默认最大 job timeout 一致。真实超时仍是硬失败，不在同一 Agent session 内盲目重试。Stage 11 成功证据记录 `caseCount` / `probeTimeoutSeconds`，失败详情也保留安全的 `caseCount`，便于区分容量问题与 MATLAB 执行故障。
+Stage 6 状态 Probe 和 Stage 11 最终覆盖率 Probe 都由宿主 runtime 根据工作量设置 Gateway job timeout，不得回退为固定 600 秒。Stage 6 按 `600 + 5 * candidateCount` 秒计算。Stage 11 把最终用例按每批 20 条分批，每批按 `600 + 30 * batchCaseCount` 秒计算，各批原始 MathWorks 覆盖数据在最后合并。两者都把有效 `SATK_GATEWAY_TIMEOUT_SECONDS` 当作最低预算并封顶 3600 秒，与 Gateway 默认最大 job timeout 一致。真实超时仍是硬失败，不在同一 Agent 会话内盲目重试。Stage 11 成功证据记录 `caseCount` / `coverageBatchSize` / `coverageBatchCount` / `probeTimeoutSeconds`，失败详情保留精确失败批次和用例范围。
 
 第 6 阶段会为上升沿和下降沿模块生成专用测试序列：先稳定在相反初态，再触发目标边沿，随后观察并恢复输入；同时保持同一逻辑链上的其他与门输入为真、其他或门输入为假。第 10 阶段不再限制单个测试用例最多只能包含 8 个操作步骤；有证据支持的状态或时序序列可以保留全部必要步骤，但有限时长的连续保持仍应优先合并为一个带正值 `delay_s` 的等待操作。
 

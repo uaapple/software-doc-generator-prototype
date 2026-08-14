@@ -1,7 +1,7 @@
 ---
 name: tcsd-stage-10-repair-coverage
 metadata:
-  version: "1.7.0"
+  version: "1.8.0"
 description: Continue from the host's bounded Simulink Design Verifier coverage supplement, inspect only the remaining measured coverage gaps, propose focused temporal TCSD cases, and submit them to deterministic MATLAB incremental validation. Use only when a tcsd_stage_execute prompt explicitly requests stage 10 with a tcsd-agent-stage-input/v1 manifest.
 ---
 
@@ -13,6 +13,7 @@ The prompt's apply command invokes the shared `tcsd-runtime/scripts/run_tcsd_pip
 1. Require `stageIndex=10`. Inspect any host validation report before the initial manifest.
 2. The Worker host has already run one bounded Simulink Design Verifier pass against the Stage 9 coverage data, independently simulated its generated cases, and retained them only when the merged Condition, Decision, or MC/DC covered count increased. Do not run Design Verifier again.
 3. Read the generated `tcsd-coverage-repair-brief/v1`. It contains only the measured gaps that remain after the host pass. If the host result already exists because all three metrics reached the threshold, do not create a proposal or modify the result.
+   Gateway evaluation is limited to three consecutive failures per stage attempt. If the runtime reports `MATLAB_GATEWAY_FAILURE_BUDGET_EXHAUSTED`, stop debugging the Gateway, preserve the current best workbook, and submit the structured partial result path supplied by the host.
 4. For every below-threshold metric, start from the brief's measured block path, SID, missing outcome, description, logical trace, and Coverage IR. Prefer the matching `complexTargetGuidance` entry: it already summarizes controlling root inputs, resolved thresholds, state or delay elements, and structurally similar blocks. If the report exposes only a model-level deficit, use MATLAB/SATK to locate the exact uncovered block before proposing a case.
 5. Inspect only the target block's local upstream dependency slice. Identify:
    - controlling root inputs;
