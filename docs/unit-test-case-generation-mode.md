@@ -501,6 +501,28 @@ checkpoint**。步骤：
 7. 环境变量必须以 `SATK_MATLAB_ROOT` 为准（`satk_eval.py` 只读取它来传 `--matlab-root`；
    只设 `MATLAB_ROOT` 会得到 "no valid MATLAB environments found"）。两者都设最稳妥。
 
+### 10.2 Stage 10 常见难点速查（A02_B02 实战沉淀，2026-08-17）
+
+**场景：唯一覆盖缺口是"库块（ITKLib/自定义库）内部块的 Decision/MC/DC 分支未执行"**（如
+`StopWatchRE/Switch1 触发器 false`）。这类缺口曾耗时 50 分钟（其中 30 分钟浪费在探针等待），
+按以下步骤可压缩到 10-15 分钟：
+
+1. **定位库块**：缺口块在 `simulink/systems/system_<X>.xml` 里是 Reference 块（`SourceBlock=库名/块名`，
+   SID 如 `98:1125`），库内部结构在**库 SLX**（如 `ITKLib.slx`）的 system xml 里；先解库 SLX 还原内部。
+2. **端口映射**：库块 `PortCounts in="N"` → 按库内 Inport 的 `Port` 参数对应父系统 Line 的
+   `Src` 连接，逐个确认每个端口的真实信号来源（如 E=充电状态 OR 输出、R=NOT(E)、dT=时间步常量）。
+3. **代数化简**：把库内 Switch/UnitDelay 链化简为布尔表达式（如 `y = E ? Sum1 : 0`），
+   判断缺口分支的值是否**可能影响任何可观测输出**；若不可能 → 结构死路径候选。
+4. **布线互补检查**：若缺口分支的判据与另一判据严格互补（如 `R = NOT(E)`），
+   代数上该分支不可达，直接在 proposal 里报 `logic_unreachable` 并给出化简证据。
+5. **探针确认（可选但强烈建议）**：用 `probe_block_inputs.py` 或一次多场景 probe
+   （充电/非充电各若干步）实测缺口块执行计数；执行计数 0 即坐实死路径。
+6. **结果**：0 候选 + 1 具体 unresolved（`logic_unreachable`）是**合法且高质量**的 Stage 10
+   收尾——不要为了凑候选硬造用例；宿主校验接受后按 partial 交付并列出证据。
+
+**执行节奏**：每次 MATLAB 命令被 SIGTERM 后，孤儿进程会完成工作；`sleep 60-240` 等产物
+（探针 JSON/日志出现 "Application shutdown complete"）再继续，不要立即重跑同一命令。
+
 ---
 
 ## 11. 模式调用方式
