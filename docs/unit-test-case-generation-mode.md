@@ -474,6 +474,32 @@ checkpoint**。步骤：
 - 本机交互式 MATLAB Desktop 存在时，只清理任务归属的 MCP 进程，不强制关闭用户会话；
 - 不得把本机配置（macOS 路径）带入生产部署。
 
+### 10.1 进程与超时执行经验（实测，2026-08-16 会话 3c951a5a 与 3c9d00d3）
+
+以下规则来自真实运行事故，Agent 必须遵守，否则会误判失败并反复重试：
+
+1. **`satk_eval.py` / `run_tcsd_pipeline_stage.py` 一律前台执行，`timeoutMs` 给足 1,200,000（20 分钟）**。
+   MATLAB 冷启动可能 10 分钟（卡在启动对话框）也可能 30 秒（热会话复用），给足超时后耐心等待。
+2. **DSH 后台任务被 `SIGTERM` 杀掉 ≠ 任务失败**。实测中 bash 作业只杀"直接命令进程"，
+   不杀其子进程组——被杀的通常是 bash 包装/runner 本身，而 satk_eval/MCP/MATLAB 会作为
+   孤儿进程继续工作并正常完成（canary、探针、仿真全部落地）。**以产物文件为准**：
+   canary sentinel、`tcsd-agent-stage-result/v1`、探针输出 JSON 出现即成功，不要用 job 状态判断。
+3. **串行执行 satk_eval，禁止并发**。`TCSD_DEDICATED_WORKER=1`（或 `TCSD_CLEAN_STALE_MCP=1`）时，
+   每次 satk_eval 启动都会执行 `clean_stale_mcp_processes()`，杀掉同 `SATK_MCP_LOG_FOLDER` 下
+   所有"陈旧"任务 MCP——并发启动会互相杀掉对方刚启动的 MCP server。一个任务内连续多次调用时
+   也要等上一次完全退出（server 日志出现 "Application shutdown complete"）再启动下一次。
+4. **失败诊断顺序**：① 检查产物文件（sentinel/result/probe JSON）；② 读 MCP 日志
+   `/private/tmp/matlab-mcp-core-server-codex/server-*.log` 与 `watchdog-*.log`（记录 evaluate
+   开始/完成、MATLAB PID、清理动作，能区分"正常完成"与"真失败"）；③ 检查残留进程
+   （`ps aux | grep -E "matlab-mcp|MATLAB_R2026a"`）；④ 确认后才决定是否重试。
+5. **不要动用户自己的 MCP 服务器**（`--matlab-session-mode=existing`、log-folder 为
+   `/var/folders/.../T/matlab-mcp-server-*` 的进程）。`clean_stale_mcp_processes` 只匹配
+   同 `SATK_MCP_LOG_FOLDER` 的任务 MCP，用户 existing 服务器不在任务树里，误杀会破坏其他会话。
+6. **MATLAB 由 watchdog 按设计清理**：server 正常关闭后 watchdog 会 "Trying to terminate children"
+   杀掉任务 MATLAB——这是正常清理，不是异常；不要因此误报"进程被杀"。
+7. 环境变量必须以 `SATK_MATLAB_ROOT` 为准（`satk_eval.py` 只读取它来传 `--matlab-root`；
+   只设 `MATLAB_ROOT` 会得到 "no valid MATLAB environments found"）。两者都设最稳妥。
+
 ---
 
 ## 11. 模式调用方式
