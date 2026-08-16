@@ -126,6 +126,132 @@ def leaf_control(node: dict[str, Any]) -> tuple[str, Any] | None:
     return None
 
 
+def abs_target(op: str, c: float, desired: bool) -> float | None:
+    """Value y such that abs(y) op c holds for the desired outcome."""
+    if desired:
+        if op == ">":
+            return c + 1.0
+        if op == ">=":
+            return c if c >= 0 else None
+        if op == "<":
+            return 0.0
+        if op == "<=":
+            return 0.0 if c >= 0 else None
+        if op == "==":
+            return c if c >= 0 else None
+        if op == "~=":
+            return c + 1.0
+    else:
+        if op == ">":
+            return 0.0
+        if op == ">=":
+            return 0.0
+        if op == "<":
+            return c + 1.0
+        if op == "<=":
+            return c + 1.0
+        if op == "==":
+            return c + 1.0
+        if op == "~=":
+            return c
+    return None
+
+
+def chain_target(node: dict[str, Any], op: str, c: float, desired: bool,
+                 where: str, depth: int = 0) -> State | None:
+    """Propagate a comparison constraint back through monotone blocks.
+
+    Handles abs, product (division by a positive literal), Switch with a
+    statically resolvable criterion, and subsystem/From/Goto passthrough,
+    ending at a root Inport assignment. Returns None when the chain is not
+    statically controllable (stateful feedback, unknown criterion, ...).
+    """
+    if depth > 6 or not isinstance(node, dict):
+        return None
+    kind = str(node.get("kind") or "").lower()
+    if kind == "root_inport":
+        name = str(node.get("signal") or node.get("name") or "").strip()
+        if not name:
+            return None
+        if op == ">":
+            value = c + 1.0 if desired else c - 1.0
+        elif op == ">=":
+            value = c if desired else c - 1.0
+        elif op == "<":
+            value = c - 1.0 if desired else c + 1.0
+        elif op == "<=":
+            value = c if desired else c + 1.0
+        elif op == "==":
+            value = c if desired else c + 1.0
+        elif op == "~=":
+            value = c + 1.0 if desired else c
+        else:
+            return None
+        return State(inputs={name: value})
+    if kind == "constant":
+        return None  # literal outcome is fixed; no executable stimulus
+    if kind == "abs":
+        target = abs_target(op, c, desired)
+        if target is None:
+            return None
+        return chain_target(first_child(node), "==", target, True, f"{where}/abs", depth + 1)
+    if kind == "block":
+        semantic = str(node.get("semantic") or "").lower()
+        children = child_traces(node)
+        if semantic == "product" and len(children) == 2:
+            # y = in1 / in2 (or in1 * in2) with one literal factor.
+            left, right = children
+            left_c = leaf_control(left)
+            right_c = leaf_control(right)
+            if left_c and left_c[0] == "const" and right_c and right_c[0] == "const":
+                return None  # both literals: outcome fixed
+            if right_c and right_c[0] == "const" and float(right_c[1]) != 0:
+                # y = in1 / k  (k positive monotone; k negative flips the op)
+                k = float(right_c[1])
+                eff_op = op if k > 0 else flip_op(op)
+                return chain_target(left, eff_op, c * k, desired, f"{where}/div", depth + 1)
+            if left_c and left_c[0] == "const" and float(left_c[1]) != 0:
+                k = float(left_c[1])
+                eff_op = op if k > 0 else flip_op(op)
+                return chain_target(right, eff_op, c / k, desired, f"{where}/mul", depth + 1)
+        return None
+    if kind == "switch":
+        children = child_traces(node)
+        if len(children) == 3:
+            criterion = leaf_control(children[1])
+            if criterion and criterion[0] == "input":
+                # u2 ~= 0 criterion: true branch = data1, false branch = data3.
+                for branch, data, crit_value in ((True, children[0], 1), (False, children[2], 0)):
+                    state = chain_target(data, op, c, desired, f"{where}/switch", depth + 1)
+                    if state is not None:
+                        state.inputs[criterion[1]] = crit_value
+                        return state
+        return None
+    if kind in {"subsystem_inport", "subsystem_outport", "subsystem", "from", "goto"}:
+        source = node.get("source")
+        if isinstance(source, dict):
+            return chain_target(source, op, c, desired, f"{where}/{kind}", depth + 1)
+        children = child_traces(node)
+        if len(children) == 1:
+            return chain_target(children[0], op, c, desired, f"{where}/{kind}", depth + 1)
+        return None
+    if kind in {"datatypeconversion", "gain"}:
+        children = child_traces(node)
+        if len(children) == 1:
+            return chain_target(children[0], op, c, desired, f"{where}/{kind}", depth + 1)
+        return None
+    return None
+
+
+def first_child(node: dict[str, Any]) -> dict[str, Any] | None:
+    children = child_traces(node)
+    return children[0] if children else None
+
+
+def flip_op(op: str) -> str:
+    return {"<": ">", "<=": ">=", ">": "<", ">=": "<=", "==": "==", "~=": "~="}.get(op, op)
+
+
 def relational_static_state(node: dict[str, Any], desired: bool, where: str) -> State:
     """Statically map a relational comparison whose operands resolve to a
     root input and a literal constant (or a parameter with a resolved
@@ -137,6 +263,16 @@ def relational_static_state(node: dict[str, Any], desired: bool, where: str) -> 
         return State(issues=[f"{where}: unsupported relational operator {operator!r}"])
     left = leaf_control(children[0])
     right = leaf_control(children[1])
+    if left is None and right is not None and right[0] == "const":
+        # Left side is a chain through monotone blocks (abs/switch/div):
+        # propagate the comparison backward to its root input.
+        chained = chain_target(children[0], operator, float(right[1]), desired, f"{where}/chain")
+        if chained is not None:
+            return chained
+    if right is None and left is not None and left[0] == "const":
+        chained = chain_target(children[1], operator, float(left[1]), desired, f"{where}/chain")
+        if chained is not None:
+            return chained
     pairs = {
         ("<=", "input", "const"): (0, 1), ("<", "input", "const"): (-1, 0),
         (">=", "input", "const"): (0, -1), (">", "input", "const"): (1, 0),

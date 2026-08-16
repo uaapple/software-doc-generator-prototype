@@ -108,6 +108,8 @@
 4. 每阶段启动全新 session；任何 checkpoint 不得复用既有 session。
 5. 硬错误（环境、MATLAB、超时、MCP）**不重试**；只有确定性校验失败才允许一次修复 session。
 
+> **宿主侧一键执行器**：优先使用 `dsh_stage_runner.py` 完成整条流水线的阶段编排，宿主不再逐阶段手工拼接命令。流程为 `init`（建任务工作区/拷贝模型与 addon/写 task.json）→ `run --stage N`（manifest → 确定性运行时 → 语义验证 → checkpoint 写入，内部按阶段串行）→ `finish`（工作簿复制到模型目录，并生成 execution/timeline/artifact 三个宿主 manifest）。Stage 10 通过 `--stage10-mode prepare/apply` 两阶段完成（prepare 产生修复提案，apply 合成新工作簿并回填）。仅在单独调试某个子步骤（如只跑运行时、只跑语义验证）时才手工调用 `run_tcsd_pipeline_stage.py` / `host_validate_tcsd_stage.py`。
+
 ---
 
 ## 4. 十二阶段流程
@@ -577,6 +579,7 @@ skills/hermes/tcsd-runtime/scripts/collect_decision_blocks.m     # 非逻辑块�
 skills/hermes/tcsd-runtime/scripts/build_decision_obligations.py # 非逻辑块 Decision 义务（S05）
 skills/hermes/tcsd-runtime/scripts/probe_block_inputs.py         # 参数覆盖+块输入观测探针（S10 工具）
 skills/hermes/tcsd-runtime/scripts/probe_block_inputs_with_params.m
+skills/hermes/tcsd-runtime/scripts/dsh_stage_runner.py          # 宿主侧一键执行器（init/run/finish）
 skills/hermes/tcsd-runtime/scripts/run_tcsd_quality_loop.py     # 质量环（合成/校验/仿真/回填/probe）
 skills/hermes/tcsd-runtime/scripts/host_validate_tcsd_stage.py  # 宿主语义验证
 skills/hermes/tcsd-runtime/references/tcsd-rules.md             # 工作簿规则全集
@@ -620,6 +623,53 @@ tcsd-cleanup-result/v1              清理证据（S12）
 simulink-ut-tcsd-execution-manifest/v1     最终执行 manifest（宿主）
 tcsd-stage-timeline/v1              阶段时间线（宿主）
 tcsd-artifact-manifest/v1           产物清单（宿主）
+```
+
+## 附录 D：关键 schema 字段速查
+
+```text
+tcsd-agent-stage-input/v1（阶段输入指针，checkpoint.input）
+  { schema, path, sha256 }              # path 指向 manifest.json，宿主按 sha256 校验
+                                        # manifest.json = { schema, jobId, stageIndex, attempt, job }
+
+tcsd-agent-stage-result/v1（阶段结果，checkpoint.result）
+  { schema, jobId, stageIndex, status, summary, artifacts }
+  artifacts[] = { path, kind, role, sha256 }     # role: evidence / output
+  # Stage 10 结果追加 repair + evidence 字段
+
+tcsd-agent-stage-checkpoint/v2（宿主 checkpoint，每阶段唯一产物）
+  { schema, pipelineSchema, jobId, stageIndex, status, summary, attempt,
+    skill: { name, version, bundleVersion, bundleHash, skillFileHash },
+    runtime: { bundleVersion, bundleHash },
+    agent, prompt, input, result,
+    validation: { passed, reportPath, semantic }, toolLogs }
+
+simulink-ut-tcsd-coverage-ir/v1（覆盖 IR，S5 产物 / S10 输入）
+  { schema, model, items, summary }
+  items[] = { id, model, coverage_class, block: { path, sid },
+              required_outcome, ... }             # coverage_class: Condition/Decision/MCDC
+  summary = { covered, required, unreachable, unresolved, unsupported }
+
+simulink-ut-logical-mcdc-obligations/v1（逻辑义务，S5）
+  { schema, model, summary, obligations, source }   # source 指向探针结果文件
+  obligations[] = { id, model, block_path, sid, operator, coverage_class, required_outcome, ... }
+  summary = { operator_count, obligation_count, required_count, unreachable_count, unresolved_count, ... }
+
+tcsd-agent-coverage-repair-proposal/v1（Stage 10 修复提案）
+  { schema, jobId, model, tests, unresolved }
+  tests[] = { id, coverage_class, block: { path, sid }, required_outcome,
+              controller, stimulus, analysis }
+
+tcsd-host-semantic-validation/v1（宿主语义验证，挂在 checkpoint.validation.semantic）
+  validation = { passed, reportPath, semantic }     # semantic.schema 必须等于本 schema
+
+simulink-ut-tcsd-execution-manifest/v1（最终执行 manifest，宿主 finish 产物）
+  { schema, authority, jobId, status, completion, workbook, coverage, evidence }
+  coverage = { initial, final, repair_required, repair_attempted, repair_applied,
+               repair_passes, repair_reason, repair_evidence }
+
+tcsd-stage-timeline/v1 / tcsd-artifact-manifest/v1（宿主 finish 产物）
+  timeline：阶段时间线；artifact：{ schema, authority, jobId, artifacts }
 ```
 
 ## 附录 C：常用环境变量

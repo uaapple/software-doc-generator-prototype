@@ -241,6 +241,34 @@ class DecisionObligationBlocksTests(unittest.TestCase):
         self.assertEqual(obligations.solve_interval([("<=", 50.0), (">=", 30.0)]), 30.0)
         self.assertIsNone(obligations.solve_interval([("<=", 30.0), (">=", 50.0)]))
 
+    def test_chain_expansion_abs_switch_division(self) -> None:
+        mapping = script("derive_logical_mcdc_mappings.py")
+        veh = {"kind": "root_inport", "signal": "VehSpd"}
+        three_six = {"kind": "constant", "value": "3.6", "resolvedValue": 3.6}
+        divide = {"kind": "block", "semantic": "product",
+                  "inputs": [{"index": 1, "trace": veh}, {"index": 2, "trace": three_six}]}
+        vld = {"kind": "root_inport", "signal": "Vld"}
+        stateful = {"kind": "stateful", "initialCondition": "0"}
+        switch = {"kind": "switch", "criteria": "u2 ~= 0", "threshold": "0", "resolvedThreshold": 0,
+                  "inputs": [{"index": 1, "trace": divide},
+                             {"index": 2, "trace": vld},
+                             {"index": 3, "trace": stateful}]}
+        abs_node = {"kind": "abs", "inputs": {"index": 1, "trace": switch}}
+        thd = {"kind": "constant", "value": "Thd_C", "resolvedValue": 1}
+        relational = {"kind": "relational", "operator": ">",
+                      "inputs": [{"index": 1, "trace": abs_node}, {"index": 2, "trace": thd}]}
+        trace = {"model": "Chain", "operators": [{
+            "id": "Chain:1", "block_path": "Chain/AND", "operator": "AND",
+            "ports": [{"index": 1, "trace": relational}],
+        }]}
+        report = mapping.derive_report(trace)["operators"][0]
+        port = report["ports"][0]
+        # abs(switch(VehSpd/3.6)) > 1 true -> VehSpd = (1+1)*3.6 = 7.2 with Vld=1
+        self.assertEqual(port["true_inputs"].get("VehSpd"), 7.2)
+        self.assertEqual(port["true_inputs"].get("Vld"), 1)
+        # false -> abs <= 1 -> VehSpd = 0
+        self.assertEqual(port["false_inputs"].get("VehSpd"), 0.0)
+
     def test_ir_merges_decision_obligations(self) -> None:
         coverage_ir = script("build_coverage_ir.py")
         trace = {"model": "Mock", "operators": []}
