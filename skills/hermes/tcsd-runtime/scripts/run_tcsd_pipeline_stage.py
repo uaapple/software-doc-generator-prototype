@@ -331,9 +331,38 @@ def stage_run(
     if stage == 5:
         run([sys.executable, str(scripts()/"derive_logical_mcdc_mappings.py"), "--traces", str(traces), "--output", str(mapping)], root)
         run([sys.executable, str(scripts()/"build_logical_mcdc_obligations.py"), "--logical-operators", str(mapping), "--output", str(obligations), "--allow-unresolved"], root)
-        run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--obligations", str(obligations), "--output", str(coverage_ir)], root)
-        state.update({"mapping": str(mapping), "obligations": str(obligations), "coverageIr": str(coverage_ir)}); save_state(job, state)
-        finish(job, stage, summary="Condition、Decision 与 MC/DC 覆盖目标已形成 Coverage IR。", artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir)]); return
+        decision_blocks = out / f"{model}_decision_blocks.json"
+        decision_obligations = out / f"{model}_decision_obligations.json"
+        root_m = str(root).replace("'", "''"); scripts_m = str(scripts()).replace("'", "''")
+        model_m = model.replace("'", "''"); mat_m = Path(inp["modelMatPath"]).name.replace("'", "''")
+        init = inp.get("projectInitScripts", [])
+        collected = False
+        # Prefer MATLAB-collected decision blocks (real connectivity evidence);
+        # fall back to static SLX XML analysis when the MATLAB gate fails.
+        try:
+            entry = out / ".tcsd-runtime" / "stage05_decision_blocks.m"
+            entry.write_text(
+                f"rootDir='{root_m}'; initScripts={matlab_cell(init)}; addpath('{scripts_m}'); "
+                f"setup_ut_support(rootDir,initScripts); "
+                f"collect_decision_blocks(rootDir,'{model_m}','{mat_m}',initScripts,'{str(decision_blocks).replace(chr(39), chr(39)+chr(39))}');",
+                encoding="utf-8",
+            )
+            run_satk([sys.executable, str(scripts() / "satk_eval.py"), str(entry)], root, stage=stage, context="decision blocks collection failed")
+            if decision_blocks.is_file():
+                run([sys.executable, str(scripts()/"build_decision_obligations.py"), "--blocks", str(decision_blocks), "--slx", str(inp["modelSlxPath"]), "--output", str(decision_obligations)], root)
+                collected = True
+        except BaseException as error:
+            print(f"stage 05 MATLAB decision blocks collection unavailable: {error}", file=sys.stderr)
+        if not collected:
+            try:
+                run([sys.executable, str(scripts()/"build_decision_obligations.py"), "--slx", str(inp["modelSlxPath"]), "--interface", str(interface), "--output", str(decision_obligations)], root)
+                collected = True
+            except BaseException as error:
+                print(f"stage 05 static decision obligations unavailable: {error}", file=sys.stderr)
+        extra_args = ["--decision-obligations", str(decision_obligations)] if collected and decision_obligations.is_file() else []
+        run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--obligations", str(obligations), *extra_args, "--output", str(coverage_ir)], root)
+        state.update({"mapping": str(mapping), "obligations": str(obligations), "coverageIr": str(coverage_ir), "decisionObligations": str(decision_obligations)}); save_state(job, state)
+        finish(job, stage, summary="Condition、Decision 与 MC/DC 覆盖目标已形成 Coverage IR。", artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir), artifact(root, decision_obligations)]); return
     if stage == 6:
         plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
         probe_artifacts = [artifact(root, plan)]; candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))

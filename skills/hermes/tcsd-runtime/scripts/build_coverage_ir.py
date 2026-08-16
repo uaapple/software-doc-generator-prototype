@@ -83,8 +83,14 @@ def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> 
 
 
 def build_ir(
-    trace_payload: dict[str, Any], *, probe_payload: dict[str, Any] | None = None, evidence_obligations: dict[str, Any] | None = None
+    trace_payload: dict[str, Any], *, probe_payload: dict[str, Any] | None = None,
+    evidence_obligations: dict[str, Any] | None = None,
+    decision_obligations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    operators = trace_payload.get("operators")
+    if isinstance(operators, dict):
+        # MATLAB jsonencode emits a bare object for a single operator struct.
+        trace_payload = {**trace_payload, "operators": [operators]}
     reports = [trace_payload] if isinstance(trace_payload.get("operators"), list) else [v for v in trace_payload.values() if isinstance(v, dict) and isinstance(v.get("operators"), list)]
     model = str(trace_payload.get("model") or (reports[0].get("model") if reports else ""))
     planner = planner_module()
@@ -121,8 +127,10 @@ def build_ir(
     # Probe-derived obligations carry the only trustworthy temporal stimulus and
     # are therefore allowed to replace structural planning items with the same
     # identity. Unsupported/unresolved items are retained verbatim as evidence.
-    if evidence_obligations:
-        raw_items = evidence_obligations.get("obligations", evidence_obligations)
+    for extra in (evidence_obligations, decision_obligations):
+        if not extra:
+            continue
+        raw_items = extra.get("obligations", extra)
         if isinstance(raw_items, list):
             for obligation in raw_items:
                 if isinstance(obligation, dict):
@@ -139,10 +147,12 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--probe-results")
     parser.add_argument("--obligations", help="probe or coverage-report-derived obligations to merge into the IR")
+    parser.add_argument("--decision-obligations", help="simulink-ut-decision-obligations/v1 to merge into the IR")
     args = parser.parse_args()
     result = build_ir(
         load(args.logical_traces), probe_payload=load(args.probe_results) if args.probe_results else None,
         evidence_obligations=load(args.obligations) if args.obligations else None,
+        decision_obligations=load(args.decision_obligations) if args.decision_obligations else None,
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

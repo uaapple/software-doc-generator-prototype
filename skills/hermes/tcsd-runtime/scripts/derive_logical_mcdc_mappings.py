@@ -133,6 +133,11 @@ def derive_state(node: dict[str, Any], desired: bool, where: str) -> State:
 
 
 def reports_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    operators = payload.get("operators")
+    # MATLAB jsonencode emits a bare object for a single (or zero-element)
+    # struct array; normalize both shapes back to a list before use.
+    if isinstance(operators, dict):
+        payload = {**payload, "operators": [operators]}
     if isinstance(payload.get("operators"), list):
         return [payload]
     return [value for value in payload.values() if isinstance(value, dict) and isinstance(value.get("operators"), list)]

@@ -212,7 +212,10 @@ def build_for_model(
 ) -> dict[str, Any]:
     found = observation_index(report)
     obligations: list[dict[str, Any]] = []
-    for probe in report.get("probes", []):
+    probes = report.get("probes") or []
+    if isinstance(probes, dict):
+        probes = [probes]
+    for probe in probes:
         if not isinstance(probe, dict):
             continue
         op_id = str(probe.get("id") or probe.get("sid") or probe.get("block_path") or "")

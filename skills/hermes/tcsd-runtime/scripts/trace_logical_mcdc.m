@@ -50,7 +50,8 @@ for m = 1:numel(modelNames)
     report.model = modelName;
     report.sample_time = model_sample_time(modelName);
     report.operator_count = numel(items);
-    report.operators = items;
+    % Force a row array so jsonencode emits a JSON array even for zero/one operator.
+    report.operators = items(:).';
     allReports.(matlab.lang.makeValidName(modelName)) = report;
     write_json(fullfile(rootDir, 'outputs', [modelName '_logical_traces.json']), report);
     bdclose(modelName);

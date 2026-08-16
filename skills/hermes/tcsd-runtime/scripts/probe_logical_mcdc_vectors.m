@@ -56,8 +56,9 @@ for m = 1:numel(modelNames)
     report.model = modelName;
     report.outputs = outputNames;
     report.case_json = caseJson;
-    report.probes = probes;
-    report.observations = observations;
+    % Force row arrays so jsonencode emits JSON arrays even for zero/one probe.
+    report.probes = probes(:).';
+    report.observations = observations(:).';
     allReports.(matlab.lang.makeValidName(modelName)) = report;
     if ~isempty(aggregateCoverage)
         coverageReports.(matlab.lang.makeValidName(modelName)) = coverage_summary(aggregateCoverage, modelName, numel(tests), opts.CoverageThreshold);

@@ -146,11 +146,17 @@
 名称或 `b*` 前缀猜测，不能把 Boolean 形信号整体转成 `single`/`double`）。
 
 **Stage 05**：`derive_logical_mcdc_mappings.py` → `build_logical_mcdc_obligations.py`
-（`--allow-unresolved`）→ `build_coverage_ir.py`，生成 Coverage IR。IR 是“模型分析 → 用例合成”
+（`--allow-unresolved`）→ 非逻辑块 Decision 义务（`collect_decision_blocks.m` 经
+`satk_eval` 收集真实块/连接证据，`build_decision_obligations.py --blocks` 生成
+`simulink-ut-decision-obligations/v1`；MATLAB 不可用时自动回退 `--slx` 静态 XML 分析，
+两者都失败则跳过）→ `build_coverage_ir.py --decision-obligations` 合并进 Coverage IR。
+IR 是“模型分析 → 用例合成”
 的确定性边界：每个条目记录覆盖类（Condition/Decision/MCDC）、block path/SID、required outcome、
 直接根输入赋值、参数覆盖、嵌套逻辑条件状态、敏化上下文、完整时序刺激、可达性状态
 （`required/covered/unsupported/unresolved/unreachable`）与证据。`unreachable` 必须要有结构或
-仿真证据；缺失映射或候选耗尽**不得**转成 `unreachable`。
+仿真证据；缺失映射或候选耗尽**不得**转成 `unreachable`。非逻辑块义务（Switch/RelationalOperator/
+MinMax/MultiPortSwitch/Saturate/Abs/使能门）只接受“能静态追到根输入或字面常量”的控制赋值，
+其余保持 `unresolved` 并给出具体原因，绝不猜测根输入名。
 
 **Stage 06**：`build_state_probe_plan.py` 生成候选（每端口 ≤32 候选、每候选 ≤8 步）；有候选则
 通过 `probe_logical_mcdc_vectors.m` 真实运行 probe，用 `build_probe_mcdc_obligations.py` 把观测
@@ -514,6 +520,10 @@ Agent 收到后：
 skills/hermes/tcsd-stage-01..12-*/SKILL.md    # 十二个原子阶段技能
 skills/hermes/tcsd-runtime/                   # 共享运行时（assets/scripts/references）
 skills/hermes/tcsd-runtime/scripts/run_tcsd_pipeline_stage.py   # 确定性运行时入口
+skills/hermes/tcsd-runtime/scripts/collect_decision_blocks.m     # 非逻辑块真实连接收集（S05）
+skills/hermes/tcsd-runtime/scripts/build_decision_obligations.py # 非逻辑块 Decision 义务（S05）
+skills/hermes/tcsd-runtime/scripts/probe_block_inputs.py         # 参数覆盖+块输入观测探针（S10 工具）
+skills/hermes/tcsd-runtime/scripts/probe_block_inputs_with_params.m
 skills/hermes/tcsd-runtime/scripts/run_tcsd_quality_loop.py     # 质量环（合成/校验/仿真/回填/probe）
 skills/hermes/tcsd-runtime/scripts/host_validate_tcsd_stage.py  # 宿主语义验证
 skills/hermes/tcsd-runtime/references/tcsd-rules.md             # 工作簿规则全集

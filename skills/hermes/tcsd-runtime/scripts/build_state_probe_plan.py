@@ -131,6 +131,9 @@ def static_state(node: dict[str, Any], desired: bool) -> tuple[dict[str, Any], d
 
 
 def reports(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    operators = payload.get("operators")
+    if isinstance(operators, dict):
+        payload = {**payload, "operators": [operators]}
     if isinstance(payload.get("operators"), list):
         return [payload]
     return [item for item in payload.values() if isinstance(item, dict) and isinstance(item.get("operators"), list)]
