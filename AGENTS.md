@@ -57,17 +57,14 @@ npm run classify:changes -- --allow-ambiguous
 - shared 协议/配置单独提交。
 - dev-only 夹具或验证材料单独提交。
 
-每次涉及代码或部署相关改动的最终回复必须包含部署拆分说明：
-
-```text
-Deployment split:
-- linux-prod: ...
-- windows-prod: ...
-- shared: ...
-- dev-only: ...
-- excluded runtime/local: ...
-```
-
 如果本次改动会改变部署方式、运行环境变量、release 包内容或拆分规则，必须同步更新：
 
 - `docs/deployment-split-handoff.md`
+
+<!-- core-principles:start -->
+## 核心原则
+
+1. Choose the simplest implementation that fully satisfies the current requirements. Avoid unnecessary abstraction, configuration, indirection, or speculative extensibility.
+2. Make the smallest necessary change that fixes the root cause. Do not refactor unrelated modules or change strategy semantics unless explicitly requested.
+3. Grow the system in layers. Start from the smallest working end-to-end version and add new capabilities incrementally. Never replace a working system with unfinished complexity.
+<!-- core-principles:end -->
