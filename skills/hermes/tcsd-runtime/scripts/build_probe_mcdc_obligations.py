@@ -4,11 +4,30 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any
 
 SCHEMA = "simulink-ut-logical-mcdc-obligations/v1"
+
+
+def load_algebraic_analysis():
+    """Load the sibling structural builder for its algebraic unreachability
+    analysis (strict implication between AND/OR sibling ports). Returns None
+    when unavailable so the probe builder degrades gracefully."""
+    try:
+        path = Path(__file__).resolve().with_name("build_logical_mcdc_obligations.py")
+        spec = importlib.util.spec_from_file_location("tcsd_logical_algebra", path)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        return None
+
+
+ALGEBRAIC = load_algebraic_analysis()
 
 
 def required_vectors(operator: str, n: int) -> list[str]:
@@ -202,6 +221,25 @@ def port_count(probe: dict[str, Any]) -> int:
     return int(probe.get("port_count") or 0)
 
 
+def algebraic_unreachable_reason(operator: str, label: str, mapping: dict[str, Any] | None) -> str | None:
+    """Algebraic evidence when this single-toggle vector is impossible (one AND
+    sibling strictly implies the toggled port, or the toggled OR port strictly
+    implies a sibling), else None. Only unobserved vectors reach this point."""
+    if ALGEBRAIC is None or not mapping:
+        return None
+    if operator not in {"AND", "OR"} or len(label) < 2:
+        return None
+    # Single-toggle vectors only: AND has exactly one F, OR exactly one T.
+    toggles = [i for i, char in enumerate(label) if char == ("T" if operator == "OR" else "F")]
+    if len(toggles) != 1:
+        return None
+    toggle_index = toggles[0] + 1
+    facts = ALGEBRAIC.facts_for_operator(mapping)
+    if len(facts) != len(label):
+        return None
+    return ALGEBRAIC.algebraic_unreachable_vector(operator, facts, toggle_index)
+
+
 def build_for_model(
     model: str,
     report: dict[str, Any],
@@ -287,7 +325,16 @@ def build_for_model(
                     obligations.append(item)
                     continue
                 override = find_override(overrides, model, op_id, label)
-                if override:
+                algebraic_reason = algebraic_unreachable_reason(operator, label, (mappings or {}).get(op_id))
+                if algebraic_reason:
+                    item.update(
+                        {
+                            "status": "unreachable",
+                            "reason": algebraic_reason,
+                            "evidence_state": "unreachable_algebraic_static",
+                        }
+                    )
+                elif override:
                     item.update(
                         {
                             "status": str(override.get("status") or "unreachable"),

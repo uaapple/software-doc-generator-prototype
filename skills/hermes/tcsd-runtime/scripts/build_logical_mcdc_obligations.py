@@ -180,6 +180,197 @@ def make_required_vector(operator_kind: str, port_count: int, toggle_index: int 
     return vector
 
 
+# ── algebraic unreachability (strict implication between sibling ports) ──────
+#
+# When two AND/OR inputs compare the SAME signal with constants, one condition
+# can strictly imply the other (e.g. (x>0.01) implies (x>0)). Then the implied
+# (weaker) port's MC/DC independent-effect vector is algebraically impossible:
+#   AND: strong port true forces weak port true  -> weak port (T,F) impossible
+#   OR : weak port true forces strong port true  -> weak port (F,T) impossible
+# Those vectors are marked `unreachable` at build time with algebraic evidence,
+# so they never enter the required denominator and Stage 10 need not re-prove
+# the same implication on every run (B04 RampLimiter2 AND(233,234) case).
+
+IMPLY_OPS = {">", ">=", "<", "<=", "==", "~="}
+
+
+def flip_op(op: str) -> str:
+    return {"<": ">", ">": "<", "<=": ">=", ">=": "<=", "==": "==", "~=": "~="}.get(op, op)
+
+
+def constant_value(trace: Any) -> float | None:
+    """Numeric value of a Constant trace leaf, or None."""
+    if not isinstance(trace, dict):
+        return None
+    if str(trace.get("kind") or "").lower() != "constant":
+        return None
+    for key in ("resolvedValue", "value", "resolved_value"):
+        raw = trace.get(key)
+        if raw is None:
+            continue
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def resolve_constant(trace: Any, depth: int = 0) -> float | None:
+    """Follow passthrough blocks, subsystem inports and From/Goto links to the
+    underlying Constant value (B04 RampLimiter2: LimitUp -> Constant7 with
+    resolvedValue 0.01). Returns None when the leaf is not a resolvable
+    constant or the chain is too deep / cyclic."""
+    if not isinstance(trace, dict) or depth > 8:
+        return None
+    kind = str(trace.get("kind") or "").lower()
+    if kind == "constant":
+        return constant_value(trace)
+    if kind in ("subsystem_inport", "from"):
+        return resolve_constant(trace.get("source"), depth + 1)
+    if kind == "block":
+        semantic = str(trace.get("semantic") or "").lower()
+        if semantic in ("datatypeconversion", "signalconversion", "unitconversion",
+                        "convert", "passthrough", "transfer"):
+            inputs = trace.get("inputs")
+            if isinstance(inputs, dict):
+                return resolve_constant(inputs.get("trace"), depth + 1)
+            if isinstance(inputs, list) and inputs and isinstance(inputs[0], dict):
+                return resolve_constant(inputs[0].get("trace"), depth + 1)
+        return None
+    return None
+
+
+def signal_leaf_id(trace: Any) -> str | None:
+    """Canonical identity of the signal side of a comparison: the top block
+    SID, or the root Inport SID/name. Constants have no signal identity."""
+    if not isinstance(trace, dict):
+        return None
+    kind = str(trace.get("kind") or "").lower()
+    if kind == "constant":
+        return None
+    sid = trace.get("sid")
+    if kind == "root_inport":
+        return f"inport:{sid or trace.get('name') or trace.get('signal')}"
+    if sid:
+        return f"block:{sid}"
+    return None
+
+
+def comparison_fact(port: dict[str, Any]) -> tuple[str, str, float] | None:
+    """(signal_id, op, constant) for a relational port trace, or None when not
+    statically decidable (stateful path, variable parameter, unknown leaf)."""
+    trace = port.get("source_trace") or port.get("trace")
+    if not isinstance(trace, dict) or str(trace.get("kind") or "").lower() != "relational":
+        return None
+    op = str(trace.get("operator") or "").strip()
+    if op not in IMPLY_OPS:
+        return None
+    inputs = trace.get("inputs")
+    if not isinstance(inputs, list) or len(inputs) < 2:
+        return None
+    first, second = inputs[0].get("trace"), inputs[1].get("trace")
+    first_constant = resolve_constant(first)
+    second_constant = resolve_constant(second)
+    first_signal = signal_leaf_id(first)
+    second_signal = signal_leaf_id(second)
+    if second_constant is not None and first_constant is None and first_signal is not None:
+        return first_signal, op, second_constant
+    if first_constant is not None and second_constant is None and second_signal is not None:
+        return second_signal, flip_op(op), first_constant
+    return None
+
+
+def implies(left: tuple[str, str, float], right: tuple[str, str, float]) -> bool:
+    """True when `left` true implies `right` true on the same signal."""
+    left_id, left_op, left_c = left
+    right_id, right_op, right_c = right
+    if left_id != right_id:
+        return False
+    if left_op == ">" and right_op in (">", ">="):
+        return left_c >= right_c
+    if left_op == ">=" and right_op == ">=":
+        return left_c >= right_c
+    if left_op == ">=" and right_op == ">":
+        return left_c > right_c
+    if left_op == "<" and right_op in ("<", "<="):
+        return left_c <= right_c
+    if left_op == "<=" and right_op == "<=":
+        return left_c <= right_c
+    if left_op == "<=" and right_op == "<":
+        return left_c < right_c
+    if left_op == "==":
+        if right_op in (">=", "<="):
+            return True
+        if right_op == "==":
+            return left_c == right_c
+        if right_op == ">":
+            return left_c > right_c
+        if right_op == "<":
+            return left_c < right_c
+        if right_op == "~=":
+            return left_c != right_c
+        return False
+    if left_op == "~=" and right_op == "~=":
+        return left_c == right_c
+    return False
+
+
+def facts_for_operator(operator: dict[str, Any]) -> list[tuple[str, str, float] | None]:
+    ports = operator.get("ports") or operator.get("inputs") or []
+    if not isinstance(ports, list):
+        return []
+    return [comparison_fact(port) if isinstance(port, dict) else None for port in ports]
+
+
+def algebraic_unreachable_ports(operator_kind: str, facts: list[tuple[str, str, float] | None]) -> dict[int, tuple[int, str]]:
+    """Port index (1-based) -> (implied_by_port_index, evidence) whose MC/DC
+    independent-effect toggle vector is algebraically impossible."""
+    if operator_kind not in {"AND", "OR"} or len(facts) < 2:
+        return {}
+    result: dict[int, tuple[int, str]] = {}
+    for j, fact_j in enumerate(facts):
+        if fact_j is None:
+            continue
+        for k, fact_k in enumerate(facts):
+            if k == j or fact_k is None:
+                continue
+            if operator_kind == "AND" and implies(fact_k, fact_j):
+                _, _, k_c = fact_k
+                _, _, j_c = fact_j
+                result[j + 1] = (
+                    k + 1,
+                    f"port{j + 1} false independent-effect vector (T..F) impossible: "
+                    f"port{k + 1} condition (same signal, {fact_k[1]}{k_c:g}) strictly implies "
+                    f"port{j + 1} condition ({fact_j[1]}{j_c:g}); strong true forces weak true.",
+                )
+                break
+            if operator_kind == "OR" and implies(fact_j, fact_k):
+                _, _, j_c = fact_j
+                _, _, k_c = fact_k
+                result[j + 1] = (
+                    k + 1,
+                    f"port{j + 1} true independent-effect vector (F..T) impossible: "
+                    f"port{j + 1} condition (same signal, {fact_j[1]}{j_c:g}) strictly implies "
+                    f"port{k + 1} condition ({fact_k[1]}{k_c:g}); weak true forces strong true.",
+                )
+                break
+    return result
+
+
+def algebraic_unreachable_vector(
+    operator_kind: str,
+    facts: list[tuple[str, str, float] | None],
+    toggle_index: int,
+) -> str | None:
+    """Evidence string when the single-toggle vector at `toggle_index` (1-based)
+    is algebraically impossible, else None."""
+    if toggle_index is None:
+        return None
+    unreachable = algebraic_unreachable_ports(operator_kind, facts)
+    entry = unreachable.get(toggle_index)
+    return entry[1] if entry else None
+
+
 def vector_label(operator_kind: str, vector: dict[int, bool]) -> str:
     letters = "".join("T" if vector[idx] else "F" for idx in sorted(vector))
     if operator_kind == "OR" and set(vector.values()) == {False}:
@@ -278,6 +469,7 @@ def build_obligation(
     operator_kind: str,
     ports: list[dict[str, Any]],
     vector: dict[int, bool],
+    unreachable_reason: str | None = None,
 ) -> dict[str, Any]:
     op_id = operator_id(operator, operator_index)
     label = vector_label(operator_kind, vector)
@@ -341,6 +533,26 @@ def build_obligation(
                 match_inputs, match_params = resolved
                 issues = [issue for issue in issues if issue.get("code") != "conflicting_assignment"]
 
+    if unreachable_reason:
+        return {
+            "id": f"{op_id}_{label}",
+            "model": model,
+            "block_path": operator.get("block_path") or operator.get("path"),
+            "sid": operator.get("sid"),
+            "operator": operator_kind,
+            "coverage_class": "MCDC",
+            "status": "unreachable",
+            "required_outcome": f"operator_input_vector={''.join('T' if vector[i] else 'F' for i in sorted(vector))}; output={output_for_vector(operator_kind, vector)}",
+            "operator_inputs": {str(idx): value for idx, value in vector.items()},
+            "source_ports": port_facts,
+            "match": {
+                "inputs": match_inputs,
+                "params": match_params,
+            },
+            "reason": unreachable_reason,
+            "evidence_state": "unreachable_algebraic",
+            "issues": issues,
+        }
     status = "required" if not issues else "unresolved"
     return {
         "id": f"{op_id}_{label}",
@@ -392,10 +604,20 @@ def build_obligations(data: dict[str, Any]) -> dict[str, Any]:
         for idx, port in enumerate(normalized_ports, start=1):
             port.setdefault("index", idx)
 
+        facts = facts_for_operator(operator)
         vector_specs = [make_required_vector(operator_kind, len(normalized_ports), None)]
         for idx in range(1, len(normalized_ports) + 1):
             vector_specs.append(make_required_vector(operator_kind, len(normalized_ports), idx))
         for vector in vector_specs:
+            # Toggle vectors flip exactly one port away from the baseline
+            # (AND single-false, OR single-true); the baseline has no toggle.
+            if operator_kind == "AND":
+                toggle = next((idx for idx, desired in vector.items() if not desired), None)
+            else:
+                toggle = next((idx for idx, desired in vector.items() if desired), None)
+            unreachable_reason = None
+            if toggle is not None and len(normalized_ports) >= 2:
+                unreachable_reason = algebraic_unreachable_vector(operator_kind, facts, toggle)
             obligations.append(
                 build_obligation(
                     model=model,
@@ -404,11 +626,13 @@ def build_obligations(data: dict[str, Any]) -> dict[str, Any]:
                     operator_kind=operator_kind,
                     ports=normalized_ports,
                     vector=vector,
+                    unreachable_reason=unreachable_reason,
                 )
             )
 
     required_count = sum(1 for item in obligations if item.get("status") == "required")
     unresolved_count = sum(1 for item in obligations if item.get("status") == "unresolved")
+    unreachable_count = sum(1 for item in obligations if item.get("status") == "unreachable")
     return {
         "schema": SCHEMA,
         "model": model,
@@ -417,6 +641,7 @@ def build_obligations(data: dict[str, Any]) -> dict[str, Any]:
             "obligation_count": len(obligations),
             "required_count": required_count,
             "unresolved_count": unresolved_count,
+            "unreachable_count": unreachable_count,
             "skipped_count": len(skipped),
         },
         "obligations": obligations,

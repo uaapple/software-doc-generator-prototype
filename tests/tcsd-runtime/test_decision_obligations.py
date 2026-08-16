@@ -283,6 +283,82 @@ class DecisionObligationBlocksTests(unittest.TestCase):
         self.assertEqual(item["reachability"]["status"], "required")
         self.assertEqual(item["controller"]["direct_inputs"], {"Ena": 1})
 
+    # ── algebraic unreachability (strict sibling implication) ───────────────
+
+    @staticmethod
+    def _rel_port(sid: int, op: str, signal_sid: str, constant: float) -> dict:
+        return {
+            "index": 1,
+            "source_trace": {
+                "kind": "relational", "operator": op, "sid": f"M:{sid}",
+                "inputs": [
+                    {"index": 1, "trace": {"kind": "block", "sid": signal_sid, "semantic": "sum"}},
+                    {"index": 2, "trace": {"kind": "constant", "resolvedValue": constant}},
+                ],
+            },
+        }
+
+    def test_implies_same_signal_direction_and_constants(self) -> None:
+        obligations = script("build_logical_mcdc_obligations.py")
+        x_gt = ("s", ">", 0.01)
+        x_gt0 = ("s", ">", 0.0)
+        x_ge = ("s", ">=", 0.01)
+        x_lt = ("s", "<", -0.5)
+        other = ("t", ">", 0.0)
+        self.assertTrue(obligations.implies(x_gt, x_gt0))      # x>0.01 -> x>0
+        self.assertFalse(obligations.implies(x_gt0, x_gt))     # x>0  -/-> x>0.01
+        self.assertTrue(obligations.implies(x_ge, x_gt0))      # x>=0.01 -> x>0 (0.01>0)
+        self.assertTrue(obligations.implies(x_gt, x_ge))       # x>0.01 -> x>=0.01
+        self.assertFalse(obligations.implies(x_ge, x_gt))      # x>=0.01 -/-> x>0.01 (x=0.01)
+        self.assertTrue(obligations.implies(x_gt, x_gt))       # reflexive (duplicate ports)
+        self.assertFalse(obligations.implies(x_gt, x_lt))      # cross-direction never
+        self.assertFalse(obligations.implies(x_gt, other))     # different signals never
+        self.assertTrue(obligations.implies(("s", "==", 5.0), x_gt0))
+        self.assertTrue(obligations.implies(("s", "~=", 3.0), ("s", "~=", 3.0)))
+        self.assertFalse(obligations.implies(("s", "~=", 3.0), ("s", "~=", 4.0)))
+
+    def test_and_weak_port_tf_vector_is_unreachable_with_evidence(self) -> None:
+        obligations = script("build_logical_mcdc_obligations.py")
+        operator = {
+            "id": "M:231", "operator": "AND", "block_path": "M/RampLimiter2/Logical Operator1",
+            "ports": [self._rel_port(233, ">", "S:221", 0.01), self._rel_port(234, ">", "S:221", 0.0)],
+        }
+        report = obligations.build_obligations({"model": "M", "operators": [operator]})
+        by_id = {item["id"]: item for item in report["obligations"]}
+        self.assertEqual(report["summary"]["unreachable_count"], 1)
+        self.assertEqual(by_id["M:231_vector_TF"]["status"], "unreachable")
+        self.assertIn("strictly implies", by_id["M:231_vector_TF"]["reason"])
+        self.assertEqual(by_id["M:231_vector_TF"]["evidence_state"], "unreachable_algebraic")
+        self.assertEqual(by_id["M:231_baseline_all_true"]["status"], "unresolved")  # no mapping -> unresolved, not unreachable
+        self.assertEqual(by_id["M:231_vector_FT"]["status"], "unresolved")
+
+    def test_or_strong_port_toggle_vector_is_unreachable(self) -> None:
+        obligations = script("build_logical_mcdc_obligations.py")
+        operator = {
+            "id": "M:232", "operator": "OR", "block_path": "M/OR",
+            "ports": [self._rel_port(1, ">", "S:1", 0.0), self._rel_port(2, ">", "S:1", 0.01)],
+        }
+        report = obligations.build_obligations({"model": "M", "operators": [operator]})
+        by_id = {item["id"]: item for item in report["obligations"]}
+        # port2 (x>0.01) true forces port1 (x>0) true -> single-true FT impossible
+        self.assertEqual(report["summary"]["unreachable_count"], 1)
+        self.assertEqual(by_id["M:232_vector_FT"]["status"], "unreachable")
+        self.assertEqual(by_id["M:232_baseline_all_false"]["status"], "unresolved")
+
+    def test_different_signals_or_constants_are_not_marked_unreachable(self) -> None:
+        obligations = script("build_logical_mcdc_obligations.py")
+        different_signal = {
+            "id": "M:233", "operator": "AND", "block_path": "M/AND",
+            "ports": [self._rel_port(1, ">", "S:A", 0.01), self._rel_port(2, ">", "S:B", 0.0)],
+        }
+        cross_direction = {
+            "id": "M:234", "operator": "AND", "block_path": "M/AND",
+            "ports": [self._rel_port(1, ">", "S:A", 0.0), self._rel_port(2, "<", "S:A", 0.01)],
+        }
+        for operator in (different_signal, cross_direction):
+            report = obligations.build_obligations({"model": "M", "operators": [operator]})
+            self.assertEqual(report["summary"]["unreachable_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

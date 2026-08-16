@@ -346,7 +346,7 @@ outcome → 控制根输入或标量参数 → 计划 Test/action → 证据状�
 | Switch | true/false 两侧都驱动（真实触发信号跨过判据） |
 | RelationalOperator | 相等/不等：每个被比较常量 + 一个合法不匹配基线；大小比较：below/equal/above；符号判据（`<0`、`~=0`）：负/零/正 |
 | 相等银行 | 同一模式信号（`stMod`/`stMode`/`stCfg`）对多个常量比较 → 每个常量一个用例 |
-| Logical Operator | AND：全真 + 每输入单独假；OR：全假 + 每输入单独真；考虑上游 NOT/反相后反推根输入赋值；映射保留在义务矩阵 |
+| Logical Operator | AND：全真 + 每输入单独假；OR：全假 + 每输入单独真；考虑上游 NOT/反相后反推根输入赋值；映射保留在义务矩阵。若某输入条件**严格蕴含**另一输入（同信号同向比较，如 `(x>0.01)` ⊃ `(x>0)`），弱端独立向量代数不可达——义务构建器自动标记 `unreachable`（带证据），Stage 10 无需重复证明 |
 | MinMax | 每个输入端口至少赢一次；相等/平局不算可靠赢家 |
 | MultiPortSwitch | 每个合法 selector 值 + default 分支（按该块合法性推导，不按同名枚举）；非法 selector 必须通过改刺激/保持/安全标定修复，不靠全局诊断抑制 |
 | Saturate | 低于下限 / 区间内 / 高于上限三区 |
@@ -537,10 +537,15 @@ checkpoint**。步骤：
 5. **代数冗余检查（AND/OR 输入互含，B04 实测 2026-08-17）**：当 AND/OR 两个输入是对同一信号
    的比较且一者**严格强于**另一者（如 `(x>0.01)` 强于 `(x>0)`、`(x≥c)` 强于 `(x>c)`），
    强端 true 必然蕴含弱端 true，弱输入端的独立影响向量（AND 的 `(T,F)`、OR 的 `(F,T)`）
-   **代数不可达**，无需探针即可判定：直接报 `logic_unreachable` 并给出蕴含证据。
-   B04 实测：`RampLimiter2` 内 `AND(233,234)`（233: `(In-y_prev)>LimitUp(0.01)`，234: `(In-y_prev)>0`）
-   与 `AND(235,236)`（LimitDown(0.005) 同构）各 1 条 MC/DC 缺口即此类，两条都是弱端
-   `(T,F)` 向量不可能（`LimitUp=0.01>0`）。
+   **代数不可达**，无需探针即可判定。
+   **该判定已静态化（2026-08-17 实施）**：`build_logical_mcdc_obligations.py` 构建义务时自动
+   完成（穿透 DataTypeConversion/子系统 Inport/From 链解析常量，如 RampLimiter2 的
+   `LimitUp`→Constant7 `resolvedValue=0.01`），不可达向量标记 `status=unreachable` + 蕴含
+   证据；`run_tcsd_quality_loop.py` 在 Stage 9/11 自动把带证据的不可达向量从覆盖率分母排除
+   （clamp 不低于 covered）。Stage 10 遇到此类缺口直接引用构建期证据，无需重新证明。
+   B04 实测：`AND(233,234)`（233: `(In-y_prev)>LimitUp(0.01)`，234: `(In-y_prev)>0`）与
+   `AND(235,236)`（LimitDown(0.005) 同构）各 1 条 MC/DC 缺口即此类；静态标记后 MC/DC
+   66.7%(4/6) → 100%(4/4)。
 6. **探针确认（可选但强烈建议）**：用 `probe_block_inputs.py` 或一次多场景 probe
    （充电/非充电各若干步）实测缺口块执行计数；执行计数 0 即坐实死路径。
 7. **结果**：0 候选 + 1 具体 unresolved（`logic_unreachable`）是**合法且高质量**的 Stage 10
@@ -681,6 +686,8 @@ simulink-ut-tcsd-coverage-ir/v1（覆盖 IR，S5 产物 / S10 输入）
 simulink-ut-logical-mcdc-obligations/v1（逻辑义务，S5）
   { schema, model, summary, obligations, source }   # source 指向探针结果文件
   obligations[] = { id, model, block_path, sid, operator, coverage_class, required_outcome, ... }
+  # status: required | unresolved | unreachable（代数蕴含证据，构建期静态判定）
+  # unreachable 项带 reason（蕴含证明）+ evidence_state=unreachable_algebraic
   summary = { operator_count, obligation_count, required_count, unreachable_count, unresolved_count, ... }
 
 tcsd-agent-coverage-repair-proposal/v1（Stage 10 修复提案）

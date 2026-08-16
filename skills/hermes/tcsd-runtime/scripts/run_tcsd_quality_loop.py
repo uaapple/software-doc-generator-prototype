@@ -470,7 +470,86 @@ def run_probe(
     if logical_mappings.exists():
         cmd.extend(["--logical-mappings", str(logical_mappings)])
     run(cmd, cwd=root_dir, check=False)
+    if collect_coverage:
+        apply_unreachable_denominator_adjustment(coverage_json, obligations)
     return obligations, coverage_json if collect_coverage else None
+
+
+def apply_unreachable_denominator_adjustment(coverage_json: Path, obligations_path: Path) -> None:
+    """Subtract algebraically-unreachable MC/DC vectors from the measured
+    denominator so percent reflects only reachable obligations.
+
+    The obligations builder marks sibling-implication vectors (e.g. AND ports
+    where one condition strictly implies the other, B04 RampLimiter2 231/232)
+    as `unreachable` with algebraic evidence; those vectors can never execute,
+    yet Simulink's raw metric counts them in `total`. The adjusted total is
+    clamped so it never drops below the covered count, and the summary items
+    are annotated so the report stays transparent."""
+    if not coverage_json.is_file() or not obligations_path.is_file():
+        return
+    try:
+        coverage = load_json(coverage_json)
+        obligations = load_json(obligations_path)
+    except (OSError, ValueError):
+        return
+    if not isinstance(coverage, dict) or not isinstance(obligations, dict):
+        return
+    per_model: dict[str, int] = {}
+    reasons: dict[str, list[str]] = {}
+    for item in obligations.get("obligations", []):
+        if not isinstance(item, dict):
+            continue
+        if item.get("status") != "unreachable":
+            continue
+        if str(item.get("coverage_class") or "").upper() != "MCDC":
+            continue
+        model = str(item.get("model") or "")
+        if not model:
+            continue
+        per_model[model] = per_model.get(model, 0) + 1
+        reasons.setdefault(model, []).append(
+            str(item.get("reason") or "algebraic sibling implication")
+        )
+    changed = False
+    for model, subtract in per_model.items():
+        entry = coverage.get(model)
+        if not isinstance(entry, dict):
+            continue
+        mcdc = entry.get("mcdc")
+        if not isinstance(mcdc, dict):
+            continue
+        total = mcdc.get("total")
+        covered = mcdc.get("covered")
+        if not isinstance(total, (int, float)) or not isinstance(covered, (int, float)):
+            continue
+        subtract = min(int(subtract), max(int(total) - int(covered), 0))
+        if subtract <= 0:
+            continue
+        adjusted = int(total) - subtract
+        mcdc["total"] = adjusted
+        mcdc["percent"] = 100.0 * float(covered) / adjusted if adjusted > 0 else 100.0
+        threshold = float(entry.get("threshold") or 80)
+        mcdc["passed"] = mcdc["percent"] >= threshold
+        if isinstance(entry.get("items"), list):
+            unreachable_blocks = {
+                str(item.get("block_path"))
+                for item in obligations.get("obligations", [])
+                if isinstance(item, dict) and item.get("status") == "unreachable"
+                and str(item.get("coverage_class") or "").upper() == "MCDC"
+                and str(item.get("model") or "") == model
+            }
+            for item in entry["items"]:
+                if str(item.get("coverage_class") or "").upper() == "MCDC" and item.get("block_path") in unreachable_blocks:
+                    item["algebraic_unreachable"] = True
+                    item["reason"] = reasons.get(model, [""])[0]
+        entry["passed"] = bool(
+            (entry.get("condition") or {}).get("passed")
+            and (entry.get("decision") or {}).get("passed")
+            and (entry.get("mcdc") or {}).get("passed")
+        )
+        changed = True
+    if changed:
+        coverage_json.write_text(json.dumps(coverage, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def coverage_below_target(path: Path) -> bool:

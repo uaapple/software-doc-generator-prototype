@@ -481,6 +481,133 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertEqual(report["summary"]["unreachable_count"], 1)
             self.assertEqual(report["summary"]["unresolved_count"], 0)
 
+    def test_probe_obligations_mark_algebraic_implication_unreachable_without_overrides(self) -> None:
+        """B04 RampLimiter2 structure: AND(x>0.01, x>0) with the mapping spec
+        carrying relational source traces -> unobserved TF becomes unreachable
+        algebraically, no override needed."""
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            probe = {
+                "ModelB": {
+                    "model": "ModelB",
+                    "probes": [
+                        {
+                            "id": "ModelB:231",
+                            "block_path": "ModelB/RampLimiter2/Logical Operator1",
+                            "sid": "ModelB:231",
+                            "operator": "AND",
+                            "port_names": ["u1", "u2"],
+                        }
+                    ],
+                    "observations": [],
+                }
+            }
+            mappings = {
+                "operators": [
+                    {
+                        "id": "ModelB:231",
+                        "operator": "AND",
+                        "block_path": "ModelB/RampLimiter2/Logical Operator1",
+                        "ports": [
+                            {"index": 1, "source_trace": {"kind": "relational", "operator": ">",
+                                                          "sid": "ModelB:233", "inputs": [
+                                                              {"index": 1, "trace": {"kind": "block", "sid": "ModelB:221", "semantic": "sum"}},
+                                                              {"index": 2, "trace": {"kind": "constant", "resolvedValue": 0.01}}]}},
+                            {"index": 2, "source_trace": {"kind": "relational", "operator": ">",
+                                                          "sid": "ModelB:234", "inputs": [
+                                                              {"index": 1, "trace": {"kind": "block", "sid": "ModelB:221", "semantic": "sum"}},
+                                                              {"index": 2, "trace": {"kind": "constant", "resolvedValue": 0.0}}]}},
+                        ],
+                    }
+                ]
+            }
+            (work / "probe.json").write_text(json.dumps(probe), encoding="utf-8")
+            (work / "mappings.json").write_text(json.dumps(mappings), encoding="utf-8")
+            # Exit code 1 is expected: the unobserved TT vector stays unresolved;
+            # the report file is still written and carries the algebraic marking.
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "build_probe_mcdc_obligations.py"),
+                    "--probe-results",
+                    str(work / "probe.json"),
+                    "--output-dir",
+                    str(work),
+                    "--logical-mappings",
+                    str(work / "mappings.json"),
+                ],
+                check=False,
+            )
+            report = json.loads((work / "ModelB_coverage_obligations.json").read_text(encoding="utf-8"))
+            by_id = {item["id"]: item for item in report["obligations"]}
+            self.assertEqual(report["summary"]["unreachable_count"], 1)
+            self.assertEqual(by_id["ModelB:231_TF"]["status"], "unreachable")
+            self.assertIn("strictly implies", by_id["ModelB:231_TF"]["reason"])
+            self.assertEqual(by_id["ModelB:231_TT"]["status"], "unresolved")  # unobserved, no algebra -> unresolved
+
+    def test_apply_unreachable_denominator_adjustment(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            summary = {
+                "ModelB": {
+                    "model": "ModelB", "test_count": 13, "threshold": 80,
+                    "condition": {"covered": 29, "total": 30, "percent": 96.67, "passed": True},
+                    "decision": {"covered": 20, "total": 20, "percent": 100.0, "passed": True},
+                    "mcdc": {"covered": 4, "total": 6, "percent": 66.67, "passed": False},
+                    "items": [{"coverage_class": "MCDC", "block_path": "ModelB/RampLimiter2/Logical Operator1",
+                               "covered": 2, "total": 3}],
+                    "passed": False,
+                }
+            }
+            obligations = {
+                "obligations": [
+                    {"model": "ModelB", "coverage_class": "MCDC", "status": "unreachable",
+                     "block_path": "ModelB/RampLimiter2/Logical Operator1",
+                     "reason": "port2 false impossible: port1 strictly implies port2"},
+                    {"model": "ModelB", "coverage_class": "MCDC", "status": "unreachable",
+                     "block_path": "ModelB/RampLimiter2/Logical Operator2",
+                     "reason": "port2 false impossible: port1 strictly implies port2"},
+                    {"model": "ModelB", "coverage_class": "MCDC", "status": "required",
+                     "block_path": "ModelB/Other"},
+                ]
+            }
+            cov_path = work / "coverage_summary.json"
+            ob_path = work / "obligations.json"
+            cov_path.write_text(json.dumps(summary), encoding="utf-8")
+            ob_path.write_text(json.dumps(obligations), encoding="utf-8")
+            quality.apply_unreachable_denominator_adjustment(cov_path, ob_path)
+            adjusted = json.loads(cov_path.read_text(encoding="utf-8"))["ModelB"]
+            mcdc = adjusted["mcdc"]
+            self.assertEqual(mcdc["total"], 4)
+            self.assertEqual(mcdc["percent"], 100.0)
+            self.assertTrue(mcdc["passed"])
+            self.assertTrue(adjusted["passed"])
+            # Item annotation stays transparent.
+            self.assertTrue(adjusted["items"][0]["algebraic_unreachable"])
+            # Clamping: never subtract below covered.
+            summary["ModelB"]["mcdc"] = {"covered": 4, "total": 5, "percent": 80.0, "passed": True}
+            cov_path.write_text(json.dumps(summary), encoding="utf-8")
+            quality.apply_unreachable_denominator_adjustment(cov_path, ob_path)
+            mcdc = json.loads(cov_path.read_text(encoding="utf-8"))["ModelB"]["mcdc"]
+            self.assertEqual(mcdc["total"], 4)
+            self.assertEqual(mcdc["percent"], 100.0)
+
+    def test_apply_unreachable_denominator_adjustment_noop_without_unreachable(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            summary = {"M": {"mcdc": {"covered": 4, "total": 6, "percent": 66.67, "passed": False}}}
+            obligations = {"obligations": [
+                {"model": "M", "coverage_class": "MCDC", "status": "unresolved", "block_path": "M/AND"},
+            ]}
+            cov_path = work / "coverage_summary.json"
+            ob_path = work / "obligations.json"
+            cov_path.write_text(json.dumps(summary), encoding="utf-8")
+            ob_path.write_text(json.dumps(obligations), encoding="utf-8")
+            quality.apply_unreachable_denominator_adjustment(cov_path, ob_path)
+            self.assertEqual(json.loads(cov_path.read_text(encoding="utf-8"))["M"]["mcdc"]["total"], 6)
+
     def test_augment_adds_mapped_missing_case_with_final_delay(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             work = Path(td)
