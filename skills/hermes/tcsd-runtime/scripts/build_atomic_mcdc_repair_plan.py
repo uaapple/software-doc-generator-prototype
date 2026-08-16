@@ -131,22 +131,25 @@ def unique_cause_pairs(ast: dict[str, Any], count: int) -> dict[int, list[tuple[
 
 def select_minimal_vectors(
     pairs: dict[int, list[tuple[tuple[bool, ...], tuple[bool, ...]]]],
-) -> tuple[list[tuple[bool, ...]], dict[int, tuple[tuple[bool, ...], tuple[bool, ...]]]]:
+) -> tuple[list[tuple[bool, ...]], dict[int, tuple[tuple[bool, ...], tuple[bool, ...]]], list[int]]:
+    # Conditions without a unique-cause pair are structurally masked by
+    # logically redundant sibling conditions (e.g. OR(AND(A,B), B, ...)).
+    # They are reported instead of raising so the caller can emit unresolved
+    # obligations with the concrete masking evidence.
     missing = [index for index, options in pairs.items() if not options]
-    if missing:
-        raise ValueError(f"conditions have no unique-cause pair: {missing}")
+    active = {index: options for index, options in pairs.items() if options}
 
-    candidates = sorted({vector for options in pairs.values() for pair in options for vector in pair})
+    candidates = sorted({vector for options in active.values() for pair in options for vector in pair})
     best_seed: tuple[bool, ...] | None = None
     best_covered: set[int] = set()
     for vector in candidates:
-        covered = {index for index, options in pairs.items() if any(vector in pair for pair in options)}
+        covered = {index for index, options in active.items() if any(vector in pair for pair in options)}
         if len(covered) > len(best_covered):
             best_seed, best_covered = vector, covered
 
     selected: set[tuple[bool, ...]] = {best_seed} if best_seed is not None else set()
     chosen: dict[int, tuple[tuple[bool, ...], tuple[bool, ...]]] = {}
-    uncovered = set(pairs)
+    uncovered = set(active)
     while uncovered:
         best: tuple[int, tuple[tuple[bool, ...], tuple[bool, ...]]] | None = None
         best_cost = math.inf
@@ -164,7 +167,7 @@ def select_minimal_vectors(
         selected.update(pair)
         chosen[index] = pair
         uncovered.remove(index)
-    return sorted(selected), chosen
+    return sorted(selected), chosen, missing
 
 
 def parse_literal(raw: Any) -> float | None:
@@ -320,12 +323,35 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
         return [], {"operator_id": operator.get("id"), "condition_count": len(atoms), "issues": ["more than 12 atomic conditions; bounded planner stopped"]}
 
     pairs = unique_cause_pairs(ast, len(atoms))
-    selected, chosen = select_minimal_vectors(pairs)
+    selected, chosen, masked = select_minimal_vectors(pairs)
     if len(selected) > 2 * len(atoms) + 2:
         raise ValueError("minimal MC/DC planner exceeded the bounded 2N+2 case limit")
 
     obligations: list[dict[str, Any]] = []
     op_id = str(operator.get("id") or operator.get("sid") or "LOGIC")
+    for index in masked:
+        atom = atoms[index]
+        obligations.append({
+            "id": f"{op_id}_atomic_{atom.id}_masked",
+            "model": model,
+            "block_path": operator.get("block_path"),
+            "sid": operator.get("sid") or operator.get("id"),
+            "operator": operator.get("operator"),
+            "coverage_class": "MCDC",
+            "status": "unresolved",
+            "required_outcome": f"atomic_condition={atom.id} independent effect",
+            "condition_states": {},
+            "match": {"inputs": {}, "params": {}},
+            "hold_s": 0.0,
+            "mapping_strategies": {},
+            "issues": [
+                f"atomic condition {atom.id} ({atom.label}) has no unique-cause pair: "
+                "its effect on the operator output is structurally masked by logically redundant "
+                "sibling conditions (model AST contains an input repeated in both a parent logic "
+                "operator and one of its operands, e.g. OR(AND(A,B), B, ...)); no executable "
+                "independent-effect vector exists"
+            ],
+        })
     for vector in selected:
         recipe = Recipe(hold_s=0.1)
         condition_states: dict[str, bool] = {}
@@ -372,6 +398,7 @@ def build_for_operator(model: str, operator: dict[str, Any]) -> tuple[list[dict[
         "emitted_vector_count": len(selected),
         "max_allowed_vectors": 2 * len(atoms) + 2,
         "conditions": [{"id": atom.id, "kind": atom.kind, "label": atom.label} for atom in atoms],
+        "masked_conditions": [{"id": atoms[index].id, "label": atoms[index].label} for index in masked],
         "pairs": condition_pairs,
         "issues": [issue for item in obligations for issue in item.get("issues", [])],
     }
