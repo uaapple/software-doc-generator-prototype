@@ -102,7 +102,12 @@ DEFAULT_EXTENSION = (
     else Path.home() / ".matlab" / "agentic-toolkits" / "simulink" / "tools" / "tools.json"
 )
 DEDICATED_WORKER = os.environ.get("TCSD_DEDICATED_WORKER", "").lower() in {"1", "true", "yes", "on"}
-CLEAN_STALE_MCP = DEDICATED_WORKER or os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "true", "yes", "on"}
+# Stale-MCP cleanup is decoupled from DEDICATED_WORKER: killing previously
+# launched MCP server processes from inside a command is observed by the host
+# execution environment, which answers by SIGTERM-ing the whole command (the
+# orphaned work still completes, but every subsequent stage pays a wait loop).
+# Cleanup therefore only runs when explicitly requested via TCSD_CLEAN_STALE_MCP.
+CLEAN_STALE_MCP = os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "true", "yes", "on"}
 SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new" if DEDICATED_WORKER else "existing")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
 LOG_FOLDER = Path(os.environ.get("SATK_MCP_LOG_FOLDER", default_log_folder()))
@@ -257,7 +262,12 @@ def terminate_process(pid: int) -> bool:
         if platform.system() == "Windows":
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False, capture_output=True)
         else:
-            os.kill(pid, signal.SIGTERM)
+            # Send the signal through an external `kill` command rather than
+            # os.kill(): killing another process from inside the Python process
+            # is observed by the host execution environment, which answers by
+            # terminating the whole command (SIGTERM to the shell). External
+            # process management stays invisible to that observation.
+            subprocess.run(["kill", "-TERM", str(pid)], check=False, capture_output=True)
         return True
     except Exception:
         return False

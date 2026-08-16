@@ -500,6 +500,10 @@ checkpoint**。步骤：
    杀掉任务 MATLAB——这是正常清理，不是异常；不要因此误报"进程被杀"。
 7. 环境变量必须以 `SATK_MATLAB_ROOT` 为准（`satk_eval.py` 只读取它来传 `--matlab-root`；
    只设 `MATLAB_ROOT` 会得到 "no valid MATLAB environments found"）。两者都设最稳妥。
+8. **不要设置 `TCSD_CLEAN_STALE_MCP=1`（实测 2026-08-17）**：杀掉残留任务 MCP 的动作会被
+   DSH 执行环境观测到，导致整个命令被 SIGTERM（工作仍由孤儿进程完成，但每个阶段都要
+   sleep 等待，单任务浪费 30+ 分钟）。残留 MCP 不影响新 server 启动，无需清理；`TCSD_DEDICATED_WORKER=1`
+   不再隐含清理（satk_eval.py 已解耦，仅显式 `TCSD_CLEAN_STALE_MCP=1` 才清理）。
 
 ### 10.2 Stage 10 常见难点速查（A02_B02 实战沉淀，2026-08-17）
 
