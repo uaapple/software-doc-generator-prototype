@@ -433,7 +433,12 @@ Agent 只负责产出 `tcsd-agent-stage-result/v1` 引用的产物；宿主执�
 **Agent 负责推理边界（分析与 proposal），确定性运行时负责执行边界，Agent 自任宿主做验证与
 checkpoint**。步骤：
 
-1. **准备任务工作区**：新建 `data/unit-test-case-generation/tasks/<uuid>/workspace/`，放入
+0. **工作区边界（DSH 专用）**：所有任务产物一律落在 DSH 工作区
+   `/Users/a0000/Documents/DSH_Proj/tcsd-pipeline-analysis/` 下；严禁在 Codex 工作区
+   （`/Users/a0000/Documents/Codex_Proj/软件文档生成-tcsd-deterministic-pipeline`）创建、
+   修改或删除任何文件（包括其 `data/` 下的任务产物）。
+1. **准备任务工作区**：新建
+   `/Users/a0000/Documents/DSH_Proj/tcsd-pipeline-analysis/data/unit-test-case-generation/tasks/<uuid>/workspace/`，放入
    `<model>.slx`、`<model>.mat`、`inputs/`、`outputs/`，复制项目 addon（如
    `skills/hermes/tcsd-runtime/assets/support-package/` 或 `.local/project-addons/<projectId>/`）。
 2. **环境准备（macOS）**：
