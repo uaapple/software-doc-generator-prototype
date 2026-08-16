@@ -362,6 +362,13 @@ outcome → 控制根输入或标量参数 → 计划 Test/action → 证据状�
 （未知时序时保守 `[+1s]`）；模式/状态转移拆成聚焦 Test，禁止一个长遍历 Test 吞掉多个转移
 （除非每步刺激不同、保持足够、且有仿真证明输出真的变化）。
 
+**使能信号不得全钉一侧（B04 实测教训，2026-08-17）**：首版用例必须包含每个使能/状态判据根
+输入（如 `wSOE`/`bXXVld` 类使能位）激活与非激活两侧的刺激。B04 首版 4 条用例全部
+`wSOE≤0`，能量信号恒 ≤0，EdgeFalling/比较器/RampLimiter/限幅逻辑整片钉死一侧
+（首轮 Condition 50% / Decision 55% / MC/DC 0%）；补上 `wSOE` 阶跃（0→1 边沿、上升/下降
+超限、慢升/慢降）后达 Condition 96.7% / Decision 100% / MC/DC 66.7%。Stage 07 基线生成时
+先扫 Switch 判据/状态可达性链上的使能根输入，确保正反两侧都进首版，而不是留到 Stage 10 补救。
+
 **最小功能域密度**：故障/有效性信号族（`*SigErr`/`*Vld`/`*Flt`/`*FltLvl`/诊断使能复位）、
 连续阈值边界输入、模式/配置枚举、Stateflow 目标状态、诊断/错误路径、独立运行模式 —— 每个域
 至少一条独立 Test、明确的合并理由、或不可达/无效解释。
@@ -506,6 +513,12 @@ checkpoint**。步骤：
    DSH 执行环境观测到，导致整个命令被 SIGTERM（工作仍由孤儿进程完成，但每个阶段都要
    sleep 等待，单任务浪费 30+ 分钟）。残留 MCP 不影响新 server 启动，无需清理；`TCSD_DEDICATED_WORKER=1`
    不再隐含清理（satk_eval.py 已解耦，仅显式 `TCSD_CLEAN_STALE_MCP=1` 才清理）。
+9. **`dsh_stage_runner.py` 全链路编排已实测通过（B04，2026-08-17）**：12 阶段 12 个 checkpoint
+   全部 `completed`，全程 0 次 SIGTERM 干扰、无 MATLAB/MCP 硬错误。两个宿主侧要点：
+   ① 语义阶段（7 起）结果不含 interface 产物时，runner 会回退到 `outputs/*_interface.json`
+   查找，不要把这个文件删掉；② `finish` 从产物解析真实 initial/final 覆盖率与修复事实，
+   按门禁判定 `completion`（任一指标未过或有 unresolved → `partial`），不要手工改写
+   execution-manifest 为 `complete`。
 
 ### 10.2 Stage 10 常见难点速查（A02_B02 实战沉淀，2026-08-17）
 
@@ -521,13 +534,28 @@ checkpoint**。步骤：
    判断缺口分支的值是否**可能影响任何可观测输出**；若不可能 → 结构死路径候选。
 4. **布线互补检查**：若缺口分支的判据与另一判据严格互补（如 `R = NOT(E)`），
    代数上该分支不可达，直接在 proposal 里报 `logic_unreachable` 并给出化简证据。
-5. **探针确认（可选但强烈建议）**：用 `probe_block_inputs.py` 或一次多场景 probe
+5. **代数冗余检查（AND/OR 输入互含，B04 实测 2026-08-17）**：当 AND/OR 两个输入是对同一信号
+   的比较且一者**严格强于**另一者（如 `(x>0.01)` 强于 `(x>0)`、`(x≥c)` 强于 `(x>c)`），
+   强端 true 必然蕴含弱端 true，弱输入端的独立影响向量（AND 的 `(T,F)`、OR 的 `(F,T)`）
+   **代数不可达**，无需探针即可判定：直接报 `logic_unreachable` 并给出蕴含证据。
+   B04 实测：`RampLimiter2` 内 `AND(233,234)`（233: `(In-y_prev)>LimitUp(0.01)`，234: `(In-y_prev)>0`）
+   与 `AND(235,236)`（LimitDown(0.005) 同构）各 1 条 MC/DC 缺口即此类，两条都是弱端
+   `(T,F)` 向量不可能（`LimitUp=0.01>0`）。
+6. **探针确认（可选但强烈建议）**：用 `probe_block_inputs.py` 或一次多场景 probe
    （充电/非充电各若干步）实测缺口块执行计数；执行计数 0 即坐实死路径。
-6. **结果**：0 候选 + 1 具体 unresolved（`logic_unreachable`）是**合法且高质量**的 Stage 10
+7. **结果**：0 候选 + 1 具体 unresolved（`logic_unreachable`）是**合法且高质量**的 Stage 10
    收尾——不要为了凑候选硬造用例；宿主校验接受后按 partial 交付并列出证据。
 
 **执行节奏**：每次 MATLAB 命令被 SIGTERM 后，孤儿进程会完成工作；`sleep 60-240` 等产物
 （探针 JSON/日志出现 "Application shutdown complete"）再继续，不要立即重跑同一命令。
+
+**修复提案格式与 apply 基线（B04 实测，2026-08-17）**：
+- `direct_inputs` 必须是对象形式 `{"信号名": 值}`（不是数组）；`parameters` 必须是 dict；
+  `controller.parameters` 必须与 `initial_params` 一致，否则宿主校验拒绝——每条候选的
+  init 值必须逐候选给出，不能只写首候选；
+- `run --stage 10 apply` 前确保 `.tcsd-runtime` 状态指向干净 iter0 基线：上一次 apply 会
+  把状态推进到 iter1，直接重跑 apply 会在错误基线上叠加（用例翻倍/基线漂移）；必要时
+  重置状态再 apply。
 
 ---
 
@@ -659,6 +687,8 @@ tcsd-agent-coverage-repair-proposal/v1（Stage 10 修复提案）
   { schema, jobId, model, tests, unresolved }
   tests[] = { id, coverage_class, block: { path, sid }, required_outcome,
               controller, stimulus, analysis }
+  # controller.direct_inputs 为对象 {信号:值}（非数组）；controller.parameters 为 dict
+  # 且与 initial_params 一致；unresolved[] 必须带 reason_code（如 logic_unreachable）+ evidence
 
 tcsd-host-semantic-validation/v1（宿主语义验证，挂在 checkpoint.validation.semantic）
   validation = { passed, reportPath, semantic }     # semantic.schema 必须等于本 schema
