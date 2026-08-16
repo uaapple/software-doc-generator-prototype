@@ -136,9 +136,14 @@ def merge_states(
     return inputs, params, input_conflicts + param_conflicts
 
 
-def port_state(port: dict[str, Any], desired: bool) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+def port_state(port: dict[str, Any], desired: bool) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[tuple[str, str, float]]]:
     label = "true" if desired else "false"
     inputs, params = state_from_container(port, label)
+    alternates = port.get(f"{label}_alternates") or []
+    ranges: list[tuple[str, str, float]] = []
+    for item in port.get(f"{label}_ranges") or []:
+        if isinstance(item, list) and len(item) == 3:
+            ranges.append((str(item[0]), str(item[1]), float(item[2])))
     missing: list[dict[str, Any]] = []
     if not inputs and not params:
         missing.append(
@@ -149,7 +154,7 @@ def port_state(port: dict[str, Any], desired: bool) -> tuple[dict[str, Any], dic
                 "message": f"port lacks {label}_inputs/{label}_params mapping",
             }
         )
-    return inputs, params, missing
+    return inputs, params, missing, alternates, ranges
 
 
 def operator_id(operator: dict[str, Any], index: int) -> str:
@@ -189,6 +194,82 @@ def output_for_vector(operator_kind: str, vector: dict[int, bool]) -> bool:
     return any(values) if operator_kind == "OR" else all(values)
 
 
+def solve_interval(constraints: list[tuple[str, float]]) -> float | None:
+    """Intersect u-side constraints of the form (op, constant) and return a
+    representative value, or None when the interval is empty (structurally
+    unsatisfiable) or contains no usable value."""
+    import math
+    lo, hi = float("-inf"), float("inf")
+    lo_open = hi_open = False
+    for op, c in constraints:
+        if op in ("<=", "<"):
+            open_ = op == "<"
+            if c < hi or (c == hi and (hi_open or not open_)):
+                hi, hi_open = c, open_
+        elif op in (">=", ">"):
+            open_ = op == ">"
+            if c > lo or (c == lo and (lo_open or not open_)):
+                lo, lo_open = c, open_
+        elif op == "==":
+            lo = hi = float(c)
+            lo_open = hi_open = False
+        elif op == "~=":
+            return None
+        else:
+            return None
+    if lo > hi or (lo == hi and (lo_open or hi_open)):
+        return None
+    if math.isinf(lo) and math.isinf(hi):
+        return 0.0
+    if math.isinf(hi):
+        value = math.ceil(lo) if not lo_open else math.floor(lo) + 1
+        if value < lo or (lo_open and value <= lo):
+            value = lo if not lo_open else lo + 1.0
+        return float(value)
+    if math.isinf(lo):
+        value = math.floor(hi) if not hi_open else math.ceil(hi) - 1
+        if value > hi or (hi_open and value >= hi):
+            value = hi if not hi_open else hi - 1.0
+        return float(value)
+    value = math.ceil(lo) if not lo_open else math.floor(lo) + 1
+    if value < hi or (value == hi and not hi_open):
+        return float(value)
+    value = math.floor(hi) if not hi_open else math.ceil(hi) - 1
+    if value > lo or (value == lo and not lo_open):
+        return float(value)
+    mid = (lo + hi) / 2.0
+    if (mid > lo or (mid == lo and not lo_open)) and (mid < hi or (mid == hi and not hi_open)):
+        return mid
+    return None
+
+
+def resolve_with_alternates(match_inputs: dict[str, Any], match_params: dict[str, Any],
+                            conflicts: list[dict[str, Any]], alternates: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Try alternate boundary values to satisfy combined constraints.
+
+    Each alternate is a candidate mapping (inputs or params) for the port that
+    just conflicted. Only the conflicting keys are re-tried, and only when the
+    alternate keeps every previously merged key consistent.
+    """
+    import itertools
+    for combo in itertools.product(*([alt] for alt in alternates)):
+        trial_inputs = dict(match_inputs)
+        trial_params = dict(match_params)
+        ok = True
+        for candidate in combo:
+            for key, value in candidate.items():
+                target = trial_inputs if key in match_inputs or key not in match_params else trial_params
+                if key in target and not values_equal(target[key], value):
+                    ok = False
+                    break
+                target[key] = value
+            if not ok:
+                break
+        if ok:
+            return trial_inputs, trial_params
+    return None
+
+
 def build_obligation(
     *,
     model: str | None,
@@ -206,10 +287,12 @@ def build_obligation(
     issues: list[dict[str, Any]] = []
     port_facts: list[dict[str, Any]] = []
 
+    all_ranges: list[tuple[str, str, float]] = []
     for idx, desired in vector.items():
         port = ports[idx - 1]
-        inputs, params, missing = port_state(port, desired)
+        inputs, params, missing, alternates, ranges = port_state(port, desired)
         issues.extend(missing)
+        all_ranges.extend(ranges)
         match_inputs, match_params, conflicts = merge_states(
             match_inputs,
             match_params,
@@ -226,6 +309,37 @@ def build_obligation(
                 "desired_value": desired,
             }
         )
+    if issues and all_ranges:
+        # Solve combined interval constraints for the same input, e.g. window
+        # comparators: `u<=30` (true) and `50<=u` (false) intersect at (30, 50).
+        by_name: dict[str, list[tuple[str, float]]] = {}
+        for name, op, c in all_ranges:
+            by_name.setdefault(name, []).append((op, c))
+        solution = {}
+        solvable = True
+        for name, constraints in by_name.items():
+            value = solve_interval(constraints)
+            if value is None:
+                solvable = False
+                break
+            solution[name] = value
+        if solvable and solution:
+            match_inputs.update(solution)
+            # Re-verify every merged key stays consistent.
+            conflicts = []
+            merged = {}
+            for state in (match_inputs,):
+                for key, value in state.items():
+                    if key in merged and not values_equal(merged[key], value):
+                        conflicts.append({"code": "conflicting_assignment", "key": key, "left": merged[key], "right": value})
+                    merged[key] = value
+            issues = [issue for issue in issues if issue.get("code") != "conflicting_assignment"]
+        else:
+            # Fall back to alternate boundary candidates.
+            resolved = resolve_with_alternates(match_inputs, match_params, conflicts, [alt for _, _, _, alts, _ in [port_state(ports[idx - 1], desired) for idx, desired in vector.items()] for alt in alts])
+            if resolved is not None:
+                match_inputs, match_params = resolved
+                issues = [issue for issue in issues if issue.get("code") != "conflicting_assignment"]
 
     status = "required" if not issues else "unresolved"
     return {

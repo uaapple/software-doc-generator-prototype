@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import unittest
 import zipfile
 from pathlib import Path
@@ -15,9 +16,11 @@ SCRIPTS = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runt
 
 
 def script(name: str):
-    spec = importlib.util.spec_from_file_location(name.replace(".py", ""), SCRIPTS / name)
+    module_name = name.replace(".py", "")
+    spec = importlib.util.spec_from_file_location(module_name, SCRIPTS / name)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -192,6 +195,51 @@ class DecisionObligationBlocksTests(unittest.TestCase):
         self.assertIn("p Min_C=100", appended["initialization"])
         # Unknown coverage classes must be recorded in skipped, not silently dropped
         self.assertIn({"id": "weird_class", "reason": "unsupported_coverage_class:Other"}, skipped)
+
+    def test_relational_static_mapping_and_interval_solving(self) -> None:
+        mapping = script("derive_logical_mcdc_mappings.py")
+        obligations = script("build_logical_mcdc_obligations.py")
+        trace = {
+            "model": "Win",
+            "operators": [{
+                "id": "Win:1", "block_path": "Win/Window", "operator": "OR",
+                "ports": [
+                    {"index": 1, "trace": {"kind": "relational", "operator": "<=",
+                                           "inputs": [{"index": 1, "trace": {"kind": "root_inport", "signal": "u"}},
+                                                      {"index": 2, "trace": {"kind": "constant", "value": "Uppr_C", "resolvedValue": 50}}]}},
+                    {"index": 2, "trace": {"kind": "relational", "operator": "<=",
+                                           "inputs": [{"index": 1, "trace": {"kind": "constant", "value": "Lowr_C", "resolvedValue": 30}},
+                                                      {"index": 2, "trace": {"kind": "root_inport", "signal": "u"}}]}},
+                ],
+            }],
+        }
+        report = mapping.derive_report(trace)["operators"][0]
+        port1 = report["ports"][0]
+        # u <= 50: true -> u=50 (range u<=50), false -> u=51 (range u>50)
+        self.assertEqual(port1["true_inputs"], {"u": 50.0})
+        self.assertIn(["u", "<=", 50.0], port1["true_ranges"])
+        # 30 <= u: true -> u=30 (range u>=30), false -> u=29 (range u<30)
+        port2 = report["ports"][1]
+        self.assertEqual(port2["true_inputs"], {"u": 30.0})
+        self.assertIn(["u", ">=", 30.0], port2["true_ranges"])
+        # Window OR (u<=50 OR 30<=u) is tautological: all-false is genuinely
+        # unsatisfiable (u>50 AND u<30), while single-toggle vectors are not.
+        data = {"model": "Win", "operators": [report]}
+        built = obligations.build_obligations(data)
+        by_id = {item["id"]: item for item in built["obligations"]}
+        baseline = by_id["Win:1_baseline_all_false"]
+        self.assertEqual(baseline["status"], "unresolved", baseline.get("issues"))
+        # Vector FT (port1 false u>50, port2 true u>=30) -> u=51
+        ft = by_id["Win:1_vector_FT"]
+        self.assertEqual(ft["status"], "required", ft.get("issues"))
+        self.assertEqual(ft["match"]["inputs"].get("u"), 51.0)
+        # Vector TF (port1 true u<=50, port2 false u<30) -> u=29
+        tf = by_id["Win:1_vector_TF"]
+        self.assertEqual(tf["status"], "required", tf.get("issues"))
+        self.assertEqual(tf["match"]["inputs"].get("u"), 29.0)
+        # Interval solver directly
+        self.assertEqual(obligations.solve_interval([("<=", 50.0), (">=", 30.0)]), 30.0)
+        self.assertIsNone(obligations.solve_interval([("<=", 30.0), (">=", 50.0)]))
 
     def test_ir_merges_decision_obligations(self) -> None:
         coverage_ir = script("build_coverage_ir.py")

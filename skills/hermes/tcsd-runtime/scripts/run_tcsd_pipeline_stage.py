@@ -421,7 +421,18 @@ def stage_run(
         finish(job, stage, summary="首版仿真完成，expValue 已由实际仿真回填。", artifacts=[artifact(root, workbook, "xlsx", "workbook"), artifact(root, sim)], evidence={"simulationResult": str(sim.relative_to(root)), "expValueCount": backfill["workbookBackfillCount"], **backfill}); return
     initial_cov = out / f"{model}_initial_coverage_summary.json"
     if stage == 9:
-        ob, cov = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=True, coverage_threshold=threshold); report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(initial_cov,report); state.update({"obligations":str(ob),"initialCoverage":str(initial_cov),"coverage":str(cov)}); save_state(job,state)
+        ob, cov = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=True, coverage_threshold=threshold); report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(initial_cov,report)
+        # Rebuild the IR with the probe-refreshed obligations so the measured
+        # observation vectors flow back into the stage-10 repair brief.
+        if state.get("decisionObligations") and Path(state["decisionObligations"]).is_file():
+            try:
+                probe_results = out / "logic_probe_results.json"
+                ir_args = [sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(ob), "--decision-obligations", str(state["decisionObligations"])]
+                run(ir_args + ["--output", str(coverage_ir)], root)
+                state["coverageIr"] = str(coverage_ir)
+            except BaseException as error:
+                print(f"stage 09 IR refresh unavailable: {error}", file=sys.stderr)
+        state.update({"obligations":str(ob),"initialCoverage":str(initial_cov),"coverage":str(cov)}); save_state(job,state)
         finish(job,stage,summary="首轮 Condition、Decision 与 MC/DC 覆盖率已采集。",artifacts=[artifact(root,initial_cov)],coverage=report); return
     if stage == 10:
         report = read_json(initial_cov)
