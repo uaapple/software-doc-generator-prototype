@@ -413,7 +413,8 @@ Agent 只负责产出 `tcsd-agent-stage-result/v1` 引用的产物；宿主执�
 
 最终交付（前端只暴露这些）：
 
-1. `outputs/<model>_Test0001_tcsd.xlsx` —— 标准命名最终工作簿（iter0/iter1 工作簿仅作证据）。
+1. `outputs/<model>_Test0001_tcsd.xlsx` —— 标准命名最终工作簿（iter0/iter1 工作簿仅作证据）；
+   另复制一份到用户提供的模型/输入所在目录（`<model>.slx` 同目录，文件名不变），最终汇报中给出该副本路径。
 2. 宿主生成的 `simulink-ut-tcsd-execution-manifest/v1`：`status=completed`、
    `completion=complete|partial`、initial/final coverage、repair 记录、workbook 引用。
 3. 逐阶段 checkpoint（技能版本/hash、runtime hash、session、token usage、验证报告）。
