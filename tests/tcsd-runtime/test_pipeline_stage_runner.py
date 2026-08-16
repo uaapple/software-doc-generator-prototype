@@ -673,5 +673,123 @@ class PipelineStageRunnerTests(unittest.TestCase):
         self.assertTrue(RUNNER.coverage_meets(report, 80))
 
 
+class StageRunnerHostFixesTests(unittest.TestCase):
+    """Regression tests for the host-side runner fixes discovered on the
+    RngPrdn_A02_B04 real-model run (semantic interface fallback and finish
+    manifests with real coverage/repair facts)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "dsh_stage_runner", RUNTIME / "scripts" / "dsh_stage_runner.py")
+        cls.runner = importlib.util.module_from_spec(spec)
+        assert spec.loader
+        spec.loader.exec_module(cls.runner)
+
+    def test_semantic_validate_falls_back_to_outputs_interface(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "outputs"
+            output.mkdir()
+            interface = output / "GenericModel_interface.json"
+            interface.write_text(json.dumps({"schema": "tcsd-model-interface/v1"}), encoding="utf-8")
+            task = {"id": "job-if", "workspace": {"directory": str(root)}}
+            result = {
+                "schema": "tcsd-agent-stage-result/v1",
+                "jobId": "job-if",
+                "stageIndex": 7,
+                "status": "completed",
+                "artifacts": [{"path": "outputs/GenericModel_tcsd_spec.json", "kind": "json", "role": "output"}],
+            }
+            request_path = output / "semantic-request.json"
+            # Fake the host validator subprocess: it must receive the fallback interface path.
+            captured = {}
+
+            def fake_run(cmd, cwd, env, capture_output, text):
+                req = json.loads(request_path.read_text(encoding="utf-8"))
+                captured["interfacePath"] = req.get("interfacePath")
+                return mock.Mock(returncode=0, stdout=json.dumps({
+                    "schema": "tcsd-host-semantic-validation/v1", "stageIndex": 7,
+                    "passed": True, "details": {}}), stderr="")
+
+            with mock.patch.object(self.runner.subprocess, "run", side_effect=fake_run):
+                report = self.runner.semantic_validate(
+                    task, 7, result, RUNTIME, request_path, output / "semantic-validation.json")
+            self.assertTrue(report["passed"])
+            self.assertEqual(captured["interfacePath"], str(interface))
+
+    def test_finish_writes_real_coverage_repair_and_picks_highest_iter(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = root / "workspace"
+            output = workspace / "outputs"
+            model_dir = root / "model-dir"
+            (output / ".tcsd-host").mkdir(parents=True)
+            model_dir.mkdir()
+            model = "RngPrdn_A02_B04"
+            iter0 = output / f"{model}_Test_coverage_ir_iter0.xlsx"
+            iter1 = output / f"{model}_Test_coverage_ir_iter1.xlsx"
+            plain = output / f"{model}_Test0001_tcsd.xlsx"
+            for path in (iter0, iter1, plain):
+                wb = Workbook()
+                wb.save(path)
+            initial = {"models": {model: {"condition": {"covered": 15, "total": 30, "percent": 50, "passed": False},
+                                          "decision": {"covered": 11, "total": 20, "percent": 55, "passed": False},
+                                          "mcdc": {"covered": 0, "total": 6, "percent": 0, "passed": False},
+                                          "test_count": 4, "threshold": 80}}}
+            final = {"models": {model: {"condition": {"covered": 29, "total": 30, "percent": 96.67, "passed": True},
+                                         "decision": {"covered": 20, "total": 20, "percent": 100, "passed": True},
+                                         "mcdc": {"covered": 4, "total": 6, "percent": 66.67, "passed": False},
+                                         "test_count": 13, "threshold": 80}}}
+            (output / f"{model}_initial_coverage_summary.json").write_text(json.dumps(initial), encoding="utf-8")
+            (output / f"{model}_final_coverage_summary.json").write_text(json.dumps(final), encoding="utf-8")
+            (output / f"{model}_repair_candidate_validation.json").write_text(json.dumps(
+                {"schema": "tcsd-repair-candidate-validation/v1", "jobId": "job-x",
+                 "passed": True, "candidateCount": 9}), encoding="utf-8")
+            (output / f"{model}_agent_coverage_repair_proposal.json").write_text(json.dumps(
+                {"schema": "tcsd-agent-coverage-repair-proposal/v1", "jobId": "job-x", "model": model,
+                 "tests": [], "unresolved": [
+                     {"coverage_class": "MCDC",
+                      "block": {"path": f"{model}/RampLimiter2/Logical Operator1", "sid": "231"},
+                      "reason_code": "logic_unreachable",
+                      "evidence": "algebraic: 233 true implies 234 true"}]}), encoding="utf-8")
+            checkpoints = output / ".tcsd-checkpoints"
+            checkpoints.mkdir()
+            for stage in range(1, 13):
+                (checkpoints / f"stage-{stage:02d}.json").write_text(json.dumps(
+                    {"stageIndex": stage, "status": "completed", "attempt": 1, "summary": "s"}), encoding="utf-8")
+            task = {"id": "job-x",
+                    "workspace": {"directory": str(workspace), "outputDir": str(output),
+                                  "modelSlxPath": str(workspace / f"{model}.slx"), "modelDir": str(model_dir)}}
+            task_path = root / "task.json"
+            task_path.write_text(json.dumps(task), encoding="utf-8")
+            self.runner.cmd_finish(mock.Mock(task=str(task_path)))
+            manifest = json.loads((output / ".tcsd-host" / "execution-manifest.json").read_text(encoding="utf-8"))
+            # Real coverage facts, not empty dicts.
+            self.assertEqual(manifest["coverage"]["initial"]["models"][model]["condition"]["percent"], 50)
+            self.assertEqual(manifest["coverage"]["final"]["models"][model]["mcdc"]["percent"], 66.67)
+            # Repair facts derived from validation + proposal.
+            self.assertTrue(manifest["coverage"]["repair_required"])
+            self.assertTrue(manifest["coverage"]["repair_applied"])
+            self.assertEqual(manifest["coverage"]["repair_passes"], 1)
+            # MC/DC below threshold with unresolved -> partial, and unresolved recorded.
+            self.assertEqual(manifest["completion"], "partial")
+            self.assertEqual(manifest["evidence"]["unresolved"][0]["reason_code"], "logic_unreachable")
+            # Timeline populated from the 12 checkpoints.
+            timeline = json.loads((output / ".tcsd-host" / "timeline.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(timeline["events"]), 12)
+            # Highest synthesis iteration workbook is delivered to the model dir
+            # under the canonical Test0001 name; manifest references the delivered name.
+            delivered = model_dir / f"{model}_Test0001_tcsd.xlsx"
+            self.assertTrue(delivered.is_file())
+            self.assertEqual(delivered.read_bytes(), iter1.read_bytes())
+            self.assertEqual(manifest["workbook"], f"outputs/{model}_Test0001_tcsd.xlsx")
+            # Artifact manifest lists workbook plus evidence files.
+            artifacts = json.loads((output / ".tcsd-host" / "artifact-manifest.json").read_text(encoding="utf-8"))
+            roles = [a["role"] for a in artifacts["artifacts"]]
+            self.assertIn("workbook", roles)
+            self.assertIn("evidence", roles)
+
+
 if __name__ == "__main__":
     unittest.main()

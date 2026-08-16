@@ -128,6 +128,12 @@ def semantic_validate(task: dict, stage: int, result: dict, runtime_dir: Path,
         if item.get("kind") == "json" and item.get("path", "").endswith("_interface.json"):
             interface_path = str(Path(task["workspace"]["directory"]) / item["path"])
             break
+    if not interface_path:
+        # Fallback: stages 7-11 do not list the interface artifact; locate the
+        # model interface JSON under outputs/ so semantic validation can run.
+        candidates = sorted(Path(task["workspace"]["directory"]).glob("outputs/*_interface.json"))
+        if candidates:
+            interface_path = str(candidates[0])
     request = {
         "schema": SCHEMA_SEMANTIC_REQUEST,
         "jobId": task["id"],
@@ -352,12 +358,18 @@ def cmd_finish(args) -> int:
     task = json.loads(Path(args.task).read_text(encoding="utf-8"))
     workspace = Path(task["workspace"]["directory"])
     output_dir = workspace / "outputs"
-    workbooks = sorted(output_dir.glob("*_Test_coverage_ir_iter*.xlsx")) + sorted(output_dir.glob("*_Test0001_tcsd.xlsx"))
+    workbooks = sorted(output_dir.glob("*_Test_coverage_ir_iter*.xlsx"))
     final = None
+    # Prefer the highest synthesis iteration workbook; fall back to a plain
+    # Test0001 name only when no iter workbook exists (stage 7 never appended).
     for candidate in reversed(workbooks):
-        if candidate.name.endswith("_Test0001_tcsd.xlsx") or "_coverage_ir_iter" in candidate.name:
+        if "_coverage_ir_iter" in candidate.name:
             final = candidate
             break
+    if final is None:
+        plain = sorted(output_dir.glob("*_Test0001_tcsd.xlsx"))
+        if plain:
+            final = plain[-1]
     if final is None:
         print("finish: no final workbook found", file=sys.stderr)
         return 1
@@ -369,21 +381,104 @@ def cmd_finish(args) -> int:
     model_dir = Path(task["workspace"]["modelDir"])
     shutil.copy2(final_path, model_dir / final_name)
     host_dir = output_dir / ".tcsd-host"
+    # Read real coverage/repair facts from stage artifacts (host-authoritative).
+    initial_cov = {}
+    final_cov = {}
+    for candidate, target in (
+        (output_dir / f"{model_name}_initial_coverage_summary.json", initial_cov),
+        (output_dir / f"{model_name}_final_coverage_summary.json", final_cov),
+    ):
+        if candidate.is_file():
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                models = data.get("models") or {}
+                target["models"] = {
+                    name: {
+                        "condition": m.get("condition"),
+                        "decision": m.get("decision"),
+                        "mcdc": m.get("mcdc"),
+                        "test_count": m.get("test_count"),
+                        "threshold": m.get("threshold"),
+                    }
+                    for name, m in models.items()
+                }
+            except Exception as exc:  # pragma: no cover
+                print(f"finish: coverage artifact {candidate.name} unreadable: {exc}", file=sys.stderr)
+    repair = {"repair_required": False, "repair_attempted": False, "repair_applied": False,
+              "repair_passes": 0, "repair_reason": "", "repair_evidence": ""}
+    repair_evidence = output_dir / f"{model_name}_repair_candidate_validation.json"
+    repair_proposal = output_dir / f"{model_name}_agent_coverage_repair_proposal.json"
+    if repair_evidence.is_file():
+        try:
+            rv = json.loads(repair_evidence.read_text(encoding="utf-8"))
+            repair["repair_required"] = True
+            repair["repair_attempted"] = True
+            repair["repair_applied"] = bool(rv.get("passed")) and int(rv.get("candidateCount") or 0) > 0
+            repair["repair_passes"] = 1
+            repair["repair_reason"] = "agent_targeted_candidates_validated_and_appended"
+            repair["repair_evidence"] = str(repair_evidence.relative_to(workspace))
+        except Exception as exc:  # pragma: no cover
+            print(f"finish: repair evidence unreadable: {exc}", file=sys.stderr)
+    unresolved = []
+    proposal_sources = [repair_proposal]
+    for attempt in sorted((output_dir / ".tcsd-agent" / "stage-10").glob("attempt-*"), reverse=True):
+        proposal_sources.append(attempt / "repair-proposal.json")
+    for source in proposal_sources:
+        if source.is_file():
+            try:
+                proposal = json.loads(source.read_text(encoding="utf-8"))
+                unresolved = [
+                    {"coverage_class": u.get("coverage_class"), "block": u.get("block"),
+                     "reason_code": u.get("reason_code"), "evidence": u.get("evidence")}
+                    for u in proposal.get("unresolved", [])
+                ]
+                break
+            except Exception as exc:  # pragma: no cover
+                print(f"finish: repair proposal unreadable: {exc}", file=sys.stderr)
+    completion = "complete"
+    all_passed = True
+    for target in (final_cov, initial_cov):
+        for m in (target.get("models") or {}).values():
+            for metric in ("condition", "decision", "mcdc"):
+                entry = m.get(metric) or {}
+                if entry.get("passed") is False:
+                    all_passed = False
+    if not all_passed or unresolved:
+        completion = "partial"
     manifest = {
         "schema": SCHEMA_MANIFEST,
         "authority": "host",
         "jobId": task["id"],
         "status": "completed",
-        "completion": "complete",
+        "completion": completion,
         "workbook": str(final_path.relative_to(workspace)),
-        "coverage": {"initial": {}, "final": {}, "repair_required": False, "repair_attempted": False,
-                     "repair_applied": False, "repair_passes": 0, "repair_reason": "", "repair_evidence": ""},
-        "evidence": {"checkpointCount": 12, "unresolved": []},
+        "coverage": {"initial": initial_cov, "final": final_cov, **repair},
+        "evidence": {"checkpointCount": 12, "unresolved": unresolved},
     }
+    events = []
+    checkpoint_dir = output_dir / ".tcsd-checkpoints"
+    for stage in range(1, 13):
+        cp = checkpoint_dir / f"stage-{stage:02d}.json"
+        if cp.is_file():
+            try:
+                data = json.loads(cp.read_text(encoding="utf-8"))
+                events.append({"stageIndex": stage, "status": data.get("status"),
+                               "attempt": data.get("attempt"), "summary": data.get("summary", "")})
+            except Exception:
+                events.append({"stageIndex": stage, "status": "unknown"})
+    artifacts = [{"path": str(final_path.relative_to(workspace)), "role": "workbook",
+                  "sha256": hashlib.sha256(final_path.read_bytes()).hexdigest()}]
+    for extra in (output_dir / f"{model_name}_initial_coverage_summary.json",
+                  output_dir / f"{model_name}_final_coverage_summary.json",
+                  output_dir / f"{model_name}_coverage_ir.json",
+                  output_dir / f"{model_name}_interface.json"):
+        if extra.is_file():
+            artifacts.append({"path": str(extra.relative_to(workspace)), "role": "evidence",
+                              "sha256": hashlib.sha256(extra.read_bytes()).hexdigest()})
     write_json(host_dir / "execution-manifest.json", manifest)
-    write_json(host_dir / "timeline.json", {"schema": SCHEMA_TIMELINE, "authority": "host", "jobId": task["id"], "events": []})
+    write_json(host_dir / "timeline.json", {"schema": SCHEMA_TIMELINE, "authority": "host", "jobId": task["id"], "events": events})
     write_json(host_dir / "artifact-manifest.json", {"schema": SCHEMA_ARTIFACTS, "authority": "host",
-                                                     "jobId": task["id"], "artifacts": []})
+                                                     "jobId": task["id"], "artifacts": artifacts})
     print(f"finish: {final_path} (delivered to {model_dir / final_name})")
     return 0
 
