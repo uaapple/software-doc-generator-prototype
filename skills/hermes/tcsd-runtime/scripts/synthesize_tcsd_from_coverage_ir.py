@@ -74,7 +74,8 @@ def synthesize(spec: dict[str, Any], ir: dict[str, Any], *, max_new_tests: int =
     for item in sorted(ir.get("items", []), key=lambda value: str(value.get("id"))):
         if added >= max_new_tests:
             break
-        if item.get("coverage_class") not in {"Decision", "MCDC"}:
+        if item.get("coverage_class") not in {"Decision", "MCDC", "Condition"}:
+            skipped.append({"id": str(item.get("id")), "reason": f"unsupported_coverage_class:{item.get('coverage_class')}"})
             continue
         reachability = item.get("reachability") if isinstance(item.get("reachability"), dict) else {}
         if reachability.get("status") != "required":

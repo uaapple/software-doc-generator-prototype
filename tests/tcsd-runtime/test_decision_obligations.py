@@ -174,6 +174,25 @@ class DecisionObligationBlocksTests(unittest.TestCase):
         # mixed input + param winner assignments land in their own maps
         self.assertTrue(any(i["match"]["inputs"].get("SigA") is not None and i["match"]["params"].get("Lim_C") is not None for i in mm))
 
+    def test_synthesis_now_appends_condition_candidates_with_params(self) -> None:
+        synthesis = script("synthesize_tcsd_from_coverage_ir.py")
+        spec = {"tests": [{"id": "TC_001", "name": "Baseline", "initialization": "Sig=0;", "action": "[+0.1s]"}]}
+        ir = {"items": [
+            {"id": "cond_param", "coverage_class": "Condition", "required_outcome": "relational false (MX >= MN)",
+             "block": {"path": "M/Cmp"}, "controller": {"direct_inputs": {}, "parameters": {"Max_C": 0, "Min_C": 100}},
+             "stimulus": {"steps": []}, "reachability": {"status": "required"}},
+            {"id": "weird_class", "coverage_class": "Other", "controller": {"direct_inputs": {}, "parameters": {}},
+             "stimulus": {"steps": []}, "reachability": {"status": "required"}},
+        ]}
+        result, skipped = synthesis.synthesize(spec, ir)
+        # Condition candidate with parameters must be appended as a test
+        self.assertEqual(len(result["tests"]), 2)
+        appended = result["tests"][1]
+        self.assertIn("p Max_C=0", appended["initialization"])
+        self.assertIn("p Min_C=100", appended["initialization"])
+        # Unknown coverage classes must be recorded in skipped, not silently dropped
+        self.assertIn({"id": "weird_class", "reason": "unsupported_coverage_class:Other"}, skipped)
+
     def test_ir_merges_decision_obligations(self) -> None:
         coverage_ir = script("build_coverage_ir.py")
         trace = {"model": "Mock", "operators": []}
