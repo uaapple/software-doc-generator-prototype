@@ -790,6 +790,56 @@ class StageRunnerHostFixesTests(unittest.TestCase):
             self.assertIn("workbook", roles)
             self.assertIn("evidence", roles)
 
+    def test_finish_falls_back_to_measured_gaps_when_proposal_has_no_unresolved(self) -> None:
+        """ParkCrl B01 regression: 11 uncovered MC/DC vectors stayed out of the
+        manifest because the repair proposal recorded no unresolved array; the
+        final coverage summary items are the authoritative fallback."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = root / "workspace"
+            output = workspace / "outputs"
+            model_dir = root / "model-dir"
+            (output / ".tcsd-host").mkdir(parents=True)
+            model_dir.mkdir()
+            model = "ParkCrl_A02_B01"
+            final_workbook = output / f"{model}_Test0001_tcsd.xlsx"
+            wb = Workbook()
+            wb.save(final_workbook)
+            final = {"models": {model: {
+                "model": model, "test_count": 67, "threshold": 80,
+                "condition": {"covered": 106, "total": 112, "percent": 94.64, "passed": True},
+                "decision": {"covered": 53, "total": 62, "percent": 85.48, "passed": True},
+                "mcdc": {"covered": 21, "total": 32, "percent": 65.62, "passed": False},
+                "items": [
+                    {"coverage_class": "MCDC", "block_path": f"{model}/AND2", "sid": "39",
+                     "covered": 1, "total": 3},
+                    {"coverage_class": "MCDC", "block_path": f"{model}/OR3", "sid": "75",
+                     "covered": 1, "total": 5},
+                ],
+            }}}
+            (output / f"{model}_initial_coverage_summary.json").write_text(
+                json.dumps({"models": {model: {"condition": {"percent": 64.29, "passed": False},
+                                               "decision": {"percent": 51.61, "passed": False},
+                                               "mcdc": {"percent": 34.38, "passed": False}}}}), encoding="utf-8")
+            (output / f"{model}_final_coverage_summary.json").write_text(json.dumps(final), encoding="utf-8")
+            # Proposal exists but carries no unresolved array.
+            (output / f"{model}_agent_coverage_repair_proposal.json").write_text(json.dumps(
+                {"schema": "tcsd-agent-coverage-repair-proposal/v1", "jobId": "job-p",
+                 "model": model, "tests": [], "unresolved": []}), encoding="utf-8")
+            task = {"id": "job-p",
+                    "workspace": {"directory": str(workspace), "outputDir": str(output),
+                                  "modelSlxPath": str(workspace / f"{model}.slx"), "modelDir": str(model_dir)}}
+            task_path = root / "task.json"
+            task_path.write_text(json.dumps(task), encoding="utf-8")
+            self.runner.cmd_finish(mock.Mock(task=str(task_path)))
+            manifest = json.loads((output / ".tcsd-host" / "execution-manifest.json").read_text(encoding="utf-8"))
+            unresolved = manifest["evidence"]["unresolved"]
+            self.assertEqual(len(unresolved), 2)
+            self.assertEqual(unresolved[0]["reason_code"], "measured_uncovered")
+            self.assertEqual(unresolved[0]["coverage_class"], "MCDC")
+            self.assertEqual(unresolved[0]["block"]["sid"], "39")
+            self.assertEqual(manifest["completion"], "partial")
+
 
 if __name__ == "__main__":
     unittest.main()

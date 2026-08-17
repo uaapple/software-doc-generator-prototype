@@ -399,6 +399,7 @@ def cmd_finish(args) -> int:
                         "mcdc": m.get("mcdc"),
                         "test_count": m.get("test_count"),
                         "threshold": m.get("threshold"),
+                        "items": m.get("items") or [],
                     }
                     for name, m in models.items()
                 }
@@ -435,6 +436,23 @@ def cmd_finish(args) -> int:
                 break
             except Exception as exc:  # pragma: no cover
                 print(f"finish: repair proposal unreadable: {exc}", file=sys.stderr)
+    if not unresolved:
+        # Fall back to the measured gaps: the final coverage summary lists every
+        # uncovered block/metric, which stays authoritative when the proposal
+        # did not record an unresolved array (ParkCrl B01: 11 uncovered MC/DC
+        # vectors across 5 blocks were absent from the manifest).
+        for item in (final_cov.get("models") or {}).values():
+            if not isinstance(item, dict):
+                continue
+            for gap in item.get("items") or []:
+                if not isinstance(gap, dict):
+                    continue
+                unresolved.append({
+                    "coverage_class": str(gap.get("coverage_class") or ""),
+                    "block": {"path": gap.get("block_path"), "sid": gap.get("sid")},
+                    "reason_code": "measured_uncovered",
+                    "evidence": f"covered={gap.get('covered')} total={gap.get('total')}",
+                })
     completion = "complete"
     all_passed = True
     for target in (final_cov, initial_cov):
