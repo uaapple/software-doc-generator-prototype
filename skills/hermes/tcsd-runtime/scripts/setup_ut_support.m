@@ -250,10 +250,27 @@ if ~isempty(explicitRoot)
     candidates{end + 1} = explicitRoot;
 end
 if ~isempty(homeDir)
-    candidates{end + 1} = fullfile(homeDir, 'Library', 'Application Support', 'MathWorks', ...
-        'MATLAB Add-Ons', 'Toolboxes', 'MATLAB MCP Core Server Toolbox');
+    addonToolboxRoot = fullfile(homeDir, 'Library', 'Application Support', 'MathWorks', ...
+        'MATLAB Add-Ons', 'Toolboxes');
+    candidates{end + 1} = fullfile(addonToolboxRoot, 'MATLAB MCP Core Server Toolbox');
+    candidates{end + 1} = fullfile(addonToolboxRoot, 'MATLAB MCP Server Toolbox');
     candidates{end + 1} = fullfile(homeDir, 'Documents', 'MATLAB', 'Add-Ons', ...
         'Toolboxes', 'MATLAB MCP Core Server Toolbox');
+    candidates{end + 1} = fullfile(homeDir, 'Documents', 'MATLAB', 'Add-Ons', ...
+        'Toolboxes', 'MATLAB MCP Server Toolbox');
+    % Tolerate other local install names (e.g. versioned toolbox folders) by
+    % scanning the add-on toolbox root for any folder containing +matlab_mcp.
+    if exist(addonToolboxRoot, 'dir')
+        entries = dir(addonToolboxRoot);
+        for i = 1:numel(entries)
+            if entries(i).isdir && ~strcmp(entries(i).name, '.') && ~strcmp(entries(i).name, '..')
+                candidate = fullfile(addonToolboxRoot, entries(i).name);
+                if exist(fullfile(candidate, '+matlab_mcp'), 'dir')
+                    candidates{end + 1} = candidate; %#ok<AGROW>
+                end
+            end
+        end
+    end
 end
 
 for i = 1:numel(candidates)
