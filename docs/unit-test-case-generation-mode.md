@@ -363,11 +363,13 @@ outcome → 控制根输入或标量参数 → 计划 Test/action → 证据状�
 （未知时序时保守 `[+1s]`）；模式/状态转移拆成聚焦 Test，禁止一个长遍历 Test 吞掉多个转移
 （除非每步刺激不同、保持足够、且有仿真证明输出真的变化）。
 
-**使能信号不得全钉一侧（B04 实测教训，2026-08-17）**：首版用例必须包含每个使能/状态判据根
+**使能信号不得全钉一侧（B04/B14/B15 三次实证，2026-08-17）**：首版用例必须包含每个使能/状态判据根
 输入（如 `wSOE`/`bXXVld` 类使能位）激活与非激活两侧的刺激。B04 首版 4 条用例全部
 `wSOE≤0`，能量信号恒 ≤0，EdgeFalling/比较器/RampLimiter/限幅逻辑整片钉死一侧
-（首轮 Condition 50% / Decision 55% / MC/DC 0%）；补上 `wSOE` 阶跃（0→1 边沿、上升/下降
-超限、慢升/慢降）后达 Condition 96.7% / Decision 100% / MC/DC 66.7%。Stage 07 基线生成时
+（首轮 Condition 50% / Decision 55% / MC/DC 0%）；B14 主链 `bRemLvBatMntnReq` 需
+`pctLvBatSoc≤70 ∧ stSocPrcsn==2` 同刻成立，首版未同时满足；B15 首版把 `icbms_pctHVBatSOCDisp`
+钉在 0（<10）→ `SocWkup=0` → `Inhb=1` → `Req` 整链死锁（首轮 Condition 83.5% / Decision 64.6% /
+MC/DC 37.5%）。三者同构：**某个多条件 AND 使能链的根输入组合从未同刻成立**。Stage 07 基线生成时
 先扫 Switch 判据/状态可达性链上的使能根输入，确保正反两侧都进首版，而不是留到 Stage 10 补救。
 
 **最小功能域密度**：故障/有效性信号族（`*SigErr`/`*Vld`/`*Flt`/`*FltLvl`/诊断使能复位）、
@@ -520,6 +522,11 @@ checkpoint**。步骤：
    查找，不要把这个文件删掉；② `finish` 从产物解析真实 initial/final 覆盖率与修复事实，
    按门禁判定 `completion`（任一指标未过或有 unresolved → `partial`），不要手工改写
    execution-manifest 为 `complete`。
+10. **`getOrStashExceptions 未定义`排查（B15 实测，2026-08-17）**：simulate 脚本执行
+   `restoredefaultpath` 后 MCP 核心路径未恢复会报此错。本机 addon 工具箱目录名是
+   "MATLAB MCP **Server** Toolbox"（非 "Core Server"），`setup_ut_support.m` 的
+   `restore_matlab_mcp_core_path()` 已修复为扫描 `+matlab_mcp` 兼容任意目录名；若在
+   新机器上再遇此错，优先检查该函数是否找到了正确的工具箱目录。
 
 ### 10.2 Stage 10 常见难点速查（A02_B02 实战沉淀，2026-08-17）
 
