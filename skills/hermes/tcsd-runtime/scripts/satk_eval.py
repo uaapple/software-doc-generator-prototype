@@ -111,6 +111,10 @@ CLEAN_STALE_MCP = os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "t
 SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new" if DEDICATED_WORKER else "existing")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
 LOG_FOLDER = Path(os.environ.get("SATK_MCP_LOG_FOLDER", default_log_folder()))
+# Headless by default: MATLAB must not pop its desktop over the user's screen
+# during unattended generation runs. Set SATK_MATLAB_DISPLAY_MODE=desktop to
+# restore the GUI (e.g. when debugging visuals interactively).
+DISPLAY_MODE = os.environ.get("SATK_MATLAB_DISPLAY_MODE", "nodesktop")
 
 
 def send(proc: subprocess.Popen[str], msg: dict) -> None:
@@ -317,8 +321,10 @@ def main() -> int:
         f"--log-folder={LOG_FOLDER}",
         f"--extension-file={DEFAULT_EXTENSION}",
     ]
-    if SESSION_MODE != "existing" and MATLAB_ROOT:
-        command.append(f"--matlab-root={MATLAB_ROOT}")
+    if SESSION_MODE != "existing":
+        command.append(f"--matlab-display-mode={DISPLAY_MODE}")
+        if MATLAB_ROOT:
+            command.append(f"--matlab-root={MATLAB_ROOT}")
 
     proc = subprocess.Popen(
         command,

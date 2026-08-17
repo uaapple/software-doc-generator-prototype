@@ -49,6 +49,7 @@
 - SATK 环境变量：
   - `SATK_MCP_LOG_FOLDER`：短 ASCII 路径（Windows `C:\Temp\matlab-mcp-core-server-codex`，macOS `/private/tmp/matlab-mcp-core-server-codex`）
   - `SATK_MATLAB_SESSION_MODE=new`（无人值守生产），`SATK_MATLAB_ROOT` 指向安装根
+  - `SATK_MATLAB_DISPLAY_MODE=nodesktop`（默认，MATLAB 无桌面启动，不弹窗口打断用户；调试界面时改 `desktop`）
   - `SATK_MCP_SERVER` / `SATK_MCP_EXTENSION`：非默认安装位置时显式给出
   - `TCSD_DEDICATED_WORKER=1`：仅无人值守 Worker，允许清理同 log 目录的陈旧任务级 MCP 进程
 
@@ -739,6 +740,7 @@ MATLAB_ROOT / SATK_MATLAB_ROOT          MATLAB 安装根
 SATK_MCP_SERVER / SATK_MCP_EXTENSION    非默认 SATK 位置
 SATK_MCP_LOG_FOLDER                     短 ASCII 日志/socket 目录
 SATK_MATLAB_SESSION_MODE                new（生产）/ existing（复用桌面）
+SATK_MATLAB_DISPLAY_MODE                nodesktop（默认，无桌面）/ desktop（调试界面用）
 TCSD_DEDICATED_WORKER                   无人值守 Worker 清理模式
 TCSD_CLEAN_STALE_MCP                    仅清理陈旧 MCP
 TCSD_PROJECT_INIT_SCRIPTS               显式模型初始化脚本列表
