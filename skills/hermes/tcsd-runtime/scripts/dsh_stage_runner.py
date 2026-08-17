@@ -453,16 +453,37 @@ def cmd_finish(args) -> int:
                     "reason_code": "measured_uncovered",
                     "evidence": f"covered={gap.get('covered')} total={gap.get('total')}",
                 })
+    else:
+        # Merge, don't replace: measured gaps that the proposal did not address
+        # (e.g. a reachable-but-uncovered vector like ParkCrl B02 AND2 C1) must
+        # still reach the manifest. Deduplicate against the proposal entries.
+        seen = {(str(u.get("coverage_class")), str((u.get("block") or {}).get("path")))
+                for u in unresolved}
+        for item in (final_cov.get("models") or {}).values():
+            if not isinstance(item, dict):
+                continue
+            for gap in item.get("items") or []:
+                if not isinstance(gap, dict):
+                    continue
+                key = (str(gap.get("coverage_class") or ""), str(gap.get("block_path") or ""))
+                if key in seen:
+                    continue
+                unresolved.append({
+                    "coverage_class": str(gap.get("coverage_class") or ""),
+                    "block": {"path": gap.get("block_path"), "sid": gap.get("sid")},
+                    "reason_code": "measured_uncovered",
+                    "evidence": f"covered={gap.get('covered')} total={gap.get('total')}",
+                })
+    # Completion follows the FINAL measured gate only: the initial round is
+    # informational (a successful repair legitimately raises it above
+    # threshold). The unresolved list is evidence detail (unreachable proofs /
+    # measured gaps), not a completion criterion by itself.
     completion = "complete"
-    all_passed = True
-    for target in (final_cov, initial_cov):
-        for m in (target.get("models") or {}).values():
-            for metric in ("condition", "decision", "mcdc"):
-                entry = m.get(metric) or {}
-                if entry.get("passed") is False:
-                    all_passed = False
-    if not all_passed or unresolved:
-        completion = "partial"
+    for m in (final_cov.get("models") or {}).values():
+        for metric in ("condition", "decision", "mcdc"):
+            entry = m.get(metric) or {}
+            if entry.get("passed") is False:
+                completion = "partial"
     manifest = {
         "schema": SCHEMA_MANIFEST,
         "authority": "host",

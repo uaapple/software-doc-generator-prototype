@@ -840,6 +840,58 @@ class StageRunnerHostFixesTests(unittest.TestCase):
             self.assertEqual(unresolved[0]["block"]["sid"], "39")
             self.assertEqual(manifest["completion"], "partial")
 
+    def test_finish_completion_uses_final_gate_and_merges_measured_gaps(self) -> None:
+        """ParkCrl B02 regression: all three final metrics pass (100/100/84.8)
+        -> completion=complete even though the INITIAL round was below target;
+        proposal-unresolved (logic_unreachable) plus measured gaps merge into
+        the evidence without duplication."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = root / "workspace"
+            output = workspace / "outputs"
+            model_dir = root / "model-dir"
+            (output / ".tcsd-host").mkdir(parents=True)
+            model_dir.mkdir()
+            model = "ParkCrl_A02_B02"
+            wb = Workbook()
+            wb.save(output / f"{model}_Test0001_tcsd.xlsx")
+            final = {"models": {model: {
+                "model": model, "test_count": 60, "threshold": 80,
+                "condition": {"covered": 130, "total": 130, "percent": 100.0, "passed": True},
+                "decision": {"covered": 12, "total": 12, "percent": 100.0, "passed": True},
+                "mcdc": {"covered": 28, "total": 33, "percent": 84.85, "passed": True},
+                "items": [
+                    {"coverage_class": "MCDC", "block_path": f"{model}/B02_RPAActv/AND2", "sid": "21",
+                     "covered": 2, "total": 3},
+                ],
+            }}}
+            initial = {"models": {model: {"condition": {"percent": 85.38, "passed": True},
+                                          "decision": {"percent": 41.67, "passed": False},
+                                          "mcdc": {"percent": 27.27, "passed": False}}}}
+            (output / f"{model}_initial_coverage_summary.json").write_text(json.dumps(initial), encoding="utf-8")
+            (output / f"{model}_final_coverage_summary.json").write_text(json.dumps(final), encoding="utf-8")
+            (output / f"{model}_agent_coverage_repair_proposal.json").write_text(json.dumps(
+                {"schema": "tcsd-agent-coverage-repair-proposal/v1", "jobId": "job-b2",
+                 "model": model, "tests": [], "unresolved": [
+                     {"coverage_class": "MCDC", "block": {"path": f"{model}/B02_RPAActv/AND4", "sid": "23"},
+                      "reason_code": "logic_unreachable", "evidence": "RPACmd shared root lockout"},
+                 ]}), encoding="utf-8")
+            task = {"id": "job-b2",
+                    "workspace": {"directory": str(workspace), "outputDir": str(output),
+                                  "modelSlxPath": str(workspace / f"{model}.slx"), "modelDir": str(model_dir)}}
+            task_path = root / "task.json"
+            task_path.write_text(json.dumps(task), encoding="utf-8")
+            self.runner.cmd_finish(mock.Mock(task=str(task_path)))
+            manifest = json.loads((output / ".tcsd-host" / "execution-manifest.json").read_text(encoding="utf-8"))
+            # Final gate passed -> complete, initial failure is informational.
+            self.assertEqual(manifest["completion"], "complete")
+            unresolved = manifest["evidence"]["unresolved"]
+            # Proposal entry plus the merged measured gap, no duplication.
+            self.assertEqual(len(unresolved), 2)
+            self.assertIn("logic_unreachable", [u["reason_code"] for u in unresolved])
+            self.assertIn("measured_uncovered", [u["reason_code"] for u in unresolved])
+            self.assertEqual(manifest["coverage"]["initial"]["models"][model]["decision"]["percent"], 41.67)
+
 
 if __name__ == "__main__":
     unittest.main()

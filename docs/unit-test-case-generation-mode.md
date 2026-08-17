@@ -520,9 +520,10 @@ checkpoint**。步骤：
    全部 `completed`，全程 0 次 SIGTERM 干扰、无 MATLAB/MCP 硬错误。两个宿主侧要点：
    ① 语义阶段（7 起）结果不含 interface 产物时，runner 会回退到 `outputs/*_interface.json`
    查找，不要把这个文件删掉；② `finish` 从产物解析真实 initial/final 覆盖率与修复事实，
-   按门禁判定 `completion`（任一指标未过或有 unresolved → `partial`），不要手工改写
-   execution-manifest 为 `complete`；unresolved 优先取修复提案，提案未记录时回退到
-   final coverage summary 的 items（ParkCrl B01 实测：11 条 MC/DC 缺口因此完整入 manifest）。
+   按**最终**三指标门禁判定 `completion`（首轮未达标是信息性记录，修复成功即 `complete`；
+   ParkCrl B02 实测：首轮 41.7/27.3 → 最终 100/84.8 判 `complete`），不要手工改写
+   execution-manifest；unresolved 明细 = 修复提案条目 + final coverage summary 的实测缺口
+   合并去重（提案未记录时回退到 items，ParkCrl B01/B02 实测验证）。
 10. **`getOrStashExceptions 未定义`排查（B15 实测，2026-08-17）**：simulate 脚本执行
    `restoredefaultpath` 后 MCP 核心路径未恢复会报此错。本机 addon 工具箱目录名是
    "MATLAB MCP **Server** Toolbox"（非 "Core Server"），`setup_ut_support.m` 的
