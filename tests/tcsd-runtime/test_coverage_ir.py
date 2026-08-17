@@ -76,6 +76,35 @@ class CoverageIrTests(unittest.TestCase):
         self.assertEqual(len(result["tests"]), 1)
         self.assertEqual(skipped, [{"id": "covered", "reason": "duplicate_existing_test"}])
 
+    def test_synthesis_uses_stimulus_initial_state_not_post_flip_direct_inputs(self) -> None:
+        """B09 r_keyon_rise regression: direct_inputs carries the post-transition
+        value (KeyOn=1) while stimulus.initial_inputs holds the pre-edge value
+        (KeyOn=0). The Initialization must keep the pre-edge value so the 0->1
+        flip in the Action actually produces an edge; baking direct_inputs into
+        the init would leave KeyOn high from t=0 and kill edge/latch logic."""
+        synthesis = script("synthesize_tcsd_from_coverage_ir.py")
+        spec = {"tests": [{"id": "TC_001", "name": "Base",
+                           "initialization": "idi_bKeyOn=0;\nicbms_pctHVBatSOCDisp=0;",
+                           "action": "[+0.1s]"}]}
+        ir = {"items": [
+            {"id": "r_keyon_rise", "coverage_class": "MCDC",
+             "required_outcome": "edge", "block": {"path": "M/Edge"},
+             "controller": {"direct_inputs": {"idi_bKeyOn": 1, "icbms_pctHVBatSOCDisp": 0},
+                            "parameters": {}},
+             "stimulus": {"initial_inputs": {"idi_bKeyOn": 0, "icbms_pctHVBatSOCDisp": 0},
+                          "initial_params": {},
+                          "steps": [{"delay_s": 0.1, "input_updates": {}},
+                                    {"delay_s": 0.1, "input_updates": {"idi_bKeyOn": 1}}]},
+             "reachability": {"status": "required"}},
+        ]}
+        result, skipped = synthesis.synthesize(spec, ir)
+        self.assertEqual(len(result["tests"]), 2)
+        appended = next(test for test in result["tests"] if test["id"] != "TC_001")
+        self.assertIn("idi_bKeyOn=0;", appended["initialization"])
+        self.assertNotIn("idi_bKeyOn=1;", appended["initialization"])
+        self.assertIn("idi_bKeyOn=1;", appended["action"])
+        self.assertEqual(skipped, [])
+
     def test_quality_loop_dispatches_repair_through_coverage_ir_synthesizer(self) -> None:
         loop = script("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as raw:

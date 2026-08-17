@@ -562,11 +562,18 @@ checkpoint**。步骤：
   把状态推进到 iter1，直接重跑 apply 会在错误基线上叠加（用例翻倍/基线漂移）；必要时
   重置状态再 apply。
 
-**候选有效性（B14 实测，2026-08-17）**：
+**候选有效性（B14/B09 实测，2026-08-17）**：
 - **候选的比较值必须先核对模型实际常量**：B14 主链候选误用 `pctLvBatSoc=95`（Greater6 实际要求
   `≤70`）、`stSocPrcsn=3`（Greater7 要求 `==2`），导致 `bRemLvBatMntnReq` 整链未激活（探针
   2828 次观测中 AND 端口5 恒 0）。RelationalOperator 候选的常量必须从 IR/模型 XML 实际值核对，
   不能凭印象——一个错值会静默杀死整条激活链，且仿真通过（仿真只证明刺激被执行，不证明分支被覆盖）。
+- **边沿/锁存候选的 init 必须保持翻转前状态（B09 教训，已修复）**：修复候选的
+  `controller.direct_inputs` 存的是翻转**后**值（KeyOn=1），而 `stimulus.initial_inputs` 才是
+  翻转前值（KeyOn=0）。合成器曾把 direct_inputs 写进工作簿 Initialization，导致边沿逻辑
+  （KeyOn 恒 1、OTAOn 恒 0、KeyStrt 恒 1）全部失效（r_keyon_rise/r_otaon_fall/r_rsl75_c1）。
+  **已修复**：`synthesize_tcsd_from_coverage_ir.py` 现在优先用 `stimulus.initial_inputs/
+  initial_params` 作为 Initialization（direct_inputs 仅作基底）。提案作者仍应在 stimulus 里给出
+  完整的翻转前 initial_inputs，不能只写 direct_inputs——有 stimulus 的候选翻转步骤才会进 Action。
 - **大模型缺口优先打主激活链**：当模型很大（数百 Condition/上百 MC/DC）且覆盖率远低于门槛时，
   先找门控整条子系统的根条件链（如 `bRemLvBatMntnReq`），按链核对全部比较常量后集中刺激；
   主链未通时散点候选提升有限（B14 一轮 16 候选仅 +1~2pp，生效的 3 类全部驱动计数链）。

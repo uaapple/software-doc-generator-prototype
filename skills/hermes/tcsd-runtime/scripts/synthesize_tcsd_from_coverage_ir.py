@@ -91,6 +91,16 @@ def synthesize(spec: dict[str, Any], ir: dict[str, Any], *, max_new_tests: int =
         if not (inputs or params or stimulus.get("steps")):
             skipped.append({"id": str(item.get("id")), "reason": "unresolved_controller"})
             continue
+        # Temporal stimulus pre-state wins over the static controller context.
+        # stimulus.initial_inputs/initial_params hold the PRE-transition values
+        # required by edge/latch logic (e.g. KeyOn must start at 0 to produce a
+        # 0->1 edge); controller.direct_inputs carries the post-transition
+        # sensitization values and must NOT leak into Initialization (B09
+        # r_keyon_rise: init KeyOn=1 baked from direct_inputs killed the edge).
+        init_inputs = dict(inputs)
+        init_inputs.update(stimulus.get("initial_inputs") or {})
+        init_params = dict(params)
+        init_params.update(stimulus.get("initial_params") or {})
         obligation = obligation_for_item(item)
         validator = validator_module()
         matched, _ = validator.find_match(obligation, snapshots, tolerance=1e-9, require_planned_test=False)
@@ -100,7 +110,7 @@ def synthesize(spec: dict[str, Any], ir: dict[str, Any], *, max_new_tests: int =
             continue
         while f"TC_{index:03d}" in existing:
             index += 1
-        spec.setdefault("tests", []).append(augment.build_test(index, obligation, augment.merge_initialization(base, inputs, params)))
+        spec.setdefault("tests", []).append(augment.build_test(index, obligation, augment.merge_initialization(base, init_inputs, init_params)))
         existing.add(f"TC_{index:03d}")
         seen.add(key)
         index += 1
