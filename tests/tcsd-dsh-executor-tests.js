@@ -26,9 +26,9 @@ const job = {
   }
 };
 const environment = executor.sessionEnvironment(job);
-assert.equal(environment.MATLAB_MCP_AUTH_TOKEN, undefined);
-assert.equal(environment.MATLAB_GATEWAY_TOKEN, undefined);
-assert.equal(environment.MATLAB_GATEWAY_EVALUATE_TOKEN, undefined);
+assert.equal(environment.MATLAB_MCP_AUTH_TOKEN, process.env.MATLAB_MCP_AUTH_TOKEN);
+assert.equal(environment.MATLAB_GATEWAY_TOKEN, process.env.MATLAB_GATEWAY_TOKEN);
+assert.equal(environment.MATLAB_GATEWAY_EVALUATE_TOKEN, process.env.MATLAB_GATEWAY_EVALUATE_TOKEN);
 assert.equal(environment.TCSD_GATEWAY_TRANSPORT, process.env.TCSD_GATEWAY_TRANSPORT);
 assert.equal(environment.TCSD_JOB_ID, job.jobId);
 const taskPath = executor.dshTaskPath(job);

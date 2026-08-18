@@ -14,7 +14,7 @@ oldPath = path;
 cleanupObj = onCleanup(@() local_cleanup(modelNames, oldDir, oldPath));
 cd(rootDir);
 addpath(fileparts(mfilename('fullpath')));
-setup_ut_support(rootDir, opts.InitScripts);
+executedInitScripts = setup_ut_support(rootDir, opts.InitScripts);
 if nargin >= 3 && ~isempty(matFileName)
     load_mat_to_base(resolve_workspace_file(rootDir, matFileName));
 end
@@ -28,16 +28,34 @@ for m = 1:numel(modelNames)
     if exist('configure_tcsd_sim_config', 'file') == 2
         configure_tcsd_sim_config(modelName, rootDir);
     end
+    set_param(modelName, 'CovMcdcMode', 'Masking');
     [inputNames, inputBlocks, outputNames] = root_ports(modelName);
     [inputTypes, inputDims] = compiled_input_metadata(modelName, inputBlocks, inputNames);
-    probes = configure_logic_probes(modelName);
+    probes = configure_tcsd_coverage_observation_model(modelName);
     caseJson = resolve_case_json(rootDir, modelName, opts.CaseSuffix, opts.CaseJson);
     spec = jsondecode(fileread(caseJson));
-    observations = struct('row', {}, 'test_id', {}, 'step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
+    observations = struct('row', {}, 'test_id', {}, 'step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {});
+    skippedTests = struct('row', {}, 'test_id', {}, 'reason', {}, 'resource', {}, 'expected_source', {}, 'matlab_identifier', {});
     aggregateCoverage = [];
     tests = normalize_struct_array(spec.tests);
     for testIndex = 1:numel(tests)
-        [obs, testCoverage] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex), rootDir, matFileName, ~isempty(opts.CoverageJson));
+        try
+            [obs, testCoverage] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex), rootDir, matFileName, ~isempty(opts.CoverageJson));
+        catch ME
+            [isMissingResource, resourceName, matlabIdentifier] = missing_external_resource(ME);
+            testId = char(string(tests(testIndex).test_id));
+            if isMissingResource && ismember(testId, opts.SkipMissingExternalResourceTestIds)
+                skippedTests(end + 1) = struct( ... %#ok<AGROW>
+                    'row', tests(testIndex).row, ...
+                    'test_id', testId, ...
+                    'reason', 'missing_external_resource', ...
+                    'resource', resourceName, ...
+                    'expected_source', 'task_mat_or_project_initialization', ...
+                    'matlab_identifier', matlabIdentifier);
+                continue;
+            end
+            rethrow(ME);
+        end
         if ~isempty(testCoverage)
             if isempty(aggregateCoverage)
                 aggregateCoverage = testCoverage;
@@ -56,12 +74,14 @@ for m = 1:numel(modelNames)
     report.model = modelName;
     report.outputs = outputNames;
     report.case_json = caseJson;
-    % Force row arrays so jsonencode emits JSON arrays even for zero/one probe.
-    report.probes = probes(:).';
-    report.observations = observations(:).';
+    report.probes = probes;
+    report.observations = observations;
+    report.skipped_tests = skippedTests;
     allReports.(matlab.lang.makeValidName(modelName)) = report;
     if ~isempty(aggregateCoverage)
-        coverageReports.(matlab.lang.makeValidName(modelName)) = coverage_summary(aggregateCoverage, modelName, numel(tests), opts.CoverageThreshold);
+        coverageReports.(matlab.lang.makeValidName(modelName)) = coverage_summary( ...
+            aggregateCoverage, modelName, numel(tests), opts.CoverageThreshold, ...
+            char(string(get_param(modelName, 'CovMcdcMode'))), executedInitScripts);
         if ~isempty(opts.CoverageDataFile)
             save_coverage_data(opts.CoverageDataFile, aggregateCoverage);
         end
@@ -89,6 +109,7 @@ opts.CoverageJson = '';
 opts.CoverageDataFile = '';
 opts.CoverageHtml = '';
 opts.CoverageThreshold = 80;
+opts.SkipMissingExternalResourceTestIds = {};
 idx = 1;
 while idx <= numel(varargin)
     key = char(string(varargin{idx}));
@@ -113,11 +134,44 @@ while idx <= numel(varargin)
             opts.CoverageHtml = char(string(value));
         case 'coveragethreshold'
             opts.CoverageThreshold = double(value);
+        case 'skipmissingexternalresourcetestids'
+            opts.SkipMissingExternalResourceTestIds = normalize_cellstr(value);
     end
     idx = idx + 2;
 end
 if isempty(opts.OutputJson)
     opts.OutputJson = fullfile(pwd, 'outputs', 'logic_probe_results.json');
+end
+end
+
+function [matched, resourceName, matlabIdentifier] = missing_external_resource(exception)
+matched = false;
+resourceName = '';
+matlabIdentifier = char(string(exception.identifier));
+queue = {exception};
+while ~isempty(queue)
+    current = queue{1};
+    queue(1) = [];
+    message = char(string(current.message));
+    patterns = {
+        '(?i)unrecognized function or variable\s+''([A-Za-z_]\w*)''', ...
+        '(?i)undefined function or variable\s+''([A-Za-z_]\w*)''', ...
+        '无法识别函数或变量\s*''([A-Za-z_]\w*)''', ...
+        '变量\s*''([A-Za-z_]\w*)''\s*未定义'
+    };
+    for i = 1:numel(patterns)
+        token = regexp(message, patterns{i}, 'tokens', 'once');
+        if ~isempty(token)
+            matched = true;
+            resourceName = token{1};
+            matlabIdentifier = char(string(current.identifier));
+            return;
+        end
+    end
+    causes = current.cause;
+    for i = 1:numel(causes)
+        queue{end + 1} = causes{i}; %#ok<AGROW>
+    end
 end
 end
 
@@ -174,98 +228,6 @@ outputBlocks = find_system(modelName, 'SearchDepth', 1, 'BlockType', 'Outport');
 [~, outputOrder] = sort(str2double(get_param(outputBlocks, 'Port')));
 outputBlocks = outputBlocks(outputOrder);
 outputNames = cellfun(@(p) get_param(p, 'Name'), outputBlocks, 'UniformOutput', false);
-end
-
-function probes = configure_logic_probes(modelName)
-logicBlocks = find_system(modelName, 'LookUnderMasks', 'all', 'FollowLinks', 'on', 'BlockType', 'Logic');
-probes = struct('id', {}, 'block_path', {}, 'sid', {}, 'operator', {}, 'port_names', {});
-for i = 1:numel(logicBlocks)
-    operator = upper(char(string(get_param(logicBlocks{i}, 'Operator'))));
-    if ~ismember(operator, {'AND', 'OR'})
-        continue;
-    end
-    handles = get_param(logicBlocks{i}, 'PortHandles');
-    portNames = {};
-    idx = numel(probes) + 1;
-    for p = 1:numel(handles.Inport)
-        line = get_param(handles.Inport(p), 'Line');
-        if isequal(line, -1)
-            portNames{p} = ''; %#ok<AGROW>
-            continue;
-        end
-        probeName = matlab.lang.makeValidName(sprintf('probe_%s_%03d_u%d', modelName, idx, p));
-        try
-            add_to_workspace_probe(logicBlocks{i}, line, probeName);
-            portNames{p} = probeName; %#ok<AGROW>
-        catch ME
-            fprintf('PROBE_ADD_FAILED %s port %d: %s\n', logicBlocks{i}, p, ME.message);
-            portNames{p} = ''; %#ok<AGROW>
-        end
-    end
-    probes(idx).id = logic_id(logicBlocks{i});
-    probes(idx).block_path = logicBlocks{i};
-    probes(idx).sid = probes(idx).id;
-    probes(idx).operator = operator;
-    probes(idx).port_names = portNames;
-end
-end
-
-function add_to_workspace_probe(targetBlock, line, variableName)
-parentSystem = get_param(targetBlock, 'Parent');
-srcPort = get_param(line, 'SrcPortHandle');
-blockName = matlab.lang.makeValidName(['CodexProbe_' variableName]);
-probeBlock = [parentSystem '/' blockName];
-suffix = 1;
-while getSimulinkBlockHandle(probeBlock) ~= -1
-    blockName = matlab.lang.makeValidName(sprintf('CodexProbe_%s_%d', variableName, suffix));
-    probeBlock = [parentSystem '/' blockName];
-    suffix = suffix + 1;
-end
-try
-    add_block('simulink/Sinks/To Workspace', probeBlock, ...
-        'VariableName', variableName, ...
-        'SaveFormat', 'Timeseries', ...
-        'Position', [30 + 15 * suffix, 30 + 15 * suffix, 140 + 15 * suffix, 60 + 15 * suffix]);
-catch ME
-    if contains(ME.message, '链接库模块') || contains(lower(ME.message), 'library') || contains(lower(ME.message), 'locked')
-        deactivate_link(parentSystem);
-        add_block('simulink/Sinks/To Workspace', probeBlock, ...
-            'VariableName', variableName, ...
-            'SaveFormat', 'Timeseries', ...
-            'Position', [30 + 15 * suffix, 30 + 15 * suffix, 140 + 15 * suffix, 60 + 15 * suffix]);
-    else
-        rethrow(ME);
-    end
-end
-dstHandles = get_param(probeBlock, 'PortHandles');
-add_line(parentSystem, srcPort, dstHandles.Inport(1), 'autorouting', 'on');
-end
-
-function deactivate_link(systemPath)
-current = systemPath;
-while ~isempty(current)
-    try
-        status = get_param(current, 'LinkStatus');
-        if ~strcmpi(status, 'none')
-            set_param(current, 'LinkStatus', 'inactive');
-            return;
-        end
-    catch
-    end
-    parent = get_param(current, 'Parent');
-    if isempty(parent) || strcmp(parent, current)
-        return;
-    end
-    current = parent;
-end
-end
-
-function id = logic_id(blockPath)
-try
-    id = Simulink.ID.getSID(blockPath);
-catch
-    id = blockPath;
-end
 end
 
 function [observations, coverageData] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, test, rootDir, matFileName, collectCoverage)
@@ -343,34 +305,17 @@ for k = 1:numel(inputNames)
     end
     ds{k} = ts;
 end
+[ds, ~] = append_root_execution_control_inputs(ds, modelName, t);
 externalInputVar = 'tc_sd_external_input_ds';
 in = Simulink.SimulationInput(modelName);
 in = in.setVariable(externalInputVar, ds);
 in = in.setModelParameter('StopTime', num2str(stopTime), 'SolverType', 'Fixed-step', 'Solver', 'FixedStepDiscrete', 'FixedStep', num2str(dt), 'SaveOutput', 'on', 'ReturnWorkspaceOutputs', 'on', 'LoadExternalInput', 'on', 'ExternalInput', externalInputVar);
 if collectCoverage
     in = in.setModelParameter('CovEnable', 'on', 'CovMetricSettings', 'dcme', ...
+        'CovMcdcMode', char(string(get_param(modelName, 'CovMcdcMode'))), ...
         'CovSaveSingleToWorkspaceVar', 'on', 'CovSaveName', 'tc_sd_covdata');
 end
-try
-    out = sim(in);
-catch ME
-    if is_mps_selector_error(ME)
-        observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
-        for k = 1:numel(steps)
-            observations(k).step_index = steps(k).index;
-            observations(k).time_s = eventTimes(k);
-            observations(k).inputs = snapshotInputs(k).values;
-            observations(k).params = initParams;
-            observations(k).vectors = struct();
-            observations(k).stimulus = stimulus_prefix(test, k);
-            observations(k).target = ensure_struct(test, 'target');
-            observations(k).prediction_status = 'simulation_error_mps_selector';
-            observations(k).error_message = ME.message;
-        end
-        return;
-    end
-    rethrow(ME);
-end
+out = sim(in);
 if collectCoverage
     try
         coverageData = out.get('tc_sd_covdata');
@@ -379,7 +324,7 @@ if collectCoverage
             'Coverage was enabled but tc_sd_covdata was not returned: %s', ME.message);
     end
 end
-observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
+observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {});
 for k = 1:numel(steps)
     observations(k).step_index = steps(k).index;
     observations(k).time_s = eventTimes(k);
@@ -407,7 +352,7 @@ end
 
 function status = prediction_status(target, vectors)
 status = 'not_predicted';
-if isempty(fieldnames(target)) || ~isfield(target, 'operator_id') || ~isfield(target, 'port_index')
+if isempty(fieldnames(target)) || ~isfield(target, 'operator_id')
     return;
 end
 fields = fieldnames(vectors);
@@ -415,6 +360,20 @@ for i = 1:numel(fields)
     vector = vectors.(fields{i});
     if ~strcmp(char(string(vector.id)), char(string(target.operator_id))) || ~vector.ok
         continue;
+    end
+    if isfield(target, 'expected_vector') && ~isempty(target.expected_vector)
+        expectedVector = logical(target.expected_vector(:)');
+        actualVector = logical(vector.values(:)');
+        if isequal(actualVector, expectedVector)
+            status = 'matched_prediction';
+        else
+            status = 'simulation_mismatch';
+        end
+        return;
+    end
+    if ~isfield(target, 'port_index')
+        status = 'target_unavailable';
+        return;
     end
     portIndex = double(target.port_index);
     if portIndex < 1 || portIndex > numel(vector.values)
@@ -437,16 +396,37 @@ end
 status = 'target_unavailable';
 end
 
-function summary = coverage_summary(cvd, modelName, testCount, threshold)
+function summary = coverage_summary(cvd, modelName, testCount, threshold, mcdcMode, initScripts)
 summary = struct();
 summary.model = modelName;
 summary.test_count = testCount;
 summary.threshold = threshold;
+summary.mcdc_mode = char(string(mcdcMode));
+summary.model_checksum = model_checksum(modelName);
+summary.support_library_path = support_library_path();
+summary.initialization_scripts = initScripts;
 summary.condition = metric_result(conditioninfo(cvd, modelName), threshold);
 summary.decision = metric_result(decisioninfo(cvd, modelName), threshold);
 summary.mcdc = metric_result(mcdcinfo(cvd, modelName), threshold);
 summary.items = collect_uncovered_coverage_items(cvd, modelName);
+summary.mcdc_items = collect_all_mcdc_items(cvd, modelName);
 summary.passed = summary.condition.passed && summary.decision.passed && summary.mcdc.passed;
+end
+
+function value = model_checksum(modelName)
+value = '';
+try
+    value = jsonencode(Simulink.BlockDiagram.getChecksum(modelName));
+catch
+end
+end
+
+function value = support_library_path()
+value = '';
+try
+    value = char(string(get_param('ITKLib', 'FileName')));
+catch
+end
 end
 
 function result = metric_result(info, threshold)
@@ -511,6 +491,32 @@ for blockIndex = 1:numel(blocks)
         end
         items{end + 1} = item; %#ok<AGROW>
     end
+end
+end
+
+function items = collect_all_mcdc_items(cvd, modelName)
+items = {};
+blocks = find_system(modelName, 'LookUnderMasks', 'all', 'FollowLinks', 'on', 'Type', 'Block');
+for blockIndex = 1:numel(blocks)
+    blockPath = blocks{blockIndex};
+    try
+        [info, description] = mcdcinfo(cvd, blockPath, true);
+    catch
+        continue;
+    end
+    metric = metric_result(info, 0);
+    if metric.total <= 0
+        continue;
+    end
+    item = struct();
+    item.coverage_class = 'MCDC';
+    item.block_path = blockPath;
+    try, item.sid = char(string(get_param(blockPath, 'SID'))); catch, item.sid = ''; end
+    item.covered = metric.covered;
+    item.total = metric.total;
+    item.percent = metric.percent;
+    item.description = jsonencode(description);
+    items{end + 1} = item; %#ok<AGROW>
 end
 end
 
@@ -808,15 +814,6 @@ fid = fopen(out, 'w');
 fprintf(fid, '%s', jsonencode(data, PrettyPrint=true));
 fclose(fid);
 fprintf('Wrote %s\n', out);
-end
-
-function tf = is_mps_selector_error(ME)
-report = getReport(ME, 'basic', 'hyperlinks', 'off');
-tf = (contains(report, 'Multiport Switch', 'IgnoreCase', true) || contains(report, 'MultiPortSwitch', 'IgnoreCase', true)) ...
-    && (contains(report, 'control port', 'IgnoreCase', true) ...
-        || contains(report, '控制端口') ...
-        || contains(report, 'does not correspond', 'IgnoreCase', true) ...
-        || contains(report, '不对应'));
 end
 
 function local_cleanup(models, oldDir, oldPath)

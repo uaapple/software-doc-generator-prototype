@@ -1846,10 +1846,21 @@ export async function createHermesApp(options = {}) {
       const jobId = String(payload.jobId || "").trim();
       const cwd = String(payload.cwd || "").trim();
       const outputDir = String(payload.outputDir || "").trim();
-      if (!taskPrompt) {
+      if (!taskPrompt || !jobId || !cwd || !outputDir) {
         return res.status(400).json({
-          error: "DSH 任务提示词不能为空。",
-          code: "dsh_task_prompt_required"
+          error: "DSH 任务标识、提示词和工作路径不能为空。",
+          code: "dsh_task_input_required"
+        });
+      }
+      const managedRoot = path.resolve(config.dataDir);
+      const resolvedCwd = path.resolve(cwd);
+      const resolvedOutputDir = path.resolve(outputDir);
+      const isManagedPath = (candidate) =>
+        candidate === managedRoot || candidate.startsWith(`${managedRoot}${path.sep}`);
+      if (!isManagedPath(resolvedCwd) || !isManagedPath(resolvedOutputDir)) {
+        return res.status(400).json({
+          error: "DSH 任务路径必须位于受管数据目录内。",
+          code: "dsh_task_path_outside_managed_root"
         });
       }
       const command = String(
@@ -1874,14 +1885,14 @@ export async function createHermesApp(options = {}) {
         environment.TCSD_JOB_ID = jobId;
         environment.TCSD_RESOURCE_OWNER_JOB_ID = jobId;
       }
-      if (outputDir) environment.TCSD_OUTPUT_DIR = outputDir;
+      environment.TCSD_OUTPUT_DIR = resolvedOutputDir;
       const options = {
         env: environment,
         maxBuffer: 16 * 1024 * 1024,
         timeout: Number(config.tcsdPipeline?.dsh?.sessionTimeoutMs || 0) || 0,
         windowsHide: true
       };
-      if (cwd) options.cwd = cwd;
+      options.cwd = resolvedCwd;
       const result = await execFileAsync(
         process.execPath,
         ["--expose-internals", dshCli, "--profile", profile, taskPrompt],

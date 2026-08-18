@@ -23,6 +23,7 @@ assert.doesNotMatch(
 assert.match(containerfile, /node:22\.22\.3-bookworm-slim@sha256:[a-f0-9]{64}/);
 assert.match(containerfile, /python:3\.11\.9-slim-bookworm@sha256:[a-f0-9]{64}/);
 assert.match(containerfile, /HERMES_AGENT_VERSION="0\.18\.2"/);
+assert.match(containerfile, /DSH_VERSION="0\.1\.0-rc\.7"/);
 assert.match(
   containerfile,
   /HERMES_AGENT_WHEEL_SHA256="8f02155cfc84b28bd98551cd18dffec0efa9ec070dd08f90f1a850f1c779492f"/
@@ -35,6 +36,8 @@ assert.ok(
   "image metadata must follow stable Python and Hermes dependency layers"
 );
 assert.match(containerfile, /COPY containers\/worker\/configure-hermes\.py/);
+assert.match(containerfile, /COPY containers\/worker\/dsh-headless-tcsd\.mjs/);
+assert.match(containerfile, /COPY presets\/unit-test-case-generation-production\//);
 assert.match(containerfile, /COPY skills\/hermes\/software-detail-runtime\//);
 for (let stageNumber = 1; stageNumber <= 9; stageNumber += 1) {
   assert.match(
@@ -46,7 +49,7 @@ for (let stageNumber = 1; stageNumber <= 9; stageNumber += 1) {
 }
 assert.match(
   containerfile,
-  /ENTRYPOINT \["\/usr\/bin\/tini", "--", "\/opt\/sdg\/venv\/bin\/python", "\/opt\/sdg\/app\/containers\/worker\/configure-hermes\.py"\]/
+  /ENTRYPOINT \["\/usr\/bin\/tini", "--", "\/usr\/local\/bin\/tcsd-dsh-worker"\]/
 );
 
 const output = await fs.mkdtemp(path.join(os.tmpdir(), "worker-source-selection-"));
@@ -73,6 +76,8 @@ try {
   assert.ok(manifest.files.includes("src/hermes-app.js"));
   assert.ok(manifest.files.includes("src/config.js"));
   for (const serviceFile of [
+    "src/services/tcsd-dsh-skill-registry.js",
+    "src/services/tcsd-dsh-stage-executor.js",
     "src/services/software-detail-hermes-skill-registry.js",
     "src/services/software-detail-hermes-stage-executor.js",
     "src/services/software-detail-matlab-lease-client.js",

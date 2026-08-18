@@ -70,8 +70,8 @@ windows:
   - deploy/schemas/native-matlab-gateway-companion-release.schema.json
   - compose.windows-docker-desktop.yaml
   - .env.windows-docker-desktop.example
-  - containers/worker/Containerfile
-  - containers/worker/configure-hermes.py
+  - containers/worker/**
+  - presets/unit-test-case-generation-production/**
   - requirements/container-worker.txt
   - scripts/prepare-worker-source.mjs
   - requirements/tcsd-runtime.txt
@@ -82,6 +82,8 @@ windows:
   - src/hermes-server.js
   - src/services/matlab-mcp-client.js
   - src/services/tcsd-pipeline-job-service.js
+  - src/services/tcsd-dsh-stage-executor.js
+  - src/services/tcsd-dsh-skill-registry.js
   - src/services/tcsd-hermes-stage-executor.js
   - src/services/tcsd-host-semantic-validator.js
   - src/services/tcsd-hermes-skill-registry.js
@@ -169,6 +171,8 @@ shared:
   - skills/requirement_validation.md
   - skills/requirement_writing.md
   - docs/**
+  - package.json
+  - package-lock.json
 dev-only:
   - .github/workflows/**
   - compose.mac.yaml
@@ -178,6 +182,4 @@ dev-only:
   - test-fixtures/**
 
 ambiguous:
-  - package.json
-  - package-lock.json
   - README.md

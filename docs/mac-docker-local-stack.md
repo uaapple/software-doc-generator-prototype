@@ -19,26 +19,13 @@
 # 1) 依赖（宿主，供 Gateway 进程与构建期使用）
 pnpm install
 
-# 2) 生成 Gateway 双 token（各一次，记录到两个文件）
-AUTH_TOKEN=$(openssl rand -hex 32)
-EVAL_TOKEN=$(openssl rand -hex 32)
-
-# 3) 宿主 Gateway 配置（不提交）
+# 2) 宿主 Gateway 配置（不提交）
 cp .env.gateway.example .env.gateway
-# 编辑 .env.gateway：MATLAB_GATEWAY_TOKEN=$AUTH_TOKEN
-#                 MATLAB_GATEWAY_EVALUATE_TOKEN=$EVAL_TOKEN
+# 通过安全方式生成两项 Gateway 随机凭据，并分别填入 Gateway 与 Worker
+# 的本机未跟踪配置；不得把凭据写入命令记录、本文档或仓库。
 
-# 4) Worker 凭据文件（root:sdg-transport 0440 挂载，DSH 会话不可读）
-mkdir -p secrets
-cat > secrets/tcsd-gateway.env <<EOF
-MATLAB_MCP_AUTH_TOKEN=$AUTH_TOKEN
-MATLAB_GATEWAY_EVALUATE_TOKEN=$EVAL_TOKEN
-EOF
-chmod 600 secrets/tcsd-gateway.env
-
-# 5) 栈配置（不提交；填入 DEEPSEEK_API_KEY）
+# 3) 栈配置（不提交；填入模型凭据）
 cp .env.mac-docker.example .env
-# 编辑 .env：DEEPSEEK_API_KEY=<你的 key>
 ```
 
 ## 2. 启动顺序
@@ -78,10 +65,10 @@ curl -s http://127.0.0.1:3101/health    # Worker（hermes-server）
 - **DSH 会话内命令全部被拒（SandboxUnavailableError）**：linuxkit 内核无
   bwrap/Landlock 沙箱后端，必须设 `DSH_PERMISSION_MODE=danger-full-access`
   （容器即沙箱：cap_drop ALL + no-new-privileges + 只读 rootfs + uid 10001）。
-- **Worker 容器内 MATLAB 调用失败（401）**：检查 secrets/tcsd-gateway.env 与
-  .env.gateway 中两个 token 是否一致、secrets 挂载权限（root:10002 0440）。
+- **Worker 容器内 MATLAB 调用失败（401）**：只核对本机未跟踪配置中的两项
+  Gateway 凭据是否与宿主 Gateway 一致，不要打印凭据内容。
 - **后端连不上 Worker**：HERMES_BASE_URL=http://worker:3101 需在 compose 网络内解析；
   检查 worker 服务是否健康。
 - **MATLAB 冷启动慢**：首阶段可能耗时 5-10 分钟，属正常（nodesktop 无头）。
-- **想切回 Hermes**：把 .env 中 `TCSD_STAGE_EXECUTOR=hermes` 并确保 HERMES_BASE_URL
-  指向原 Hermes Agent 服务（仅当该服务存在）。
+- TCSD 默认且正式使用 DSH；Hermes 只保留给尚未迁移的软件详设链路，不作为
+  TCSD 回退路径。

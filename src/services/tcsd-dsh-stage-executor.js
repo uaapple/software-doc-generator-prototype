@@ -85,6 +85,9 @@ export class TcsdDshStageExecutor {
     // transport so the container split needs no code change on the backend.
     this.transport = String(options.transport || config.hermes?.transport || "cli").trim().toLowerCase();
     this.agentBaseURL = String(options.agentBaseURL || config.hermes?.baseURL || "").trim().replace(/\/+$/, "");
+    this.agentAuthToken = String(
+      options.agentAuthToken || config.hermes?.authToken || ""
+    ).trim();
     this.catalog = options.catalog || new TcsdStageCatalog();
     this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({ python: this.python });
     this.packager = options.packager || new TcsdHermesStageExecutor({
@@ -146,12 +149,11 @@ export class TcsdDshStageExecutor {
   }
 
   sessionEnvironment(job) {
-    // Explicitly omit Gateway credentials. The platform grants those only to
-    // the controlled satk_eval.py / matlab_gateway_lease.py child process.
+    // The Worker keeps its existing Gateway credential contract: the
+    // image-owned allowlist wrapper launches only the two approved Python
+    // clients. Values are inherited in memory and must never be persisted or
+    // included in DSH transcripts.
     const environment = { ...process.env };
-    delete environment.MATLAB_MCP_AUTH_TOKEN;
-    delete environment.MATLAB_GATEWAY_TOKEN;
-    delete environment.MATLAB_GATEWAY_EVALUATE_TOKEN;
     return {
       ...environment,
       NO_COLOR: "1",
@@ -345,7 +347,12 @@ export class TcsdDshStageExecutor {
     try {
       const response = await fetch(`${this.agentBaseURL}/internal/dsh/tasks`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(this.agentAuthToken
+            ? { Authorization: `Bearer ${this.agentAuthToken}` }
+            : {})
+        },
         body: JSON.stringify(payload),
         signal: controller.signal
       });

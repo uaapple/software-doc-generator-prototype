@@ -8,6 +8,17 @@ from typing import Any
 
 INPUT_SCHEMA = "tcsd-agent-stage-input/v1"
 RESULT_SCHEMA = "tcsd-agent-stage-result/v1"
+STAGE6_PROBE_TIMEOUT_BASE_SECONDS = 600
+STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS = 5
+STAGE6_PROBE_TIMEOUT_MAX_SECONDS = 3600
+STAGE6_PROBE_BATCH_SIZE = 64
+STAGE6_MAX_CANDIDATES_PER_TARGET = 8
+STAGE6_MAX_TOTAL_CANDIDATES = 384
+STAGE11_PROBE_TIMEOUT_BASE_SECONDS = 600
+STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS = 30
+STAGE11_PROBE_TIMEOUT_MAX_SECONDS = 3600
+STAGE11_PROBE_BATCH_SIZE = 20
+STAGE7_MAX_INITIAL_TESTS = 100
 
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path); module = importlib.util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module); return module
@@ -15,6 +26,61 @@ def load_module(name: str, path: Path):
 def read_json(path: Path) -> dict[str, Any]: return json.loads(path.read_text(encoding="utf-8"))
 def write_json(path: Path, value: Any) -> None: path.parent.mkdir(parents=True, exist_ok=True); path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 def file_sha256(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()
+def should_finish_stage10_partial_after_mcdc_delta(attempt: int, report: dict[str, Any]) -> bool:
+    return attempt >= 2 and report.get("passed") is not True
+
+def stage6_probe_timeout_seconds(candidate_count: int) -> int:
+    configured = os.environ.get("SATK_GATEWAY_TIMEOUT_SECONDS", "").strip()
+    configured_floor = STAGE6_PROBE_TIMEOUT_BASE_SECONDS
+    if configured:
+        try:
+            configured_floor = max(1, int(float(configured)))
+        except ValueError:
+            configured_floor = STAGE6_PROBE_TIMEOUT_BASE_SECONDS
+    adaptive = STAGE6_PROBE_TIMEOUT_BASE_SECONDS + max(0, candidate_count) * STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS
+    return min(STAGE6_PROBE_TIMEOUT_MAX_SECONDS, max(configured_floor, adaptive))
+
+def stage11_probe_timeout_seconds(case_count: int) -> int:
+    configured = os.environ.get("SATK_GATEWAY_TIMEOUT_SECONDS", "").strip()
+    configured_floor = STAGE11_PROBE_TIMEOUT_BASE_SECONDS
+    if configured:
+        try:
+            configured_floor = max(1, int(float(configured)))
+        except ValueError:
+            configured_floor = STAGE11_PROBE_TIMEOUT_BASE_SECONDS
+    adaptive = STAGE11_PROBE_TIMEOUT_BASE_SECONDS + max(0, case_count) * STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS
+    return min(STAGE11_PROBE_TIMEOUT_MAX_SECONDS, max(configured_floor, adaptive))
+
+def coverage_record(report: dict[str, Any], model: str) -> dict[str, Any]:
+    models = report.get("models") if isinstance(report.get("models"), dict) else report
+    record = models.get(model) if isinstance(models, dict) else None
+    if not isinstance(record, dict):
+        raise RuntimeError(f"coverage report does not contain model {model}")
+    return record
+
+def coverage_gain(before: dict[str, Any], after: dict[str, Any], model: str) -> dict[str, int]:
+    left = coverage_record(before, model)
+    right = coverage_record(after, model)
+    gains: dict[str, int] = {}
+    for key in ("condition", "decision", "mcdc"):
+        before_metric = left.get(key) if isinstance(left.get(key), dict) else {}
+        after_metric = right.get(key) if isinstance(right.get(key), dict) else {}
+        gains[key] = int(after_metric.get("covered") or 0) - int(before_metric.get("covered") or 0)
+    return gains
+
+def run_matlab_entry(
+    *, root: Path, entry: Path, lines: list[str], gateway_timeout_seconds: int = 900
+) -> None:
+    quality = load_module("tcsd_quality_entry", scripts() / "run_tcsd_quality_loop.py")
+    quality.write_matlab_entry(entry, "\n".join(lines))
+    quality.run_satk(
+        sys.executable,
+        scripts(),
+        entry,
+        root,
+        gateway_timeout_seconds=gateway_timeout_seconds,
+    )
+
 def planning_mapping_assessment(raw: dict[str, Any], obligations: Path, root: Path) -> dict[str, Any]:
     assessment = dict(raw)
     raw_status = str(assessment.pop("status", "failed"))
@@ -52,11 +118,44 @@ def ensure_within(root: Path, candidate: Path, label: str) -> Path:
     if not resolved.is_relative_to(root.resolve()): raise RuntimeError(f"{label} is outside the task workspace: {resolved}")
     return resolved
 
+class RecoverableStageValidationError(RuntimeError):
+    """A deterministic Agent artifact defect that one fresh session may repair."""
+
+    def __init__(self, message: str, validation_report_path: Path):
+        super().__init__(message)
+        self.validation_report_path = validation_report_path
+
 def hard_error_code(stage: int, error: BaseException) -> str:
+    if isinstance(error, RecoverableStageValidationError): return "tcsd_stage_validation_failed"
     if isinstance(error, subprocess.TimeoutExpired): return "tcsd_stage_timeout"
     if stage == 1: return "tcsd_input_invalid"
     if stage == 2: return "tcsd_environment_gate_failed"
     return "tcsd_stage_runtime_failed"
+
+def public_error_details(error: BaseException) -> dict[str, Any]:
+    raw = getattr(error, "details", None)
+    if not isinstance(raw, dict): return {}
+    details: dict[str, Any] = {}
+    safe_text_keys = {
+        "phase", "gatewayErrorCode", "gatewayJobId", "gatewayStatus",
+        "diagnosticArtifactFileName",
+    }
+    safe_number_keys = {
+        "satkExitCode", "timeoutSeconds", "candidateCount", "caseCount",
+        "batchIndex", "batchCount", "batchCandidateCount", "batchStart", "batchEnd",
+    }
+    safe_hash_keys = {"probePlanSha256", "probeEntrySha256"}
+    for key in safe_text_keys:
+        value = str(raw.get(key) or "").strip()
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]*", value): details[key] = value[:160]
+    for key in safe_number_keys:
+        value = raw.get(key)
+        if isinstance(value, (int, float)) and 0 <= value <= 1000000: details[key] = value
+    for key in safe_hash_keys:
+        value = str(raw.get(key) or "").strip().lower()
+        if re.fullmatch(r"[a-f0-9]{64}", value): details[key] = value
+    if isinstance(raw.get("probeEntryExists"), bool): details["probeEntryExists"] = raw["probeEntryExists"]
+    return details
 
 PUBLIC_ERROR_LIMIT = 2000
 SECRET_ASSIGNMENT_RE = re.compile(
@@ -90,15 +189,42 @@ def mcp_error_text(output: str) -> str:
     ]
     return " ".join(message for message in messages if message)
 
+def immutable_python_command(command: list[str]) -> list[str]:
+    if len(command) >= 2 and command[1] != "-B" and str(command[1]).endswith(".py"):
+        return [command[0], "-B", *command[1:]]
+    return command
+
+
 def run(command: list[str], cwd: Path) -> None:
-    subprocess.run(command, cwd=cwd, check=True)
+    try:
+        subprocess.run(
+            immutable_python_command(command),
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except subprocess.CalledProcessError as error:
+        detail = public_error_text(error.stderr or "")
+        if detail:
+            raise RuntimeError(
+                f"deterministic command failed (exit {error.returncode}): {detail}"
+            ) from None
+        raise RuntimeError(
+            f"deterministic command failed (exit {error.returncode})."
+        ) from None
 
 def run_satk(command: list[str], cwd: Path, *, stage: int, context: str) -> None:
-    transport = os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip()
-    if transport and len(command) >= 2 and Path(command[1]).name == "satk_eval.py":
-        command = [transport, *command[1:]]
     try:
-        subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True)
+        subprocess.run(
+            immutable_python_command(command),
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
     except subprocess.CalledProcessError as error:
         detail = mcp_error_text(error.stdout or "")
         if not detail:
@@ -116,7 +242,7 @@ def matlab_cell(items: list[str]) -> str: return "{" + ",".join("'" + item.repla
 def matlab_string(value: str) -> str: return "'" + value.replace("'", "''") + "'"
 def stage4_matlab_code(*, root: Path, scripts_dir: Path, interface: Path, model: str, mat_name: str, init_scripts: list[str]) -> str:
     root_m = str(root).replace("'", "''"); scripts_m = str(scripts_dir).replace("'", "''"); interface_m = str(interface).replace("'", "''"); model_m = model.replace("'", "''"); mat_m = mat_name.replace("'", "''")
-    return f"rootDir='{root_m}'; model='{model_m}'; initScripts={matlab_cell(init_scripts)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); load_system(fullfile(rootDir,'{model_m}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); inputNames=reshape(cellstr(string(get_param(ins,'Name'))),1,[]); outputNames=reshape(cellstr(string(get_param(outs,'Name'))),1,[]); p=struct('schema','tcsd-model-interface/v1','inputs',{{inputNames}},'outputs',{{outputNames}}); fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_m}','WorkspaceInitialized',true); bdclose(model);"
+    return f"rootDir='{root_m}'; model='{model_m}'; initScripts={matlab_cell(init_scripts)}; addpath('{scripts_m}'); setup_ut_support(rootDir,initScripts); load_system(fullfile(rootDir,'{model_m}.slx')); ins=find_system(model,'SearchDepth',1,'BlockType','Inport'); outs=find_system(model,'SearchDepth',1,'BlockType','Outport'); inputNames=reshape(cellstr(string(get_param(ins,'Name'))),1,[]); outputNames=reshape(cellstr(string(get_param(outs,'Name'))),1,[]); controls={{}}; ens=find_system(model,'SearchDepth',1,'BlockType','EnablePort'); for k=1:numel(ens), controls{{end+1}}=struct('name',char(string(get_param(ens{{k}},'Name'))),'type','enable','defaultPolicy','enabled'); end; trs=find_system(model,'SearchDepth',1,'BlockType','TriggerPort'); for k=1:numel(trs), controls{{end+1}}=struct('name',char(string(get_param(trs{{k}},'Name'))),'type','trigger','defaultPolicy','unsupported'); end; p=struct('schema','tcsd-model-interface/v1','inputs',{{inputNames}},'outputs',{{outputNames}}); p.executionControls=controls; fid=fopen('{interface_m}','w'); fprintf(fid,'%s',jsonencode(p,PrettyPrint=true)); fclose(fid); trace_logical_mcdc(rootDir,{{model}},'{mat_m}','WorkspaceInitialized',true); bdclose(model);"
 def interface_names(values: Any) -> list[str]:
     if values is None: return []
     if isinstance(values, (str, int, float)): values = [values]
@@ -125,13 +251,29 @@ def interface_names(values: Any) -> list[str]:
 def validate_interface(value: dict[str, Any]) -> dict[str, Any]:
     if value.get("schema") != "tcsd-model-interface/v1": raise RuntimeError("model interface schema is invalid")
     if not all(isinstance(value.get(key), list) and all(isinstance(name, str) and name for name in value[key]) for key in ("inputs", "outputs")): raise RuntimeError("model interface inputs/outputs must be string arrays")
+    controls = value.get("executionControls", [])
+    if not isinstance(controls, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("name"), str) and item["name"]
+        and item.get("type") in {"enable", "trigger"}
+        and isinstance(item.get("defaultPolicy"), str) and item["defaultPolicy"]
+        for item in controls
+    ): raise RuntimeError("model interface executionControls are invalid")
     return value
 def initial_spec(interface: dict[str, Any], model: str) -> dict[str, Any]:
     root = interface.get("rootPorts", interface); inputs = root.get("inputs", []); outputs_ = root.get("outputs", [])
     input_names, output_names = interface_names(inputs), interface_names(outputs_)
+    enabled_controls = [
+        str(item["name"])
+        for item in interface.get("executionControls", [])
+        if isinstance(item, dict)
+        and item.get("type") == "enable"
+        and item.get("defaultPolicy") == "enabled"
+    ]
+    control_initialization = "\n".join(f"{name}=1;" for name in enabled_controls)
     initialization = "\n".join(f"{name}=0;" for name in input_names)
-    action = "\n".join([*(f"{name}=0;" for name in input_names), "[+0.1s]"])
-    return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线"}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action}]}
+    action = "\n".join(["[+0.01s]", *(f"{name}=0;" for name in input_names), "[+0.1s]"])
+    return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线", "initialization_1": control_initialization}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action}]}
 STEP_MARKER_RE = re.compile(r"^\s*\[\+")
 EXP_VALUE_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*expValue\(\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*\)\s*;?\s*$")
 def workbook_steps(action: str) -> list[dict[str, Any]]:
@@ -177,19 +319,395 @@ def simulation_backfill_evidence(simulation: dict[str, Any], workbook: Path) -> 
         counts: dict[str, int] = {}
         for step in steps:
             result = simulation_steps[step["index"]]; stable = result.get("stable", {}); outputs_ = result.get("outputs", {})
-            expected = {} if step["finalEmptyDelay"] else {str(name): value for name, value in outputs_.items() if stable.get(name) is not False}
+            expected = {} if step["finalEmptyDelay"] else {str(name): value for name, value in outputs_.items() if stable.get(name) is True}
             actual = step["values"]
             if set(expected) != set(actual): raise RuntimeError(f"simulation/workbook output mismatch: {key} step {step['index']} expected={sorted(expected)} actual={sorted(actual)}")
             for name, value in expected.items():
                 if isinstance(value, (dict, list)) or not math.isclose(float(value), actual[name], rel_tol=1e-7, abs_tol=1e-7): raise RuntimeError(f"simulation/workbook value mismatch: {key} step {step['index']} output {name}")
                 counts[name] = counts.get(name, 0) + 1; matched.append({"row": key[0], "testId": key[1], "step": step["index"], "output": name, "value": actual[name]})
         case_outputs[f"{key[0]}:{key[1]}"] = counts
+    tests_without_expected_values = [
+        {"row": key[0], "testId": key[1]}
+        for key in workbook_cases
+        if not case_outputs.get(f"{key[0]}:{key[1]}")
+    ]
+    if tests_without_expected_values:
+        labels = ", ".join(item["testId"] or f"row {item['row']}" for item in tests_without_expected_values)
+        raise RuntimeError(f"simulation backfill produced no verified expValue for Test cases: {labels}")
     if not matched: raise RuntimeError("simulation backfill produced no verified expValue items")
-    return {"simulationValueCount": len(matched), "workbookBackfillCount": len(matched), "caseOutputCounts": case_outputs, "backfillItems": matched}
+    return {
+        "simulationValueCount": len(matched),
+        "workbookBackfillCount": len(matched),
+        "testCaseCount": len(workbook_cases),
+        "testsWithoutExpectedValues": tests_without_expected_values,
+        "caseOutputCounts": case_outputs,
+        "backfillItems": matched,
+    }
+
+
+def initial_recipe_probe_evidence(cases: dict[str, Any], probe: dict[str, Any], model: str) -> dict[str, Any]:
+    tests = cases.get("tests") if isinstance(cases.get("tests"), list) else []
+    targeted = {
+        str(test.get("test_id")): test.get("target")
+        for test in tests
+        if isinstance(test, dict)
+        and isinstance(test.get("target"), dict)
+        and test["target"].get("expected_vector")
+    }
+    report = probe.get(model, probe) if isinstance(probe, dict) else {}
+    observations = report.get("observations") if isinstance(report, dict) else []
+    observations = observations if isinstance(observations, list) else []
+    skipped_ids = {
+        str(item.get("test_id") or "")
+        for item in (report.get("skipped_tests") or [])
+        if isinstance(item, dict) and item.get("reason") == "missing_external_resource"
+    }
+    targeted = {
+        test_id: target for test_id, target in targeted.items()
+        if test_id not in skipped_ids
+    }
+    matched = {
+        str(item.get("test_id"))
+        for item in observations
+        if isinstance(item, dict) and item.get("prediction_status") == "matched_prediction"
+    }
+    failed = sorted(test_id for test_id in targeted if test_id not in matched)
+    return {
+        "plannedCandidateCount": len(targeted),
+        "verifiedCandidateCount": len(targeted) - len(failed),
+        "observationCount": len(observations),
+        "failedCandidateCount": len(failed),
+    }
+
+
+def initial_recipe_validation_failures(
+    cases: dict[str, Any], probe: dict[str, Any], model: str, skippable_test_ids: set[str]
+) -> list[dict[str, Any]]:
+    tests = cases.get("tests") if isinstance(cases.get("tests"), list) else []
+    targeted = {
+        str(test.get("test_id")): test.get("target")
+        for test in tests
+        if isinstance(test, dict)
+        and isinstance(test.get("target"), dict)
+        and test["target"].get("expected_vector")
+    }
+    report = probe.get(model, probe) if isinstance(probe, dict) else {}
+    observations = report.get("observations") if isinstance(report, dict) else []
+    observations = observations if isinstance(observations, list) else []
+    skipped_ids = {
+        str(item.get("test_id") or "")
+        for item in (report.get("skipped_tests") or [])
+        if isinstance(item, dict) and item.get("reason") == "missing_external_resource"
+    }
+    result: list[dict[str, Any]] = []
+    for test_id, target in targeted.items():
+        if test_id in skipped_ids:
+            continue
+        relevant = [item for item in observations if isinstance(item, dict) and str(item.get("test_id") or "") == test_id]
+        if any(item.get("prediction_status") == "matched_prediction" for item in relevant):
+            continue
+        if test_id not in skippable_test_ids:
+            raise RuntimeError(f"MATLAB contradicted a non-candidate Test case: {test_id or '<missing>'}")
+        labels = sorted({
+            str(vector.get("label") or "")
+            for item in relevant
+            for vector in ((item.get("vectors") or {}).values() if isinstance(item.get("vectors"), dict) else [])
+            if isinstance(vector, dict)
+            and str(vector.get("id") or "") == str(target.get("operator_id") or "")
+            and vector.get("label")
+        })
+        result.append({
+            "testId": test_id,
+            "reason": "simulation_mismatch",
+            "coverageItemId": str(target.get("coverage_item_id") or ""),
+            "operatorId": str(target.get("operator_id") or ""),
+            "expectedVector": list(target.get("expected_vector") or []),
+            "observedVectors": labels,
+            "handoffStage": 10,
+        })
+    return result
+
+
+def initial_recipe_missing_resource_skips(
+    probe: dict[str, Any], model: str, skippable_test_ids: set[str]
+) -> list[dict[str, Any]]:
+    report = probe.get(model, probe) if isinstance(probe, dict) else {}
+    raw = report.get("skipped_tests") if isinstance(report, dict) else []
+    raw = raw if isinstance(raw, list) else []
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict) or item.get("reason") != "missing_external_resource":
+            continue
+        test_id = str(item.get("test_id") or "")
+        resource = str(item.get("resource") or "")
+        if test_id not in skippable_test_ids:
+            raise RuntimeError(f"MATLAB attempted to skip a non-candidate Test case: {test_id or '<missing>'}")
+        if not re.fullmatch(r"[A-Za-z_]\w*", resource):
+            raise RuntimeError(f"MATLAB reported an invalid missing external resource for Test case {test_id}")
+        if test_id in seen:
+            continue
+        seen.add(test_id)
+        result.append({
+            "testId": test_id,
+            "row": int(item.get("row") or 0),
+            "reason": "missing_external_resource",
+            "resource": resource,
+            "expectedSource": "task_mat_or_project_initialization",
+            "matlabIdentifier": str(item.get("matlab_identifier") or ""),
+        })
+    return result
+
+
+def remove_initial_recipe_tests(spec: dict[str, Any], skipped_test_ids: set[str]) -> dict[str, Any]:
+    tests = spec.get("tests") if isinstance(spec.get("tests"), list) else []
+    return {
+        **spec,
+        "tests": [
+            test for test in tests
+            if not isinstance(test, dict) or str(test.get("id") or "") not in skipped_test_ids
+        ],
+    }
+
+
+def record_initial_recipe_resource_skips(
+    synthesis: dict[str, Any], skips: list[dict[str, Any]], remaining_test_count: int
+) -> dict[str, Any]:
+    result = dict(synthesis)
+    skipped = list(result.get("skipped") or [])
+    skipped.extend({
+        "id": item["testId"],
+        "reason": item["reason"],
+        "resource": item["resource"],
+        "expected_source": item["expectedSource"],
+    } for item in skips)
+    skipped_by_reason = dict(result.get("skipped_by_reason") or {})
+    skipped_by_reason["missing_external_resource"] = (
+        int(skipped_by_reason.get("missing_external_resource") or 0) + len(skips)
+    )
+    input_count = int(result.get("input_test_count") or 0)
+    result.update({
+        "output_test_count": remaining_test_count,
+        "added": max(0, remaining_test_count - input_count),
+        "skipped": skipped,
+        "skipped_by_reason": skipped_by_reason,
+        "missing_external_resource_skipped_count": len(skips),
+        "missing_external_resources": sorted({
+            item["resource"] for item in skips
+        }),
+    })
+    return result
+
+
+def record_initial_recipe_validation_failures(
+    synthesis: dict[str, Any], failures: list[dict[str, Any]], remaining_test_count: int
+) -> dict[str, Any]:
+    result = dict(synthesis)
+    skipped = list(result.get("skipped") or [])
+    skipped.extend({
+        "id": item["testId"],
+        "reason": item["reason"],
+        "coverage_item_id": item["coverageItemId"],
+        "operator_id": item["operatorId"],
+        "expected_vector": item["expectedVector"],
+        "observed_vectors": item["observedVectors"],
+        "handoff_stage": item["handoffStage"],
+    } for item in failures)
+    skipped_by_reason = dict(result.get("skipped_by_reason") or {})
+    skipped_by_reason["simulation_mismatch"] = (
+        int(skipped_by_reason.get("simulation_mismatch") or 0) + len(failures)
+    )
+    input_count = int(result.get("input_test_count") or 0)
+    result.update({
+        "output_test_count": remaining_test_count,
+        "added": max(0, remaining_test_count - input_count),
+        "skipped": skipped,
+        "skipped_by_reason": skipped_by_reason,
+        "simulation_mismatch_skipped_count": len(failures),
+    })
+    return result
+
+
 def coverage_meets(report: dict[str, Any], threshold: float) -> bool:
     records = report.get("models", report)
     valid = [record for record in records.values() if isinstance(record, dict) and all(key in record for key in ("condition", "decision", "mcdc"))]
     return bool(valid) and all(float(record[key]["percent"]) >= threshold for record in valid for key in ("condition", "decision", "mcdc"))
+
+def prepare_design_verifier_gapfill(
+    *,
+    job: dict[str, Any],
+    state: dict[str, Any],
+    quality: Any,
+    root: Path,
+    out: Path,
+    model: str,
+    interface: Path,
+    threshold: float,
+) -> tuple[Path, Path]:
+    current_report = Path(state.get("currentCoverage") or state["initialCoverage"])
+    current_data = Path(state.get("currentCoverageData") or state["initialCoverageData"])
+    mcdc_mode = str(coverage_record(read_json(current_report), model).get("mcdc_mode") or "").strip()
+    if mcdc_mode not in {"Masking", "UniqueCause"}:
+        raise RuntimeError("stage 9 coverage does not declare a supported MC/DC mode")
+    if state.get("designVerifierAttempted"):
+        return current_report, current_data
+
+    verifier_dir = out / ".tcsd-runtime" / "design-verifier"
+    verifier_cases = verifier_dir / f"{model}_design_verifier_cases.json"
+    verifier_evidence = verifier_dir / f"{model}_design_verifier_evidence.json"
+    verifier_entry = verifier_dir / f"{model}_design_verifier_entry.m"
+    verifier_output = verifier_dir / "sldv"
+    verifier_dir.mkdir(parents=True, exist_ok=True)
+    init_scripts = job["input"].get("projectInitScripts", [])
+    try:
+        run_matlab_entry(
+            root=root,
+            entry=verifier_entry,
+            gateway_timeout_seconds=900,
+            lines=[
+                f"addpath({quality.matlab_string(str(scripts()))});",
+                (
+                    f"run_design_verifier_gapfill({quality.matlab_string(str(root))},"
+                    f"{quality.matlab_string(model)},{quality.matlab_string(job['input']['modelMatPath'])},"
+                    f"{quality.matlab_string(str(current_data))},{quality.matlab_string(str(verifier_output))},"
+                    f"{quality.matlab_string(str(verifier_cases))},{quality.matlab_string(str(verifier_evidence))},"
+                    f"'InitScripts',{quality.matlab_cell(init_scripts)},'McdcMode',{quality.matlab_string(mcdc_mode)},"
+                    "'MaxProcessTime',600,'MaxTestCaseSteps',4000);"
+                ),
+            ],
+        )
+    except Exception as error:
+        if not verifier_evidence.is_file():
+            write_json(verifier_evidence, {
+                "schema": "tcsd-design-verifier-gapfill/v1",
+                "status": "failed",
+                "reason": "design_verifier_execution_failed",
+                "errorType": type(error).__name__,
+            })
+
+    evidence = read_json(verifier_evidence) if verifier_evidence.is_file() else {}
+    state.update({
+        "designVerifierAttempted": True,
+        "designVerifierEvidence": str(verifier_evidence),
+        "designVerifierApplied": False,
+    })
+    if evidence.get("status") != "completed" or not verifier_cases.is_file():
+        save_state(job, state)
+        return current_report, current_data
+
+    candidate_count = len(read_json(verifier_cases).get("tests") or [])
+    if candidate_count <= 0:
+        save_state(job, state)
+        return current_report, current_data
+
+    next_spec = out / f"{model}_design_verifier_spec.json"
+    candidate_cases = out / f"{model}_design_verifier_candidate_cases.json"
+    append_report = out / f"{model}_design_verifier_append.json"
+    next_workbook = out / f"{model}_design_verifier_tcsd.xlsx"
+    base_test_count = len(read_json(Path(state["spec"])).get("tests") or [])
+    run([
+        sys.executable,
+        str(scripts() / "append_extracted_cases_to_tcsd.py"),
+        "--spec", state["spec"],
+        "--candidates", str(verifier_cases),
+        "--output-spec", str(next_spec),
+        "--output-candidates", str(candidate_cases),
+        "--report", str(append_report),
+    ], root)
+    run([
+        sys.executable,
+        str(scripts() / "build_tcsd_from_json.py"),
+        "--template", str(scripts().parent / "assets" / "templates" / "tcsd_template.xlsx"),
+        "--spec", str(next_spec),
+        "--output", str(next_workbook),
+        "--interface-json", str(interface),
+    ], root)
+    all_workbook_cases = quality.extract_cases(
+        python=sys.executable,
+        scripts=scripts(),
+        root_dir=root,
+        model=model,
+        workbook=next_workbook,
+        interface_json=interface,
+    )
+    extracted_payload = read_json(all_workbook_cases)
+    write_json(candidate_cases, {
+        **extracted_payload,
+        "tests": (extracted_payload.get("tests") or [])[base_test_count:],
+    })
+    if len(read_json(candidate_cases).get("tests") or []) != candidate_count:
+        raise RuntimeError("Design Verifier workbook candidate rows do not match generated cases")
+    candidate_simulation = quality.simulate_and_backfill(
+        python=sys.executable,
+        scripts=scripts(),
+        root_dir=root,
+        model=model,
+        workbook=next_workbook,
+        case_json=candidate_cases,
+        mat_file=job["input"]["modelMatPath"],
+        outputs=",".join(read_json(interface).get("outputs", [])),
+        exclude_outputs="",
+        interface_json=interface,
+        result_name=f"{model}_design_verifier_simulation.json",
+        collect_coverage=True,
+        coverage_threshold=threshold,
+        mcdc_mode=mcdc_mode,
+        coverage_result_name=f"{model}_design_verifier_candidate_coverage.json",
+        init_scripts=init_scripts,
+    )
+    generic_candidate_data = out / f"{model}_candidate_coverage.cvt"
+    candidate_data = out / f"{model}_design_verifier_candidate_coverage.cvt"
+    if not generic_candidate_data.is_file():
+        raise RuntimeError("Design Verifier candidate coverage data is missing")
+    shutil.copyfile(generic_candidate_data, candidate_data)
+    merged_data = out / f"{model}_design_verifier_merged_coverage.cvt"
+    merged_json = out / f"{model}_design_verifier_merged_coverage.json"
+    merge_entry = verifier_dir / f"{model}_design_verifier_merge_entry.m"
+    run_matlab_entry(
+        root=root,
+        entry=merge_entry,
+        gateway_timeout_seconds=900,
+        lines=[
+            f"addpath({quality.matlab_string(str(scripts()))});",
+            (
+                f"merge_tcsd_coverage({quality.matlab_string(str(root))},{quality.matlab_string(model)},"
+                f"{quality.matlab_string(str(current_data))},{quality.matlab_string(str(candidate_data))},"
+                f"{quality.matlab_string(str(merged_data))},{quality.matlab_string(str(merged_json))},"
+                f"'InitScripts',{quality.matlab_cell(init_scripts)},'MatFile',"
+                f"{quality.matlab_string(job['input']['modelMatPath'])},'McdcMode',{quality.matlab_string(mcdc_mode)},'Threshold',{threshold:g});"
+            ),
+        ],
+    )
+    merged_report = out / f"{model}_design_verifier_coverage_report.json"
+    write_json(merged_report, {"schema": "tcsd-coverage-report/v1", "models": read_json(merged_json)})
+    gain = coverage_gain(read_json(current_report), read_json(merged_report), model)
+    gain_report = out / f"{model}_design_verifier_coverage_gain.json"
+    write_json(gain_report, {
+        "schema": "tcsd-coverage-gain/v1",
+        "source": "simulink-design-verifier",
+        "candidateCount": candidate_count,
+        "gain": gain,
+        "passed": any(value > 0 for value in gain.values()),
+    })
+    if not any(value > 0 for value in gain.values()):
+        state["designVerifierGain"] = gain
+        save_state(job, state)
+        return current_report, current_data
+
+    state.update({
+        "designVerifierApplied": True,
+        "designVerifierGain": gain,
+        "designVerifierCandidateCount": candidate_count,
+        "designVerifierSimulation": str(candidate_simulation),
+        "designVerifierGainEvidence": str(gain_report),
+        "workbook": str(next_workbook),
+        "spec": str(next_spec),
+        "currentCoverage": str(merged_report),
+        "currentCoverageData": str(merged_data),
+        "repairApplied": True,
+    })
+    save_state(job, state)
+    return merged_report, merged_data
 
 def stage_run(
     stage: int,
@@ -201,6 +719,9 @@ def stage_run(
 ) -> None:
     root, out, model, state = workspace(job), outputs(job), model_name(job), load_state(job); inp = job["input"]; out.mkdir(parents=True, exist_ok=True)
     quality = load_module("tcsd_quality", scripts() / "run_tcsd_quality_loop.py")
+    state_classifier = load_module(
+        "tcsd_state_classifier", scripts() / "classify_state_probe_targets.py"
+    )
     if stage == 1:
         required = [ensure_within(root, Path(inp["modelSlxPath"]), "modelSlxPath"), ensure_within(root, Path(inp["modelMatPath"]), "modelMatPath")]
         required.extend(ensure_within(root, root / item, "projectInitScript") for item in inp.get("projectInitScripts", []))
@@ -210,14 +731,10 @@ def stage_run(
         manifest = out / ".tcsd-evidence" / "input-manifest.json"; write_json(manifest, {"schema": "tcsd-input-manifest/v1", "jobId": job["jobId"], "files": [{"path": str(item), "size": item.stat().st_size} for item in required], "projectAddon": inp.get("projectAddonCopy", {})})
         finish(job, stage, summary="输入文件与项目附件已验证。", artifacts=[artifact(root, manifest)]); return
     if stage == 2:
-        # Gateway topology: MATLAB lives on the host behind the Gateway, so the
-        # local executable check is skipped; the canary below verifies Gateway
-        # health and the controlled transport instead.
-        gateway_mode = bool(os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip()) and bool(os.environ.get("SATK_GATEWAY_URL", "").strip())
-        if not gateway_mode:
-            matlab_root = matlab_root_path(inp)
-            matlab = matlab_root / "bin" / ("matlab.exe" if os.name == "nt" else "matlab")
-            if not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
+        matlab_root = matlab_root_path(inp)
+        matlab = matlab_root / "bin" / ("matlab.exe" if os.name == "nt" else "matlab")
+        gateway_mode = bool(str(os.environ.get("SATK_GATEWAY_URL") or "").strip())
+        if not gateway_mode and not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
         if not (scripts() / "satk_eval.py").is_file(): raise RuntimeError("SATK runtime runner is missing")
         env = out / ".tcsd-evidence" / "environment.json"; env.parent.mkdir(parents=True, exist_ok=True)
         fixture = os.environ.get("TCSD_PIPELINE_ENV_CANARY_FIXTURE", "")
@@ -225,10 +742,7 @@ def stage_run(
             shutil.copy2(fixture, env)
         else:
             satk_runtime = load_module("tcsd_satk_eval", scripts() / "satk_eval.py")
-            if os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip() and satk_runtime.gateway_url():
-                selected_server = {"discovery": "matlab-gateway", "transport": "tcsd-gateway-transport"}
-            else:
-                selected_server = satk_runtime.server_info()
+            selected_server = satk_runtime.server_info()
             modules: dict[str, dict[str, str]] = {}
             for module_name in ("yaml", "openpyxl"):
                 module = __import__(module_name)
@@ -342,58 +856,340 @@ def stage_run(
     if stage == 5:
         run([sys.executable, str(scripts()/"derive_logical_mcdc_mappings.py"), "--traces", str(traces), "--output", str(mapping)], root)
         run([sys.executable, str(scripts()/"build_logical_mcdc_obligations.py"), "--logical-operators", str(mapping), "--output", str(obligations), "--allow-unresolved"], root)
-        decision_blocks = out / f"{model}_decision_blocks.json"
-        decision_obligations = out / f"{model}_decision_obligations.json"
-        root_m = str(root).replace("'", "''"); scripts_m = str(scripts()).replace("'", "''")
-        model_m = model.replace("'", "''"); mat_m = Path(inp["modelMatPath"]).name.replace("'", "''")
-        init = inp.get("projectInitScripts", [])
-        collected = False
-        # Prefer MATLAB-collected decision blocks (real connectivity evidence);
-        # fall back to static SLX XML analysis when the MATLAB gate fails.
-        try:
-            entry = out / ".tcsd-runtime" / "stage05_decision_blocks.m"
-            entry.write_text(
-                f"rootDir='{root_m}'; initScripts={matlab_cell(init)}; addpath('{scripts_m}'); "
-                f"setup_ut_support(rootDir,initScripts); "
-                f"collect_decision_blocks(rootDir,'{model_m}','{mat_m}',initScripts,'{str(decision_blocks).replace(chr(39), chr(39)+chr(39))}');",
-                encoding="utf-8",
-            )
-            run_satk([sys.executable, str(scripts() / "satk_eval.py"), str(entry)], root, stage=stage, context="decision blocks collection failed")
-            if decision_blocks.is_file():
-                run([sys.executable, str(scripts()/"build_decision_obligations.py"), "--blocks", str(decision_blocks), "--slx", str(inp["modelSlxPath"]), "--output", str(decision_obligations)], root)
-                collected = True
-        except BaseException as error:
-            print(f"stage 05 MATLAB decision blocks collection unavailable: {error}", file=sys.stderr)
-        if not collected:
-            try:
-                run([sys.executable, str(scripts()/"build_decision_obligations.py"), "--slx", str(inp["modelSlxPath"]), "--interface", str(interface), "--output", str(decision_obligations)], root)
-                collected = True
-            except BaseException as error:
-                print(f"stage 05 static decision obligations unavailable: {error}", file=sys.stderr)
-        extra_args = ["--decision-obligations", str(decision_obligations)] if collected and decision_obligations.is_file() else []
-        run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--obligations", str(obligations), *extra_args, "--output", str(coverage_ir)], root)
-        state.update({"mapping": str(mapping), "obligations": str(obligations), "coverageIr": str(coverage_ir), "decisionObligations": str(decision_obligations)}); save_state(job, state)
-        finish(job, stage, summary="Condition、Decision 与 MC/DC 覆盖目标已形成 Coverage IR。", artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir), artifact(root, decision_obligations)]); return
+        run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--obligations", str(obligations), "--include-nested-operators", "--output", str(coverage_ir)], root)
+        ir_summary = read_json(coverage_ir).get("summary", {})
+        state.update({"mapping": str(mapping), "obligations": str(obligations), "coverageIr": str(coverage_ir)}); save_state(job, state)
+        finish(
+            job,
+            stage,
+            summary="条件、判定与修正条件/判定覆盖目标已形成，并完成首轮可执行性统计。",
+            artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir)],
+            evidence={"executionReadiness": ir_summary.get("executionReadiness", {})},
+        ); return
     if stage == 6:
-        plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
+        plan = out / f"{model}_state_probe_plan.json"; run([
+            sys.executable,
+            str(scripts() / "build_state_probe_plan.py"),
+            "--traces",
+            str(traces),
+            "--coverage-ir",
+            str(coverage_ir),
+            "--output",
+            str(plan),
+            "--max-candidates-per-port",
+            str(STAGE6_MAX_CANDIDATES_PER_TARGET),
+            "--max-total-candidates",
+            str(STAGE6_MAX_TOTAL_CANDIDATES),
+        ], root); plan_data = read_json(plan)
         probe_artifacts = [artifact(root, plan)]; candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))
+        probe_timeout_seconds = stage6_probe_timeout_seconds(min(candidate_count, STAGE6_PROBE_BATCH_SIZE))
+        probe_batch_count = math.ceil(candidate_count / STAGE6_PROBE_BATCH_SIZE) if candidate_count else 0
         if candidate_count > 0:
             probe_results = out / f"{model}_state_probe_results.json"; probe_fixture = os.environ.get("TCSD_PIPELINE_PROBE_RESULTS_FIXTURE", "")
             if probe_fixture:
-                shutil.copy2(probe_fixture, probe_results); run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
-            else: obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json")
-            read_json(probe_results)
-            ir_args = [sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations)]
-            if state.get("decisionObligations") and Path(state["decisionObligations"]).is_file():
-                ir_args += ["--decision-obligations", str(state["decisionObligations"])]
-            run(ir_args + ["--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
+                shutil.copy2(probe_fixture, probe_results)
+                obligations = quality.build_probe_obligations(
+                    python=sys.executable,
+                    scripts=scripts(),
+                    root_dir=root,
+                    model=model,
+                    probe_results=probe_results,
+                    unreachable_overrides="",
+                )
+            else:
+                try:
+                    primary_results = out / f"{model}_state_probe_results_primary.json"
+                    obligations, batch_manifest = quality.run_probe_batched(
+                        python=sys.executable,
+                        scripts=scripts(),
+                        root_dir=root,
+                        model=model,
+                        mat_file=inp["modelMatPath"],
+                        init_scripts=inp.get("projectInitScripts", []),
+                        unreachable_overrides="",
+                        coverage_threshold=float(inp.get("coverageThreshold", 80)),
+                        case_json=plan,
+                        output_name=primary_results.name,
+                        batch_size=STAGE6_PROBE_BATCH_SIZE,
+                        gateway_timeout_seconds=probe_timeout_seconds,
+                        manifest_name=f"{model}_state_probe_batch_manifest_primary.json",
+                    )
+                    probe_artifacts.append(artifact(root, batch_manifest, "json", "state-probe-batches"))
+                    primary_classification = state_classifier.classify_targets(
+                        plan_data, read_json(primary_results)
+                    )
+                    primary_classification_path = out / f"{model}_state_probe_classification_primary.json"
+                    write_json(primary_classification_path, primary_classification)
+                    second_plan_data = state_classifier.second_pass_plan(
+                        plan_data, primary_classification
+                    )
+                    second_plan = out / f"{model}_state_probe_plan_secondary.json"
+                    write_json(second_plan, second_plan_data)
+                    second_results = out / f"{model}_state_probe_results_secondary.json"
+                    second_count = len(second_plan_data.get("tests") or [])
+                    if second_count:
+                        _, second_manifest = quality.run_probe_batched(
+                            python=sys.executable,
+                            scripts=scripts(),
+                            root_dir=root,
+                            model=model,
+                            mat_file=inp["modelMatPath"],
+                            init_scripts=inp.get("projectInitScripts", []),
+                            unreachable_overrides="",
+                            coverage_threshold=float(inp.get("coverageThreshold", 80)),
+                            case_json=second_plan,
+                            output_name=second_results.name,
+                            batch_size=STAGE6_PROBE_BATCH_SIZE,
+                            gateway_timeout_seconds=stage6_probe_timeout_seconds(
+                                min(second_count, STAGE6_PROBE_BATCH_SIZE)
+                            ),
+                            manifest_name=f"{model}_state_probe_batch_manifest_secondary.json",
+                        )
+                        probe_artifacts.append(artifact(root, second_manifest, "json", "state-probe-batches"))
+                        probe_artifacts.append(
+                            artifact(root, second_results, "json", "state-probe-secondary")
+                        )
+                        merged_plan, merged_results = state_classifier.merge_passes(
+                            plan_data,
+                            read_json(primary_results),
+                            second_plan_data,
+                            read_json(second_results),
+                        )
+                    else:
+                        merged_plan, merged_results = plan_data, read_json(primary_results)
+                    write_json(probe_results, merged_results)
+                    final_classification = state_classifier.classify_targets(
+                        merged_plan, merged_results
+                    )
+                    final_classification_path = out / f"{model}_state_probe_classification.json"
+                    write_json(final_classification_path, final_classification)
+                    probe_artifacts.extend([
+                        artifact(root, primary_results, "json", "state-probe-primary"),
+                        artifact(root, primary_classification_path, "json", "state-probe-classification"),
+                        artifact(root, second_plan, "json", "state-probe-secondary-plan"),
+                        artifact(root, final_classification_path, "json", "state-probe-classification"),
+                    ])
+                except quality.SatkEvaluationError as error:
+                    probe_entry = out / f"{model}_probe_mcdc_entry.m"
+                    error.details.update({
+                        "candidateCount": candidate_count,
+                        "probePlanSha256": file_sha256(plan),
+                        "probeEntryExists": probe_entry.is_file(),
+                    })
+                    if probe_entry.is_file(): error.details["probeEntrySha256"] = file_sha256(probe_entry)
+                    raise
+            read_json(probe_results); run([sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations), "--include-nested-operators", "--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
-        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0}); return
+        final_status_counts = (
+            final_classification.get("statusCounts", {})
+            if candidate_count > 0 and not probe_fixture
+            else {}
+        )
+        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={
+            "candidateCount": candidate_count,
+            "truncatedCandidateCount": int(plan_data.get("summary", {}).get("truncated_candidate_count") or 0),
+            "probeExecuted": candidate_count > 0,
+            "probeBatchSize": STAGE6_PROBE_BATCH_SIZE if candidate_count > 0 else None,
+            "probeBatchCount": probe_batch_count,
+            "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None,
+            "strictPrimaryCount": int(plan_data.get("summary", {}).get("strict_primary_count") or 0),
+            "causalOnlyPrimaryCount": int(plan_data.get("summary", {}).get("causal_only_primary_count") or 0),
+            "secondPassCandidateCount": second_count if candidate_count > 0 and not probe_fixture else 0,
+            "strictSuccessTargetCount": int(final_status_counts.get("strict_success") or 0),
+            "causalTransitionTargetCount": int(final_status_counts.get("direction_unverified") or 0),
+            "noTransitionTargetCount": int(final_status_counts.get("no_transition") or 0),
+            "observationMissingTargetCount": int(final_status_counts.get("observation_missing") or 0),
+            "unplannedTargetCount": int(final_status_counts.get("unplanned") or 0),
+            "expectedDirectionConflictTargetCount": (
+                int(final_classification.get("expectedDirectionConflictTargetCount") or 0)
+                if candidate_count > 0 and not probe_fixture else 0
+            ),
+            "simulationMismatchTargetCount": (
+                int(final_classification.get("simulationMismatchTargetCount") or 0)
+                if candidate_count > 0 and not probe_fixture else 0
+            ),
+            "causalOnlyReasonCounts": (
+                final_classification.get("causalOnlyReasonCounts", {})
+                if candidate_count > 0 and not probe_fixture else {}
+            ),
+        }); return
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)
-        spec, workbook, _ = quality.synthesize_ir_once(python=sys.executable, scripts=scripts(), root_dir=root, template=scripts().parent/"assets"/"templates"/"tcsd_template.xlsx", model=model, spec=spec, workbook=workbook, interface_json=interface, coverage_ir=coverage_ir, iteration=0)
-        quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface); state.update({"spec": str(spec), "workbook": str(workbook)}); save_state(job, state)
+        spec, workbook, synthesis = quality.synthesize_ir_once(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            template=scripts().parent / "assets" / "templates" / "tcsd_template.xlsx",
+            model=model,
+            spec=spec,
+            workbook=workbook,
+            interface_json=interface,
+            coverage_ir=coverage_ir,
+            iteration=0,
+            max_new_tests=STAGE7_MAX_INITIAL_TESTS,
+        )
+        synthesis_report = out / f"{model}_coverage_ir_synthesis_iter0.json"
+        quality.validate_workbook(python=sys.executable, scripts=scripts(), root_dir=root, workbook=workbook, interface_json=interface)
+        verification_results = out / f"{model}_initial_recipe_probe_results.json"
+        resource_gaps = out / f"{model}_initial_recipe_resource_gaps.json"
+        validation_gaps = out / f"{model}_initial_recipe_validation_gaps.json"
+        verification_artifacts = []
+        if int(synthesis.get("added") or 0) > 0:
+            synthesized_spec = read_json(spec)
+            synthesized_tests = synthesized_spec.get("tests") if isinstance(synthesized_spec.get("tests"), list) else []
+            input_test_count = int(synthesis.get("input_test_count") or 0)
+            skippable_test_ids = {
+                str(test.get("id") or "")
+                for test in synthesized_tests[input_test_count:]
+                if isinstance(test, dict) and test.get("id")
+            }
+            verification_cases = quality.extract_cases(
+                python=sys.executable,
+                scripts=scripts(),
+                root_dir=root,
+                model=model,
+                workbook=workbook,
+                interface_json=interface,
+                coverage_ir=coverage_ir,
+            )
+            quality.run_probe(
+                python=sys.executable,
+                scripts=scripts(),
+                root_dir=root,
+                model=model,
+                mat_file=inp["modelMatPath"],
+                init_scripts=inp.get("projectInitScripts", []),
+                unreachable_overrides="",
+                collect_coverage=False,
+                coverage_threshold=float(inp.get("coverageThreshold", 80)),
+                case_json=verification_cases,
+                output_name=verification_results.name,
+                build_obligations=False,
+                skip_missing_external_resource_test_ids=sorted(skippable_test_ids),
+            )
+            probe_payload = read_json(verification_results)
+            missing_resource_skips = initial_recipe_missing_resource_skips(
+                probe_payload,
+                model,
+                skippable_test_ids,
+            )
+            if missing_resource_skips:
+                skipped_test_ids = {item["testId"] for item in missing_resource_skips}
+                synthesized_spec = remove_initial_recipe_tests(synthesized_spec, skipped_test_ids)
+                write_json(spec, synthesized_spec)
+                run([
+                    sys.executable,
+                    str(scripts() / "build_tcsd_from_json.py"),
+                    "--template",
+                    str(scripts().parent / "assets" / "templates" / "tcsd_template.xlsx"),
+                    "--spec",
+                    str(spec),
+                    "--output",
+                    str(workbook),
+                    "--interface-json",
+                    str(interface),
+                ], root)
+                quality.validate_workbook(
+                    python=sys.executable,
+                    scripts=scripts(),
+                    root_dir=root,
+                    workbook=workbook,
+                    interface_json=interface,
+                )
+                verification_cases = quality.extract_cases(
+                    python=sys.executable,
+                    scripts=scripts(),
+                    root_dir=root,
+                    model=model,
+                    workbook=workbook,
+                    interface_json=interface,
+                    coverage_ir=coverage_ir,
+                )
+                synthesis = record_initial_recipe_resource_skips(
+                    synthesis,
+                    missing_resource_skips,
+                    len(synthesized_spec["tests"]),
+                )
+                write_json(synthesis_report, synthesis)
+                write_json(resource_gaps, {
+                    "schema": "tcsd-initial-recipe-resource-gaps/v1",
+                    "model": model,
+                    "skippedCandidateCount": len(missing_resource_skips),
+                    "items": missing_resource_skips,
+                })
+            validation_failures = initial_recipe_validation_failures(
+                read_json(verification_cases),
+                probe_payload,
+                model,
+                skippable_test_ids,
+            )
+            if validation_failures:
+                failed_test_ids = {item["testId"] for item in validation_failures}
+                synthesized_spec = remove_initial_recipe_tests(synthesized_spec, failed_test_ids)
+                write_json(spec, synthesized_spec)
+                run([
+                    sys.executable,
+                    str(scripts() / "build_tcsd_from_json.py"),
+                    "--template",
+                    str(scripts().parent / "assets" / "templates" / "tcsd_template.xlsx"),
+                    "--spec",
+                    str(spec),
+                    "--output",
+                    str(workbook),
+                    "--interface-json",
+                    str(interface),
+                ], root)
+                quality.validate_workbook(
+                    python=sys.executable,
+                    scripts=scripts(),
+                    root_dir=root,
+                    workbook=workbook,
+                    interface_json=interface,
+                )
+                synthesis = record_initial_recipe_validation_failures(
+                    synthesis,
+                    validation_failures,
+                    len(synthesized_spec["tests"]),
+                )
+                write_json(synthesis_report, synthesis)
+                write_json(validation_gaps, {
+                    "schema": "tcsd-initial-recipe-validation-gaps/v1",
+                    "model": model,
+                    "skippedCandidateCount": len(validation_failures),
+                    "handoffStage": 10,
+                    "items": validation_failures,
+                })
+            probe_evidence = initial_recipe_probe_evidence(
+                read_json(verification_cases),
+                probe_payload,
+                model,
+            )
+            probe_evidence["unverifiedCandidateCount"] = max(
+                0,
+                int(synthesis.get("added") or 0) - int(probe_evidence["verifiedCandidateCount"]),
+            )
+            verification_artifacts = [
+                artifact(root, verification_cases, "json", "initial-recipe-cases"),
+                artifact(root, verification_results, "json", "initial-recipe-probe"),
+            ]
+            if resource_gaps.is_file():
+                verification_artifacts.append(
+                    artifact(root, resource_gaps, "json", "initial-recipe-resource-gaps")
+                )
+            if validation_gaps.is_file():
+                verification_artifacts.append(
+                    artifact(root, validation_gaps, "json", "initial-recipe-validation-gaps")
+                )
+        else:
+            probe_evidence = {
+                "plannedCandidateCount": 0,
+                "verifiedCandidateCount": 0,
+                "observationCount": 0,
+                "failedCandidateCount": 0,
+                "unverifiedCandidateCount": 0,
+            }
+        state.update({"spec": str(spec), "workbook": str(workbook), "initialSynthesis": str(synthesis_report)}); save_state(job, state)
         planning_obligations = out / f"{model}_planning_obligations_snapshot.json"
         planning_assessment = out / f"{model}_planning_mapping_assessment.json"
         shutil.copy2(obligations, planning_obligations)
@@ -406,6 +1202,15 @@ def stage_run(
             report=planning_assessment,
         )
         assessment = planning_mapping_assessment(assessment, planning_obligations, root)
+        assessment["generation"] = {
+            "plannedCandidateCount": int(synthesis.get("planned_candidate_count") or 0),
+            "actualAddedCount": int(synthesis.get("added") or 0),
+            "duplicateSkippedCount": int(synthesis.get("duplicate_skipped_count") or 0),
+            "controlConflictSkippedCount": int(synthesis.get("control_conflict_skipped_count") or 0),
+            "unresolvedThresholdSkippedCount": int(synthesis.get("unresolved_threshold_skipped_count") or 0),
+            "missingExternalResourceSkippedCount": int(synthesis.get("missing_external_resource_skipped_count") or 0),
+            "simulationMismatchSkippedCount": int(synthesis.get("simulation_mismatch_skipped_count") or 0),
+        }
         write_json(planning_assessment, assessment)
         finish(
             job,
@@ -414,13 +1219,17 @@ def stage_run(
             artifacts=[
                 artifact(root, spec),
                 artifact(root, workbook, "xlsx", "workbook"),
+                artifact(root, synthesis_report, "json", "initial-case-synthesis"),
                 artifact(root, planning_obligations, "json", "planning-obligations"),
                 artifact(root, planning_assessment, "json", "planning-mapping-assessment"),
+                *verification_artifacts,
             ],
             evidence={
                 "planningMappingAssessment": str(planning_assessment.relative_to(root)),
                 "mappingAuthority": "planning",
                 "supersededByStage": 9,
+                "initialCaseGeneration": assessment["generation"],
+                "initialRecipeProbe": probe_evidence,
             },
         ); return
     workbook = Path(state["workbook"]); spec = Path(state["spec"]); threshold = float(inp.get("coverageThreshold", 80))
@@ -432,24 +1241,48 @@ def stage_run(
         finish(job, stage, summary="首版仿真完成，expValue 已由实际仿真回填。", artifacts=[artifact(root, workbook, "xlsx", "workbook"), artifact(root, sim)], evidence={"simulationResult": str(sim.relative_to(root)), "expValueCount": backfill["workbookBackfillCount"], **backfill}); return
     initial_cov = out / f"{model}_initial_coverage_summary.json"
     if stage == 9:
-        ob, cov = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=True, coverage_threshold=threshold); report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(initial_cov,report)
-        # Rebuild the IR with the probe-refreshed obligations so the measured
-        # observation vectors flow back into the stage-10 repair brief.
-        if state.get("decisionObligations") and Path(state["decisionObligations"]).is_file():
-            try:
-                probe_results = out / "logic_probe_results.json"
-                ir_args = [sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(ob), "--decision-obligations", str(state["decisionObligations"])]
-                run(ir_args + ["--output", str(coverage_ir)], root)
-                state["coverageIr"] = str(coverage_ir)
-            except BaseException as error:
-                print(f"stage 09 IR refresh unavailable: {error}", file=sys.stderr)
-        state.update({"obligations":str(ob),"initialCoverage":str(initial_cov),"coverage":str(cov)}); save_state(job,state)
-        finish(job,stage,summary="首轮 Condition、Decision 与 MC/DC 覆盖率已采集。",artifacts=[artifact(root,initial_cov)],coverage=report); return
+        ob, cov = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=True, coverage_threshold=threshold)
+        raw_coverage = out / f"{model}_coverage.cvt"
+        if not raw_coverage.is_file():
+            raise RuntimeError("stage 9 raw coverage data is missing")
+        initial_raw_coverage = out / f"{model}_initial_coverage.cvt"
+        shutil.copyfile(raw_coverage, initial_raw_coverage)
+        report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}
+        write_json(initial_cov,report)
+        state.update({"obligations":str(ob),"initialCoverage":str(initial_cov),"initialCoverageData":str(initial_raw_coverage),"currentCoverage":str(initial_cov),"currentCoverageData":str(initial_raw_coverage),"coverage":str(cov)})
+        save_state(job,state)
+        finish(job,stage,summary="首轮条件、判定与 MC/DC 覆盖率及原始覆盖数据已采集。",artifacts=[artifact(root,initial_cov),artifact(root,initial_raw_coverage,"cvt","coverage-data")],coverage=report); return
     if stage == 10:
-        report = read_json(initial_cov)
         brief = Path(repair_brief).resolve() if repair_brief else out / f"{model}_coverage_repair_brief.json"
         proposal = Path(repair_proposal).resolve() if repair_proposal else out / f"{model}_agent_coverage_repair_proposal.json"
         if stage10_mode in {"prepare", "auto"}:
+            try:
+                current_cov, _ = prepare_design_verifier_gapfill(
+                    job=job,
+                    state=state,
+                    quality=quality,
+                    root=root,
+                    out=out,
+                    model=model,
+                    interface=interface,
+                    threshold=threshold,
+                )
+            except Exception as error:
+                fallback_evidence = out / f"{model}_design_verifier_fallback.json"
+                write_json(fallback_evidence, {
+                    "schema": "tcsd-design-verifier-gapfill/v1",
+                    "status": "partial",
+                    "reason": "design_verifier_candidate_validation_failed",
+                    "errorType": type(error).__name__,
+                })
+                state.update({
+                    "designVerifierAttempted": True,
+                    "designVerifierApplied": False,
+                    "designVerifierEvidence": str(fallback_evidence),
+                })
+                save_state(job, state)
+                current_cov = Path(state.get("currentCoverage") or state.get("initialCoverage") or initial_cov)
+            report = read_json(current_cov)
             run(
                 [
                     sys.executable,
@@ -460,7 +1293,7 @@ def stage_run(
                     "--model",
                     model,
                     "--coverage-report",
-                    str(initial_cov),
+                    str(current_cov),
                     "--logical-traces",
                     str(traces),
                     "--coverage-ir",
@@ -474,42 +1307,95 @@ def stage_run(
                 ],
                 root,
             )
+            if coverage_meets(report, threshold):
+                verifier_artifacts = [artifact(root, brief)]
+                for path_value, kind, role in (
+                    (state.get("designVerifierEvidence"), "json", "design-verifier-evidence"),
+                    (state.get("designVerifierGainEvidence"), "json", "coverage-gain"),
+                    (state.get("workbook"), "xlsx", "workbook"),
+                ):
+                    if path_value and Path(path_value).is_file():
+                        verifier_artifacts.append(artifact(root, Path(path_value), kind, role))
+                finish(
+                    job,
+                    stage,
+                    summary=f"官方求解器补充后，三项覆盖率均达到 {threshold:g}%，无需 Agent 继续修正。",
+                    artifacts=verifier_artifacts,
+                    coverage=report,
+                    repair={
+                        "required": True,
+                        "attempted": True,
+                        "applied": bool(state.get("designVerifierApplied")),
+                        "passes": 1 if state.get("designVerifierApplied") else 0,
+                        "reason": "design_verifier_coverage_target_met",
+                    },
+                    evidence={
+                        "designVerifierApplied": bool(state.get("designVerifierApplied")),
+                        "designVerifierCandidateCount": int(state.get("designVerifierCandidateCount") or 0),
+                        "designVerifierGain": state.get("designVerifierGain") or {},
+                        "repairBrief": str(brief.relative_to(root)),
+                    },
+                )
+                return
             if stage10_mode == "prepare":
                 return
-        if coverage_meets(report, threshold):
-            finish(
-                job,
-                stage,
-                status="skipped",
-                summary=f"首轮三项覆盖率均达到 {threshold:g}%。",
-                skipReason=f"首轮三项覆盖率均达到 {threshold:g}%。",
-                artifacts=[artifact(root, brief)],
-                evidence={"repairBrief": str(brief.relative_to(root))},
-            )
-            return
+        current_cov = Path(state.get("currentCoverage") or state.get("initialCoverage") or initial_cov)
+        report = read_json(current_cov)
+        current_mcdc_mode = str(coverage_record(report, model).get("mcdc_mode") or "").strip()
+        if current_mcdc_mode not in {"Masking", "UniqueCause"}:
+            raise RuntimeError("current coverage does not declare a supported MC/DC mode")
+        spec = Path(state["spec"])
+        workbook = Path(state["workbook"])
         if not proposal.is_file():
             raise RuntimeError("stage 10 requires an Agent-authored coverage repair proposal")
 
         proposal_ir = out / f"{model}_agent_repair_coverage_ir.json"
-        proposal_validation = out / f"{model}_agent_repair_validation.json"
-        run(
-            [
-                sys.executable,
-                str(scripts() / "validate_agent_coverage_repair.py"),
-                "validate",
-                "--brief",
-                str(brief),
-                "--proposal",
-                str(proposal),
-                "--interface",
-                str(interface),
-                "--output-ir",
-                str(proposal_ir),
-                "--report-json",
-                str(proposal_validation),
-            ],
-            root,
+        proposal_validation = out / (
+            f"{model}_agent_repair_validation_attempt"
+            f"{int(job.get('_stageAttempt') or 1)}.json"
         )
+        proposal_ir.unlink(missing_ok=True)
+        proposal_validation.unlink(missing_ok=True)
+        try:
+            run(
+                [
+                    sys.executable,
+                    str(scripts() / "validate_agent_coverage_repair.py"),
+                    "validate",
+                    "--brief",
+                    str(brief),
+                    "--proposal",
+                    str(proposal),
+                    "--interface",
+                    str(interface),
+                    "--output-ir",
+                    str(proposal_ir),
+                    "--report-json",
+                    str(proposal_validation),
+                ],
+                root,
+            )
+        except subprocess.CalledProcessError:
+            if not proposal_validation.is_file():
+                raise
+            failure_report = read_json(proposal_validation)
+            validation_error = failure_report.get("error", {})
+            if (
+                failure_report.get("schema") != "tcsd-agent-coverage-repair-validation/v1"
+                or failure_report.get("jobId") != job["jobId"]
+                or failure_report.get("model") != model
+                or failure_report.get("passed") is not False
+                or not isinstance(validation_error, dict)
+                or validation_error.get("code") != "proposal_validation_failed"
+            ):
+                raise
+            detail = public_error_text(
+                validation_error.get("message")
+            )
+            raise RecoverableStageValidationError(
+                f"Agent coverage repair proposal failed deterministic validation: {detail}",
+                proposal_validation,
+            ) from None
         validation = read_json(proposal_validation)
         base_artifacts = [
             artifact(root, brief, "json", "coverage-repair-brief"),
@@ -517,6 +1403,13 @@ def stage_run(
             artifact(root, proposal_validation, "json", "agent-repair-validation"),
             artifact(root, proposal_ir, "json", "coverage-repair"),
         ]
+        for path_value, kind, role in (
+            (state.get("designVerifierEvidence"), "json", "design-verifier-evidence"),
+            (state.get("designVerifierGainEvidence"), "json", "coverage-gain"),
+            (state.get("workbook"), "xlsx", "workbook"),
+        ):
+            if path_value and Path(path_value).is_file():
+                base_artifacts.append(artifact(root, Path(path_value), kind, role))
         accepted = int(validation.get("acceptedCandidateCount") or 0)
         unresolved = int(validation.get("unresolvedCount") or 0)
         evidence = {
@@ -533,7 +1426,7 @@ def stage_run(
             state.update(
                 {
                     "repairAttempted": True,
-                    "repairApplied": False,
+                    "repairApplied": bool(state.get("designVerifierApplied")),
                     "repairReason": reason,
                     "repairEvidence": str(proposal_validation),
                 }
@@ -548,8 +1441,8 @@ def stage_run(
                 repair={
                     "required": True,
                     "attempted": True,
-                    "applied": False,
-                    "passes": 0,
+                    "applied": bool(state.get("designVerifierApplied")),
+                    "passes": 1 if state.get("designVerifierApplied") else 0,
                     "reason": reason,
                     "evidence": str(proposal_validation.relative_to(root)),
                 },
@@ -583,7 +1476,7 @@ def stage_run(
             state.update(
                 {
                     "repairAttempted": True,
-                    "repairApplied": False,
+                    "repairApplied": bool(state.get("designVerifierApplied")),
                     "repairReason": reason,
                     "repairEvidence": str(synthesis_evidence),
                 }
@@ -598,8 +1491,8 @@ def stage_run(
                 repair={
                     "required": True,
                     "attempted": True,
-                    "applied": False,
-                    "passes": 0,
+                    "applied": bool(state.get("designVerifierApplied")),
+                    "passes": 1 if state.get("designVerifierApplied") else 0,
                     "reason": reason,
                     "evidence": str(synthesis_evidence.relative_to(root)),
                 },
@@ -624,20 +1517,162 @@ def stage_run(
                 workbook=next_book,
                 interface_json=interface,
             )
+            all_candidate_cases = read_json(candidate_cases)
+            base_test_count = len(read_json(spec).get("tests") or [])
+            candidate_only_cases = out / f"{model}_agent_repair_candidate_cases.json"
+            write_json(candidate_only_cases, {
+                **all_candidate_cases,
+                "tests": (all_candidate_cases.get("tests") or [])[base_test_count:],
+            })
+            if not read_json(candidate_only_cases).get("tests"):
+                raise RuntimeError("Agent repair synthesis did not produce distinct candidate rows")
             candidate_simulation = quality.simulate_and_backfill(
                 python=sys.executable,
                 scripts=scripts(),
                 root_dir=root,
                 model=model,
                 workbook=next_book,
-                case_json=candidate_cases,
+                case_json=candidate_only_cases,
                 mat_file=inp["modelMatPath"],
                 outputs=",".join(read_json(interface).get("outputs", [])),
                 exclude_outputs="",
                 interface_json=interface,
                 result_name=f"{model}_repair_candidate_simulation.json",
+                collect_coverage=True,
+                coverage_threshold=threshold,
+                mcdc_mode=current_mcdc_mode,
+                coverage_result_name=f"{model}_repair_candidate_coverage_summary.json",
+                init_scripts=inp.get("projectInitScripts", []),
             )
             backfill = simulation_backfill_evidence(read_json(candidate_simulation), next_book)
+            candidate_coverage = out / f"{model}_repair_candidate_coverage_summary.json"
+            generic_candidate_data = out / f"{model}_candidate_coverage.cvt"
+            candidate_coverage_data = out / f"{model}_repair_candidate_coverage.cvt"
+            if not generic_candidate_data.is_file():
+                raise RuntimeError("Agent candidate raw coverage data is missing")
+            shutil.copyfile(generic_candidate_data, candidate_coverage_data)
+            merged_coverage_data = out / f"{model}_repair_merged_coverage.cvt"
+            merged_coverage_json = out / f"{model}_repair_merged_coverage.json"
+            merge_entry = out / ".tcsd-runtime" / f"{model}_repair_merge_entry.m"
+            run_matlab_entry(
+                root=root,
+                entry=merge_entry,
+                gateway_timeout_seconds=900,
+                lines=[
+                    f"addpath({quality.matlab_string(str(scripts()))});",
+                    (
+                        f"merge_tcsd_coverage({quality.matlab_string(str(root))},{quality.matlab_string(model)},"
+                        f"{quality.matlab_string(str(state.get('currentCoverageData') or state['initialCoverageData']))},"
+                        f"{quality.matlab_string(str(candidate_coverage_data))},{quality.matlab_string(str(merged_coverage_data))},"
+                        f"{quality.matlab_string(str(merged_coverage_json))},'InitScripts',"
+                        f"{quality.matlab_cell(inp.get('projectInitScripts', []))},'MatFile',"
+                        f"{quality.matlab_string(inp['modelMatPath'])},'McdcMode',{quality.matlab_string(current_mcdc_mode)},'Threshold',{threshold:g});"
+                    ),
+                ],
+            )
+            merged_coverage_report = out / f"{model}_repair_merged_coverage_report.json"
+            write_json(merged_coverage_report, {
+                "schema": "tcsd-coverage-report/v1",
+                "models": read_json(merged_coverage_json),
+            })
+            coverage_delta = out / f"{model}_repair_candidate_mcdc_delta.json"
+            completed_delta = subprocess.run(
+                [
+                    sys.executable,
+                    str(scripts() / "judge_mcdc_coverage_delta.py"),
+                    "--baseline",
+                    str(current_cov),
+                    "--candidate",
+                    str(merged_coverage_report),
+                    "--repair-ir",
+                    str(proposal_ir),
+                    "--model",
+                    model,
+                    "--output",
+                    str(coverage_delta),
+                ],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            delta_report = read_json(coverage_delta) if coverage_delta.is_file() else {}
+            if completed_delta.returncode != 0 or delta_report.get("passed") is not True:
+                if not coverage_delta.is_file():
+                    raise RuntimeError("MC/DC coverage delta judge did not write its report")
+                if should_finish_stage10_partial_after_mcdc_delta(
+                    int(job.get("_stageAttempt") or 1), delta_report
+                ):
+                    reason = "mcdc_delta_no_new_independent_effect_pair"
+                    write_json(
+                        candidate_diagnostic,
+                        {
+                            "schema": "tcsd-repair-candidate-validation/v1",
+                            "jobId": job["jobId"],
+                            "passed": False,
+                            "candidateCount": added,
+                            "simulationResult": str(candidate_simulation.relative_to(root)),
+                            "coverageResult": str(candidate_coverage.relative_to(root)),
+                            "mcdcDelta": str(coverage_delta.relative_to(root)),
+                            "reason": reason,
+                            "newIndependentEffectPairCount": int(
+                                delta_report.get("newIndependentEffectPairCount") or 0
+                            ),
+                            "backfill": backfill,
+                        },
+                    )
+                    state.update(
+                        {
+                            "repairAttempted": True,
+                            "repairApplied": bool(state.get("designVerifierApplied")),
+                            "repairReason": reason,
+                            "repairEvidence": str(coverage_delta),
+                        }
+                    )
+                    save_state(job, state)
+                    finish(
+                        job,
+                        stage,
+                        status="partial",
+                        summary=(
+                            "两轮 Agent 修正候选均未形成新的 MC/DC 独立影响对；"
+                            "宿主已拒绝无效候选并保留当前最佳工作簿。"
+                        ),
+                        artifacts=[
+                            *repair_artifacts,
+                            artifact(root, candidate_diagnostic),
+                            artifact(root, candidate_coverage, "json", "candidate-coverage"),
+                            artifact(root, coverage_delta, "json", "mcdc-coverage-delta"),
+                            artifact(root, candidate_simulation),
+                        ],
+                        repair={
+                            "required": True,
+                            "attempted": True,
+                            "applied": bool(state.get("designVerifierApplied")),
+                            "passes": 1 if state.get("designVerifierApplied") else 0,
+                            "reason": reason,
+                            "evidence": str(coverage_delta.relative_to(root)),
+                        },
+                        evidence={
+                            **evidence,
+                            "candidateValidation": str(candidate_diagnostic.relative_to(root)),
+                            "candidateSimulation": str(candidate_simulation.relative_to(root)),
+                            "candidateCoverage": str(candidate_coverage.relative_to(root)),
+                            "mcdcDelta": str(coverage_delta.relative_to(root)),
+                            "mcdcMode": str(delta_report.get("mcdcMode") or ""),
+                            "newIndependentEffectPairCount": int(
+                                delta_report.get("newIndependentEffectPairCount") or 0
+                            ),
+                            "candidateValidationPassed": False,
+                        },
+                    )
+                    return
+                raise RecoverableStageValidationError(
+                    "Agent coverage repair did not add the required MC/DC independent-effect pairs.",
+                    coverage_delta,
+                )
             write_json(
                 candidate_diagnostic,
                 {
@@ -646,9 +1681,13 @@ def stage_run(
                     "passed": True,
                     "candidateCount": added,
                     "simulationResult": str(candidate_simulation.relative_to(root)),
+                    "coverageResult": str(candidate_coverage.relative_to(root)),
+                    "mcdcDelta": str(coverage_delta.relative_to(root)),
                     "backfill": backfill,
                 },
             )
+        except RecoverableStageValidationError:
+            raise
         except Exception as error:
             reason = "agent_candidate_simulation_failed"
             write_json(
@@ -665,7 +1704,7 @@ def stage_run(
             state.update(
                 {
                     "repairAttempted": True,
-                    "repairApplied": False,
+                    "repairApplied": bool(state.get("designVerifierApplied")),
                     "repairReason": reason,
                     "repairEvidence": str(candidate_diagnostic),
                 }
@@ -675,13 +1714,13 @@ def stage_run(
                 job,
                 stage,
                 status="partial",
-                summary="Agent 候选未通过宿主仿真验证，已保留首轮工作簿。",
+                summary="Agent 候选未通过宿主仿真验证，已保留当前最佳工作簿。",
                 artifacts=[*repair_artifacts, artifact(root, candidate_diagnostic)],
                 repair={
                     "required": True,
                     "attempted": True,
-                    "applied": False,
-                    "passes": 0,
+                    "applied": bool(state.get("designVerifierApplied")),
+                    "passes": 1 if state.get("designVerifierApplied") else 0,
                     "reason": reason,
                     "evidence": str(candidate_diagnostic.relative_to(root)),
                 },
@@ -693,6 +1732,10 @@ def stage_run(
             {
                 "candidateValidation": str(candidate_diagnostic.relative_to(root)),
                 "candidateSimulation": str(candidate_simulation.relative_to(root)),
+                "candidateCoverage": str(candidate_coverage.relative_to(root)),
+                "mcdcDelta": str(coverage_delta.relative_to(root)),
+                "mcdcMode": str(delta_report.get("mcdcMode") or ""),
+                "newIndependentEffectPairCount": int(delta_report.get("newIndependentEffectPairCount") or 0),
                 "simulationResult": str(candidate_simulation.relative_to(root)),
                 "candidateValidationPassed": True,
                 "expValueCount": backfill["workbookBackfillCount"],
@@ -708,6 +1751,8 @@ def stage_run(
                 "workbook": str(next_book),
                 "spec": str(next_spec),
                 "repairCandidateSimulation": str(candidate_simulation),
+                "currentCoverage": str(merged_coverage_report),
+                "currentCoverageData": str(merged_coverage_data),
             }
         )
         save_state(job, state)
@@ -718,6 +1763,8 @@ def stage_run(
             artifacts=[
                 *repair_artifacts,
                 artifact(root, candidate_diagnostic),
+                artifact(root, candidate_coverage, "json", "candidate-coverage"),
+                artifact(root, coverage_delta, "json", "mcdc-coverage-delta"),
                 artifact(root, next_book, "xlsx", "workbook"),
                 artifact(root, candidate_simulation),
             ],
@@ -734,9 +1781,126 @@ def stage_run(
         return
     final_cov=out/f"{model}_final_coverage_summary.json"
     if stage == 11:
-        if not state.get("repairApplied"): finish(job,stage,status="skipped",summary="修正未实际应用，引用首轮仿真与覆盖率。",skipReason="修正未实际应用，引用首轮结果。",artifacts=[]); return
-        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface,result_name=f"{model}_final_simulation_results.json"); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
-        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=final_report,evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],**backfill}); return
+        workbook = Path(state["workbook"])
+        cases = quality.extract_cases(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            model=model,
+            workbook=workbook,
+            interface_json=interface,
+        )
+        case_count = len(read_json(cases).get("tests", []))
+        batch_size = min(STAGE11_PROBE_BATCH_SIZE, max(1, case_count))
+        probe_timeout_seconds = stage11_probe_timeout_seconds(batch_size)
+        sim = quality.simulate_and_backfill(
+            python=sys.executable,
+            scripts=scripts(),
+            root_dir=root,
+            model=model,
+            workbook=workbook,
+            case_json=cases,
+            mat_file=inp["modelMatPath"],
+            outputs=",".join(read_json(interface).get("outputs", [])),
+            exclude_outputs="",
+            interface_json=interface,
+            result_name=f"{model}_final_simulation_results.json",
+        )
+        backfill = simulation_backfill_evidence(read_json(sim), workbook)
+        coverage_reused = not bool(state.get("repairApplied")) and bool(state.get("currentCoverage"))
+        batch_manifest: Path | None = None
+        final_coverage_data: Path | None = None
+        if coverage_reused:
+            final_report = read_json(Path(state["currentCoverage"]))
+            ob = Path(state["obligations"])
+            current_data = state.get("currentCoverageData")
+            final_coverage_data = Path(current_data) if current_data else None
+            batch_count = 0
+        else:
+            current_report = Path(state.get("currentCoverage") or state["initialCoverage"])
+            current_mcdc_mode = str(
+                coverage_record(read_json(current_report), model).get("mcdc_mode") or ""
+            ).strip()
+            if current_mcdc_mode not in {"Masking", "UniqueCause"}:
+                raise RuntimeError("stage 11 coverage mode is missing or unsupported")
+            try:
+                if case_count > STAGE11_PROBE_BATCH_SIZE:
+                    ob, cov, final_coverage_data, batch_manifest = quality.run_coverage_probe_batched(
+                        python=sys.executable,
+                        scripts=scripts(),
+                        root_dir=root,
+                        model=model,
+                        mat_file=inp["modelMatPath"],
+                        init_scripts=inp.get("projectInitScripts", []),
+                        unreachable_overrides="",
+                        coverage_threshold=threshold,
+                        case_json=cases,
+                        batch_size=STAGE11_PROBE_BATCH_SIZE,
+                        gateway_timeout_seconds=probe_timeout_seconds,
+                        mcdc_mode=current_mcdc_mode,
+                    )
+                    batch_count = math.ceil(case_count / STAGE11_PROBE_BATCH_SIZE)
+                else:
+                    ob, cov = quality.run_probe(
+                        python=sys.executable,
+                        scripts=scripts(),
+                        root_dir=root,
+                        model=model,
+                        mat_file=inp["modelMatPath"],
+                        init_scripts=inp.get("projectInitScripts", []),
+                        unreachable_overrides="",
+                        collect_coverage=True,
+                        coverage_threshold=threshold,
+                        case_json=cases,
+                        gateway_timeout_seconds=probe_timeout_seconds,
+                    )
+                    generic_data = out / f"{model}_coverage.cvt"
+                    final_coverage_data = out / f"{model}_final_coverage.cvt"
+                    shutil.copyfile(generic_data, final_coverage_data)
+                    batch_count = 1
+            except quality.SatkEvaluationError as error:
+                error.details["caseCount"] = case_count
+                raise
+            final_report = {"schema": "tcsd-coverage-report/v1", "models": read_json(cov)}
+        write_json(final_cov, final_report)
+        state.update({
+            "finalSimulation": str(sim),
+            "finalCoverage": str(final_cov),
+            "finalCoverageData": str(final_coverage_data) if final_coverage_data else "",
+            "finalBackfillEvidence": backfill,
+            "obligations": str(ob),
+        })
+        save_state(job, state)
+        artifacts = [
+            artifact(root, workbook, "xlsx", "workbook"),
+            artifact(root, sim),
+            artifact(root, final_cov),
+        ]
+        if batch_manifest is not None:
+            artifacts.append(artifact(root, batch_manifest, "json", "final-coverage-batches"))
+        if final_coverage_data is not None:
+            artifacts.append(artifact(root, final_coverage_data, "cvt", "coverage-data"))
+        finish(
+            job,
+            stage,
+            summary="修正后最终仿真、回填与覆盖率检查已完成。",
+            artifacts=artifacts,
+            coverage=final_report,
+            evidence={
+                "simulationResult": str(sim.relative_to(root)),
+                "expValueCount": backfill["workbookBackfillCount"],
+                "caseCount": case_count,
+                "probeTimeoutSeconds": probe_timeout_seconds,
+                "coverageBatchSize": batch_size,
+                "coverageBatchCount": batch_count,
+                "coverageReusedFromStage9": coverage_reused,
+                "coverageBatchManifest": (
+                    str(batch_manifest.relative_to(root)) if batch_manifest is not None else ""
+                ),
+                **backfill,
+            },
+        )
+        return
     if stage == 12:
         cleanup=out/f"{model}_tcsd_cleanup.json"
         owned_candidates=[out/".tcsd-runtime"/"stage04_interface.m",out/".tcsd-runtime"/"job.json",out/f"{model}_probe_mcdc_entry.m",out/f"{model}_simulate_mcdc_entry.m"]; removed=[]
@@ -752,6 +1916,7 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--result", required=True)
     parser.add_argument("--stage10-mode", choices=("auto", "prepare", "apply"), default="auto")
+    parser.add_argument("--stage6-mode", choices=("execute", "verify-host"), default="execute")
     parser.add_argument("--repair-brief", default="")
     parser.add_argument("--repair-proposal", default="")
     args = parser.parse_args()
@@ -761,8 +1926,19 @@ def main() -> int:
     if stage < 1 or stage > 12: raise RuntimeError("stage input manifest stageIndex is invalid")
     job = manifest.get("job")
     if not isinstance(job, dict) or job.get("jobId") != manifest.get("jobId"): raise RuntimeError("stage input manifest job snapshot is invalid")
+    job["_stageAttempt"] = int(manifest.get("attempt") or 1)
     result_path = ensure_within(workspace(job), Path(args.result), "resultPath")
     job["_stageResultPath"] = str(result_path)
+    if stage == 6 and args.stage6_mode == "verify-host":
+        result = read_json(result_path)
+        if (
+            result.get("schema") != RESULT_SCHEMA
+            or result.get("jobId") != job["jobId"]
+            or result.get("stageIndex") != 6
+            or result.get("status") not in {"completed", "partial", "skipped"}
+        ):
+            raise RuntimeError("host-prepared stage 6 result is unavailable or invalid")
+        return 0
     if args.repair_brief:
         ensure_within(workspace(job), Path(args.repair_brief), "repairBriefPath")
     if args.repair_proposal:
@@ -784,6 +1960,21 @@ def main() -> int:
             raise RuntimeError("stage runtime produced an invalid result envelope")
         return 0
     except BaseException as error:
+        recoverable_validation = isinstance(error, RecoverableStageValidationError)
+        error_payload = {
+            "code": hard_error_code(stage, error),
+            "message": public_error_text(error),
+            "hard": not recoverable_validation,
+        }
+        safe_details = public_error_details(error)
+        if safe_details:
+            error_payload["details"] = safe_details
+        if recoverable_validation:
+            error_payload["details"] = {
+                "validationReportPath": error.validation_report_path.resolve()
+                .relative_to(workspace(job).resolve())
+                .as_posix()
+            }
         write_json(result_path, {
             "schema": RESULT_SCHEMA,
             "jobId": job["jobId"],
@@ -791,11 +1982,7 @@ def main() -> int:
             "status": "failed",
             "summary": "TCSD deterministic stage runtime failed.",
             "artifacts": [],
-            "error": {
-                "code": hard_error_code(stage, error),
-                "message": str(error),
-                "hard": True
-            }
+            "error": error_payload,
         })
-        return 1
+        return 0 if recoverable_validation else 1
 if __name__ == "__main__": raise SystemExit(main())

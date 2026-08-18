@@ -523,18 +523,19 @@ npm run release:zip:windows-source
 
 这些命令读取 `deploy/targets/*.json`，不要再手写 include/exclude 列表。
 
-## TCSD Docker Worker Gateway secret transport
+## TCSD DSH Worker 与 Gateway 调用边界
 
 `containers/worker/**`、`compose.windows-docker-desktop.yaml` 与
 `.env.windows-docker-desktop.example` 属于 Windows Docker Desktop Worker，和
-`skills/hermes/tcsd-runtime/**` 一起进入 Windows 侧部署，不进入 Linux release。平台在启动
-容器前创建 `SDG_GATEWAY_SECRET_FILE` 指向的 root-owned `0440` 两行文件（只含
-`MATLAB_MCP_AUTH_TOKEN` 与 `MATLAB_GATEWAY_EVALUATE_TOKEN`）；不得将 token 放进 Compose
-`environment`、`.env`、日志或任务数据。setgid transport 与 `no-new-privileges` 不兼容，故
-Worker service 不设置该 Compose security option，并保留 `cap_drop: ALL`、只读根文件系统。
-Worker 的 setgid transport binary 只向 canonical
-`satk_eval.py` / `matlab_gateway_lease.py` Python 进程传递 token。`docs/docker-desktop-production-deployment.md`
-是 shared 运维文档；`tests/**` 是 dev-only。
+`presets/unit-test-case-generation-production/**`、`skills/hermes/tcsd-runtime/**`
+一起进入 Windows 侧部署，不进入 Linux 发布包。TCSD 的 Agent 执行器为固定版本 DSH；
+Platform 到 Worker 的既有作业接口保持不变。
+
+Worker 继续保持非特权用户、只读根文件系统、`CapDrop=ALL`、无 `CapAdd`、
+`no-new-privileges=true` 与 `init=true`。Gateway 凭据沿用受支持的 Worker 进程内注入方式，
+只能由镜像内白名单包装器调用 `satk_eval.py` 或 `matlab_gateway_lease.py`；不得写入任务、
+日志、DSH 会话导出或发布资产。`docs/docker-desktop-production-deployment.md` 是 shared
+运维文档；`tests/**` 是 dev-only。
 
 ## 部署端 AI 推荐流程
 

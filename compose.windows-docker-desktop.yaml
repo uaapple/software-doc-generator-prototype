@@ -60,6 +60,13 @@ services:
     environment:
       APP_ENV: production
       APP_RUNTIME_ROLE: hermes-agent
+      TINI_SUBREAPER: "1"
+      DSH_PERMISSION_MODE: danger-full-access
+      TCSD_STAGE_EXECUTOR: dsh
+      TCSD_DSH_COMMAND: /usr/local/bin/dsh
+      TCSD_DSH_PROFILE: headless
+      TCSD_DSH_PRESET: unit-test-case-generation-production
+      TCSD_DSH_SESSION_TIMEOUT_MS: ${TCSD_DSH_SESSION_TIMEOUT_MS:-21600000}
       APP_DATA_DIR: /var/lib/sdg/data
       APP_SKILLS_DIR: /opt/sdg/app/skills
       HERMES_HOST: 0.0.0.0
@@ -80,6 +87,7 @@ services:
       HERMES_SERVER_REQUEST_TIMEOUT_MS: "0"
       HERMES_TASK_CONCURRENCY: "1"
       TCSD_PIPELINE_PYTHON: /opt/sdg/venv/bin/python
+      TCSD_GATEWAY_TRANSPORT: /usr/local/bin/tcsd-gateway-transport
       TCSD_STAGE_HERMES_SKILLS_DIR: /var/lib/sdg/hermes-home/skills
       TCSD_STAGE_HERMES_PROFILE: ${TCSD_STAGE_HERMES_PROFILE:-}
       TCSD_STAGE_HERMES_MAX_TURNS: ${TCSD_STAGE_HERMES_MAX_TURNS:-200}

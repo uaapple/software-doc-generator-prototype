@@ -4,30 +4,11 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 from pathlib import Path
 from typing import Any
 
 SCHEMA = "simulink-ut-logical-mcdc-obligations/v1"
-
-
-def load_algebraic_analysis():
-    """Load the sibling structural builder for its algebraic unreachability
-    analysis (strict implication between AND/OR sibling ports). Returns None
-    when unavailable so the probe builder degrades gracefully."""
-    try:
-        path = Path(__file__).resolve().with_name("build_logical_mcdc_obligations.py")
-        spec = importlib.util.spec_from_file_location("tcsd_logical_algebra", path)
-        assert spec and spec.loader
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-    except Exception:
-        return None
-
-
-ALGEBRAIC = load_algebraic_analysis()
 
 
 def required_vectors(operator: str, n: int) -> list[str]:
@@ -221,47 +202,6 @@ def port_count(probe: dict[str, Any]) -> int:
     return int(probe.get("port_count") or 0)
 
 
-def algebraic_unreachable_reason(operator: str, label: str, mapping: dict[str, Any] | None) -> str | None:
-    """Algebraic evidence when this single-toggle vector is impossible (one AND
-    sibling strictly implies the toggled port, or the toggled OR port strictly
-    implies a sibling), else None. Only unobserved vectors reach this point."""
-    if ALGEBRAIC is None or not mapping:
-        return None
-    if operator not in {"AND", "OR"} or len(label) < 2:
-        return None
-    # Single-toggle vectors only: AND has exactly one F, OR exactly one T.
-    toggles = [i for i, char in enumerate(label) if char == ("T" if operator == "OR" else "F")]
-    if len(toggles) != 1:
-        return None
-    toggle_index = toggles[0] + 1
-    facts = ALGEBRAIC.facts_for_operator(mapping)
-    if len(facts) != len(label):
-        return None
-    return ALGEBRAIC.algebraic_unreachable_vector(operator, facts, toggle_index)
-
-
-def mps_error_targets(report: dict[str, Any]) -> dict[str, str]:
-    """Operator ids whose targeted probe simulation aborted with a
-    MultiPortSwitch selector out-of-range diagnostic (model-inherent
-    constraint: the selector input can legally leave the data-port range,
-    e.g. a Stateflow operating-condition id 4/5 feeding a 0..3 MPS with
-    DiagnosticForDefault=Error). Vectors of these operators that the probe
-    could not observe are structurally unreachable, not missing coverage."""
-    result: dict[str, str] = {}
-    for obs in report.get("observations", []):
-        if not isinstance(obs, dict):
-            continue
-        if obs.get("prediction_status") != "simulation_error_mps_selector":
-            continue
-        target = obs.get("target") or {}
-        op_id = str(target.get("operator_id") or "")
-        if not op_id:
-            continue
-        message = str(obs.get("error_message") or "MultiPortSwitch selector out of range")
-        result.setdefault(op_id, message)
-    return result
-
-
 def build_for_model(
     model: str,
     report: dict[str, Any],
@@ -271,12 +211,8 @@ def build_for_model(
     mappings: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     found = observation_index(report)
-    mps_errors = mps_error_targets(report)
     obligations: list[dict[str, Any]] = []
-    probes = report.get("probes") or []
-    if isinstance(probes, dict):
-        probes = [probes]
-    for probe in probes:
+    for probe in report.get("probes", []):
         if not isinstance(probe, dict):
             continue
         op_id = str(probe.get("id") or probe.get("sid") or probe.get("block_path") or "")
@@ -348,41 +284,12 @@ def build_for_model(
                     obligations.append(item)
                     continue
                 override = find_override(overrides, model, op_id, label)
-                algebraic_reason = algebraic_unreachable_reason(operator, label, (mappings or {}).get(op_id))
-                if algebraic_reason:
-                    item.update(
-                        {
-                            "status": "unreachable",
-                            "reason": algebraic_reason,
-                            "evidence_state": "unreachable_algebraic_static",
-                        }
-                    )
-                elif override:
+                if override:
                     item.update(
                         {
                             "status": str(override.get("status") or "unreachable"),
                             "reason": str(override.get("reason") or "Probe did not observe this vector; override marked it unreachable."),
                             "evidence_state": "probe_not_observed_with_override",
-                        }
-                    )
-                elif op_id in mps_errors:
-                    item.update(
-                        {
-                            "status": "unreachable",
-                            "reason": (
-                                "Model-inherent MultiPortSwitch constraint: the probe simulation for this "
-                                "operator aborted with a selector out-of-range diagnostic "
-                                f"({mps_errors[op_id][:220]}). Vectors that require this state cannot be executed."
-                            ),
-                            "evidence_state": "unreachable_mps_selector_constraint",
-                            "issues": [
-                                {
-                                    "code": "probe_vector_not_observed_mps_selector_error",
-                                    "operator_id": op_id,
-                                    "label": label,
-                                    "message": mps_errors[op_id][:400],
-                                }
-                            ],
                         }
                     )
                 else:

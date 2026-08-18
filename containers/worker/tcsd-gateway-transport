@@ -1,11 +1,12 @@
 #!/bin/sh
-# Invoke only approved TCSD Gateway client scripts. The installed setgid binary
-# reads the root-owned secret file and injects its values only into Python.
+# Invoke only approved Gateway client scripts through the image-owned Python
+# runtime. Docker no-new-privileges remains enabled; credentials stay in the
+# Worker process environment and must never be printed by these scripts.
 set -eu
 
 case "${1:-}" in
   /opt/sdg/app/skills/hermes/tcsd-runtime/scripts/satk_eval.py|/opt/sdg/app/skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py)
-    exec /usr/local/libexec/tcsd-gateway-transport "$@"
+    exec /opt/sdg/venv/bin/python "$@"
     ;;
   *)
     echo "tcsd-gateway-transport: unsupported controlled script" >&2
