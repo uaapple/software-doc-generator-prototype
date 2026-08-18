@@ -98,7 +98,8 @@ function params = collect_params(b, bt)
 end
 
 function inputs = collect_inputs(b, rootInputs, depth)
-    inputs = struct('port', {}, 'src_kind', {}, 'src_value', {});
+    inputs = struct('port', {}, 'src_kind', {}, 'src_value', {}, ...
+                    'src_param_min', {}, 'src_param_max', {}, 'src_param_value', {});
     try
         ph = get_param(b, 'PortHandles');
     catch
@@ -106,9 +107,42 @@ function inputs = collect_inputs(b, rootInputs, depth)
     end
     for port = 1:numel(ph.Inport)
         [kind, value] = trace_upstream_of_port(b, port, rootInputs, depth);
-        inputs(end + 1).port = port; %#ok<AGROW>
-        inputs(end).src_kind = kind;
-        inputs(end).src_value = value;
+        entry = struct('port', port, 'src_kind', kind, 'src_value', value, ...
+                       'src_param_min', [], 'src_param_max', [], 'src_param_value', []);
+        if strcmp(kind, 'param')
+            bounds = param_bounds(value);
+            if ~isempty(bounds)
+                entry.src_param_min = bounds.min;
+                entry.src_param_max = bounds.max;
+                entry.src_param_value = bounds.value;
+            end
+        end
+        inputs(end + 1) = entry; %#ok<AGROW>
+    end
+end
+
+function bounds = param_bounds(name)
+    bounds = [];
+    try
+        obj = evalin('base', name);
+    catch
+        return;
+    end
+    if ~isobject(obj) && ~isprop(obj, 'Value')
+        return;
+    end
+    bounds = struct('min', [], 'max', [], 'value', []);
+    try
+        bounds.value = obj.Value;
+    catch
+    end
+    try
+        bounds.min = obj.Min;
+    catch
+    end
+    try
+        bounds.max = obj.Max;
+    catch
     end
 end
 

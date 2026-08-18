@@ -50,11 +50,48 @@ setActiveConfigSet(modelName, report.configName);
 % Cornex projects carry line labels whose base-workspace objects are custom
 % signal classes rather than Simulink.Signal. Keep those labels from becoming
 % a compile-time signal-object requirement in this unsaved simulation copy.
+originalSRC = '';
+try
+    originalSRC = get_param(modelName, 'SignalResolutionControl');
+catch
+end
 try
     set_param(modelName, 'SignalResolutionControl', 'None');
 catch
 end
+% Some models depend on signal-object resolution to pin data types on named
+% lines (e.g. divide4 data-type propagation). Disabling signal resolution
+% makes them fail to compile, so fall back to the model's own setting when
+% the sim-only config cannot compile with resolution disabled.
+if ~can_compile(modelName)
+    try
+        set_param(modelName, 'SignalResolutionControl', originalSRC);
+    catch
+    end
+    report.signalResolutionControl = originalSRC;
+    report.signalResolutionFallback = true;
+    if ~can_compile(modelName)
+        report.signalResolutionBothFail = true;
+    end
+else
+    report.signalResolutionControl = 'None';
+    report.signalResolutionFallback = false;
+end
 print_report(report);
+end
+
+function ok = can_compile(modelName)
+ok = true;
+try
+    feval(modelName, [], [], [], 'compile');
+    feval(modelName, [], [], [], 'term');
+catch
+    ok = false;
+    try
+        feval(modelName, [], [], [], 'term');
+    catch
+    end
+end
 end
 
 function cs = copy_resolved_config_set(configSet)

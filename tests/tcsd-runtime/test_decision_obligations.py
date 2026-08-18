@@ -177,6 +177,58 @@ class DecisionObligationBlocksTests(unittest.TestCase):
         # mixed input + param winner assignments land in their own maps
         self.assertTrue(any(i["match"]["inputs"].get("SigA") is not None and i["match"]["params"].get("Lim_C") is not None for i in mm))
 
+    def test_blocks_mode_parameter_bounds_pick_in_range_and_unreachable(self) -> None:
+        """liuts A04_B03 regression: parameter-driven RelationalOperator values
+        must stay within the collected Min/Max bounds (hardcoded (100,0) went
+        out of range, e.g. Max=99); an unrealizable side is marked unreachable
+        with param_range_unreachable evidence instead of emitted with an
+        out-of-range value."""
+        builder = script("build_decision_obligations.py")
+        blocks_data = {
+            "model": "Mock",
+            "blocks": [
+                # dstEVRngLimLow_C ∈ [0,99]: true side needs left > right -> in range;
+                # false side left < right also in range. Both required.
+                {"path": "Mock/CmpInRange", "sid": "40", "type": "RelationalOperator",
+                 "params": {"Operator": ">"},
+                 "inputs": [{"port": 1, "src_kind": "param", "src_value": "A_C",
+                             "src_param_min": 0, "src_param_max": 99, "src_param_value": 50},
+                            {"port": 2, "src_kind": "param", "src_value": "B_C",
+                             "src_param_min": 0, "src_param_max": 99, "src_param_value": 50}]},
+                # left ∈ [50,50], right ∈ [0,10]: left < right unreachable (50 < 10 不可能)
+                {"path": "Mock/CmpUnreach", "sid": "41", "type": "RelationalOperator",
+                 "params": {"Operator": "<"},
+                 "inputs": [{"port": 1, "src_kind": "param", "src_value": "Fixed_C",
+                             "src_param_min": 50, "src_param_max": 50, "src_param_value": 50},
+                            {"port": 2, "src_kind": "param", "src_value": "Low_C",
+                             "src_param_min": 0, "src_param_max": 10, "src_param_value": 5}]},
+                # No bounds: legacy (100,0) scheme fallback.
+                {"path": "Mock/CmpNoBounds", "sid": "42", "type": "RelationalOperator",
+                 "params": {"Operator": ">="},
+                 "inputs": [{"port": 1, "src_kind": "param", "src_value": "X_C"},
+                            {"port": 2, "src_kind": "param", "src_value": "Y_C"}]},
+            ],
+            "enable_ports": [],
+        }
+        items = builder.generate_from_blocks(blocks_data, "Mock")
+        in_range = [i for i in items if i["sid"] == "40"]
+        self.assertEqual(len([i for i in in_range if i["status"] == "required"]), 2)
+        for item in in_range:
+            for value in item["match"]["params"].values():
+                self.assertGreaterEqual(value, 0)
+                self.assertLessEqual(value, 99)
+        # True side of `left < right` is impossible: left==50, right<=10.
+        unreach = [i for i in items if i["sid"] == "41" and i["status"] == "unreachable"]
+        self.assertEqual(len(unreach), 1)
+        self.assertIn("true", unreach[0]["required_outcome"])
+        self.assertIn("param_range_unreachable", unreach[0]["reason"])
+        required41 = [i for i in items if i["sid"] == "41" and i["status"] == "required"]
+        self.assertEqual(len(required41), 1)
+        self.assertIn("false", required41[0]["required_outcome"])
+        # Fallback keeps the legacy in-range-free scheme when bounds are absent.
+        no_bounds = [i for i in items if i["sid"] == "42"]
+        self.assertEqual(len([i for i in no_bounds if i["status"] == "required"]), 2)
+
     def test_synthesis_now_appends_condition_candidates_with_params(self) -> None:
         synthesis = script("synthesize_tcsd_from_coverage_ir.py")
         spec = {"tests": [{"id": "TC_001", "name": "Baseline", "initialization": "Sig=0;", "action": "[+0.1s]"}]}

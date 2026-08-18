@@ -227,6 +227,88 @@ def _control(inputs: dict[int, tuple[str, Any]], port: int) -> tuple[str, Any] |
     return None
 
 
+def _param_bounds(inputs: dict[int, tuple[str, Any]], port: int) -> dict[str, Any] | None:
+    """Return (min, max, value) bounds for a parameter-driven input port, if
+    the MATLAB collector attached them. Values are None when unavailable."""
+    entry = inputs.get(port)
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("src_kind") != "param":
+        return None
+    bounds = {
+        "min": _float_or_none(entry.get("src_param_min")),
+        "max": _float_or_none(entry.get("src_param_max")),
+        "value": _float_or_none(entry.get("src_param_value")),
+    }
+    return bounds
+
+
+def _pick_param_pair(operator, lb, rb):
+    """Pick in-range parameter values (left, right) that realize the given
+    relational operator true/false, using collected Min/Max bounds.
+
+    Returns (true_pair, false_pair) or None when the ranges cannot realize a
+    side (algebraic unreachable). Falls back to the classic (100, 0) scheme
+    only when bounds are unavailable."""
+    if lb is None or rb is None:
+        return None
+    lmin, lmax = lb.get("min"), lb.get("max")
+    rmin, rmax = rb.get("min"), rb.get("max")
+    if None in (lmin, lmax, rmin, rmax):
+        return None
+    lmin, lmax, rmin, rmax = float(lmin), float(lmax), float(rmin), float(rmax)
+    if operator in {">=", ">"}:
+        true_pair = (lmax, rmin)  # left >=/> right when lmax >=/> rmin
+        false_pair = (lmin, rmax)  # left < right when lmin < rmax
+        if operator == ">":
+            if not (lmax > rmin):
+                true_pair = None
+            if not (lmin <= rmax):
+                false_pair = None
+        else:
+            if not (lmax >= rmin):
+                true_pair = None
+            if not (lmin < rmax):
+                false_pair = None
+    elif operator in {"<=", "<"}:
+        true_pair = (lmin, rmax)  # left <=/< right when lmin <=/< rmax
+        false_pair = (lmax, rmin)  # left > right when lmax > rmin
+        if operator == "<":
+            if not (lmin < rmax):
+                true_pair = None
+            if not (lmax >= rmin):
+                false_pair = None
+        else:
+            if not (lmin <= rmax):
+                true_pair = None
+            if not (lmax > rmin):
+                false_pair = None
+    elif operator in {"==", "~="}:
+        # A common value must exist in both ranges.
+        common = max(lmin, rmin)
+        if common > min(lmax, rmax):
+            return None
+        if operator == "==":
+            true_pair = (common, common)
+            # Distinct values: move right away from the common value.
+            cand = common + 1
+            if not (rmin <= cand <= rmax):
+                cand = common - 1
+            if not (rmin <= cand <= rmax):
+                return None
+            false_pair = (common, cand)
+        else:
+            true_pair = (common, common + 1 if common + 1 <= rmax else common - 1)
+            if not (rmin <= true_pair[1] <= rmax):
+                return None
+            false_pair = (common, common)
+    else:
+        return None
+    if true_pair is None and false_pair is None:
+        return None
+    return (true_pair, false_pair)
+
+
 def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[str, Any]]:
     """Generate Decision obligations from `simulink-ut-decision-blocks/v1`
     evidence collected by collect_decision_blocks.m (MATLAB authority)."""
@@ -251,6 +333,15 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
             except (TypeError, ValueError):
                 continue
             inputs[port] = (entry.get("src_kind"), entry.get("src_value"))
+        # Keep the raw entries (with optional param bounds) for range-aware
+        # parameter-pair generation.
+        raw_input_by_port: dict[int, dict[str, Any]] = {}
+        for entry in raw_inputs:
+            try:
+                port = int(entry.get("port"))
+            except (TypeError, ValueError):
+                continue
+            raw_input_by_port[port] = entry
 
         if btype == "Switch":
             criteria = params.get("Criteria", "u2 >= Threshold")
@@ -326,23 +417,61 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
             # Calibration banks such as `MX >= MN` are controlled by two
             # workspace parameters: drive the parameters themselves.
             if left[0] == "param" and right is not None and right[0] == "param":
-                pairs = {
-                    ">=": (100, 0), ">": (100, 0),
-                    "<=": (0, 100), "<": (0, 100),
-                    "==": (5, 5), "~=": (5, 6),
-                }
-                if operator in pairs:
-                    true_a, true_b = pairs[operator]
-                    false_a, false_b = (true_b, true_a)
+                lb = _param_bounds(raw_input_by_port, 1)
+                rb = _param_bounds(raw_input_by_port, 2)
+                picked = _pick_param_pair(operator, lb, rb)
+                if picked is not None and picked[0] is not None and picked[1] is not None:
+                    true_pair, false_pair = picked
                     items.append(obligation(sid=sid, model=model, path=path,
                                             outcome=f"relational true ({left[1]} {operator} {right[1]})",
                                             status="required",
-                                            params={left[1]: true_a, right[1]: true_b}))
+                                            params={left[1]: true_pair[0], right[1]: true_pair[1]}))
                     items.append(obligation(sid=sid, model=model, path=path,
                                             outcome=f"relational false ({left[1]} {operator} {right[1]})",
                                             status="required",
-                                            params={left[1]: false_a, right[1]: false_b}))
-                    continue
+                                            params={left[1]: false_pair[0], right[1]: false_pair[1]}))
+                elif picked is not None and (picked[0] is None or picked[1] is None):
+                    # One side is algebraically unreachable within the
+                    # parameter ranges.
+                    if picked[0] is not None:
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"relational true ({left[1]} {operator} {right[1]})",
+                                                status="required",
+                                                params={left[1]: picked[0][0], right[1]: picked[0][1]}))
+                    else:
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"relational true ({left[1]} {operator} {right[1]})",
+                                                status="unreachable",
+                                                reason=f"param_range_unreachable: {left[1]}∈[{lb.get('min')},{lb.get('max')}], {right[1]}∈[{rb.get('min')},{rb.get('max')}] 不能实现 {operator} true"))
+                    if picked[1] is not None:
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"relational false ({left[1]} {operator} {right[1]})",
+                                                status="required",
+                                                params={left[1]: picked[1][0], right[1]: picked[1][1]}))
+                    else:
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"relational false ({left[1]} {operator} {right[1]})",
+                                                status="unreachable",
+                                                reason=f"param_range_unreachable: {left[1]}∈[{lb.get('min')},{lb.get('max')}], {right[1]}∈[{rb.get('min')},{rb.get('max')}] 不能实现 {operator} false"))
+                else:
+                    # No bounds collected: fall back to the legacy scheme.
+                    pairs = {
+                        ">=": (100, 0), ">": (100, 0),
+                        "<=": (0, 100), "<": (0, 100),
+                        "==": (5, 5), "~=": (5, 6),
+                    }
+                    if operator in pairs:
+                        true_a, true_b = pairs[operator]
+                        false_a, false_b = (true_b, true_a)
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"relational true ({left[1]} {operator} {right[1]})",
+                                                status="required",
+                                                params={left[1]: true_a, right[1]: true_b}))
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"relational false ({left[1]} {operator} {right[1]})",
+                                                status="required",
+                                                params={left[1]: false_a, right[1]: false_b}))
+                continue
             if left[0] == "input" and right is not None and right[0] == "const":
                 c = _float_or_none(right[1])
                 pairs = {
