@@ -17,6 +17,9 @@
 #ifndef REQUIRE_ROOT_OWNER
 #define REQUIRE_ROOT_OWNER 1
 #endif
+#ifndef PYTHON_EXECUTABLE
+#define PYTHON_EXECUTABLE "/usr/local/bin/python3"
+#endif
 
 static int allowed_script(const char *script) {
   char resolved[4096];
@@ -55,8 +58,7 @@ int main(int argc, char **argv) {
     fputs("tcsd-gateway-transport: unsupported controlled script\n", stderr); return 64;
   }
   load_secret_file();
-  argv[0] = getenv("PYTHON_EXECUTABLE");
-  if (!argv[0] || !*argv[0]) argv[0] = "/usr/local/bin/python3";
+  argv[0] = PYTHON_EXECUTABLE;
   execv(argv[0], argv);
   perror("tcsd-gateway-transport: exec");
   return errno == ENOENT ? 127 : 70;

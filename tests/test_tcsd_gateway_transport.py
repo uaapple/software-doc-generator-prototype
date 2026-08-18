@@ -42,6 +42,7 @@ class GatewayTransportTests(unittest.TestCase):
                 f'-DSECRET_FILE=\"{secret}\"',
                 f'-DSATK_SCRIPT=\"{SCRIPTS / "satk_eval.py"}\"',
                 f'-DLEASE_SCRIPT=\"{REPO / "skills" / "hermes" / "software-detail-runtime" / "scripts" / "matlab_gateway_lease.py"}\"',
+                f'-DPYTHON_EXECUTABLE=\"{os.sys.executable}\"',
                 "-DREQUIRE_ROOT_OWNER=0",
                 "-o", str(binary), str(TRANSPORT),
             ], check=True)
@@ -50,7 +51,7 @@ class GatewayTransportTests(unittest.TestCase):
             try:
                 result = subprocess.run(
                     [str(binary), str(SCRIPTS / "satk_eval.py"), "--server-info"],
-                    env={"PATH": os.environ["PATH"], "PYTHON_EXECUTABLE": os.sys.executable, "SATK_GATEWAY_URL": "http://127.0.0.1:1"},
+                    env={"PATH": os.environ["PATH"], "PYTHON_EXECUTABLE": "/bin/false", "SATK_GATEWAY_URL": "http://127.0.0.1:1"},
                     text=True,
                     capture_output=True,
                 )
