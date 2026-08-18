@@ -2283,7 +2283,7 @@ for (const options of [
 
 const frontend = await readFile(path.join(repo, "public", "unit-test-case-generation.js"), "utf8");
 assert.match(frontend, /十二阶段运行态/);
-assert.match(frontend, /独立 Hermes Agent 会话/);
+assert.match(frontend, /单个 DSH 会话执行/);
 assert.match(frontend, /版本 \/ bundle/);
 assert.match(frontend, /Profile \/ Model/);
 assert.doesNotMatch(frontend, /工具日志摘要/);

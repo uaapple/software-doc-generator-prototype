@@ -787,7 +787,7 @@ function renderTaskDetail(task) {
   const pipelineStages = Array.isArray(task.pipeline?.stages) ? task.pipeline.stages : [];
   const pipelineCheckpoints = Array.isArray(task.pipeline?.checkpoints) ? task.pipeline.checkpoints : [];
   const pipelineHtml = pipelineStages.length
-    ? `<div class="unit-detail-section"><h3>十二阶段运行态</h3><p>每个阶段由独立 Hermes Agent 会话执行；展开可查看技能、模型、token、验证与产物追溯。</p><div class="unit-runtime-list">${pipelineStages.map((stage) => renderPipelineStage(stage, pipelineCheckpoints)).join("")}</div></div>`
+    ? `<div class="unit-detail-section"><h3>十二阶段运行态</h3><p>整条流水线由单个 DSH 会话执行；阶段状态随运行时落盘的 checkpoint 逐段推进，展开可查看验证与产物追溯。</p><div class="unit-runtime-list">${pipelineStages.map((stage) => renderPipelineStage(stage, pipelineCheckpoints)).join("")}</div></div>`
     : "";
   const delivery = task.workerDelivery || null;
   const canRedeliver =

@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -162,42 +162,120 @@ export class TcsdDshStageExecutor {
   }
 
   async startSession(job) {
+    // One headless DSH session runs the whole 12-stage task. It is spawned in
+    // the background so the platform can poll each stage checkpoint as the
+    // deterministic runner inside the session writes it (progressive stage
+    // status in the UI). The returned handle exposes the session identity
+    // immediately and resolves its exitPromise when the dsh process ends.
     const startedMs = Date.now();
     const taskPath = await this.prepareDshTask(job);
     const prompt = this.buildTaskPrompt(job, taskPath);
+    const sessionId = `dsh-${job.jobId}`;
+    let exitPromise;
     try {
-      const result = await (this.transport === "api"
-        ? this.dispatchToWorker(job, prompt)
-        : this.commandRunner(process.execPath, [
-            "--expose-internals",
-            this.resolveDshCli(),
-            "--profile",
-            this.profile,
-            prompt
-          ], {
-            cwd: path.resolve(job.input.workspaceDir),
-            env: this.sessionEnvironment(job),
-            timeout: this.timeoutMs,
-            maxBuffer: 16 * 1024 * 1024,
-            windowsHide: true
-          }));
-      await this.persistSessionTranscript(job, result, prompt);
-      return {
-        sessionId: `dsh-${job.jobId}`,
+      if (this.transport === "api") {
+        exitPromise = this.dispatchToWorker(job, prompt).then((result) => {
+          const summary = result?.summary || {};
+          return { code: 0, stdout: String(result?.stdout || ""), stderr: String(result?.stderr || ""), summary };
+        });
+      } else {
+        const child = spawn(process.execPath, [
+          "--expose-internals",
+          this.resolveDshCli(),
+          "--profile",
+          this.profile,
+          prompt
+        ], {
+          cwd: path.resolve(job.input.workspaceDir),
+          env: this.sessionEnvironment(job),
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true
+        });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk) => { stdout += String(chunk); });
+        child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+        exitPromise = new Promise((resolve) => {
+          child.on("error", (cause) => resolve({ code: -1, stdout, stderr, error: cause }));
+          child.on("close", (code) => resolve({ code, stdout, stderr }));
+        });
+      }
+    } catch (cause) {
+      throw publicRuntimeError(cause, this.timeoutMs);
+    }
+    const model = String(process.env.DSH_MODEL || process.env.DEEPSEEK_MODEL || "dsh-headless");
+    const handle = {
+      sessionId,
+      profile: this.profile,
+      preset: this.preset,
+      startedAt: new Date(startedMs).toISOString(),
+      promptSha256: sha256(prompt),
+      model,
+      exitPromise,
+      _summary: null,
+      get endedAt() { return this._summary?.endedAt ?? this.startedAt; },
+      get durationMs() { return this._summary?.durationMs ?? 0; },
+      get totalTokens() { return this._summary?.totalTokens ?? 0; },
+      get turns() { return this._summary?.turns ?? 1; },
+      get stdoutBytes() { return this._summary?.stdoutBytes ?? 0; },
+      get stderrBytes() { return this._summary?.stderrBytes ?? 0; },
+      get status() { return this._summary?.status ?? "running"; },
+      get stderr() { return this._summary?.stderr ?? ""; }
+    };
+    exitPromise.then((result) => {
+      handle._summary = {
         status: "completed",
-        startedAt: new Date(startedMs).toISOString(),
-        endedAt: this.now(),
+        endedAt: new Date().toISOString(),
         durationMs: Date.now() - startedMs,
-        model: String(process.env.DSH_MODEL || process.env.DEEPSEEK_MODEL || "dsh-headless"),
         totalTokens: 0,
         turns: 1,
         stdoutBytes: Buffer.byteLength(String(result?.stdout || "")),
         stderrBytes: Buffer.byteLength(String(result?.stderr || "")),
-        promptSha256: sha256(prompt)
+        code: result?.code,
+        stdout: result?.stdout || "",
+        stderr: result?.stderr || "",
+        error: result?.error || null
       };
-    } catch (cause) {
-      throw publicRuntimeError(cause, this.timeoutMs);
+      return this.persistSessionTranscript(job, result, prompt).catch(() => null);
+    }).catch(() => null);
+    return handle;
+  }
+
+  async awaitStageCheckpoint(job, stageIndex, session) {
+    // Poll the shared workspace for the runner-written checkpoint of this
+    // stage while the single DSH session is still running. Returns the
+    // checkpoint path once present; throws with the dsh stderr if the session
+    // ended before the stage checkpoint appeared.
+    const checkpointPath = path.join(
+      path.resolve(job.input.outputDir),
+      ".tcsd-checkpoints",
+      `stage-${String(stageIndex).padStart(2, "0")}.json`
+    );
+    const pollMs = Math.max(2000, Number(this.pollIntervalMs || 5000));
+    const deadline = Date.now() + this.timeoutMs;
+    while (Date.now() < deadline) {
+      const exit = await Promise.race([
+        session.exitPromise.then(() => "exit"),
+        new Promise((resolve) => setTimeout(resolve, pollMs))
+      ]);
+      try {
+        const stat = await fs.stat(checkpointPath);
+        if (stat.isFile()) {
+          return checkpointPath;
+        }
+      } catch {
+        // checkpoint not written yet
+      }
+      if (exit === "exit") {
+        throw publicRuntimeError(Object.assign(new Error("DSH session ended before the stage checkpoint was written."), {
+          code: 1,
+          stderr: String(session.stderr || "")
+        }), this.timeoutMs);
+      }
     }
+    throw publicRuntimeError(Object.assign(new Error("timed out waiting for the DSH stage checkpoint."), {
+      code: "ETIMEDOUT"
+    }), this.timeoutMs);
   }
 
   resolveDshCli() {
@@ -290,7 +368,10 @@ export class TcsdDshStageExecutor {
   }
 
   ensureSession(job) {
-    if (!this.sessions.has(job.jobId)) this.sessions.set(job.jobId, this.startSession(job));
+    if (!this.sessions.has(job.jobId)) {
+      const session = this.startSession(job);
+      this.sessions.set(job.jobId, session);
+    }
     return this.sessions.get(job.jobId);
   }
 
@@ -376,7 +457,20 @@ export class TcsdDshStageExecutor {
     const definition = TCSD_STAGE_DEFINITIONS[stageIndex - 1];
     if (!definition) throw Object.assign(new Error(`Unknown TCSD stage ${stageIndex}`), { code: TCSD_ERROR_CODES.input });
     const session = await this.ensureSession(job);
-    const { checkpoint: raw, checkpointPath } = await this.readRunnerCheckpoint(job, stageIndex);
+    const checkpointPath = await this.awaitStageCheckpoint(job, stageIndex, session);
+    if (stageIndex === 12) {
+      // Final stage: the runner writes the last checkpoint before `finish`;
+      // wait for the session to end so telemetry is complete and a non-zero
+      // dsh exit surfaces as a task failure with its stderr.
+      const outcome = await session.exitPromise;
+      if (outcome?.code !== 0 && outcome?.code !== undefined) {
+        throw publicRuntimeError(Object.assign(new Error("DSH session ended with a failure after the final stage."), {
+          code: outcome.code,
+          stderr: String(outcome?.stderr || "")
+        }), this.timeoutMs);
+      }
+    }
+    const { checkpoint: raw } = await this.readRunnerCheckpoint(job, stageIndex);
     if (Number(raw.stageIndex) !== stageIndex || raw.jobId !== job.jobId || raw.pipelineSchema !== TCSD_PIPELINE_SCHEMA) {
       throw stageRuntimeError(stageIndex, `DSH runner checkpoint does not match job ${job.jobId} stage ${stageIndex}.`);
     }

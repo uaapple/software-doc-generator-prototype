@@ -403,7 +403,9 @@ export class TcsdPipelineJobService {
       const nextAttempt = stage.attempt + 1;
       const attemptState = await this.captureAttemptState(job, index);
       await this.setStage(job, index, "正在执行", {
-        summary: nextAttempt === 1 ? "正在启动独立 Hermes Agent 会话。" : "正在启动一次独立验证修复会话。"
+        summary: nextAttempt === 1
+          ? "单个 DSH 会话正在执行整条流水线，等待本阶段 checkpoint。"
+          : "宿主校验未通过，等待同一 DSH 会话再次产出本阶段 checkpoint。"
       });
       try {
         if (this.cancelled.has(job.jobId)) throw this.cancelledError(job.jobId);
