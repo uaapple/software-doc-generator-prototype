@@ -533,6 +533,43 @@ export async function createApp() {
     }
   });
 
+  app.get("/api/unit-test-case-generation/tasks/:taskId/dsh-session-log", async (req, res, next) => {
+    try {
+      const task = await unitTestCaseGenerationService.getTask(req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "单元测试用例生成任务不存在", code: "unit_test_case_task_not_found" });
+      }
+      const outputDir = task.workspace?.outputDir;
+      if (!outputDir) {
+        return res.status(404).json({ error: "任务没有可用的 DSH 会话日志", code: "dsh_session_log_unavailable" });
+      }
+      const sessionDir = path.join(outputDir, ".tcsd-dsh");
+      const candidates = [path.join(sessionDir, "session.jsonl"), path.join(sessionDir, "session.log")];
+      let logFile = "";
+      for (const candidate of candidates) {
+        try {
+          const stat = await fs.stat(candidate);
+          if (stat.isFile()) {
+            logFile = candidate;
+            break;
+          }
+        } catch {
+          // candidate missing; try the next one
+        }
+      }
+      if (!logFile) {
+        return res.status(404).json({
+          error: "该任务没有 DSH 会话日志（可能由 Hermes 执行，或会话日志未落盘）",
+          code: "dsh_session_log_not_found"
+        });
+      }
+      const baseName = String(task.inputs?.modelSlx?.originalName || "model").replace(/\.[^.]+$/, "");
+      res.download(logFile, `${baseName}_dsh_session_log.jsonl`);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.delete("/api/unit-test-case-generation/tasks/:taskId", async (req, res, next) => {
     try {
       const result = await unitTestCaseGenerationService.deleteTask(req.params.taskId);

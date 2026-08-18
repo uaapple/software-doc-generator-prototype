@@ -4196,3 +4196,16 @@ body[data-page-kind="software-module-description-generation"] #module-descriptio
     flex: 1 1 0;
   }
 }
+
+/* DSH session log export button reuses the artifact-link card look. */
+body[data-page-kind="unit-test-case-generation"] .unit-dsh-log-export {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+body[data-page-kind="unit-test-case-generation"] .unit-dsh-log-export:hover {
+  box-shadow: 0 12px 24px rgba(19, 81, 151, 0.18);
+  transform: translateY(-1px);
+}

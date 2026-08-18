@@ -732,6 +732,26 @@ function renderTaskDetail(task) {
         </div>
       `
       : "";
+  const dshLogHtml = `
+    <div class="unit-detail-section">
+      <div class="unit-artifact-head">
+        <div>
+          <h3>DSH 会话日志</h3>
+          <p>导出该生成任务的 DSH session log，用于生成质量分析。</p>
+        </div>
+        <span>JSONL</span>
+      </div>
+      <div class="unit-artifact-list">
+        <button class="unit-artifact-link unit-dsh-log-export" type="button" data-dsh-log-task-id="${escapeHtml(task.id)}">
+          <span>
+            <strong>session.jsonl</strong>
+            <small>结构化会话事件（模型推理 / 工具调用 / 阶段产物）</small>
+          </span>
+          <b>导出日志</b>
+        </button>
+      </div>
+    </div>
+  `;
   const warnings = Array.isArray(task.hermes?.warnings) ? task.hermes.warnings : [];
   const warningHtml = warnings.length
     ? `
@@ -801,6 +821,7 @@ function renderTaskDetail(task) {
       </div>
     </div>
     ${artifactHtml}
+    ${dshLogHtml}
     <div class="unit-detail-grid">
       <div class="unit-detail-section">
         <h3>输入文件</h3>
@@ -892,6 +913,52 @@ try {
   await loadWorkers();
 } catch (_error) {
   syncProjectControls();
+}
+
+elements.taskDetail?.addEventListener("click", (event) => {
+  const exportButton = event.target.closest("[data-dsh-log-task-id]");
+  if (!exportButton) return;
+  event.preventDefault();
+  void exportDshSessionLog(exportButton.dataset.dshLogTaskId || "");
+});
+
+async function exportDshSessionLog(taskId = "") {
+  if (!taskId || state.exportingDshLogIds?.has(taskId)) {
+    return;
+  }
+  if (!state.exportingDshLogIds) {
+    state.exportingDshLogIds = new Set();
+  }
+  state.exportingDshLogIds.add(taskId);
+  setStatus("正在导出 DSH 会话日志…", "busy");
+  try {
+    const response = await fetch(`/api/unit-test-case-generation/tasks/${encodeURIComponent(taskId)}/dsh-session-log`);
+    if (!response.ok) {
+      let message = `导出失败（HTTP ${response.status}）`;
+      try {
+        const body = await response.json();
+        message = body.error || message;
+      } catch {
+        // non-JSON error body; keep the generic message
+      }
+      setStatus(message, "error");
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `task-${taskId}_dsh_session_log.jsonl`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setStatus("DSH 会话日志已导出。", "success");
+  } catch (error) {
+    setStatus(error.message || "导出 DSH 会话日志失败。", "error");
+  } finally {
+    state.exportingDshLogIds.delete(taskId);
+  }
 }
 
 try {

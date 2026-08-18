@@ -162,6 +162,7 @@ export class TcsdDshStageExecutor {
         maxBuffer: 16 * 1024 * 1024,
         windowsHide: true
       });
+      await this.persistSessionTranscript(job, result, prompt);
       return {
         sessionId: `dsh-${job.jobId}`,
         status: "completed",
@@ -177,6 +178,35 @@ export class TcsdDshStageExecutor {
       };
     } catch (cause) {
       throw publicRuntimeError(cause, this.timeoutMs);
+    }
+  }
+
+  async persistSessionTranscript(job, result, prompt) {
+    // Fallback transcript alongside the structured session.jsonl dumped by the
+    // headless runner. Both live under <outputDir>/.tcsd-dsh/ so the platform
+    // can offer per-task session-log export for quality analysis.
+    try {
+      const sessionDir = path.join(path.resolve(job.input.outputDir), ".tcsd-dsh");
+      await fs.mkdir(sessionDir, { recursive: true });
+      await fs.writeFile(
+        path.join(sessionDir, "session.log"),
+        [
+          `# DSH headless session transcript`,
+          `# job: ${job.jobId}`,
+          `# command: ${this.command} --profile ${this.profile}`,
+          `# promptSha256: ${sha256(prompt)}`,
+          "",
+          "--- stdout ---",
+          String(result?.stdout || ""),
+          "",
+          "--- stderr ---",
+          String(result?.stderr || ""),
+          ""
+        ].join("\n"),
+        "utf-8"
+      );
+    } catch (error) {
+      console.warn(`TCSD DSH session transcript could not be persisted: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
