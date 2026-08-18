@@ -556,6 +556,14 @@ checkpoint**。步骤：
    B04 实测：`AND(233,234)`（233: `(In-y_prev)>LimitUp(0.01)`，234: `(In-y_prev)>0`）与
    `AND(235,236)`（LimitDown(0.005) 同构）各 1 条 MC/DC 缺口即此类；静态标记后 MC/DC
    66.7%(4/6) → 100%(4/4)。
+5.5. **类型域/值域代数证据（liuts A04_B01 实测，2026-08-18）**：当比较/Equal 的一侧是
+    **值域受类型约束**的信号（如 `DTC(CountR.Out)` 把布尔比较结果转 uint8 → 值域恒
+    `{0,1}`），与常量 2/3/4 的 Equal/GE 及后续链（OR2 端口2、Switch 判据）代数不可达——
+    直接报 `logic_unreachable` 并给类型推导证据（无需探针即可判定，探针坐实更稳）。
+    同类还包括：uint16 计数器 vs int32 饱和边界、布尔→uint8 值域排除常量比较。
+    注：**Simulink 惰性求值**（条件输入执行）会使未选中分支的块（如 MinMax 输入 2 wins）
+    在正常分支下永不执行——这类缺口若只有异常分支（如参数覆盖 `LimUp<LimLow`）可达，
+    超单轮修复限制时按 `measured_uncovered` 如实记录，不要硬造用例。
 6. **探针确认（可选但强烈建议）**：用 `probe_block_inputs.py` 或一次多场景 probe
    （充电/非充电各若干步）实测缺口块执行计数；执行计数 0 即坐实死路径。
 7. **结果**：0 候选 + 1 具体 unresolved（`logic_unreachable`）是**合法且高质量**的 Stage 10
