@@ -16,16 +16,25 @@ mkdir -p "$TCSD_WORKSPACE_ROOT" "$DSH_HOME" "$SATK_MCP_LOG_FOLDER"
 
 preset_source=/opt/sdg/app/presets/unit-test-case-generation-production
 preset_target="$DSH_HOME/.agent-presets/unit-test-case-generation-production"
-if [ ! -f "$preset_target/agent.cordis.yml" ]; then
-  mkdir -p "$preset_target"
-  cp "$preset_source/agent.cordis.yml" "$preset_source/preset.yml" "$preset_target/"
-fi
+# Force-refresh on every start: the preset is image-owned read-only config and
+# must never be shadowed by a stale copy in the persistent dsh-home volume.
+mkdir -p "$preset_target"
+cp -f "$preset_source/agent.cordis.yml" "$preset_source/preset.yml" "$preset_target/"
 
 headless_profile="$DSH_HOME/profiles/headless"
 headless_patch="$headless_profile/cordis.patch.yml"
 if [ ! -f "$headless_patch" ] || ! grep -q 'dsh-headless-tcsd' "$headless_patch"; then
   mkdir -p "$headless_profile"
   cp /opt/sdg/app/containers/worker/headless-production-preset.patch.yml "$headless_patch"
+fi
+
+# Role switch: APP_RUNTIME_ROLE=hermes-agent runs the Worker service (backend
+# dispatches generation tasks via HERMES_TRANSPORT=api -> POST /internal/dsh/tasks,
+# which spawns a headless DSH session per task). Without a role (or with a task
+# instruction argument) it stays the one-shot task driver.
+if [ "${APP_RUNTIME_ROLE:-}" = "hermes-agent" ] && [ "$#" -eq 0 ]; then
+  cd /opt/sdg/app
+  exec node --disable-warning=ExperimentalWarning src/hermes-server.js
 fi
 
 if [ "$#" -eq 0 ]; then

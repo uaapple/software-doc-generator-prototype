@@ -1,10 +1,12 @@
 import express from "express";
 import multer from "multer";
 import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import path from "node:path";
 import { createWriteStream, promises as fs } from "node:fs";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
 import { config } from "./config.js";
 import { ExtractionService } from "./services/extraction-service.js";
 import { LlmService } from "./services/llm-service.js";
@@ -32,6 +34,8 @@ import {
 import { SerialGate } from "./services/serial-gate.js";
 import { SoftwareDetailHermesSkillRegistry } from "./services/software-detail-hermes-skill-registry.js";
 import { SoftwareDetailMatlabLeaseClient } from "./services/software-detail-matlab-lease-client.js";
+
+const execFileAsync = promisify(execFile);
 
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
 const MAX_MULTIPART_FILE_COUNT = 2048;
@@ -1833,6 +1837,67 @@ export async function createHermesApp(options = {}) {
       }
     }
   );
+
+  app.post("/internal/dsh/tasks", requireHermesAuth, async (req, res) => {
+    const startedAt = Date.now();
+    try {
+      const payload = req.body || {};
+      const taskPrompt = String(payload.taskPrompt || "").trim();
+      const jobId = String(payload.jobId || "").trim();
+      const cwd = String(payload.cwd || "").trim();
+      const outputDir = String(payload.outputDir || "").trim();
+      if (!taskPrompt) {
+        return res.status(400).json({
+          error: "DSH 任务提示词不能为空。",
+          code: "dsh_task_prompt_required"
+        });
+      }
+      const command = String(
+        config.tcsdPipeline?.dsh?.command ||
+          process.env.TCSD_DSH_COMMAND ||
+          "dsh"
+      );
+      const profile = String(
+        config.tcsdPipeline?.dsh?.profile ||
+          process.env.TCSD_DSH_PROFILE ||
+          "headless"
+      );
+      const environment = { ...process.env, NO_COLOR: "1" };
+      if (jobId) {
+        environment.TCSD_JOB_ID = jobId;
+        environment.TCSD_RESOURCE_OWNER_JOB_ID = jobId;
+      }
+      if (outputDir) environment.TCSD_OUTPUT_DIR = outputDir;
+      const options = {
+        env: environment,
+        maxBuffer: 16 * 1024 * 1024,
+        timeout: Number(config.tcsdPipeline?.dsh?.sessionTimeoutMs || 0) || 0,
+        windowsHide: true
+      };
+      if (cwd) options.cwd = cwd;
+      const result = await execFileAsync(
+        command,
+        ["--profile", profile, taskPrompt],
+        options
+      );
+      return res.json({
+        jobId,
+        status: "completed",
+        startedAt: new Date(startedAt).toISOString(),
+        endedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+        sessionId: `dsh-${jobId || "task"}`,
+        stdoutBytes: Buffer.byteLength(String(result?.stdout || "")),
+        stderrBytes: Buffer.byteLength(String(result?.stderr || ""))
+      });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return res.status(500).json({
+        error: `DSH 任务执行失败：${message}`,
+        code: "dsh_task_failed"
+      });
+    }
+  });
 
   const executeStepRequest = async (req, res, next) => {
     const startedAt = Date.now();

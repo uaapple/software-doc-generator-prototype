@@ -75,6 +75,12 @@ export class TcsdDshStageExecutor {
     this.timeoutMs = Math.max(1000, Number(options.timeoutMs ?? config.tcsdPipeline?.dsh?.sessionTimeoutMs ?? 6 * 60 * 60 * 1000));
     this.python = options.python || process.env.TCSD_PIPELINE_PYTHON || (process.platform === "win32" ? "python" : "python3");
     this.commandRunner = options.commandRunner || execFileAsync;
+    // "api": dispatch the headless DSH session to the Worker container through
+    // the existing agent transport (HERMES_TRANSPORT=api + HERMES_BASE_URL);
+    // "cli": spawn dsh locally (dev all-in-one). Defaults to the configured
+    // transport so the container split needs no code change on the backend.
+    this.transport = String(options.transport || config.hermes?.transport || "cli").trim().toLowerCase();
+    this.agentBaseURL = String(options.agentBaseURL || config.hermes?.baseURL || "").trim().replace(/\/+$/, "");
     this.catalog = options.catalog || new TcsdStageCatalog();
     this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({ python: this.python });
     this.packager = options.packager || new TcsdHermesStageExecutor({
@@ -155,13 +161,15 @@ export class TcsdDshStageExecutor {
     const taskPath = await this.prepareDshTask(job);
     const prompt = this.buildTaskPrompt(job, taskPath);
     try {
-      const result = await this.commandRunner(this.command, ["--profile", this.profile, prompt], {
-        cwd: path.resolve(job.input.workspaceDir),
-        env: this.sessionEnvironment(job),
-        timeout: this.timeoutMs,
-        maxBuffer: 16 * 1024 * 1024,
-        windowsHide: true
-      });
+      const result = await (this.transport === "api"
+        ? this.dispatchToWorker(job, prompt)
+        : this.commandRunner(this.command, ["--profile", this.profile, prompt], {
+            cwd: path.resolve(job.input.workspaceDir),
+            env: this.sessionEnvironment(job),
+            timeout: this.timeoutMs,
+            maxBuffer: 16 * 1024 * 1024,
+            windowsHide: true
+          }));
       await this.persistSessionTranscript(job, result, prompt);
       return {
         sessionId: `dsh-${job.jobId}`,
@@ -207,6 +215,48 @@ export class TcsdDshStageExecutor {
       );
     } catch (error) {
       console.warn(`TCSD DSH session transcript could not be persisted: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async dispatchToWorker(job, prompt) {
+    // Container split: the Worker container serves POST /internal/dsh/tasks
+    // and runs the headless DSH session with its own env (model credentials,
+    // gateway transport wrapper, shared workspace). The backend only sends
+    // the prompt and the shared container paths.
+    if (!this.agentBaseURL) {
+      throw new Error("TCSD DSH api transport requires HERMES_BASE_URL");
+    }
+    const payload = {
+      jobId: job.jobId,
+      taskPrompt: prompt,
+      cwd: path.resolve(job.input.workspaceDir),
+      outputDir: path.resolve(job.input.outputDir)
+    };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await fetch(`${this.agentBaseURL}/internal/dsh/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.error || `DSH worker task failed with HTTP ${response.status}`);
+      }
+      return {
+        stdout: "",
+        stderr: body?.detail ? `worker: ${body.detail}` : "",
+        summary: body
+      };
+    } catch (cause) {
+      if (cause?.name === "AbortError") {
+        throw new Error(`TCSD DSH worker session timed out after ${this.timeoutMs}ms`);
+      }
+      throw cause;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
