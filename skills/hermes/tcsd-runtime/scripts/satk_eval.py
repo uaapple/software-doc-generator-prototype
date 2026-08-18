@@ -220,7 +220,7 @@ DEFAULT_EXTENSION = (
     else Path.home() / ".matlab" / "agentic-toolkits" / "simulink" / "tools" / "tools.json"
 )
 DEDICATED_WORKER = os.environ.get("TCSD_DEDICATED_WORKER", "").lower() in {"1", "true", "yes", "on"}
-CLEAN_STALE_MCP = DEDICATED_WORKER or os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "true", "yes", "on"}
+CLEAN_STALE_MCP = os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "true", "yes", "on"}
 SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new" if DEDICATED_WORKER else "existing")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
 DISPLAY_MODE = os.environ.get("SATK_MATLAB_DISPLAY_MODE", "").strip()

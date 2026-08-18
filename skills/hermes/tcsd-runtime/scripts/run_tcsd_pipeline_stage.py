@@ -217,6 +217,9 @@ def run(command: list[str], cwd: Path) -> None:
         ) from None
 
 def run_satk(command: list[str], cwd: Path, *, stage: int, context: str) -> None:
+    transport = os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip()
+    if transport and len(command) >= 2 and Path(command[1]).name == "satk_eval.py":
+        command = [transport, *command[1:]]
     try:
         subprocess.run(
             immutable_python_command(command),
@@ -742,7 +745,10 @@ def stage_run(
             shutil.copy2(fixture, env)
         else:
             satk_runtime = load_module("tcsd_satk_eval", scripts() / "satk_eval.py")
-            selected_server = satk_runtime.server_info()
+            if os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip() and satk_runtime.gateway_url():
+                selected_server = {"discovery": "matlab-gateway", "transport": "tcsd-gateway-transport"}
+            else:
+                selected_server = satk_runtime.server_info()
             modules: dict[str, dict[str, str]] = {}
             for module_name in ("yaml", "openpyxl"):
                 module = __import__(module_name)

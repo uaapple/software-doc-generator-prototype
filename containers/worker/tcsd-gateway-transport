@@ -1,0 +1,14 @@
+#!/bin/sh
+# Invoke only approved TCSD Gateway client scripts. The installed setgid binary
+# reads the root-owned secret file and injects its values only into Python.
+set -eu
+
+case "${1:-}" in
+  /opt/sdg/app/skills/hermes/tcsd-runtime/scripts/satk_eval.py|/opt/sdg/app/skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py)
+    exec /usr/local/libexec/tcsd-gateway-transport "$@"
+    ;;
+  *)
+    echo "tcsd-gateway-transport: unsupported controlled script" >&2
+    exit 64
+    ;;
+esac

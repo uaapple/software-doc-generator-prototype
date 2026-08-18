@@ -1,0 +1,63 @@
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#ifndef SECRET_FILE
+#define SECRET_FILE "/run/secrets/tcsd-gateway.env"
+#endif
+#ifndef SATK_SCRIPT
+#define SATK_SCRIPT "/opt/sdg/app/skills/hermes/tcsd-runtime/scripts/satk_eval.py"
+#endif
+#ifndef LEASE_SCRIPT
+#define LEASE_SCRIPT "/opt/sdg/app/skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py"
+#endif
+#ifndef REQUIRE_ROOT_OWNER
+#define REQUIRE_ROOT_OWNER 1
+#endif
+
+static int allowed_script(const char *script) {
+  char resolved[4096];
+  if (!realpath(script, resolved)) return 0;
+  return strcmp(resolved, SATK_SCRIPT) == 0 || strcmp(resolved, LEASE_SCRIPT) == 0;
+}
+
+static void load_secret_file(void) {
+  struct stat metadata;
+  char line[8192];
+  if (stat(SECRET_FILE, &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
+      (REQUIRE_ROOT_OWNER && metadata.st_uid != 0) || (metadata.st_mode & 0037) != 0) {
+    fputs("tcsd-gateway-transport: Gateway credential file permissions are unsafe\n", stderr); exit(77);
+  }
+  FILE *file = fopen(SECRET_FILE, "r");
+  if (!file) { perror("tcsd-gateway-transport: Gateway credential file is unavailable"); exit(77); }
+  while (fgets(line, sizeof(line), file)) {
+    char *equals = strchr(line, '=');
+    char *value;
+    if (!equals || line[0] == '#' || line[0] == '\n') continue;
+    *equals = '\0'; value = equals + 1;
+    value[strcspn(value, "\r\n")] = '\0';
+    if ((strcmp(line, "MATLAB_MCP_AUTH_TOKEN") != 0 && strcmp(line, "MATLAB_GATEWAY_EVALUATE_TOKEN") != 0) || !*value) {
+      fputs("tcsd-gateway-transport: invalid Gateway credential file\n", stderr); exit(77);
+    }
+    if (setenv(line, value, 1) != 0) { perror("tcsd-gateway-transport: setenv"); exit(77); }
+  }
+  fclose(file);
+  if (!getenv("MATLAB_MCP_AUTH_TOKEN") || !getenv("MATLAB_GATEWAY_EVALUATE_TOKEN")) {
+    fputs("tcsd-gateway-transport: Gateway credentials are incomplete\n", stderr); exit(77);
+  }
+}
+
+int main(int argc, char **argv) {
+  if (argc < 2 || !allowed_script(argv[1])) {
+    fputs("tcsd-gateway-transport: unsupported controlled script\n", stderr); return 64;
+  }
+  load_secret_file();
+  argv[0] = getenv("PYTHON_EXECUTABLE");
+  if (!argv[0] || !*argv[0]) argv[0] = "/usr/local/bin/python3";
+  execv(argv[0], argv);
+  perror("tcsd-gateway-transport: exec");
+  return errno == ENOENT ? 127 : 70;
+}

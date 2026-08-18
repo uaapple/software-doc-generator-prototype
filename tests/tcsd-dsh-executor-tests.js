@@ -29,6 +29,7 @@ const environment = executor.sessionEnvironment(job);
 assert.equal(environment.MATLAB_MCP_AUTH_TOKEN, undefined);
 assert.equal(environment.MATLAB_GATEWAY_TOKEN, undefined);
 assert.equal(environment.MATLAB_GATEWAY_EVALUATE_TOKEN, undefined);
+assert.equal(environment.TCSD_GATEWAY_TRANSPORT, process.env.TCSD_GATEWAY_TRANSPORT);
 assert.equal(environment.TCSD_JOB_ID, job.jobId);
 const taskPath = executor.dshTaskPath(job);
 const prompt = executor.buildTaskPrompt(job, taskPath);

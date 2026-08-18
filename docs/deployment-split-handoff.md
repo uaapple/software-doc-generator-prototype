@@ -523,6 +523,17 @@ npm run release:zip:windows-source
 
 这些命令读取 `deploy/targets/*.json`，不要再手写 include/exclude 列表。
 
+## TCSD Docker Worker Gateway secret transport
+
+`containers/worker/**`、`compose.windows-docker-desktop.yaml` 与
+`.env.windows-docker-desktop.example` 属于 Windows Docker Desktop Worker，和
+`skills/hermes/tcsd-runtime/**` 一起进入 Windows 侧部署，不进入 Linux release。平台在启动
+容器前创建 `SDG_GATEWAY_SECRET_FILE` 指向的 root-owned `0440` 两行文件（只含
+`MATLAB_MCP_AUTH_TOKEN` 与 `MATLAB_GATEWAY_EVALUATE_TOKEN`）；不得将 token 放进 Compose
+`environment`、`.env`、日志或任务数据。Worker 的 setgid transport binary 只向 canonical
+`satk_eval.py` / `matlab_gateway_lease.py` Python 进程传递 token。`docs/docker-desktop-production-deployment.md`
+是 shared 运维文档；`tests/**` 是 dev-only。
+
 ## 部署端 AI 推荐流程
 
 1. 拉取开发分支最新提交。

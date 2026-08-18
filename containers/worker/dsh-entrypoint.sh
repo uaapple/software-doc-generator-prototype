@@ -7,7 +7,11 @@ set -eu
 : "${SATK_MATLAB_DISPLAY_MODE:=nodesktop}"
 : "${SATK_MCP_LOG_FOLDER:=/var/lib/sdg/logs/matlab-mcp}"
 : "${TCSD_CLEAN_STALE_MCP:=0}"
+: "${TCSD_GATEWAY_TRANSPORT:=/usr/local/bin/tcsd-gateway-transport}"
 
+# Transport path is intentionally visible; Gateway tokens are not. The DSH
+# process cannot read the root-owned secret mount or inherit its contents.
+unset MATLAB_MCP_AUTH_TOKEN MATLAB_GATEWAY_TOKEN MATLAB_GATEWAY_EVALUATE_TOKEN
 mkdir -p "$TCSD_WORKSPACE_ROOT" "$DSH_HOME" "$SATK_MCP_LOG_FOLDER"
 
 preset_source=/opt/sdg/app/presets/unit-test-case-generation-production
