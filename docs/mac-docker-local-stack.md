@@ -75,6 +75,9 @@ curl -s http://127.0.0.1:3101/health    # Worker（hermes-server）
 
 ## 5. 常见问题
 
+- **DSH 会话内命令全部被拒（SandboxUnavailableError）**：linuxkit 内核无
+  bwrap/Landlock 沙箱后端，必须设 `DSH_PERMISSION_MODE=danger-full-access`
+  （容器即沙箱：cap_drop ALL + no-new-privileges + 只读 rootfs + uid 10001）。
 - **Worker 容器内 MATLAB 调用失败（401）**：检查 secrets/tcsd-gateway.env 与
   .env.gateway 中两个 token 是否一致、secrets 挂载权限（root:10002 0440）。
 - **后端连不上 Worker**：HERMES_BASE_URL=http://worker:3101 需在 compose 网络内解析；

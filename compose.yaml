@@ -80,6 +80,8 @@ services:
     environment:
       APP_ENV: development
       APP_RUNTIME_ROLE: hermes-agent
+      TINI_SUBREAPER: "1"
+      DSH_PERMISSION_MODE: danger-full-access
       APP_DATA_DIR: /var/lib/sdg/data
       APP_SKILLS_DIR: /opt/sdg/app/skills
       HERMES_HOST: 0.0.0.0
