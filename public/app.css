@@ -3527,6 +3527,21 @@ body[data-page-kind="unit-test-case-generation"] .unit-stage-trace summary span 
   font-weight: 400;
 }
 
+body[data-page-kind="unit-test-case-generation"] .unit-stage-trace summary .unit-stage-coverage {
+  align-self: start;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--brand);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  justify-self: start;
+  letter-spacing: 0.02em;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
 body[data-page-kind="unit-test-case-generation"] .unit-stage-trace-body {
   border-top: 1px solid var(--line);
   margin-top: 12px;

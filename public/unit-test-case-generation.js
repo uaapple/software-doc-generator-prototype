@@ -82,6 +82,36 @@ function formatTokenUsage(usage = null) {
   ].join(" · ");
 }
 
+function formatPercent(value) {
+  const percentage = Number(value ?? NaN);
+  if (!Number.isFinite(percentage)) return "";
+  return `${percentage % 1 === 0 ? String(percentage) : percentage.toFixed(1)}%`;
+}
+
+function renderCoverageChip(coverage) {
+  const models = coverage && typeof coverage === "object" ? coverage.models : null;
+  if (!models || typeof models !== "object") return "";
+  const labels = { condition: "条件", decision: "判定", mcdc: "MC/DC" };
+  const blocks = Object.entries(models)
+    .map(([model, record]) => {
+      const metrics = ["condition", "decision", "mcdc"]
+        .map((key) => {
+          const metric = record && typeof record === "object" ? record[key] : null;
+          const percentage = formatPercent(metric?.percent);
+          if (!percentage) return "";
+          const ratio =
+            Number(metric?.covered ?? NaN) >= 0 && Number(metric?.total ?? NaN) > 0
+              ? ` (${metric.covered}/${metric.total})`
+              : "";
+          return `${labels[key]} ${percentage}${ratio}`;
+        })
+        .filter(Boolean);
+      return metrics.length ? `${model}: ${metrics.join(" · ")}` : "";
+    })
+    .filter(Boolean);
+  return blocks.length ? blocks.join(" ｜ ") : "";
+}
+
 function renderPipelineStage(stage, pipelineCheckpoints = []) {
   const checkpoint = stage.checkpoint || null;
   const checkpointIndex = pipelineCheckpoints.find((item) => item.stageIndex === stage.index) || null;
@@ -89,6 +119,8 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
   const agent = checkpoint?.agent || {};
   const artifacts = Array.isArray(checkpoint?.artifacts) ? checkpoint.artifacts : [];
   const attempts = Array.isArray(stage.attempts) ? stage.attempts : [];
+  const coverage = checkpoint?.coverage || null;
+  const coverageChip = renderCoverageChip(coverage);
   const artifactSummary = artifacts.length
     ? artifacts.map((item) => [item.role || item.kind || "artifact", item.fileName].filter(Boolean).join(": ")).join("\n")
     : "无";
@@ -103,6 +135,7 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
       <summary>
         <strong>${escapeHtml(`${stage.index}. ${stage.name} · ${stage.status}`)}</strong>
         <span>${escapeHtml(stage.summary || stage.skipReason || stage.error?.message || "等待执行")}</span>
+        ${coverageChip ? `<span class="unit-stage-coverage">${escapeHtml(coverageChip)}</span>` : ""}
       </summary>
       <div class="unit-stage-trace-body">
         <dl class="unit-meta-list">
@@ -117,6 +150,7 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
         </dl>
         <h4>尝试与会话</h4>
         <pre>${escapeHtml(attemptSummary)}</pre>
+        ${coverage ? `<h4>覆盖率</h4><pre>${escapeHtml(compactJson(coverage))}</pre>` : ""}
         <h4>宿主验证</h4>
         <pre>${escapeHtml(compactJson(checkpoint?.validation || stage.error))}</pre>
         <h4>产物</h4>
