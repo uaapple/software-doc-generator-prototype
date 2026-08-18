@@ -42,6 +42,10 @@
       - **任务工作根**：`/var/lib/sdg/data`（等同于 `${TCSD_WORKSPACE_ROOT:-/var/lib/sdg/data}`）。所有任务 workspace 均必须位于其下；严禁读取或写入宿主绝对路径。
       - MATLAB 访问固定使用 Gateway：`SATK_GATEWAY_URL` 指向受保护 Gateway；`SATK_MATLAB_SESSION_MODE=gateway`；`SATK_MATLAB_DISPLAY_MODE=nodesktop`；`SATK_MCP_LOG_FOLDER=/var/lib/sdg/logs/matlab-mcp`。不得自行启动本地 MATLAB/MCP server 或拼接 Gateway HTTP 请求。
       - Gateway/evaluate token 只由受控 `satk_eval.py` / `matlab_gateway_lease.py` 子进程获取；不得读取、要求、打印或把它们带入模型上下文、提示词、产物或日志。
+      - **调用受控脚本必须经由容器内凭据包装器**：`${TCSD_GATEWAY_TRANSPORT:-/usr/local/bin/tcsd-gateway-transport} <script> <args...>`，
+        例如 `tcsd-gateway-transport /opt/sdg/app/skills/hermes/tcsd-runtime/scripts/satk_eval.py <entry.m>`（wrapper 自行选择 Python 解释器）。
+        直接执行 python 脚本不会获得 Gateway 凭据，Stage 2 环境门禁将失败；包装器仅接受
+        `satk_eval.py` 与 `matlab_gateway_lease.py` 两个脚本。
       - Python 需要 `yaml`、`openpyxl`；运行时 Python 可用 `TCSD_PIPELINE_PYTHON` 指定。
 
       ## 2. 任务工作区（Worker 专用）
