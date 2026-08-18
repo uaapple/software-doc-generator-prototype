@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import z from "@deepseek-ai/schemastery";
+import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { SessionId } from "@deepseek-ai/dsh-session";
-import { z } from "zod";
 
-export const name = "@deepseek-ai/dsh-headless-tcsd";
-export const inject = ["agents", "agentDefaultModel", "sessions", "headlessStartup", "appExit"];
-export const Config = z.object({ task: z.string() });
+export const name = "headless-tcsd-runner";
+export const inject = ["agentDefaultModel", "agents", "sessions"];
+export const Config = z.object({ task: z.string().required() });
 
 function summarize(events, firstSeq) {
   let text = "";
@@ -21,20 +22,22 @@ function summarize(events, firstSeq) {
 }
 
 export async function apply(ctx, config) {
-  const io = { stdout: process.stdout, stderr: process.stderr, exit: ctx.get("appExit") };
+  const exit = ctx.get("appExit");
+  const io = { stdout: process.stdout, stderr: process.stderr, exit };
   try {
     await ctx.get("loader")?.await();
     const agents = ctx.get("agents");
     const defaultModel = ctx.get("agentDefaultModel");
     const sessions = ctx.get("sessions");
     const presets = ctx.get("agentPresets");
-    if (!agents || !defaultModel || !sessions || !presets) throw new Error("TCSD headless DSH profile is missing its agent preset services");
+    if (!exit || !agents || !defaultModel || !sessions || !presets) throw new Error("TCSD headless DSH profile is missing its agent preset services");
     const selection = defaultModel.currentSelection();
     const { agent } = await agents.create({
       sessionId: SessionId(`session-${randomUUID()}`),
       meta: { cwd: process.cwd() },
       agentOptions: { provider: selection.provider, model: selection.model },
       setup: async (agentCtx) => {
+        installModelSelection(agentCtx, { current: selection, assembled: undefined });
         await presets.mount(agentCtx);
       }
     });
