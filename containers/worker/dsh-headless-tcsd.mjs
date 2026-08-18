@@ -1,11 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
-
-// Installed next to @deepseek-ai/dsh: resolve against its pinned dependencies.
-const require = createRequire(new URL("./package.json", import.meta.url));
-const { createUserMessage } = require("@deepseek-ai/dsh-agent");
-const { SessionId } = require("@deepseek-ai/dsh-session");
-const { z } = require("zod");
+import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import { SessionId } from "@deepseek-ai/dsh-session";
+import { z } from "zod";
 
 export const name = "@deepseek-ai/dsh-headless-tcsd";
 export const inject = ["agents", "agentDefaultModel", "sessions", "headlessStartup", "appExit"];
