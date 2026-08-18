@@ -64,6 +64,14 @@ class GatewayTransportTests(unittest.TestCase):
                 self.assertNotIn("MATLAB_MCP_AUTH_TOKEN is unavailable", result.stderr)
                 self.assertNotIn("bearer-test", result.stdout + result.stderr)
                 self.assertNotIn("untrusted-python", result.stdout + result.stderr)
+                alias = Path(directory) / "satk_eval.py"
+                alias.symlink_to(SCRIPTS / "satk_eval.py")
+                alias_result = subprocess.run(
+                    [str(binary), str(alias), "--server-info"],
+                    env={"SATK_GATEWAY_URL": "http://127.0.0.1:1"}, text=True, capture_output=True,
+                )
+                self.assertEqual(alias_result.returncode, 1)
+                self.assertNotIn("bearer-test", alias_result.stdout + alias_result.stderr)
                 rejected = subprocess.run([str(binary), "/bin/echo", "unexpected"], text=True, capture_output=True)
                 self.assertEqual(rejected.returncode, 64)
             finally:
