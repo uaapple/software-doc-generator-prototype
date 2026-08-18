@@ -545,6 +545,55 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertIn("strictly implies", by_id["ModelB:231_TF"]["reason"])
             self.assertEqual(by_id["ModelB:231_TT"]["status"], "unresolved")  # unobserved, no algebra -> unresolved
 
+    def test_probe_obligations_mark_mps_selector_error_vectors_unreachable(self) -> None:
+        """EngStrtStop A09 regression: a Stateflow operating-condition id 4/5
+        feeding a 0..3 MultiPortSwitch with DiagnosticForDefault=Error aborts
+        the targeted probe simulation; those vectors are model-inherently
+        unreachable and must carry evidence instead of remaining unresolved."""
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            probe = {
+                "ModelE": {
+                    "model": "ModelE",
+                    "probes": [
+                        {
+                            "id": "ModelE:40",
+                            "block_path": "ModelE/C01_JumpFlg/AND",
+                            "sid": "ModelE:40",
+                            "operator": "AND",
+                            "port_names": ["u1", "u2"],
+                        }
+                    ],
+                    "observations": [
+                        {"test_id": "STATE_PROBE_0001", "row": 1, "step_index": 2, "time_s": 0.11,
+                         "inputs": {"VehCfg_bMoutnUp": 1}, "params": {}, "vectors": {},
+                         "target": {"operator_id": "ModelE:40"},
+                         "prediction_status": "simulation_error_mps_selector",
+                         "error_message": "MultiPortSwitch selector input (4) is out of range 0..3"},
+                    ],
+                }
+            }
+            (work / "probe.json").write_text(json.dumps(probe), encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "build_probe_mcdc_obligations.py"),
+                    "--probe-results",
+                    str(work / "probe.json"),
+                    "--output-dir",
+                    str(work),
+                ],
+                check=False,
+            )
+            report = json.loads((work / "ModelE_coverage_obligations.json").read_text(encoding="utf-8"))
+            # All three vectors of the blocked operator are model-inherently unreachable.
+            self.assertEqual(report["summary"]["unreachable_count"], 3)
+            self.assertEqual(report["summary"]["required_count"], 0)
+            for item in report["obligations"]:
+                self.assertEqual(item["status"], "unreachable")
+                self.assertIn("MultiPortSwitch", item["reason"])
+                self.assertEqual(item["evidence_state"], "unreachable_mps_selector_constraint")
+
     def test_apply_unreachable_denominator_adjustment(self) -> None:
         quality = load_script_module("run_tcsd_quality_loop.py")
         with tempfile.TemporaryDirectory() as td:

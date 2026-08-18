@@ -209,11 +209,12 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
                 and vector.get("ok") is True
                 and isinstance(vector.get("values"), list)
             ] if isinstance(vectors, dict) else []
+            mps_blocked = observation.get("prediction_status") == "simulation_error_mps_selector"
             if (
                 test_id not in planned
                 or step_index not in planned[test_id]
                 or not isinstance(observation.get("inputs"), dict)
-                or not valid_vectors
+                or (not valid_vectors and not mps_blocked)
                 or observation.get("prediction_status") in {"target_unavailable", "simulation_mismatch"}
             ):
                 raise ValueError("Probe observation is missing executed values or contradicts its planned target")

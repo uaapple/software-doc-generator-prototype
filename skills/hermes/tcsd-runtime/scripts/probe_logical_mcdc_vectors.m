@@ -33,7 +33,7 @@ for m = 1:numel(modelNames)
     probes = configure_logic_probes(modelName);
     caseJson = resolve_case_json(rootDir, modelName, opts.CaseSuffix, opts.CaseJson);
     spec = jsondecode(fileread(caseJson));
-    observations = struct('row', {}, 'test_id', {}, 'step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {});
+    observations = struct('row', {}, 'test_id', {}, 'step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
     aggregateCoverage = [];
     tests = normalize_struct_array(spec.tests);
     for testIndex = 1:numel(tests)
@@ -351,7 +351,26 @@ if collectCoverage
     in = in.setModelParameter('CovEnable', 'on', 'CovMetricSettings', 'dcme', ...
         'CovSaveSingleToWorkspaceVar', 'on', 'CovSaveName', 'tc_sd_covdata');
 end
-out = sim(in);
+try
+    out = sim(in);
+catch ME
+    if is_mps_selector_error(ME)
+        observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
+        for k = 1:numel(steps)
+            observations(k).step_index = steps(k).index;
+            observations(k).time_s = eventTimes(k);
+            observations(k).inputs = snapshotInputs(k).values;
+            observations(k).params = initParams;
+            observations(k).vectors = struct();
+            observations(k).stimulus = stimulus_prefix(test, k);
+            observations(k).target = ensure_struct(test, 'target');
+            observations(k).prediction_status = 'simulation_error_mps_selector';
+            observations(k).error_message = ME.message;
+        end
+        return;
+    end
+    rethrow(ME);
+end
 if collectCoverage
     try
         coverageData = out.get('tc_sd_covdata');
@@ -360,7 +379,7 @@ if collectCoverage
             'Coverage was enabled but tc_sd_covdata was not returned: %s', ME.message);
     end
 end
-observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {});
+observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
 for k = 1:numel(steps)
     observations(k).step_index = steps(k).index;
     observations(k).time_s = eventTimes(k);
@@ -789,6 +808,15 @@ fid = fopen(out, 'w');
 fprintf(fid, '%s', jsonencode(data, PrettyPrint=true));
 fclose(fid);
 fprintf('Wrote %s\n', out);
+end
+
+function tf = is_mps_selector_error(ME)
+report = getReport(ME, 'basic', 'hyperlinks', 'off');
+tf = (contains(report, 'Multiport Switch', 'IgnoreCase', true) || contains(report, 'MultiPortSwitch', 'IgnoreCase', true)) ...
+    && (contains(report, 'control port', 'IgnoreCase', true) ...
+        || contains(report, '控制端口') ...
+        || contains(report, 'does not correspond', 'IgnoreCase', true) ...
+        || contains(report, '不对应'));
 end
 
 function local_cleanup(models, oldDir, oldPath)

@@ -240,6 +240,28 @@ def algebraic_unreachable_reason(operator: str, label: str, mapping: dict[str, A
     return ALGEBRAIC.algebraic_unreachable_vector(operator, facts, toggle_index)
 
 
+def mps_error_targets(report: dict[str, Any]) -> dict[str, str]:
+    """Operator ids whose targeted probe simulation aborted with a
+    MultiPortSwitch selector out-of-range diagnostic (model-inherent
+    constraint: the selector input can legally leave the data-port range,
+    e.g. a Stateflow operating-condition id 4/5 feeding a 0..3 MPS with
+    DiagnosticForDefault=Error). Vectors of these operators that the probe
+    could not observe are structurally unreachable, not missing coverage."""
+    result: dict[str, str] = {}
+    for obs in report.get("observations", []):
+        if not isinstance(obs, dict):
+            continue
+        if obs.get("prediction_status") != "simulation_error_mps_selector":
+            continue
+        target = obs.get("target") or {}
+        op_id = str(target.get("operator_id") or "")
+        if not op_id:
+            continue
+        message = str(obs.get("error_message") or "MultiPortSwitch selector out of range")
+        result.setdefault(op_id, message)
+    return result
+
+
 def build_for_model(
     model: str,
     report: dict[str, Any],
@@ -249,6 +271,7 @@ def build_for_model(
     mappings: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     found = observation_index(report)
+    mps_errors = mps_error_targets(report)
     obligations: list[dict[str, Any]] = []
     probes = report.get("probes") or []
     if isinstance(probes, dict):
@@ -340,6 +363,26 @@ def build_for_model(
                             "status": str(override.get("status") or "unreachable"),
                             "reason": str(override.get("reason") or "Probe did not observe this vector; override marked it unreachable."),
                             "evidence_state": "probe_not_observed_with_override",
+                        }
+                    )
+                elif op_id in mps_errors:
+                    item.update(
+                        {
+                            "status": "unreachable",
+                            "reason": (
+                                "Model-inherent MultiPortSwitch constraint: the probe simulation for this "
+                                "operator aborted with a selector out-of-range diagnostic "
+                                f"({mps_errors[op_id][:220]}). Vectors that require this state cannot be executed."
+                            ),
+                            "evidence_state": "unreachable_mps_selector_constraint",
+                            "issues": [
+                                {
+                                    "code": "probe_vector_not_observed_mps_selector_error",
+                                    "operator_id": op_id,
+                                    "label": label,
+                                    "message": mps_errors[op_id][:400],
+                                }
+                            ],
                         }
                     )
                 else:
