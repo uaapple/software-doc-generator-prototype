@@ -17,6 +17,13 @@ if [ ! -f "$preset_target/agent.cordis.yml" ]; then
   cp "$preset_source/agent.cordis.yml" "$preset_source/preset.yml" "$preset_target/"
 fi
 
+headless_profile="$DSH_HOME/profiles/headless"
+headless_patch="$headless_profile/cordis.patch.yml"
+if [ ! -f "$headless_patch" ] || ! grep -q 'dsh-headless-tcsd' "$headless_patch"; then
+  mkdir -p "$headless_profile"
+  cp /opt/sdg/app/containers/worker/headless-production-preset.patch.yml "$headless_patch"
+fi
+
 if [ "$#" -eq 0 ]; then
   echo "usage: tcsd-dsh-worker <task instruction>" >&2
   exit 64

@@ -1,0 +1,24 @@
+# Applied only to the DSH headless profile. It adds the Worker production
+# composition and makes it the default agent preset for each one-shot session.
+- insert:
+    - id: agent-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      config:
+        default: unit-test-case-generation-production
+        roots:
+          - path: /var/lib/sdg/dsh-home/.agent-presets
+            trust: user
+        includeUserRoot: false
+
+# The stock headless runner creates an agent directly. Disable it, then insert
+# the Worker runner which mounts the configured default preset before the task
+# reaches the model.
+- id: headless-runner
+  disabled: true
+- insert:
+    - id: headless-tcsd-runner
+      name: file:///usr/local/lib/node_modules/@deepseek-ai/dsh/tcsd-headless-runner.mjs
+      inject:
+        - headlessStartup
+      config:
+        task: !!js ctx.headlessStartup.task
