@@ -59,6 +59,7 @@
       你是推理边界，确定性运行时（`skills/hermes/tcsd-runtime/scripts/run_tcsd_pipeline_stage.py`）是执行边界；你同时自任宿主做独立验证与 checkpoint。
 
       - **一键执行器（优先）**：整条流水线优先用 `skills/hermes/tcsd-runtime/scripts/dsh_stage_runner.py` 编排：`init`（建任务工作区/拷贝模型与 addon/写 task.json）→ `run --stage N`（manifest → 确定性运行时 → 语义验证 → checkpoint 写入，内部按阶段串行）→ `finish`（工作簿复制到模型目录，并生成 execution/timeline/artifact 三个宿主 manifest）。Stage 10 通过 `--stage10-mode prepare/apply` 两阶段完成。仅单独调试某个子步骤时才手工走下面的逐阶段命令。
+      - **阶段纪律（传菜员原则）**：`run --stage 1` 至 `run --stage 12` 严格按序、每阶段仅调用一次 runner，然后 `finish`。覆盖率修复**只存在**于 stage-10（prepare/apply）；其余任何阶段不得运行额外 MATLAB 仿真、探针、覆盖率收集、诊断或用例修改。stage-11 完成后**立即** `run --stage 12` 与 `finish`——stage-12 是纯清理打包（传菜员），无论覆盖率达到与否都不补救、不复查、不追加；未达标缺口由 `finish` 记为 unresolved 收尾。宿主校验由 runner 内建（每阶段 semantic validation + checkpoint），无需也不得自行重跑 MATLAB 实验来「独立验证」。
       - 每阶段（手工流程，仅调试用）：写 `tcsd-agent-stage-input/v1` manifest（含 job 快照：`modelSlxPath`/`modelMatPath`/`workspaceDir`/`outputDir`/`projectInitScripts`/`coverageThreshold=80`/`stageIndex`/`attempt`）→ 运行 `run_tcsd_pipeline_stage.py --manifest … --result …` → 读 `tcsd-agent-stage-result/v1` → 对语义阶段（2/6/7/8/9/10/11）运行 `host_validate_tcsd_stage.py` 并按 `src/services/tcsd-pipeline-contract.js` 的 `validateStageResult` 做宿主校验 → 通过后写 `tcsd-agent-stage-checkpoint/v2`。
       - 硬错误（环境/MATLAB/超时/MCP）不重试；只有确定性校验失败允许一次修复（attempt ≤ 2）。
       - 每阶段完成后向用户汇报进度（阶段名、产物、门禁结果），不要长时间静默。
