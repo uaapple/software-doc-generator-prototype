@@ -175,6 +175,8 @@ shared:
   - package-lock.json
 dev-only:
   - .github/workflows/**
+  - .env.gateway.example
+  - PORTING_TASK.md
   - compose.mac.yaml
   - scripts/check-platform-container.mjs
   - tests/container-config-tests.mjs
