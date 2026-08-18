@@ -100,6 +100,7 @@ export class TcsdDshStageExecutor {
   async prepareDshTask(job) {
     const taskPath = this.dshTaskPath(job);
     const workspaceDir = path.resolve(job.input.workspaceDir);
+    await fs.mkdir(path.dirname(taskPath), { recursive: true });
     await writeJson(taskPath, {
       id: job.jobId,
       type: "unit_test_case_generation",
