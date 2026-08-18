@@ -13,8 +13,8 @@
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
       config:
+        # Note: profile boot REPLACES `roots` with the shipped system root
+        # (config/agent-presets); keep includeUserRoot at its default (true)
+        # so the plugin also scans $DSH_HOME/.agent-presets, where the
+        # entrypoint force-copies this preset on every start.
         default: unit-test-case-generation-production
-        roots:
-          - path: /var/lib/sdg/dsh-home/.agent-presets
-            trust: user
-        includeUserRoot: false
