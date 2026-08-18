@@ -372,6 +372,33 @@ outcome → 控制根输入或标量参数 → 计划 Test/action → 证据状�
 MC/DC 37.5%）；ParkCrl B02：`RPACmd` 为 R/S 两链共享根，锁存无法独立翻转；liuts A04_B02：标定参数 `WarnMsg_bSelBatSOE_C` 默认非 0 钉死 Switch23 判据 → u3 子树（Product→Divide→Switch1→MultiPortSwitch20）整链因惰性求值从不执行（探针 decisioninfo 坐实），参数覆盖 `p WarnMsg_bSelBatSOE_C=0` 打开后 Switch1 两侧各执行 101 次；liuts A04_B03：`WarnMsg_bHvBatPrdnRngOvrd_C` 默认 1 钉死顶层 Switch3 → in3 链（Switch1/Switch2）惰性死寂，参数覆盖 0 后整链激活（两次标定默认值变体）。五次同构：**某个多条件 AND 使能链 / Switch 判据的根输入（含标定参数默认值）被钉死一侧**，未选中子树因惰性求值整链死寂。Stage 07 基线生成时
 先扫 Switch 判据/状态可达性链上的使能根输入，确保正反两侧都进首版，而不是留到 Stage 10 补救。
 
+**场景激活矩阵——初版必打清单（11 次运行实证，2026-08-19）**：逐次复盘证明，Stage 10 修复轮
+几乎总是在重建**模块级业务场景**，而初版只打了散点义务。初版必须包含每个主要子系统的
+"场景激活"用例（场景条件同刻成立），否则该子系统全部义务留到修复轮：
+
+| 运行 | 场景 | 根条件（初版缺） |
+|---|---|---|
+| B04 | 能量使能 | `wSOE>0` 全 0 钉死 |
+| B09 | 上电边沿 | KeyOn/OTAOn/KeyStrt 无翻转序列 |
+| B14 | 电池维护 | `pctLvBatSoc≤70 ∧ stSocPrcsn==2` 未同刻 |
+| B15 | SOC 唤醒 | `SOCDisp≥10` 全 <10 |
+| ParkCrlB01 | RPA 告警 | `LrcpReq≠0 ∧ RPACmd==0` 未同刻 |
+| ParkCrlB02 | RPA 锁存 | KeyOn+Gear+RPACmd+LrcpReq 组合未构 |
+| liutsB01 | 计数极限 | CountR 未驱动到 MAX=400 |
+| liutsB02/B03 | 标定默认值 | `bSelBatSOE_C/bHvBatPrdnRngOvrd_C` 默认非 0 钉死 Switch |
+| EngA09 | 工况越界 | MoutnUp/Dwn 触发 MPS 越界（不可达，证据） |
+| EngA11 | **加油场景** | 51 用例仅 2 条置加油请求=1，整模块未激活 |
+
+**六种场景模板（初版合成器应按此扫描生成）**：
+1. 使能链激活：模块级 AND/Switch 链根条件同刻成立（含比较常量核对）
+2. 标定默认值翻转：从 MAT 读参数默认值，非 0 门控判据的加 `p Param=0` 用例（B02/B03）
+3. 模式/枚举遍历：Stateflow 工况/枚举端口每个合法值一条（A11 挡位 N/P、发动机状态、加油请求）
+4. 边沿序列：KeyOn/请求类 0→1→0 完整翻转（B09）
+5. 计数/延迟到极限：CountR/StopWatch 驱动到 MAX 或超时边界（liutsB01/A09 库块）
+6. 锁存 set→hold→reset：RSLatch 全时序（ParkCrlB02/A11）
+实现提示：Stage 5 扫描各子系统顶层 Switch/AND 的根条件（含标定参数默认值），Stage 7 按模板
+生成场景用例；当前为 Agent 纪律（10.2 候选有效性同源），代码化是下一步改进项。
+
 **最小功能域密度**：故障/有效性信号族（`*SigErr`/`*Vld`/`*Flt`/`*FltLvl`/诊断使能复位）、
 连续阈值边界输入、模式/配置枚举、Stateflow 目标状态、诊断/错误路径、独立运行模式 —— 每个域
 至少一条独立 Test、明确的合并理由、或不可达/无效解释。
