@@ -43,6 +43,7 @@ class GatewayTransportTests(unittest.TestCase):
                 f'-DSATK_SCRIPT=\"{SCRIPTS / "satk_eval.py"}\"',
                 f'-DLEASE_SCRIPT=\"{REPO / "skills" / "hermes" / "software-detail-runtime" / "scripts" / "matlab_gateway_lease.py"}\"',
                 f'-DPYTHON_EXECUTABLE=\"{os.sys.executable}\"',
+                f"-DTRANSPORT_GID={os.getgid()}",
                 "-DREQUIRE_ROOT_OWNER=0",
                 "-o", str(binary), str(TRANSPORT),
             ], check=True)
@@ -51,13 +52,18 @@ class GatewayTransportTests(unittest.TestCase):
             try:
                 result = subprocess.run(
                     [str(binary), str(SCRIPTS / "satk_eval.py"), "--server-info"],
-                    env={"PATH": os.environ["PATH"], "PYTHON_EXECUTABLE": "/bin/false", "SATK_GATEWAY_URL": "http://127.0.0.1:1"},
+                    env={
+                        "PATH": os.environ["PATH"], "PYTHON_EXECUTABLE": "/bin/false",
+                        "PYTHONPATH": "/tmp/untrusted-python", "PYTHONINSPECT": "1",
+                        "SATK_GATEWAY_URL": "http://127.0.0.1:1",
+                    },
                     text=True,
                     capture_output=True,
                 )
                 self.assertEqual(result.returncode, 1)
                 self.assertNotIn("MATLAB_MCP_AUTH_TOKEN is unavailable", result.stderr)
                 self.assertNotIn("bearer-test", result.stdout + result.stderr)
+                self.assertNotIn("untrusted-python", result.stdout + result.stderr)
                 rejected = subprocess.run([str(binary), "/bin/echo", "unexpected"], text=True, capture_output=True)
                 self.assertEqual(rejected.returncode, 64)
             finally:

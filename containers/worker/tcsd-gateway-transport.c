@@ -20,18 +20,34 @@
 #ifndef PYTHON_EXECUTABLE
 #define PYTHON_EXECUTABLE "/usr/local/bin/python3"
 #endif
+#ifndef TRANSPORT_GID
+#define TRANSPORT_GID 10002
+#endif
 
-static int allowed_script(const char *script) {
+static const char *controlled_script(const char *script) {
   char resolved[4096];
-  if (!realpath(script, resolved)) return 0;
-  return strcmp(resolved, SATK_SCRIPT) == 0 || strcmp(resolved, LEASE_SCRIPT) == 0;
+  if (!realpath(script, resolved)) return NULL;
+  if (strcmp(resolved, SATK_SCRIPT) == 0) return SATK_SCRIPT;
+  if (strcmp(resolved, LEASE_SCRIPT) == 0) return LEASE_SCRIPT;
+  return NULL;
+}
+
+static void sanitize_python_environment(void) {
+  const char *names[] = {
+    "PYTHONBREAKPOINT", "PYTHONHOME", "PYTHONINSPECT", "PYTHONPATH",
+    "PYTHONSTARTUP", "PYTHONUSERBASE", "PYTHONWARNINGS", NULL,
+  };
+  for (size_t index = 0; names[index]; ++index) unsetenv(names[index]);
+  setenv("PYTHONNOUSERSITE", "1", 1);
+  setenv("PYTHONSAFEPATH", "1", 1);
 }
 
 static void load_secret_file(void) {
   struct stat metadata;
   char line[8192];
   if (stat(SECRET_FILE, &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
-      (REQUIRE_ROOT_OWNER && metadata.st_uid != 0) || (metadata.st_mode & 0037) != 0) {
+      (REQUIRE_ROOT_OWNER && metadata.st_uid != 0) || metadata.st_gid != TRANSPORT_GID ||
+      (metadata.st_mode & 0037) != 0) {
     fputs("tcsd-gateway-transport: Gateway credential file permissions are unsafe\n", stderr); exit(77);
   }
   FILE *file = fopen(SECRET_FILE, "r");
@@ -54,9 +70,12 @@ static void load_secret_file(void) {
 }
 
 int main(int argc, char **argv) {
-  if (argc < 2 || !allowed_script(argv[1])) {
+  const char *script = argc < 2 ? NULL : controlled_script(argv[1]);
+  if (!script) {
     fputs("tcsd-gateway-transport: unsupported controlled script\n", stderr); return 64;
   }
+  argv[1] = (char *)script;
+  sanitize_python_environment();
   load_secret_file();
   argv[0] = PYTHON_EXECUTABLE;
   execv(argv[0], argv);
