@@ -564,6 +564,13 @@ checkpoint**。步骤：
     注：**Simulink 惰性求值**（条件输入执行）会使未选中分支的块（如 MinMax 输入 2 wins）
     在正常分支下永不执行——这类缺口若只有异常分支（如参数覆盖 `LimUp<LimLow`）可达，
     超单轮修复限制时按 `measured_uncovered` 如实记录，不要硬造用例。
+5.6. **MPS selector 越界模型固有约束（EngStrtStop A09 实测，2026-08-18）**：当 Stateflow/
+    上游逻辑的工况 ID 可输出**超出 MultiPortSwitch 合法选择范围**的值（如 MoutnUp/Dwn 的
+    ID=4/5 喂 0..3 的 MPS，`DiagnosticForDefault=Error`），驱动该状态的向量**仿真即报错**——
+    这是模型固有约束，不是覆盖缺口：探针已容错记录 `simulation_error_mps_selector` + 错误
+    消息，义务构建器把该算子全部未观测向量标 `unreachable`（证据 = MPS 约束 + 实测报错），
+    宿主校验接受该证据。识别要点：探针报 MPS selector out of range → 查其控制端口上游
+    （Stateflow 输出/枚举转换），确认值域越界是模型设计如此，而非刺激错误。
 6. **探针确认（可选但强烈建议）**：用 `probe_block_inputs.py` 或一次多场景 probe
    （充电/非充电各若干步）实测缺口块执行计数；执行计数 0 即坐实死路径。
 7. **结果**：0 候选 + 1 具体 unresolved（`logic_unreachable`）是**合法且高质量**的 Stage 10
