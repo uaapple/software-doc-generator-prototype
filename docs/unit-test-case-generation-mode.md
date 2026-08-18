@@ -363,13 +363,13 @@ outcome → 控制根输入或标量参数 → 计划 Test/action → 证据状�
 （未知时序时保守 `[+1s]`）；模式/状态转移拆成聚焦 Test，禁止一个长遍历 Test 吞掉多个转移
 （除非每步刺激不同、保持足够、且有仿真证明输出真的变化）。
 
-**使能信号不得全钉一侧（B04/B14/B15 三次实证，2026-08-17）**：首版用例必须包含每个使能/状态判据根
+**使能信号不得全钉一侧（B04/B14/B15/ParkCrlB02/liutsA04B02 五次实证，2026-08-17~18）**：首版用例必须包含每个使能/状态判据根
 输入（如 `wSOE`/`bXXVld` 类使能位）激活与非激活两侧的刺激。B04 首版 4 条用例全部
 `wSOE≤0`，能量信号恒 ≤0，EdgeFalling/比较器/RampLimiter/限幅逻辑整片钉死一侧
 （首轮 Condition 50% / Decision 55% / MC/DC 0%）；B14 主链 `bRemLvBatMntnReq` 需
 `pctLvBatSoc≤70 ∧ stSocPrcsn==2` 同刻成立，首版未同时满足；B15 首版把 `icbms_pctHVBatSOCDisp`
 钉在 0（<10）→ `SocWkup=0` → `Inhb=1` → `Req` 整链死锁（首轮 Condition 83.5% / Decision 64.6% /
-MC/DC 37.5%）。三者同构：**某个多条件 AND 使能链的根输入组合从未同刻成立**。Stage 07 基线生成时
+MC/DC 37.5%）；ParkCrl B02：`RPACmd` 为 R/S 两链共享根，锁存无法独立翻转；liuts A04_B02：标定参数 `WarnMsg_bSelBatSOE_C` 默认非 0 钉死 Switch23 判据 → u3 子树（Product→Divide→Switch1→MultiPortSwitch20）整链因惰性求值从不执行（探针 decisioninfo 坐实），参数覆盖 `p WarnMsg_bSelBatSOE_C=0` 打开后 Switch1 两侧各执行 101 次。五次同构：**某个多条件 AND 使能链 / Switch 判据的根输入（含标定参数默认值）被钉死一侧**，未选中子树因惰性求值整链死寂。Stage 07 基线生成时
 先扫 Switch 判据/状态可达性链上的使能根输入，确保正反两侧都进首版，而不是留到 Stage 10 补救。
 
 **最小功能域密度**：故障/有效性信号族（`*SigErr`/`*Vld`/`*Flt`/`*FltLvl`/诊断使能复位）、
