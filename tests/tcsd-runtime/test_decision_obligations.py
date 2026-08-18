@@ -124,7 +124,7 @@ class DecisionObligationBlocksTests(unittest.TestCase):
             "blocks": [
                 {"path": "Mock/Switch1", "sid": "10", "type": "Switch",
                  "params": {"Criteria": "u2 ~= 0"},
-                 "inputs": [{"port": 3, "src_kind": "input", "src_value": "Ena"}]},
+                 "inputs": [{"port": 2, "src_kind": "input", "src_value": "Ena"}]},
                 {"path": "Mock/Abs1", "sid": "11", "type": "Abs", "params": {},
                  "inputs": [{"port": 1, "src_kind": "const", "src_value": "0.001"}]},
                 {"path": "Mock/Mm1", "sid": "12", "type": "MinMax", "params": {"Function": "max", "Inputs": "2"},
@@ -156,7 +156,7 @@ class DecisionObligationBlocksTests(unittest.TestCase):
                             {"port": 2, "src_kind": "param", "src_value": "Min_C"}]},
                 {"path": "Mock/Sw", "sid": "31", "type": "Switch",
                  "params": {"Criteria": "u2 ~= 0"},
-                 "inputs": [{"port": 3, "src_kind": "param", "src_value": "Ovrd_C"}]},
+                 "inputs": [{"port": 2, "src_kind": "param", "src_value": "Ovrd_C"}]},
                 {"path": "Mock/Mm", "sid": "32", "type": "MinMax",
                  "params": {"Function": "max", "Inputs": "2"},
                  "inputs": [{"port": 1, "src_kind": "input", "src_value": "SigA"},
@@ -228,6 +228,66 @@ class DecisionObligationBlocksTests(unittest.TestCase):
         # Fallback keeps the legacy in-range-free scheme when bounds are absent.
         no_bounds = [i for i in items if i["sid"] == "42"]
         self.assertEqual(len([i for i in no_bounds if i["status"] == "required"]), 2)
+    def test_switch_control_port_follows_criteria_u2_and_u3(self) -> None:
+        """Simulink Switch criteria names the control port (B02/A11 root
+        cause): 'u2 ~= 0' reads port 2 (a calibration param), not port 3."""
+        builder = script("build_decision_obligations.py")
+        blocks_data = {
+            "model": "Mock",
+            "blocks": [
+                # criteria u2 -> control at port 2 = param with known default 1
+                {"path": "Mock/SwU2", "sid": "50", "type": "Switch",
+                 "params": {"Criteria": "u2 ~= 0"},
+                 "inputs": [{"port": 1, "src_kind": "input", "src_value": "SigA"},
+                            {"port": 2, "src_kind": "param", "src_value": "Gate_C",
+                             "src_param_min": 0, "src_param_max": 1, "src_param_value": 1},
+                            {"port": 3, "src_kind": "input", "src_value": "SigB"}]},
+                # criteria u3 -> control stays at port 3 (backward compat)
+                {"path": "Mock/SwU3", "sid": "51", "type": "Switch",
+                 "params": {"Criteria": "u3 ~= 0"},
+                 "inputs": [{"port": 1, "src_kind": "input", "src_value": "SigA"},
+                            {"port": 2, "src_kind": "input", "src_value": "SigB"},
+                            {"port": 3, "src_kind": "input", "src_value": "Ctl"}]},
+            ],
+            "enable_ports": [],
+        }
+        items = builder.generate_from_blocks(blocks_data, "Mock")
+        # u2 switch: param flip case must exist and carry scenario evidence.
+        u2 = [i for i in items if i["sid"] == "50"]
+        self.assertEqual(len([i for i in u2 if i["status"] == "required"]), 2)
+        flip = next(i for i in u2 if i["status"] == "required" and i["match"]["params"] == {"Gate_C": 0})
+        self.assertEqual(flip.get("evidence_state"), "scenario_activation_calibration_default")
+        self.assertIn("标定默认值 Gate_C=1", flip.get("reason", ""))
+        # u3 switch: control on port 3, values 1/0 on Ctl.
+        u3 = [i for i in items if i["sid"] == "51"]
+        self.assertEqual(len([i for i in u3 if i["status"] == "required"]), 2)
+        by_outcome = {i["required_outcome"]: i["match"]["inputs"] for i in u3}
+        self.assertEqual(by_outcome["switch true (u3 ~= 0)"], {"Ctl": 1})
+        self.assertEqual(by_outcome["switch false (u3 ~= 0)"], {"Ctl": 0})
+
+    def test_mps_uses_data_port_indices_for_legal_selectors(self) -> None:
+        """liuts B02 regression: MultiPortSwitch with DataPortIndices={4,5,6,7}
+        has legal selectors 4..7, not 1..4."""
+        builder = script("build_decision_obligations.py")
+        blocks_data = {
+            "model": "Mock",
+            "blocks": [
+                {"path": "Mock/MPS", "sid": "60", "type": "MultiPortSwitch",
+                 "params": {"Inputs": "5", "DataPortOrder": "One-based",
+                            "DataPortIndices": "{4,5,6,7}"},
+                 "inputs": [{"port": 1, "src_kind": "input", "src_value": "Sel"}]},
+                {"path": "Mock/MPSDef", "sid": "61", "type": "MultiPortSwitch",
+                 "params": {"Inputs": "3", "DataPortOrder": "Zero-based"},
+                 "inputs": [{"port": 1, "src_kind": "input", "src_value": "Sel2"}]},
+            ],
+            "enable_ports": [],
+        }
+        items = builder.generate_from_blocks(blocks_data, "Mock")
+        mps = [i for i in items if i["sid"] == "60" and i["status"] == "required"]
+        selectors = sorted(i["match"]["inputs"]["Sel"] for i in mps)
+        self.assertEqual(selectors, [4, 5, 6, 7])
+        mps_def = [i for i in items if i["sid"] == "61" and i["status"] == "required"]
+        self.assertEqual(sorted(i["match"]["inputs"]["Sel2"] for i in mps_def), [0, 1])
 
     def test_synthesis_now_appends_condition_candidates_with_params(self) -> None:
         synthesis = script("synthesize_tcsd_from_coverage_ir.py")

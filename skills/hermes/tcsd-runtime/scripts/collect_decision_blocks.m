@@ -129,6 +129,12 @@ function bounds = param_bounds(name)
         return;
     end
     if ~isobject(obj) && ~isprop(obj, 'Value')
+        % Plain numeric calibration scalar (e.g. WarnMsg_bSelBatSOE_C = 1):
+        % the default VALUE itself is the fact that matters for scenario
+        % activation (a non-zero default pins a `u2 ~= 0` Switch criterion).
+        if isnumeric(obj) && isscalar(obj)
+            bounds = struct('min', [], 'max', [], 'value', double(obj));
+        end
         return;
     end
     bounds = struct('min', [], 'max', [], 'value', []);
