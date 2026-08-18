@@ -19,6 +19,8 @@ import { ModelRequirementViewService } from "./services/model-requirement-view-s
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
 import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js";
 import { TCSD_ERROR_CODES, isTerminalJobStatus } from "./services/tcsd-pipeline-contract.js";
+import { TcsdDshStageExecutor } from "./services/tcsd-dsh-stage-executor.js";
+import { TcsdDshSkillRegistry } from "./services/tcsd-dsh-skill-registry.js";
 import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.js";
 import { TcsdHermesSkillRegistry } from "./services/tcsd-hermes-skill-registry.js";
 import { SoftwareDetailPipelineJobService, isTerminalSoftwareDetailJobStatus } from "./services/software-detail-pipeline-job-service.js";
@@ -1395,14 +1397,21 @@ export async function createHermesApp(options = {}) {
       parts: Number(config.hermes.maxUploadFileCount || MAX_MULTIPART_FILE_COUNT) + 2
     }
   });
-  const tcsdStageExecutor = new TcsdHermesStageExecutor();
-  const tcsdSkillRegistry = new TcsdHermesSkillRegistry({
-    command: tcsdStageExecutor.command,
-    commandArgsPrefix: tcsdStageExecutor.commandArgsPrefix,
-    profile: tcsdStageExecutor.profile,
-    stateDbPath: tcsdStageExecutor.stateDbPath,
-    catalog: tcsdStageExecutor.catalog
-  });
+  const tcsdStageExecutor = config.tcsdPipeline.stageExecutor === "dsh"
+    ? new TcsdDshStageExecutor()
+    : new TcsdHermesStageExecutor();
+  const tcsdSkillRegistry = config.tcsdPipeline.stageExecutor === "dsh"
+    ? new TcsdDshSkillRegistry({
+        catalog: tcsdStageExecutor.catalog,
+        profile: tcsdStageExecutor.preset
+      })
+    : new TcsdHermesSkillRegistry({
+        command: tcsdStageExecutor.command,
+        commandArgsPrefix: tcsdStageExecutor.commandArgsPrefix,
+        profile: tcsdStageExecutor.profile,
+        stateDbPath: tcsdStageExecutor.stateDbPath,
+        catalog: tcsdStageExecutor.catalog
+      });
   const pipelineRunGate = new SerialGate({
     concurrency: Math.max(1, Number(config.hermes?.taskConcurrency || 1) || 1)
   });
