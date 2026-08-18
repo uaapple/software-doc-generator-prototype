@@ -44,9 +44,13 @@ function publicRuntimeError(cause, timeoutMs) {
       code: TCSD_ERROR_CODES.workerUnavailable
     });
   }
+  const stderr = String(cause?.stderr || "").trim();
   return Object.assign(new Error("TCSD DSH headless session failed."), {
     code: TCSD_ERROR_CODES.stageRuntime,
-    details: { exitCode: Number.isInteger(cause?.code) ? cause.code : null }
+    details: {
+      exitCode: Number.isInteger(cause?.code) ? cause.code : null,
+      ...(stderr ? { stderr: stderr.slice(-2000) } : {})
+    }
   });
 }
 
