@@ -23,7 +23,7 @@ const composeArgs = [
   "--file",
   path.join(rootDir, "compose.mac.yaml")
 ];
-const actionsRequiringSecrets = new Set(["up", "build", "config", "restart", "test"]);
+const actionsRequiringSecrets = new Set(["up", "config", "restart", "test"]);
 const requiredSecrets = [
   "HERMES_AGENT_TOKEN",
   "MATLAB_GATEWAY_TOKEN",
@@ -208,7 +208,31 @@ async function main() {
     return;
   }
   if (requestedAction === "build") {
-    runDocker([...composeArgs, "build", "--pull"]);
+    const builds = [
+      {
+        file: "containers/worker/Containerfile",
+        image: getConfigValue("SDG_WORKER_IMAGE") || "sdg-hermes-worker:mac-dev"
+      },
+      {
+        file: "docker/platform.Containerfile",
+        image: getConfigValue("SDG_PLATFORM_IMAGE") || "sdg-platform:mac-dev"
+      }
+    ];
+    for (const build of builds) {
+      runDocker([
+        "buildx",
+        "build",
+        "--pull",
+        "--load",
+        "--platform",
+        "linux/amd64",
+        "--file",
+        build.file,
+        "--tag",
+        build.image,
+        rootDir
+      ]);
+    }
     return;
   }
   if (requestedAction === "config") {
