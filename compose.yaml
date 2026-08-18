@@ -201,6 +201,10 @@ services:
       - type: bind
         source: ${SDG_CONTAINER_DATA_DIR:-./.local/container/data}
         target: /var/lib/sdg/data
+      - type: bind
+        source: ${SDG_PROJECT_ADDONS_DIR:-./.local/project-addons}
+        target: /var/lib/sdg/project-addons
+        read_only: true
       - type: volume
         source: platform-skills
         target: /var/lib/sdg/skills
