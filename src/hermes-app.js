@@ -1908,6 +1908,23 @@ export async function createHermesApp(options = {}) {
         stdoutBytes: Buffer.byteLength(String(result?.stdout || "")),
         stderrBytes: Buffer.byteLength(String(result?.stderr || ""))
       });
+      // Fallback session log: the TCSD runner persists structured
+      // session.jsonl itself; this plain-text capture guarantees the
+      // frontend export has data even if the runner dump is unavailable.
+      if (outputDir) {
+        try {
+          const sessionDir = path.join(outputDir, ".tcsd-dsh");
+          await fs.mkdir(sessionDir, { recursive: true });
+          await fs.writeFile(
+            path.join(sessionDir, "session.log"),
+            `${String(result?.stdout || "")}${String(result?.stderr || "")}`,
+            "utf-8"
+          );
+        } catch (persistError) {
+          // Log persistence must never fail the task response.
+          console.error(`dsh task session.log persistence failed: ${persistError?.message || persistError}`);
+        }
+      }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       return res.status(500).json({

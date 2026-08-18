@@ -125,7 +125,14 @@ COPY skills/hermes/tcsd-stage-11-final-validation/ ./skills/hermes/tcsd-stage-11
 COPY skills/hermes/tcsd-stage-12-package-cleanup/ ./skills/hermes/tcsd-stage-12-package-cleanup/
 COPY presets/unit-test-case-generation-production/ ./presets/unit-test-case-generation-production/
 COPY containers/worker/headless-production-preset.patch.yml ./containers/worker/headless-production-preset.patch.yml
-COPY containers/worker/dsh-headless-tcsd.mjs /usr/local/lib/node_modules/@deepseek-ai/dsh/tcsd-headless-runner.mjs
+# The headless runner is replaced at the FILE level: DSH patch semantics reject
+# swapping a row's implementation (same id + different name is skipped), so the
+# image overwrites the stock @deepseek-ai/dsh-headless entry with the TCSD
+# runner (sync apply + session JSONL dump). The row keeps its id/name, so the
+# loader's app-entry resolution is untouched. The setgid transport C source was
+# dropped by the production integration (shell allowlist wrapper instead).
+COPY containers/worker/dsh-headless-tcsd.mjs /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-headless/lib/index.js
+RUN chmod 0644 /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-headless/lib/index.js
 COPY containers/worker/tcsd-gateway-transport /usr/local/bin/tcsd-gateway-transport
 COPY containers/worker/dsh-entrypoint.sh /usr/local/bin/tcsd-dsh-worker
 COPY containers/worker/THIRD_PARTY_NOTICES.md /opt/sdg/THIRD_PARTY_LICENSES/THIRD_PARTY_NOTICES.md
@@ -159,7 +166,7 @@ RUN mkdir -p \
       /var/lib/sdg/project-addons \
       /var/lib/sdg/tmp && \
     chmod 0755 /usr/local/bin/tcsd-dsh-worker /usr/local/bin/tcsd-gateway-transport && \
-    chmod 0644 /usr/local/lib/node_modules/@deepseek-ai/dsh/tcsd-headless-runner.mjs && \
+    chmod 0644 /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-headless/lib/index.js && \
     chown -R 10001:10001 /var/lib/sdg /opt/sdg/app /opt/sdg/THIRD_PARTY_LICENSES
 
 ARG IMAGE_REVISION=unknown

@@ -1,9 +1,14 @@
 # Applied only to the DSH headless profile. It adds the Worker production
 # composition and makes it the default agent preset for each one-shot session.
 #
-# The stock headless-runner is the profile's app entry: DISABLING it leaves the
-# loader with no app to reach ready state and `loader.await()` hangs forever.
-# Replace it in place (same id, our loader source) instead.
+# The TCSD headless runner is NOT swapped here: DSH patch semantics reject a
+# patch row whose `name` differs from the target row (skipped with a warning),
+# so a file:// replacement of the stock `headless-runner` never takes effect.
+# Instead the worker image overwrites the stock @deepseek-ai/dsh-headless
+# package entry (lib/index.js) with the TCSD runner at the FILE level; the row
+# keeps its id `headless-runner` and name `@deepseek-ai/dsh-headless`, so the
+# loader's app-entry resolution is untouched. DISABLING the stock row would
+# leave the loader with no app to reach ready state and `loader.await()` hangs.
 - insert:
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'
@@ -13,10 +18,3 @@
           - path: /var/lib/sdg/dsh-home/.agent-presets
             trust: user
         includeUserRoot: false
-
-- id: headless-runner
-  name: file:///usr/local/lib/node_modules/@deepseek-ai/dsh/tcsd-headless-runner.mjs
-  inject:
-    - headlessStartup
-  config:
-    task: !!js ctx.headlessStartup.task
