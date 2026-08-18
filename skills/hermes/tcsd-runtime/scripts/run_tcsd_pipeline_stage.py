@@ -282,7 +282,7 @@ def stage_run(
                 "schema": "tcsd-environment-gate/v2",
                 "jobId": job["jobId"],
                 "nonce": nonce,
-                "matlabRoot": str(matlab_root),
+                "matlabRoot": "host-matlab-gateway" if gateway_mode else str(matlab_root),
                 "python": sys.executable,
                 "runner": str(scripts() / "satk_eval.py"),
                 "pythonDependencies": {"passed": True, "modules": modules},
