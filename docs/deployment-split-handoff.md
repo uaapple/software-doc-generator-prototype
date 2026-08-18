@@ -530,7 +530,9 @@ npm run release:zip:windows-source
 `skills/hermes/tcsd-runtime/**` 一起进入 Windows 侧部署，不进入 Linux release。平台在启动
 容器前创建 `SDG_GATEWAY_SECRET_FILE` 指向的 root-owned `0440` 两行文件（只含
 `MATLAB_MCP_AUTH_TOKEN` 与 `MATLAB_GATEWAY_EVALUATE_TOKEN`）；不得将 token 放进 Compose
-`environment`、`.env`、日志或任务数据。Worker 的 setgid transport binary 只向 canonical
+`environment`、`.env`、日志或任务数据。setgid transport 与 `no-new-privileges` 不兼容，故
+Worker service 不设置该 Compose security option，并保留 `cap_drop: ALL`、只读根文件系统。
+Worker 的 setgid transport binary 只向 canonical
 `satk_eval.py` / `matlab_gateway_lease.py` Python 进程传递 token。`docs/docker-desktop-production-deployment.md`
 是 shared 运维文档；`tests/**` 是 dev-only。
 
