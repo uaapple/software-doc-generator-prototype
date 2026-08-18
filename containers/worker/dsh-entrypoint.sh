@@ -70,4 +70,5 @@ fi
 
 # The platform injects only model-provider variables into this process.
 # Gateway secrets are scoped to the approved Python transport scripts only.
-drop dsh --profile headless "$*"
+# DSH's HMR service requires node --expose-internals.
+drop node --expose-internals /usr/local/bin/dsh --profile headless "$@"

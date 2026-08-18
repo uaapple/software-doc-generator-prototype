@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 import { createHash, randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import path from "node:path";
 import { createWriteStream, promises as fs } from "node:fs";
 import { Transform } from "node:stream";
@@ -1862,6 +1862,13 @@ export async function createHermesApp(options = {}) {
           process.env.TCSD_DSH_PROFILE ||
           "headless"
       );
+      const dshCli = command.includes("/") || /^[A-Za-z]:[\\/]/.test(command)
+        ? command
+        : execFileSync(
+            "sh",
+            ["-c", `command -v ${JSON.stringify(command)}`],
+            { encoding: "utf-8" }
+          ).trim() || command;
       const environment = { ...process.env, NO_COLOR: "1" };
       if (jobId) {
         environment.TCSD_JOB_ID = jobId;
@@ -1876,8 +1883,8 @@ export async function createHermesApp(options = {}) {
       };
       if (cwd) options.cwd = cwd;
       const result = await execFileAsync(
-        command,
-        ["--profile", profile, taskPrompt],
+        process.execPath,
+        ["--expose-internals", dshCli, "--profile", profile, taskPrompt],
         options
       );
       return res.json({

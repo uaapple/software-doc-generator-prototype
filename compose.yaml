@@ -87,6 +87,7 @@ services:
       HERMES_BASE_URL: http://worker:3101
       HERMES_TRANSPORT: cli
       HERMES_COMMAND: /opt/sdg/venv/bin/hermes
+      TCSD_DSH_COMMAND: /usr/local/bin/dsh
       HERMES_HOME: /var/lib/sdg/hermes-home
       HERMES_STATE_DB_PATH: /var/lib/sdg/hermes-home/state.db
       HERMES_AUTH_TOKEN: ${HERMES_AGENT_TOKEN:?HERMES_AGENT_TOKEN must be set}

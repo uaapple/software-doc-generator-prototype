@@ -47,16 +47,21 @@ function dumpSessionLog(events, firstSeq) {
 }
 
 export async function apply(ctx, config) {
+  const step = (msg) => process.stderr.write(`[tcsd-runner] ${msg}\n`);
+  step("apply start");
   const exit = ctx.get("appExit");
   const io = { stdout: process.stdout, stderr: process.stderr, exit };
   try {
+    step("loader awaited");
     await ctx.get("loader")?.await();
+    step("loader done");
     const agents = ctx.get("agents");
     const defaultModel = ctx.get("agentDefaultModel");
     const sessions = ctx.get("sessions");
     const presets = ctx.get("agentPresets");
     if (!exit || !agents || !defaultModel || !sessions || !presets) throw new Error("TCSD headless DSH profile is missing its agent preset services");
     const selection = defaultModel.currentSelection();
+    step("selection: " + JSON.stringify(selection ? {provider: selection.provider, model: selection.model} : null));
     const { agent } = await agents.create({
       sessionId: SessionId(`session-${randomUUID()}`),
       meta: { cwd: process.cwd() },
@@ -66,15 +71,19 @@ export async function apply(ctx, config) {
         await presets.mount(agentCtx);
       }
     });
+    step("agent created, waiting idle");
     await agent.whenIdle();
     const firstSeq = agent.session.seq;
     agent.followup(createUserMessage({
       content: [{ type: "text", text: config.task }],
       source: { kind: "user" }
     }));
+    step("task followup sent, waiting idle");
     await agent.whenIdle();
+    step("idle done, flushing session");
     await sessions.flush(agent.session);
     const outcome = summarize(agent.session.events, firstSeq);
+    step("session flushed, outcome reason: " + (outcome.reason?.kind || "none"));
     dumpSessionLog(agent.session.events, firstSeq);
     io.stdout.write(`${outcome.text}\n`);
     if (outcome.reason?.kind === "error") io.stderr.write(`dsh: ${outcome.reason.error.code}: ${outcome.reason.error.message}\n`);

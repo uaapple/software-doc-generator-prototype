@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -164,7 +164,13 @@ export class TcsdDshStageExecutor {
     try {
       const result = await (this.transport === "api"
         ? this.dispatchToWorker(job, prompt)
-        : this.commandRunner(this.command, ["--profile", this.profile, prompt], {
+        : this.commandRunner(process.execPath, [
+            "--expose-internals",
+            this.resolveDshCli(),
+            "--profile",
+            this.profile,
+            prompt
+          ], {
             cwd: path.resolve(job.input.workspaceDir),
             env: this.sessionEnvironment(job),
             timeout: this.timeoutMs,
@@ -188,6 +194,24 @@ export class TcsdDshStageExecutor {
     } catch (cause) {
       throw publicRuntimeError(cause, this.timeoutMs);
     }
+  }
+
+  resolveDshCli() {
+    // DSH's HMR service requires node --expose-internals; the CLI is a JS
+    // module, so resolve its absolute path and launch it via process.execPath.
+    const configured = String(this.command || "").trim();
+    if (configured.includes("/") || /^[A-Za-z]:[\\/]/.test(configured)) {
+      return configured;
+    }
+    try {
+      const resolved = execFileSync("sh", ["-c", `command -v ${JSON.stringify(configured)}`], { encoding: "utf-8" }).trim();
+      if (resolved) {
+        return resolved;
+      }
+    } catch {
+      // keep the configured command name as a fallback
+    }
+    return configured;
   }
 
   async persistSessionTranscript(job, result, prompt) {
