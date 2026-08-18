@@ -227,6 +227,37 @@ def _control(inputs: dict[int, tuple[str, Any]], port: int) -> tuple[str, Any] |
     return None
 
 
+def _switch_control_port(criteria: str) -> int:
+    """Simulink Switch: the Criteria string names the control port explicitly
+    (e.g. 'u2 >= Threshold' -> control is port 2; data ports are 1 and 3).
+    Falls back to port 3 only when the criteria does not name a port."""
+    match = re.search(r"\bu(\d+)\b", str(criteria or ""))
+    if match:
+        try:
+            port = int(match.group(1))
+            if port >= 1:
+                return port
+        except ValueError:
+            pass
+    return 3
+
+
+def _parse_data_port_indices(raw: Any) -> list[int] | None:
+    """Parse MultiPortSwitch DataPortIndices like '{4,5,6,7}', '[4 5 6 7]' or
+    '4,5,6,7' into the legal selector values. None when absent/unparseable."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    cleaned = text.replace("{", "").replace("}", "").replace("[", "").replace("]", "")
+    try:
+        values = [int(float(part.strip())) for part in re.split(r"[,\s]+", cleaned) if part.strip()]
+    except ValueError:
+        return None
+    return values or None
+
+
 def _param_bounds(inputs: dict[int, tuple[str, Any]], port: int) -> dict[str, Any] | None:
     """Return (min, max, value) bounds for a parameter-driven input port, if
     the MATLAB collector attached them. Values are None when unavailable."""
@@ -346,14 +377,15 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
         if btype == "Switch":
             criteria = params.get("Criteria", "u2 >= Threshold")
             threshold = str(params.get("Threshold", ""))
-            control = _control(inputs, 3)
+            control_port = _switch_control_port(criteria)
+            control = _control(inputs, control_port)
             if control is None:
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"switch true ({criteria})", status="unresolved",
-                                        reason="missing_static_controller: 判据输入 in:3 未解析到根输入/常量"))
+                                        reason=f"missing_static_controller: 判据输入 in:{control_port} 未解析到根输入/常量"))
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"switch false ({criteria})", status="unresolved",
-                                        reason="missing_static_controller: 判据输入 in:3 未解析到根输入/常量"))
+                                        reason=f"missing_static_controller: 判据输入 in:{control_port} 未解析到根输入/常量"))
                 continue
             kind, value = control
             if kind == "param":
@@ -361,9 +393,20 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                     items.append(obligation(sid=sid, model=model, path=path,
                                             outcome=f"switch true ({criteria})", status="required",
                                             params={value: 1}))
-                    items.append(obligation(sid=sid, model=model, path=path,
+                    false_item = obligation(sid=sid, model=model, path=path,
                                             outcome=f"switch false ({criteria})", status="required",
-                                            params={value: 0}))
+                                            params={value: 0})
+                    # Scenario-activation evidence: when the calibration default
+                    # is known and pins one side (B02/B03/A11: non-zero default
+                    # on a `~= 0` criterion dead-locks the other branch), the
+                    # flip case is a deliberate default-override scenario case.
+                    default = _param_bounds(raw_input_by_port, control_port)
+                    if default is not None and default.get("value") is not None and default["value"] != 0:
+                        false_item["evidence_state"] = "scenario_activation_calibration_default"
+                        false_item["reason"] = (
+                            f"标定默认值 {value}={default['value']:g} 钉死判据 {criteria} 一侧；"
+                            f"此用例翻转默认值打开另一侧（场景激活）")
+                    items.append(false_item)
                 else:
                     items.append(obligation(sid=sid, model=model, path=path,
                                             outcome=f"switch true ({criteria})", status="unresolved",
@@ -542,8 +585,12 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                                         reason="missing_static_controller: selector in:1 未解析到根输入"))
                 continue
             name = selector[1]
-            data_port_order = params.get("DataPortOrder", "One-based")
-            values = range(count) if "Zero" in str(data_port_order) else range(1, count + 1)
+            indices = _parse_data_port_indices(params.get("DataPortIndices"))
+            if indices is not None:
+                values = indices
+            else:
+                data_port_order = params.get("DataPortOrder", "One-based")
+                values = range(count) if "Zero" in str(data_port_order) else range(1, count + 1)
             for value in values:
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"selector={value}", status="required",
@@ -642,14 +689,15 @@ def generate_obligations(slx: SlxModel, model: str) -> list[dict[str, Any]]:
         if btype == "Switch":
             criteria = params.get("Criteria", "u2 >= Threshold")
             threshold = params.get("Threshold", "")
-            control = slx.trace_input(sid, "3")
+            control_port = _switch_control_port(criteria)
+            control = slx.trace_input(sid, str(control_port))
             if control is None:
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"switch true ({criteria})", status="unresolved",
-                                        reason="missing_static_controller: 判据输入 in:3 上游不是根 Inport/字面常量"))
+                                        reason=f"missing_static_controller: 判据输入 in:{control_port} 上游不是根 Inport/字面常量"))
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"switch false ({criteria})", status="unresolved",
-                                        reason="missing_static_controller: 判据输入 in:3 上游不是根 Inport/字面常量"))
+                                        reason=f"missing_static_controller: 判据输入 in:{control_port} 上游不是根 Inport/字面常量"))
                 continue
             kind, value = control
             if kind == "input":
@@ -785,8 +833,12 @@ def generate_obligations(slx: SlxModel, model: str) -> list[dict[str, Any]]:
                                         reason="missing_static_controller: selector in:1 不是根 Inport"))
                 continue
             name = selector[1]
-            data_port_order = params.get("DataPortOrder", "One-based")
-            values = range(count) if "Zero" in data_port_order else range(1, count + 1)
+            indices = _parse_data_port_indices(params.get("DataPortIndices"))
+            if indices is not None:
+                values = indices
+            else:
+                data_port_order = params.get("DataPortOrder", "One-based")
+                values = range(count) if "Zero" in data_port_order else range(1, count + 1)
             for value in values:
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"selector={value}", status="required",
