@@ -1886,18 +1886,52 @@ export async function createHermesApp(options = {}) {
         environment.TCSD_RESOURCE_OWNER_JOB_ID = jobId;
       }
       environment.TCSD_OUTPUT_DIR = resolvedOutputDir;
-      const options = {
+      const sessionTimeoutMs = Number(config.tcsdPipeline?.dsh?.sessionTimeoutMs || 0) || 0;
+      const child = spawn(process.execPath, ["--expose-internals", dshCli, "--profile", profile, taskPrompt], {
+        cwd: resolvedCwd,
         env: environment,
-        maxBuffer: 16 * 1024 * 1024,
-        timeout: Number(config.tcsdPipeline?.dsh?.sessionTimeoutMs || 0) || 0,
+        stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true
-      };
-      options.cwd = resolvedCwd;
-      const result = await execFileAsync(
-        process.execPath,
-        ["--expose-internals", dshCli, "--profile", profile, taskPrompt],
-        options
-      );
+      });
+      let stdout = "";
+      let stderr = "";
+      // Live capture: mirror the session output to the task workspace so
+      // mid-run failures (e.g. LLM request retry loops) are diagnosable
+      // without waiting for session exit.
+      let liveStream = null;
+      try {
+        await fs.mkdir(path.join(resolvedOutputDir, ".tcsd-dsh"), { recursive: true });
+        liveStream = await fs.open(path.join(resolvedOutputDir, ".tcsd-dsh", "session.live.log"), "w");
+      } catch { liveStream = null; }
+      const writeLive = (text) => { if (liveStream) liveStream.write(text).catch(() => {}); };
+      child.stdout.on("data", (chunk) => { stdout += String(chunk); writeLive(String(chunk)); });
+      child.stderr.on("data", (chunk) => { stderr += String(chunk); writeLive(String(chunk)); });
+      const exitCode = await new Promise((resolve) => {
+        const timer = sessionTimeoutMs > 0
+          ? setTimeout(() => { child.kill("SIGTERM"); }, sessionTimeoutMs)
+          : null;
+        child.on("error", () => { if (timer) clearTimeout(timer); resolve(-1); });
+        child.on("close", (code) => { if (timer) clearTimeout(timer); resolve(code ?? -1); });
+      });
+      if (liveStream) await liveStream.close().catch(() => {});
+      // Plain-text session log (fallback; the runner persists structured
+      // session.jsonl itself).
+      try {
+        await fs.writeFile(
+          path.join(resolvedOutputDir, ".tcsd-dsh", "session.log"),
+          `${stdout}${stderr}`,
+          "utf-8"
+        );
+      } catch (persistError) {
+        console.error(`dsh task session.log persistence failed: ${persistError?.message || persistError}`);
+      }
+      if (exitCode !== 0) {
+        return res.status(500).json({
+          error: `DSH task execution failed with exit code ${exitCode}`,
+          code: "dsh_task_failed",
+          detail: String(stderr).slice(-4000)
+        });
+      }
       return res.json({
         jobId,
         status: "completed",
@@ -1905,26 +1939,9 @@ export async function createHermesApp(options = {}) {
         endedAt: new Date().toISOString(),
         durationMs: Date.now() - startedAt,
         sessionId: `dsh-${jobId || "task"}`,
-        stdoutBytes: Buffer.byteLength(String(result?.stdout || "")),
-        stderrBytes: Buffer.byteLength(String(result?.stderr || ""))
+        stdoutBytes: Buffer.byteLength(String(stdout || "")),
+        stderrBytes: Buffer.byteLength(String(stderr || ""))
       });
-      // Fallback session log: the TCSD runner persists structured
-      // session.jsonl itself; this plain-text capture guarantees the
-      // frontend export has data even if the runner dump is unavailable.
-      if (outputDir) {
-        try {
-          const sessionDir = path.join(outputDir, ".tcsd-dsh");
-          await fs.mkdir(sessionDir, { recursive: true });
-          await fs.writeFile(
-            path.join(sessionDir, "session.log"),
-            `${String(result?.stdout || "")}${String(result?.stderr || "")}`,
-            "utf-8"
-          );
-        } catch (persistError) {
-          // Log persistence must never fail the task response.
-          console.error(`dsh task session.log persistence failed: ${persistError?.message || persistError}`);
-        }
-      }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       return res.status(500).json({
