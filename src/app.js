@@ -564,10 +564,22 @@ export async function createApp() {
         });
       }
       const baseName = String(task.inputs?.modelSlx?.originalName || "model").replace(/\.[^.]+$/, "");
+      const fileName = `${baseName}_dsh_session_log.jsonl`;
+      if (logFile.endsWith("session.jsonl")) {
+        // Raw streaming deltas (assistant/chunk) dominate the file (≈69MB of
+        // a 74MB log for one task); the final content is fully carried by
+        // assistant/message. Trim them when serving so the export stays
+        // comparable to the DSH desktop export (a few MB), for old and new
+        // tasks alike.
+        const raw = await fs.readFile(logFile, "utf8");
+        const trimmed = raw.split("\n").filter((line) => !line.includes('"type":"assistant/chunk"')).join("\n");
+        res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+        return res.type("application/octet-stream").send(trimmed);
+      }
       // The session log lives under the dotfile directory .tcsd-dsh; send's
       // default dotfiles handling ("ignore") 404s any dotfile path, so allow
       // dotfiles explicitly for this download.
-      res.download(logFile, `${baseName}_dsh_session_log.jsonl`, { dotfiles: "allow" });
+      res.download(logFile, fileName, { dotfiles: "allow" });
     } catch (error) {
       next(error);
     }

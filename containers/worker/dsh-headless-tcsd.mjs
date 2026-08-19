@@ -70,6 +70,11 @@ function dumpSessionLog(events, firstSeq) {
   const lines = [];
   for (const event of events) {
     if (event.seq < firstSeq) continue;
+    // Raw streaming deltas dominate the size (438k chunk events ≈ 69MB for
+    // one task); the final content is fully carried by assistant/message.
+    // Skip them so the persisted log stays comparable to the DSH desktop
+    // export (a few MB of semantic events).
+    if (event.type === "assistant/chunk") continue;
     lines.push(JSON.stringify(event));
   }
   if (!lines.length) return;
