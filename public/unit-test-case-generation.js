@@ -150,7 +150,13 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
         </dl>
         <h4>尝试与会话</h4>
         <pre>${escapeHtml(attemptSummary)}</pre>
+        <h4>输入</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.input))}</pre>
+        <h4>结果</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.result))}</pre>
         ${coverage ? `<h4>覆盖率</h4><pre>${escapeHtml(compactJson(coverage))}</pre>` : ""}
+        <h4>工具日志摘要</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.toolLogs))}</pre>
         <h4>宿主验证</h4>
         <pre>${escapeHtml(compactJson(checkpoint?.validation || stage.error))}</pre>
         <h4>产物</h4>

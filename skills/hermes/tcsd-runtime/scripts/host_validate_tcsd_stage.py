@@ -14,6 +14,17 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+# The platform semantic validator invokes this script with `python -I -B`
+# (isolated mode), where sys.path[0] is NOT the script directory; without this
+# bootstrap the sibling-module imports below fail with ModuleNotFoundError.
+# Under a plain invocation sys.path[0] already is the script directory and the
+# normalization is a no-op.
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+SCRIPT_DIRECTORY_TEXT = str(SCRIPT_DIRECTORY)
+if not sys.path or sys.path[0] != SCRIPT_DIRECTORY_TEXT:
+    sys.path[:] = [entry for entry in sys.path if entry != SCRIPT_DIRECTORY_TEXT]
+    sys.path.insert(0, SCRIPT_DIRECTORY_TEXT)
+
 from openpyxl import load_workbook
 
 from run_tcsd_pipeline_stage import simulation_backfill_evidence
