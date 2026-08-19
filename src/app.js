@@ -564,7 +564,10 @@ export async function createApp() {
         });
       }
       const baseName = String(task.inputs?.modelSlx?.originalName || "model").replace(/\.[^.]+$/, "");
-      res.download(logFile, `${baseName}_dsh_session_log.jsonl`);
+      // The session log lives under the dotfile directory .tcsd-dsh; send's
+      // default dotfiles handling ("ignore") 404s any dotfile path, so allow
+      // dotfiles explicitly for this download.
+      res.download(logFile, `${baseName}_dsh_session_log.jsonl`, { dotfiles: "allow" });
     } catch (error) {
       next(error);
     }
