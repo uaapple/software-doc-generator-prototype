@@ -11,6 +11,23 @@ set -eu
 
 mkdir -p "$TCSD_WORKSPACE_ROOT" "$DSH_HOME" "$SATK_MCP_LOG_FOLDER"
 
+# DSH scrubs credential-shaped env names (TOKEN/KEY/SECRET) from every child
+# process, so the transport wrapper cannot inherit the Gateway tokens from
+# env. Materialize them into a 0600 file the wrapper sources at exec time;
+# the tokens are then removed from this process env. (0600 owner = service
+# user; the model could read it with an explicit path, accepted per the
+# operator's credential policy.)
+TCSD_GATEWAY_SECRETS_FILE="${TCSD_GATEWAY_SECRETS_FILE:-/var/lib/sdg/hermes-home/gateway-secrets.env}"
+if [ -n "${MATLAB_MCP_AUTH_TOKEN:-}" ] || [ -n "${MATLAB_GATEWAY_EVALUATE_TOKEN:-}" ]; then
+  {
+    [ -n "${MATLAB_MCP_AUTH_TOKEN:-}" ] && printf 'MATLAB_MCP_AUTH_TOKEN=%s\n' "$MATLAB_MCP_AUTH_TOKEN"
+    [ -n "${MATLAB_GATEWAY_EVALUATE_TOKEN:-}" ] && printf 'MATLAB_GATEWAY_EVALUATE_TOKEN=%s\n' "$MATLAB_GATEWAY_EVALUATE_TOKEN"
+  } > "$TCSD_GATEWAY_SECRETS_FILE"
+  chmod 0600 "$TCSD_GATEWAY_SECRETS_FILE"
+  unset MATLAB_MCP_AUTH_TOKEN MATLAB_GATEWAY_TOKEN MATLAB_GATEWAY_EVALUATE_TOKEN
+fi
+export TCSD_GATEWAY_SECRETS_FILE
+
 preset_source=/opt/sdg/app/presets/unit-test-case-generation-production
 preset_target="$DSH_HOME/.agent-presets/unit-test-case-generation-production"
 # Force-refresh on every start: the preset is image-owned read-only config and
