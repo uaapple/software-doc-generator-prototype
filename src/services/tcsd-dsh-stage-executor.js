@@ -196,8 +196,22 @@ export class TcsdDshStageExecutor {
         });
         let stdout = "";
         let stderr = "";
-        child.stdout.on("data", (chunk) => { stdout += String(chunk); });
-        child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+        // Live capture: mirror the session stderr to the task workspace so
+        // mid-run failures (e.g. LLM request retry loops) are diagnosable
+        // without waiting for session exit.
+        const liveLog = path.join(path.resolve(job.input.outputDir), ".tcsd-dsh", "session.live.log");
+        let liveStream = null;
+        try {
+          const { promises: fsLive } = await import("node:fs");
+          await fsLive.mkdir(path.dirname(liveLog), { recursive: true });
+          liveStream = await fsLive.open(liveLog, "w");
+        } catch { liveStream = null; }
+        const appendLive = async (text) => { if (liveStream) await liveStream.write(text).catch(() => {}); };
+        child.stdout.on("data", (chunk) => { stdout += String(chunk); appendLive(String(chunk)); });
+        child.stderr.on("data", (chunk) => { stderr += String(chunk); appendLive(String(chunk)); });
+        const closeLive = () => { if (liveStream) { liveStream.close().catch(() => {}); liveStream = null; } };
+        child.on("close", closeLive);
+        child.on("error", closeLive);
         exitPromise = new Promise((resolve) => {
           child.on("error", (cause) => resolve({ code: -1, stdout, stderr, error: cause }));
           child.on("close", (code) => resolve({ code, stdout, stderr }));
