@@ -1514,7 +1514,20 @@ export class UnitTestCaseGenerationService {
       if (!stat.isFile()) {
         continue;
       }
-      const expectedValueSummary = await summarizeWorkbookExpectedValues(absolutePath);
+      // The runner writes the final workbook right before job completion;
+      // a poll can observe the file mid-write (ZIP parse fails). Retry with
+      // backoff so a transient unreadable state does not fail the task.
+      let expectedValueSummary = null;
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        try {
+          expectedValueSummary = await summarizeWorkbookExpectedValues(absolutePath);
+          break;
+        } catch (error) {
+          const message = String(error?.message || "");
+          if (attempt >= 5 || !/ZIP|central directory|end of central/i.test(message)) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
+      }
       artifacts.push({
         id: randomUUID(),
         kind: candidate.kind || "tcsd_workbook",
