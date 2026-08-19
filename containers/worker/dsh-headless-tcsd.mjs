@@ -93,7 +93,7 @@ function dumpSessionLog(events, firstSeq) {
  * turns, steps) without waiting for session exit. assistant/chunk raw deltas
  * are skipped. Returns a disposer.
  */
-function startLiveEventStream(events, firstSeq, outputDir) {
+function startLiveEventStream(session, firstSeq, outputDir) {
   if (!outputDir) return () => {};
   const logPath = path.join(outputDir, ".tcsd-dsh", "session.events.jsonl");
   let lastSeq = firstSeq;
@@ -109,7 +109,9 @@ function startLiveEventStream(events, firstSeq, outputDir) {
   }
   const flush = () => {
     try {
-      const snapshot = Array.isArray(events) ? events : [];
+      // session.events returns a frozen snapshot refreshed on every access
+      // (invalidated on append); re-read it each tick so the stream grows.
+      const snapshot = Array.isArray(session.events) ? session.events : [];
       for (let index = 0; index < snapshot.length; index += 1) {
         const event = snapshot[index];
         if (!event || event.seq < lastSeq) continue;
@@ -126,6 +128,7 @@ function startLiveEventStream(events, firstSeq, outputDir) {
   timer.unref?.();
   return () => {
     if (timer) clearInterval(timer);
+    flush();
     try { closeSync(stream.fd); } catch {}
   };
 }
@@ -166,7 +169,7 @@ async function run(ctx, task, io) {
     source: { kind: "user" }
   }));
   step("task followup sent, waiting idle");
-  const disposeLive = startLiveEventStream(agent.session.events, firstSeq, process.env.TCSD_OUTPUT_DIR || "");
+  const disposeLive = startLiveEventStream(agent.session, firstSeq, process.env.TCSD_OUTPUT_DIR || "");
   try {
     await agent.whenIdle();
   } finally {
