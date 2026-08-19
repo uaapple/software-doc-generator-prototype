@@ -1547,9 +1547,13 @@ export class UnitTestCaseGenerationService {
         expectedOutputPattern: task.hermes?.expectedOutputPattern || unitTestCaseConfig().expectedOutputPattern
       });
     }
+    // Host contract: require_exp_values means the workbook carries at least
+    // one expValue overall (validate_tcsd_workbook.py), NOT one per Test row —
+    // the deterministic baseline case (TC_001) legitimately has no assertion.
+    // Align the platform completion check with that rule.
     const invalidArtifacts = artifacts.filter((artifact) =>
       Number(artifact.testCaseCount || 0) < 1 ||
-      artifact.missingExpectedValueTestCases.length > 0
+      Number(artifact.expValueCount || 0) < 1
     );
     if (invalidArtifacts.length) {
       const missingTestCases = invalidArtifacts.flatMap((artifact) =>
