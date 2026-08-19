@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, writeFileSync, writeSync } from "node:fs";
 import path from "node:path";
 import z from "@deepseek-ai/schemastery";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
@@ -101,8 +101,8 @@ function startLiveEventStream(events, firstSeq, outputDir) {
   let stream = null;
   try {
     mkdirSync(path.dirname(logPath), { recursive: true });
-    const fd = require("node:fs").openSync(logPath, "a");
-    stream = { fd, write(text) { require("node:fs").writeSync(fd, text); } };
+    const fd = openSync(logPath, "a");
+    stream = { fd, write(text) { writeSync(fd, text); } };
   } catch (error) {
     process.stderr.write(`dsh: failed to open live event stream: ${error instanceof Error ? error.message : String(error)}\n`);
     return () => {};
@@ -126,7 +126,7 @@ function startLiveEventStream(events, firstSeq, outputDir) {
   timer.unref?.();
   return () => {
     if (timer) clearInterval(timer);
-    try { require("node:fs").closeSync(stream.fd); } catch {}
+    try { closeSync(stream.fd); } catch {}
   };
 }
 
