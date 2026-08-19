@@ -13,7 +13,6 @@ from openpyxl import load_workbook
 
 
 STEP_RE = re.compile(r"^\s*\[\+\s*([0-9.]+)\s*(ms|s)\s*\](.*)$", re.IGNORECASE)
-SUPPLEMENTAL_ITEM_RE = re.compile(r"MC/DC supplemental case for ([^;]+);")
 NUMBER = r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?"
 VALUE = rf"({NUMBER}|\[\s*{NUMBER}(?:[\s,]+{NUMBER})*\s*\])"
 PARAM_RE = re.compile(rf"^\s*p\s+([A-Za-z_]\w*)\s*=\s*{VALUE}\s*;")
@@ -48,7 +47,6 @@ def parse_assignments(
     text: str,
     input_names: set[str],
     context: str,
-    execution_control_names: set[str] | None = None,
 ) -> tuple[dict[str, object], dict[str, object], list[dict[str, str]]]:
     inputs: dict[str, object] = {}
     params: dict[str, object] = {}
@@ -72,8 +70,6 @@ def parse_assignments(
         if assign_match:
             if assign_match.group(1) in input_names:
                 inputs[assign_match.group(1)] = parse_value(assign_match.group(2))
-            elif assign_match.group(1) in (execution_control_names or set()):
-                continue
             else:
                 unknowns.append(unknown_assignment(context, assign_match.group(1), line))
     return inputs, params, unknowns
@@ -103,7 +99,6 @@ def parse_steps(
     input_names: set[str],
     row: int,
     test_id: str,
-    execution_control_names: set[str] | None = None,
 ) -> tuple[list[dict], list[dict[str, str]]]:
     steps: list[dict] = []
     unknowns: list[dict[str, str]] = []
@@ -123,9 +118,7 @@ def parse_steps(
         if current is None:
             continue
         context = f"row {row} test {test_id} action step {len(steps) + 1}"
-        inputs, params, line_unknowns = parse_assignments(
-            raw, input_names, context, execution_control_names
-        )
+        inputs, params, line_unknowns = parse_assignments(raw, input_names, context)
         unknowns.extend(line_unknowns)
         current["input_updates"].update(inputs)
         current["param_updates"].update(params)
@@ -139,11 +132,8 @@ def parse_steps(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workbook", required=True)
-    parser.add_argument("--model", default="")
     parser.add_argument("--inputs", required=True, help="Comma-separated root input names")
-    parser.add_argument("--execution-controls", default="", help="Comma-separated root execution-control names")
     parser.add_argument("--output", required=True)
-    parser.add_argument("--coverage-ir")
     parser.add_argument(
         "--allow-unknown-assignments",
         action="store_true",
@@ -152,17 +142,6 @@ def main() -> int:
     args = parser.parse_args()
 
     input_names = {name.strip() for name in args.inputs.split(",") if name.strip()}
-    execution_control_names = {
-        name.strip() for name in args.execution_controls.split(",") if name.strip()
-    }
-    coverage_items: dict[str, dict] = {}
-    if args.coverage_ir:
-        coverage_ir = json.loads(Path(args.coverage_ir).read_text(encoding="utf-8"))
-        coverage_items = {
-            str(item.get("id")): item
-            for item in coverage_ir.get("items", [])
-            if isinstance(item, dict) and item.get("id")
-        }
     wb = load_workbook(args.workbook)
     ws = wb["TCSD"]
     group_inputs: dict[str, object] = {}
@@ -173,12 +152,7 @@ def main() -> int:
             continue
         for offset in range(0, 2):
             context = f"row {row + offset} TestGroup initialization"
-            inputs, params, unknowns = parse_assignments(
-                ws.cell(row + offset, 6).value or "",
-                input_names,
-                context,
-                execution_control_names,
-            )
+            inputs, params, unknowns = parse_assignments(ws.cell(row + offset, 6).value or "", input_names, context)
             unknown_assignments.extend(unknowns)
             group_inputs.update(inputs)
             group_params.update(params)
@@ -190,41 +164,11 @@ def main() -> int:
             continue
         test_id = ws.cell(row, 1).value
         context = f"row {row} test {test_id} initialization"
-        test_inputs, test_params, unknowns = parse_assignments(
-            ws.cell(row, 6).value or "",
-            input_names,
-            context,
-            execution_control_names,
-        )
+        test_inputs, test_params, unknowns = parse_assignments(ws.cell(row, 6).value or "", input_names, context)
         unknown_assignments.extend(unknowns)
         init_inputs, init_params = merge_assignments(group_inputs, group_params, test_inputs, test_params)
-        steps, step_unknowns = parse_steps(
-            ws.cell(row, 7).value or "",
-            input_names,
-            row,
-            str(test_id or ""),
-            execution_control_names,
-        )
+        steps, step_unknowns = parse_steps(ws.cell(row, 7).value or "", input_names, row, str(test_id or ""))
         unknown_assignments.extend(step_unknowns)
-        description = str(ws.cell(row, 5).value or "")
-        target: dict[str, object] = {}
-        item_match = SUPPLEMENTAL_ITEM_RE.search(description)
-        if item_match:
-            item = coverage_items.get(item_match.group(1).strip()) or {}
-            recipe = item.get("controlRecipe") if isinstance(item.get("controlRecipe"), dict) else {}
-            vector = str(recipe.get("condition_vector") or "")
-            block = item.get("block") if isinstance(item.get("block"), dict) else {}
-            if (
-                recipe.get("probe_vector_compatible") is True
-                and vector
-                and set(vector) <= {"T", "F"}
-                and block.get("sid")
-            ):
-                target = {
-                    "coverage_item_id": str(item.get("id")),
-                    "operator_id": str(block.get("sid")),
-                    "expected_vector": [value == "T" for value in vector],
-                }
         tests.append(
             {
                 "row": row,
@@ -233,7 +177,6 @@ def main() -> int:
                 "init_values": init_inputs,
                 "init_params": init_params,
                 "steps": steps,
-                "target": target,
             }
         )
     if unknown_assignments and not args.allow_unknown_assignments:
@@ -244,10 +187,7 @@ def main() -> int:
         return 1
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps({"schema": "tcsd-extracted-cases/v1", "model": args.model, "tests": tests}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    out.write_text(json.dumps({"tests": tests}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(out)
     return 0
 

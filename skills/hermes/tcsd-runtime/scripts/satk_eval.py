@@ -85,14 +85,16 @@ def gateway_url(environ=None) -> str:
     return str(values.get("SATK_GATEWAY_URL") or "").strip().rstrip("/")
 
 
-def gateway_headers(environ=None) -> dict[str, str]:
+def gateway_headers(environ=None, *, evaluate: bool = False) -> dict[str, str]:
     values = os.environ if environ is None else environ
-    headers = {"Content-Type": "application/json"}
     token = str(values.get("MATLAB_MCP_AUTH_TOKEN") or "").strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    evaluate_token = str(values.get("MATLAB_GATEWAY_EVALUATE_TOKEN") or "").strip()
-    if evaluate_token:
+    if not token:
+        raise RuntimeError("MATLAB_MCP_AUTH_TOKEN is unavailable to the controlled Gateway script")
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    if evaluate:
+        evaluate_token = str(values.get("MATLAB_GATEWAY_EVALUATE_TOKEN") or "").strip()
+        if not evaluate_token:
+            raise RuntimeError("MATLAB_GATEWAY_EVALUATE_TOKEN is unavailable to the controlled Gateway script")
         headers["X-SDG-Evaluate-Token"] = evaluate_token
         headers["X-SDG-Gateway-Caller"] = "tcsd-runtime"
     return headers
@@ -114,11 +116,12 @@ def gateway_request(
     normalized_method = str(method or "").upper()
     retryable = normalized_method in {"GET", "PUT", "DELETE"}
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    requires_evaluate_token = normalized_method == "POST" and route.startswith("/api/jobs/") and not route.endswith("/cancel")
     for attempt in range(len(retry_delays) + 1):
         request = urllib.request.Request(
             f"{base_url}{route}",
             data=body,
-            headers=gateway_headers(environ),
+            headers=gateway_headers(environ, evaluate=requires_evaluate_token),
             method=normalized_method,
         )
         try:
@@ -342,6 +345,8 @@ def mirror_runtime_matlab_scripts(code: str, *, environ=None) -> str:
 def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
     values = os.environ if environ is None else environ
     mapping_id = str(values.get("SATK_GATEWAY_MAPPING_ID") or "worker-data").strip()
+    if mapping_id != "worker-data":
+        raise RuntimeError("SATK_GATEWAY_MAPPING_ID must be worker-data")
     workspace_id = f"satk-{uuid.uuid4().hex}"
     asset_id = "matlab-code"
     job_id = f"eval-{uuid.uuid4().hex}"

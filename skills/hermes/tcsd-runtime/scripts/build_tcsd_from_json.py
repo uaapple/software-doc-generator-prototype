@@ -11,12 +11,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from validate_tcsd_workbook import (
-    load_interface_execution_controls,
-    load_interface_names,
-    print_text_report,
-    validate_workbook,
-)
+from validate_tcsd_workbook import load_interface_names, print_text_report, validate_workbook
 
 
 HEADERS = [
@@ -179,14 +174,7 @@ def main() -> int:
     wb.save(output)
     if not args.skip_workbook_validation and (args.inputs or args.outputs or args.interface_json):
         root_inputs, root_outputs = load_interface_names(args.interface_json, args.inputs, args.outputs)
-        execution_controls = load_interface_execution_controls(args.interface_json)
-        report = validate_workbook(
-            output,
-            root_inputs,
-            root_outputs,
-            require_exp_values=False,
-            execution_controls=execution_controls,
-        )
+        report = validate_workbook(output, root_inputs, root_outputs, require_exp_values=False)
         if report["status"] != "passed":
             print_text_report(report)
             return 1

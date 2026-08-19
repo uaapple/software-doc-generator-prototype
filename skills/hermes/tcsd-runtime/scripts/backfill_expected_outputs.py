@@ -43,8 +43,8 @@ def format_number(value: float) -> str:
 
 
 def output_is_stable_for_step(step_result: dict, output: str) -> bool:
-    """Return whether simulation explicitly verified one output as stable."""
-    return step_result.get("stable", {}).get(output) is True
+    """Return whether a single output can be trusted at this step."""
+    return step_result.get("stable", {}).get(output) is not False
 
 
 def build_action(

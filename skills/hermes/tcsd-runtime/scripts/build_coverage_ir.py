@@ -18,20 +18,6 @@ from typing import Any
 
 SCHEMA = "simulink-ut-tcsd-coverage-ir/v1"
 VALID_STATUS = {"required", "unsupported", "unresolved", "unreachable", "covered"}
-MAX_TRACE_BYTES = 16 * 1024 * 1024
-MAX_OPERATOR_COUNT = 200_000
-
-
-def structured_error(code: str, message: str, details: dict[str, Any] | None = None) -> int:
-    payload: dict[str, Any] = {
-        "schema": "tcsd-deterministic-script-error/v1",
-        "code": code,
-        "message": message,
-    }
-    if details:
-        payload["details"] = details
-    print(json.dumps(payload, ensure_ascii=False), file=sys.stderr)
-    return 1
 
 
 def load(path: str | Path) -> dict[str, Any]:
@@ -74,25 +60,6 @@ def planner_module() -> Any:
     return module
 
 
-def contains_temporal_trace(node: Any) -> bool:
-    if isinstance(node, dict):
-        kind = str(node.get("kind") or "").lower()
-        labels = " ".join(
-            str(node.get(key) or "")
-            for key in ("name", "maskType", "referenceBlock", "semantic", "blockType")
-        ).lower()
-        compact = "".join(character for character in labels if character.isalnum())
-        if kind == "stateful" or any(
-            token in compact
-            for token in ("edgerising", "edgefalling", "risingedge", "fallingedge")
-        ):
-            return True
-        return any(contains_temporal_trace(value) for value in node.values())
-    if isinstance(node, list):
-        return any(contains_temporal_trace(value) for value in node)
-    return False
-
-
 def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> dict[str, Any]:
     status = str(item.get("status") or "required").lower()
     if status not in VALID_STATUS:
@@ -108,10 +75,6 @@ def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> 
         "controller": {"direct_inputs": norm_map(match.get("inputs")), "parameters": norm_map(match.get("params"))},
         "nested_logic": item.get("condition_states") or item.get("operator_inputs") or {},
         "sensitization_context": item.get("sensitization_context") or {},
-        "patternType": item.get("pattern_type") or "",
-        "controlRecipe": item.get("control_recipe") if isinstance(item.get("control_recipe"), dict) else {},
-        "mcdcPairs": item.get("mcdc_pairs") if isinstance(item.get("mcdc_pairs"), list) else [],
-        "detectorEvidence": item.get("detector_evidence") if isinstance(item.get("detector_evidence"), dict) else {},
         "stimulus": norm_stimulus(item.get("stimulus")),
         "reachability": {"status": status, "reason": item.get("reason"), "issues": item.get("issues") or []},
         "simulation_evidence": evidence if isinstance(evidence, dict) else {},
@@ -122,36 +85,18 @@ def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> 
 def build_ir(
     trace_payload: dict[str, Any], *, probe_payload: dict[str, Any] | None = None,
     evidence_obligations: dict[str, Any] | None = None,
-    include_nested_operators: bool = False,
+    decision_obligations: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    planner = planner_module()
-    reports = planner.reports(trace_payload)
-    if not reports:
-        raise ValueError("logical traces contain no operator reports")
+    operators = trace_payload.get("operators")
+    if isinstance(operators, dict):
+        # MATLAB jsonencode emits a bare object for a single operator struct.
+        trace_payload = {**trace_payload, "operators": [operators]}
+    reports = [trace_payload] if isinstance(trace_payload.get("operators"), list) else [v for v in trace_payload.values() if isinstance(v, dict) and isinstance(v.get("operators"), list)]
     model = str(trace_payload.get("model") or (reports[0].get("model") if reports else ""))
+    planner = planner_module()
     items: list[dict[str, Any]] = []
-    operator_count = 0
     for report in reports:
-        top = planner.top_operators(report)
-        if include_nested_operators:
-            top_ids = {str(item.get("id") or item.get("sid") or "") for item in top}
-            nested = [
-                item for item in planner.operator_records(report)
-                if str(item.get("id") or item.get("sid") or "") not in top_ids
-            ]
-            operators = [*top, *nested]
-        else:
-            operators = top
-        operator_count += len(operators)
-        if operator_count > MAX_OPERATOR_COUNT:
-            raise ValueError(
-                f"logical operator count {operator_count} exceeds the supported limit "
-                f"({MAX_OPERATOR_COUNT})"
-            )
-        for operator in operators:
-            operator_start = len(items)
-            operator_id = str(operator.get("id") or operator.get("sid") or "")
-            planning_tier = "top" if operator_id in {str(item.get("id") or item.get("sid") or "") for item in top} else "nested"
+        for operator in planner.top_operators(report):
             op_id = str(operator.get("id") or operator.get("sid") or operator.get("block_path"))
             # A decision is always explicit even when detailed MCDC mapping is unsupported.
             items.append(normalize_item({
@@ -161,10 +106,8 @@ def build_ir(
             }, "Decision", model=model))
             planned, summary = planner.build_for_operator(model, operator)
             for obligation in planned:
-                obligation_class = str(obligation.get("coverage_class") or "MCDC")
-                items.append(normalize_item(obligation, obligation_class, model=model))
-                condition_states = (obligation.get("condition_states") or {}) if obligation_class == "MCDC" else {}
-                for condition, desired in condition_states.items():
+                items.append(normalize_item(obligation, "MCDC", model=model))
+                for condition, desired in (obligation.get("condition_states") or {}).items():
                     items.append(normalize_item({
                         "id": f"{obligation['id']}_{condition}", "model": model,
                         "block_path": operator.get("block_path"), "sid": operator.get("sid"),
@@ -177,8 +120,6 @@ def build_ir(
                     "id": f"{op_id}_analysis", "model": model, "block_path": operator.get("block_path"),
                     "sid": operator.get("sid"), "status": "unsupported", "reason": "; ".join(summary["issues"]),
                 }, "MCDC", model=model))
-            for planned_item in items[operator_start:]:
-                planned_item["planningTier"] = planning_tier
     if probe_payload:
         for item in items:
             evidence = probe_payload.get(model, probe_payload).get("observations", []) if isinstance(probe_payload.get(model, probe_payload), dict) else []
@@ -186,8 +127,10 @@ def build_ir(
     # Probe-derived obligations carry the only trustworthy temporal stimulus and
     # are therefore allowed to replace structural planning items with the same
     # identity. Unsupported/unresolved items are retained verbatim as evidence.
-    if evidence_obligations:
-        raw_items = evidence_obligations.get("obligations", evidence_obligations)
+    for extra in (evidence_obligations, decision_obligations):
+        if not extra:
+            continue
+        raw_items = extra.get("obligations", extra)
         if isinstance(raw_items, list):
             for obligation in raw_items:
                 if isinstance(obligation, dict):
@@ -195,52 +138,7 @@ def build_ir(
     # Stable ID ordering makes output independent of traversal/dict order.
     unique = {item["id"]: item for item in items}
     values = [unique[key] for key in sorted(unique)]
-    status_summary = {
-        status: sum(item["reachability"]["status"] == status for item in values)
-        for status in sorted(VALID_STATUS)
-    }
-    executable = [
-        item for item in values
-        if item["reachability"]["status"] == "required"
-        and (
-            item["controller"]["direct_inputs"]
-            or item["controller"]["parameters"]
-            or item["stimulus"]["steps"]
-        )
-    ]
-    issue_text = {
-        item["id"]: " ".join(str(value) for value in item["reachability"].get("issues", []))
-        for item in values
-    }
-    readiness = {
-        "totalTargetCount": len(values),
-        "executableTargetCount": len(executable),
-        "missingRootControlPathCount": sum(
-            item["reachability"]["status"] == "unresolved"
-            and any(token in issue_text[item["id"]].lower() for token in ("controller", "root input", "mapping"))
-            for item in values
-        ),
-        "unresolvedThresholdCount": sum(
-            item["reachability"]["status"] == "unresolved"
-            and any(token in issue_text[item["id"]].lower() for token in ("threshold", "constant value", "resolved"))
-            for item in values
-        ),
-        "temporalStateTargetCount": sum(
-            contains_temporal_trace(port.get("trace"))
-            for report in reports
-            for operator in planner.operator_records(report)
-            if isinstance(operator, dict)
-            for port in operator.get("ports", [])
-            if isinstance(port, dict)
-        ),
-        "unsupportedTargetCount": status_summary.get("unsupported", 0),
-    }
-    return {
-        "schema": SCHEMA,
-        "model": model,
-        "items": values,
-        "summary": {**status_summary, "executionReadiness": readiness},
-    }
+    return {"schema": SCHEMA, "model": model, "items": values, "summary": {status: sum(item["reachability"]["status"] == status for item in values) for status in sorted(VALID_STATUS)}}
 
 
 def main() -> int:
@@ -249,33 +147,13 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--probe-results")
     parser.add_argument("--obligations", help="probe or coverage-report-derived obligations to merge into the IR")
-    parser.add_argument("--include-nested-operators", action="store_true")
+    parser.add_argument("--decision-obligations", help="simulink-ut-decision-obligations/v1 to merge into the IR")
     args = parser.parse_args()
-    try:
-        trace_path = Path(args.logical_traces)
-        if not trace_path.is_file():
-            return structured_error("coverage_ir_traces_missing", f"logical traces file not found: {trace_path}")
-        if trace_path.stat().st_size > MAX_TRACE_BYTES:
-            return structured_error(
-                "coverage_ir_traces_too_large",
-                f"logical traces file exceeds the supported size ({trace_path.stat().st_size} > {MAX_TRACE_BYTES} bytes)",
-            )
-        trace_payload = load(trace_path)
-        if not isinstance(trace_payload, dict):
-            return structured_error("coverage_ir_traces_invalid", "logical traces must be a JSON object")
-        obligations_payload = load(args.obligations) if args.obligations else None
-        probe_payload = load(args.probe_results) if args.probe_results else None
-        result = build_ir(
-            trace_payload,
-            probe_payload=probe_payload,
-            evidence_obligations=obligations_payload,
-            include_nested_operators=args.include_nested_operators,
-        )
-    except (KeyError, TypeError, ValueError, RecursionError, IndexError, MemoryError, OSError) as cause:
-        return structured_error(
-            "coverage_ir_build_failed",
-            f"{type(cause).__name__}: {cause}",
-        )
+    result = build_ir(
+        load(args.logical_traces), probe_payload=load(args.probe_results) if args.probe_results else None,
+        evidence_obligations=load(args.obligations) if args.obligations else None,
+        decision_obligations=load(args.decision_obligations) if args.decision_obligations else None,
+    )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

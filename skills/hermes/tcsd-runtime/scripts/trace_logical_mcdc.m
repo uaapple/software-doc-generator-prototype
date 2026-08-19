@@ -50,7 +50,8 @@ for m = 1:numel(modelNames)
     report.model = modelName;
     report.sample_time = model_sample_time(modelName);
     report.operator_count = numel(items);
-    report.operators = items;
+    % Force a row array so jsonencode emits a JSON array even for zero/one operator.
+    report.operators = items(:).';
     allReports.(matlab.lang.makeValidName(modelName)) = report;
     write_json(fullfile(rootDir, 'outputs', [modelName '_logical_traces.json']), report);
     bdclose(modelName);
@@ -172,7 +173,6 @@ switch node.blockType
     case 'SubSystem'
         node.kind = 'subsystem';
         node.source = trace_subsystem_outport(blockPath, srcPortNumber, rootNames, depth, seen);
-        node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
     case 'From'
         node.kind = 'from';
         node.gotoTag = safe_param(blockPath, 'GotoTag');
@@ -184,7 +184,7 @@ switch node.blockType
     case 'Constant'
         node.kind = 'constant';
         node.value = safe_param(blockPath, 'Value');
-        [node.resolvedValue, node.resolvedSource] = resolve_expression_with_source(node.value, blockPath);
+        node.resolvedValue = resolve_expression(node.value);
     case 'RelationalOperator'
         node.kind = 'relational';
         node.operator = safe_param(blockPath, 'Operator');
@@ -197,12 +197,12 @@ switch node.blockType
         node.kind = 'switch';
         node.criteria = safe_param(blockPath, 'Criteria');
         node.threshold = safe_param(blockPath, 'Threshold');
-        [node.resolvedThreshold, node.resolvedThresholdSource] = resolve_expression_with_source(node.threshold, blockPath);
+        node.resolvedThreshold = resolve_expression(node.threshold);
         node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
     case {'UnitDelay', 'Delay', 'Memory'}
         node.kind = 'stateful';
         node.initialCondition = safe_param(blockPath, 'InitialCondition');
-        [node.resolvedInitialCondition, node.resolvedInitialConditionSource] = resolve_expression_with_source(node.initialCondition, blockPath);
+        node.resolvedInitialCondition = resolve_expression(node.initialCondition);
         node.delayLength = safe_param(blockPath, 'DelayLength');
         node.sampleTime = safe_param(blockPath, 'SampleTime');
         node.inputs = trace_block_inputs(blockPath, rootNames, depth + 1, seen);
@@ -228,8 +228,6 @@ node.path = blockPath;
 node.sid = logic_id(blockPath);
 node.blockType = safe_param(blockPath, 'BlockType');
 node.name = safe_param(blockPath, 'Name');
-node.maskType = safe_param(blockPath, 'MaskType');
-node.referenceBlock = safe_param(blockPath, 'ReferenceBlock');
 node.outport = double(srcPortNumber);
 end
 
@@ -298,8 +296,6 @@ names = {};
 switch blockType
     case 'Gain'
         names = {'Gain'};
-    case 'Bias'
-        names = {'Bias'};
     case {'Sum', 'Product'}
         names = {'Inputs'};
     case 'DataTypeConversion'
@@ -311,8 +307,7 @@ switch blockType
 end
 for i = 1:numel(names)
     params.(names{i}) = safe_param(blockPath, names{i});
-    [params.([names{i} 'Resolved']), params.([names{i} 'ResolvedSource'])] = ...
-        resolve_expression_with_source(params.(names{i}), blockPath);
+    params.([names{i} 'Resolved']) = resolve_expression(params.(names{i}));
 end
 end
 
@@ -324,68 +319,34 @@ end
 end
 
 function value = resolve_expression(expression)
-[value, ~] = resolve_expression_with_source(expression, '');
-end
-
-function [value, source] = resolve_expression_with_source(expression, blockPath)
 value = [];
-source = '';
 text = strtrim(char(string(expression)));
 if isempty(text)
     return;
 end
-number = str2double(text);
-if ~isnan(number)
-    value = number;
-    source = 'model_literal';
-    return;
-elseif strcmpi(text, 'true')
-    value = true;
-    source = 'model_literal';
-    return;
-elseif strcmpi(text, 'false')
-    value = false;
-    source = 'model_literal';
-    return;
-end
-if ~isempty(blockPath)
-    try
-        raw = slResolve(text, blockPath);
-        [value, ok] = normalize_resolved_value(raw);
-        if ok
-            source = 'model_context';
-            return;
-        end
-    catch
-    end
-end
 try
     raw = evalin('base', text);
-    [value, ok] = normalize_resolved_value(raw);
-    if ok
-        source = 'base_workspace';
+    if isobject(raw) && isprop(raw, 'Value')
+        raw = raw.Value;
+    end
+    if isnumeric(raw) || islogical(raw)
+        if isscalar(raw)
+            value = double(raw);
+        elseif numel(raw) <= 32
+            value = double(raw);
+        end
+    elseif ischar(raw) || (isstring(raw) && isscalar(raw))
+        value = char(string(raw));
     end
 catch
-end
-end
-
-function [value, ok] = normalize_resolved_value(raw)
-value = [];
-ok = false;
-if isobject(raw) && isprop(raw, 'Value')
-    raw = raw.Value;
-end
-if isnumeric(raw) || islogical(raw)
-    if isscalar(raw)
-        value = double(raw);
-        ok = true;
-    elseif numel(raw) <= 32
-        value = double(raw);
-        ok = true;
+    number = str2double(text);
+    if ~isnan(number)
+        value = number;
+    elseif strcmpi(text, 'true')
+        value = true;
+    elseif strcmpi(text, 'false')
+        value = false;
     end
-elseif ischar(raw) || (isstring(raw) && isscalar(raw))
-    value = char(string(raw));
-    ok = true;
 end
 end
 

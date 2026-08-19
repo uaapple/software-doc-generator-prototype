@@ -1,5 +1,4 @@
 import { execFile, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +11,6 @@ import {
 
 const execFileAsync = promisify(execFile);
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 function parseArgs(values) {
   const result = {};
@@ -165,36 +163,15 @@ try {
   }
   const executionManifest = checkpoints[11]?.executionManifest;
   const planningMapping = executionManifest?.evidence?.planningMappingAssessment;
-  const oracle = executionManifest?.oracle;
-  const caseOutputCounts = oracle?.caseOutputCounts && typeof oracle.caseOutputCounts === "object"
-    ? Object.values(oracle.caseOutputCounts)
-    : [];
-  const oracleValueCount = caseOutputCounts.reduce((total, counts) => (
-    total + Object.values(counts || {}).reduce((subtotal, count) => subtotal + Number(count || 0), 0)
-  ), 0);
-  const finalWorkbook = path.resolve(workspace, String(executionManifest?.workbook || ""));
   if (
     executionManifest?.authority !== "host" ||
     executionManifest?.evidence?.checkpointCount !== 12 ||
     planningMapping?.authority !== "planning" ||
     planningMapping?.blocking !== false ||
     planningMapping?.supersededBy?.stageIndex !== 9 ||
-    planningMapping?.supersededBy?.authority !== "measured-simulink-coverage" ||
-    oracle?.authority !== "host" ||
-    oracle?.status !== "complete" ||
-    ![8, 11].includes(Number(oracle?.sourceStageIndex)) ||
-    !Number.isInteger(Number(oracle?.testCaseCount)) ||
-    Number(oracle.testCaseCount) < 1 ||
-    !Number.isInteger(Number(oracle?.expValueCount)) ||
-    Number(oracle.expValueCount) < Number(oracle.testCaseCount) ||
-    !Array.isArray(oracle?.testsWithoutExpectedValues) ||
-    oracle.testsWithoutExpectedValues.length !== 0 ||
-    caseOutputCounts.length !== Number(oracle.testCaseCount) ||
-    oracleValueCount !== Number(oracle.expValueCount) ||
-    oracle?.simulationResult !== executionManifest?.simulation?.result ||
-    oracle?.workbookSha256 !== sha256(await fs.readFile(finalWorkbook))
+    planningMapping?.supersededBy?.authority !== "measured-simulink-coverage"
   ) {
-    throw new Error("Host execution manifest lacks twelve-checkpoint/planning/oracle completeness evidence");
+    throw new Error("Host execution manifest lacks twelve-checkpoint/planning-supersession evidence");
   }
   const planningAssessmentPath = path.resolve(workspace, planningMapping.path);
   const planningAssessment = JSON.parse(await fs.readFile(planningAssessmentPath, "utf8"));
@@ -228,13 +205,6 @@ try {
     runtimeBundleHash: sourceRuntime.bundleHash,
     runtimeFileCount: installedRuntime.fileCount,
     checkpointCount: executionManifest.evidence.checkpointCount,
-    oracle: {
-      sourceStageIndex: oracle.sourceStageIndex,
-      testCaseCount: oracle.testCaseCount,
-      expValueCount: oracle.expValueCount,
-      testsWithoutExpectedValues: oracle.testsWithoutExpectedValues,
-      workbookSha256: oracle.workbookSha256
-    },
     stage7ExpValues,
     stage8ExpValues,
     planningMappingStatus: planningAssessment.status,

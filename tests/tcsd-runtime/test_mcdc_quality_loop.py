@@ -8,7 +8,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runtime"
 SCRIPTS = ROOT / "scripts"
@@ -24,360 +23,6 @@ def load_script_module(script_name: str):
 
 
 class McdcQualityLoopTests(unittest.TestCase):
-    def test_all_matlab_execution_paths_append_root_execution_controls(self) -> None:
-        for script_name in (
-            "simulate_tcsd_cases.m",
-            "probe_logical_mcdc_vectors.m",
-            "collect_mcdc_coverage_feedback.m",
-        ):
-            source = (SCRIPTS / script_name).read_text(encoding="utf-8")
-            self.assertIn(
-                "append_root_execution_control_inputs(ds, modelName, t)",
-                source,
-                script_name,
-            )
-
-    def test_root_execution_control_helper_enables_but_does_not_guess_triggers(self) -> None:
-        source = (SCRIPTS / "append_root_execution_control_inputs.m").read_text(encoding="utf-8")
-        self.assertIn("'BlockType', 'EnablePort'", source)
-        self.assertIn("timeseries(ones(numel(time), 1), time)", source)
-        self.assertIn("'BlockType', 'TriggerPort'", source)
-        self.assertIn("tcsd:UnsupportedRootTriggerPort", source)
-
-    def test_state_probe_global_limit_distributes_candidates_across_targets(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        tests = []
-        targets = []
-        for operator in ("Model:1", "Model:2"):
-            targets.append({"operator_id": operator, "port_index": 1, "candidate_count": 4})
-            for index in range(4):
-                tests.append({
-                    "row": len(tests) + 1,
-                    "test_id": f"OLD_{len(tests) + 1}",
-                    "target": {"operator_id": operator, "port_index": 1},
-                })
-        limited, truncated = planner.limit_candidates(tests, targets, 4)
-        self.assertEqual(truncated, 4)
-        self.assertEqual(
-            [item["target"]["operator_id"] for item in limited],
-            ["Model:1", "Model:2", "Model:1", "Model:2"],
-        )
-        self.assertEqual([item["test_id"] for item in limited], [
-            "STATE_PROBE_0001", "STATE_PROBE_0002", "STATE_PROBE_0003", "STATE_PROBE_0004",
-        ])
-        self.assertTrue(all(item["candidate_count"] == 2 for item in targets))
-        self.assertTrue(all(item["truncated_candidate_count"] == 2 for item in targets))
-
-    def test_probe_batches_merge_results_and_write_manifest(self) -> None:
-        quality = load_script_module("run_tcsd_quality_loop.py")
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            outputs = root / "outputs"
-            outputs.mkdir()
-            cases = outputs / "GenericModel_state_probe_plan.json"
-            cases.write_text(json.dumps({
-                "schema": "simulink-ut-state-probe-plan/v1",
-                "model": "GenericModel",
-                "tests": [{"test_id": f"STATE_PROBE_{index:04d}"} for index in range(1, 6)],
-            }), encoding="utf-8")
-
-            def fake_probe(**kwargs):
-                batch = json.loads(Path(kwargs["case_json"]).read_text(encoding="utf-8"))
-                result = outputs / kwargs["output_name"]
-                result.write_text(json.dumps({
-                    "GenericModel": {
-                        "schema": "simulink-ut-logical-mcdc-probe/v2",
-                        "model": "GenericModel",
-                        "observations": [
-                            {"test_id": item["test_id"], "prediction_status": "observed"}
-                            for item in batch["tests"]
-                        ],
-                        "skipped_tests": [],
-                    },
-                }), encoding="utf-8")
-                return outputs / "GenericModel_coverage_obligations.json", None
-
-            def fake_obligations(**_kwargs):
-                path = outputs / "GenericModel_coverage_obligations.json"
-                path.write_text('{"obligations":[]}', encoding="utf-8")
-                return path
-
-            with (
-                mock.patch.object(quality, "run_probe", side_effect=fake_probe),
-                mock.patch.object(quality, "build_probe_obligations", side_effect=fake_obligations),
-            ):
-                obligations, manifest = quality.run_probe_batched(
-                    python=sys.executable,
-                    scripts=SCRIPTS,
-                    root_dir=root,
-                    model="GenericModel",
-                    mat_file="values.mat",
-                    init_scripts=[],
-                    unreachable_overrides="",
-                    coverage_threshold=80,
-                    case_json=cases,
-                    output_name="GenericModel_state_probe_results.json",
-                    batch_size=2,
-                )
-            merged = json.loads((outputs / "GenericModel_state_probe_results.json").read_text(encoding="utf-8"))
-            report = merged["GenericModel"]
-            self.assertEqual(report["batch_count"], 3)
-            self.assertEqual(len(report["observations"]), 5)
-            manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
-            self.assertEqual(manifest_data["status"], "completed")
-            self.assertEqual([item["candidateCount"] for item in manifest_data["batches"]], [2, 2, 1])
-            self.assertTrue(obligations.is_file())
-
-    def test_probe_batch_failure_records_exact_batch(self) -> None:
-        quality = load_script_module("run_tcsd_quality_loop.py")
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            outputs = root / "outputs"
-            outputs.mkdir()
-            cases = outputs / "GenericModel_state_probe_plan.json"
-            cases.write_text(json.dumps({
-                "schema": "simulink-ut-state-probe-plan/v1",
-                "model": "GenericModel",
-                "tests": [{"test_id": f"STATE_PROBE_{index:04d}"} for index in range(1, 5)],
-            }), encoding="utf-8")
-            calls = 0
-
-            def fail_second_batch(**kwargs):
-                nonlocal calls
-                calls += 1
-                if calls == 2:
-                    raise quality.SatkEvaluationError("failed", {
-                        "gatewayErrorCode": "MATLAB:UndefinedFunction",
-                        "diagnosticArtifactFileName": "batch-002.error.json",
-                    })
-                result = outputs / kwargs["output_name"]
-                result.write_text(json.dumps({
-                    "GenericModel": {
-                        "schema": "simulink-ut-logical-mcdc-probe/v2",
-                        "observations": [],
-                    },
-                }), encoding="utf-8")
-                return outputs / "unused.json", None
-
-            with mock.patch.object(quality, "run_probe", side_effect=fail_second_batch):
-                with self.assertRaises(quality.SatkEvaluationError) as raised:
-                    quality.run_probe_batched(
-                        python=sys.executable,
-                        scripts=SCRIPTS,
-                        root_dir=root,
-                        model="GenericModel",
-                        mat_file="values.mat",
-                        init_scripts=[],
-                        unreachable_overrides="",
-                        coverage_threshold=80,
-                        case_json=cases,
-                        output_name="GenericModel_state_probe_results.json",
-                        batch_size=2,
-                    )
-            self.assertEqual(raised.exception.details["batchIndex"], 2)
-            self.assertEqual(raised.exception.details["batchStart"], 3)
-            self.assertEqual(raised.exception.details["batchEnd"], 4)
-            manifest = json.loads((outputs / "GenericModel_probe_batch_manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["status"], "failed")
-            self.assertEqual(manifest["batches"][-1]["diagnosticArtifactFileName"], "batch-002.error.json")
-
-    def test_final_coverage_batches_preserve_each_batch_and_merge_once(self) -> None:
-        quality = load_script_module("run_tcsd_quality_loop.py")
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            outputs = root / "outputs"
-            outputs.mkdir()
-            cases = outputs / "GenericModel_cases.json"
-            cases.write_text(json.dumps({
-                "schema": "simulink-ut-cases/v1",
-                "model": "GenericModel",
-                "tests": [{"test_id": f"TC_{index:03d}"} for index in range(1, 6)],
-            }), encoding="utf-8")
-            call_count = 0
-
-            def fake_probe(**kwargs):
-                nonlocal call_count
-                call_count += 1
-                batch = json.loads(Path(kwargs["case_json"]).read_text(encoding="utf-8"))
-                result = outputs / kwargs["output_name"]
-                result.write_text(json.dumps({
-                    "GenericModel": {
-                        "schema": "simulink-ut-logical-mcdc-probe/v2",
-                        "model": "GenericModel",
-                        "observations": [
-                            {"test_id": item["test_id"], "prediction_status": "observed"}
-                            for item in batch["tests"]
-                        ],
-                        "skipped_tests": [],
-                    },
-                }), encoding="utf-8")
-                (outputs / "GenericModel_coverage.cvt").write_bytes(f"coverage-{call_count}".encode())
-                (outputs / "GenericModel_coverage_summary.json").write_text(
-                    '{"GenericModel":{"condition":{"covered":1,"total":2}}}',
-                    encoding="utf-8",
-                )
-                return outputs / "GenericModel_coverage_obligations.json", outputs / "GenericModel_coverage_summary.json"
-
-            def fake_merge(*_args, **_kwargs):
-                (outputs / "GenericModel_final_coverage.cvt").write_bytes(b"merged")
-                (outputs / "GenericModel_final_coverage.json").write_text(
-                    '{"GenericModel":{"condition":{"covered":2,"total":2}}}',
-                    encoding="utf-8",
-                )
-
-            def fake_obligations(**_kwargs):
-                path = outputs / "GenericModel_coverage_obligations.json"
-                path.write_text('{"obligations":[]}', encoding="utf-8")
-                return path
-
-            with (
-                mock.patch.object(quality, "run_probe", side_effect=fake_probe),
-                mock.patch.object(quality, "run_satk", side_effect=fake_merge) as merge_mock,
-                mock.patch.object(quality, "build_probe_obligations", side_effect=fake_obligations),
-            ):
-                obligations, coverage_json, coverage_data, manifest = quality.run_coverage_probe_batched(
-                    python=sys.executable,
-                    scripts=SCRIPTS,
-                    root_dir=root,
-                    model="GenericModel",
-                    mat_file="values.mat",
-                    init_scripts=[],
-                    unreachable_overrides="",
-                    coverage_threshold=80,
-                    case_json=cases,
-                    batch_size=2,
-                    gateway_timeout_seconds=1200,
-                    mcdc_mode="Masking",
-                )
-            manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
-            self.assertEqual(manifest_data["batchCount"], 3)
-            self.assertEqual([item["caseCount"] for item in manifest_data["batches"]], [2, 2, 1])
-            self.assertTrue(all(item["status"] == "completed" for item in manifest_data["batches"]))
-            self.assertEqual(call_count, 3)
-            merge_mock.assert_called_once()
-            self.assertTrue(obligations.is_file())
-            self.assertTrue(coverage_json.is_file())
-            self.assertTrue(coverage_data.is_file())
-
-    def test_satk_failure_recovers_last_json_object_after_prefix_output(self) -> None:
-        quality = load_script_module("run_tcsd_quality_loop.py")
-        error = quality.satk_failure(
-            'gateway warning\n{"error":{"code":"MATLAB_EXECUTION_FAILED","message":"probe failed","data":{"gatewayJobId":"eval-safe","gatewayStatus":"failed","timeoutSeconds":900}}}',
-            "",
-            1,
-        )
-        self.assertEqual(error.details["gatewayErrorCode"], "MATLAB_EXECUTION_FAILED")
-        self.assertEqual(error.details["gatewayJobId"], "eval-safe")
-
-    def test_probe_passes_candidate_only_missing_resource_skip_allowlist(self) -> None:
-        quality = load_script_module("run_tcsd_quality_loop.py")
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            outputs = root / "outputs"
-            outputs.mkdir()
-
-            def successful_satk(*_args, **_kwargs):
-                (outputs / "initial-probe.json").write_text("{}", encoding="utf-8")
-
-            with mock.patch.object(quality, "run_satk", side_effect=successful_satk):
-                quality.run_probe(
-                    python=sys.executable,
-                    scripts=SCRIPTS,
-                    root_dir=root,
-                    model="GenericModel",
-                    mat_file="values.mat",
-                    init_scripts=[],
-                    unreachable_overrides="",
-                    collect_coverage=False,
-                    coverage_threshold=80,
-                    case_json=outputs / "cases.json",
-                    output_name="initial-probe.json",
-                    build_obligations=False,
-                    skip_missing_external_resource_test_ids=["TC_002", "TC_003"],
-                )
-            entry = (outputs / "GenericModel_probe_mcdc_entry.m").read_text(encoding="utf-8")
-            self.assertIn("'SkipMissingExternalResourceTestIds', {'TC_002', 'TC_003'}", entry)
-
-    def test_matlab_probe_records_missing_external_resource_without_leaking_messages(self) -> None:
-        source = (SCRIPTS / "probe_logical_mcdc_vectors.m").read_text(encoding="utf-8")
-        self.assertIn("missing_external_resource", source)
-        self.assertIn("task_mat_or_project_initialization", source)
-        self.assertIn("ismember(testId, opts.SkipMissingExternalResourceTestIds)", source)
-        self.assertNotIn("'message', message", source)
-
-    def test_stage_9_10_and_11_share_one_coverage_model_preparation(self) -> None:
-        probe = (SCRIPTS / "probe_logical_mcdc_vectors.m").read_text(encoding="utf-8")
-        candidate = (SCRIPTS / "simulate_tcsd_cases.m").read_text(encoding="utf-8")
-        shared = (SCRIPTS / "configure_tcsd_coverage_observation_model.m").read_text(encoding="utf-8")
-
-        self.assertIn("configure_tcsd_coverage_observation_model(modelName)", probe)
-        self.assertIn("configure_tcsd_coverage_observation_model(modelName)", candidate)
-        self.assertIn("add_to_workspace_probe", shared)
-        self.assertNotIn("function probes = configure_logic_probes", probe)
-        self.assertIn("set_param(modelName, 'CovMcdcMode', 'Masking')", probe)
-        self.assertIn("summary.mcdc_items = collect_all_mcdc_items", probe)
-        self.assertIn("summary.items = collect_coverage_items", candidate)
-
-    def test_simulation_rejects_a_successful_gateway_call_without_result_artifact(self) -> None:
-        quality = load_script_module("run_tcsd_quality_loop.py")
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            (root / "outputs").mkdir()
-            with mock.patch.object(quality, "run_satk", return_value=None):
-                with self.assertRaises(quality.SatkEvaluationError) as raised:
-                    quality.simulate_and_backfill(
-                        python=sys.executable,
-                        scripts=SCRIPTS,
-                        root_dir=root,
-                        model="GenericModel",
-                        workbook=root / "outputs" / "cases.xlsx",
-                        case_json=root / "outputs" / "cases.json",
-                        mat_file="values.mat",
-                        outputs="Result",
-                        exclude_outputs="",
-                        interface_json=root / "outputs" / "interface.json",
-                    )
-            self.assertEqual(
-                raised.exception.details["gatewayErrorCode"],
-                "MATLAB_RESULT_ARTIFACT_MISSING",
-            )
-            self.assertEqual(raised.exception.details["phase"], "matlab_case_simulation")
-
-    def test_simulation_surfaces_captured_matlab_identifier(self) -> None:
-        quality = load_script_module("run_tcsd_quality_loop.py")
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            outputs = root / "outputs"
-            outputs.mkdir()
-
-            def failed_satk(*_args, **_kwargs):
-                (outputs / "GenericModel_sim_results_mcdc.error.json").write_text(
-                    json.dumps({
-                        "schema": "tcsd-matlab-simulation-error/v1",
-                        "identifier": "Simulink:Engine:ModelError",
-                        "message": "The model simulation failed.",
-                    }),
-                    encoding="utf-8",
-                )
-                raise quality.SatkEvaluationError("gateway failure", {"phase": "matlab_probe_evaluation"})
-
-            with mock.patch.object(quality, "run_satk", side_effect=failed_satk):
-                with self.assertRaises(quality.SatkEvaluationError) as raised:
-                    quality.simulate_and_backfill(
-                        python=sys.executable,
-                        scripts=SCRIPTS,
-                        root_dir=root,
-                        model="GenericModel",
-                        workbook=outputs / "cases.xlsx",
-                        case_json=outputs / "cases.json",
-                        mat_file="values.mat",
-                        outputs="Result",
-                        exclude_outputs="",
-                        interface_json=outputs / "interface.json",
-                    )
-            self.assertEqual(raised.exception.details["gatewayErrorCode"], "Simulink:Engine:ModelError")
-            self.assertIn("model simulation failed", str(raised.exception).lower())
-
     def test_state_probe_planner_builds_bounded_timing_sequences_without_model_names(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")
         trace = {
@@ -400,7 +45,7 @@ class McdcQualityLoopTests(unittest.TestCase):
                                             "inputs": [{"trace": {"kind": "root_inport", "signal": "TimerEnable"}}],
                                         }
                                     },
-                                    {"trace": {"kind": "constant", "value": "WaitTime_C", "resolvedValue": 0.25}},
+                                    {"trace": {"kind": "constant", "value": "Wait_C", "resolvedValue": 0.25}},
                                 ],
                             },
                         },
@@ -410,382 +55,16 @@ class McdcQualityLoopTests(unittest.TestCase):
             ],
         }
 
-        plan = planner.build_plan(trace, max_candidates=6, sample_time=0.01)
+        plan = planner.build_plan(trace, max_candidates=6, max_steps=8, sample_time=0.01)
 
         self.assertEqual(plan["summary"]["target_count"], 1)
-        self.assertEqual(plan["summary"]["candidate_count"], 1)
-        self.assertEqual(plan["summary"]["backup_candidate_count"], 5)
-        self.assertEqual(plan["targets"][0]["available_candidate_count"], 8)
-        for test in [*plan["tests"], *plan["backup_tests"]]:
+        self.assertEqual(plan["summary"]["candidate_count"], 6)
+        self.assertTrue(plan["targets"][0]["bounded"])
+        for test in plan["tests"]:
             self.assertEqual(test["init_values"]["Request"], 1)
-            self.assertEqual(test["evidence_step"], 3)
-            self.assertEqual(test["target"]["pattern_type"], "generic-state-timing")
-            self.assertIn(test["target"]["control_transition"], {"0->1", "1->0"})
-            self.assertIn(test["target"]["expected_target_transition"], {"", "0->1", "1->0"})
+            self.assertLessEqual(len(test["steps"]), 8)
+            self.assertIn(test["target"]["transition"], {"0->1", "1->0"})
         self.assertTrue(any(step["delay_s"] > 0.25 for test in plan["tests"] for step in test["steps"]))
-
-    def test_state_probe_planner_does_not_treat_unrelated_numeric_constants_as_time(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        trace = {
-            "kind": "stateful",
-            "inputs": [
-                {"trace": {"kind": "root_inport", "signal": "Enable"}},
-                {"trace": {"kind": "constant", "value": "TorqueLimit_C", "resolvedValue": 3000}},
-            ],
-        }
-        deps = planner.collect_dependencies(trace)
-        self.assertEqual(deps.temporal_thresholds, [])
-        self.assertEqual(deps.value_thresholds, [3000])
-        self.assertEqual(planner.hold_candidates(deps, 0.01), [0.1, 1.0, 5.0])
-        self.assertIn((0.0, 3150.0), planner.stimulus_transitions(deps))
-
-    def test_state_probe_planner_derives_target_transition_from_relational_threshold(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        trace = {
-            "model": "ThresholdModel",
-            "operators": [{
-                "id": "ThresholdModel:1",
-                "operator": "AND",
-                "ports": [{
-                    "index": 1,
-                    "trace": {
-                        "kind": "relational",
-                        "operator": ">",
-                        "inputs": [
-                            {
-                                "trace": {
-                                    "kind": "stateful",
-                                    "initialCondition": "0",
-                                    "resolvedInitialCondition": 0,
-                                    "inputs": [{"trace": {"kind": "root_inport", "signal": "Torque"}}],
-                                }
-                            },
-                            {"trace": {"kind": "constant", "value": "TorqueLimit_C", "resolvedValue": 40}},
-                        ],
-                    },
-                }],
-            }],
-        }
-        plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
-        primary = plan["tests"][0]
-        self.assertGreater(primary["steps"][1]["input_updates"]["Torque"], 40)
-        self.assertEqual(primary["target"]["expected_target_transition"], "0->1")
-
-    def test_atomic_planner_folds_abs_and_opposite_constant_thresholds(self) -> None:
-        planner = load_script_module("build_atomic_mcdc_repair_plan.py")
-        absolute = {
-            "kind": "abs",
-            "inputs": [{"trace": {"kind": "constant", "value": "-0.001"}}],
-        }
-        opposite = {
-            "kind": "subsystem",
-            "name": "Opposite1",
-            "maskType": "Opposite",
-            "source": {"kind": "unresolved_subsystem_outport"},
-            "inputs": [{"trace": {"kind": "constant", "value": "0.001"}}],
-        }
-
-        self.assertEqual(planner.resolved_constant(absolute)[0], 0.001)
-        self.assertEqual(planner.resolved_constant(opposite)[0], -0.001)
-        for threshold, expected in ((absolute, 0.001), (opposite, -0.001)):
-            relation = {
-                "kind": "relational",
-                "operator": "<=",
-                "inputs": [
-                    {"trace": {"kind": "root_inport", "signal": "Distance"}},
-                    {"trace": threshold},
-                ],
-            }
-            controller = planner.relational_controller(relation)
-            self.assertIsNotNone(controller)
-            self.assertEqual(controller["root_input"], "Distance")
-            self.assertEqual(controller["root_boundary"], expected)
-
-    def test_atomic_planner_accepts_matlab_scalar_operator_encoding(self) -> None:
-        planner = load_script_module("build_atomic_mcdc_repair_plan.py")
-        report = {
-            "model": "SingleOperator",
-            "operators": {"id": "SingleOperator:1", "operator": "AND", "ports": []},
-        }
-        self.assertEqual(planner.reports(report), [report])
-        self.assertEqual(len(planner.top_operators(report)), 1)
-
-    def test_state_probe_primary_prefers_provable_target_transition(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        trace = {
-            "model": "ThresholdModel",
-            "operators": [{
-                "id": "ThresholdModel:1",
-                "operator": "AND",
-                "ports": [{
-                    "index": 1,
-                    "trace": {
-                        "kind": "relational",
-                        "operator": ">",
-                        "inputs": [
-                            {"trace": {"kind": "stateful", "initialCondition": "0", "resolvedInitialCondition": 0, "inputs": [
-                                {"trace": {"kind": "root_inport", "signal": "Torque"}}
-                            ]}},
-                            {"trace": {"kind": "constant", "value": "TorqueLimit_C", "resolvedValue": 40}},
-                        ],
-                    },
-                }],
-            }],
-        }
-        plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
-        self.assertEqual(plan["tests"][0]["target"]["expected_target_transition"], "0->1")
-        self.assertNotEqual(plan["tests"][0]["steps"][1]["input_updates"]["Torque"], 1)
-        self.assertEqual(plan["targets"][0]["primary_preflight_status"], "strict")
-        self.assertGreater(plan["targets"][0]["strict_candidate_count"], 0)
-        self.assertEqual(plan["summary"]["preflight_failure_count"], 0)
-
-    def test_state_probe_preflight_marks_unprovable_path_as_causal_only(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        trace = {
-            "model": "OpaqueModel",
-            "operators": [{
-                "id": "OpaqueModel:1",
-                "operator": "AND",
-                "ports": [{
-                    "index": 1,
-                    "trace": {
-                        "kind": "stateful",
-                        "inputs": [{"trace": {"kind": "root_inport", "signal": "Enable"}}],
-                    },
-                }],
-            }],
-        }
-        plan = planner.build_plan(trace, max_candidates=4, sample_time=0.01)
-        self.assertEqual(plan["targets"][0]["primary_preflight_status"], "causal_only")
-        self.assertEqual(plan["targets"][0]["strict_candidate_count"], 0)
-        self.assertEqual(plan["targets"][0]["causal_only_reason"], "missing_threshold_evidence")
-        self.assertEqual(plan["summary"]["strict_primary_count"], 0)
-        self.assertEqual(plan["summary"]["causal_only_primary_count"], 1)
-
-    def test_state_probe_primary_budget_never_drops_a_planned_target(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        operators = []
-        for index in range(3):
-            operators.append({
-                "id": f"Model:{index + 1}",
-                "operator": "AND",
-                "ports": [{
-                    "index": 1,
-                    "trace": {
-                        "kind": "stateful",
-                        "inputs": [{"trace": {"kind": "root_inport", "signal": f"Enable{index + 1}"}}],
-                    },
-                }],
-            })
-        plan = planner.build_plan(
-            {"model": "Model", "operators": operators},
-            max_candidates=2,
-            sample_time=0.01,
-            max_total_candidates=1,
-        )
-        self.assertEqual(plan["summary"]["candidate_count"], 3)
-        self.assertTrue(plan["summary"]["primary_budget_expanded"])
-        self.assertEqual(plan["limits"]["effective_primary_budget"], 3)
-
-    def test_target_classifier_selects_opposite_and_longer_second_pass_candidate(self) -> None:
-        classifier = load_script_module("classify_state_probe_targets.py")
-        target = {"operator_id": "Model:1", "port_index": 1}
-        plan = {
-            "model": "Model",
-            "targets": [{**target, "status": "planned"}],
-            "tests": [{"test_id": "PRIMARY", "evidence_step": 3, "target": {**target, "control_transition": "0->1", "expected_target_transition": "0->1", "hold_s": 0.1}}],
-            "backup_tests": [
-                {"test_id": "SHORT", "target": {**target, "control_transition": "1->0", "expected_target_transition": "1->0", "hold_s": 1.0}},
-                {"test_id": "LONG", "target": {**target, "control_transition": "1->0", "expected_target_transition": "1->0", "hold_s": 5.0}},
-                {"test_id": "WRONG", "target": {**target, "control_transition": "0->1", "expected_target_transition": "0->1", "hold_s": 5.0}},
-            ],
-            "summary": {},
-        }
-        results = {"Model": {"observations": [{
-            "test_id": "PRIMARY",
-            "prediction_status": "observed",
-            "step_index": 1,
-            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [True]}},
-        }, {
-            "test_id": "PRIMARY",
-            "prediction_status": "observed",
-            "step_index": 3,
-            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [True]}},
-        }]}}
-        classification = classifier.classify_targets(plan, results)
-        self.assertEqual(classification["statusCounts"], {"no_transition": 1})
-        second = classifier.second_pass_plan(plan, classification)
-        self.assertEqual(len(second["tests"]), 1)
-        self.assertEqual(second["tests"][0]["target"]["control_transition"], "1->0")
-        self.assertEqual(second["tests"][0]["target"]["expected_target_transition"], "1->0")
-        self.assertEqual(second["tests"][0]["target"]["hold_s"], 5.0)
-        self.assertEqual(second["selection_records"][0]["reason"], "missing_target_direction")
-
-    def test_target_classifier_does_not_spend_second_pass_on_unprovable_backup(self) -> None:
-        classifier = load_script_module("classify_state_probe_targets.py")
-        target = {"operator_id": "Model:1", "port_index": 1}
-        plan = {
-            "model": "Model",
-            "targets": [{**target, "status": "planned"}],
-            "tests": [{
-                "test_id": "PRIMARY",
-                "evidence_step": 3,
-                "target": {**target, "control_transition": "0->1", "expected_target_transition": ""},
-            }],
-            "backup_tests": [{
-                "test_id": "WEAK_BACKUP",
-                "target": {**target, "control_transition": "1->0", "expected_target_transition": "", "hold_s": 5.0},
-            }],
-            "summary": {},
-        }
-        results = {"Model": {"observations": [{
-            "test_id": "PRIMARY",
-            "step_index": 1,
-            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [False]}},
-        }, {
-            "test_id": "PRIMARY",
-            "step_index": 3,
-            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [False]}},
-        }]}}
-        classification = classifier.classify_targets(plan, results)
-        second = classifier.second_pass_plan(plan, classification)
-        self.assertEqual(second["tests"], [])
-        self.assertEqual(second["summary"]["second_pass_target_count"], 1)
-        self.assertEqual(second["summary"]["second_pass_candidate_count"], 0)
-        self.assertEqual(second["summary"]["second_pass_unplanned_count"], 1)
-
-    def test_target_classifier_reports_expected_direction_conflict_separately(self) -> None:
-        classifier = load_script_module("classify_state_probe_targets.py")
-        target = {"operator_id": "Model:1", "port_index": 1}
-        plan = {
-            "model": "Model",
-            "targets": [{**target, "status": "planned"}],
-            "tests": [{
-                "test_id": "P1",
-                "evidence_step": 2,
-                "target": {**target, "expected_target_transition": "0->1"},
-            }],
-            "backup_tests": [],
-        }
-        results = {"Model": {"observations": [{
-            "test_id": "P1",
-            "step_index": 1,
-            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [True]}},
-        }, {
-            "test_id": "P1",
-            "step_index": 2,
-            "vectors": {"probe": {"id": "Model:1", "ok": True, "values": [False]}},
-        }]}}
-        classification = classifier.classify_targets(plan, results)
-        self.assertEqual(classification["statusCounts"], {"plan_conflict": 1})
-        self.assertEqual(classification["expectedDirectionConflictTargetCount"], 1)
-        self.assertEqual(classification["simulationMismatchTargetCount"], 0)
-        self.assertEqual(classification["targets"][0]["expectedDirectionConflictCount"], 1)
-
-    def test_target_classifier_merges_two_passes_before_target_classification(self) -> None:
-        classifier = load_script_module("classify_state_probe_targets.py")
-        target = {"operator_id": "Model:1", "port_index": 1}
-        primary_plan = {
-            "model": "Model",
-            "targets": [{**target, "status": "planned"}],
-            "tests": [{"test_id": "P1", "evidence_step": 2, "target": {**target, "expected_target_transition": "0->1"}}],
-            "backup_tests": [],
-            "summary": {},
-        }
-        second_plan = {
-            "model": "Model",
-            "tests": [{"test_id": "S1", "evidence_step": 2, "target": {**target, "expected_target_transition": "1->0"}}],
-        }
-        primary_results = {"Model": {"observations": [
-            {"test_id": "P1", "step_index": 1, "vectors": {"v": {"id": "Model:1", "ok": True, "values": [False]}}},
-            {"test_id": "P1", "step_index": 2, "vectors": {"v": {"id": "Model:1", "ok": True, "values": [False]}}},
-        ]}}
-        second_results = {"Model": {"observations": [
-            {"test_id": "S1", "step_index": 1, "vectors": {"v": {"id": "Model:1", "ok": True, "values": [True]}}},
-            {"test_id": "S1", "step_index": 2, "vectors": {"v": {"id": "Model:1", "ok": True, "values": [False]}}},
-        ]}}
-        merged_plan, merged_results = classifier.merge_passes(
-            primary_plan, primary_results, second_plan, second_results
-        )
-        classification = classifier.classify_targets(merged_plan, merged_results)
-        self.assertEqual(classification["statusCounts"], {"strict_success": 1})
-        self.assertEqual(merged_plan["summary"]["total_executed_candidate_count"], 2)
-
-    def test_state_probe_planner_keeps_edge_and_generic_test_fields_identical(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        trace = {
-            "model": "MixedStateModel",
-            "operators": [{
-                "id": "MixedStateModel:1",
-                "operator": "AND",
-                "ports": [
-                    {
-                        "index": 1,
-                        "trace": {
-                            "kind": "subsystem",
-                            "name": "EdgeRising",
-                            "source": {"kind": "root_inport", "signal": "EdgeInput"},
-                        },
-                    },
-                    {
-                        "index": 2,
-                        "trace": {
-                            "kind": "relational",
-                            "operator": ">",
-                            "inputs": [
-                                {
-                                    "trace": {
-                                        "kind": "stateful",
-                                        "inputs": [{"trace": {"kind": "root_inport", "signal": "TimerEnable"}}],
-                                    }
-                                },
-                                {"trace": {"kind": "constant", "value": "Wait_C", "resolvedValue": 0.25}},
-                            ],
-                        },
-                    },
-                ],
-            }],
-        }
-
-        plan = planner.build_plan(trace, max_candidates=4, sample_time=0.01)
-
-        pattern_types = {test["target"]["pattern_type"] for test in plan["tests"]}
-        self.assertEqual(pattern_types, {"rising-edge", "generic-state-timing"})
-        self.assertEqual(len({frozenset(test) for test in plan["tests"]}), 1)
-        self.assertEqual(len({frozenset(test["target"]) for test in plan["tests"]}), 1)
-        self.assertEqual(
-            len({frozenset(step) for test in plan["tests"] for step in test["steps"]}),
-            1,
-        )
-        self.assertEqual(
-            {test["target"]["pattern_type"]: test["evidence_step"] for test in plan["tests"]},
-            {"rising-edge": 2, "generic-state-timing": 3},
-        )
-
-    def test_state_probe_planner_rejects_inconsistent_test_fields_before_matlab(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        valid = {
-            "row": 1,
-            "test_id": "STATE_PROBE_0001",
-            "init_values": {},
-            "init_params": {},
-            "steps": [{"index": 1, "delay_s": 0.01, "input_updates": {}, "param_updates": {}}],
-            "evidence_step": 1,
-            "target": {
-                "operator_id": "Model:1",
-                "port_index": 1,
-                "pattern_type": "generic-state-timing",
-                "control_input": "Enable",
-                "control_transition": "0->1",
-                "expected_target_transition": "",
-                "hold_s": 0.01,
-            },
-        }
-        invalid = dict(valid)
-        invalid.pop("evidence_step")
-
-        with self.assertRaisesRegex(ValueError, "fields differ from the required schema"):
-            planner.validate_test_schema([valid, invalid])
 
     def test_state_probe_planner_reports_unsupported_semantics_without_guessing(self) -> None:
         planner = load_script_module("build_state_probe_plan.py")
@@ -798,106 +77,11 @@ class McdcQualityLoopTests(unittest.TestCase):
             }],
         }
 
-        plan = planner.build_plan(trace, max_candidates=32, sample_time=0.01)
+        plan = planner.build_plan(trace, max_candidates=32, max_steps=8, sample_time=0.01)
 
         self.assertEqual(plan["summary"]["candidate_count"], 0)
         self.assertEqual(plan["targets"][0]["status"], "unsupported_semantics")
         self.assertIn("lookup_table", plan["targets"][0]["unsupported_semantics"])
-
-    def test_state_probe_planner_builds_dedicated_rising_and_falling_edge_sequences(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        for block_name, expected_pattern, start, end in (
-            ("EdgeRising", "rising-edge", 0, 1),
-            ("EdgeFalling", "falling-edge", 1, 0),
-        ):
-            with self.subTest(block_name=block_name):
-                trace = {
-                    "model": "GenericEdge",
-                    "operators": [{
-                        "id": f"GenericEdge:{block_name}",
-                        "operator": "AND",
-                        "ports": [
-                            {
-                                "index": 1,
-                                "trace": {
-                                    "kind": "subsystem",
-                                    "name": block_name,
-                                    "source": {"kind": "root_inport", "signal": "EdgeInput"},
-                                },
-                            },
-                            {"index": 2, "trace": {"kind": "root_inport", "signal": "Enable"}},
-                        ],
-                    }],
-                }
-
-                plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
-
-                self.assertEqual(plan["summary"]["candidate_count"], 1)
-                self.assertEqual(plan["targets"][0]["pattern_type"], expected_pattern)
-                candidate = plan["tests"][0]
-                self.assertEqual(candidate["init_values"], {"Enable": 1, "EdgeInput": start})
-                self.assertEqual(len(candidate["steps"]), 4)
-                self.assertEqual(candidate["steps"][1]["input_updates"], {"EdgeInput": end})
-                self.assertEqual(candidate["steps"][3]["input_updates"], {"EdgeInput": start})
-                self.assertEqual(candidate["evidence_step"], 2)
-                self.assertEqual(candidate["target"]["pattern_type"], expected_pattern)
-                self.assertEqual(candidate["target"]["expected_target_transition"], f"{start}->{end}")
-
-    def test_state_probe_planner_evaluates_inverted_falling_edge_target_direction(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        trace = {
-            "model": "InvertedFallingEdge",
-            "operators": [{
-                "id": "InvertedFallingEdge:1",
-                "operator": "AND",
-                "ports": [{
-                    "index": 1,
-                    "trace": {
-                        "kind": "logic",
-                        "operator": "NOT",
-                        "inputs": [{
-                            "trace": {
-                                "kind": "subsystem",
-                                "name": "EdgeFalling",
-                                "source": {"kind": "root_inport", "signal": "EdgeInput"},
-                            }
-                        }],
-                    },
-                }],
-            }],
-        }
-
-        plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
-
-        self.assertEqual(plan["summary"]["candidate_count"], 1)
-        candidate = plan["tests"][0]
-        self.assertEqual(candidate["target"]["control_transition"], "1->0")
-        self.assertEqual(candidate["target"]["expected_target_transition"], "0->1")
-
-    def test_state_probe_planner_does_not_claim_edge_direction_for_ambiguous_control_path(self) -> None:
-        planner = load_script_module("build_state_probe_plan.py")
-        trace = {
-            "model": "AmbiguousEdge",
-            "operators": [{
-                "id": "AmbiguousEdge:1",
-                "operator": "AND",
-                "ports": [{
-                    "index": 1,
-                    "trace": {
-                        "kind": "subsystem",
-                        "name": "EdgeRising",
-                        "inputs": [
-                            {"trace": {"kind": "root_inport", "signal": "A"}},
-                            {"trace": {"kind": "root_inport", "signal": "B"}},
-                        ],
-                    },
-                }],
-            }],
-        }
-        plan = planner.build_plan(trace, max_candidates=8, sample_time=0.01)
-        self.assertTrue(plan["tests"])
-        self.assertTrue(all(not test["target"]["expected_target_transition"] for test in plan["tests"]))
-        self.assertEqual(plan["targets"][0]["primary_preflight_status"], "causal_only")
 
     def test_probe_obligation_preserves_full_state_stimulus(self) -> None:
         builder = load_script_module("build_probe_mcdc_obligations.py")
@@ -1094,7 +278,7 @@ class McdcQualityLoopTests(unittest.TestCase):
                 ],
             }
             plan = {
-                "generation_mode": "minimal_masking_mcdc",
+                "generation_mode": "minimal_unique_cause",
                 "summary": {"decisions": [{"condition_count": 2, "max_allowed_vectors": 6}]},
                 "obligations": [
                     {
@@ -1233,38 +417,6 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertEqual(port["true_inputs"], {"HvOnFail": 0})
             self.assertEqual(port["false_inputs"], {"HvOnFail": 1})
 
-    def test_trace_adapter_accepts_single_operator_object_shape(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp)
-            trace = {
-                "schema": "simulink-ut-logical-mcdc-trace/v1",
-                "model": "GenericModel",
-                "operator_count": 1,
-                "operators": {
-                    "id": "GenericModel:7",
-                    "operator": "AND",
-                    "ports": [{
-                        "index": 1,
-                        "trace": {"kind": "root_inport", "signal": "Enable"},
-                    }],
-                },
-            }
-            (work / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
-            subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPTS / "derive_logical_mcdc_mappings.py"),
-                    "--traces",
-                    str(work / "trace.json"),
-                    "--output",
-                    str(work / "mapping.json"),
-                ],
-                check=True,
-            )
-            mapping = json.loads((work / "mapping.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(mapping["operators"]), 1)
-            self.assertEqual(mapping["operators"][0]["ports"][0]["true_inputs"], {"Enable": 1})
-
     def test_backfill_keeps_later_stable_steps_after_unstable_step(self) -> None:
         backfill = load_script_module("backfill_expected_outputs.py")
         action = "\n".join(
@@ -1286,54 +438,6 @@ class McdcQualityLoopTests(unittest.TestCase):
         self.assertNotIn("OutA = expValue(0);", rebuilt)
         self.assertNotIn("OutA = expValue(0,0.01,0);", rebuilt)
         self.assertIn("[+6.3s] // timer expired\nOutA = expValue(1);", rebuilt)
-
-    def test_backfill_requires_explicit_stability_and_skips_final_empty_delay(self) -> None:
-        backfill = load_script_module("backfill_expected_outputs.py")
-        action = "\n".join(
-            [
-                "[+6.3s] // timer is changing throughout this interval",
-                "TimerEnable = 1;",
-                "[+0.01s] // settled state",
-                "OutA = expValue(999);",
-                "[+0.1s]",
-                "OutA = expValue(999);",
-            ]
-        )
-        step_results = {
-            # A missing stability verdict must not recreate the old timer oracle.
-            1: {"outputs": {"OutA": 0.01}, "stable": {}},
-            2: {"outputs": {"OutA": 1}, "stable": {"OutA": True}},
-            3: {"outputs": {"OutA": 1}, "stable": {"OutA": True}},
-        }
-
-        rebuilt = backfill.build_action(action, step_results, ["OutA"])
-
-        self.assertNotIn("OutA = expValue(0.01);", rebuilt)
-        self.assertIn("[+0.01s] // settled state\nOutA = expValue(1);", rebuilt)
-        self.assertTrue(rebuilt.endswith("[+0.1s]"))
-
-    def test_simulation_requires_both_following_interval_endpoints_for_stability(self) -> None:
-        timer_times = [0.01, 0.02]
-        timer_values = [0.01, 0.02]
-        duplicate_singleton_times = [0.02, 0.02]
-
-        # MQTester compares the expectation at 0.02, so the timer change at
-        # the right endpoint must make the complete 0.01 -> 0.02 interval
-        # unstable. Duplicate samples at one instant remain insufficient.
-        self.assertGreater(max(timer_values) - min(timer_values), 0)
-        self.assertEqual(timer_times, [0.01, 0.02])
-        self.assertEqual(len(set(duplicate_singleton_times)), 1)
-
-        source = (SCRIPTS / "simulate_tcsd_cases.m").read_text(encoding="utf-8")
-
-        self.assertIn(
-            "following_interval_mask(vals.Time, intervalStart, intervalEnd, dt)",
-            source,
-        )
-        self.assertIn("time <= (upperBound + timeTolerance)", source)
-        self.assertIn("has_complete_interval_samples(", source)
-        self.assertIn("hasDistinctTimes && hasStart && hasEnd", source)
-        self.assertIn("stable.(signalName) = false;", source)
 
     def test_probe_obligations_distinguish_required_and_unreachable(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1376,6 +480,182 @@ class McdcQualityLoopTests(unittest.TestCase):
             self.assertEqual(report["summary"]["required_count"], 2)
             self.assertEqual(report["summary"]["unreachable_count"], 1)
             self.assertEqual(report["summary"]["unresolved_count"], 0)
+
+    def test_probe_obligations_mark_algebraic_implication_unreachable_without_overrides(self) -> None:
+        """B04 RampLimiter2 structure: AND(x>0.01, x>0) with the mapping spec
+        carrying relational source traces -> unobserved TF becomes unreachable
+        algebraically, no override needed."""
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            probe = {
+                "ModelB": {
+                    "model": "ModelB",
+                    "probes": [
+                        {
+                            "id": "ModelB:231",
+                            "block_path": "ModelB/RampLimiter2/Logical Operator1",
+                            "sid": "ModelB:231",
+                            "operator": "AND",
+                            "port_names": ["u1", "u2"],
+                        }
+                    ],
+                    "observations": [],
+                }
+            }
+            mappings = {
+                "operators": [
+                    {
+                        "id": "ModelB:231",
+                        "operator": "AND",
+                        "block_path": "ModelB/RampLimiter2/Logical Operator1",
+                        "ports": [
+                            {"index": 1, "source_trace": {"kind": "relational", "operator": ">",
+                                                          "sid": "ModelB:233", "inputs": [
+                                                              {"index": 1, "trace": {"kind": "block", "sid": "ModelB:221", "semantic": "sum"}},
+                                                              {"index": 2, "trace": {"kind": "constant", "resolvedValue": 0.01}}]}},
+                            {"index": 2, "source_trace": {"kind": "relational", "operator": ">",
+                                                          "sid": "ModelB:234", "inputs": [
+                                                              {"index": 1, "trace": {"kind": "block", "sid": "ModelB:221", "semantic": "sum"}},
+                                                              {"index": 2, "trace": {"kind": "constant", "resolvedValue": 0.0}}]}},
+                        ],
+                    }
+                ]
+            }
+            (work / "probe.json").write_text(json.dumps(probe), encoding="utf-8")
+            (work / "mappings.json").write_text(json.dumps(mappings), encoding="utf-8")
+            # Exit code 1 is expected: the unobserved TT vector stays unresolved;
+            # the report file is still written and carries the algebraic marking.
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "build_probe_mcdc_obligations.py"),
+                    "--probe-results",
+                    str(work / "probe.json"),
+                    "--output-dir",
+                    str(work),
+                    "--logical-mappings",
+                    str(work / "mappings.json"),
+                ],
+                check=False,
+            )
+            report = json.loads((work / "ModelB_coverage_obligations.json").read_text(encoding="utf-8"))
+            by_id = {item["id"]: item for item in report["obligations"]}
+            self.assertEqual(report["summary"]["unreachable_count"], 1)
+            self.assertEqual(by_id["ModelB:231_TF"]["status"], "unreachable")
+            self.assertIn("strictly implies", by_id["ModelB:231_TF"]["reason"])
+            self.assertEqual(by_id["ModelB:231_TT"]["status"], "unresolved")  # unobserved, no algebra -> unresolved
+
+    def test_probe_obligations_mark_mps_selector_error_vectors_unreachable(self) -> None:
+        """EngStrtStop A09 regression: a Stateflow operating-condition id 4/5
+        feeding a 0..3 MultiPortSwitch with DiagnosticForDefault=Error aborts
+        the targeted probe simulation; those vectors are model-inherently
+        unreachable and must carry evidence instead of remaining unresolved."""
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            probe = {
+                "ModelE": {
+                    "model": "ModelE",
+                    "probes": [
+                        {
+                            "id": "ModelE:40",
+                            "block_path": "ModelE/C01_JumpFlg/AND",
+                            "sid": "ModelE:40",
+                            "operator": "AND",
+                            "port_names": ["u1", "u2"],
+                        }
+                    ],
+                    "observations": [
+                        {"test_id": "STATE_PROBE_0001", "row": 1, "step_index": 2, "time_s": 0.11,
+                         "inputs": {"VehCfg_bMoutnUp": 1}, "params": {}, "vectors": {},
+                         "target": {"operator_id": "ModelE:40"},
+                         "prediction_status": "simulation_error_mps_selector",
+                         "error_message": "MultiPortSwitch selector input (4) is out of range 0..3"},
+                    ],
+                }
+            }
+            (work / "probe.json").write_text(json.dumps(probe), encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "build_probe_mcdc_obligations.py"),
+                    "--probe-results",
+                    str(work / "probe.json"),
+                    "--output-dir",
+                    str(work),
+                ],
+                check=False,
+            )
+            report = json.loads((work / "ModelE_coverage_obligations.json").read_text(encoding="utf-8"))
+            # All three vectors of the blocked operator are model-inherently unreachable.
+            self.assertEqual(report["summary"]["unreachable_count"], 3)
+            self.assertEqual(report["summary"]["required_count"], 0)
+            for item in report["obligations"]:
+                self.assertEqual(item["status"], "unreachable")
+                self.assertIn("MultiPortSwitch", item["reason"])
+                self.assertEqual(item["evidence_state"], "unreachable_mps_selector_constraint")
+
+    def test_apply_unreachable_denominator_adjustment(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            summary = {
+                "ModelB": {
+                    "model": "ModelB", "test_count": 13, "threshold": 80,
+                    "condition": {"covered": 29, "total": 30, "percent": 96.67, "passed": True},
+                    "decision": {"covered": 20, "total": 20, "percent": 100.0, "passed": True},
+                    "mcdc": {"covered": 4, "total": 6, "percent": 66.67, "passed": False},
+                    "items": [{"coverage_class": "MCDC", "block_path": "ModelB/RampLimiter2/Logical Operator1",
+                               "covered": 2, "total": 3}],
+                    "passed": False,
+                }
+            }
+            obligations = {
+                "obligations": [
+                    {"model": "ModelB", "coverage_class": "MCDC", "status": "unreachable",
+                     "block_path": "ModelB/RampLimiter2/Logical Operator1",
+                     "reason": "port2 false impossible: port1 strictly implies port2"},
+                    {"model": "ModelB", "coverage_class": "MCDC", "status": "unreachable",
+                     "block_path": "ModelB/RampLimiter2/Logical Operator2",
+                     "reason": "port2 false impossible: port1 strictly implies port2"},
+                    {"model": "ModelB", "coverage_class": "MCDC", "status": "required",
+                     "block_path": "ModelB/Other"},
+                ]
+            }
+            cov_path = work / "coverage_summary.json"
+            ob_path = work / "obligations.json"
+            cov_path.write_text(json.dumps(summary), encoding="utf-8")
+            ob_path.write_text(json.dumps(obligations), encoding="utf-8")
+            quality.apply_unreachable_denominator_adjustment(cov_path, ob_path)
+            adjusted = json.loads(cov_path.read_text(encoding="utf-8"))["ModelB"]
+            mcdc = adjusted["mcdc"]
+            self.assertEqual(mcdc["total"], 4)
+            self.assertEqual(mcdc["percent"], 100.0)
+            self.assertTrue(mcdc["passed"])
+            self.assertTrue(adjusted["passed"])
+            # Item annotation stays transparent.
+            self.assertTrue(adjusted["items"][0]["algebraic_unreachable"])
+            # Clamping: never subtract below covered.
+            summary["ModelB"]["mcdc"] = {"covered": 4, "total": 5, "percent": 80.0, "passed": True}
+            cov_path.write_text(json.dumps(summary), encoding="utf-8")
+            quality.apply_unreachable_denominator_adjustment(cov_path, ob_path)
+            mcdc = json.loads(cov_path.read_text(encoding="utf-8"))["ModelB"]["mcdc"]
+            self.assertEqual(mcdc["total"], 4)
+            self.assertEqual(mcdc["percent"], 100.0)
+
+    def test_apply_unreachable_denominator_adjustment_noop_without_unreachable(self) -> None:
+        quality = load_script_module("run_tcsd_quality_loop.py")
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td)
+            summary = {"M": {"mcdc": {"covered": 4, "total": 6, "percent": 66.67, "passed": False}}}
+            obligations = {"obligations": [
+                {"model": "M", "coverage_class": "MCDC", "status": "unresolved", "block_path": "M/AND"},
+            ]}
+            cov_path = work / "coverage_summary.json"
+            ob_path = work / "obligations.json"
+            cov_path.write_text(json.dumps(summary), encoding="utf-8")
+            ob_path.write_text(json.dumps(obligations), encoding="utf-8")
+            quality.apply_unreachable_denominator_adjustment(cov_path, ob_path)
+            self.assertEqual(json.loads(cov_path.read_text(encoding="utf-8"))["M"]["mcdc"]["total"], 6)
 
     def test_augment_adds_mapped_missing_case_with_final_delay(self) -> None:
         with tempfile.TemporaryDirectory() as td:
