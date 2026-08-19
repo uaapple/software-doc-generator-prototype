@@ -87,6 +87,50 @@ function dumpSessionLog(events, firstSeq) {
 }
 
 /**
+ * Live event streamer: poll the session events array and append every new
+ * semantic event to $TCSD_OUTPUT_DIR/.tcsd-dsh/session.events.jsonl so the
+ * platform can observe the agent's real-time activity (tool calls, model
+ * turns, steps) without waiting for session exit. assistant/chunk raw deltas
+ * are skipped. Returns a disposer.
+ */
+function startLiveEventStream(events, firstSeq, outputDir) {
+  if (!outputDir) return () => {};
+  const logPath = path.join(outputDir, ".tcsd-dsh", "session.events.jsonl");
+  let lastSeq = firstSeq;
+  let timer = null;
+  let stream = null;
+  try {
+    mkdirSync(path.dirname(logPath), { recursive: true });
+    const fd = require("node:fs").openSync(logPath, "a");
+    stream = { fd, write(text) { require("node:fs").writeSync(fd, text); } };
+  } catch (error) {
+    process.stderr.write(`dsh: failed to open live event stream: ${error instanceof Error ? error.message : String(error)}\n`);
+    return () => {};
+  }
+  const flush = () => {
+    try {
+      const snapshot = Array.isArray(events) ? events : [];
+      for (let index = 0; index < snapshot.length; index += 1) {
+        const event = snapshot[index];
+        if (!event || event.seq < lastSeq) continue;
+        lastSeq = event.seq + 1;
+        if (event.type === "assistant/chunk") continue;
+        stream.write(`${JSON.stringify(event)}\n`);
+      }
+    } catch (error) {
+      process.stderr.write(`dsh: live event stream failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+  };
+  flush();
+  timer = setInterval(flush, 2000);
+  timer.unref?.();
+  return () => {
+    if (timer) clearInterval(timer);
+    try { require("node:fs").closeSync(stream.fd); } catch {}
+  };
+}
+
+/**
  * Run one task through a freshly created Agent and request process exit.
  * Mirrors the stock runner: loader await happens inside this background run,
  * never in apply, so the tree reaches ready immediately.
@@ -122,7 +166,12 @@ async function run(ctx, task, io) {
     source: { kind: "user" }
   }));
   step("task followup sent, waiting idle");
-  await agent.whenIdle();
+  const disposeLive = startLiveEventStream(agent.session.events, firstSeq, process.env.TCSD_OUTPUT_DIR || "");
+  try {
+    await agent.whenIdle();
+  } finally {
+    disposeLive();
+  }
   step("idle done, flushing session");
   await sessions.flush(agent.session);
   const outcome = summarize(agent.session.events, firstSeq);
