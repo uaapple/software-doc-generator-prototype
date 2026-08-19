@@ -388,6 +388,7 @@ MC/DC 37.5%）；ParkCrl B02：`RPACmd` 为 R/S 两链共享根，锁存无法�
 | liutsB02/B03 | 标定默认值 | `bSelBatSOE_C/bHvBatPrdnRngOvrd_C` 默认非 0 钉死 Switch |
 | EngA09 | 工况越界 | MoutnUp/Dwn 触发 MPS 越界（不可达，证据） |
 | EngA11 | **加油场景** | 51 用例仅 2 条置加油请求=1，整模块未激活 |
+| EngA12 | AnulInsp 检查锁存 | `stAnulInsp 0→2 边沿 ∧ stIdleSpd∈{1,2} ∧ tCoolt≥80 ∧ SOC∈(20,93) ∧ Gear=6` 五条件从未同刻，RSLatch.Q 恒 0 |
 
 **六种场景模板（初版合成器应按此扫描生成）**：
 1. 使能链激活：模块级 AND/Switch 链根条件同刻成立（含比较常量核对）
@@ -397,6 +398,12 @@ MC/DC 37.5%）；ParkCrl B02：`RPACmd` 为 R/S 两链共享根，锁存无法�
 5. 计数/延迟到极限：CountR/StopWatch 驱动到 MAX 或超时边界（liutsB01/A09 库块）
 6. 锁存 set→hold→reset：RSLatch 全时序（ParkCrlB02/A11）
 实现提示：Stage 5 扫描各子系统顶层 Switch/AND 的根条件（含标定参数默认值），Stage 7 按模板
+生成场景用例。**批次 1 已代码化（2026-08-19）**：Switch 控制端口按判据解析（u2→端口 2，
+修复硬编码端口 3）、标定默认值翻转义务（scenario_activation_calibration_default 证据）、
+MPS DataPortIndices。**批次 2 缺口（EngA12 实测）**：Switch 控制端经 Logic/Relational/
+UnitDelay 链时追踪器停下（unsupported_src_type_*）→ 多条件根输入链仍无法生成翻转用例；
+设计：collect_decision_blocks.m 对 Logic 控制链复用 trace_logical_mcdc 的逻辑映射
+（true_inputs/false_inputs 已是根输入组合），把 Switch 义务与逻辑算子映射打通。
 生成场景用例；当前为 Agent 纪律（10.2 候选有效性同源），代码化是下一步改进项。
 
 **最小功能域密度**：故障/有效性信号族（`*SigErr`/`*Vld`/`*Flt`/`*FltLvl`/诊断使能复位）、
