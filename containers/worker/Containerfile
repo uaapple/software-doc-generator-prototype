@@ -100,6 +100,7 @@ COPY --from=node-dependencies /build/node_modules ./node_modules
 COPY --from=source-selection /selected/src ./src
 COPY --from=source-selection /selected/public ./public
 COPY --from=source-selection /selected/source-manifest.json ./container-source-manifest.json
+COPY docs/unit-test-case-generation-mode.md ./docs/unit-test-case-generation-mode.md
 COPY package.json package-lock.json ./
 COPY templates/*.json ./templates/
 COPY containers/worker/configure-hermes.py ./containers/worker/configure-hermes.py
