@@ -1572,7 +1572,7 @@ export class UnitTestCaseGenerationService {
     // Align the platform completion check with that rule.
     const invalidArtifacts = artifacts.filter((artifact) =>
       Number(artifact.testCaseCount || 0) < 1 ||
-      Number(artifact.expValueCount || 0) < 1
+      Number(artifact.expectedValueCount || 0) < 1
     );
     if (invalidArtifacts.length) {
       const missingTestCases = invalidArtifacts.flatMap((artifact) =>
