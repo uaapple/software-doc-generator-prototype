@@ -605,7 +605,13 @@ function publicPipelineStage(stage = {}) {
         status: String(checkpoint.validation.status || "").slice(0, 60),
         code: safeDeliveryText(checkpoint.validation.code),
         summary: publicExecutionMessage(checkpoint.validation.status, checkpoint.validation.code)
-      } : null
+      } : null,
+      // Fields rendered by the progressive stage trace (stage-9/11 coverage
+      // chip, stage input/result, tool log summary).
+      coverage: checkpoint.coverage && typeof checkpoint.coverage === "object" ? checkpoint.coverage : null,
+      input: checkpoint.input && typeof checkpoint.input === "object" ? checkpoint.input : null,
+      result: checkpoint.result && typeof checkpoint.result === "object" ? checkpoint.result : null,
+      toolLogs: Array.isArray(checkpoint.toolLogs) ? checkpoint.toolLogs : null
     } : null
   };
 }
