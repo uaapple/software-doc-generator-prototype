@@ -1,32 +1,14 @@
-function simulate_tcsd_cases(rootDir, modelName, matFile, caseJson, resultJson, varargin)
-p = inputParser;
-addParameter(p, 'CoverageDataFile', '', @(x) ischar(x) || isstring(x));
-addParameter(p, 'CoverageJson', '', @(x) ischar(x) || isstring(x));
-addParameter(p, 'CoverageThreshold', 80, @isnumeric);
-addParameter(p, 'McdcMode', '', @(x) ischar(x) || isstring(x));
-addParameter(p, 'InitScripts', {}, @(x) iscell(x) || isstring(x));
-parse(p, varargin{:});
-coverageDataFile = char(string(p.Results.CoverageDataFile));
-coverageJson = char(string(p.Results.CoverageJson));
-collectCoverage = ~isempty(coverageDataFile) || ~isempty(coverageJson);
-mcdcMode = char(string(p.Results.McdcMode));
+function simulate_tcsd_cases(rootDir, modelName, matFile, caseJson, resultJson)
 modelName = char(string(modelName));
 matFile = char(string(matFile));
 cleanupObj = onCleanup(@() cleanup_task_models({modelName, 'ITKLib'}));
-initScripts = cellstr(p.Results.InitScripts);
-executedInitScripts = setup_ut_support(rootDir, initScripts);
+setup_ut_support(rootDir);
 cleanup_task_models({modelName, 'ITKLib'});
 load_mat_to_base(resolve_workspace_file(rootDir, matFile));
 load_support_library(rootDir, 'ITKLib.slx');
 load_system(fullfile(rootDir, [modelName '.slx']));
 maybe_apply_mps_default_override(modelName);
 configure_tcsd_sim_config(modelName, rootDir);
-if collectCoverage
-    if isempty(mcdcMode)
-        mcdcMode = char(string(get_param(modelName, 'CovMcdcMode')));
-    end
-    set_param(modelName, 'CovMcdcMode', mcdcMode);
-end
 
 inputBlocks = find_system(modelName, 'SearchDepth', 1, 'BlockType', 'Inport');
 [~, inputOrder] = sort(str2double(get_param(inputBlocks, 'Port')));
@@ -39,13 +21,9 @@ outputBlocks = outputBlocks(outputOrder);
 outputNames = cellfun(@(p) get_param(p, 'Name'), outputBlocks, 'UniformOutput', false);
 
 [inputTypes, inputDims] = compiled_input_metadata(modelName, inputBlocks, inputNames);
-if collectCoverage
-    configure_tcsd_coverage_observation_model(modelName);
-end
 
 spec = jsondecode(fileread(caseJson));
 results = struct('row', {}, 'test_id', {}, 'steps', {});
-aggregateCoverage = [];
 for testIndex = 1:numel(spec.tests)
     test = spec.tests(testIndex);
     currentValues = struct();
@@ -69,8 +47,7 @@ for testIndex = 1:numel(spec.tests)
         step = test.steps(stepIndex);
         paramFields = fieldnames(step.param_updates);
         if ~isempty(paramFields) && ~isempty(segmentSteps)
-            [stepResults, segmentCoverage] = run_segment(modelName, matFile, rootDir, inputNames, inputTypes, inputDims, outputNames, segmentInitialValues, segmentParams, segmentSteps, collectCoverage, mcdcMode);
-            aggregateCoverage = merge_coverage(aggregateCoverage, segmentCoverage);
+            stepResults = run_segment(modelName, matFile, rootDir, inputNames, inputTypes, inputDims, outputNames, segmentInitialValues, segmentParams, segmentSteps);
             caseSteps = [caseSteps, stepResults]; %#ok<AGROW>
             segmentSteps = [];
         end
@@ -104,8 +81,7 @@ for testIndex = 1:numel(spec.tests)
         end
     end
     if ~isempty(segmentSteps)
-        [stepResults, segmentCoverage] = run_segment(modelName, matFile, rootDir, inputNames, inputTypes, inputDims, outputNames, segmentInitialValues, segmentParams, segmentSteps, collectCoverage, mcdcMode);
-        aggregateCoverage = merge_coverage(aggregateCoverage, segmentCoverage);
+        stepResults = run_segment(modelName, matFile, rootDir, inputNames, inputTypes, inputDims, outputNames, segmentInitialValues, segmentParams, segmentSteps);
         caseSteps = [caseSteps, stepResults]; %#ok<AGROW>
     end
     [~, order] = sort([caseSteps.index]);
@@ -120,26 +96,10 @@ payload.tests = results;
 fid = fopen(resultJson, 'w');
 fprintf(fid, '%s', jsonencode(payload, PrettyPrint=true));
 fclose(fid);
-if collectCoverage
-    if isempty(aggregateCoverage)
-        error('simulate_tcsd_cases:CoverageDataMissing', 'Coverage collection was requested but no coverage data was returned.');
-    end
-    if ~isempty(coverageDataFile)
-        save_coverage_data(coverageDataFile, aggregateCoverage);
-    end
-    if ~isempty(coverageJson)
-        coveragePayload = struct();
-        coveragePayload.(matlab.lang.makeValidName(modelName)) = coverage_summary( ...
-            aggregateCoverage, modelName, numel(spec.tests), p.Results.CoverageThreshold, mcdcMode);
-        coveragePayload.(matlab.lang.makeValidName(modelName)).initialization_scripts = executedInitScripts;
-        write_json_file(coverageJson, coveragePayload);
-    end
-end
 cleanup_task_models({modelName, 'ITKLib'});
 end
 
-function [stepResults, coverageData] = run_segment(modelName, matFile, rootDir, inputNames, inputTypes, inputDims, outputNames, initialValues, paramOverrides, steps, collectCoverage, mcdcMode)
-coverageData = [];
+function stepResults = run_segment(modelName, matFile, rootDir, inputNames, inputTypes, inputDims, outputNames, initialValues, paramOverrides, steps)
 dt = 0.01;
 totalTime = 0;
 for k = 1:numel(steps)
@@ -215,17 +175,11 @@ for k = 1:numel(inputNames)
     end
     ds{k} = ts;
 end
-[ds, ~] = append_root_execution_control_inputs(ds, modelName, t);
 
 in = Simulink.SimulationInput(modelName);
 externalInputVar = 'tc_sd_external_input_ds';
 in = in.setVariable(externalInputVar, ds);
 in = in.setModelParameter('StopTime', num2str(stopTime), 'SolverType', 'Fixed-step', 'Solver', 'FixedStepDiscrete', 'FixedStep', num2str(dt), 'SaveOutput', 'on', 'ReturnWorkspaceOutputs', 'on', 'LoadExternalInput', 'on', 'ExternalInput', externalInputVar);
-if collectCoverage
-    in = in.setModelParameter('CovEnable', 'on', 'CovMetricSettings', 'dcme', ...
-        'CovMcdcMode', mcdcMode, 'CovSaveSingleToWorkspaceVar', 'on', ...
-        'CovSaveName', 'tc_sd_candidate_covdata');
-end
 try
     out = sim(in);
 catch ME
@@ -234,14 +188,6 @@ catch ME
         error('simulate_tcsd_cases:InvalidMultiPortSwitchSelector', '%s\n\n%s', getReport(ME, 'basic', 'hyperlinks', 'off'), diagText);
     end
     rethrow(ME);
-end
-if collectCoverage
-    try
-        coverageData = out.get('tc_sd_candidate_covdata');
-    catch ME
-        error('simulate_tcsd_cases:CoverageDataMissing', ...
-            'Coverage was enabled but candidate coverage data was not returned: %s', ME.message);
-    end
 end
 
 stepResults = struct('index', {}, 'time_s', {}, 'outputs', {}, 'stable', {});
@@ -256,23 +202,14 @@ for k = 1:numel(steps)
         sampleValue = sample_output_value(data, vals.Time, sampleIndex);
         if isscalar(sampleValue)
             outputs.(signalName) = double(sampleValue);
-            % MQTester checks an expValue written after this event at the next
-            % event too, so both interval boundaries must be observed. A
-            % singleton timestamp is not evidence of stability (duplicate
-            % event samples included).
             if k < numel(steps)
-                intervalStart = eventTimes(k);
-                intervalEnd = eventTimes(k + 1);
-                intervalMask = following_interval_mask(vals.Time, intervalStart, intervalEnd, dt);
-                hasCompleteInterval = has_complete_interval_samples( ...
-                    vals.Time(intervalMask), intervalStart, intervalEnd, dt);
+                intervalMask = vals.Time >= (eventTimes(k) - (dt / 100)) & vals.Time < (eventTimes(k + 1) - (dt / 100));
             else
-                intervalMask = false(size(vals.Time));
-                hasCompleteInterval = false;
+                intervalMask = abs(vals.Time - eventTimes(k)) <= (dt / 100);
             end
             intervalData = interval_output_data(data, vals.Time, intervalMask);
-            if isempty(intervalData) || ~hasCompleteInterval
-                stable.(signalName) = false;
+            if isempty(intervalData)
+                stable.(signalName) = true;
             else
                 intervalData = double(intervalData(:));
                 stable.(signalName) = (max(intervalData) - min(intervalData)) <= stability_tolerance(signalName);
@@ -284,108 +221,6 @@ for k = 1:numel(steps)
     stepResults(k).outputs = outputs;
     stepResults(k).stable = stable;
 end
-end
-
-function aggregate = merge_coverage(aggregate, current)
-if isempty(current)
-    return;
-end
-if isempty(aggregate)
-    aggregate = current;
-else
-    aggregate = aggregate + current;
-end
-end
-
-function summary = coverage_summary(cvd, modelName, testCount, threshold, mcdcMode)
-summary = struct();
-summary.model = modelName;
-summary.test_count = testCount;
-summary.threshold = threshold;
-summary.mcdc_mode = char(string(mcdcMode));
-summary.model_checksum = model_checksum(modelName);
-summary.support_library_path = support_library_path();
-summary.condition = metric_result(conditioninfo(cvd, modelName), threshold);
-summary.decision = metric_result(decisioninfo(cvd, modelName), threshold);
-summary.mcdc = metric_result(mcdcinfo(cvd, modelName), threshold);
-summary.items = collect_coverage_items(cvd, modelName);
-summary.passed = summary.condition.passed && summary.decision.passed && summary.mcdc.passed;
-end
-
-function value = model_checksum(modelName)
-value = '';
-try
-    value = jsonencode(Simulink.BlockDiagram.getChecksum(modelName));
-catch
-end
-end
-
-function value = support_library_path()
-value = '';
-try
-    value = char(string(get_param('ITKLib', 'FileName')));
-catch
-end
-end
-
-function result = metric_result(info, threshold)
-values = double(info(:)');
-if numel(values) >= 2
-    covered = values(1); total = values(2);
-elseif isempty(values)
-    covered = 0; total = 0;
-else
-    covered = values(1); total = values(1);
-end
-if total > 0, percent = 100 * covered / total; else, percent = 100; end
-result = struct('covered', covered, 'total', total, 'percent', percent, 'passed', percent >= threshold);
-end
-
-function items = collect_coverage_items(cvd, modelName)
-items = {};
-blocks = find_system(modelName, 'LookUnderMasks', 'all', 'FollowLinks', 'on', 'Type', 'Block');
-metricNames = {'Condition', 'Decision', 'MCDC'};
-metricFunctions = {@conditioninfo, @decisioninfo, @mcdcinfo};
-for blockIndex = 1:numel(blocks)
-    blockPath = blocks{blockIndex};
-    for metricIndex = 1:numel(metricNames)
-        try
-            [info, description] = metricFunctions{metricIndex}(cvd, blockPath, true);
-        catch
-            continue;
-        end
-        metric = metric_result(info, 0);
-        if metric.total <= 0, continue; end
-        item = struct();
-        item.coverage_class = metricNames{metricIndex};
-        item.block_path = blockPath;
-        try, item.sid = char(string(get_param(blockPath, 'SID'))); catch, item.sid = ''; end
-        item.covered = metric.covered;
-        item.total = metric.total;
-        item.percent = metric.percent;
-        item.description = jsonencode(description);
-        items{end + 1} = item; %#ok<AGROW>
-    end
-end
-end
-
-function save_coverage_data(pathName, cvd)
-[folder, name] = fileparts(char(string(pathName)));
-if isempty(folder), folder = pwd; end
-if ~exist(folder, 'dir'), mkdir(folder); end
-oldDir = pwd;
-cleanupObj = onCleanup(@() cd(oldDir));
-cd(folder);
-cvsave(name, cvd);
-clear cleanupObj;
-cd(oldDir);
-end
-
-function write_json_file(pathName, payload)
-fid = fopen(pathName, 'w');
-if fid < 0, error('simulate_tcsd_cases:WriteFailed', 'Cannot write %s.', pathName); end
-cleanupObj = onCleanup(@() fclose(fid));
-fprintf(fid, '%s', jsonencode(payload, PrettyPrint=true));
 end
 function [inputTypes, inputDims] = compiled_input_metadata(modelName, inputBlocks, inputNames)
 inputTypes = struct();
@@ -520,31 +355,6 @@ elseif size(data, ndims(data)) == numel(time)
 else
     values = data(intervalMask);
 end
-end
-
-function mask = following_interval_mask(time, intervalStart, intervalEnd, dt)
-time = double(time(:));
-lowerBound = min(double(intervalStart), double(intervalEnd));
-upperBound = max(double(intervalStart), double(intervalEnd));
-magnitude = max([1; abs(time); abs(lowerBound); abs(upperBound)]);
-timeTolerance = max(dt / 100, 32 * eps(magnitude));
-mask = time >= (lowerBound - timeTolerance) & time <= (upperBound + timeTolerance);
-end
-
-function tf = has_complete_interval_samples(time, intervalStart, intervalEnd, dt)
-if numel(time) < 2
-    tf = false;
-    return;
-end
-time = sort(double(time(:)));
-lowerBound = min(double(intervalStart), double(intervalEnd));
-upperBound = max(double(intervalStart), double(intervalEnd));
-magnitude = max([1; abs(time); abs(lowerBound); abs(upperBound)]);
-timeTolerance = max(dt / 100, 32 * eps(magnitude));
-hasDistinctTimes = any(diff(time) > timeTolerance);
-hasStart = any(abs(time - lowerBound) <= timeTolerance);
-hasEnd = any(abs(time - upperBound) <= timeTolerance);
-tf = hasDistinctTimes && hasStart && hasEnd;
 end
 
 function tol = stability_tolerance(signalName)

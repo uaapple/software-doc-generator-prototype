@@ -605,7 +605,13 @@ function publicPipelineStage(stage = {}) {
         status: String(checkpoint.validation.status || "").slice(0, 60),
         code: safeDeliveryText(checkpoint.validation.code),
         summary: publicExecutionMessage(checkpoint.validation.status, checkpoint.validation.code)
-      } : null
+      } : null,
+      // Fields rendered by the progressive stage trace (stage-9/11 coverage
+      // chip, stage input/result, tool log summary).
+      coverage: checkpoint.coverage && typeof checkpoint.coverage === "object" ? checkpoint.coverage : null,
+      input: checkpoint.input && typeof checkpoint.input === "object" ? checkpoint.input : null,
+      result: checkpoint.result && typeof checkpoint.result === "object" ? checkpoint.result : null,
+      toolLogs: Array.isArray(checkpoint.toolLogs) ? checkpoint.toolLogs : null
     } : null
   };
 }
@@ -1514,7 +1520,20 @@ export class UnitTestCaseGenerationService {
       if (!stat.isFile()) {
         continue;
       }
-      const expectedValueSummary = await summarizeWorkbookExpectedValues(absolutePath);
+      // The runner writes the final workbook right before job completion;
+      // a poll can observe the file mid-write (ZIP parse fails). Retry with
+      // backoff so a transient unreadable state does not fail the task.
+      let expectedValueSummary = null;
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        try {
+          expectedValueSummary = await summarizeWorkbookExpectedValues(absolutePath);
+          break;
+        } catch (error) {
+          const message = String(error?.message || "");
+          if (attempt >= 5 || !/ZIP|central directory|end of central/i.test(message)) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
+      }
       artifacts.push({
         id: randomUUID(),
         kind: candidate.kind || "tcsd_workbook",
@@ -1547,9 +1566,13 @@ export class UnitTestCaseGenerationService {
         expectedOutputPattern: task.hermes?.expectedOutputPattern || unitTestCaseConfig().expectedOutputPattern
       });
     }
+    // Host contract: require_exp_values means the workbook carries at least
+    // one expValue overall (validate_tcsd_workbook.py), NOT one per Test row —
+    // the deterministic baseline case (TC_001) legitimately has no assertion.
+    // Align the platform completion check with that rule.
     const invalidArtifacts = artifacts.filter((artifact) =>
       Number(artifact.testCaseCount || 0) < 1 ||
-      artifact.missingExpectedValueTestCases.length > 0
+      Number(artifact.expectedValueCount || 0) < 1
     );
     if (invalidArtifacts.length) {
       const missingTestCases = invalidArtifacts.flatMap((artifact) =>

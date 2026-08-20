@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { config } from "./config.js";
-import { ensureStorage } from "./services/storage.js";
+import { ensureStorage, readJson } from "./services/storage.js";
 import { ProjectService } from "./services/project-service.js";
 import { PipelineService, normalizeManualTitleOutline } from "./services/pipeline-service.js";
 import { BenchmarkCaseService } from "./services/benchmark-case-service.js";
@@ -528,6 +528,77 @@ export async function createApp() {
     try {
       const artifact = await unitTestCaseGenerationService.getArtifact(req.params.taskId, req.params.artifactId);
       res.download(artifact.absolutePath, artifact.fileName);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/unit-test-case-generation/tasks/:taskId/dsh-session-log", async (req, res, next) => {
+    try {
+      const task = await unitTestCaseGenerationService.getTask(req.params.taskId);
+      if (!task) {
+        return res.status(404).json({ error: "单元测试用例生成任务不存在", code: "unit_test_case_task_not_found" });
+      }
+      // The pipeline runs in the Worker's ws-* workspace (job.input.outputDir),
+      // NOT the platform task dir; the platform shares the same data volume, so
+      // that path is directly readable here. Try the job record first, then
+      // fall back to the task workspace (single-host / legacy tasks).
+      const outputDirs = [];
+      const jobId = String(task.pipeline?.jobId || "").trim();
+      if (jobId) {
+        try {
+          const job = await readJson(path.join(config.tcsdPipeline?.jobStoreDir || "", `${jobId}.json`));
+          const jobOutputDir = String(job?.input?.outputDir || "").trim();
+          if (jobOutputDir) outputDirs.push(jobOutputDir);
+        } catch {
+          // job record missing; fall back to the task workspace
+        }
+      }
+      if (task.workspace?.outputDir) outputDirs.push(task.workspace.outputDir);
+      if (!outputDirs.length) {
+        return res.status(404).json({ error: "任务没有可用的 DSH 会话日志", code: "dsh_session_log_unavailable" });
+      }
+      const sessionDirs = outputDirs.map((dir) => path.join(dir, ".tcsd-dsh"));
+      const candidates = [
+        ...sessionDirs.map((dir) => path.join(dir, "session.jsonl")),
+        ...sessionDirs.map((dir) => path.join(dir, "session.events.jsonl")),
+        ...sessionDirs.map((dir) => path.join(dir, "session.log"))
+      ];
+      let logFile = "";
+      for (const candidate of candidates) {
+        try {
+          const stat = await fs.stat(candidate);
+          if (stat.isFile()) {
+            logFile = candidate;
+            break;
+          }
+        } catch {
+          // candidate missing; try the next one
+        }
+      }
+      if (!logFile) {
+        return res.status(404).json({
+          error: "该任务没有 DSH 会话日志（可能由 Hermes 执行，或会话日志未落盘）",
+          code: "dsh_session_log_not_found"
+        });
+      }
+      const baseName = String(task.inputs?.modelSlx?.originalName || "model").replace(/\.[^.]+$/, "");
+      const fileName = `${baseName}_dsh_session_log.jsonl`;
+      if (logFile.endsWith("session.jsonl") || logFile.endsWith("session.events.jsonl")) {
+        // Raw streaming deltas (assistant/chunk) dominate the file (≈69MB of
+        // a 74MB log for one task); the final content is fully carried by
+        // assistant/message. Trim them when serving so the export stays
+        // comparable to the DSH desktop export (a few MB), for old and new
+        // tasks alike.
+        const raw = await fs.readFile(logFile, "utf8");
+        const trimmed = raw.split("\n").filter((line) => !line.includes('"type":"assistant/chunk"')).join("\n");
+        res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+        return res.type("application/octet-stream").send(trimmed);
+      }
+      // The session log lives under the dotfile directory .tcsd-dsh; send's
+      // default dotfiles handling ("ignore") 404s any dotfile path, so allow
+      // dotfiles explicitly for this download.
+      res.download(logFile, fileName, { dotfiles: "allow" });
     } catch (error) {
       next(error);
     }

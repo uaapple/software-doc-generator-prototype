@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import { config } from "../config.js";
 import {
   TCSD_CHECKPOINT_SCHEMA,
@@ -13,89 +15,12 @@ import {
   validateStageCheckpoint,
   validateStageResult
 } from "./tcsd-pipeline-contract.js";
-import { createHermesSpawnRunner, runHermesCommand } from "./hermes-command.js";
-import {
-  formatPythonCommand,
-  resolvePythonInvocation,
-  runPythonCommand
-} from "./python-command.js";
 import { TcsdHostSemanticValidator } from "./tcsd-host-semantic-validator.js";
 import { hashTcsdBundle, TcsdStageCatalog } from "./tcsd-stage-catalog.js";
 import { readJson, writeJson } from "./storage.js";
 
+const execFileAsync = promisify(execFile);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function activityFingerprint(paths = []) {
-  let latestMtimeMs = 0;
-  let fileCount = 0;
-  let totalBytes = 0;
-  async function visit(targetPath) {
-    let stat;
-    try {
-      stat = await fs.lstat(targetPath);
-    } catch (cause) {
-      if (cause?.code === "ENOENT") return;
-      throw cause;
-    }
-    latestMtimeMs = Math.max(latestMtimeMs, stat.mtimeMs || 0);
-    if (stat.isFile()) {
-      fileCount += 1;
-      totalBytes += stat.size;
-      return;
-    }
-    if (!stat.isDirectory()) return;
-    const entries = await fs.readdir(targetPath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) continue;
-      await visit(path.join(targetPath, entry.name));
-    }
-  }
-  for (const targetPath of [...new Set(paths.filter(Boolean).map((value) => path.resolve(value)))]) {
-    await visit(targetPath);
-  }
-  return `${latestMtimeMs}:${fileCount}:${totalBytes}`;
-}
-
-async function listBundleFilesWithHashes(bundleDir) {
-  const entries = await fs.readdir(bundleDir, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name, "en"))) {
-    const absolutePath = path.join(bundleDir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...(await listBundleFilesWithHashes(absolutePath)));
-    } else if (entry.isFile()) {
-      files.push({
-        relativePath: path.relative(bundleDir, absolutePath).split(path.sep).join("/"),
-        sha256: sha256(await fs.readFile(absolutePath))
-      });
-    }
-  }
-  return files;
-}
-
-async function bundleFileDiffs(installedDir, sourceDir, bundleLabel) {
-  const [installed, source] = await Promise.all([
-    listBundleFilesWithHashes(installedDir),
-    listBundleFilesWithHashes(sourceDir)
-  ]);
-  const sourceByPath = new Map(source.map((item) => [item.relativePath, item.sha256]));
-  const installedByPath = new Map(installed.map((item) => [item.relativePath, item.sha256]));
-  const diffs = [];
-  for (const [relativePath, installedSha] of installedByPath) {
-    if (!sourceByPath.has(relativePath)) {
-      diffs.push({ bundle: bundleLabel, relativePath, status: "added" });
-    } else if (sourceByPath.get(relativePath) !== installedSha) {
-      diffs.push({ bundle: bundleLabel, relativePath, status: "modified" });
-    }
-  }
-  for (const relativePath of sourceByPath.keys()) {
-    if (!installedByPath.has(relativePath)) {
-      diffs.push({ bundle: bundleLabel, relativePath, status: "removed" });
-    }
-  }
-  return diffs;
-}
 
 function relativeToWorkspace(workspaceDir, absolutePath) {
   const relativePath = path.relative(path.resolve(workspaceDir), path.resolve(absolutePath));
@@ -139,7 +64,6 @@ async function readSkillUsageRecord(usageFile, skillName) {
 }
 
 function publicRuntimeError(cause, stageIndex, timeoutMs) {
-  if (cause?.code === TCSD_ERROR_CODES.stalled) return cause;
   if (cause?.killed || cause?.signal === "SIGTERM" || cause?.code === "ETIMEDOUT") {
     return Object.assign(new Error(`TCSD stage ${stageIndex} Hermes session timed out after ${timeoutMs}ms`), {
       code: TCSD_ERROR_CODES.timeout,
@@ -160,15 +84,11 @@ function publicRuntimeError(cause, stageIndex, timeoutMs) {
 
 function stageRuntimeResultError(result, stageIndex, attempt, sessionId = "") {
   if (result?.status !== "failed") return null;
-  const resultDetails = result.error?.details && typeof result.error.details === "object"
-    ? result.error.details
-    : {};
   return Object.assign(
     new Error(result.error?.message || result.summary || `TCSD stage ${stageIndex} deterministic runtime failed.`),
     {
       code: result.error?.code || TCSD_ERROR_CODES.stageRuntime,
       details: {
-        ...resultDetails,
         stageIndex,
         attempt,
         sessionId,
@@ -192,10 +112,7 @@ function defaultStateDbPath(profile) {
 export class TcsdHermesStageExecutor {
   constructor(options = {}) {
     this.command = options.command || config.hermes.command || "hermes";
-    this.commandArgsPrefix = Array.isArray(options.commandArgsPrefix ?? config.hermes.commandArgsPrefix)
-      ? (options.commandArgsPrefix ?? config.hermes.commandArgsPrefix).map((value) => String(value))
-      : [];
-    this.pythonInvocation = resolvePythonInvocation(options);
+    this.python = options.python || process.env.TCSD_PIPELINE_PYTHON || (process.platform === "win32" ? "python" : "python3");
     this.profile = String(options.profile ?? config.tcsdPipeline.hermesProfile ?? config.hermes.profile ?? "").trim() || "default";
     this.maxTurns = Math.max(1, Number(options.maxTurns ?? config.tcsdPipeline.stageMaxTurns ?? 200) || 200);
     this.timeoutMs = Math.max(
@@ -203,78 +120,19 @@ export class TcsdHermesStageExecutor {
       Number(options.timeoutMs ?? config.tcsdPipeline.stageTimeoutMs ?? 60 * 60 * 1000) || 60 * 60 * 1000
     );
     this.stateDbPath = options.stateDbPath || defaultStateDbPath(this.profile);
-    this.commandRunner = options.commandRunner || createHermesSpawnRunner();
-    this.hostStageRunner = options.hostStageRunner || createHermesSpawnRunner();
-    this.activeSessions = new Map();
-    this.watchdogStallMs = Math.max(
-      0,
-      Number(
-        options.watchdogStallMs ??
-        process.env.TCSD_STAGE_HERMES_WATCHDOG_STALL_MS ??
-        300000
-      )
-    );
-    this.watchdogGraceMs = Math.max(0, Number(options.watchdogGraceMs ?? 15000));
-    this.watchdogPollMs = Math.max(100, Number(options.watchdogPollMs ?? 10000));
-    this.noResultStallMs = Math.max(
-      0,
-      Number(
-        options.noResultStallMs ??
-        process.env.TCSD_STAGE_HERMES_NO_RESULT_STALL_MS ??
-        1800000
-      )
-    );
-    this.noResultPollMs = Math.max(
-      this.watchdogPollMs,
-      Number(options.noResultPollMs ?? 30000)
-    );
+    this.commandRunner = options.commandRunner || execFileAsync;
     this.catalog = options.catalog || new TcsdStageCatalog();
-    this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({
-      pythonInvocation: this.pythonInvocation
-    });
+    this.semanticValidator = options.semanticValidator || new TcsdHostSemanticValidator({ python: this.python });
     this.usageReader = options.usageReader ||
       ((sessionId, runtime, skill, invocation) => this.readSessionUsage(sessionId, runtime, skill, invocation));
-    this.sessionIdResolver = options.sessionIdResolver ||
-      ((runtime, prompt, skill) => this.resolveSessionId(runtime, prompt, skill));
     this.now = options.now || (() => new Date().toISOString());
-  }
-
-  async resolveSessionId(runtime, prompt, skill) {
-    const script = path.join(runtime.directory, "scripts", "resolve_hermes_session.py");
-    const { stdout = "" } = await runPythonCommand(
-      this.commandRunner,
-      this.pythonInvocation,
-      [
-        "-B",
-        script,
-        "--state-db",
-        this.stateDbPath,
-        "--expected-skill-name",
-        skill.name,
-        "--expected-prompt-sha256",
-        sha256(prompt)
-      ],
-      {
-        cwd: runtime.directory,
-        timeout: 10000,
-        maxBuffer: 1024 * 1024,
-        windowsHide: true,
-        env: { ...process.env, NO_COLOR: "1" }
-      }
-    );
-    const resolved = JSON.parse(String(stdout || "").trim());
-    const sessionId = String(resolved?.sessionId || "").trim();
-    if (!sessionId) throw new Error("Hermes state database did not resolve a session ID");
-    return sessionId;
   }
 
   async readSessionUsage(sessionId, runtime, skill, invocation) {
     const script = path.join(runtime.directory, "scripts", "read_hermes_session.py");
-    const { stdout = "" } = await runPythonCommand(
-      this.commandRunner,
-      this.pythonInvocation,
+    const { stdout = "" } = await this.commandRunner(
+      this.python,
       [
-        "-B",
         script,
         "--state-db",
         this.stateDbPath,
@@ -360,281 +218,21 @@ export class TcsdHermesStageExecutor {
       installedSkillFileHash !== sourceSkill.skillFileHash
     ) {
       throw Object.assign(new Error("Installed TCSD skill or runtime changed after the job snapshot."), {
-        code: TCSD_ERROR_CODES.skillTreeMutated,
+        code: TCSD_ERROR_CODES.workerUnavailable,
         details: { stageIndex, skillName: sourceSkill.name }
       });
     }
     return {
       skill: {
         ...sourceSkill,
-        directory: skillDirectory,
-        sourceDirectory: sourceSkill.directory
+        directory: skillDirectory
       },
       runtime: {
         ...sourceRuntime,
         directory: runtimeDirectory,
-        installedPath: runtimeDirectory,
-        sourceDirectory: sourceRuntime.directory
+        installedPath: runtimeDirectory
       }
     };
-  }
-
-  async assertInstalledBundlesImmutable(job, stageIndex, { sessionId, attempt } = {}) {
-    const snapshot = job.skillSnapshot;
-    const diffs = [];
-    const installedStages = Array.isArray(snapshot?.stages) ? snapshot.stages : [];
-    for (let index = 1; index <= 12; index += 1) {
-      const installed = installedStages.find((item) => item.index === index);
-      if (!installed?.installedPath) continue;
-      const source = await this.catalog.describe(index);
-      diffs.push(
-        ...(await bundleFileDiffs(
-          path.resolve(installed.installedPath),
-          path.resolve(source.directory),
-          `stage-${String(index).padStart(2, "0")}`
-        ))
-      );
-    }
-    if (snapshot?.runtime?.installedPath) {
-      const source = await this.catalog.runtime();
-      diffs.push(
-        ...(await bundleFileDiffs(
-          path.resolve(snapshot.runtime.installedPath),
-          path.resolve(source.directory),
-          "tcsd-runtime"
-        ))
-      );
-    }
-    if (!diffs.length) return;
-    throw Object.assign(
-      new Error(
-        `TCSD skill tree was mutated by the stage agent session (${diffs.length} file(s)).`
-      ),
-      {
-        code: TCSD_ERROR_CODES.skillTreeMutated,
-        details: {
-          stageIndex,
-          attempt,
-          sessionId,
-          mutatedFileCount: diffs.length,
-          mutatedFiles: diffs.slice(0, 20)
-        }
-      }
-    );
-  }
-
-  /**
-   * 运行 Hermes 阶段会话；当结果文件已为 completed 且一段时间无新写入、
-   * 而 CLI 进程仍挂起（hermes chat 退出路径 futex/线程 join 竞态）时，
-   * 终止进程并按已完成的增量输出收尾，避免阶段无限停留在“正在执行”。
-   * 尚无结果且输出、阶段文件和 Hermes 状态库长时间均无变化时，终止
-   * 停滞会话并返回可识别错误，由作业服务使用全新 session 自动重试一次。
-   */
-  async runStageHermes({ command, args, options, resultPath, activityPaths = [], recoverSessionId, job }) {
-    const promise = runHermesCommand(this.commandRunner, command, args, options);
-    const child = promise.child || null;
-    const jobId = String(job?.jobId || "").trim();
-    if (jobId && child) this.activeSessions.set(jobId, { promise, child, job });
-    const clearActiveSession = () => {
-      if (jobId && this.activeSessions.get(jobId)?.promise === promise) {
-        this.activeSessions.delete(jobId);
-      }
-    };
-    if ((!this.watchdogStallMs && !this.noResultStallMs) || !child) {
-      return promise.finally(clearActiveSession);
-    }
-    try {
-    let lastSeenMtime = 0;
-    let lastOutputSize = 0;
-    let lastActivityFingerprint = "";
-    let lastActivityAt = Date.now();
-    let nextActivityScanAt = 0;
-    for (;;) {
-      const settled = await Promise.race([
-        promise.then(
-          (value) => ({ kind: "ok", value }),
-          (error) => ({ kind: "error", error })
-        ),
-        sleep(this.watchdogPollMs).then(() => ({ kind: "poll" }))
-      ]);
-      if (settled.kind === "ok") return settled.value;
-      if (settled.kind === "error") throw settled.error;
-      const partialStdout =
-        typeof promise.stdoutSoFar === "function" ? promise.stdoutSoFar() : "";
-      const partialStderr =
-        typeof promise.stderrSoFar === "function" ? promise.stderrSoFar() : "";
-      const outputSize = Buffer.byteLength(partialStdout) + Buffer.byteLength(partialStderr);
-      if (outputSize !== lastOutputSize) {
-        lastOutputSize = outputSize;
-        lastActivityAt = Date.now();
-      }
-      if (this.noResultStallMs && Date.now() >= nextActivityScanAt) {
-        const fingerprint = await activityFingerprint(activityPaths);
-        if (lastActivityFingerprint && fingerprint !== lastActivityFingerprint) {
-          lastActivityAt = Date.now();
-        }
-        lastActivityFingerprint = fingerprint;
-        nextActivityScanAt = Date.now() + this.noResultPollMs;
-      }
-      let completed = false;
-      try {
-        const stat = await fs.stat(resultPath);
-        if (stat.mtimeMs > lastSeenMtime) lastSeenMtime = stat.mtimeMs;
-        if (this.watchdogStallMs && lastSeenMtime > 0 && Date.now() - lastSeenMtime >= this.watchdogStallMs) {
-          const parsed = JSON.parse(await fs.readFile(resultPath, "utf8"));
-          completed =
-            parsed?.schema === TCSD_STAGE_RESULT_SCHEMA &&
-            parsed?.status === "completed";
-        }
-      } catch {
-        completed = false;
-      }
-      const stalled =
-        !completed &&
-        this.noResultStallMs > 0 &&
-        Date.now() - lastActivityAt >= this.noResultStallMs;
-      if (!completed && !stalled) continue;
-      let recoveredSessionId = parseSessionId(`${partialStdout}\n${partialStderr}`);
-      if (!recoveredSessionId && completed && typeof recoverSessionId === "function") {
-        try {
-          recoveredSessionId = String(await recoverSessionId()).trim();
-        } catch {
-          recoveredSessionId = "";
-        }
-      }
-      if (typeof promise.terminate === "function") promise.terminate("SIGTERM");
-      else child.kill("SIGTERM");
-      const exited = await Promise.race([
-        promise.then(() => true).catch(() => true),
-        sleep(this.watchdogGraceMs).then(() => false)
-      ]);
-      if (!exited) {
-        try {
-          if (typeof promise.terminate === "function") promise.terminate("SIGKILL");
-          else child.kill("SIGKILL");
-        } catch {
-          // 进程可能已退出
-        }
-      }
-      if (Array.isArray(job.events)) {
-        const workspaceDirValue = String(job.input?.workspaceDir || "").trim();
-        job.events.push({
-          at: this.now(),
-          type: stalled
-            ? "hermes_stage_watchdog_stalled_session"
-            : "hermes_stage_watchdog_killed_session",
-          stageIndex: options.stageIndex,
-          attempt: options.attempt,
-          ...(stalled
-            ? {
-                inactivityMs: Date.now() - lastActivityAt,
-                stallThresholdMs: this.noResultStallMs
-              }
-            : {}),
-          ...(workspaceDirValue
-            ? { resultPath: relativeToWorkspace(path.resolve(workspaceDirValue), resultPath) }
-            : {}),
-          ...(recoveredSessionId ? { sessionId: recoveredSessionId, sessionIdRecovered: true } : {})
-        });
-      }
-      if (stalled) {
-        throw Object.assign(
-          new Error(
-            `TCSD stage ${options.stageIndex} Hermes session made no observable progress for ${this.noResultStallMs}ms.`
-          ),
-          {
-            code: TCSD_ERROR_CODES.stalled,
-            details: {
-              stageIndex: options.stageIndex,
-              attempt: options.attempt,
-              inactivityMs: Date.now() - lastActivityAt,
-              stallThresholdMs: this.noResultStallMs
-            }
-          }
-        );
-      }
-      return { stdout: partialStdout, stderr: partialStderr, sessionId: recoveredSessionId };
-    }
-    } finally {
-      clearActiveSession();
-    }
-  }
-
-  async cancel(jobId = "", job = null) {
-    const normalizedJobId = String(jobId || "").trim();
-    const active = this.activeSessions.get(normalizedJobId);
-    const gatewayCancellation = await this.cancelActiveGatewayJob(active?.job || job).catch(() => ({
-      present: true,
-      cancelled: false
-    }));
-    if (!active) {
-      return {
-        requested: gatewayCancellation.present,
-        stopped: !gatewayCancellation.present || gatewayCancellation.cancelled
-      };
-    }
-    const terminate = (signal) => {
-      if (typeof active.promise.terminate === "function") return active.promise.terminate(signal);
-      try {
-        return active.child.kill(signal);
-      } catch {
-        return false;
-      }
-    };
-    terminate("SIGTERM");
-    const exited = await Promise.race([
-      active.promise.then(() => true).catch(() => true),
-      sleep(this.watchdogGraceMs).then(() => false)
-    ]);
-    if (!exited) {
-      terminate("SIGKILL");
-      const killed = await Promise.race([
-        active.promise.then(() => true).catch(() => true),
-        sleep(this.watchdogGraceMs).then(() => false)
-      ]);
-      return {
-        requested: true,
-        stopped: killed && (!gatewayCancellation.present || gatewayCancellation.cancelled)
-      };
-    }
-    return {
-      requested: true,
-      stopped: !gatewayCancellation.present || gatewayCancellation.cancelled
-    };
-  }
-
-  async cancelActiveGatewayJob(job = {}) {
-    const outputDir = String(job?.input?.outputDir || "").trim();
-    if (!outputDir) return { present: false, cancelled: false };
-    const markerPath = path.join(outputDir, ".tcsd-runtime", "active-gateway-job.json");
-    const marker = await readJson(markerPath, null);
-    if (
-      marker?.schema !== "tcsd-active-gateway-job/v1" ||
-      String(marker.ownerJobId || "") !== String(job.jobId || "") ||
-      !/^[A-Za-z0-9._-]{1,200}$/.test(String(marker.workspaceId || "")) ||
-      !/^[A-Za-z0-9._-]{1,200}$/.test(String(marker.jobId || ""))
-    ) {
-      return { present: false, cancelled: false };
-    }
-    const baseUrl = String(process.env.SATK_GATEWAY_URL || "").trim().replace(/\/+$/, "");
-    if (!baseUrl) return { present: true, cancelled: false };
-    const headers = { "Content-Type": "application/json" };
-    const authToken = String(process.env.MATLAB_MCP_AUTH_TOKEN || "").trim();
-    const evaluateToken = String(process.env.MATLAB_GATEWAY_EVALUATE_TOKEN || "").trim();
-    if (authToken) headers.Authorization = `Bearer ${authToken}`;
-    if (evaluateToken) {
-      headers["X-SDG-Evaluate-Token"] = evaluateToken;
-      headers["X-SDG-Gateway-Caller"] = "tcsd-runtime";
-    }
-    const response = await fetch(`${baseUrl}/api/jobs/${encodeURIComponent(marker.jobId)}/cancel`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ workspaceId: marker.workspaceId }),
-      signal: AbortSignal.timeout(15000)
-    });
-    if (!response.ok && response.status !== 404) return { present: true, cancelled: false };
-    await fs.rm(markerPath, { force: true }).catch(() => {});
-    return { present: true, cancelled: true };
   }
 
   buildPrompt({ definition, skill, runtime, manifestPath, resultPath, validationReportPath, attempt }) {
@@ -645,35 +243,24 @@ export class TcsdHermesStageExecutor {
           "Repair only the reported deterministic validation defects, then rerun the same stage in this new session."
         ]
       : ["This is the initial stage attempt. No earlier session context is available."];
-    const runtimeCommand = formatPythonCommand(this.pythonInvocation, [
-      "-B",
-      path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py"),
+    const runtimeCommand = [
+      this.python,
+      `"${path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py")}"`,
       "--manifest",
-      manifestPath,
+      `"${manifestPath}"`,
       "--result",
-      resultPath
-    ]);
-    if (definition.index === 6) {
-      return [
-        `/${definition.skillName} You are executing the generic Hermes step tcsd_stage_execute.`,
-        `Load and execute only the slash-invoked ${definition.skillName} skill.`,
-        `Execute only stage ${definition.index}: ${definition.name}.`,
-        `Read the authoritative input manifest: ${manifestPath}`,
-        ...repairLines,
-        "The Worker host has already completed the deterministic MATLAB probe batches.",
-        "Do not start MATLAB, SATK, a Gateway job, or another probe process.",
-        "Invoke this exact verification command:",
-        `${runtimeCommand} --stage6-mode verify-host`,
-        `The required candidate result path is: ${resultPath}`,
-        `The required result schema is ${TCSD_STAGE_RESULT_SCHEMA}.`,
-        "Do not edit the host-prepared result or artifacts. Do not write a host checkpoint or expose secrets.",
-        `The installed skills directory (${skill.directory}) and runtime directory (${runtime.directory}) are immutable: never create, modify, rename, or delete any file under them.`,
-        "Your text response is non-authoritative; the host independently validates all result artifacts."
-      ].join("\n");
-    }
+      `"${resultPath}"`
+    ].join(" ");
     if (definition.index === 10) {
       const repairBriefPath = path.join(path.dirname(resultPath), "repair-brief.json");
       const repairProposalPath = path.join(path.dirname(resultPath), "repair-proposal.json");
+      const prepareCommand = [
+        runtimeCommand,
+        "--stage10-mode",
+        "prepare",
+        "--repair-brief",
+        `"${repairBriefPath}"`
+      ].join(" ");
       const applyCommand = [
         runtimeCommand,
         "--stage10-mode",
@@ -689,11 +276,11 @@ export class TcsdHermesStageExecutor {
         `Execute only stage ${definition.index}: ${definition.name}.`,
         `Read the authoritative input manifest: ${manifestPath}`,
         ...repairLines,
-        "The Worker host has already run the bounded Simulink Design Verifier pass and prepared the remaining measured coverage gaps.",
+        "Run this exact prepare command first:",
+        prepareCommand,
         `Read the resulting authoritative coverage repair brief at: ${repairBriefPath}`,
-        `If ${resultPath} already contains a completed or skipped host result, do not modify it and finish this session without creating a proposal.`,
         "Inspect only the uncovered target block and its local upstream model slice.",
-        "There is no per-test limit on JSON stimulus.steps action entries. Preserve every ordered action required by the evidenced state or timing sequence.",
+        "The maxStepsPerTest limit counts JSON stimulus.steps action entries only; it does not count Simulink solver steps, sample hits, counter increments, or Unit Delay updates.",
         "A finite hold spanning many sample periods is one action step: compute the justified duration and encode it as one positive delay_s instead of declaring the sequence unconstructible.",
         `Write the required Agent repair proposal to: ${repairProposalPath}`,
         "Then run this exact deterministic apply command:",
@@ -701,7 +288,6 @@ export class TcsdHermesStageExecutor {
         `The required candidate result path is: ${resultPath}`,
         `The required result schema is ${TCSD_STAGE_RESULT_SCHEMA}.`,
         "Do not edit the existing workbook or write a host checkpoint. Do not expose hidden reasoning or secrets.",
-        `The installed skills directory (${skill.directory}) and runtime directory (${runtime.directory}) are immutable: never create, modify, rename, or delete any file under them; the host verifies this after your session. Write all generated files only into the task workspace.`,
         "Your text response is non-authoritative; the host accepts only independently validated proposal, simulation, workbook, and result artifacts."
       ].join("\n");
     }
@@ -716,7 +302,6 @@ export class TcsdHermesStageExecutor {
       `The required candidate result path is: ${resultPath}`,
       `The required result schema is ${TCSD_STAGE_RESULT_SCHEMA}.`,
       "Do not write a host checkpoint. Do not expose hidden reasoning or secrets.",
-      `The installed skills directory (${skill.directory}) and runtime directory (${runtime.directory}) are immutable: never create, modify, rename, or delete any file under them; the host verifies this after your session. Write all generated files only into the task workspace.`,
       "Your text response is non-authoritative; the host will accept the stage only after independently validating the result file and artifacts."
     ].join("\n");
   }
@@ -732,57 +317,9 @@ export class TcsdHermesStageExecutor {
     const artifacts = [...checkpointArtifacts, ...(agentArtifacts || [])]
       .filter((artifact) => artifact?.path && artifact?.kind)
       .filter((artifact, index, values) => values.findIndex((item) => item.path === artifact.path) === index);
-    const finalValidationCheckpoint = job.stages?.[10]?.checkpoint;
-    const initialBackfillCheckpoint = job.stages?.[7]?.checkpoint;
-    const oracleCheckpoint = finalValidationCheckpoint?.status !== "skipped" && finalValidationCheckpoint?.evidence
-      ? finalValidationCheckpoint
-      : initialBackfillCheckpoint;
-    const oracleEvidence = oracleCheckpoint?.evidence;
-    const oracleStageIndex = oracleCheckpoint === finalValidationCheckpoint ? 11 : 8;
-    const caseOutputCounts = oracleEvidence?.caseOutputCounts;
-    const testCaseCount = Number(oracleEvidence?.testCaseCount);
-    const expValueCount = Number(oracleEvidence?.workbookBackfillCount);
-    const testsWithoutExpectedValues = oracleEvidence?.testsWithoutExpectedValues;
-    const caseOutputEntries = caseOutputCounts && typeof caseOutputCounts === "object" && !Array.isArray(caseOutputCounts)
-      ? Object.entries(caseOutputCounts)
-      : [];
-    const countedExpectedValues = caseOutputEntries.length
-      ? caseOutputEntries.reduce((total, [, counts]) => (
-          total + (
-            counts && typeof counts === "object" && !Array.isArray(counts)
-              ? Object.values(counts).reduce((subtotal, count) => subtotal + Number(count || 0), 0)
-              : 0
-          )
-        ), 0)
-      : 0;
-    if (
-      !oracleCheckpoint ||
-      oracleCheckpoint.validation?.passed !== true ||
-      !Number.isInteger(testCaseCount) ||
-      testCaseCount < 1 ||
-      !Number.isInteger(expValueCount) ||
-      expValueCount < testCaseCount ||
-      !Array.isArray(testsWithoutExpectedValues) ||
-      testsWithoutExpectedValues.length !== 0 ||
-      caseOutputEntries.length !== testCaseCount ||
-      caseOutputEntries.some(([identity, counts]) => (
-        !identity ||
-        !counts ||
-        typeof counts !== "object" ||
-        Array.isArray(counts) ||
-        !Object.keys(counts).length ||
-        Object.values(counts).some((count) => !Number.isInteger(Number(count)) || Number(count) < 1)
-      )) ||
-      countedExpectedValues !== expValueCount ||
-      Number(oracleEvidence?.simulationValueCount) !== expValueCount ||
-      Number(oracleEvidence?.expValueCount) !== expValueCount ||
-      !oracleEvidence?.simulationResult
-    ) {
-      throw Object.assign(new Error("Host cannot package TCSD completion without complete per-Test oracle evidence."), {
-        code: TCSD_ERROR_CODES.validation
-      });
-    }
-    const latestWorkbook = (oracleCheckpoint.artifacts || [])
+    const latestWorkbook = [...(job.stages || [])]
+      .reverse()
+      .flatMap((stage) => stage.checkpoint?.artifacts || [])
       .find((artifact) => artifact.kind === "xlsx")?.path || "";
     if (!latestWorkbook) {
       throw Object.assign(new Error("Host cannot package TCSD completion without a verified final workbook."), {
@@ -799,7 +336,9 @@ export class TcsdHermesStageExecutor {
     if (latestWorkbookAbsolutePath !== finalWorkbookAbsolutePath) {
       await fs.copyFile(latestWorkbookAbsolutePath, finalWorkbookAbsolutePath);
     }
-    const latestSimulation = oracleEvidence.simulationResult;
+    const latestSimulation = job.stages?.[10]?.checkpoint?.evidence?.simulationResult ||
+      job.stages?.[7]?.checkpoint?.evidence?.simulationResult ||
+      "";
     const initialCoverageArtifact = job.stages?.[8]?.checkpoint?.evidence?.coverageReport || "";
     const finalCoverageArtifact = job.stages?.[10]?.checkpoint?.evidence?.coverageReport || initialCoverageArtifact;
     const planningMappingArtifact = artifacts.find((artifact) => artifact.role === "planning-mapping-assessment");
@@ -846,19 +385,8 @@ export class TcsdHermesStageExecutor {
       generatedAt: this.now(),
       workbook: finalWorkbookPath,
       simulation: {
-        status: "completed",
+        status: latestSimulation ? "completed" : "not_required",
         result: latestSimulation
-      },
-      oracle: {
-        authority: "host",
-        status: "complete",
-        sourceStageIndex: oracleStageIndex,
-        testCaseCount,
-        expValueCount,
-        testsWithoutExpectedValues: [],
-        caseOutputCounts,
-        simulationResult: latestSimulation,
-        workbookSha256: sha256(await fs.readFile(finalWorkbookAbsolutePath))
       },
       evidence: {
         checkpointCount: (job.checkpoints || []).length + 1,
@@ -988,99 +516,6 @@ export class TcsdHermesStageExecutor {
       }
     };
     await writeJson(manifestPath, manifest);
-    if (stageIndex === 6) {
-      const hostPromise = runPythonCommand(
-        this.hostStageRunner,
-        this.pythonInvocation,
-        [
-          "-B",
-          path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py"),
-          "--manifest",
-          manifestPath,
-          "--result",
-          resultPath
-        ],
-        {
-          cwd: workspaceDir,
-          env: {
-            ...process.env,
-            NO_COLOR: "1",
-            TCSD_JOB_ID: job.jobId,
-            TCSD_OUTPUT_DIR: outputDir,
-            TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
-            TCSD_STAGE_INDEX: String(stageIndex),
-            TCSD_STAGE_ATTEMPT: String(attempt),
-            SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
-          },
-          timeout: this.timeoutMs,
-          maxBuffer: 16 * 1024 * 1024,
-          windowsHide: true
-        }
-      );
-      const child = hostPromise.child || null;
-      if (child) this.activeSessions.set(job.jobId, { promise: hostPromise, child, job });
-      try {
-        await hostPromise;
-      } catch (cause) {
-        const failedResult = await readJson(resultPath, null).catch(() => null);
-        const runtimeError = stageRuntimeResultError(failedResult, stageIndex, attempt);
-        if (runtimeError) throw runtimeError;
-        throw publicRuntimeError(cause, stageIndex, this.timeoutMs);
-      } finally {
-        if (this.activeSessions.get(job.jobId)?.promise === hostPromise) {
-          this.activeSessions.delete(job.jobId);
-        }
-      }
-    }
-    if (stageIndex === 10) {
-      const repairBriefPath = path.join(attemptDir, "repair-brief.json");
-      const hostPromise = runPythonCommand(
-        this.hostStageRunner,
-        this.pythonInvocation,
-        [
-          "-B",
-          path.join(runtime.directory, "scripts", "run_tcsd_pipeline_stage.py"),
-          "--manifest",
-          manifestPath,
-          "--result",
-          resultPath,
-          "--stage10-mode",
-          "prepare",
-          "--repair-brief",
-          repairBriefPath
-        ],
-        {
-          cwd: workspaceDir,
-          env: {
-            ...process.env,
-            NO_COLOR: "1",
-            TCSD_JOB_ID: job.jobId,
-            TCSD_OUTPUT_DIR: outputDir,
-            TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
-            TCSD_STAGE_INDEX: String(stageIndex),
-            TCSD_STAGE_ATTEMPT: String(attempt),
-            SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
-          },
-          timeout: this.timeoutMs,
-          maxBuffer: 16 * 1024 * 1024,
-          windowsHide: true
-        }
-      );
-      const child = hostPromise.child || null;
-      if (child) this.activeSessions.set(job.jobId, { promise: hostPromise, child, job });
-      try {
-        await hostPromise;
-      } catch (cause) {
-        const failedResult = await readJson(resultPath, null).catch(() => null);
-        const runtimeError = stageRuntimeResultError(failedResult, stageIndex, attempt);
-        if (runtimeError) throw runtimeError;
-        throw publicRuntimeError(cause, stageIndex, this.timeoutMs);
-      } finally {
-        if (this.activeSessions.get(job.jobId)?.promise === hostPromise) {
-          this.activeSessions.delete(job.jobId);
-        }
-      }
-    }
     const prompt = this.buildPrompt({
       definition,
       skill,
@@ -1091,42 +526,24 @@ export class TcsdHermesStageExecutor {
       attempt
     });
     const rawArgs = ["chat", "-q", prompt, "-Q", "--source", "tool", "--max-turns", String(this.maxTurns), "--yolo"];
-    const args = [...this.commandArgsPrefix, ...profileArgs(this.profile, rawArgs)];
+    const args = profileArgs(this.profile, rawArgs);
     const skillUsageFile = path.join(path.dirname(path.dirname(skill.directory)), ".usage.json");
     const usageBefore = await readSkillUsageRecord(skillUsageFile, skill.name);
     const startedAt = Date.now();
     let commandResult;
     try {
-      commandResult = await this.runStageHermes({
-        command: this.command,
-        args,
-        options: {
-          cwd: workspaceDir,
-          env: {
-            ...process.env,
-            NO_COLOR: "1",
-            TCSD_JOB_ID: job.jobId,
-            TCSD_OUTPUT_DIR: outputDir,
-            TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
-            TCSD_STAGE_INDEX: String(stageIndex),
-            TCSD_STAGE_ATTEMPT: String(attempt),
-            SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
-          },
-          timeout: this.timeoutMs,
-          maxBuffer: 16 * 1024 * 1024,
-          windowsHide: true,
-          stageIndex,
-          attempt
+      commandResult = await this.commandRunner(this.command, args, {
+        cwd: workspaceDir,
+        env: {
+          ...process.env,
+          NO_COLOR: "1",
+          TCSD_JOB_ID: job.jobId,
+          TCSD_RESOURCE_OWNER_JOB_ID: job.jobId,
+          SATK_MATLAB_ROOT: process.env.SATK_MATLAB_ROOT || process.env.MATLAB_ROOT || ""
         },
-        resultPath,
-        activityPaths: [
-          outputDir,
-          this.stateDbPath,
-          `${this.stateDbPath}-wal`,
-          `${this.stateDbPath}-shm`
-        ],
-        recoverSessionId: () => this.sessionIdResolver(runtime, prompt, skill),
-        job
+        timeout: this.timeoutMs,
+        maxBuffer: 16 * 1024 * 1024,
+        windowsHide: true
       });
     } catch (cause) {
       const failedResult = await readJson(resultPath, null).catch(() => null);
@@ -1136,21 +553,13 @@ export class TcsdHermesStageExecutor {
     }
     const stdout = String(commandResult?.stdout || "");
     const stderr = String(commandResult?.stderr || "");
-    let sessionId = String(commandResult?.sessionId || "").trim() || parseSessionId(`${stdout}\n${stderr}`);
-    if (!sessionId) {
-      try {
-        sessionId = String(await this.sessionIdResolver(runtime, prompt, skill)).trim();
-      } catch {
-        sessionId = "";
-      }
-    }
+    const sessionId = parseSessionId(`${stdout}\n${stderr}`);
     if (!sessionId) {
       throw Object.assign(new Error("Hermes stage session did not report a session_id."), {
         code: TCSD_ERROR_CODES.telemetry,
         details: { stageIndex, attempt }
       });
     }
-    await this.assertInstalledBundlesImmutable(job, stageIndex, { sessionId, attempt });
     const priorSessionIds = this.collectPriorSessionIds(job);
     if (priorSessionIds.has(sessionId)) {
       throw Object.assign(new Error("Hermes reused a prior TCSD stage session."), {
@@ -1180,15 +589,7 @@ export class TcsdHermesStageExecutor {
       resultReadError = cause;
     }
     const runtimeError = stageRuntimeResultError(result, stageIndex, attempt, sessionId);
-    if (runtimeError) {
-      runtimeError.details = {
-        ...(runtimeError.details || {}),
-        profile: this.profile,
-        model: tokenUsage.model,
-        tokenUsage
-      };
-      throw runtimeError;
-    }
+    if (runtimeError) throw runtimeError;
     let validatedResult;
     let semanticEvidence;
     try {
@@ -1210,7 +611,6 @@ export class TcsdHermesStageExecutor {
         pipelineState: job
       });
     } catch (cause) {
-      const semanticDiagnostics = cause?.details?.diagnostics || null;
       const report = {
         schema: "tcsd-host-validation-report/v1",
         jobId: job.jobId,
@@ -1219,7 +619,6 @@ export class TcsdHermesStageExecutor {
         passed: false,
         code: cause.code || TCSD_ERROR_CODES.validation,
         message: cause.message,
-        semanticDiagnostics,
         resultPath: relativeToWorkspace(workspaceDir, resultPath),
         sessionId
       };
@@ -1234,7 +633,6 @@ export class TcsdHermesStageExecutor {
           model: tokenUsage.model,
           tokenUsage,
           skill: manifest.skill,
-          semanticDiagnostics,
           validationReportPath: relativeToWorkspace(workspaceDir, validationPath)
         }
       });

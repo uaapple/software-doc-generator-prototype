@@ -1,0 +1,3 @@
+name: 单元测试用例生成模式（Worker）
+description: 容器内 headless DSH 会话通过既有确定性 TCSD 运行时与 Gateway 生成覆盖优先的 TCSD 工作簿。
+order: 10

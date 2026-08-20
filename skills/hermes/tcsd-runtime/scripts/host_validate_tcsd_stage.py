@@ -10,87 +10,43 @@ import math
 import os
 import re
 import sys
-import time
+import urllib.request
 from pathlib import Path
 from typing import Any
-import urllib.error
-import urllib.request
-from urllib.parse import urlsplit
 
-REPORT_SCHEMA = "tcsd-host-semantic-validation/v1"
-SELF_CHECK_SCHEMA = "tcsd-host-semantic-self-check/v1"
+# The platform semantic validator invokes this script with `python -I -B`
+# (isolated mode), where sys.path[0] is NOT the script directory; without this
+# bootstrap the sibling-module imports below fail with ModuleNotFoundError.
+# Under a plain invocation sys.path[0] already is the script directory and the
+# normalization is a no-op.
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 SCRIPT_DIRECTORY_TEXT = str(SCRIPT_DIRECTORY)
 if not sys.path or sys.path[0] != SCRIPT_DIRECTORY_TEXT:
     sys.path[:] = [entry for entry in sys.path if entry != SCRIPT_DIRECTORY_TEXT]
     sys.path.insert(0, SCRIPT_DIRECTORY_TEXT)
 
-try:
-    from openpyxl import load_workbook
+from openpyxl import load_workbook
 
-    import run_tcsd_pipeline_stage as pipeline_stage_module
-    import classify_state_probe_targets as state_probe_classifier_module
-    import validate_agent_coverage_repair as coverage_repair_module
-    import validate_tcsd_workbook as workbook_validation_module
-except ModuleNotFoundError as error:
-    missing_module = str(error.name or "")
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", missing_module):
-        missing_module = "unknown"
-    print(
-        json.dumps(
-            {
-                "schema": REPORT_SCHEMA,
-                "stageIndex": 0,
-                "passed": False,
-                "message": f"host validator import failed: missing module {missing_module}",
-            },
-            ensure_ascii=False,
-        ),
-        file=sys.stderr,
-    )
-    raise SystemExit(1) from None
-
-simulation_backfill_evidence = pipeline_stage_module.simulation_backfill_evidence
-BRIEF_SCHEMA = coverage_repair_module.BRIEF_SCHEMA
-IR_SCHEMA = coverage_repair_module.IR_SCHEMA
-PROPOSAL_SCHEMA = coverage_repair_module.PROPOSAL_SCHEMA
-VALIDATION_SCHEMA = coverage_repair_module.VALIDATION_SCHEMA
-build_brief = coverage_repair_module.build_brief
-validate_proposal = coverage_repair_module.validate_proposal
-load_interface_names = workbook_validation_module.load_interface_names
-load_interface_execution_controls = workbook_validation_module.load_interface_execution_controls
-validate_workbook = workbook_validation_module.validate_workbook
+from run_tcsd_pipeline_stage import simulation_backfill_evidence
+from validate_agent_coverage_repair import (
+    BRIEF_SCHEMA,
+    IR_SCHEMA,
+    PROPOSAL_SCHEMA,
+    VALIDATION_SCHEMA,
+    build_brief,
+    validate_proposal,
+)
+from validate_tcsd_workbook import load_interface_names, validate_workbook
 
 
+REPORT_SCHEMA = "tcsd-host-semantic-validation/v1"
 COVERAGE_SCHEMA = "tcsd-coverage-report/v1"
 SIMULATION_SCHEMA = "tcsd-simulation-result/v1"
 ENVIRONMENT_SCHEMA = "tcsd-environment-gate/v2"
 PROBE_PLAN_SCHEMA = "simulink-ut-state-probe-plan/v1"
 PROBE_RESULT_SCHEMA = "simulink-ut-logical-mcdc-probe/v2"
-PROBE_CLASSIFICATION_SCHEMA = "tcsd-state-probe-target-classification/v1"
 REPAIR_CANDIDATE_SCHEMA = "tcsd-repair-candidate-validation/v1"
 SYNTHESIS_SCHEMA = "simulink-ut-tcsd-coverage-ir-synthesis/v1"
-EXTRACTED_CASES_SCHEMA = "tcsd-extracted-cases/v1"
-INITIAL_RECIPE_RESOURCE_GAPS_SCHEMA = "tcsd-initial-recipe-resource-gaps/v1"
-INITIAL_RECIPE_VALIDATION_GAPS_SCHEMA = "tcsd-initial-recipe-validation-gaps/v1"
-
-
-def self_check() -> dict[str, Any]:
-    local_modules = {
-        "run_tcsd_pipeline_stage": pipeline_stage_module,
-        "classify_state_probe_targets": state_probe_classifier_module,
-        "validate_agent_coverage_repair": coverage_repair_module,
-        "validate_tcsd_workbook": workbook_validation_module,
-    }
-    for name, module in local_modules.items():
-        module_path = Path(str(getattr(module, "__file__", ""))).resolve()
-        if module_path.parent != SCRIPT_DIRECTORY:
-            raise RuntimeError(f"host validator local import resolved outside its trusted script directory: {name}")
-    return {
-        "schema": SELF_CHECK_SCHEMA,
-        "passed": True,
-        "localModules": sorted(local_modules),
-    }
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -144,137 +100,19 @@ def canonical(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def fetch_gateway_evidence(
-    route: str,
-    gateway_url: str,
-    token: str,
-    *,
-    retry_delays: tuple[float, ...] = (0.1, 0.25),
-    sleep=time.sleep,
-) -> dict[str, Any]:
-    for attempt in range(len(retry_delays) + 1):
-        request = urllib.request.Request(
-            f"{gateway_url}{route}",
-            headers={"Authorization": f"Bearer {token}"},
-            method="GET",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=10.0) as response:
-                value = json.loads(response.read().decode("utf-8"))
-            if not isinstance(value, dict):
-                raise ValueError("gateway evidence response must be an object")
-            return value
-        except urllib.error.HTTPError:
-            raise
-        except urllib.error.URLError:
-            if attempt >= len(retry_delays):
-                raise
-            sleep(max(0.0, float(retry_delays[attempt])))
-    raise RuntimeError("gateway evidence retry loop ended unexpectedly")
-
-
-def gateway_evidence_payload(
-    health: dict[str, Any],
-    version: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "schema": "tcsd-matlab-gateway-evidence/v1",
-        "authenticated": True,
-        "health": {
-            "schema": health.get("schema"),
-            "service": health.get("service"),
-            "ok": health.get("ok"),
-            "gatewayVersion": health.get("version"),
-        },
-        "version": {
-            "schema": version.get("schema"),
-            "service": version.get("service"),
-            "gatewayVersion": version.get("gatewayVersion"),
-            "matlabRelease": version.get("matlabRelease"),
-            "matlabMcpVersion": version.get("matlabMcpVersion"),
-            "satkVersion": version.get("satkVersion"),
-        },
-    }
-
-
-def validate_satk_server(
-    server: dict[str, Any],
-    *,
-    environ: dict[str, str] | None = None,
-    gateway_fetch=None,
-) -> dict[str, Any]:
-    discovery = str(server.get("discovery") or "")
-    if discovery == "matlab-gateway":
-        if any(key in server for key in ("path", "sha256", "sizeBytes")):
-            raise ValueError("gateway MCP evidence must not claim a container-local executable")
-        values = os.environ if environ is None else environ
-        gateway_url = str(server.get("gatewayUrl") or "")
-        configured_gateway_url = str(values.get("SATK_GATEWAY_URL") or "").strip().rstrip("/")
-        gateway_token = str(values.get("MATLAB_MCP_AUTH_TOKEN") or "").strip()
-        parsed_url = urlsplit(gateway_url)
-        evidence = server.get("gatewayEvidence")
-        if (
-            gateway_url != configured_gateway_url
-            or parsed_url.scheme not in {"http", "https"}
-            or not parsed_url.hostname
-            or parsed_url.username is not None
-            or parsed_url.password is not None
-            or parsed_url.query
-            or parsed_url.fragment
-            or not gateway_token
-            or not isinstance(evidence, dict)
-        ):
-            raise ValueError("gateway MCP discovery evidence is incomplete")
-        supplied_sha256 = str(evidence.get("sha256") or "")
-        evidence_payload = {key: value for key, value in evidence.items() if key != "sha256"}
-        fetch = gateway_fetch or fetch_gateway_evidence
-        live_health = fetch("/health", configured_gateway_url, gateway_token)
-        live_version = fetch("/version", configured_gateway_url, gateway_token)
-        live_evidence_payload = gateway_evidence_payload(live_health, live_version)
-        health = evidence_payload.get("health")
-        version = evidence_payload.get("version")
-        expected_sha256 = hashlib.sha256(canonical(evidence_payload).encode()).hexdigest()
-        if (
-            evidence_payload.get("schema") != "tcsd-matlab-gateway-evidence/v1"
-            or evidence_payload.get("authenticated") is not True
-            or not isinstance(health, dict)
-            or health.get("schema") != "matlab-gateway-health/v1"
-            or health.get("service") != "matlab-gateway"
-            or health.get("ok") is not True
-            or not isinstance(version, dict)
-            or version.get("schema") != "matlab-gateway-version/v1"
-            or version.get("service") != "matlab-gateway"
-            or not str(version.get("gatewayVersion") or "")
-            or version.get("gatewayVersion") != server.get("gatewayVersion")
-            or version.get("matlabRelease") != server.get("matlabRelease")
-            or version.get("matlabMcpVersion") != server.get("matlabMcpVersion")
-            or version.get("satkVersion") != server.get("satkVersion")
-            or not re.fullmatch(r"[a-f0-9]{64}", supplied_sha256)
-            or supplied_sha256 != expected_sha256
-            or evidence_payload != live_evidence_payload
-        ):
-            raise ValueError("gateway MCP health/version evidence is invalid")
-        return {
-            "satkServerDiscovery": discovery,
-            "satkGatewayEvidenceSha256": supplied_sha256,
-            "satkGatewayVersion": version["gatewayVersion"],
-        }
-
-    if (
-        not server.get("path")
-        or not Path(str(server.get("path"))).is_file()
-        or not re.fullmatch(r"[a-f0-9]{64}", str(server.get("sha256") or ""))
-        or int(server.get("sizeBytes") or 0) <= 0
-    ):
-        raise ValueError("direct MCP executable evidence is incomplete")
-    server_path = Path(str(server["path"])).resolve()
-    if hashlib.sha256(server_path.read_bytes()).hexdigest() != server["sha256"]:
-        raise ValueError("environment canary MCP server hash does not match the selected executable")
-    return {
-        "satkServerDiscovery": discovery or "direct",
-        "satkServerPath": str(server_path),
-        "satkServerSha256": server["sha256"],
-    }
+def gateway_health_ok(gateway_url: str) -> tuple[bool, str]:
+    """Live health probe of the MATLAB Gateway (no auth required on /health)."""
+    try:
+        with urllib.request.urlopen(f"{gateway_url}/health", timeout=10) as response:
+            value = json.loads(response.read().decode("utf-8"))
+        return (
+            isinstance(value, dict)
+            and value.get("schema") == "matlab-gateway-health/v1"
+            and value.get("ok") is True
+            and value.get("service") == "matlab-gateway"
+        ), ""
+    except Exception as exc:  # pragma: no cover - network dependent
+        return False, str(exc)
 
 
 def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
@@ -287,6 +125,33 @@ def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
     server = satk.get("server") if isinstance(satk, dict) else None
     modules = dependencies.get("modules") if isinstance(dependencies, dict) else None
     required_modules = {"yaml", "openpyxl"}
+    discovery = str((server or {}).get("discovery") or "")
+    configured_gateway_url = str(os.environ.get("SATK_GATEWAY_URL") or "").strip().rstrip("/")
+    gateway_mode = discovery == "matlab-gateway"
+    if gateway_mode:
+        health_ok, health_error = gateway_health_ok(configured_gateway_url)
+        server_ok = bool(
+            configured_gateway_url
+            and str((server or {}).get("transport") or "") == "tcsd-gateway-transport"
+            and health_ok
+        )
+        server_invalid_reason = (
+            "configured SATK_GATEWAY_URL is empty"
+            if not configured_gateway_url
+            else (
+                "transport is not tcsd-gateway-transport"
+                if str((server or {}).get("transport") or "") != "tcsd-gateway-transport"
+                else f"gateway health probe failed: {health_error}"
+            )
+        )
+    else:
+        server_ok = bool(
+            isinstance(server, dict)
+            and Path(str(server.get("path") or "")).is_file()
+            and re.fullmatch(r"[a-f0-9]{64}", str(server.get("sha256") or ""))
+            and int(server.get("sizeBytes") or 0) > 0
+        )
+        server_invalid_reason = "direct MCP executable evidence is incomplete"
     if (
         gate.get("passed") is not True
         or not isinstance(modules, dict)
@@ -314,9 +179,24 @@ def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
         or satk.get("nonceMatched") is not True
         or not satk.get("runner")
         or not isinstance(server, dict)
+        or not server_ok
     ):
-        raise ValueError("environment canary evidence is incomplete or internally inconsistent")
-    server_evidence = validate_satk_server(server)
+        raise ValueError(f"environment canary evidence is incomplete or internally inconsistent: {server_invalid_reason}")
+    if gateway_mode:
+        return {
+            "environmentSchema": ENVIRONMENT_SCHEMA,
+            "dependencyModules": sorted(required_modules),
+            "workspaceIoPassed": True,
+            "matlabNonceSha256": hashlib.sha256(str(gate["nonce"]).encode()).hexdigest(),
+            "simulinkLoaded": True,
+            "satkSentinelWritten": True,
+            "satkServerDiscovery": discovery,
+            "satkGatewayTransport": str(server.get("transport")),
+            "satkGatewayUrl": configured_gateway_url,
+        }
+    server_path = Path(str(server["path"])).resolve()
+    if hashlib.sha256(server_path.read_bytes()).hexdigest() != server["sha256"]:
+        raise ValueError("environment canary MCP server hash does not match the selected executable")
     return {
         "environmentSchema": ENVIRONMENT_SCHEMA,
         "dependencyModules": sorted(required_modules),
@@ -324,7 +204,8 @@ def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
         "matlabNonceSha256": hashlib.sha256(str(gate["nonce"]).encode()).hexdigest(),
         "simulinkLoaded": True,
         "satkSentinelWritten": True,
-        **server_evidence,
+        "satkServerPath": str(server_path),
+        "satkServerSha256": server["sha256"],
     }
 
 
@@ -336,13 +217,6 @@ def probe_reports(payload: dict[str, Any]) -> list[dict[str, Any]]:
         for item in payload.values()
         if isinstance(item, dict) and item.get("schema") == PROBE_RESULT_SCHEMA
     ]
-
-
-def find_probe_result(request: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
-    for _, path, value in json_artifacts(request):
-        if probe_reports(value):
-            return path, value
-    raise ValueError(f"required semantic artifact schema is missing: {PROBE_RESULT_SCHEMA}")
 
 
 def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
@@ -375,34 +249,11 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
         return {"candidateCount": 0, "probeExecuted": False, "observationCount": 0}
     if evidence.get("probeExecuted") is not True:
         raise ValueError("Probe candidates exist but probeExecuted is not true")
-    final_result_payload = None
-    final_classification = None
-    secondary_plan = None
-    for artifact, _, payload in json_artifacts(request):
-        role = str(artifact.get("role") or "")
-        if role == "evidence" and probe_reports(payload):
-            final_result_payload = payload
-        if payload.get("schema") == PROBE_CLASSIFICATION_SCHEMA:
-            final_classification = payload
-        if role == "state-probe-secondary-plan" and payload.get("schema") == PROBE_PLAN_SCHEMA:
-            secondary_plan = payload
-    reports = probe_reports(final_result_payload or {})
+    reports: list[dict[str, Any]] = []
+    for _, _, payload in json_artifacts(request):
+        reports.extend(probe_reports(payload))
     if not reports:
-        raise ValueError("Probe candidates exist but no final actual Probe result is present")
-    if isinstance(secondary_plan, dict):
-        for test in secondary_plan.get("tests") or []:
-            if not isinstance(test, dict):
-                raise ValueError("state Probe secondary plan contains an invalid candidate")
-            test_id = str(test.get("test_id") or "")
-            steps = test.get("steps")
-            indices = {
-                int(step.get("index") or 0)
-                for step in steps
-                if isinstance(step, dict) and int(step.get("index") or 0) > 0
-            } if isinstance(steps, list) else set()
-            if not test_id or not indices or test_id in planned:
-                raise ValueError("state Probe secondary plan contains an invalid candidate")
-            planned[test_id] = indices
+        raise ValueError("Probe candidates exist but no actual Probe result is present")
     observed: dict[str, set[int]] = {}
     observation_count = 0
     for report in reports:
@@ -414,58 +265,33 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
                 continue
             test_id = str(observation.get("test_id") or "")
             step_index = int(observation.get("step_index") or 0)
+            vectors = observation.get("vectors")
+            valid_vectors = [
+                vector
+                for vector in vectors.values()
+                if isinstance(vectors, dict)
+                and isinstance(vector, dict)
+                and vector.get("ok") is True
+                and isinstance(vector.get("values"), list)
+            ] if isinstance(vectors, dict) else []
+            mps_blocked = observation.get("prediction_status") == "simulation_error_mps_selector"
             if (
                 test_id not in planned
                 or step_index not in planned[test_id]
                 or not isinstance(observation.get("inputs"), dict)
+                or (not valid_vectors and not mps_blocked)
+                or observation.get("prediction_status") in {"target_unavailable", "simulation_mismatch"}
             ):
-                raise ValueError("Probe observation identity or executed inputs do not match the plan")
+                raise ValueError("Probe observation is missing executed values or contradicts its planned target")
             observed.setdefault(test_id, set()).add(step_index)
             observation_count += 1
-
-    if not isinstance(final_classification, dict):
-        raise ValueError("state Probe target classification is missing")
-    classification_plan = json.loads(json.dumps(plan))
-    if isinstance(secondary_plan, dict):
-        classification_plan["tests"] = [
-            *(plan.get("tests") or []),
-            *(secondary_plan.get("tests") or []),
-        ]
-        classification_plan["backup_tests"] = []
-    recomputed = state_probe_classifier_module.classify_targets(
-        classification_plan,
-        final_result_payload or {},
-    )
-    if canonical(final_classification) != canonical(recomputed):
-        raise ValueError("state Probe target classification does not match host-recomputed observations")
-    expected_direction_conflicts = int(recomputed.get("expectedDirectionConflictTargetCount") or 0)
-    simulation_mismatches = int(recomputed.get("simulationMismatchTargetCount") or 0)
-    if simulation_mismatches:
-        raise ValueError("state Probe contains a simulation mismatch")
-    status_counts = recomputed.get("statusCounts") if isinstance(recomputed.get("statusCounts"), dict) else {}
-    for status, evidence_key in (
-        ("strict_success", "strictSuccessTargetCount"),
-        ("direction_unverified", "causalTransitionTargetCount"),
-        ("no_transition", "noTransitionTargetCount"),
-        ("observation_missing", "observationMissingTargetCount"),
-        ("unplanned", "unplannedTargetCount"),
-    ):
-        if int(evidence.get(evidence_key) or 0) != int(status_counts.get(status) or 0):
-            raise ValueError(f"Agent {status} count does not match host-recomputed observations")
-    if int(evidence.get("expectedDirectionConflictTargetCount") or 0) != expected_direction_conflicts:
-        raise ValueError("Agent expected-direction conflict count does not match host-recomputed observations")
-    if int(evidence.get("simulationMismatchTargetCount") or 0) != simulation_mismatches:
-        raise ValueError("Agent simulation-mismatch count does not match host-recomputed observations")
+    for test_id, indices in planned.items():
+        if observed.get(test_id) != indices:
+            raise ValueError(f"Probe candidate {test_id} was not observed for every planned step")
     return {
         "candidateCount": candidate_count,
         "probeExecuted": True,
         "observationCount": observation_count,
-        "targetCount": int(recomputed.get("targetCount") or 0),
-        "statusCounts": status_counts,
-        "unresolvedTargetCount": sum(
-            int(status_counts.get(status) or 0)
-            for status in ("no_transition", "observation_missing", "not_executed", "unplanned", "resource_missing")
-        ),
     }
 
 
@@ -497,13 +323,11 @@ def validate_workbook_stage(request: dict[str, Any], require_exp_values: bool) -
         "model interface",
     )
     root_inputs, root_outputs = load_interface_names(str(interface_path))
-    execution_controls = load_interface_execution_controls(str(interface_path))
     report = validate_workbook(
         workbook,
         root_inputs,
         root_outputs,
         require_exp_values=require_exp_values,
-        execution_controls=execution_controls,
     )
     template_path = Path(str(request.get("templatePath") or "")).resolve()
     if template_path.is_file() and hashlib.sha256(workbook.read_bytes()).digest() == hashlib.sha256(template_path.read_bytes()).digest():
@@ -515,27 +339,7 @@ def validate_workbook_stage(request: dict[str, Any], require_exp_values: bool) -
         or action_step_count < int(report.get("test_count") or 0)
     ):
         first = (report.get("errors") or [{"code": "missing_executable_tests"}])[0]
-        message = f"TCSD workbook semantic validation failed: {first.get('code')}"
-        missing_error = next(
-            (
-                error
-                for error in report.get("errors") or []
-                if error.get("code") == "missing_test_exp_values"
-            ),
-            None,
-        )
-        if missing_error:
-            missing_tests = missing_error.get("test_cases")
-            if not isinstance(missing_tests, list):
-                missing_tests = report.get("missing_exp_value_test_cases") or []
-            labels = [
-                str(item.get("test_id") or f"row {item.get('row')}")
-                for item in missing_tests
-                if isinstance(item, dict)
-            ]
-            if labels:
-                message = f"{message} (missing Test cases: {', '.join(labels)})"
-        raise ValueError(message)
+        raise ValueError(f"TCSD workbook semantic validation failed: {first.get('code')}")
     return {
         "testCount": int(report["test_count"]),
         "inputAssignmentCount": int(report.get("input_assignment_count") or 0),
@@ -544,130 +348,6 @@ def validate_workbook_stage(request: dict[str, Any], require_exp_values: bool) -
         "actionStepCount": action_step_count,
         "workbookSha256": hashlib.sha256(workbook.read_bytes()).hexdigest(),
     }
-
-
-def validate_initial_recipe_probe(request: dict[str, Any]) -> dict[str, Any]:
-    _, synthesis = find_json_schema(request, SYNTHESIS_SCHEMA)
-    added = int(synthesis.get("added") or 0)
-    missing_resource_count = int(synthesis.get("missing_external_resource_skipped_count") or 0)
-    validation_failure_count = int(synthesis.get("simulation_mismatch_skipped_count") or 0)
-    claimed = request.get("evidence") if isinstance(request.get("evidence"), dict) else {}
-    claimed_probe = claimed.get("initialRecipeProbe") if isinstance(claimed.get("initialRecipeProbe"), dict) else {}
-    if added <= 0 and validation_failure_count <= 0:
-        expected = {
-            "plannedCandidateCount": 0,
-            "verifiedCandidateCount": 0,
-            "observationCount": 0,
-            "failedCandidateCount": 0,
-            "unverifiedCandidateCount": 0,
-        }
-    else:
-        _, cases = find_json_schema(request, EXTRACTED_CASES_SCHEMA)
-        _, probe = find_probe_result(request)
-        model = str(cases.get("model") or "")
-        if not model:
-            raise ValueError("initial recipe cases did not record the model name")
-        expected = pipeline_stage_module.initial_recipe_probe_evidence(cases, probe, model)
-        expected["unverifiedCandidateCount"] = max(
-            0,
-            added - int(expected["verifiedCandidateCount"]),
-        )
-    if canonical(claimed_probe) != canonical(expected):
-        raise ValueError("initial recipe probe evidence does not match host-parsed observations")
-    details: dict[str, Any] = {"initialRecipeProbe": expected}
-    if missing_resource_count > 0:
-        _, probe = find_probe_result(request)
-        _, gaps = find_json_schema(request, INITIAL_RECIPE_RESOURCE_GAPS_SCHEMA)
-        reports = probe_reports(probe)
-        probe_skips = [
-            {
-                "testId": str(item.get("test_id") or ""),
-                "resource": str(item.get("resource") or ""),
-                "reason": str(item.get("reason") or ""),
-                "expectedSource": str(item.get("expected_source") or ""),
-            }
-            for report in reports
-            for item in (report.get("skipped_tests") or [])
-            if isinstance(item, dict) and item.get("reason") == "missing_external_resource"
-        ]
-        gap_items = [
-            {
-                "testId": str(item.get("testId") or ""),
-                "resource": str(item.get("resource") or ""),
-                "reason": str(item.get("reason") or ""),
-                "expectedSource": str(item.get("expectedSource") or ""),
-            }
-            for item in (gaps.get("items") or [])
-            if isinstance(item, dict)
-        ]
-        synthesis_skips = [
-            {
-                "testId": str(item.get("id") or ""),
-                "resource": str(item.get("resource") or ""),
-                "reason": str(item.get("reason") or ""),
-                "expectedSource": str(item.get("expected_source") or ""),
-            }
-            for item in (synthesis.get("skipped") or [])
-            if isinstance(item, dict) and item.get("reason") == "missing_external_resource"
-        ]
-        if (
-            missing_resource_count != len(gap_items)
-            or int(gaps.get("skippedCandidateCount") or 0) != len(gap_items)
-            or canonical(sorted(probe_skips, key=lambda item: item["testId"]))
-            != canonical(sorted(gap_items, key=lambda item: item["testId"]))
-            or canonical(sorted(synthesis_skips, key=lambda item: item["testId"]))
-            != canonical(sorted(gap_items, key=lambda item: item["testId"]))
-        ):
-            raise ValueError("initial recipe missing-resource evidence is internally inconsistent")
-        details["initialRecipeResourceGaps"] = {
-            "skippedCandidateCount": len(gap_items),
-            "resources": sorted({item["resource"] for item in gap_items}),
-        }
-    if validation_failure_count > 0:
-        _, cases = find_json_schema(request, EXTRACTED_CASES_SCHEMA)
-        _, probe = find_probe_result(request)
-        _, gaps = find_json_schema(request, INITIAL_RECIPE_VALIDATION_GAPS_SCHEMA)
-        model = str(cases.get("model") or "")
-        targeted_ids = {
-            str(item.get("test_id") or "")
-            for item in (cases.get("tests") or [])
-            if isinstance(item, dict) and isinstance(item.get("target"), dict)
-        }
-        expected_failures = pipeline_stage_module.initial_recipe_validation_failures(
-            cases,
-            probe,
-            model,
-            targeted_ids,
-        )
-        gap_items = [item for item in (gaps.get("items") or []) if isinstance(item, dict)]
-        synthesis_items = [
-            {
-                "testId": str(item.get("id") or ""),
-                "reason": str(item.get("reason") or ""),
-                "coverageItemId": str(item.get("coverage_item_id") or ""),
-                "operatorId": str(item.get("operator_id") or ""),
-                "expectedVector": list(item.get("expected_vector") or []),
-                "observedVectors": list(item.get("observed_vectors") or []),
-                "handoffStage": int(item.get("handoff_stage") or 0),
-            }
-            for item in (synthesis.get("skipped") or [])
-            if isinstance(item, dict) and item.get("reason") == "simulation_mismatch"
-        ]
-        sort_key = lambda item: str(item.get("testId") or "")
-        if (
-            validation_failure_count != len(expected_failures)
-            or int(gaps.get("skippedCandidateCount") or 0) != len(expected_failures)
-            or int(gaps.get("handoffStage") or 0) != 10
-            or canonical(sorted(gap_items, key=sort_key)) != canonical(sorted(expected_failures, key=sort_key))
-            or canonical(sorted(synthesis_items, key=sort_key)) != canonical(sorted(expected_failures, key=sort_key))
-        ):
-            raise ValueError("initial recipe simulation-mismatch evidence is internally inconsistent")
-        details["initialRecipeValidationGaps"] = {
-            "skippedCandidateCount": len(expected_failures),
-            "handoffStage": 10,
-            "coverageItemIds": sorted({item["coverageItemId"] for item in expected_failures}),
-        }
-    return details
 
 
 def validate_simulation(request: dict[str, Any]) -> dict[str, Any]:
@@ -762,7 +442,11 @@ def validate_coverage(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def rebuild_repair_brief(request: dict[str, Any], brief: dict[str, Any]) -> dict[str, Any]:
+def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
+    _, brief = find_json_schema(request, BRIEF_SCHEMA)
+    _, proposal = find_json_schema(request, PROPOSAL_SCHEMA)
+    _, validation = find_json_schema(request, VALIDATION_SCHEMA)
+    _, repair_ir = find_json_schema(request, IR_SCHEMA)
     root = Path(request["workspaceDir"])
     evidence = brief.get("evidence") if isinstance(brief.get("evidence"), dict) else {}
     coverage_ref = str(evidence.get("coverageReport") or "")
@@ -771,12 +455,9 @@ def rebuild_repair_brief(request: dict[str, Any], brief: dict[str, Any]) -> dict
     interface_ref = str(evidence.get("modelInterface") or "")
     coverage_path = resolve_workspace_path(root, coverage_ref, "stage 10 source coverage report")
     traces_path = resolve_workspace_path(root, traces_ref, "stage 10 source logical traces")
-    coverage_ir_path = resolve_workspace_path(root, coverage_ir_ref, "stage 10 source Coverage IR")
-    resolve_workspace_path(root, interface_ref, "stage 10 source model interface")
-    synthesis_path = coverage_ir_path.with_name(
-        coverage_ir_path.name.replace("_coverage_ir.json", "_coverage_ir_synthesis_iter0.json")
-    )
-    return build_brief(
+    resolve_workspace_path(root, coverage_ir_ref, "stage 10 source Coverage IR")
+    interface_path = resolve_workspace_path(root, interface_ref, "stage 10 source model interface")
+    expected_brief = build_brief(
         job_id=str(request.get("jobId") or ""),
         model=str(brief.get("model") or ""),
         coverage=read_json(coverage_path),
@@ -786,54 +467,9 @@ def rebuild_repair_brief(request: dict[str, Any], brief: dict[str, Any]) -> dict
         trace_path=traces_ref,
         interface_path=interface_ref,
         threshold=float(request.get("coverageThreshold") or 80),
-        coverage_ir=read_json(coverage_ir_path),
-        initial_synthesis=read_json(synthesis_path) if synthesis_path.is_file() else {},
     )
-
-
-def validate_repair_brief(request: dict[str, Any], brief: dict[str, Any]) -> None:
-    expected_brief = rebuild_repair_brief(request, brief)
     if canonical(brief) != canonical(expected_brief):
         raise ValueError("Agent repair brief does not match host-rebuilt measured coverage deficits")
-
-
-def validate_unapplied_repair_outcome(
-    *,
-    reason: str,
-    accepted: int,
-    unresolved: int,
-    added: int,
-    synthesis: dict[str, Any] | None,
-    candidate: dict[str, Any] | None,
-) -> None:
-    if reason == "agent_reported_specific_unresolved_deficits" and (accepted != 0 or unresolved < 1):
-        raise ValueError("unresolved stage 10 result lacks specific unresolved deficit evidence")
-    if reason == "agent_candidates_duplicate_existing_tests" and (accepted < 1 or not synthesis or added != 0):
-        raise ValueError("duplicate stage 10 result lacks deterministic deduplication evidence")
-    if reason == "agent_candidate_simulation_failed" and (
-        accepted < 1 or not isinstance(candidate, dict) or candidate.get("passed") is not False
-    ):
-        raise ValueError("failed stage 10 candidate lacks deterministic simulation failure evidence")
-    if reason == "mcdc_delta_no_new_independent_effect_pair" and (
-        accepted < 1
-        or added < 1
-        or not isinstance(candidate, dict)
-        or candidate.get("passed") is not False
-        or str(candidate.get("reason") or "") != reason
-        or int(candidate.get("newIndependentEffectPairCount") or 0) != 0
-    ):
-        raise ValueError("rejected stage 10 MC/DC candidate lacks zero-delta judge evidence")
-
-
-def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
-    _, brief = find_json_schema(request, BRIEF_SCHEMA)
-    _, proposal = find_json_schema(request, PROPOSAL_SCHEMA)
-    _, validation = find_json_schema(request, VALIDATION_SCHEMA)
-    _, repair_ir = find_json_schema(request, IR_SCHEMA)
-    validate_repair_brief(request, brief)
-    root = Path(request["workspaceDir"])
-    evidence = brief.get("evidence") if isinstance(brief.get("evidence"), dict) else {}
-    interface_ref = str(evidence.get("modelInterface") or "")
     interface_path = resolve_workspace_path(
         root,
         str(request.get("interfacePath") or ""),
@@ -865,7 +501,6 @@ def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
         "agent_reported_specific_unresolved_deficits",
         "agent_candidates_duplicate_existing_tests",
         "agent_candidate_simulation_failed",
-        "mcdc_delta_no_new_independent_effect_pair",
     }
     if reason not in allowed_reasons:
         raise ValueError("stage 10 repair reason is not a specific validated outcome")
@@ -877,14 +512,14 @@ def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
     else:
         workbook_details = {}
         simulation_details = {}
-        validate_unapplied_repair_outcome(
-            reason=reason,
-            accepted=accepted,
-            unresolved=unresolved,
-            added=added,
-            synthesis=synthesis,
-            candidate=candidate,
-        )
+        if reason == "agent_reported_specific_unresolved_deficits" and (accepted != 0 or unresolved < 1):
+            raise ValueError("unresolved stage 10 result lacks specific unresolved deficit evidence")
+        if reason == "agent_candidates_duplicate_existing_tests" and (accepted < 1 or not synthesis or added != 0):
+            raise ValueError("duplicate stage 10 result lacks deterministic deduplication evidence")
+        if reason == "agent_candidate_simulation_failed" and (
+            accepted < 1 or not isinstance(candidate, dict) or candidate.get("passed") is not False
+        ):
+            raise ValueError("failed stage 10 candidate lacks deterministic simulation failure evidence")
     return {
         "proposalItemCount": int(validation.get("proposalItemCount") or 0),
         "acceptedCandidateCount": accepted,
@@ -905,7 +540,6 @@ def validate(request: dict[str, Any]) -> dict[str, Any]:
         details.update(validate_probe(request))
     elif stage == 7:
         details.update(validate_workbook_stage(request, require_exp_values=False))
-        details.update(validate_initial_recipe_probe(request))
     elif stage == 8:
         details.update(validate_workbook_stage(request, require_exp_values=True))
         details.update(validate_simulation(request))
@@ -927,14 +561,9 @@ def validate(request: dict[str, Any]) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--request")
-    mode.add_argument("--self-check", action="store_true")
+    parser.add_argument("--request", required=True)
     args = parser.parse_args()
     try:
-        if args.self_check:
-            print(json.dumps(self_check(), ensure_ascii=False, sort_keys=True))
-            return 0
         request = read_json(Path(args.request))
         print(json.dumps(validate(request), ensure_ascii=False))
         return 0

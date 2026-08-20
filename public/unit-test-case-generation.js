@@ -82,6 +82,36 @@ function formatTokenUsage(usage = null) {
   ].join(" · ");
 }
 
+function formatPercent(value) {
+  const percentage = Number(value ?? NaN);
+  if (!Number.isFinite(percentage)) return "";
+  return `${percentage % 1 === 0 ? String(percentage) : percentage.toFixed(1)}%`;
+}
+
+function renderCoverageChip(coverage) {
+  const models = coverage && typeof coverage === "object" ? coverage.models : null;
+  if (!models || typeof models !== "object") return "";
+  const labels = { condition: "条件", decision: "判定", mcdc: "MC/DC" };
+  const blocks = Object.entries(models)
+    .map(([model, record]) => {
+      const metrics = ["condition", "decision", "mcdc"]
+        .map((key) => {
+          const metric = record && typeof record === "object" ? record[key] : null;
+          const percentage = formatPercent(metric?.percent);
+          if (!percentage) return "";
+          // Keep the summary chip compact: percentages only; covered/total
+          // details stay in the expanded 覆盖率 section.
+          return `${labels[key]} ${percentage}`;
+        })
+        .filter(Boolean);
+      // Single-model runs omit the model prefix so the chip fits the panel.
+      const prefix = metrics.length && Object.keys(models).length > 1 ? `${model}: ` : "";
+      return `${prefix}${metrics.join(" · ")}`;
+    })
+    .filter(Boolean);
+  return blocks.length ? blocks.join(" ｜ ") : "";
+}
+
 function renderPipelineStage(stage, pipelineCheckpoints = []) {
   const checkpoint = stage.checkpoint || null;
   const checkpointIndex = pipelineCheckpoints.find((item) => item.stageIndex === stage.index) || null;
@@ -89,6 +119,8 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
   const agent = checkpoint?.agent || {};
   const artifacts = Array.isArray(checkpoint?.artifacts) ? checkpoint.artifacts : [];
   const attempts = Array.isArray(stage.attempts) ? stage.attempts : [];
+  const coverage = checkpoint?.coverage || null;
+  const coverageChip = renderCoverageChip(coverage);
   const artifactSummary = artifacts.length
     ? artifacts.map((item) => [item.role || item.kind || "artifact", item.fileName].filter(Boolean).join(": ")).join("\n")
     : "无";
@@ -103,6 +135,7 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
       <summary>
         <strong>${escapeHtml(`${stage.index}. ${stage.name} · ${stage.status}`)}</strong>
         <span>${escapeHtml(stage.summary || stage.skipReason || stage.error?.message || "等待执行")}</span>
+        ${coverageChip ? `<span class="unit-stage-coverage">${escapeHtml(coverageChip)}</span>` : ""}
       </summary>
       <div class="unit-stage-trace-body">
         <dl class="unit-meta-list">
@@ -117,6 +150,13 @@ function renderPipelineStage(stage, pipelineCheckpoints = []) {
         </dl>
         <h4>尝试与会话</h4>
         <pre>${escapeHtml(attemptSummary)}</pre>
+        <h4>输入</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.input))}</pre>
+        <h4>结果</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.result))}</pre>
+        ${coverage ? `<h4>覆盖率</h4><pre>${escapeHtml(compactJson(coverage))}</pre>` : ""}
+        <h4>工具日志摘要</h4>
+        <pre>${escapeHtml(compactJson(checkpoint?.toolLogs))}</pre>
         <h4>宿主验证</h4>
         <pre>${escapeHtml(compactJson(checkpoint?.validation || stage.error))}</pre>
         <h4>产物</h4>
@@ -732,6 +772,26 @@ function renderTaskDetail(task) {
         </div>
       `
       : "";
+  const dshLogHtml = `
+    <div class="unit-detail-section">
+      <div class="unit-artifact-head">
+        <div>
+          <h3>DSH 会话日志</h3>
+          <p>导出该生成任务的 DSH session log，用于生成质量分析。</p>
+        </div>
+        <span>JSONL</span>
+      </div>
+      <div class="unit-artifact-list">
+        <button class="unit-artifact-link unit-dsh-log-export" type="button" data-dsh-log-task-id="${escapeHtml(task.id)}">
+          <span>
+            <strong>session.jsonl</strong>
+            <small>结构化会话事件（模型推理 / 工具调用 / 阶段产物）</small>
+          </span>
+          <b>导出日志</b>
+        </button>
+      </div>
+    </div>
+  `;
   const warnings = Array.isArray(task.hermes?.warnings) ? task.hermes.warnings : [];
   const warningHtml = warnings.length
     ? `
@@ -767,7 +827,7 @@ function renderTaskDetail(task) {
   const pipelineStages = Array.isArray(task.pipeline?.stages) ? task.pipeline.stages : [];
   const pipelineCheckpoints = Array.isArray(task.pipeline?.checkpoints) ? task.pipeline.checkpoints : [];
   const pipelineHtml = pipelineStages.length
-    ? `<div class="unit-detail-section"><h3>十二阶段运行态</h3><p>每个阶段由独立 Hermes Agent 会话执行；展开可查看技能、模型、token、验证与产物追溯。</p><div class="unit-runtime-list">${pipelineStages.map((stage) => renderPipelineStage(stage, pipelineCheckpoints)).join("")}</div></div>`
+    ? `<div class="unit-detail-section"><h3>十二阶段运行态</h3><p>整条流水线由单个 DSH 会话执行；阶段状态随运行时落盘的 checkpoint 逐段推进，展开可查看验证与产物追溯。</p><div class="unit-runtime-list">${pipelineStages.map((stage) => renderPipelineStage(stage, pipelineCheckpoints)).join("")}</div></div>`
     : "";
   const delivery = task.workerDelivery || null;
   const canRedeliver =
@@ -801,6 +861,7 @@ function renderTaskDetail(task) {
       </div>
     </div>
     ${artifactHtml}
+    ${dshLogHtml}
     <div class="unit-detail-grid">
       <div class="unit-detail-section">
         <h3>输入文件</h3>
@@ -892,6 +953,52 @@ try {
   await loadWorkers();
 } catch (_error) {
   syncProjectControls();
+}
+
+elements.taskDetail?.addEventListener("click", (event) => {
+  const exportButton = event.target.closest("[data-dsh-log-task-id]");
+  if (!exportButton) return;
+  event.preventDefault();
+  void exportDshSessionLog(exportButton.dataset.dshLogTaskId || "");
+});
+
+async function exportDshSessionLog(taskId = "") {
+  if (!taskId || state.exportingDshLogIds?.has(taskId)) {
+    return;
+  }
+  if (!state.exportingDshLogIds) {
+    state.exportingDshLogIds = new Set();
+  }
+  state.exportingDshLogIds.add(taskId);
+  setStatus("正在导出 DSH 会话日志…", "busy");
+  try {
+    const response = await fetch(`/api/unit-test-case-generation/tasks/${encodeURIComponent(taskId)}/dsh-session-log`);
+    if (!response.ok) {
+      let message = `导出失败（HTTP ${response.status}）`;
+      try {
+        const body = await response.json();
+        message = body.error || message;
+      } catch {
+        // non-JSON error body; keep the generic message
+      }
+      setStatus(message, "error");
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `task-${taskId}_dsh_session_log.jsonl`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    setStatus("DSH 会话日志已导出。", "success");
+  } catch (error) {
+    setStatus(error.message || "导出 DSH 会话日志失败。", "error");
+  } finally {
+    state.exportingDshLogIds.delete(taskId);
+  }
 }
 
 try {

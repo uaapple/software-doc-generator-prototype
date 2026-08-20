@@ -1,10 +1,12 @@
 import express from "express";
 import multer from "multer";
 import { createHash, randomUUID } from "node:crypto";
+import { execFile, execFileSync } from "node:child_process";
 import path from "node:path";
 import { createWriteStream, promises as fs } from "node:fs";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
 import { config } from "./config.js";
 import { ExtractionService } from "./services/extraction-service.js";
 import { LlmService } from "./services/llm-service.js";
@@ -19,6 +21,8 @@ import { ModelRequirementViewService } from "./services/model-requirement-view-s
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
 import { TcsdPipelineJobService } from "./services/tcsd-pipeline-job-service.js";
 import { TCSD_ERROR_CODES, isTerminalJobStatus } from "./services/tcsd-pipeline-contract.js";
+import { TcsdDshStageExecutor } from "./services/tcsd-dsh-stage-executor.js";
+import { TcsdDshSkillRegistry } from "./services/tcsd-dsh-skill-registry.js";
 import { TcsdHermesStageExecutor } from "./services/tcsd-hermes-stage-executor.js";
 import { TcsdHermesSkillRegistry } from "./services/tcsd-hermes-skill-registry.js";
 import { SoftwareDetailPipelineJobService, isTerminalSoftwareDetailJobStatus } from "./services/software-detail-pipeline-job-service.js";
@@ -30,6 +34,8 @@ import {
 import { SerialGate } from "./services/serial-gate.js";
 import { SoftwareDetailHermesSkillRegistry } from "./services/software-detail-hermes-skill-registry.js";
 import { SoftwareDetailMatlabLeaseClient } from "./services/software-detail-matlab-lease-client.js";
+
+const execFileAsync = promisify(execFile);
 
 const MAX_TRANSFERRED_TCSD_OUTPUT_BYTES = 50 * 1024 * 1024;
 const MAX_MULTIPART_FILE_COUNT = 2048;
@@ -1395,14 +1401,21 @@ export async function createHermesApp(options = {}) {
       parts: Number(config.hermes.maxUploadFileCount || MAX_MULTIPART_FILE_COUNT) + 2
     }
   });
-  const tcsdStageExecutor = new TcsdHermesStageExecutor();
-  const tcsdSkillRegistry = new TcsdHermesSkillRegistry({
-    command: tcsdStageExecutor.command,
-    commandArgsPrefix: tcsdStageExecutor.commandArgsPrefix,
-    profile: tcsdStageExecutor.profile,
-    stateDbPath: tcsdStageExecutor.stateDbPath,
-    catalog: tcsdStageExecutor.catalog
-  });
+  const tcsdStageExecutor = config.tcsdPipeline.stageExecutor === "dsh"
+    ? new TcsdDshStageExecutor()
+    : new TcsdHermesStageExecutor();
+  const tcsdSkillRegistry = config.tcsdPipeline.stageExecutor === "dsh"
+    ? new TcsdDshSkillRegistry({
+        catalog: tcsdStageExecutor.catalog,
+        profile: tcsdStageExecutor.preset
+      })
+    : new TcsdHermesSkillRegistry({
+        command: tcsdStageExecutor.command,
+        commandArgsPrefix: tcsdStageExecutor.commandArgsPrefix,
+        profile: tcsdStageExecutor.profile,
+        stateDbPath: tcsdStageExecutor.stateDbPath,
+        catalog: tcsdStageExecutor.catalog
+      });
   const pipelineRunGate = new SerialGate({
     concurrency: Math.max(1, Number(config.hermes?.taskConcurrency || 1) || 1)
   });
@@ -1824,6 +1837,119 @@ export async function createHermesApp(options = {}) {
       }
     }
   );
+
+  app.post("/internal/dsh/tasks", requireHermesAuth, async (req, res) => {
+    const startedAt = Date.now();
+    try {
+      const payload = req.body || {};
+      const taskPrompt = String(payload.taskPrompt || "").trim();
+      const jobId = String(payload.jobId || "").trim();
+      const cwd = String(payload.cwd || "").trim();
+      const outputDir = String(payload.outputDir || "").trim();
+      if (!taskPrompt || !jobId || !cwd || !outputDir) {
+        return res.status(400).json({
+          error: "DSH 任务标识、提示词和工作路径不能为空。",
+          code: "dsh_task_input_required"
+        });
+      }
+      const managedRoot = path.resolve(config.dataDir);
+      const resolvedCwd = path.resolve(cwd);
+      const resolvedOutputDir = path.resolve(outputDir);
+      const isManagedPath = (candidate) =>
+        candidate === managedRoot || candidate.startsWith(`${managedRoot}${path.sep}`);
+      if (!isManagedPath(resolvedCwd) || !isManagedPath(resolvedOutputDir)) {
+        return res.status(400).json({
+          error: "DSH 任务路径必须位于受管数据目录内。",
+          code: "dsh_task_path_outside_managed_root"
+        });
+      }
+      const command = String(
+        config.tcsdPipeline?.dsh?.command ||
+          process.env.TCSD_DSH_COMMAND ||
+          "dsh"
+      );
+      const profile = String(
+        config.tcsdPipeline?.dsh?.profile ||
+          process.env.TCSD_DSH_PROFILE ||
+          "headless"
+      );
+      const dshCli = command.includes("/") || /^[A-Za-z]:[\\/]/.test(command)
+        ? command
+        : execFileSync(
+            "sh",
+            ["-c", `command -v ${JSON.stringify(command)}`],
+            { encoding: "utf-8" }
+          ).trim() || command;
+      const environment = { ...process.env, NO_COLOR: "1" };
+      if (jobId) {
+        environment.TCSD_JOB_ID = jobId;
+        environment.TCSD_RESOURCE_OWNER_JOB_ID = jobId;
+      }
+      environment.TCSD_OUTPUT_DIR = resolvedOutputDir;
+      const sessionTimeoutMs = Number(config.tcsdPipeline?.dsh?.sessionTimeoutMs || 0) || 0;
+      const child = spawn(process.execPath, ["--expose-internals", dshCli, "--profile", profile, taskPrompt], {
+        cwd: resolvedCwd,
+        env: environment,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
+      });
+      let stdout = "";
+      let stderr = "";
+      // Live capture: mirror the session output to the task workspace so
+      // mid-run failures (e.g. LLM request retry loops) are diagnosable
+      // without waiting for session exit.
+      let liveStream = null;
+      try {
+        await fs.mkdir(path.join(resolvedOutputDir, ".tcsd-dsh"), { recursive: true });
+        liveStream = await fs.open(path.join(resolvedOutputDir, ".tcsd-dsh", "session.live.log"), "w");
+      } catch { liveStream = null; }
+      const writeLive = (text) => { if (liveStream) liveStream.write(text).catch(() => {}); };
+      child.stdout.on("data", (chunk) => { stdout += String(chunk); writeLive(String(chunk)); });
+      child.stderr.on("data", (chunk) => { stderr += String(chunk); writeLive(String(chunk)); });
+      const exitCode = await new Promise((resolve) => {
+        const timer = sessionTimeoutMs > 0
+          ? setTimeout(() => { child.kill("SIGTERM"); }, sessionTimeoutMs)
+          : null;
+        child.on("error", () => { if (timer) clearTimeout(timer); resolve(-1); });
+        child.on("close", (code) => { if (timer) clearTimeout(timer); resolve(code ?? -1); });
+      });
+      if (liveStream) await liveStream.close().catch(() => {});
+      // Plain-text session log (fallback; the runner persists structured
+      // session.jsonl itself).
+      try {
+        await fs.writeFile(
+          path.join(resolvedOutputDir, ".tcsd-dsh", "session.log"),
+          `${stdout}${stderr}`,
+          "utf-8"
+        );
+      } catch (persistError) {
+        console.error(`dsh task session.log persistence failed: ${persistError?.message || persistError}`);
+      }
+      if (exitCode !== 0) {
+        return res.status(500).json({
+          error: `DSH task execution failed with exit code ${exitCode}`,
+          code: "dsh_task_failed",
+          detail: String(stderr).slice(-4000)
+        });
+      }
+      return res.json({
+        jobId,
+        status: "completed",
+        startedAt: new Date(startedAt).toISOString(),
+        endedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+        sessionId: `dsh-${jobId || "task"}`,
+        stdoutBytes: Buffer.byteLength(String(stdout || "")),
+        stderrBytes: Buffer.byteLength(String(stderr || ""))
+      });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return res.status(500).json({
+        error: `DSH 任务执行失败：${message}`,
+        code: "dsh_task_failed"
+      });
+    }
+  });
 
   const executeStepRequest = async (req, res, next) => {
     const startedAt = Date.now();

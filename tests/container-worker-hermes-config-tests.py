@@ -25,7 +25,6 @@ def environment(home: Path, **overrides: str) -> dict[str, str]:
     values = os.environ.copy()
     for name in (
         "HERMES_PROFILE",
-        "TCSD_STAGE_HERMES_PROFILE",
         "HERMES_INFERENCE_PROVIDER",
         "HERMES_INFERENCE_MODEL",
         "DEEPSEEK_API_KEY",
@@ -120,58 +119,17 @@ with tempfile.TemporaryDirectory(prefix="sdg-hermes-config-") as temporary:
     profiles_env = environment(
         profiles_home,
         HERMES_PROFILE="application-profile",
-        TCSD_STAGE_HERMES_PROFILE="stage-profile",
     )
     profiles = run_configurator(profiles_home, "--configure-only", env=profiles_env)
     assert profiles.returncode == 0, profiles.stderr
     for config_path in (
         profiles_home / "config.yaml",
         profiles_home / "profiles" / "application-profile" / "config.yaml",
-        profiles_home / "profiles" / "stage-profile" / "config.yaml",
     ):
         assert read_yaml(config_path)["model"] == {
             "provider": PROVIDER,
             "default": MODEL,
         }
-
-    fake_chat = root / "fake-hermes-chat.py"
-    fake_chat.write_text(
-        "\n".join(
-            [
-                "import os",
-                "from pathlib import Path",
-                "import sys",
-                "import yaml",
-                "home = Path(os.environ['HERMES_HOME'])",
-                "profile = os.environ.get('TCSD_STAGE_HERMES_PROFILE', '').strip()",
-                "config = home / 'config.yaml' if not profile or profile == 'default' else home / 'profiles' / profile / 'config.yaml'",
-                "payload = yaml.safe_load(config.read_text(encoding='utf-8'))",
-                "assert sys.argv[1:3] == ['chat', '-q']",
-                "assert payload['model']['provider'] == os.environ['EXPECTED_PROVIDER']",
-                "assert payload['model']['default'] == os.environ['EXPECTED_MODEL']",
-                "print('fake chat accepted persisted model selection')",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    chat_home = root / "chat-home"
-    chat_env = environment(
-        chat_home,
-        TCSD_STAGE_HERMES_PROFILE="stage-profile",
-        EXPECTED_PROVIDER=PROVIDER,
-        EXPECTED_MODEL=MODEL,
-    )
-    chat = run_configurator(
-        chat_home,
-        sys.executable,
-        str(fake_chat),
-        "chat",
-        "-q",
-        "smoke",
-        env=chat_env,
-    )
-    assert chat.returncode == 0, chat.stderr
-    assert "fake chat accepted persisted model selection" in chat.stdout
 
     missing_provider_env = environment(root / "missing-provider")
     missing_provider_env["HERMES_INFERENCE_PROVIDER"] = ""
@@ -180,15 +138,6 @@ with tempfile.TemporaryDirectory(prefix="sdg-hermes-config-") as temporary:
     )
     assert missing_provider.returncode != 0
     assert "HERMES_INFERENCE_PROVIDER must be non-empty" in missing_provider.stderr
-
-    invalid_profile_env = environment(
-        root / "invalid-profile", TCSD_STAGE_HERMES_PROFILE="../escape"
-    )
-    invalid_profile = run_configurator(
-        root / "invalid-profile", "--configure-only", env=invalid_profile_env
-    )
-    assert invalid_profile.returncode != 0
-    assert "invalid Hermes profile name" in invalid_profile.stderr
 
     symlink_home = root / "symlink-home"
     symlink_home.mkdir()

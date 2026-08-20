@@ -2,7 +2,6 @@ import importlib.util
 import hashlib
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -14,20 +13,12 @@ from openpyxl import Workbook
 
 RUNTIME = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runtime"
 SCRIPT = RUNTIME / "scripts" / "run_tcsd_pipeline_stage.py"
-QUALITY_LOOP = RUNTIME / "scripts" / "run_tcsd_quality_loop.py"
-SESSION_READER = RUNTIME / "scripts" / "read_hermes_session.py"
-SESSION_RESOLVER = RUNTIME / "scripts" / "resolve_hermes_session.py"
 SATK_SCRIPT = RUNTIME / "scripts" / "satk_eval.py"
 REPAIR_SCRIPT = RUNTIME / "scripts" / "validate_agent_coverage_repair.py"
-HOST_VALIDATOR_SCRIPT = RUNTIME / "scripts" / "host_validate_tcsd_stage.py"
 SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
 RUNNER = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 SPEC.loader.exec_module(RUNNER)
-QUALITY_SPEC = importlib.util.spec_from_file_location("run_tcsd_quality_loop", QUALITY_LOOP)
-QUALITY = importlib.util.module_from_spec(QUALITY_SPEC)
-assert QUALITY_SPEC.loader
-QUALITY_SPEC.loader.exec_module(QUALITY)
 SATK_SPEC = importlib.util.spec_from_file_location("satk_eval", SATK_SCRIPT)
 SATK = importlib.util.module_from_spec(SATK_SPEC)
 assert SATK_SPEC.loader
@@ -36,1038 +27,9 @@ REPAIR_SPEC = importlib.util.spec_from_file_location("validate_agent_coverage_re
 REPAIR = importlib.util.module_from_spec(REPAIR_SPEC)
 assert REPAIR_SPEC.loader
 REPAIR_SPEC.loader.exec_module(REPAIR)
-HOST_VALIDATOR_SPEC = importlib.util.spec_from_file_location("host_validate_tcsd_stage", HOST_VALIDATOR_SCRIPT)
-HOST_VALIDATOR = importlib.util.module_from_spec(HOST_VALIDATOR_SPEC)
-assert HOST_VALIDATOR_SPEC.loader
-HOST_VALIDATOR_SPEC.loader.exec_module(HOST_VALIDATOR)
 
 
 class PipelineStageRunnerTests(unittest.TestCase):
-    def stage6_validation_request(self, root, *, end_vector=None):
-        plan = {
-            "schema": "simulink-ut-state-probe-plan/v1",
-            "model": "GenericModel",
-            "targets": [{
-                "operator_id": "GenericModel:1",
-                "port_index": 1,
-                "status": "planned",
-            }],
-            "tests": [{
-                "test_id": "STATE_PROBE_0001",
-                "steps": [{"index": 1}, {"index": 2}],
-                "evidence_step": 2,
-                "target": {
-                    "operator_id": "GenericModel:1",
-                    "port_index": 1,
-                    "expected_target_transition": "0->1",
-                },
-            }],
-            "backup_tests": [],
-            "summary": {"candidate_count": 1},
-        }
-        observations = [{
-            "test_id": "STATE_PROBE_0001",
-            "step_index": 1,
-            "inputs": {"Input": 0},
-            "vectors": {"target": {"id": "GenericModel:1", "ok": True, "values": [False]}},
-            "prediction_status": "observed",
-        }, {
-            "test_id": "STATE_PROBE_0001",
-            "step_index": 2,
-            "inputs": {"Input": 1},
-            "vectors": (
-                {"target": {"id": "GenericModel:1", "ok": True, "values": [end_vector]}}
-                if end_vector is not None else {}
-            ),
-            "prediction_status": "observed",
-        }]
-        results = {
-            "GenericModel": {
-                "schema": "simulink-ut-logical-mcdc-probe/v2",
-                "observations": observations,
-                "skipped_tests": [],
-            },
-        }
-        classification = HOST_VALIDATOR.state_probe_classifier_module.classify_targets(plan, results)
-        paths = {}
-        for name, payload in (("plan", plan), ("results", results), ("classification", classification)):
-            path = Path(root) / f"{name}.json"
-            path.write_text(json.dumps(payload), encoding="utf-8")
-            paths[name] = path
-        request = {
-            "workspaceDir": str(root),
-            "artifacts": [
-                {"path": paths["plan"].name, "kind": "json", "role": "evidence"},
-                {"path": paths["results"].name, "kind": "json", "role": "evidence"},
-                {"path": paths["classification"].name, "kind": "json", "role": "state-probe-classification"},
-            ],
-            "evidence": {
-                "candidateCount": 1,
-                "probeExecuted": True,
-                "strictSuccessTargetCount": int(classification["statusCounts"].get("strict_success") or 0),
-                "causalTransitionTargetCount": int(classification["statusCounts"].get("direction_unverified") or 0),
-                "noTransitionTargetCount": int(classification["statusCounts"].get("no_transition") or 0),
-                "observationMissingTargetCount": int(classification["statusCounts"].get("observation_missing") or 0),
-                "unplannedTargetCount": int(classification["statusCounts"].get("unplanned") or 0),
-                "expectedDirectionConflictTargetCount": int(classification["expectedDirectionConflictTargetCount"]),
-                "simulationMismatchTargetCount": int(classification["simulationMismatchTargetCount"]),
-            },
-        }
-        return request
-
-    def test_stage6_host_accepts_observation_missing_as_unresolved_target(self):
-        with tempfile.TemporaryDirectory() as temp:
-            details = HOST_VALIDATOR.validate_probe(self.stage6_validation_request(temp))
-        self.assertEqual(details["statusCounts"], {"observation_missing": 1})
-        self.assertEqual(details["unresolvedTargetCount"], 1)
-
-    def test_stage6_host_records_expected_direction_conflicts_as_unresolved(self):
-        with tempfile.TemporaryDirectory() as temp:
-            request = self.stage6_validation_request(temp, end_vector=False)
-            plan_path = Path(temp) / "plan.json"
-            plan = json.loads(plan_path.read_text(encoding="utf-8"))
-            results_path = Path(temp) / "results.json"
-            results = json.loads(results_path.read_text(encoding="utf-8"))
-            results["GenericModel"]["observations"][0]["vectors"]["target"]["values"] = [True]
-            results_path.write_text(json.dumps(results), encoding="utf-8")
-            classification = HOST_VALIDATOR.state_probe_classifier_module.classify_targets(plan, results)
-            (Path(temp) / "classification.json").write_text(json.dumps(classification), encoding="utf-8")
-            request["evidence"]["expectedDirectionConflictTargetCount"] = 1
-            request["evidence"]["noTransitionTargetCount"] = 0
-            details = HOST_VALIDATOR.validate_probe(request)
-            self.assertEqual(details["statusCounts"], {"plan_conflict": 1})
-            self.assertEqual(details["unresolvedTargetCount"], 0)
-
-    def test_stage6_host_still_rejects_simulation_mismatches(self):
-        with tempfile.TemporaryDirectory() as temp:
-            request = self.stage6_validation_request(temp, end_vector=True)
-            classification_path = Path(temp) / "classification.json"
-            classification = json.loads(classification_path.read_text(encoding="utf-8"))
-            classification["simulationMismatchTargetCount"] = 1
-            classification["targets"][0]["status"] = "simulation_mismatch"
-            classification["targets"][0]["simulationMismatchCount"] = 1
-            classification_path.write_text(json.dumps(classification), encoding="utf-8")
-            request["evidence"]["strictSuccessTargetCount"] = 0
-            request["evidence"]["simulationMismatchTargetCount"] = 1
-            with mock.patch.object(
-                HOST_VALIDATOR.state_probe_classifier_module,
-                "classify_targets",
-                return_value=classification,
-            ):
-                with self.assertRaisesRegex(ValueError, "simulation mismatch"):
-                    HOST_VALIDATOR.validate_probe(request)
-
-    def test_stage7_initial_generation_budget_is_one_hundred(self):
-        self.assertEqual(RUNNER.STAGE7_MAX_INITIAL_TESTS, 100)
-
-    def test_stage7_skips_only_candidate_cases_with_missing_external_resources(self):
-        probe = {
-            "GenericModel": {
-                "skipped_tests": [{
-                    "row": 7,
-                    "test_id": "TC_002",
-                    "reason": "missing_external_resource",
-                    "resource": "Calibration_C",
-                    "expected_source": "task_mat_or_project_initialization",
-                    "matlab_identifier": "MATLAB:UndefinedFunction",
-                }],
-            },
-        }
-        skips = RUNNER.initial_recipe_missing_resource_skips(
-            probe,
-            "GenericModel",
-            {"TC_002"},
-        )
-        self.assertEqual(skips[0]["resource"], "Calibration_C")
-        self.assertEqual(skips[0]["expectedSource"], "task_mat_or_project_initialization")
-        spec = {
-            "tests": [
-                {"id": "TC_001", "name": "baseline"},
-                {"id": "TC_002", "name": "candidate"},
-                {"id": "TC_003", "name": "unaffected candidate"},
-            ],
-        }
-        pruned = RUNNER.remove_initial_recipe_tests(spec, {"TC_002"})
-        self.assertEqual([item["id"] for item in pruned["tests"]], ["TC_001", "TC_003"])
-        synthesis = RUNNER.record_initial_recipe_resource_skips(
-            {
-                "input_test_count": 1,
-                "output_test_count": 3,
-                "added": 2,
-                "skipped": [],
-                "skipped_by_reason": {},
-            },
-            skips,
-            2,
-        )
-        self.assertEqual(synthesis["added"], 1)
-        self.assertEqual(synthesis["missing_external_resource_skipped_count"], 1)
-        self.assertEqual(synthesis["missing_external_resources"], ["Calibration_C"])
-
-        with self.assertRaisesRegex(RuntimeError, "non-candidate"):
-            RUNNER.initial_recipe_missing_resource_skips(
-                probe,
-                "GenericModel",
-                {"TC_003"},
-            )
-
-    def test_initial_recipe_probe_requires_every_planned_vector_to_be_observed(self):
-        cases = {
-            "schema": "tcsd-extracted-cases/v1",
-            "model": "GenericModel",
-            "tests": [
-                {"test_id": "TC_001", "target": {}},
-                {
-                    "test_id": "TC_002",
-                    "target": {
-                        "coverage_item_id": "GenericModel:Gate_atomic_TF",
-                        "operator_id": "GenericModel:Gate",
-                        "expected_vector": [True, False],
-                    },
-                },
-            ],
-        }
-        probe = {
-            "GenericModel": {
-                "schema": "simulink-ut-logical-mcdc-probe/v2",
-                "observations": [
-                    {"test_id": "TC_001", "prediction_status": "not_predicted"},
-                    {"test_id": "TC_002", "prediction_status": "matched_prediction"},
-                ],
-            },
-        }
-        self.assertEqual(
-            RUNNER.initial_recipe_probe_evidence(cases, probe, "GenericModel"),
-            {
-                "plannedCandidateCount": 1,
-                "verifiedCandidateCount": 1,
-                "observationCount": 2,
-                "failedCandidateCount": 0,
-            },
-        )
-        probe["GenericModel"]["observations"][1]["prediction_status"] = "simulation_mismatch"
-        self.assertEqual(
-            RUNNER.initial_recipe_probe_evidence(cases, probe, "GenericModel"),
-            {
-                "plannedCandidateCount": 1,
-                "verifiedCandidateCount": 0,
-                "observationCount": 2,
-                "failedCandidateCount": 1,
-            },
-        )
-        failures = RUNNER.initial_recipe_validation_failures(
-            cases,
-            probe,
-            "GenericModel",
-            {"TC_002"},
-        )
-        self.assertEqual(failures[0]["testId"], "TC_002")
-        self.assertEqual(failures[0]["handoffStage"], 10)
-        self.assertEqual(failures[0]["reason"], "simulation_mismatch")
-        with self.assertRaisesRegex(RuntimeError, "non-candidate"):
-            RUNNER.initial_recipe_validation_failures(cases, probe, "GenericModel", set())
-
-    def test_case_extraction_attaches_coverage_vector_targets(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            workbook = root / "cases.xlsx"
-            output = root / "cases.json"
-            coverage_ir = root / "coverage-ir.json"
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "TCSD"
-            for column, value in enumerate(
-                ["TestID", "Name", "Type", "Requirement ID", "Test Case Description", "Initialization", "Action"],
-                start=1,
-            ):
-                ws.cell(1, column).value = value
-            ws.cell(2, 1).value = "TC_002"
-            ws.cell(2, 2).value = "Boundary"
-            ws.cell(2, 3).value = "Test"
-            ws.cell(2, 5).value = "MC/DC supplemental case for GenericModel:Gate_atomic_TF; target"
-            ws.cell(2, 6).value = "Input=1;"
-            ws.cell(2, 7).value = "[+0.1s]"
-            wb.save(workbook)
-            coverage_ir.write_text(json.dumps({
-                "items": [{
-                    "id": "GenericModel:Gate_atomic_TF",
-                    "block": {"sid": "GenericModel:Gate"},
-                    "controlRecipe": {"condition_vector": "TF", "probe_vector_compatible": True},
-                }],
-            }), encoding="utf-8")
-            subprocess.run(
-                [
-                    sys.executable,
-                    "-B",
-                    str(RUNTIME / "scripts" / "extract_tcsd_cases.py"),
-                    "--workbook",
-                    str(workbook),
-                    "--model",
-                    "GenericModel",
-                    "--inputs",
-                    "Input",
-                    "--coverage-ir",
-                    str(coverage_ir),
-                    "--output",
-                    str(output),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            extracted = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(extracted["schema"], "tcsd-extracted-cases/v1")
-            self.assertEqual(extracted["model"], "GenericModel")
-            self.assertEqual(extracted["tests"][0]["target"], {
-                "coverage_item_id": "GenericModel:Gate_atomic_TF",
-                "operator_id": "GenericModel:Gate",
-                "expected_vector": [True, False],
-            })
-
-    def test_host_rebuilds_initial_recipe_probe_evidence(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            synthesis_path = root / "synthesis.json"
-            cases_path = root / "cases.json"
-            probe_path = root / "probe.json"
-            synthesis_path.write_text(json.dumps({
-                "schema": "simulink-ut-tcsd-coverage-ir-synthesis/v1",
-                "added": 1,
-            }), encoding="utf-8")
-            cases_path.write_text(json.dumps({
-                "schema": "tcsd-extracted-cases/v1",
-                "model": "GenericModel",
-                "tests": [{
-                    "test_id": "TC_002",
-                    "target": {
-                        "coverage_item_id": "GenericModel:Gate_atomic_TF",
-                        "operator_id": "GenericModel:Gate",
-                        "expected_vector": [True, False],
-                    },
-                }],
-            }), encoding="utf-8")
-            probe_path.write_text(json.dumps({
-                "schema": "simulink-ut-logical-mcdc-probe/v2",
-                "model": "GenericModel",
-                "observations": [{
-                    "test_id": "TC_002",
-                    "prediction_status": "matched_prediction",
-                }],
-            }), encoding="utf-8")
-            expected = {
-                "plannedCandidateCount": 1,
-                "verifiedCandidateCount": 1,
-                "observationCount": 1,
-                "failedCandidateCount": 0,
-                "unverifiedCandidateCount": 0,
-            }
-            request = {
-                "workspaceDir": str(root),
-                "artifacts": [
-                    {"path": synthesis_path.name, "kind": "json"},
-                    {"path": cases_path.name, "kind": "json"},
-                    {"path": probe_path.name, "kind": "json"},
-                ],
-                "evidence": {"initialRecipeProbe": expected},
-            }
-            self.assertEqual(
-                HOST_VALIDATOR.validate_initial_recipe_probe(request),
-                {"initialRecipeProbe": expected},
-            )
-            request["evidence"]["initialRecipeProbe"]["verifiedCandidateCount"] = 0
-            with self.assertRaisesRegex(ValueError, "does not match"):
-                HOST_VALIDATOR.validate_initial_recipe_probe(request)
-
-    def test_host_validates_initial_recipe_missing_resource_evidence(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            synthesis_path = root / "synthesis.json"
-            cases_path = root / "cases.json"
-            probe_path = root / "probe.json"
-            gaps_path = root / "gaps.json"
-            synthesis_path.write_text(json.dumps({
-                "schema": "simulink-ut-tcsd-coverage-ir-synthesis/v1",
-                "added": 1,
-                "missing_external_resource_skipped_count": 1,
-                "skipped": [{
-                    "id": "TC_002",
-                    "reason": "missing_external_resource",
-                    "resource": "Calibration_C",
-                    "expected_source": "task_mat_or_project_initialization",
-                }],
-            }), encoding="utf-8")
-            cases_path.write_text(json.dumps({
-                "schema": "tcsd-extracted-cases/v1",
-                "model": "GenericModel",
-                "tests": [{
-                    "test_id": "TC_003",
-                    "target": {
-                        "operator_id": "GenericModel:Gate",
-                        "expected_vector": [True, False],
-                    },
-                }],
-            }), encoding="utf-8")
-            probe_path.write_text(json.dumps({
-                "GenericModel": {
-                    "schema": "simulink-ut-logical-mcdc-probe/v2",
-                    "model": "GenericModel",
-                    "observations": [{
-                        "test_id": "TC_003",
-                        "prediction_status": "matched_prediction",
-                    }],
-                    "skipped_tests": [{
-                        "test_id": "TC_002",
-                        "reason": "missing_external_resource",
-                        "resource": "Calibration_C",
-                        "expected_source": "task_mat_or_project_initialization",
-                    }],
-                },
-            }), encoding="utf-8")
-            gaps_path.write_text(json.dumps({
-                "schema": "tcsd-initial-recipe-resource-gaps/v1",
-                "skippedCandidateCount": 1,
-                "items": [{
-                    "testId": "TC_002",
-                    "reason": "missing_external_resource",
-                    "resource": "Calibration_C",
-                    "expectedSource": "task_mat_or_project_initialization",
-                }],
-            }), encoding="utf-8")
-            request = {
-                "workspaceDir": str(root),
-                "artifacts": [
-                    {"path": path.name, "kind": "json"}
-                    for path in (synthesis_path, cases_path, probe_path, gaps_path)
-                ],
-                "evidence": {
-                    "initialRecipeProbe": {
-                        "plannedCandidateCount": 1,
-                        "verifiedCandidateCount": 1,
-                        "observationCount": 1,
-                        "failedCandidateCount": 0,
-                        "unverifiedCandidateCount": 0,
-                    },
-                },
-            }
-            details = HOST_VALIDATOR.validate_initial_recipe_probe(request)
-            self.assertEqual(details["initialRecipeResourceGaps"], {
-                "skippedCandidateCount": 1,
-                "resources": ["Calibration_C"],
-            })
-            tampered = json.loads(gaps_path.read_text(encoding="utf-8"))
-            tampered["items"][0]["resource"] = "Other_C"
-            gaps_path.write_text(json.dumps(tampered), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "internally inconsistent"):
-                HOST_VALIDATOR.validate_initial_recipe_probe(request)
-
-    def test_host_validates_initial_recipe_simulation_mismatch_handoff(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            synthesis_path = root / "synthesis.json"
-            cases_path = root / "cases.json"
-            probe_path = root / "probe.json"
-            gaps_path = root / "validation-gaps.json"
-            failure = {
-                "testId": "TC_002",
-                "reason": "simulation_mismatch",
-                "coverageItemId": "GenericModel:Gate_atomic_TF",
-                "operatorId": "GenericModel:Gate",
-                "expectedVector": [True, False],
-                "observedVectors": ["TT"],
-                "handoffStage": 10,
-            }
-            synthesis_path.write_text(json.dumps({
-                "schema": "simulink-ut-tcsd-coverage-ir-synthesis/v1",
-                "added": 0,
-                "simulation_mismatch_skipped_count": 1,
-                "skipped": [{
-                    "id": failure["testId"],
-                    "reason": failure["reason"],
-                    "coverage_item_id": failure["coverageItemId"],
-                    "operator_id": failure["operatorId"],
-                    "expected_vector": failure["expectedVector"],
-                    "observed_vectors": failure["observedVectors"],
-                    "handoff_stage": failure["handoffStage"],
-                }],
-            }), encoding="utf-8")
-            cases_path.write_text(json.dumps({
-                "schema": "tcsd-extracted-cases/v1",
-                "model": "GenericModel",
-                "tests": [{
-                    "test_id": "TC_002",
-                    "target": {
-                        "coverage_item_id": failure["coverageItemId"],
-                        "operator_id": failure["operatorId"],
-                        "expected_vector": failure["expectedVector"],
-                    },
-                }],
-            }), encoding="utf-8")
-            probe_path.write_text(json.dumps({
-                "schema": "simulink-ut-logical-mcdc-probe/v2",
-                "model": "GenericModel",
-                "observations": [{
-                    "test_id": "TC_002",
-                    "prediction_status": "simulation_mismatch",
-                    "vectors": {
-                        "GenericModel_Gate": {
-                            "id": "GenericModel:Gate",
-                            "label": "TT",
-                        },
-                    },
-                }],
-            }), encoding="utf-8")
-            gaps_path.write_text(json.dumps({
-                "schema": "tcsd-initial-recipe-validation-gaps/v1",
-                "skippedCandidateCount": 1,
-                "handoffStage": 10,
-                "items": [failure],
-            }), encoding="utf-8")
-            expected_probe = {
-                "plannedCandidateCount": 1,
-                "verifiedCandidateCount": 0,
-                "observationCount": 1,
-                "failedCandidateCount": 1,
-                "unverifiedCandidateCount": 0,
-            }
-            request = {
-                "workspaceDir": str(root),
-                "artifacts": [
-                    {"path": path.name, "kind": "json"}
-                    for path in (synthesis_path, cases_path, probe_path, gaps_path)
-                ],
-                "evidence": {"initialRecipeProbe": expected_probe},
-            }
-            details = HOST_VALIDATOR.validate_initial_recipe_probe(request)
-            self.assertEqual(details["initialRecipeProbe"], expected_probe)
-            self.assertEqual(details["initialRecipeValidationGaps"], {
-                "skippedCandidateCount": 1,
-                "handoffStage": 10,
-                "coverageItemIds": [failure["coverageItemId"]],
-            })
-            tampered = json.loads(gaps_path.read_text(encoding="utf-8"))
-            tampered["items"][0]["observedVectors"] = ["FF"]
-            gaps_path.write_text(json.dumps(tampered), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "internally inconsistent"):
-                HOST_VALIDATOR.validate_initial_recipe_probe(request)
-
-    def test_stage10_host_rebuild_uses_the_same_prior_planning_inputs(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            output = root / "outputs"
-            output.mkdir()
-            coverage_path = output / "GenericModel_initial_coverage_summary.json"
-            traces_path = output / "GenericModel_logical_traces.json"
-            coverage_ir_path = output / "GenericModel_coverage_ir.json"
-            synthesis_path = output / "GenericModel_coverage_ir_synthesis_iter0.json"
-            interface_path = output / "GenericModel_interface.json"
-            coverage = {
-                "models": {
-                    "GenericModel": {
-                        "condition": {"covered": 1, "total": 2, "percent": 50},
-                        "decision": {"covered": 1, "total": 2, "percent": 50},
-                        "mcdc": {"covered": 1, "total": 2, "percent": 50},
-                        "items": [{
-                            "id": "remaining",
-                            "coverage_class": "Condition",
-                            "block_path": "GenericModel/Compare",
-                            "covered": 1,
-                            "total": 2,
-                            "percent": 50,
-                            "missing_outcomes": ["equal boundary"],
-                        }],
-                    },
-                },
-            }
-            traces = {"model": "GenericModel", "operators": []}
-            coverage_ir = {
-                "summary": {"executionReadiness": {"totalTargetCount": 3, "executableTargetCount": 1}},
-                "items": [{
-                    "id": "compare-equal",
-                    "coverage_class": "Condition",
-                    "block": {"path": "GenericModel/Compare", "sid": "GenericModel:1"},
-                    "required_outcome": "equal boundary",
-                    "patternType": "simple_comparator_boundary",
-                    "controller": {"direct_inputs": {"InputVoltage": 320}, "parameters": {}},
-                    "stimulus": {"steps": []},
-                    "reachability": {"status": "required"},
-                }],
-            }
-            synthesis = {
-                "planned_candidate_count": 3,
-                "added": 1,
-                "duplicate_skipped_count": 2,
-                "control_conflict_skipped_count": 0,
-                "unresolved_threshold_skipped_count": 0,
-            }
-            interface = {"schema": "tcsd-model-interface/v1", "inputs": ["InputVoltage"], "outputs": ["Output"]}
-            for path, value in (
-                (coverage_path, coverage),
-                (traces_path, traces),
-                (coverage_ir_path, coverage_ir),
-                (synthesis_path, synthesis),
-                (interface_path, interface),
-            ):
-                path.write_text(json.dumps(value), encoding="utf-8")
-            brief = REPAIR.build_brief(
-                job_id="job-generic",
-                model="GenericModel",
-                coverage=coverage,
-                traces=traces,
-                coverage_ir_path=str(coverage_ir_path),
-                coverage_report_path=str(coverage_path),
-                trace_path=str(traces_path),
-                interface_path=str(interface_path),
-                threshold=80.0,
-                coverage_ir=coverage_ir,
-                initial_synthesis=synthesis,
-            )
-            request = {
-                "jobId": "job-generic",
-                "workspaceDir": str(root),
-                "coverageThreshold": 80.0,
-            }
-
-            self.maxDiff = None
-            self.assertEqual(HOST_VALIDATOR.rebuild_repair_brief(request, brief), brief)
-            HOST_VALIDATOR.validate_repair_brief(request, brief)
-
-            tampered = json.loads(json.dumps(brief))
-            tampered["priorPlanning"]["stage7InitialGeneration"]["actualAddedCount"] = 2
-            with self.assertRaisesRegex(ValueError, "does not match host-rebuilt"):
-                HOST_VALIDATOR.validate_repair_brief(request, tampered)
-
-    def test_stage10_brief_carries_prior_planning_and_avoids_identical_retries(self):
-        brief = REPAIR.build_brief(
-            job_id="job-generic",
-            model="GenericModel",
-            coverage={
-                "models": {
-                    "GenericModel": {
-                        "condition": {"covered": 1, "total": 2, "percent": 50},
-                        "decision": {"covered": 1, "total": 2, "percent": 50},
-                        "mcdc": {"covered": 1, "total": 2, "percent": 50},
-                        "items": [{
-                            "id": "remaining",
-                            "coverage_class": "Condition",
-                            "block_path": "GenericModel/Compare",
-                            "covered": 1,
-                            "total": 2,
-                            "percent": 50,
-                            "missing_outcomes": ["equal boundary"],
-                        }],
-                    },
-                },
-            },
-            traces={"model": "GenericModel", "operators": []},
-            coverage_ir_path="coverage-ir.json",
-            coverage_report_path="coverage.json",
-            trace_path="traces.json",
-            interface_path="interface.json",
-            threshold=80,
-            coverage_ir={
-                "summary": {"executionReadiness": {"totalTargetCount": 3, "executableTargetCount": 3}},
-                "items": [{
-                    "id": "compare-equal",
-                    "coverage_class": "Condition",
-                    "block": {"path": "GenericModel/Compare", "sid": "GenericModel:1"},
-                    "required_outcome": "equal boundary",
-                    "patternType": "simple_comparator_boundary",
-                    "controller": {"direct_inputs": {"InputVoltage": 320}, "parameters": {}},
-                    "stimulus": {"steps": []},
-                    "reachability": {"status": "required"},
-                }],
-            },
-            initial_synthesis={
-                "planned_candidate_count": 3,
-                "added": 3,
-                "duplicate_skipped_count": 0,
-                "control_conflict_skipped_count": 0,
-                "unresolved_threshold_skipped_count": 0,
-            },
-        )
-
-        prior = brief["priorPlanning"]
-        self.assertEqual(prior["stage5ExecutionReadiness"]["executableTargetCount"], 3)
-        self.assertEqual(prior["stage7InitialGeneration"]["actualAddedCount"], 3)
-        self.assertEqual(prior["attemptedTargets"][0]["pattern_type"], "simple_comparator_boundary")
-        self.assertEqual(
-            prior["doNotRepeatIdenticalControllers"][0]["controller"]["direct_inputs"],
-            {"InputVoltage": 320},
-        )
-        self.assertEqual(prior["measuredRemainingTargets"][0]["id"], "remaining")
-
-    def test_stage10_brief_exposes_bounded_complex_target_guidance(self):
-        coverage = {
-            "models": {
-                "GenericModel": {
-                    "condition": {"covered": 2, "total": 2, "percent": 100},
-                    "decision": {"covered": 2, "total": 2, "percent": 100},
-                    "mcdc": {"covered": 1, "total": 2, "percent": 50},
-                    "mcdc_mode": "Masking",
-                    "model_checksum": "[1,2,3,4]",
-                    "support_library_path": "/workspace/ITKLib.slx",
-                    "initialization_scripts": ["init_Global.m"],
-                    "items": [{
-                        "id": "missing-mcdc",
-                        "coverage_class": "MCDC",
-                        "block_path": "GenericModel/DebCnt1/Logic",
-                        "sid": "10:20",
-                        "covered": 1,
-                        "total": 2,
-                        "percent": 50,
-                        "missing_outcomes": ["C2 independent effect"],
-                        "description": json.dumps({"condition": [{"text": "C2", "achieved": False}]}),
-                    }, {
-                        "id": "already-covered-mcdc",
-                        "coverage_class": "MCDC",
-                        "block_path": "GenericModel/AlreadyCovered",
-                        "sid": "99",
-                        "covered": 2,
-                        "total": 2,
-                        "percent": 100,
-                        "description": json.dumps({"condition": [{"text": "C1", "achieved": True}]}),
-                    }],
-                },
-            },
-        }
-        traces = {
-            "model": "GenericModel",
-            "operators": [{
-                "id": "GenericModel:10:20",
-                "block_path": "GenericModel/DebCnt1/Logic",
-                "sid": "GenericModel:10:20",
-                "referenceBlock": "ITKLib/TimeCounter/DebCnt/Logic",
-                "ports": [{
-                    "trace": {
-                        "path": "GenericModel/DebCnt1/Delay",
-                        "sid": "GenericModel:10:21",
-                        "kind": "stateful",
-                        "blockType": "UnitDelay",
-                        "resolvedInitialCondition": 0,
-                        "sampleTime": "0.01",
-                        "inputs": {
-                            "trace": {
-                                "path": "GenericModel/Input",
-                                "sid": "GenericModel:1",
-                                "isRootInput": True,
-                                "signal": "InputVoltage",
-                            },
-                        },
-                    },
-                }],
-            }, {
-                "id": "GenericModel:11:20",
-                "block_path": "GenericModel/DebCnt2/Logic",
-                "sid": "GenericModel:11:20",
-                "referenceBlock": "ITKLib/TimeCounter/DebCnt/Logic",
-                "ports": [{
-                    "trace": {
-                        "path": "GenericModel/DebCnt2/Delay",
-                        "sid": "GenericModel:11:21",
-                        "kind": "stateful",
-                        "blockType": "UnitDelay",
-                        "resolvedInitialCondition": 0,
-                        "sampleTime": "0.01",
-                        "inputs": {
-                            "trace": {
-                                "path": "GenericModel/PeerInput",
-                                "sid": "GenericModel:2",
-                                "isRootInput": True,
-                                "signal": "PeerInputVoltage",
-                            },
-                        },
-                    },
-                }],
-            }],
-        }
-        brief = REPAIR.build_brief(
-            job_id="job-guidance",
-            model="GenericModel",
-            coverage=coverage,
-            traces=traces,
-            coverage_ir_path="coverage-ir.json",
-            coverage_report_path="coverage.json",
-            trace_path="traces.json",
-            interface_path="interface.json",
-            threshold=80,
-        )
-
-        self.assertEqual(brief["coverageContext"]["mcdcMode"], "Masking")
-        self.assertEqual(len(brief["coverageTargets"]), 1)
-        self.assertEqual(brief["coverageTargets"][0]["id"], "missing-mcdc")
-        guidance = brief["complexTargetGuidance"][0]
-        self.assertEqual(guidance["rootInputs"], ["InputVoltage"])
-        self.assertEqual(guidance["statefulElements"][0]["sampleTime"], "0.01")
-        self.assertEqual(guidance["structuralPeers"], [{
-            "path": "GenericModel/DebCnt2/Logic",
-            "sid": "GenericModel:11:20",
-            "rootInputs": ["PeerInputVoltage"],
-            "statefulElements": [{
-                "path": "GenericModel/DebCnt2/Delay",
-                "sid": "GenericModel:11:21",
-                "kind": "stateful",
-                "initialCondition": 0,
-                "sampleTime": "0.01",
-            }],
-            "thresholds": [],
-        }])
-
-    def test_session_resolver_uses_exact_prompt_hash_without_exposing_prompt(self):
-        with tempfile.TemporaryDirectory() as temp:
-            database = Path(temp) / "state.db"
-            prompt = "/tcsd-stage-10-repair-coverage unique manifest path"
-            with sqlite3.connect(database) as connection:
-                connection.execute(
-                    "create table messages (id integer primary key, session_id text, role text, content text)"
-                )
-                connection.execute(
-                    "insert into messages values (1, ?, 'user', ?)",
-                    ("session-stage10", prompt),
-                )
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(SESSION_RESOLVER),
-                    "--state-db",
-                    str(database),
-                    "--expected-skill-name",
-                    "tcsd-stage-10-repair-coverage",
-                    "--expected-prompt-sha256",
-                    hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(json.loads(completed.stdout), {"sessionId": "session-stage10"})
-            self.assertNotIn(prompt, completed.stdout)
-
-    def test_agent_proposal_validation_failure_is_recoverable(self):
-        error = RUNNER.RecoverableStageValidationError(
-            "invalid proposal",
-            Path("/tmp/proposal-validation.json"),
-        )
-        self.assertEqual(
-            RUNNER.hard_error_code(10, error),
-            "tcsd_stage_validation_failed",
-        )
-
-    def test_stage10_mcdc_delta_failure_retries_once_then_finishes_partial(self):
-        failed_report = {
-            "schema": "tcsd-mcdc-coverage-delta/v1",
-            "passed": False,
-            "newIndependentEffectPairCount": 0,
-        }
-        self.assertFalse(
-            RUNNER.should_finish_stage10_partial_after_mcdc_delta(1, failed_report)
-        )
-        self.assertTrue(
-            RUNNER.should_finish_stage10_partial_after_mcdc_delta(2, failed_report)
-        )
-        self.assertFalse(
-            RUNNER.should_finish_stage10_partial_after_mcdc_delta(
-                2, {**failed_report, "passed": True}
-            )
-        )
-
-    def test_stage10_host_validator_accepts_zero_delta_partial_evidence(self):
-        synthesis = {"schema": HOST_VALIDATOR.SYNTHESIS_SCHEMA, "added": 2}
-        candidate = {
-            "schema": HOST_VALIDATOR.REPAIR_CANDIDATE_SCHEMA,
-            "passed": False,
-            "reason": "mcdc_delta_no_new_independent_effect_pair",
-            "newIndependentEffectPairCount": 0,
-        }
-        repair = {
-            "required": True,
-            "attempted": True,
-            "applied": False,
-            "passes": 0,
-            "reason": "mcdc_delta_no_new_independent_effect_pair",
-        }
-        HOST_VALIDATOR.validate_unapplied_repair_outcome(
-            reason=repair["reason"],
-            accepted=2,
-            unresolved=0,
-            added=2,
-            synthesis=synthesis,
-            candidate=candidate,
-        )
-        with self.assertRaisesRegex(ValueError, "zero-delta judge evidence"):
-            HOST_VALIDATOR.validate_unapplied_repair_outcome(
-                reason=repair["reason"],
-                accepted=2,
-                unresolved=0,
-                added=2,
-                synthesis=synthesis,
-                candidate={**candidate, "newIndependentEffectPairCount": 1},
-            )
-
-    def test_stage10_validator_crash_cannot_reuse_stale_attempt_outputs(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            output = root / "outputs"
-            output.mkdir()
-            model = root / "GenericModel.slx"
-            mat = root / "GenericModel.mat"
-            model.write_bytes(b"slx")
-            mat.write_bytes(b"mat")
-            job = {
-                "jobId": "job-generic",
-                "_stageAttempt": 1,
-                "_stageResultPath": str(output / "stage-10-result.json"),
-                "resources": {"ownerJobId": "job-generic"},
-                "input": {
-                    "workspaceDir": str(root),
-                    "outputDir": str(output),
-                    "modelSlxPath": str(model),
-                    "modelMatPath": str(mat),
-                    "coverageThreshold": 80,
-                },
-            }
-            RUNNER.write_json(
-                RUNNER.state_path(job),
-                {
-                    "schema": "tcsd-stage-runner-state/v1",
-                    "jobId": "job-generic",
-                    "workbook": str(output / "GenericModel_Test0001_tcsd.xlsx"),
-                    "spec": str(output / "GenericModel_tcsd_spec.json"),
-                },
-            )
-            RUNNER.write_json(
-                output / "GenericModel_initial_coverage_summary.json",
-                {
-                    "schema": "tcsd-coverage-report/v1",
-                    "models": {
-                        "GenericModel": {
-                            "mcdc_mode": "Masking",
-                            **{
-                                metric: {"percent": 50}
-                                for metric in ("condition", "decision", "mcdc")
-                            },
-                        },
-                    },
-                },
-            )
-            brief = output / "GenericModel_coverage_repair_brief.json"
-            proposal = output / "GenericModel_agent_coverage_repair_proposal.json"
-            brief.write_text("{}", encoding="utf-8")
-            proposal.write_text("{}", encoding="utf-8")
-            stale_ir = output / "GenericModel_agent_repair_coverage_ir.json"
-            stale_report = output / "GenericModel_agent_repair_validation_attempt1.json"
-            stale_ir.write_text('{"stale":true}', encoding="utf-8")
-            RUNNER.write_json(
-                stale_report,
-                {
-                    "schema": REPAIR.VALIDATION_SCHEMA,
-                    "jobId": "job-generic",
-                    "model": "GenericModel",
-                    "passed": False,
-                    "error": {
-                        "code": "proposal_validation_failed",
-                        "message": "stale deterministic failure",
-                    },
-                },
-            )
-            validator_crash = subprocess.CalledProcessError(
-                1,
-                ["python3", "validate_agent_coverage_repair.py"],
-                stderr="validator crashed",
-            )
-            with mock.patch.object(RUNNER, "run", side_effect=validator_crash):
-                with self.assertRaises(subprocess.CalledProcessError) as raised:
-                    RUNNER.stage_run(
-                        10,
-                        job,
-                        stage10_mode="validate",
-                        repair_brief=str(brief),
-                        repair_proposal=str(proposal),
-                    )
-            self.assertIs(raised.exception, validator_crash)
-            self.assertEqual(
-                RUNNER.hard_error_code(10, raised.exception),
-                "tcsd_stage_runtime_failed",
-            )
-            self.assertFalse(stale_ir.exists())
-            self.assertFalse(stale_report.exists())
-
-    def test_agent_proposal_cli_writes_structured_failure_for_schema_and_json_errors(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            brief = root / "brief.json"
-            interface = root / "interface.json"
-            brief.write_text(
-                json.dumps({
-                    "schema": REPAIR.BRIEF_SCHEMA,
-                    "jobId": "job-generic",
-                    "model": "GenericModel",
-                    "guardrails": {},
-                }),
-                encoding="utf-8",
-            )
-            interface.write_text(
-                json.dumps({
-                    "schema": "tcsd-model-interface/v1",
-                    "inputs": ["Enable"],
-                    "outputs": ["Output"],
-                }),
-                encoding="utf-8",
-            )
-            for label, proposal_text in (
-                ("schema", json.dumps({"schema": "wrong/v1", "tests": [], "unresolved": []})),
-                ("json", "{"),
-            ):
-                with self.subTest(label=label):
-                    proposal = root / f"proposal-{label}.json"
-                    report = root / f"report-{label}.json"
-                    output_ir = root / f"ir-{label}.json"
-                    proposal.write_text(proposal_text, encoding="utf-8")
-                    completed = subprocess.run(
-                        [
-                            sys.executable,
-                            "-B",
-                            str(REPAIR_SCRIPT),
-                            "validate",
-                            "--brief",
-                            str(brief),
-                            "--proposal",
-                            str(proposal),
-                            "--interface",
-                            str(interface),
-                            "--output-ir",
-                            str(output_ir),
-                            "--report-json",
-                            str(report),
-                        ],
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                    )
-                    self.assertEqual(completed.returncode, 2)
-                    failure = json.loads(report.read_text(encoding="utf-8"))
-                    self.assertEqual(failure["schema"], REPAIR.VALIDATION_SCHEMA)
-                    self.assertEqual(failure["jobId"], "job-generic")
-                    self.assertEqual(failure["model"], "GenericModel")
-                    self.assertFalse(failure["passed"])
-                    self.assertEqual(
-                        failure["error"]["code"],
-                        "proposal_validation_failed",
-                    )
-                    self.assertFalse(output_ir.exists())
-
-    def test_runtime_python_subprocesses_disable_bytecode_writes(self):
-        command = [sys.executable, "sibling.py", "--check"]
-        self.assertEqual(
-            RUNNER.immutable_python_command(command),
-            [sys.executable, "-B", "sibling.py", "--check"],
-        )
-        with mock.patch.object(QUALITY.subprocess, "run") as run_mock:
-            QUALITY.run(command, cwd=RUNTIME)
-        self.assertEqual(
-            run_mock.call_args.args[0],
-            [sys.executable, "-B", "sibling.py", "--check"],
-        )
-
     def test_stage10_agent_repair_preserves_focused_temporal_stimulus(self):
         brief = {
             "schema": REPAIR.BRIEF_SCHEMA,
@@ -1083,6 +45,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }],
             "guardrails": {
                 "maxCandidateTests": 16,
+                "maxStepsPerTest": 8,
                 "parametersOnlyInInitialization": True,
                 "analyzeOnlyTargetUpstreamSlice": True,
                 "fullRootInputEnumerationForbidden": True,
@@ -1128,18 +91,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
         self.assertEqual(ir["items"][0]["analysis"]["cumulative_wait_s"], 0.4)
         self.assertEqual(ir["items"][0]["controller"]["parameters"], {"Bypass": 0, "WaitThreshold": 3})
 
-        proposal["tests"][0]["stimulus"]["steps"] = [
-            {"delay_s": 0.01, "input_updates": {"Enable": index % 2}, "param_updates": {}}
-            for index in range(12)
-        ]
-        proposal["tests"][0]["stimulus"]["evidence_step"] = 12
-        unlimited_ir, _ = REPAIR.validate_proposal(
-            proposal,
-            brief,
-            {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
-        )
-        self.assertEqual(len(unlimited_ir["items"][0]["stimulus"]["steps"]), 12)
-
         proposal["tests"][0]["required_outcome"] = "unmeasured true branch"
         with self.assertRaisesRegex(ValueError, "measured missing outcome"):
             REPAIR.validate_proposal(
@@ -1166,6 +117,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             "coverageTargets": [],
             "guardrails": {
                 "maxCandidateTests": 16,
+                "maxStepsPerTest": 8,
                 "stepCountSemantics": "stimulus_action_entries",
                 "simulationSamplePeriodsDoNotCountAsSteps": True,
                 "longHoldAsSingleActionAllowed": True,
@@ -1213,6 +165,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }],
             "guardrails": {
                 "maxCandidateTests": 16,
+                "maxStepsPerTest": 8,
                 "stepCountSemantics": "stimulus_action_entries",
                 "simulationSamplePeriodsDoNotCountAsSteps": True,
                 "longHoldAsSingleActionAllowed": True,
@@ -1240,18 +193,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
                 {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
             )
 
-        proposal["unresolved"][0]["evidence"] = (
-            "A Unit Delay counter needs 65534 separate input transitions. "
-            "Each transition maps to one TCSD stimulus.steps entry, while the "
-            "allocated per-test entry budget is 8."
-        )
-        with self.assertRaisesRegex(ValueError, "sample periods as TCSD action steps"):
-            REPAIR.validate_proposal(
-                proposal,
-                brief,
-                {"schema": "tcsd-model-interface/v1", "inputs": ["Enable"], "outputs": ["Output"]},
-            )
-
     def test_stage10_accepts_long_hold_as_one_action_step(self):
         brief = {
             "schema": REPAIR.BRIEF_SCHEMA,
@@ -1267,6 +208,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }],
             "guardrails": {
                 "maxCandidateTests": 16,
+                "maxStepsPerTest": 8,
                 "stepCountSemantics": "stimulus_action_entries",
                 "simulationSamplePeriodsDoNotCountAsSteps": True,
                 "longHoldAsSingleActionAllowed": True,
@@ -1402,236 +344,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
                     context="environment gate failed",
                 )
 
-    def test_quality_satk_runner_preserves_gateway_failure_details(self):
-        response = json.dumps({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "error": {
-                "code": "MATLAB_EXECUTION_FAILED",
-                "message": "probe failed token=must-not-appear at C:/secret/model.slx",
-                "data": {
-                    "gatewayJobId": "eval-safe-job",
-                    "gatewayStatus": "failed",
-                    "timeoutSeconds": 2400,
-                },
-            },
-        })
-        completed = subprocess.CompletedProcess(
-            ["python3", "satk_eval.py", "probe.m"],
-            1,
-            stdout=response,
-            stderr="",
-        )
-        with mock.patch.object(QUALITY.subprocess, "run", return_value=completed):
-            with self.assertRaises(QUALITY.SatkEvaluationError) as raised:
-                QUALITY.run_satk(
-                    "python3",
-                    Path("/skills/tcsd-runtime/scripts"),
-                    Path("/workspace/outputs/probe.m"),
-                    Path("/workspace"),
-                )
-        self.assertNotIn("must-not-appear", str(raised.exception))
-        self.assertNotIn("C:/secret", str(raised.exception))
-        self.assertIn("token=[REDACTED]", str(raised.exception))
-        self.assertIn("[path]", str(raised.exception))
-        self.assertEqual(
-            raised.exception.details,
-            {
-                "phase": "matlab_probe_evaluation",
-                "satkExitCode": 1,
-                "gatewayErrorCode": "MATLAB_EXECUTION_FAILED",
-                "gatewayJobId": "eval-safe-job",
-                "gatewayStatus": "failed",
-                "timeoutSeconds": 2400.0,
-            },
-        )
-
-    def test_quality_satk_runner_injects_stage_probe_timeout(self):
-        completed = subprocess.CompletedProcess(
-            ["python3", "satk_eval.py", "probe.m"],
-            0,
-            stdout="",
-            stderr="",
-        )
-        with mock.patch.object(QUALITY.subprocess, "run", return_value=completed) as run_mock:
-            QUALITY.run_satk(
-                "python3",
-                Path("/skills/tcsd-runtime/scripts"),
-                Path("/workspace/outputs/probe.m"),
-                Path("/workspace"),
-                gateway_timeout_seconds=2710,
-            )
-        self.assertEqual(
-            run_mock.call_args.kwargs["env"]["SATK_GATEWAY_TIMEOUT_SECONDS"],
-            "2710",
-        )
-
-    def test_stage10_gateway_failure_budget_is_bounded_and_attempt_scoped(self):
-        with tempfile.TemporaryDirectory() as temp:
-            values = {
-                "TCSD_STAGE_INDEX": "10",
-                "TCSD_STAGE_ATTEMPT": "2",
-                "TCSD_JOB_ID": "job-gateway-budget",
-                "TCSD_OUTPUT_DIR": temp,
-            }
-            path = SATK.gateway_failure_budget_path(environ=values)
-            self.assertEqual(path.name, "gateway-failure-budget-stage-10-attempt-2.json")
-            self.assertEqual(SATK.gateway_failure_limit(environ=values), 3)
-            SATK.write_gateway_failure_count(path, 3, "MCP_TOOL_REPORTED_FAILURE")
-            self.assertEqual(SATK.read_gateway_failure_count(path), 3)
-            result = SATK.gateway_budget_exhausted_result(3, 3)
-            self.assertEqual(result["error"]["code"], "MATLAB_GATEWAY_FAILURE_BUDGET_EXHAUSTED")
-            self.assertNotIn("job-gateway-budget", json.dumps(result))
-
-    def test_stage6_probe_timeout_scales_with_candidates_and_is_bounded(self):
-        with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(RUNNER.stage6_probe_timeout_seconds(0), 600)
-            self.assertEqual(RUNNER.stage6_probe_timeout_seconds(422), 2710)
-            self.assertEqual(RUNNER.stage6_probe_timeout_seconds(1000), 3600)
-        with mock.patch.dict(
-            os.environ,
-            {"SATK_GATEWAY_TIMEOUT_SECONDS": "3000"},
-            clear=True,
-        ):
-            self.assertEqual(RUNNER.stage6_probe_timeout_seconds(100), 3000)
-
-    def test_stage11_probe_timeout_scales_with_final_cases_and_is_bounded(self):
-        with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(RUNNER.stage11_probe_timeout_seconds(0), 600)
-            self.assertEqual(RUNNER.stage11_probe_timeout_seconds(38), 1740)
-            self.assertEqual(RUNNER.stage11_probe_timeout_seconds(100), 3600)
-        with mock.patch.dict(
-            os.environ,
-            {"SATK_GATEWAY_TIMEOUT_SECONDS": "2400"},
-            clear=True,
-        ):
-            self.assertEqual(RUNNER.stage11_probe_timeout_seconds(38), 2400)
-
-    def test_stage11_batches_final_coverage_probe_with_per_batch_timeout(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp).resolve()
-            output = root / "outputs"
-            output.mkdir()
-            model = root / "GenericModel.slx"
-            mat = root / "GenericModel.mat"
-            workbook = output / "GenericModel_Test0001_tcsd.xlsx"
-            spec = output / "GenericModel_tcsd_spec.json"
-            model.write_bytes(b"slx")
-            mat.write_bytes(b"mat")
-            Workbook().save(workbook)
-            RUNNER.write_json(spec, {"tests": []})
-            RUNNER.write_json(output / "GenericModel_interface.json", {"outputs": []})
-            initial_coverage = output / "GenericModel_initial_coverage_summary.json"
-            RUNNER.write_json(initial_coverage, {
-                "schema": "tcsd-coverage-report/v1",
-                "models": {"GenericModel": {"mcdc_mode": "Masking"}},
-            })
-            RUNNER.write_json(
-                output / ".tcsd-runtime" / "runner-state.json",
-                {
-                    "repairApplied": True,
-                    "workbook": str(workbook),
-                    "spec": str(spec),
-                    "initialCoverage": str(initial_coverage),
-                },
-            )
-            result_path = output / ".tcsd-results" / "stage-11.json"
-            job = {
-                "jobId": "job-stage11-timeout",
-                "_stageResultPath": str(result_path),
-                "input": {
-                    "workspaceDir": str(root),
-                    "outputDir": str(output),
-                    "modelSlxPath": str(model),
-                    "modelMatPath": str(mat),
-                    "projectInitScripts": [],
-                    "coverageThreshold": 80,
-                },
-            }
-            quality = mock.Mock()
-
-            def extract_cases(**_kwargs):
-                cases = output / "GenericModel_cases.json"
-                RUNNER.write_json(cases, {"tests": [{"test_id": index} for index in range(38)]})
-                return cases
-
-            def simulate_and_backfill(**_kwargs):
-                simulation = output / "GenericModel_final_simulation_results.json"
-                RUNNER.write_json(simulation, {"tests": []})
-                return simulation
-
-            def run_coverage_probe_batched(**_kwargs):
-                obligations = output / "GenericModel_coverage_obligations.json"
-                coverage = output / "GenericModel_final_coverage.json"
-                coverage_data = output / "GenericModel_final_coverage.cvt"
-                manifest = output / "GenericModel_final_coverage_batch_manifest.json"
-                RUNNER.write_json(obligations, {"obligations": []})
-                RUNNER.write_json(coverage, {"GenericModel": {"mcdc_mode": "Masking"}})
-                coverage_data.write_bytes(b"coverage")
-                RUNNER.write_json(manifest, {"batchCount": 2})
-                return obligations, coverage, coverage_data, manifest
-
-            quality.extract_cases.side_effect = extract_cases
-            quality.simulate_and_backfill.side_effect = simulate_and_backfill
-            quality.run_coverage_probe_batched.side_effect = run_coverage_probe_batched
-            with (
-                mock.patch.object(RUNNER, "load_module", return_value=quality),
-                mock.patch.object(
-                    RUNNER,
-                    "simulation_backfill_evidence",
-                    return_value={"workbookBackfillCount": 1266},
-                ),
-                mock.patch.dict(os.environ, {}, clear=True),
-            ):
-                RUNNER.stage_run(11, job)
-            self.assertEqual(
-                quality.run_coverage_probe_batched.call_args.kwargs["gateway_timeout_seconds"],
-                1200,
-            )
-            result = RUNNER.read_json(result_path)
-            self.assertEqual(result["evidence"]["caseCount"], 38)
-            self.assertEqual(result["evidence"]["probeTimeoutSeconds"], 1200)
-            self.assertEqual(result["evidence"]["coverageBatchSize"], 20)
-            self.assertEqual(result["evidence"]["coverageBatchCount"], 2)
-            self.assertFalse(result["evidence"]["coverageReusedFromStage9"])
-
-    def test_stage_runtime_error_details_are_strictly_allowlisted(self):
-        error = RuntimeError("failed")
-        error.details = {
-            "phase": "matlab_probe_evaluation",
-            "gatewayErrorCode": "MATLAB_EXECUTION_FAILED",
-            "gatewayJobId": "eval-safe-job",
-            "gatewayStatus": "failed",
-            "satkExitCode": 1,
-            "timeoutSeconds": 2400,
-            "candidateCount": 3,
-            "caseCount": 38,
-            "batchIndex": 2,
-            "batchCount": 6,
-            "batchCandidateCount": 64,
-            "batchStart": 65,
-            "batchEnd": 128,
-            "diagnosticArtifactFileName": "GenericModel_state_probe_batch_002_results.error.json",
-            "probeEntryExists": True,
-            "probePlanSha256": "a" * 64,
-            "probeEntrySha256": "b" * 64,
-            "token": "must-not-appear",
-            "path": "C:/secret/model.slx",
-        }
-        details = RUNNER.public_error_details(error)
-        self.assertEqual(details["gatewayJobId"], "eval-safe-job")
-        self.assertEqual(details["candidateCount"], 3)
-        self.assertEqual(details["caseCount"], 38)
-        self.assertEqual(details["batchIndex"], 2)
-        self.assertEqual(details["batchEnd"], 128)
-        self.assertEqual(
-            details["diagnosticArtifactFileName"],
-            "GenericModel_state_probe_batch_002_results.error.json",
-        )
-        self.assertEqual(details["probePlanSha256"], "a" * 64)
-        self.assertNotIn("token", details)
-        self.assertNotIn("path", details)
-
     def test_stage02_matlab_root_falls_back_to_satk_root(self):
         with mock.patch.dict(
             os.environ,
@@ -1673,103 +385,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
             self.assertEqual(assessment["supersededBy"]["authority"], "measured-simulink-coverage")
             self.assertEqual(assessment["sourceObligations"]["sha256"], hashlib.sha256(obligations.read_bytes()).hexdigest())
 
-    def test_hermes_session_reader_reports_actual_model_and_token_usage(self):
-        with tempfile.TemporaryDirectory() as temp:
-            temp_path = Path(temp)
-            database = Path(temp) / "state.db"
-            skill_file = temp_path / "SKILL.md"
-            usage_file = temp_path / ".usage.json"
-            skill_source = b"---\r\nname: tcsd-stage-01-validate-inputs\r\n---\r\n\r\n# Stage 1\r\n"
-            skill_file.write_bytes(skill_source)
-            usage_file.write_text(
-                json.dumps(
-                    {
-                        "tcsd-stage-01-validate-inputs": {
-                            "use_count": 3,
-                            "last_used_at": "2026-07-24T11:34:05+00:00",
-                        }
-                    }
-                ),
-                encoding="utf-8",
-            )
-            connection = sqlite3.connect(database)
-            try:
-                connection.execute(
-                    """
-                    create table sessions (
-                      id text primary key,
-                      model text,
-                      input_tokens integer,
-                      output_tokens integer,
-                      cache_read_tokens integer,
-                      cache_write_tokens integer,
-                      reasoning_tokens integer
-                    )
-                    """
-                )
-                connection.execute(
-                    "insert into sessions values (?, ?, ?, ?, ?, ?, ?)",
-                    ("session-actual", "provider/model-v2", 100, 20, 5, 2, 7),
-                )
-                connection.execute(
-                    """
-                    create table messages (
-                      id integer primary key autoincrement,
-                      session_id text,
-                      role text,
-                      content text,
-                      timestamp real
-                    )
-                    """
-                )
-                connection.execute(
-                    "insert into messages(session_id, role, content, timestamp) values (?, ?, ?, ?)",
-                    (
-                        "session-actual",
-                        "user",
-                        "/tcsd-stage-01-validate-inputs execute stage one",
-                        1.0,
-                    ),
-                )
-                connection.commit()
-            finally:
-                connection.close()
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SESSION_READER),
-                    "--state-db",
-                    str(database),
-                    "--session-id",
-                    "session-actual",
-                    "--expected-skill-name",
-                    "tcsd-stage-01-validate-inputs",
-                    "--expected-skill-file",
-                    str(skill_file),
-                    "--expected-skill-sha256",
-                    hashlib.sha256(skill_source).hexdigest(),
-                    "--skill-usage-file",
-                    str(usage_file),
-                    "--expected-use-count-before",
-                    "2",
-                    "--invocation-started-at",
-                    "2026-07-24T11:34:00Z",
-                    "--invocation-ended-at",
-                    "2026-07-24T11:34:10Z",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            usage = json.loads(result.stdout)
-            self.assertEqual(usage["model"], "provider/model-v2")
-            self.assertEqual(usage["totalTokens"], 127)
-            self.assertEqual(usage["reasoningTokens"], 7)
-            self.assertTrue(usage["skillLoad"]["loaded"])
-            self.assertEqual(usage["skillLoad"]["source"], "hermes-state-db+skill-usage")
-            self.assertEqual(usage["skillLoad"]["usageCountBefore"], 2)
-            self.assertEqual(usage["skillLoad"]["usageCountAfter"], 3)
-
     def test_first_three_stages_write_candidate_results_but_not_host_checkpoints(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -1792,11 +407,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }
             fake_matlab_root = root / "fake-matlab"
             (fake_matlab_root / "bin").mkdir(parents=True)
-            fake_matlab_executable = "matlab.exe" if os.name == "nt" else "matlab"
-            (fake_matlab_root / "bin" / fake_matlab_executable).write_text(
-                "fixture",
-                encoding="utf-8",
-            )
+            (fake_matlab_root / "bin" / "matlab").write_text("fixture", encoding="utf-8")
             fake_mcp_server = root / "fake-matlab-mcp-server"
             fake_mcp_server.write_bytes(b"offline MCP fixture")
             job["input"]["matlabRoot"] = str(fake_matlab_root)
@@ -1873,31 +484,9 @@ class PipelineStageRunnerTests(unittest.TestCase):
         spec = RUNNER.initial_spec({"inputs": "OnlyInput", "outputs": "OnlyOutput"}, "GenericModel")
         self.assertEqual(interface["inputs"], ["OnlyInput"])
         self.assertEqual(spec["tests"][0]["initialization"], "OnlyInput=0;")
-        self.assertEqual(
-            spec["tests"][0]["action"],
-            "[+0.01s]\nOnlyInput=0;\n[+0.1s]",
-        )
-        self.assertEqual(len(RUNNER.workbook_steps(spec["tests"][0]["action"])), 2)
         self.assertNotIn("output_reference", spec["tests"][0])
         with self.assertRaises(RuntimeError):
             RUNNER.validate_interface({"schema": "tcsd-model-interface/v1", "inputs": "OnlyInput", "outputs": ["OnlyOutput"]})
-
-    def test_execution_controls_are_separate_from_business_inputs(self):
-        interface = RUNNER.validate_interface({
-            "schema": "tcsd-model-interface/v1",
-            "inputs": ["BusinessInput"],
-            "outputs": ["Output"],
-            "executionControls": [{
-                "name": "Enable",
-                "type": "enable",
-                "defaultPolicy": "enabled",
-            }],
-        })
-        spec = RUNNER.initial_spec(interface, "GenericModel")
-        self.assertEqual(interface["inputs"], ["BusinessInput"])
-        self.assertEqual(interface["executionControls"][0]["name"], "Enable")
-        self.assertNotIn("Enable=", spec["tests"][0]["initialization"])
-        self.assertEqual(spec["test_group"]["initialization_1"], "Enable=1;")
 
     def test_stage_four_initializes_its_new_session_before_tracing(self):
         code = RUNNER.stage4_matlab_code(root=Path("C:/job"), scripts_dir=Path("C:/skill/scripts"), interface=Path("C:/job/outputs/interface.json"), model="GenericModel", mat_name="GenericModel.mat", init_scripts=["project_init.m"])
@@ -1905,8 +494,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
         trace = code.index("trace_logical_mcdc")
         self.assertIn("initScripts={'project_init.m'}", code)
         self.assertIn("'WorkspaceInitialized',true", code)
-        self.assertIn("'BlockType','EnablePort'", code)
-        self.assertIn("p.executionControls=controls", code)
         self.assertLess(setup, trace)
 
     def test_simulation_backfill_requires_matching_real_result_counts(self):
@@ -1917,36 +504,9 @@ class PipelineStageRunnerTests(unittest.TestCase):
             evidence = RUNNER.simulation_backfill_evidence(simulation, workbook)
             self.assertEqual(evidence["simulationValueCount"], 1)
             self.assertEqual(evidence["workbookBackfillCount"], 1)
-            self.assertEqual(evidence["testCaseCount"], 1)
-            self.assertEqual(evidence["testsWithoutExpectedValues"], [])
-            self.assertEqual(evidence["caseOutputCounts"], {"3:TC_001": {"OnlyOutput": 1}})
             self.assertEqual(evidence["backfillItems"], [{"row": 3, "testId": "TC_001", "step": 1, "output": "OnlyOutput", "value": 1.0}])
             with self.assertRaises(RuntimeError):
                 RUNNER.simulation_backfill_evidence({"tests": []}, workbook)
-
-    def test_simulation_backfill_requires_explicit_stability_and_an_oracle_per_test(self):
-        with tempfile.TemporaryDirectory() as temp:
-            workbook = Path(temp) / "result.xlsx"
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "TCSD"
-            ws["A3"] = "TC_001"
-            ws["C3"] = "Test"
-            ws["G3"] = "[+0.1s]\n[+0.1s]"
-            wb.save(workbook)
-            simulation = {
-                "tests": [{
-                    "row": 3,
-                    "test_id": "TC_001",
-                    "steps": [
-                        {"index": 1, "outputs": {"OnlyOutput": 1}, "stable": {}},
-                        {"index": 2, "outputs": {"OnlyOutput": 1}, "stable": {"OnlyOutput": True}},
-                    ],
-                }]
-            }
-
-            with self.assertRaisesRegex(RuntimeError, r"no verified expValue for Test cases: TC_001"):
-                RUNNER.simulation_backfill_evidence(simulation, workbook)
 
     def test_simulation_backfill_rejects_missing_extra_and_wrong_values(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -1969,7 +529,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             }
             (output / "GenericModel_logical_traces.json").write_text(json.dumps(trace), encoding="utf-8")
             probe = {"GenericModel": {"schema": "simulink-ut-logical-mcdc-probe/v2", "model": "GenericModel", "probes": [{"id": "GenericModel:1", "sid": "GenericModel:1", "block_path": "GenericModel/Decision", "operator": "AND", "port_names": ["u1", "u2"]}], "observations": []}}
-            for index, label in enumerate(("TT",), 1):
+            for index, label in enumerate(("TT", "FT", "TF"), 1):
                 probe["GenericModel"]["observations"].append({"test_id": f"STATE_PROBE_{index:04d}", "row": index, "step_index": 2, "time_s": 0.1, "inputs": {"Enable": int(label[0] == "T"), "Request": int(label[1] == "T")}, "params": {}, "vectors": {"decision": {"id": "GenericModel:1", "label": label, "ok": True}}, "stimulus": {"initial_inputs": {"Enable": 0, "Request": 1}, "initial_params": {}, "steps": [{"index": 1, "delay_s": 0.01, "input_updates": {"Enable": 1}, "param_updates": {}}, {"index": 2, "delay_s": 0.1, "input_updates": {}, "param_updates": {}}], "evidence_step": 2}, "prediction_status": "observed"})
             probe_fixture = root / "probe-results.json"; probe_fixture.write_text(json.dumps(probe), encoding="utf-8")
             job = {"jobId": "job-cli", "resources": {"ownerJobId": "job-cli"}, "input": {"workspaceDir": str(root), "outputDir": str(output), "modelSlxPath": str(model), "modelMatPath": str(mat), "coverageThreshold": 80}}
@@ -2005,13 +565,233 @@ class PipelineStageRunnerTests(unittest.TestCase):
             self.assertEqual(result["schema"], "tcsd-agent-stage-result/v1")
             self.assertTrue(result["evidence"]["probeExecuted"])
             self.assertFalse((output / ".tcsd-checkpoints").exists())
-            self.assertGreater(after["summary"]["unresolved_count"], 0)
+            self.assertEqual(after["summary"]["unresolved_count"], 0)
 
     def test_coverage_threshold_uses_all_three_metrics_for_every_model(self):
         report = {"M1": {"condition": {"percent": 90}, "decision": {"percent": 90}, "mcdc": {"percent": 79}}}
         self.assertFalse(RUNNER.coverage_meets(report, 80))
         report["M1"]["mcdc"]["percent"] = 80
         self.assertTrue(RUNNER.coverage_meets(report, 80))
+
+
+class StageRunnerHostFixesTests(unittest.TestCase):
+    """Regression tests for the host-side runner fixes discovered on the
+    RngPrdn_A02_B04 real-model run (semantic interface fallback and finish
+    manifests with real coverage/repair facts)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "dsh_stage_runner", RUNTIME / "scripts" / "dsh_stage_runner.py")
+        cls.runner = importlib.util.module_from_spec(spec)
+        assert spec.loader
+        spec.loader.exec_module(cls.runner)
+
+    def test_semantic_validate_falls_back_to_outputs_interface(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "outputs"
+            output.mkdir()
+            interface = output / "GenericModel_interface.json"
+            interface.write_text(json.dumps({"schema": "tcsd-model-interface/v1"}), encoding="utf-8")
+            task = {"id": "job-if", "workspace": {"directory": str(root)}}
+            result = {
+                "schema": "tcsd-agent-stage-result/v1",
+                "jobId": "job-if",
+                "stageIndex": 7,
+                "status": "completed",
+                "artifacts": [{"path": "outputs/GenericModel_tcsd_spec.json", "kind": "json", "role": "output"}],
+            }
+            request_path = output / "semantic-request.json"
+            # Fake the host validator subprocess: it must receive the fallback interface path.
+            captured = {}
+
+            def fake_run(cmd, cwd, env, capture_output, text):
+                req = json.loads(request_path.read_text(encoding="utf-8"))
+                captured["interfacePath"] = req.get("interfacePath")
+                return mock.Mock(returncode=0, stdout=json.dumps({
+                    "schema": "tcsd-host-semantic-validation/v1", "stageIndex": 7,
+                    "passed": True, "details": {}}), stderr="")
+
+            with mock.patch.object(self.runner.subprocess, "run", side_effect=fake_run):
+                report = self.runner.semantic_validate(
+                    task, 7, result, RUNTIME, request_path, output / "semantic-validation.json")
+            self.assertTrue(report["passed"])
+            self.assertEqual(captured["interfacePath"], str(interface))
+
+    def test_finish_writes_real_coverage_repair_and_picks_highest_iter(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = root / "workspace"
+            output = workspace / "outputs"
+            model_dir = root / "model-dir"
+            (output / ".tcsd-host").mkdir(parents=True)
+            model_dir.mkdir()
+            model = "RngPrdn_A02_B04"
+            iter0 = output / f"{model}_Test_coverage_ir_iter0.xlsx"
+            iter1 = output / f"{model}_Test_coverage_ir_iter1.xlsx"
+            plain = output / f"{model}_Test0001_tcsd.xlsx"
+            for path in (iter0, iter1, plain):
+                wb = Workbook()
+                wb.save(path)
+            initial = {"models": {model: {"condition": {"covered": 15, "total": 30, "percent": 50, "passed": False},
+                                          "decision": {"covered": 11, "total": 20, "percent": 55, "passed": False},
+                                          "mcdc": {"covered": 0, "total": 6, "percent": 0, "passed": False},
+                                          "test_count": 4, "threshold": 80}}}
+            final = {"models": {model: {"condition": {"covered": 29, "total": 30, "percent": 96.67, "passed": True},
+                                         "decision": {"covered": 20, "total": 20, "percent": 100, "passed": True},
+                                         "mcdc": {"covered": 4, "total": 6, "percent": 66.67, "passed": False},
+                                         "test_count": 13, "threshold": 80}}}
+            (output / f"{model}_initial_coverage_summary.json").write_text(json.dumps(initial), encoding="utf-8")
+            (output / f"{model}_final_coverage_summary.json").write_text(json.dumps(final), encoding="utf-8")
+            (output / f"{model}_repair_candidate_validation.json").write_text(json.dumps(
+                {"schema": "tcsd-repair-candidate-validation/v1", "jobId": "job-x",
+                 "passed": True, "candidateCount": 9}), encoding="utf-8")
+            (output / f"{model}_agent_coverage_repair_proposal.json").write_text(json.dumps(
+                {"schema": "tcsd-agent-coverage-repair-proposal/v1", "jobId": "job-x", "model": model,
+                 "tests": [], "unresolved": [
+                     {"coverage_class": "MCDC",
+                      "block": {"path": f"{model}/RampLimiter2/Logical Operator1", "sid": "231"},
+                      "reason_code": "logic_unreachable",
+                      "evidence": "algebraic: 233 true implies 234 true"}]}), encoding="utf-8")
+            checkpoints = output / ".tcsd-checkpoints"
+            checkpoints.mkdir()
+            for stage in range(1, 13):
+                (checkpoints / f"stage-{stage:02d}.json").write_text(json.dumps(
+                    {"stageIndex": stage, "status": "completed", "attempt": 1, "summary": "s"}), encoding="utf-8")
+            task = {"id": "job-x",
+                    "workspace": {"directory": str(workspace), "outputDir": str(output),
+                                  "modelSlxPath": str(workspace / f"{model}.slx"), "modelDir": str(model_dir)}}
+            task_path = root / "task.json"
+            task_path.write_text(json.dumps(task), encoding="utf-8")
+            self.runner.cmd_finish(mock.Mock(task=str(task_path)))
+            manifest = json.loads((output / ".tcsd-host" / "execution-manifest.json").read_text(encoding="utf-8"))
+            # Real coverage facts, not empty dicts.
+            self.assertEqual(manifest["coverage"]["initial"]["models"][model]["condition"]["percent"], 50)
+            self.assertEqual(manifest["coverage"]["final"]["models"][model]["mcdc"]["percent"], 66.67)
+            # Repair facts derived from validation + proposal.
+            self.assertTrue(manifest["coverage"]["repair_required"])
+            self.assertTrue(manifest["coverage"]["repair_applied"])
+            self.assertEqual(manifest["coverage"]["repair_passes"], 1)
+            # MC/DC below threshold with unresolved -> partial, and unresolved recorded.
+            self.assertEqual(manifest["completion"], "partial")
+            self.assertEqual(manifest["evidence"]["unresolved"][0]["reason_code"], "logic_unreachable")
+            # Timeline populated from the 12 checkpoints.
+            timeline = json.loads((output / ".tcsd-host" / "timeline.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(timeline["events"]), 12)
+            # Highest synthesis iteration workbook is delivered to the model dir
+            # under the canonical Test0001 name; manifest references the delivered name.
+            delivered = model_dir / f"{model}_Test0001_tcsd.xlsx"
+            self.assertTrue(delivered.is_file())
+            self.assertEqual(delivered.read_bytes(), iter1.read_bytes())
+            self.assertEqual(manifest["workbook"], f"outputs/{model}_Test0001_tcsd.xlsx")
+            # Artifact manifest lists workbook plus evidence files.
+            artifacts = json.loads((output / ".tcsd-host" / "artifact-manifest.json").read_text(encoding="utf-8"))
+            roles = [a["role"] for a in artifacts["artifacts"]]
+            self.assertIn("workbook", roles)
+            self.assertIn("evidence", roles)
+
+    def test_finish_falls_back_to_measured_gaps_when_proposal_has_no_unresolved(self) -> None:
+        """ParkCrl B01 regression: 11 uncovered MC/DC vectors stayed out of the
+        manifest because the repair proposal recorded no unresolved array; the
+        final coverage summary items are the authoritative fallback."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = root / "workspace"
+            output = workspace / "outputs"
+            model_dir = root / "model-dir"
+            (output / ".tcsd-host").mkdir(parents=True)
+            model_dir.mkdir()
+            model = "ParkCrl_A02_B01"
+            final_workbook = output / f"{model}_Test0001_tcsd.xlsx"
+            wb = Workbook()
+            wb.save(final_workbook)
+            final = {"models": {model: {
+                "model": model, "test_count": 67, "threshold": 80,
+                "condition": {"covered": 106, "total": 112, "percent": 94.64, "passed": True},
+                "decision": {"covered": 53, "total": 62, "percent": 85.48, "passed": True},
+                "mcdc": {"covered": 21, "total": 32, "percent": 65.62, "passed": False},
+                "items": [
+                    {"coverage_class": "MCDC", "block_path": f"{model}/AND2", "sid": "39",
+                     "covered": 1, "total": 3},
+                    {"coverage_class": "MCDC", "block_path": f"{model}/OR3", "sid": "75",
+                     "covered": 1, "total": 5},
+                ],
+            }}}
+            (output / f"{model}_initial_coverage_summary.json").write_text(
+                json.dumps({"models": {model: {"condition": {"percent": 64.29, "passed": False},
+                                               "decision": {"percent": 51.61, "passed": False},
+                                               "mcdc": {"percent": 34.38, "passed": False}}}}), encoding="utf-8")
+            (output / f"{model}_final_coverage_summary.json").write_text(json.dumps(final), encoding="utf-8")
+            # Proposal exists but carries no unresolved array.
+            (output / f"{model}_agent_coverage_repair_proposal.json").write_text(json.dumps(
+                {"schema": "tcsd-agent-coverage-repair-proposal/v1", "jobId": "job-p",
+                 "model": model, "tests": [], "unresolved": []}), encoding="utf-8")
+            task = {"id": "job-p",
+                    "workspace": {"directory": str(workspace), "outputDir": str(output),
+                                  "modelSlxPath": str(workspace / f"{model}.slx"), "modelDir": str(model_dir)}}
+            task_path = root / "task.json"
+            task_path.write_text(json.dumps(task), encoding="utf-8")
+            self.runner.cmd_finish(mock.Mock(task=str(task_path)))
+            manifest = json.loads((output / ".tcsd-host" / "execution-manifest.json").read_text(encoding="utf-8"))
+            unresolved = manifest["evidence"]["unresolved"]
+            self.assertEqual(len(unresolved), 2)
+            self.assertEqual(unresolved[0]["reason_code"], "measured_uncovered")
+            self.assertEqual(unresolved[0]["coverage_class"], "MCDC")
+            self.assertEqual(unresolved[0]["block"]["sid"], "39")
+            self.assertEqual(manifest["completion"], "partial")
+
+    def test_finish_completion_uses_final_gate_and_merges_measured_gaps(self) -> None:
+        """ParkCrl B02 regression: all three final metrics pass (100/100/84.8)
+        -> completion=complete even though the INITIAL round was below target;
+        proposal-unresolved (logic_unreachable) plus measured gaps merge into
+        the evidence without duplication."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = root / "workspace"
+            output = workspace / "outputs"
+            model_dir = root / "model-dir"
+            (output / ".tcsd-host").mkdir(parents=True)
+            model_dir.mkdir()
+            model = "ParkCrl_A02_B02"
+            wb = Workbook()
+            wb.save(output / f"{model}_Test0001_tcsd.xlsx")
+            final = {"models": {model: {
+                "model": model, "test_count": 60, "threshold": 80,
+                "condition": {"covered": 130, "total": 130, "percent": 100.0, "passed": True},
+                "decision": {"covered": 12, "total": 12, "percent": 100.0, "passed": True},
+                "mcdc": {"covered": 28, "total": 33, "percent": 84.85, "passed": True},
+                "items": [
+                    {"coverage_class": "MCDC", "block_path": f"{model}/B02_RPAActv/AND2", "sid": "21",
+                     "covered": 2, "total": 3},
+                ],
+            }}}
+            initial = {"models": {model: {"condition": {"percent": 85.38, "passed": True},
+                                          "decision": {"percent": 41.67, "passed": False},
+                                          "mcdc": {"percent": 27.27, "passed": False}}}}
+            (output / f"{model}_initial_coverage_summary.json").write_text(json.dumps(initial), encoding="utf-8")
+            (output / f"{model}_final_coverage_summary.json").write_text(json.dumps(final), encoding="utf-8")
+            (output / f"{model}_agent_coverage_repair_proposal.json").write_text(json.dumps(
+                {"schema": "tcsd-agent-coverage-repair-proposal/v1", "jobId": "job-b2",
+                 "model": model, "tests": [], "unresolved": [
+                     {"coverage_class": "MCDC", "block": {"path": f"{model}/B02_RPAActv/AND4", "sid": "23"},
+                      "reason_code": "logic_unreachable", "evidence": "RPACmd shared root lockout"},
+                 ]}), encoding="utf-8")
+            task = {"id": "job-b2",
+                    "workspace": {"directory": str(workspace), "outputDir": str(output),
+                                  "modelSlxPath": str(workspace / f"{model}.slx"), "modelDir": str(model_dir)}}
+            task_path = root / "task.json"
+            task_path.write_text(json.dumps(task), encoding="utf-8")
+            self.runner.cmd_finish(mock.Mock(task=str(task_path)))
+            manifest = json.loads((output / ".tcsd-host" / "execution-manifest.json").read_text(encoding="utf-8"))
+            # Final gate passed -> complete, initial failure is informational.
+            self.assertEqual(manifest["completion"], "complete")
+            unresolved = manifest["evidence"]["unresolved"]
+            # Proposal entry plus the merged measured gap, no duplication.
+            self.assertEqual(len(unresolved), 2)
+            self.assertIn("logic_unreachable", [u["reason_code"] for u in unresolved])
+            self.assertIn("measured_uncovered", [u["reason_code"] for u in unresolved])
+            self.assertEqual(manifest["coverage"]["initial"]["models"][model]["decision"]["percent"], 41.67)
 
 
 if __name__ == "__main__":

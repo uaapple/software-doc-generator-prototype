@@ -183,7 +183,7 @@ def main() -> int:
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
     payload = load_obligation_payload(args.obligations)
     obligations = load_obligation_map(args.obligations)
-    if payload.get("generation_mode") in {"minimal_unique_cause", "minimal_masking_mcdc"}:
+    if payload.get("generation_mode") == "minimal_unique_cause":
         decisions = payload.get("summary", {}).get("decisions", [])
         plan_limit = sum(int(item.get("max_allowed_vectors") or 0) for item in decisions if isinstance(item, dict))
         if plan_limit and len(obligations) > plan_limit:

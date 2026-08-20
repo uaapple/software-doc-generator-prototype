@@ -4,10 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import {
-  resolvePythonInvocation,
-  runPythonCommand
-} from "../../src/services/python-command.js";
 
 const execFileAsync = promisify(execFile);
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -46,9 +42,7 @@ const runner = path.join(
   "scripts",
   "run_tcsd_pipeline_stage.py"
 );
-const pythonInvocation = resolvePythonInvocation();
-await runPythonCommand(execFileAsync, pythonInvocation, [
-  "-B",
+await execFileAsync(process.env.TCSD_PIPELINE_PYTHON || "python3", [
   runner,
   "--manifest",
   manifestPath,

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Invoke only approved Gateway client scripts through the image-owned Python
+# runtime. Docker no-new-privileges remains enabled. DSH scrubs credential
+# env names from children, so the tokens come from the 0600 secrets file the
+# entrypoint materialized; they must never be printed by these scripts.
+set -eu
+
+TCSD_GATEWAY_SECRETS_FILE="${TCSD_GATEWAY_SECRETS_FILE:-/var/lib/sdg/hermes-home/gateway-secrets.env}"
+if [ -f "$TCSD_GATEWAY_SECRETS_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$TCSD_GATEWAY_SECRETS_FILE"
+  set +a
+fi
+
+case "${1:-}" in
+  /opt/sdg/app/skills/hermes/tcsd-runtime/scripts/satk_eval.py|/opt/sdg/app/skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py)
+    exec /opt/sdg/venv/bin/python "$@"
+    ;;
+  *)
+    echo "tcsd-gateway-transport: unsupported controlled script" >&2
+    exit 64
+    ;;
+esac

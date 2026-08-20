@@ -1,4 +1,4 @@
-function executedScripts = setup_ut_support(rootDir, initScripts)
+function setup_ut_support(rootDir, initScripts)
 if nargin < 2
     initScripts = {};
 end
@@ -10,7 +10,7 @@ scriptDir = fileparts(mfilename('fullpath'));
 restore_matlab_mcp_core_path();
 restore_satk_tools_path();
 add_workspace_support_paths(rootDir, scriptDir);
-executedScripts = run_project_init_scripts(rootDir, initScripts);
+run_project_init_scripts(rootDir, initScripts);
 end
 
 function add_workspace_support_paths(rootDir, scriptDir)
@@ -51,7 +51,7 @@ for i = 1:numel(parts)
 end
 end
 
-function executedScripts = run_project_init_scripts(rootDir, initScripts)
+function run_project_init_scripts(rootDir, initScripts)
 discoveredScripts = discover_project_init_scripts(rootDir);
 environmentScripts = split_init_script_list(getenv('TCSD_PROJECT_INIT_SCRIPTS'));
 explicitScripts = normalize_init_scripts(initScripts);
@@ -171,28 +171,16 @@ if should_skip_project_path(scriptDir, rootDir)
     return;
 end
 [~, name, ext] = fileparts(scriptPath);
-fileName = [name ext];
 excludedNames = {
     'setup_ut_support.m'
     'simulate_tcsd_cases.m'
-    'configure_tcsd_coverage_observation_model.m'
     'collect_mcdc_coverage_feedback.m'
     'configure_tcsd_sim_config.m'
     'cast_input_for_simulink_ut.m'
 };
-if any(strcmpi(fileName, excludedNames)) || is_backup_or_temporary_init_script(fileName)
+if any(strcmpi([name ext], excludedNames))
     skip = true;
 end
-end
-
-function tf = is_backup_or_temporary_init_script(fileName)
-normalized = lower(char(fileName));
-tf = ~isempty(regexp(normalized, ...
-    '(^|[._-])(backup|bak|copy|old|orig|original|tmp|temp|autosave)([._-]|$)', ...
-    'once')) || ...
-    contains(normalized, '备份') || ...
-    contains(normalized, '副本') || ...
-    contains(normalized, '~');
 end
 
 function relPath = relative_to_root(filePath, rootDir)
@@ -256,22 +244,33 @@ if isempty(homeDir)
     homeDir = getenv('USERPROFILE');
 end
 
-sessionRoot = getenv('MW_MCP_SESSION_DIR');
-if ~isempty(sessionRoot) && exist(fullfile(sessionRoot, '+matlab_mcp'), 'dir')
-    addpath(sessionRoot);
-    return;
-end
-
 candidates = {};
 explicitRoot = getenv('MATLAB_MCP_CORE_ROOT');
 if ~isempty(explicitRoot)
     candidates{end + 1} = explicitRoot;
 end
 if ~isempty(homeDir)
-    candidates{end + 1} = fullfile(homeDir, 'Library', 'Application Support', 'MathWorks', ...
-        'MATLAB Add-Ons', 'Toolboxes', 'MATLAB MCP Core Server Toolbox');
+    addonToolboxRoot = fullfile(homeDir, 'Library', 'Application Support', 'MathWorks', ...
+        'MATLAB Add-Ons', 'Toolboxes');
+    candidates{end + 1} = fullfile(addonToolboxRoot, 'MATLAB MCP Core Server Toolbox');
+    candidates{end + 1} = fullfile(addonToolboxRoot, 'MATLAB MCP Server Toolbox');
     candidates{end + 1} = fullfile(homeDir, 'Documents', 'MATLAB', 'Add-Ons', ...
         'Toolboxes', 'MATLAB MCP Core Server Toolbox');
+    candidates{end + 1} = fullfile(homeDir, 'Documents', 'MATLAB', 'Add-Ons', ...
+        'Toolboxes', 'MATLAB MCP Server Toolbox');
+    % Tolerate other local install names (e.g. versioned toolbox folders) by
+    % scanning the add-on toolbox root for any folder containing +matlab_mcp.
+    if exist(addonToolboxRoot, 'dir')
+        entries = dir(addonToolboxRoot);
+        for i = 1:numel(entries)
+            if entries(i).isdir && ~strcmp(entries(i).name, '.') && ~strcmp(entries(i).name, '..')
+                candidate = fullfile(addonToolboxRoot, entries(i).name);
+                if exist(fullfile(candidate, '+matlab_mcp'), 'dir')
+                    candidates{end + 1} = candidate; %#ok<AGROW>
+                end
+            end
+        end
+    end
 end
 
 for i = 1:numel(candidates)

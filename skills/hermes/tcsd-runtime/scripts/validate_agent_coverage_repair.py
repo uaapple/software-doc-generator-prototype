@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -25,23 +24,13 @@ ALLOWED_UNRESOLVED_REASONS = {
 }
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*$")
 SAMPLE_PERIOD_TEXT_RE = re.compile(
-    r"(?i)(simulation|solver|sample|sampling|unit\s*delay|counter|timer|"
-    r"stored\s+state|feedback\s+path|stateful|周期|采样|计数|仿真|状态|反馈)"
+    r"(?i)(simulation|solver|sample|sampling|unit\s*delay|counter|timer|周期|采样|计数|仿真)"
 )
 ACTION_STEP_LIMIT_TEXT_RE = re.compile(
     r"(?i)(exceed(?:s|ing|ed)?|more\s+than|greater\s+than|over|超过|大于|超出)"
     r".{0,80}(?:action\s*)?(?:step|steps|步|guardrail|limit|限制)"
     r"|(?:step|steps|步|guardrail|limit|限制).{0,80}"
     r"(?:exceed(?:s|ing|ed)?|more\s+than|greater\s+than|over|超过|大于|超出)"
-)
-STATE_TRANSITION_BUDGET_TEXT_RE = re.compile(
-    r"(?is)(?:requir(?:e|es|ed|ing)|demand(?:s|ed|ing)?|need(?:s|ed|ing)?)"
-    r".{0,120}\b(?:toggle|toggles|transition|transitions|increment|increments|"
-    r"update|updates|advance|advances)\b"
-    r".{0,320}\b(?:step|steps|entry|entries|budget|guardrail|limit)\b"
-    r"|\b(?:step|steps|entry|entries|budget|guardrail|limit)\b"
-    r".{0,320}(?:toggle|toggles|transition|transitions|increment|increments|"
-    r"update|updates|advance|advances)\b"
 )
 
 
@@ -89,147 +78,6 @@ def trace_elements(value: Any, found: dict[tuple[str, str], dict[str, str]]) -> 
             trace_elements(child, found)
 
 
-def decoded_json(value: Any) -> Any:
-    if not isinstance(value, str) or not value.strip():
-        return value
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError:
-        return value
-
-
-def trace_operator_for_target(traces: dict[str, Any], target: dict[str, Any]) -> dict[str, Any] | None:
-    block = target.get("block") if isinstance(target.get("block"), dict) else {}
-    path = str(block.get("path") or "")
-    sid = str(block.get("sid") or "")
-    raw_operators = traces.get("operators")
-    operators = [raw_operators] if isinstance(raw_operators, dict) else raw_operators if isinstance(raw_operators, list) else []
-    matches = [
-        item
-        for item in operators
-        if isinstance(item, dict)
-        and ((path and str(item.get("block_path") or "") == path) or (sid and str(item.get("sid") or "").endswith(sid)))
-    ]
-    return matches[0] if len(matches) == 1 else None
-
-
-def trace_shape(value: Any) -> Any:
-    """Return a path-independent structural signature for a logical trace."""
-    if isinstance(value, list):
-        return tuple(trace_shape(child) for child in value)
-    if not isinstance(value, dict):
-        return None
-    if value.get("isRootInput") is True:
-        return ("root_input",)
-    if "trace" in value and set(value).issubset({"index", "trace"}):
-        return trace_shape(value.get("trace"))
-    kind = str(value.get("kind") or value.get("blockType") or "")
-    semantic = str(value.get("operator") or value.get("semantic") or "")
-    children = tuple(
-        (key, trace_shape(value.get(key)))
-        for key in ("inputs", "source")
-        if key in value
-    )
-    return (kind, semantic, children)
-
-
-def operator_evidence(operator: dict[str, Any] | None) -> dict[str, list[dict[str, Any]] | list[str]]:
-    roots: set[str] = set()
-    stateful: dict[tuple[str, str], dict[str, Any]] = {}
-    thresholds: dict[tuple[str, str], dict[str, Any]] = {}
-
-    def visit(value: Any) -> None:
-        if isinstance(value, dict):
-            if value.get("isRootInput") is True:
-                name = str(value.get("signal") or value.get("name") or "").strip()
-                if name:
-                    roots.add(name)
-            kind = str(value.get("kind") or "")
-            block_type = str(value.get("blockType") or "")
-            path = str(value.get("path") or "")
-            sid = str(value.get("sid") or "")
-            if kind in {"stateful", "delay"} or block_type in {"Delay", "UnitDelay", "Memory"}:
-                stateful[(path, sid)] = {
-                    "path": path,
-                    "sid": sid,
-                    "kind": kind or block_type,
-                    "initialCondition": value.get("resolvedInitialCondition", value.get("initialCondition")),
-                    "sampleTime": value.get("sampleTime"),
-                }
-            resolved_threshold = value.get("resolvedThreshold")
-            resolved_value = value.get("resolvedValue")
-            if resolved_threshold is not None or (kind == "constant" and resolved_value is not None):
-                thresholds[(path, sid)] = {
-                    "path": path,
-                    "sid": sid,
-                    "operator": value.get("operator"),
-                    "value": resolved_threshold if resolved_threshold is not None else resolved_value,
-                    "source": value.get("resolvedThresholdSource", value.get("resolvedSource", "")),
-                }
-            for child in value.values():
-                visit(child)
-        elif isinstance(value, list):
-            for child in value:
-                visit(child)
-
-    if operator:
-        visit(operator)
-    return {
-        "rootInputs": sorted(roots),
-        "statefulElements": sorted(stateful.values(), key=lambda item: (item["path"], item["sid"])),
-        "thresholds": sorted(thresholds.values(), key=lambda item: (item["path"], item["sid"])),
-    }
-
-
-def collect_complex_target_guidance(
-    targets: list[dict[str, Any]], traces: dict[str, Any]
-) -> list[dict[str, Any]]:
-    raw_operators = traces.get("operators")
-    operators = [raw_operators] if isinstance(raw_operators, dict) else raw_operators if isinstance(raw_operators, list) else []
-    guidance: list[dict[str, Any]] = []
-    for target in targets:
-        operator = trace_operator_for_target(traces, target)
-        evidence = operator_evidence(operator)
-        signature = (
-            str((operator or {}).get("operator") or ""),
-            trace_shape((operator or {}).get("ports")),
-        )
-        peers = []
-        if operator:
-            for item in operators:
-                if not isinstance(item, dict) or item is operator:
-                    continue
-                peer_signature = (str(item.get("operator") or ""), trace_shape(item.get("ports")))
-                if peer_signature != signature:
-                    continue
-                peer_evidence = operator_evidence(item)
-                peers.append(
-                    {
-                        "path": str(item.get("block_path") or ""),
-                        "sid": str(item.get("sid") or ""),
-                        **peer_evidence,
-                    }
-                )
-                if len(peers) >= 8:
-                    break
-        guidance.append(
-            {
-                "targetId": target.get("id"),
-                "coverageClass": target.get("coverage_class"),
-                "block": target.get("block"),
-                "missingOutcomes": target.get("missing_outcomes", []),
-                "measuredDescription": decoded_json(target.get("description")),
-                **evidence,
-                "structuralPeers": peers,
-                "agentTask": (
-                    "只设计该目标的有界时序刺激；按上游延时、阈值、锁存、恢复和复位顺序计算保持时间，"
-                    "不得重新枚举整个模型。"
-                ),
-            }
-        )
-    return guidance
-
-
 def metric_name(raw: Any) -> str:
     normalized = str(raw or "").strip().lower()
     return {
@@ -247,21 +95,6 @@ def normalized_detail(item: dict[str, Any], model: str, coverage_class: str, ind
     missing = item.get("missing_outcomes")
     if not isinstance(missing, list):
         missing = []
-    if not missing and coverage_class == "MCDC":
-        description = item.get("description")
-        if isinstance(description, str):
-            try:
-                description = json.loads(description)
-            except json.JSONDecodeError:
-                description = {}
-        conditions = description.get("condition") if isinstance(description, dict) else []
-        if isinstance(conditions, dict):
-            conditions = [conditions]
-        missing = [
-            f"{str(condition.get('text') or '条件')}: independent effect not demonstrated"
-            for condition in conditions or []
-            if isinstance(condition, dict) and condition.get("achieved") is not True
-        ]
     return {
         "id": str(item.get("id") or f"{model}:{coverage_class}:{index}"),
         "model": model,
@@ -287,8 +120,6 @@ def build_brief(
     trace_path: str,
     interface_path: str,
     threshold: float,
-    coverage_ir: dict[str, Any] | None = None,
-    initial_synthesis: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     records = coverage_records(coverage)
     record = records.get(model)
@@ -323,9 +154,7 @@ def build_brief(
         if not isinstance(item, dict):
             continue
         coverage_class = metric_name(item.get("coverage_class") or item.get("metric"))
-        covered = float(item.get("covered") or 0)
-        total = float(item.get("total") or 0)
-        if coverage_class in deficit_classes and total > 0 and covered < total:
+        if coverage_class in deficit_classes:
             targets.append(normalized_detail(item, model, coverage_class, index))
     for coverage_class in sorted(deficit_classes):
         if not any(target["coverage_class"] == coverage_class for target in targets):
@@ -346,29 +175,6 @@ def build_brief(
 
     elements: dict[tuple[str, str], dict[str, str]] = {}
     trace_elements(traces, elements)
-    coverage_ir = coverage_ir if isinstance(coverage_ir, dict) else {}
-    initial_synthesis = initial_synthesis if isinstance(initial_synthesis, dict) else {}
-    attempted: list[dict[str, Any]] = []
-    for item in coverage_ir.get("items", []):
-        if not isinstance(item, dict) or (item.get("reachability") or {}).get("status") != "required":
-            continue
-        controller = item.get("controller") if isinstance(item.get("controller"), dict) else {}
-        stimulus = item.get("stimulus") if isinstance(item.get("stimulus"), dict) else {}
-        if not (controller.get("direct_inputs") or controller.get("parameters") or stimulus.get("steps")):
-            continue
-        attempted.append(
-            {
-                "id": str(item.get("id") or ""),
-                "coverage_class": str(item.get("coverage_class") or ""),
-                "block": item.get("block") if isinstance(item.get("block"), dict) else {},
-                "required_outcome": item.get("required_outcome"),
-                "pattern_type": item.get("patternType") or "",
-                "controller": controller,
-                "stimulus": stimulus,
-            }
-        )
-    attempted = attempted[:256]
-    complex_guidance = collect_complex_target_guidance(targets[:64], traces)
     return {
         "schema": BRIEF_SCHEMA,
         "jobId": job_id,
@@ -377,34 +183,7 @@ def build_brief(
         "coverageThreshold": threshold,
         "metricDeficits": deficits,
         "coverageTargets": targets,
-        "coverageContext": {
-            "mcdcMode": str(record.get("mcdc_mode") or record.get("mcdcMode") or ""),
-            "modelChecksum": str(record.get("model_checksum") or record.get("modelChecksum") or ""),
-            "supportLibraryPath": str(record.get("support_library_path") or record.get("supportLibraryPath") or ""),
-            "initializationScripts": record.get("initialization_scripts", []),
-        },
-        "complexTargetGuidance": complex_guidance,
         "modelElementIndex": sorted(elements.values(), key=lambda item: (item["path"], item["sid"])),
-        "priorPlanning": {
-            "stage5ExecutionReadiness": (coverage_ir.get("summary") or {}).get("executionReadiness", {}),
-            "stage7InitialGeneration": {
-                "plannedCandidateCount": int(initial_synthesis.get("planned_candidate_count") or 0),
-                "actualAddedCount": int(initial_synthesis.get("added") or 0),
-                "duplicateSkippedCount": int(initial_synthesis.get("duplicate_skipped_count") or 0),
-                "controlConflictSkippedCount": int(initial_synthesis.get("control_conflict_skipped_count") or 0),
-                "unresolvedThresholdSkippedCount": int(initial_synthesis.get("unresolved_threshold_skipped_count") or 0),
-            },
-            "attemptedTargets": attempted,
-            "doNotRepeatIdenticalControllers": [
-                {
-                    "id": item["id"],
-                    "controller": item["controller"],
-                    "stimulus": item["stimulus"],
-                }
-                for item in attempted
-            ],
-            "measuredRemainingTargets": targets,
-        },
         "evidence": {
             "coverageReport": coverage_report_path,
             "logicalTraces": trace_path,
@@ -413,8 +192,8 @@ def build_brief(
         },
         "guardrails": {
             "maxCandidateTests": 16,
+            "maxStepsPerTest": 8,
             "stepCountSemantics": "stimulus_action_entries",
-            "actionStepCountLimit": None,
             "simulationSamplePeriodsDoNotCountAsSteps": True,
             "longHoldAsSingleActionAllowed": True,
             "parametersOnlyInInitialization": True,
@@ -451,11 +230,7 @@ def unresolved_confuses_sample_periods_with_action_steps(
         return False
     if guardrails.get("longHoldAsSingleActionAllowed") is not True:
         return False
-    action_budget_claim = (
-        ACTION_STEP_LIMIT_TEXT_RE.search(evidence)
-        or STATE_TRANSITION_BUDGET_TEXT_RE.search(evidence)
-    )
-    return bool(SAMPLE_PERIOD_TEXT_RE.search(evidence) and action_budget_claim)
+    return bool(SAMPLE_PERIOD_TEXT_RE.search(evidence) and ACTION_STEP_LIMIT_TEXT_RE.search(evidence))
 
 
 def validate_proposal(
@@ -472,6 +247,7 @@ def validate_proposal(
     if not isinstance(tests, list) or not isinstance(unresolved, list):
         raise ValueError("coverage repair proposal tests/unresolved must be arrays")
     max_tests = int(brief.get("guardrails", {}).get("maxCandidateTests") or 16)
+    max_steps = int(brief.get("guardrails", {}).get("maxStepsPerTest") or 8)
     if len(tests) > max_tests:
         raise ValueError("coverage repair proposal exceeds the bounded candidate limit")
     if brief.get("repairRequired") and not tests and not unresolved:
@@ -543,8 +319,8 @@ def validate_proposal(
         if unknown_inputs:
             raise ValueError(f"{item_id} uses unknown root inputs: {sorted(unknown_inputs)}")
         steps = stimulus.get("steps")
-        if not isinstance(steps, list) or not steps:
-            raise ValueError(f"{item_id} must contain at least one ordered action step")
+        if not isinstance(steps, list) or not 1 <= len(steps) <= max_steps:
+            raise ValueError(f"{item_id} must contain 1..{max_steps} ordered action steps")
         normalized_steps: list[dict[str, Any]] = []
         cumulative_delay = 0.0
         for index, step in enumerate(steps, 1):
@@ -618,9 +394,10 @@ def validate_proposal(
             evidence=evidence,
             guardrails=guardrails,
         ):
+            max_steps = int(guardrails.get("maxStepsPerTest") or 8)
             raise ValueError(
                 "state_sequence_not_constructible incorrectly treats simulation sample periods as "
-                "TCSD action steps. There is no per-test action-step count limit; "
+                f"TCSD action steps: maxStepsPerTest={max_steps} counts only stimulus.steps entries. "
                 "Encode the finite counter/timer hold as one positive delay_s action, then let the "
                 "deterministic host validate it by simulation."
             )
@@ -685,7 +462,6 @@ def main() -> int:
         traces_path = Path(args.logical_traces)
         ir_path = Path(args.coverage_ir)
         interface_path = Path(args.interface)
-        synthesis_path = ir_path.with_name(ir_path.name.replace("_coverage_ir.json", "_coverage_ir_synthesis_iter0.json"))
         brief = build_brief(
             job_id=args.job_id,
             model=args.model,
@@ -696,8 +472,6 @@ def main() -> int:
             trace_path=str(traces_path),
             interface_path=str(interface_path),
             threshold=args.threshold,
-            coverage_ir=read_json(ir_path),
-            initial_synthesis=read_json(synthesis_path) if synthesis_path.is_file() else {},
         )
         write_json(Path(args.output), brief)
         print(json.dumps({"output": args.output, "deficits": len(brief["metricDeficits"])}, ensure_ascii=False))
@@ -706,43 +480,8 @@ def main() -> int:
     brief = read_json(Path(args.brief))
     if brief.get("schema") != BRIEF_SCHEMA:
         raise ValueError("coverage repair brief schema is invalid")
-    interface = read_json(Path(args.interface))
-    proposal: dict[str, Any] = {}
-    try:
-        proposal = read_json(Path(args.proposal))
-        ir, report = validate_proposal(proposal, brief, interface)
-    except ValueError as error:
-        failure_report = {
-            "schema": VALIDATION_SCHEMA,
-            "jobId": brief.get("jobId"),
-            "model": brief.get("model"),
-            "proposalItemCount": len(proposal.get("tests", []))
-            if isinstance(proposal, dict) and isinstance(proposal.get("tests"), list)
-            else 0,
-            "acceptedCandidateCount": 0,
-            "unresolvedCount": 0,
-            "acceptedCandidateIds": [],
-            "unresolved": [],
-            "guardrails": brief.get("guardrails", {}),
-            "passed": False,
-            "error": {
-                "code": "proposal_validation_failed",
-                "message": str(error),
-            },
-        }
-        write_json(Path(args.report_json), failure_report)
-        print(
-            json.dumps(
-                {
-                    "output": args.report_json,
-                    "passed": False,
-                    "error": str(error),
-                },
-                ensure_ascii=False,
-            ),
-            file=sys.stderr,
-        )
-        return 2
+    proposal = read_json(Path(args.proposal))
+    ir, report = validate_proposal(proposal, brief, read_json(Path(args.interface)))
     write_json(Path(args.output_ir), ir)
     write_json(Path(args.report_json), report)
     print(

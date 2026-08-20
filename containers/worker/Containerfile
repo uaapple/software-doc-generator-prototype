@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 
 # Official node:22.22.3-bookworm-slim OCI index, resolved 2026-07-27.
 # linux/amd64 resolves to sha256:16d364eebf6b62da439dc993d9b80940c78b0ca38438452f011ab9a25c752644.
@@ -26,6 +25,7 @@ RUN node ./scripts/prepare-worker-source.mjs \
 
 FROM ${PYTHON_BASE_IMAGE} AS runtime
 ARG HERMES_AGENT_VERSION="0.18.2"
+ARG DSH_VERSION="0.1.0-rc.7"
 ARG HERMES_AGENT_WHEEL_URL="https://files.pythonhosted.org/packages/0c/4c/91652c61450763bfe165c65b83026503de0ac9ddad2c11ee522490bf4c2d/hermes_agent-0.18.2-py3-none-any.whl"
 ARG HERMES_AGENT_WHEEL_SHA256="8f02155cfc84b28bd98551cd18dffec0efa9ec070dd08f90f1a850f1c779492f"
 
@@ -38,6 +38,9 @@ ENV APP_RUNTIME_ROLE="hermes-agent" \
     PATH="/opt/sdg/venv/bin:${PATH}" \
     HOME="/var/lib/sdg/hermes-home" \
     HERMES_HOME="/var/lib/sdg/hermes-home" \
+    DSH_HOME="/var/lib/sdg/hermes-home/dsh" \
+    DSH_TELEMETRY_DISABLED="1" \
+    DSH_PERMISSION_MODE="danger-full-access" \
     HERMES_HOST="0.0.0.0" \
     HERMES_PORT="3101" \
     HERMES_UPLOAD_TMPDIR="/var/lib/sdg/data/uploads" \
@@ -70,7 +73,9 @@ COPY --from=node-dependencies /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-dependencies /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
-    test "$(node --version)" = "v22.22.3"
+    test "$(node --version)" = "v22.22.3" && \
+    npm install --global --omit=dev --ignore-scripts "@deepseek-ai/dsh@${DSH_VERSION}" && \
+    test "$(dsh --version)" = "${DSH_VERSION}"
 
 COPY requirements/container-worker.txt /tmp/container-worker.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -95,6 +100,7 @@ COPY --from=node-dependencies /build/node_modules ./node_modules
 COPY --from=source-selection /selected/src ./src
 COPY --from=source-selection /selected/public ./public
 COPY --from=source-selection /selected/source-manifest.json ./container-source-manifest.json
+COPY docs/unit-test-case-generation-mode.md ./docs/unit-test-case-generation-mode.md
 COPY package.json package-lock.json ./
 COPY templates/*.json ./templates/
 COPY containers/worker/configure-hermes.py ./containers/worker/configure-hermes.py
@@ -104,6 +110,7 @@ COPY containers/worker/configure-hermes.py ./containers/worker/configure-hermes.
 COPY skills/hermes/tcsd-runtime/scripts/ ./skills/hermes/tcsd-runtime/scripts/
 COPY skills/hermes/tcsd-runtime/references/ ./skills/hermes/tcsd-runtime/references/
 COPY skills/hermes/tcsd-runtime/assets/templates/tcsd_template.xlsx ./skills/hermes/tcsd-runtime/assets/templates/tcsd_template.xlsx
+COPY skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py ./skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py
 COPY skills/hermes/tcsd-stage-01-validate-inputs/ ./skills/hermes/tcsd-stage-01-validate-inputs/
 COPY skills/hermes/tcsd-stage-02-check-environment/ ./skills/hermes/tcsd-stage-02-check-environment/
 COPY skills/hermes/tcsd-stage-03-initialize-workspace/ ./skills/hermes/tcsd-stage-03-initialize-workspace/
@@ -116,6 +123,20 @@ COPY skills/hermes/tcsd-stage-09-collect-coverage/ ./skills/hermes/tcsd-stage-09
 COPY skills/hermes/tcsd-stage-10-repair-coverage/ ./skills/hermes/tcsd-stage-10-repair-coverage/
 COPY skills/hermes/tcsd-stage-11-final-validation/ ./skills/hermes/tcsd-stage-11-final-validation/
 COPY skills/hermes/tcsd-stage-12-package-cleanup/ ./skills/hermes/tcsd-stage-12-package-cleanup/
+COPY presets/unit-test-case-generation-production/ ./presets/unit-test-case-generation-production/
+COPY containers/worker/headless-production-preset.patch.yml ./containers/worker/headless-production-preset.patch.yml
+# The headless runner is replaced at the FILE level: DSH patch semantics reject
+# swapping a row's implementation (same id + different name is skipped), so the
+# image overwrites the stock @deepseek-ai/dsh-headless entry with the TCSD
+# runner (sync apply + session JSONL dump). The row keeps its id/name, so the
+# loader's app-entry resolution is untouched. The setgid transport C source was
+# dropped by the production integration (shell allowlist wrapper instead).
+COPY containers/worker/dsh-headless-tcsd.mjs /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-headless/lib/index.js
+RUN chmod 0644 /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-headless/lib/index.js
+COPY containers/worker/tcsd-gateway-transport /usr/local/bin/tcsd-gateway-transport
+COPY containers/worker/dsh-entrypoint.sh /usr/local/bin/tcsd-dsh-worker
+COPY containers/worker/THIRD_PARTY_NOTICES.md /opt/sdg/THIRD_PARTY_LICENSES/THIRD_PARTY_NOTICES.md
+COPY containers/worker/dsh-MIT.txt /opt/sdg/THIRD_PARTY_LICENSES/dsh-MIT.txt
 
 # The software-detail runtime and its nine explicit stage skills are immutable
 # Worker image inputs. Mutable project addons remain host-mounted runtime data.
@@ -140,25 +161,29 @@ RUN mkdir -p \
       /var/lib/sdg/data/tcsd-pipeline-jobs \
       /var/lib/sdg/data/software-detail-pipeline-jobs \
       /var/lib/sdg/hermes-home \
+      /var/lib/sdg/hermes-home/dsh \
       /var/lib/sdg/logs \
       /var/lib/sdg/project-addons \
       /var/lib/sdg/tmp && \
-    chown -R 10001:10001 /var/lib/sdg /opt/sdg/app
+    chmod 0755 /usr/local/bin/tcsd-dsh-worker /usr/local/bin/tcsd-gateway-transport && \
+    chmod 0644 /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-headless/lib/index.js && \
+    chown -R 10001:10001 /var/lib/sdg /opt/sdg/app /opt/sdg/THIRD_PARTY_LICENSES
 
 ARG IMAGE_REVISION=unknown
 ARG IMAGE_VERSION=0.1.0-container
-LABEL org.opencontainers.image.title="Software Document Generator Hermes Worker" \
+LABEL org.opencontainers.image.title="Software Document Generator DSH Worker" \
       org.opencontainers.image.revision="${IMAGE_REVISION}" \
       org.opencontainers.image.version="${IMAGE_VERSION}" \
       org.opencontainers.image.source="https://github.com/uaapple/software-doc-generator-prototype" \
       org.opencontainers.image.vendor="ITK Engineering" \
       org.opencontainers.image.base.name="python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317" \
       io.software-doc-generator.node.base="node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752" \
-      io.software-doc-generator.hermes.version="${HERMES_AGENT_VERSION}"
+      io.software-doc-generator.hermes.version="${HERMES_AGENT_VERSION}" \
+      io.software-doc-generator.dsh.version="${DSH_VERSION}"
 
 USER 10001:10001
 EXPOSE 3101
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:3101/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-ENTRYPOINT ["/usr/bin/tini", "--", "/opt/sdg/venv/bin/python", "/opt/sdg/app/containers/worker/configure-hermes.py"]
-CMD ["node", "--disable-warning=ExperimentalWarning", "src/hermes-server.js"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/tcsd-dsh-worker"]
+CMD []

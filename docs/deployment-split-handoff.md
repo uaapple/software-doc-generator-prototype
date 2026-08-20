@@ -523,6 +523,20 @@ npm run release:zip:windows-source
 
 这些命令读取 `deploy/targets/*.json`，不要再手写 include/exclude 列表。
 
+## TCSD DSH Worker 与 Gateway 调用边界
+
+`containers/worker/**`、`compose.windows-docker-desktop.yaml` 与
+`.env.windows-docker-desktop.example` 属于 Windows Docker Desktop Worker，和
+`presets/unit-test-case-generation-production/**`、`skills/hermes/tcsd-runtime/**`
+一起进入 Windows 侧部署，不进入 Linux 发布包。TCSD 的 Agent 执行器为固定版本 DSH；
+Platform 到 Worker 的既有作业接口保持不变。
+
+Worker 继续保持非特权用户、只读根文件系统、`CapDrop=ALL`、无 `CapAdd`、
+`no-new-privileges=true` 与 `init=true`。Gateway 凭据沿用受支持的 Worker 进程内注入方式，
+只能由镜像内白名单包装器调用 `satk_eval.py` 或 `matlab_gateway_lease.py`；不得写入任务、
+日志、DSH 会话导出或发布资产。`docs/docker-desktop-production-deployment.md` 是 shared
+运维文档；`tests/**` 是 dev-only。
+
 ## 部署端 AI 推荐流程
 
 1. 拉取开发分支最新提交。

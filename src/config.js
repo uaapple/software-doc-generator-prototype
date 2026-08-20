@@ -235,9 +235,24 @@ export const config = {
   },
   tcsdPipeline: {
     jobStoreDir: path.join(dataDir, "tcsd-pipeline-jobs"),
+    stageExecutor:
+      String(process.env.TCSD_STAGE_EXECUTOR || "dsh").trim().toLowerCase() === "hermes"
+        ? "hermes"
+        : "dsh",
     hermesProfile: String(process.env.TCSD_STAGE_HERMES_PROFILE || hermesProfile || "").trim() || "default",
     stageMaxTurns: Number(process.env.TCSD_STAGE_HERMES_MAX_TURNS || 200),
-    stageTimeoutMs: Number(process.env.TCSD_STAGE_HERMES_TIMEOUT_MS || 7200000)
+    stageTimeoutMs: Number(process.env.TCSD_STAGE_HERMES_TIMEOUT_MS || 7200000),
+    dsh: {
+      command: process.env.TCSD_DSH_COMMAND || "dsh",
+      profile: process.env.TCSD_DSH_PROFILE || "headless",
+      preset:
+        process.env.TCSD_DSH_PRESET ||
+        "unit-test-case-generation-production",
+      sessionTimeoutMs: Number(
+        process.env.TCSD_DSH_SESSION_TIMEOUT_MS || 6 * 60 * 60 * 1000
+      ),
+      pollIntervalMs: Number(process.env.TCSD_DSH_POLL_INTERVAL_MS || 15000)
+    }
   },
   softwareDetailPipeline: {
     jobStoreDir: path.join(dataDir, "software-detail-pipeline-jobs"),

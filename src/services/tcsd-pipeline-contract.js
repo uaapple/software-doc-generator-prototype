@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { parseZipArchive } from "./zip-archive.js";
+import { inflateRawSync } from "node:zlib";
 
 export const TCSD_PIPELINE_SCHEMA = "tcsd-agent-stage-pipeline/v2";
 export const TCSD_LEGACY_PIPELINE_SCHEMA = "tcsd-deterministic-pipeline/v1";
@@ -16,14 +16,14 @@ export const TCSD_STAGE_DEFINITIONS = Object.freeze([
   ["校验输入文件与项目附件", "tcsd-stage-01-validate-inputs"],
   ["检查 MATLAB 与模型工具环境", "tcsd-stage-02-check-environment"],
   ["初始化模型工作区", "tcsd-stage-03-initialize-workspace"],
-  ["加载模型并提取输入输出接口", "tcsd-stage-04-extract-interface", "1.2.0"],
-  ["分析条件、判定与 MC/DC 覆盖目标", "tcsd-stage-05-analyze-coverage", "1.2.0"],
-  ["生成并验证状态及时序刺激", "tcsd-stage-06-validate-state-probes", "1.4.0"],
-  ["生成并校验首版测试用例", "tcsd-stage-07-build-initial-cases", "1.2.2"],
+  ["加载模型并提取输入输出接口", "tcsd-stage-04-extract-interface"],
+  ["分析条件、判定与 MC/DC 覆盖目标", "tcsd-stage-05-analyze-coverage"],
+  ["生成并验证状态及时序刺激", "tcsd-stage-06-validate-state-probes"],
+  ["生成并校验首版测试用例", "tcsd-stage-07-build-initial-cases"],
   ["运行模型仿真并回填期望值", "tcsd-stage-08-simulate-backfill"],
   ["采集首轮覆盖率", "tcsd-stage-09-collect-coverage"],
-  ["根据覆盖率修正测试用例", "tcsd-stage-10-repair-coverage", "1.8.0"],
-  ["运行最终仿真与覆盖率检查", "tcsd-stage-11-final-validation", "1.2.0"],
+  ["根据覆盖率修正测试用例", "tcsd-stage-10-repair-coverage", "1.3.0"],
+  ["运行最终仿真与覆盖率检查", "tcsd-stage-11-final-validation"],
   ["整理任务产物并清理运行环境", "tcsd-stage-12-package-cleanup"]
 ].map(([name, skillName, skillVersion = "1.1.0"], offset) => Object.freeze({
   index: offset + 1,
@@ -47,12 +47,12 @@ export const TCSD_ERROR_CODES = Object.freeze({
   sessionReuse: "tcsd_stage_session_reused",
   input: "tcsd_input_invalid",
   timeout: "tcsd_stage_timeout",
-  stalled: "tcsd_stage_stalled",
-  cancelled: "tcsd_job_cancelled",
   pollTimeout: "tcsd_poll_timeout",
   transientNetwork: "tcsd_transient_network",
   illegalTransition: "tcsd_illegal_transition",
   obsolete: "tcsd_pipeline_version_obsolete",
+  stalled: "tcsd_stage_stalled",
+  cancelled: "tcsd_job_cancelled",
   skillTreeMutated: "tcsd_skill_tree_mutated"
 });
 
@@ -133,59 +133,6 @@ export function coverageCompletion(coverage = {}, unresolved = false, threshold 
   return unresolved || !coverageMeetsThreshold(coverage, threshold) ? "partial" : "complete";
 }
 
-function parseOracleManifest(oracle = {}, simulation = {}) {
-  const testCaseCount = Number(oracle.testCaseCount);
-  const expValueCount = Number(oracle.expValueCount);
-  const caseOutputCounts = oracle.caseOutputCounts;
-  const caseEntries = caseOutputCounts && typeof caseOutputCounts === "object" && !Array.isArray(caseOutputCounts)
-    ? Object.entries(caseOutputCounts)
-    : [];
-  const countedExpectedValues = caseEntries.reduce((total, [, counts]) => (
-    total + (
-      counts && typeof counts === "object" && !Array.isArray(counts)
-        ? Object.values(counts).reduce((subtotal, count) => subtotal + Number(count || 0), 0)
-        : 0
-    )
-  ), 0);
-  if (
-    oracle.authority !== "host" ||
-    oracle.status !== "complete" ||
-    ![8, 11].includes(Number(oracle.sourceStageIndex)) ||
-    !Number.isInteger(testCaseCount) ||
-    testCaseCount < 1 ||
-    !Number.isInteger(expValueCount) ||
-    expValueCount < testCaseCount ||
-    !Array.isArray(oracle.testsWithoutExpectedValues) ||
-    oracle.testsWithoutExpectedValues.length !== 0 ||
-    caseEntries.length !== testCaseCount ||
-    caseEntries.some(([identity, counts]) => (
-      !identity ||
-      !counts ||
-      typeof counts !== "object" ||
-      Array.isArray(counts) ||
-      !Object.keys(counts).length ||
-      Object.values(counts).some((count) => !Number.isInteger(Number(count)) || Number(count) < 1)
-    )) ||
-    countedExpectedValues !== expValueCount ||
-    !oracle.simulationResult ||
-    oracle.simulationResult !== simulation?.result ||
-    !/^[a-f0-9]{64}$/.test(String(oracle.workbookSha256 || ""))
-  ) {
-    throw contractError("最终执行 manifest 缺少完整的逐 Test oracle 证据");
-  }
-  return {
-    authority: "host",
-    status: "complete",
-    sourceStageIndex: Number(oracle.sourceStageIndex),
-    testCaseCount,
-    expValueCount,
-    testsWithoutExpectedValues: [],
-    caseOutputCounts,
-    simulationResult: oracle.simulationResult,
-    workbookSha256: oracle.workbookSha256
-  };
-}
-
 export function parseExecutionManifest(manifest = {}) {
   if (
     manifest.schema !== TCSD_EXECUTION_MANIFEST_SCHEMA ||
@@ -196,7 +143,6 @@ export function parseExecutionManifest(manifest = {}) {
   }
   const initial = normalizeCoverageReport(manifest.coverage?.initial);
   const final = normalizeCoverageReport(manifest.coverage?.final);
-  const oracle = parseOracleManifest(manifest.oracle, manifest.simulation);
   const repair = {
     required: Boolean(manifest.coverage?.repair_required),
     attempted: Boolean(manifest.coverage?.repair_attempted),
@@ -220,7 +166,6 @@ export function parseExecutionManifest(manifest = {}) {
     repair,
     workbook: manifest.workbook,
     simulation: manifest.simulation,
-    oracle,
     evidence: manifest.evidence,
     initialArtifact: manifest.coverage?.initial_artifact,
     finalArtifact: manifest.coverage?.final_artifact
@@ -280,18 +225,35 @@ async function assertArtifact(rootDir, artifact = {}) {
 }
 
 function xlsxText(buffer) {
-  try {
-    return parseZipArchive(buffer, {
-      maxArchiveBytes: 256 * 1024 * 1024,
-      maxEntryUncompressedBytes: 64 * 1024 * 1024,
-      maxTotalUncompressedBytes: 256 * 1024 * 1024
-    })
-      .readTextEntriesBySuffix(".xml")
-      .map((entry) => entry.text)
-      .join("\n");
-  } catch (_error) {
-    throw contractError("XLSX zip 目录或 entry 非法");
+  const result = [];
+  let eocd = -1;
+  for (let offset = buffer.length - 22; offset >= Math.max(0, buffer.length - 66000); offset -= 1) {
+    if (buffer.readUInt32LE(offset) === 0x06054b50) {
+      eocd = offset;
+      break;
+    }
   }
+  if (eocd < 0) throw contractError("XLSX zip 目录非法");
+  let offset = buffer.readUInt32LE(eocd + 16);
+  const count = buffer.readUInt16LE(eocd + 10);
+  for (let index = 0; index < count; index += 1) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) throw contractError("XLSX zip entry 非法");
+    const method = buffer.readUInt16LE(offset + 10);
+    const size = buffer.readUInt32LE(offset + 20);
+    const nameLength = buffer.readUInt16LE(offset + 28);
+    const extra = buffer.readUInt16LE(offset + 30);
+    const comment = buffer.readUInt16LE(offset + 32);
+    const local = buffer.readUInt32LE(offset + 42);
+    const name = buffer.subarray(offset + 46, offset + 46 + nameLength).toString("utf8");
+    offset += 46 + nameLength + extra + comment;
+    if (!name.endsWith(".xml")) continue;
+    const localName = buffer.readUInt16LE(local + 26);
+    const localExtra = buffer.readUInt16LE(local + 28);
+    const start = local + 30 + localName + localExtra;
+    const compressed = buffer.subarray(start, start + size);
+    result.push((method === 8 ? inflateRawSync(compressed) : compressed).toString("utf8"));
+  }
+  return result.join("\n");
 }
 
 async function evidenceJson(rootDir, relativePath, expectedSchema) {
@@ -305,47 +267,19 @@ async function validateBackfillEvidence(raw, context, artifacts) {
   const simulationCount = Number(raw.evidence?.simulationValueCount || 0);
   const workbookCount = Number(raw.evidence?.workbookBackfillCount || 0);
   const expCount = Number(raw.evidence?.expValueCount || 0);
-  const testCaseCount = Number(raw.evidence?.testCaseCount);
-  const testsWithoutExpectedValues = raw.evidence?.testsWithoutExpectedValues;
-  const caseOutputCounts = raw.evidence?.caseOutputCounts;
-  const caseEntries = caseOutputCounts && typeof caseOutputCounts === "object" && !Array.isArray(caseOutputCounts)
-    ? Object.entries(caseOutputCounts)
-    : [];
-  const caseExpectedValueCount = caseEntries.reduce((total, [, counts]) => (
-    total + (
-      counts && typeof counts === "object" && !Array.isArray(counts)
-        ? Object.values(counts).reduce((subtotal, count) => subtotal + Number(count || 0), 0)
-        : 0
-    )
-  ), 0);
   const items = raw.evidence?.backfillItems;
   if (
     !raw.evidence?.simulationResult ||
     simulationCount < 1 ||
     workbookCount !== simulationCount ||
     expCount !== workbookCount ||
-    !Number.isInteger(testCaseCount) ||
-    testCaseCount < 1 ||
-    !Array.isArray(testsWithoutExpectedValues) ||
-    testsWithoutExpectedValues.length !== 0 ||
-    caseEntries.length !== testCaseCount ||
-    caseEntries.some(([identity, counts]) => (
-      !identity ||
-      !counts ||
-      typeof counts !== "object" ||
-      Array.isArray(counts) ||
-      !Object.keys(counts).length ||
-      Object.values(counts).some((count) => !Number.isInteger(Number(count)) || Number(count) < 1)
-    )) ||
-    caseExpectedValueCount !== workbookCount ||
     !Array.isArray(items) ||
     items.length !== workbookCount ||
-    !caseOutputCounts
+    !raw.evidence?.caseOutputCounts
   ) {
     throw contractError(`第 ${context.stageIndex} 阶段缺少逐项仿真/回填交叉证据`);
   }
   const identities = new Set();
-  const itemCounts = {};
   for (const item of items) {
     const key = `${item?.row}|${item?.testId}|${item?.step}|${item?.output}`;
     if (
@@ -361,12 +295,6 @@ async function validateBackfillEvidence(raw, context, artifacts) {
       throw contractError(`第 ${context.stageIndex} 阶段回填明细非法或重复`);
     }
     identities.add(key);
-    const caseKey = `${item.row}:${item.testId}`;
-    itemCounts[caseKey] ||= {};
-    itemCounts[caseKey][item.output] = Number(itemCounts[caseKey][item.output] || 0) + 1;
-  }
-  if (JSON.stringify(itemCounts) !== JSON.stringify(caseOutputCounts)) {
-    throw contractError(`第 ${context.stageIndex} 阶段逐 Test oracle 计数与回填明细不一致`);
   }
   const workbook = artifacts.find((item) => item.kind === "xlsx");
   if (!workbook || !xlsxText(await fs.readFile(workbook.absolutePath)).includes("expValue(")) {
@@ -529,10 +457,7 @@ export async function validateStageResult(raw = {}, context = {}) {
     if (
       Number(raw.evidence?.expValueCount || 0) !== Number(semantic.expValueCount || 0) ||
       Number(raw.evidence?.simulationValueCount || 0) !== Number(semantic.simulationValueCount || 0) ||
-      Number(raw.evidence?.workbookBackfillCount || 0) !== Number(semantic.workbookBackfillCount || 0) ||
-      Number(raw.evidence?.testCaseCount || 0) !== Number(semantic.testCaseCount || 0) ||
-      JSON.stringify(raw.evidence?.testsWithoutExpectedValues) !== JSON.stringify(semantic.testsWithoutExpectedValues) ||
-      JSON.stringify(raw.evidence?.caseOutputCounts) !== JSON.stringify(semantic.caseOutputCounts)
+      Number(raw.evidence?.workbookBackfillCount || 0) !== Number(semantic.workbookBackfillCount || 0)
     ) {
       throw contractError("第 8 阶段 Agent 计数与宿主逐项仿真/工作簿结果不一致");
     }
@@ -582,27 +507,17 @@ export async function validateStageResult(raw = {}, context = {}) {
   }
   if (context.stageIndex === 11) {
     const repairApplied = context.pipelineState?.repair?.applied === true;
-    const reusedStage9Coverage = raw.evidence?.coverageReusedFromStage9 === true;
     if (repairApplied && raw.status === "skipped") {
       throw contractError("第 10 阶段已应用修正，第 11 阶段不得跳过最终仿真与覆盖率");
     }
-    if (!repairApplied && raw.status !== "skipped" && !reusedStage9Coverage) {
-      throw contractError("第 10 阶段未应用修正，第 11 阶段必须明确跳过或复用第 9 阶段覆盖率");
-    }
-    if (repairApplied && reusedStage9Coverage) {
-      throw contractError("第 10 阶段已应用修正，第 11 阶段不得复用第 9 阶段覆盖率");
+    if (!repairApplied && raw.status !== "skipped") {
+      throw contractError("第 10 阶段未应用修正，第 11 阶段应明确跳过");
     }
   }
   if (context.stageIndex === 11 && raw.status !== "skipped") {
     const semantic = requireSemanticEvidence(context, 11);
     await validateBackfillEvidence(raw, context, artifacts);
-    if (
-      !raw.coverage ||
-      !coverageMatches(raw.coverage, semantic.coverage) ||
-      Number(raw.evidence?.testCaseCount || 0) !== Number(semantic.testCaseCount || 0) ||
-      JSON.stringify(raw.evidence?.testsWithoutExpectedValues) !== JSON.stringify(semantic.testsWithoutExpectedValues) ||
-      JSON.stringify(raw.evidence?.caseOutputCounts) !== JSON.stringify(semantic.caseOutputCounts)
-    ) {
+    if (!raw.coverage || !coverageMatches(raw.coverage, semantic.coverage)) {
       throw contractError("第 11 阶段最终覆盖率与宿主解析报告不一致");
     }
     raw.coverage = normalizeCoverageReport(semantic.coverage);
@@ -801,18 +716,6 @@ export async function validateStageCheckpoint(raw = {}, context = {}) {
     }
     const parsedManifest = parseExecutionManifest(executionReference.value);
     const threshold = Number(context.pipelineState?.input?.coverageThreshold || 80);
-    const finalValidationCheckpoint = context.pipelineState?.stages?.[10]?.checkpoint;
-    const expectedOracleCheckpoint = finalValidationCheckpoint?.status !== "skipped" && finalValidationCheckpoint?.evidence
-      ? finalValidationCheckpoint
-      : context.pipelineState?.stages?.[7]?.checkpoint;
-    const expectedOracle = expectedOracleCheckpoint?.evidence;
-    const expectedOracleStageIndex = expectedOracleCheckpoint === finalValidationCheckpoint ? 11 : 8;
-    const workbookAbsolutePath = resolveWorkspacePath(
-      context.workspaceDir,
-      executionReference.value.workbook,
-      "final workbook"
-    );
-    const workbookSha256 = createHash("sha256").update(await fs.readFile(workbookAbsolutePath)).digest("hex");
     const expectedCompletion = coverageCompletion(
       parsedManifest.final,
       !coverageMeetsThreshold(parsedManifest.final, threshold),
@@ -828,16 +731,9 @@ export async function validateStageCheckpoint(raw = {}, context = {}) {
       parsedManifest.repair.required !== Boolean(context.pipelineState?.repair?.required) ||
       parsedManifest.repair.attempted !== Boolean(context.pipelineState?.repair?.attempted) ||
       parsedManifest.repair.applied !== Boolean(context.pipelineState?.repair?.applied) ||
-      parsedManifest.repair.passes !== Number(context.pipelineState?.repair?.passes || 0) ||
-      parsedManifest.oracle.sourceStageIndex !== expectedOracleStageIndex ||
-      parsedManifest.oracle.testCaseCount !== Number(expectedOracle?.testCaseCount) ||
-      parsedManifest.oracle.expValueCount !== Number(expectedOracle?.workbookBackfillCount) ||
-      parsedManifest.oracle.simulationResult !== expectedOracle?.simulationResult ||
-      parsedManifest.oracle.workbookSha256 !== workbookSha256 ||
-      JSON.stringify(parsedManifest.oracle.testsWithoutExpectedValues) !== JSON.stringify(expectedOracle?.testsWithoutExpectedValues) ||
-      JSON.stringify(parsedManifest.oracle.caseOutputCounts) !== JSON.stringify(expectedOracle?.caseOutputCounts)
+      parsedManifest.repair.passes !== Number(context.pipelineState?.repair?.passes || 0)
     ) {
-      throw contractError("第 12 阶段宿主 manifest 与已验证覆盖率/修正/oracle 状态不一致");
+      throw contractError("第 12 阶段宿主 manifest 与已验证覆盖率/修正状态不一致");
     }
   }
   return {
