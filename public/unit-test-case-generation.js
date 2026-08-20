@@ -99,14 +99,14 @@ function renderCoverageChip(coverage) {
           const metric = record && typeof record === "object" ? record[key] : null;
           const percentage = formatPercent(metric?.percent);
           if (!percentage) return "";
-          const ratio =
-            Number(metric?.covered ?? NaN) >= 0 && Number(metric?.total ?? NaN) > 0
-              ? ` (${metric.covered}/${metric.total})`
-              : "";
-          return `${labels[key]} ${percentage}${ratio}`;
+          // Keep the summary chip compact: percentages only; covered/total
+          // details stay in the expanded 覆盖率 section.
+          return `${labels[key]} ${percentage}`;
         })
         .filter(Boolean);
-      return metrics.length ? `${model}: ${metrics.join(" · ")}` : "";
+      // Single-model runs omit the model prefix so the chip fits the panel.
+      const prefix = blocks.length && Object.keys(models).length > 1 ? `${model}: ` : "";
+      return `${prefix}${metrics.join(" · ")}`;
     })
     .filter(Boolean);
   return blocks.length ? blocks.join(" ｜ ") : "";
