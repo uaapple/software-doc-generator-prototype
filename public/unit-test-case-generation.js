@@ -105,7 +105,7 @@ function renderCoverageChip(coverage) {
         })
         .filter(Boolean);
       // Single-model runs omit the model prefix so the chip fits the panel.
-      const prefix = blocks.length && Object.keys(models).length > 1 ? `${model}: ` : "";
+      const prefix = metrics.length && Object.keys(models).length > 1 ? `${model}: ` : "";
       return `${prefix}${metrics.join(" · ")}`;
     })
     .filter(Boolean);
