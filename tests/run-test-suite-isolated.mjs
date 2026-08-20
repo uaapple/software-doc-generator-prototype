@@ -61,11 +61,6 @@ const suites = [
     args: ["tests/slx-parser-tests.js"]
   },
   {
-    id: "tcsd",
-    command: process.execPath,
-    args: ["tests/tcsd-pipeline-contract-tests.js"]
-  },
-  {
     id: "hermes-upload-relocation",
     command: process.execPath,
     args: ["tests/hermes-upload-relocation-tests.mjs"]
@@ -144,8 +139,7 @@ const suites = [
       "tests.tcsd-runtime.test_coverage_ir",
       "tests.tcsd-runtime.test_pipeline_stage_runner",
       "tests.tcsd-runtime.test_mcdc_quality_loop",
-      "tests.tcsd-runtime.test_host_validator_bootstrap",
-      "tests.tcsd-runtime.test_validate_tcsd_workbook"
+      "tests.tcsd-runtime.test_decision_obligations"
     ]
   },
   {

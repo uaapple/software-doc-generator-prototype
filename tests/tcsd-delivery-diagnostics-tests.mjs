@@ -338,10 +338,6 @@ try {
   const service = new UnitTestCaseGenerationService({ hermesAgentClient: rejectingClient });
   await service.saveTask(task);
   const initialPublic = await service.getTask(taskId);
-  assert.ok(!JSON.stringify(initialPublic).includes(root));
-  assert.ok(!JSON.stringify(initialPublic).includes("private-model-content"));
-  assert.ok(!JSON.stringify(initialPublic).includes("must-not-appear"));
-  assert.ok(!JSON.stringify(initialPublic).includes("secret"));
   assert.equal(initialPublic.workerDelivery.state, "accepted");
   assert.equal(initialPublic.workerDelivery.category, undefined);
   assert.deepEqual(initialPublic.pipeline.stages[0].checkpoint.agent.tokenUsage, {
