@@ -476,7 +476,50 @@ export class TcsdPipelineJobService {
       for (let index = 1; index <= 12; index += 1) {
         if (this.cancelled.has(jobId)) return this.get(jobId);
         const stage = job.stages[index - 1];
-        if (["已完成", "已跳过", "部分完成"].includes(stage.status) && await this.verifiedCheckpoint(job, index)) {
+        // The in-session runner can overwrite a stage checkpoint file with a
+        // newer attempt (agent re-run); re-ingest the newer file in place so
+        // downstream contract checks (e.g. stage 11 vs stage 10 repair) see
+        // the latest evidence instead of a stale first ingestion.
+        const fileCheckpoint = await this.verifiedCheckpoint(job, index).catch(() => null);
+        const fileAttempt = Number(fileCheckpoint?.attempt || 0);
+        const ingestedAttempt = Number(stage.checkpoint?.attempt || 0);
+        const terminalStatuses = ["已完成", "已跳过", "部分完成"];
+        const fileStatus = fileCheckpoint?.status === "skipped"
+          ? "已跳过"
+          : fileCheckpoint?.status === "partial"
+            ? "部分完成"
+            : "已完成";
+        const reIngest = async () => {
+          this.applyCheckpoint(job, fileCheckpoint);
+          job.checkpoints = [
+            ...job.checkpoints.filter((item) => item.stageIndex !== index),
+            {
+              stageIndex: index,
+              path: checkpointFor(job, index),
+              verifiedAt: now(),
+              schema: fileCheckpoint.schema,
+              sessionId: fileCheckpoint.agent.sessionId,
+              skillName: fileCheckpoint.skill.name,
+              bundleHash: fileCheckpoint.skill.bundleHash
+            }
+          ];
+          await this.setStage(job, index, fileStatus, {
+            summary: fileCheckpoint.summary || fileCheckpoint.skipReason || "阶段证据已验证。",
+            skipReason: fileCheckpoint.skipReason || "",
+            checkpoint: fileCheckpoint
+          });
+        };
+        if (terminalStatuses.includes(stage.status) && fileCheckpoint && fileAttempt > ingestedAttempt) {
+          await reIngest();
+          continue;
+        }
+        // A failed stage whose checkpoint file now validates (earlier stages
+        // were re-ingested) is recovered from the file without re-execution.
+        if (stage.status === "失败" && fileCheckpoint) {
+          await reIngest();
+          continue;
+        }
+        if (terminalStatuses.includes(stage.status) && fileCheckpoint) {
           continue;
         }
         if (stage.status !== "等待执行") {

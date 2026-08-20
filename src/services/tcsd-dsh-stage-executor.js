@@ -144,7 +144,7 @@ export class TcsdDshStageExecutor {
       "这是平台已创建的受管任务；不得运行 init、不得创建另一工作区或改变 task.json。",
       `仅用 Python 前台依次运行：${runner} run --task ${taskPath} --stage 1 至 12（Stage 10 保持 auto），然后 ${runner} finish --task ${taskPath}。`,
       "完成以 outputs/.tcsd-checkpoints/ 下 12 个 checkpoint 和 outputs/.tcsd-host 三件套为准。",
-      "纪律（必须遵守）：严格按 1→12 顺序，每阶段仅运行一次 runner；覆盖率补救只发生在 stage-10；stage-11 完成后立即 stage-12 与 finish，不得在阶段间进行任何额外 MATLAB 仿真、探针、覆盖率收集、诊断或用例修改；stage-12 是纯清理打包，无论覆盖率如何都直接收尾，未达标缺口由 finish 记为 unresolved。"
+      "纪律（必须遵守）：严格按 1→12 顺序，每阶段仅运行一次 runner；阶段结果（含 partial/skipped/completed）即终态，禁止对任何已产出 checkpoint 的阶段重跑或追加修改；覆盖率补救只发生在 stage-10；stage-11 完成后立即 stage-12 与 finish，不得在阶段间进行任何额外 MATLAB 仿真、探针、覆盖率收集、诊断或用例修改；stage-12 是纯清理打包，无论覆盖率如何都直接收尾，未达标缺口由 finish 记为 unresolved。"
     ].join("\n");
   }
 
