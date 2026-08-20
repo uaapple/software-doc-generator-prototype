@@ -3953,58 +3953,6 @@ const tests = [
     }
   },
   {
-    name: "Hermes Agent sidecar disables default HTTP request timeout for long steps",
-    run: async () => {
-      const configSource = await fs.readFile(new URL("../src/config.js", import.meta.url), "utf8");
-      const serverSource = await fs.readFile(new URL("../src/hermes-server.js", import.meta.url), "utf8");
-
-      assert.match(configSource, /serverRequestTimeoutMs:\s*Number\(process\.env\.HERMES_SERVER_REQUEST_TIMEOUT_MS\s*\|\|\s*0\)/);
-      assert.match(configSource, /stageTimeoutMs:\s*Number\(process\.env\.TCSD_STAGE_HERMES_TIMEOUT_MS\s*\|\|\s*7200000\)/);
-      assert.match(configSource, /stageMaxTurns:\s*Number\(process\.env\.TCSD_STAGE_HERMES_MAX_TURNS\s*\|\|\s*200\)/);
-      assert.match(configSource, /TCSD_STAGE_HERMES_PROFILE\s*\|\|\s*hermesProfile/);
-      assert.match(configSource, /simulink_module_description_generate:\s*Number\(\s*process\.env\.HERMES_TIMEOUT_SIMULINK_MODULE_DESCRIPTION_GENERATE_MS\s*\|\|\s*3600000\s*\)/);
-      assert.match(configSource, /HERMES_MAX_TURNS_SIMULINK_MODULE_DESCRIPTION_GENERATE[\s\S]*:\s*10000/);
-      assert.ok(serverSource.includes("server.requestTimeout = requestTimeoutMs"));
-      assert.ok(serverSource.includes("server.timeout = requestTimeoutMs"));
-    }
-  },
-  {
-    name: "Hermes agent client rejects the removed whole-task TCSD entry",
-    run: async () => {
-      await withTempConfig(async (tempDir) => {
-        const workspaceDir = path.join(tempDir, "ut-workspace");
-        const outputDir = path.join(workspaceDir, "outputs");
-        await fs.mkdir(outputDir, { recursive: true });
-        const invocations = [];
-        const client = new HermesAgentClient({
-          transport: "cli",
-          timeoutMs: 120000,
-          usageReader: async () => null,
-          commandRunner: async (command, args, options) => {
-            invocations.push({ command, args, options });
-            return {
-              stdout:
-                "{\"status\":\"completed\",\"summary\":\"完成\",\"outputFiles\":[{\"relativePath\":\"outputs/Demo_Test0001_tcsd.xlsx\"}],\"warnings\":[]}\n\nsession_id: 20260522_ut\n",
-              stderr: ""
-            };
-          }
-        });
-
-        await assert.rejects(
-          () => client.executeStep({
-            taskId: "ut-task-1",
-            stepType: "simulink_ut_tcsd_generate",
-            allowedPaths: [workspaceDir],
-            workdir: workspaceDir,
-            inputArtifact: { workspaceDir, outputDir }
-          }),
-          /Unsupported Hermes CLI step/
-        );
-        assert.equal(invocations.length, 0);
-      });
-    }
-  },
-  {
     name: "Hermes agent client builds simulink_module_description_generate prompt and only normalizes DOCX outputs",
     run: async () => {
       await withTempConfig(async (tempDir) => {

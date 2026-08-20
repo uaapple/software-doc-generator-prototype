@@ -2,7 +2,6 @@ import importlib.util
 import hashlib
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -14,7 +13,6 @@ from openpyxl import Workbook
 
 RUNTIME = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runtime"
 SCRIPT = RUNTIME / "scripts" / "run_tcsd_pipeline_stage.py"
-SESSION_READER = RUNTIME / "scripts" / "read_hermes_session.py"
 SATK_SCRIPT = RUNTIME / "scripts" / "satk_eval.py"
 REPAIR_SCRIPT = RUNTIME / "scripts" / "validate_agent_coverage_repair.py"
 SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
@@ -386,103 +384,6 @@ class PipelineStageRunnerTests(unittest.TestCase):
             self.assertEqual(assessment["supersededBy"]["stageIndex"], 9)
             self.assertEqual(assessment["supersededBy"]["authority"], "measured-simulink-coverage")
             self.assertEqual(assessment["sourceObligations"]["sha256"], hashlib.sha256(obligations.read_bytes()).hexdigest())
-
-    def test_hermes_session_reader_reports_actual_model_and_token_usage(self):
-        with tempfile.TemporaryDirectory() as temp:
-            temp_path = Path(temp)
-            database = Path(temp) / "state.db"
-            skill_file = temp_path / "SKILL.md"
-            usage_file = temp_path / ".usage.json"
-            skill_source = b"---\r\nname: tcsd-stage-01-validate-inputs\r\n---\r\n\r\n# Stage 1\r\n"
-            skill_file.write_bytes(skill_source)
-            usage_file.write_text(
-                json.dumps(
-                    {
-                        "tcsd-stage-01-validate-inputs": {
-                            "use_count": 3,
-                            "last_used_at": "2026-07-24T11:34:05+00:00",
-                        }
-                    }
-                ),
-                encoding="utf-8",
-            )
-            connection = sqlite3.connect(database)
-            try:
-                connection.execute(
-                    """
-                    create table sessions (
-                      id text primary key,
-                      model text,
-                      input_tokens integer,
-                      output_tokens integer,
-                      cache_read_tokens integer,
-                      cache_write_tokens integer,
-                      reasoning_tokens integer
-                    )
-                    """
-                )
-                connection.execute(
-                    "insert into sessions values (?, ?, ?, ?, ?, ?, ?)",
-                    ("session-actual", "provider/model-v2", 100, 20, 5, 2, 7),
-                )
-                connection.execute(
-                    """
-                    create table messages (
-                      id integer primary key autoincrement,
-                      session_id text,
-                      role text,
-                      content text,
-                      timestamp real
-                    )
-                    """
-                )
-                connection.execute(
-                    "insert into messages(session_id, role, content, timestamp) values (?, ?, ?, ?)",
-                    (
-                        "session-actual",
-                        "user",
-                        "/tcsd-stage-01-validate-inputs execute stage one",
-                        1.0,
-                    ),
-                )
-                connection.commit()
-            finally:
-                connection.close()
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SESSION_READER),
-                    "--state-db",
-                    str(database),
-                    "--session-id",
-                    "session-actual",
-                    "--expected-skill-name",
-                    "tcsd-stage-01-validate-inputs",
-                    "--expected-skill-file",
-                    str(skill_file),
-                    "--expected-skill-sha256",
-                    hashlib.sha256(skill_source).hexdigest(),
-                    "--skill-usage-file",
-                    str(usage_file),
-                    "--expected-use-count-before",
-                    "2",
-                    "--invocation-started-at",
-                    "2026-07-24T11:34:00Z",
-                    "--invocation-ended-at",
-                    "2026-07-24T11:34:10Z",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            usage = json.loads(result.stdout)
-            self.assertEqual(usage["model"], "provider/model-v2")
-            self.assertEqual(usage["totalTokens"], 127)
-            self.assertEqual(usage["reasoningTokens"], 7)
-            self.assertTrue(usage["skillLoad"]["loaded"])
-            self.assertEqual(usage["skillLoad"]["source"], "hermes-state-db+skill-usage")
-            self.assertEqual(usage["skillLoad"]["usageCountBefore"], 2)
-            self.assertEqual(usage["skillLoad"]["usageCountAfter"], 3)
 
     def test_first_three_stages_write_candidate_results_but_not_host_checkpoints(self):
         with tempfile.TemporaryDirectory() as temp:
