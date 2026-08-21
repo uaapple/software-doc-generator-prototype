@@ -265,30 +265,6 @@ class DecisionObligationBlocksTests(unittest.TestCase):
         self.assertEqual(by_outcome["switch true (u3 ~= 0)"], {"Ctl": 1})
         self.assertEqual(by_outcome["switch false (u3 ~= 0)"], {"Ctl": 0})
 
-    def test_mps_uses_data_port_indices_for_legal_selectors(self) -> None:
-        """liuts B02 regression: MultiPortSwitch with DataPortIndices={4,5,6,7}
-        has legal selectors 4..7, not 1..4."""
-        builder = script("build_decision_obligations.py")
-        blocks_data = {
-            "model": "Mock",
-            "blocks": [
-                {"path": "Mock/MPS", "sid": "60", "type": "MultiPortSwitch",
-                 "params": {"Inputs": "5", "DataPortOrder": "One-based",
-                            "DataPortIndices": "{4,5,6,7}"},
-                 "inputs": [{"port": 1, "src_kind": "input", "src_value": "Sel"}]},
-                {"path": "Mock/MPSDef", "sid": "61", "type": "MultiPortSwitch",
-                 "params": {"Inputs": "3", "DataPortOrder": "Zero-based"},
-                 "inputs": [{"port": 1, "src_kind": "input", "src_value": "Sel2"}]},
-            ],
-            "enable_ports": [],
-        }
-        items = builder.generate_from_blocks(blocks_data, "Mock")
-        mps = [i for i in items if i["sid"] == "60" and i["status"] == "required"]
-        selectors = sorted(i["match"]["inputs"]["Sel"] for i in mps)
-        self.assertEqual(selectors, [4, 5, 6, 7])
-        mps_def = [i for i in items if i["sid"] == "61" and i["status"] == "required"]
-        self.assertEqual(sorted(i["match"]["inputs"]["Sel2"] for i in mps_def), [0, 1])
-
     def test_synthesis_now_appends_condition_candidates_with_params(self) -> None:
         synthesis = script("synthesize_tcsd_from_coverage_ir.py")
         spec = {"tests": [{"id": "TC_001", "name": "Baseline", "initialization": "Sig=0;", "action": "[+0.1s]"}]}

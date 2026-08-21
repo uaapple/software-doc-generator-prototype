@@ -160,12 +160,10 @@ assert.doesNotMatch(
 assert.match(containerDevScript, /verifyWritableMounts/);
 assert.match(containerDevScript, /verifyWorkerGatewayReachability/);
 assert.match(containerDevScript, /"config", "--quiet"/);
-assert.match(workerService, /HERMES_INFERENCE_PROVIDER:/);
-assert.match(workerService, /HERMES_INFERENCE_MODEL:/);
-assert.match(workerService, /DEEPSEEK_API_KEY:/);
-assert.match(workerService, /DEEPSEEK_BASE_URL:/);
-assert.match(workerService, /GLM_API_KEY:/);
-assert.match(workerService, /GLM_BASE_URL:/);
+assert.match(workerService, /env_file:[\s\S]*SDG_SHARED_SECRETS_FILE/);
+assert.match(platformService, /env_file:[\s\S]*SDG_SHARED_SECRETS_FILE/);
+assert.doesNotMatch(workerService, /HERMES_INFERENCE_PROVIDER:|HERMES_INFERENCE_MODEL:/);
+assert.doesNotMatch(workerService, /DEEPSEEK_API_KEY:|DEEPSEEK_BASE_URL:|GLM_API_KEY:|GLM_BASE_URL:/);
 assert.doesNotMatch(platformService, /DEEPSEEK_API_KEY|DEEPSEEK_BASE_URL|GLM_API_KEY|GLM_BASE_URL/);
 assert.doesNotMatch(platformService, /HERMES_INFERENCE_PROVIDER|HERMES_INFERENCE_MODEL/);
 
@@ -429,7 +427,7 @@ function testHermesProviderComposeMapping() {
       deepseek.services.worker.environment.DEEPSEEK_BASE_URL,
       "https://api.deepseek.com"
     );
-    assert.ok(!Object.hasOwn(deepseek.services.platform.environment, "DEEPSEEK_API_KEY"));
+    assert.equal(deepseek.services.platform.environment.DEEPSEEK_API_KEY, "deepseek-test-placeholder");
     assert.ok(!Object.hasOwn(deepseek.services.platform.environment, "GLM_API_KEY"));
 
     const zai = renderComposeConfig(
@@ -437,7 +435,7 @@ function testHermesProviderComposeMapping() {
       "zai.env",
       [
         "HERMES_INFERENCE_PROVIDER=zai",
-        "HERMES_INFERENCE_MODEL=",
+        "HERMES_INFERENCE_MODEL=glm-compatibility-model",
         "ZHIPU_MODEL=glm-compatibility-model",
         "ZHIPU_API_KEY=zai-test-placeholder",
         "ZHIPU_BASE_URL=https://open.bigmodel.cn/api/paas/v4"
@@ -445,9 +443,9 @@ function testHermesProviderComposeMapping() {
     );
     assert.equal(zai.services.worker.environment.HERMES_INFERENCE_PROVIDER, "zai");
     assert.equal(zai.services.worker.environment.HERMES_INFERENCE_MODEL, "glm-compatibility-model");
-    assert.equal(zai.services.worker.environment.GLM_API_KEY, "zai-test-placeholder");
+    assert.equal(zai.services.worker.environment.ZHIPU_API_KEY, "zai-test-placeholder");
     assert.equal(
-      zai.services.worker.environment.GLM_BASE_URL,
+      zai.services.worker.environment.ZHIPU_BASE_URL,
       "https://open.bigmodel.cn/api/paas/v4"
     );
   } finally {
@@ -463,7 +461,8 @@ function renderComposeConfig(temporaryDirectory, fileName, providerLines) {
       ...providerLines,
       "HERMES_AGENT_TOKEN=hermes-test-placeholder",
       "MATLAB_GATEWAY_TOKEN=gateway-test-placeholder",
-      "MATLAB_GATEWAY_EVALUATE_TOKEN=evaluate-test-placeholder"
+      "MATLAB_GATEWAY_EVALUATE_TOKEN=evaluate-test-placeholder",
+      `SDG_SHARED_SECRETS_FILE=${envFile}`
     ].join("\n"),
     "utf8"
   );
