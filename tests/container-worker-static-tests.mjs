@@ -8,6 +8,14 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const containerfilePath = path.join(root, "containers", "worker", "Containerfile");
 const containerfile = await fs.readFile(containerfilePath, "utf8");
+const entrypointPath = path.join(root, "containers", "worker", "dsh-entrypoint.sh");
+const entrypoint = await fs.readFile(entrypointPath, "utf8");
+
+assert.match(
+  entrypoint,
+  /apply-llm-settings\.mjs/,
+  "the worker entrypoint must apply the DSH LLM provider settings at start"
+);
 
 assert.doesNotMatch(containerfile, /^\s*COPY\s+\.\s+/m, "Worker image cannot use COPY .");
 assert.doesNotMatch(
@@ -37,6 +45,8 @@ assert.ok(
 );
 assert.match(containerfile, /COPY containers\/worker\/configure-hermes\.py/);
 assert.match(containerfile, /COPY containers\/worker\/dsh-headless-tcsd\.mjs/);
+assert.match(containerfile, /COPY containers\/worker\/apply-llm-settings\.mjs/);
+assert.match(containerfile, /chmod 0755 \/usr\/local\/bin\/tcsd-dsh-worker \/usr\/local\/bin\/tcsd-gateway-transport \/usr\/local\/bin\/apply-llm-settings\.mjs/);
 assert.match(containerfile, /COPY presets\/unit-test-case-generation-production\//);
 assert.match(containerfile, /COPY skills\/hermes\/software-detail-runtime\//);
 for (let stageNumber = 1; stageNumber <= 9; stageNumber += 1) {

@@ -353,6 +353,8 @@ TCSD 生产入口固定为 `POST /internal/tcsd-pipeline/jobs` 与 `GET /interna
 
 DSH 会话日志导出（任务详情页「DSH 会话日志」）在 Linux/Windows 分离部署下不得按本地路径读取：DSH 日志落在 Windows Worker 的 `job.input.outputDir/.tcsd-dsh/session[.events].jsonl`（`ws-<uuid>/outputs`），Linux 平台读不到。平台导出接口 `GET /api/unit-test-case-generation/tasks/:taskId/dsh-session-log` 的解析顺序固定为：① 平台本地文件（单机/共享数据卷与旧任务，原始任务记录的 `workspace.outputDir`/`agentOutputDir` 与本地 job 记录）；② 通过任务固化的 Worker profile 调用 `GET /internal/tcsd-pipeline/jobs/:jobId/dsh-session-log` 转发（Worker 侧按 `job.input.outputDir` 优先、`workspaceDir/outputs` 回退读取并剔除 `assistant/chunk` 行，与桌面导出体量一致）；③ 两者皆无时保持 `dsh_session_log_unavailable`/`dsh_session_log_not_found` 历史错误语义，Worker 不可达返回 502 `dsh_session_log_worker_unavailable`。
 
+DSH 的 `deepseek-official` provider 默认 LLM 调优由 Worker 容器入口注入 `$DSH_HOME/settings.yaml` 的 `llm-deepseek:` 段（DSH settings-file 文档，启动加载并热重载；Worker 无 web Models 页写入冲突）。入口脚本 `containers/worker/apply-llm-settings.mjs` 固定管理三个键，可通过三个可选环境变量覆盖（compose 透传，未设置时用生产默认值）：`DSH_LLM_REASONING_EFFORT`（`off|low|high|max`，默认 `max`）、`DSH_LLM_MAX_RETRIES`（每 step 失败重试上限，默认 `5`）、`DSH_LLM_STREAM_IDLE_TIMEOUT_MS`（流式空闲超时，默认 `180000`）。脚本零依赖（行级段替换，保留其它顶层段与注释）、非法值 fail-fast（退出码 2）、失败不阻断 Worker 启动（DSH 保持出厂默认）。设置经 `compose.windows-docker-desktop.yaml`/`compose.yaml` 的 `${DSH_LLM_*:-默认}` 透传，示例见 `.env.windows-docker-desktop.example` 与 `.env.container.example`。
+
 十二个 `skills/hermes/tcsd-stage-*` 目录各自只包含一个原子 `SKILL.md` 与发现元数据。Windows 任务启动前由 `TcsdHermesSkillRegistry` 把它们安装到所选 Hermes profile 的 `skills/tcsd/<skill-name>`，把共享 runtime 安装到相邻的 `skills/tcsd/tcsd-runtime`，然后真实执行 `hermes [-p <profile>] skills list`；缺少任一名称、目录、版本、SKILL.md hash 或 bundle hash时，任务 fail-closed。可以在发布后运行：
 
 ```powershell
