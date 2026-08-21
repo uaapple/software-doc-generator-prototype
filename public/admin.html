@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>管理后台 · 生成工具</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body class="admin-shell">
+    <main class="admin-layout">
+      <nav class="admin-command-bar" aria-label="管理导航">
+        <a class="admin-brand" href="/" aria-label="返回生成工具">
+          <img src="/assets/itk-logo.jpg" alt="ITK Engineering" />
+          <span><small>ITK ENGINEERING</small><strong>管理后台</strong></span>
+        </a>
+        <div class="admin-session">
+          <a class="quiet-action" href="/">生成工具</a>
+          <span class="session-user"><span class="presence-dot"></span><span id="admin-current-user">管理员</span></span>
+          <button id="admin-logout" class="quiet-action" type="button">退出</button>
+        </div>
+      </nav>
+
+      <div class="admin-backend">
+        <aside class="admin-sidebar">
+          <div class="sidebar-heading"><p>MANAGEMENT</p><strong>后台管理</strong><span>平台配置与运行审计</span></div>
+          <nav class="admin-section-nav" aria-label="后台功能">
+            <a class="admin-nav-item" href="#task-audit" data-admin-view="task-audit"><span>01</span><div><strong>任务审计</strong><small>任务、项目与消耗</small></div></a>
+            <a class="admin-nav-item" href="#account-create" data-admin-view="account-create"><span>02</span><div><strong>账户创建</strong><small>创建平台登录账户</small></div></a>
+            <a class="admin-nav-item" href="#password-change" data-admin-view="password-change"><span>03</span><div><strong>管理员密码修改</strong><small>更新当前登录密码</small></div></a>
+            <a class="admin-nav-item" href="#model-credentials" data-admin-view="model-credentials"><span>04</span><div><strong>模型凭据管理</strong><small>Worker 模型连接配置</small></div></a>
+          </nav>
+        </aside>
+
+        <div class="admin-stage">
+          <section id="task-audit" class="admin-view" data-admin-panel="task-audit">
+            <header class="admin-page-head">
+              <div><p class="eyebrow">TASK LEDGER</p><h1>任务审计</h1><p>按任务类型、项目、发起人和时间范围追踪生成任务。</p></div>
+            </header>
+
+            <section id="metrics" class="telemetry-strip" aria-label="任务汇总"></section>
+
+            <article class="distribution-panel">
+              <div class="panel-heading"><div><h2>任务分布</h2><p id="distribution-caption" class="panel-copy">按项目统计</p></div></div>
+              <div id="bars" class="execution-rails"></div>
+            </article>
+
+            <article class="task-ledger">
+              <div class="ledger-heading">
+                <div><h2>任务明细</h2><p id="task-result-count">正在读取任务…</p></div>
+                <button id="reset-task-filters" class="reset-action" type="button">清除筛选</button>
+              </div>
+              <div class="task-filter-bar" aria-label="任务筛选">
+                <label>任务类型<select id="task-type-filter"><option value="all">全部任务类型</option><option value="unit_test">单元测试用例生成</option><option value="software_detail">软件详设生成</option></select></label>
+                <label>所属项目<select id="task-project-filter"><option value="all">全部项目</option></select></label>
+                <label>发起人<select id="task-account-filter"><option value="all">全部发起人</option></select></label>
+                <div class="date-range-filter"><span>时间范围</span><div class="date-range-inputs"><input id="task-start-date" type="date" aria-label="开始日期" /><i>至</i><input id="task-end-date" type="date" aria-label="结束日期" /></div></div>
+              </div>
+              <p id="pricing-note" class="pricing-note"></p>
+              <div class="table-wrap">
+                <table class="stats-table">
+                  <thead><tr><th>任务</th><th>项目</th><th>发起人</th><th>开始时间</th><th>结束时间</th><th>状态</th><th class="numeric">Token</th><th class="numeric">估算费用</th></tr></thead>
+                  <tbody id="task-rows"></tbody>
+                </table>
+              </div>
+              <div id="task-empty" class="task-empty" hidden><strong>没有符合条件的任务</strong><span>调整或清除筛选条件后再试。</span></div>
+            </article>
+          </section>
+
+          <section id="account-create" class="admin-view" data-admin-panel="account-create" hidden>
+            <header class="admin-page-head"><div><p class="eyebrow">ACCESS CONTROL</p><h1>账户创建</h1><p>创建可以登录生成工具的新账户。</p></div></header>
+            <article class="admin-panel account-panel standalone-panel">
+              <div class="panel-heading"><div><h2>新账户</h2><p class="panel-copy">设置用户名、显示名称和初始密码。</p></div><span id="account-count" class="panel-count">0 个账户</span></div>
+              <form id="account-form" class="account-form">
+                <label>用户名<input name="username" autocomplete="off" placeholder="例如 zhangsan" required /></label>
+                <label>显示名称<input name="displayName" autocomplete="off" placeholder="例如 张三" required /></label>
+                <label>初始密码<input name="password" type="password" minlength="8" autocomplete="new-password" placeholder="至少 8 位" required /></label>
+                <button class="primary-action" type="submit">创建账户</button>
+              </form>
+              <p id="account-status" class="inline-status" hidden></p>
+              <div class="subsection-label">现有账户</div>
+              <div id="account-list" class="account-list"></div>
+            </article>
+          </section>
+
+          <section id="password-change" class="admin-view" data-admin-panel="password-change" hidden>
+            <header class="admin-page-head"><div><p class="eyebrow">SECURITY</p><h1>管理员密码修改</h1><p>验证旧密码后，为当前管理员设置新密码。</p></div></header>
+            <article class="admin-panel password-panel standalone-panel narrow-panel">
+              <form id="password-form" class="password-form">
+                <label>当前密码<input name="oldPassword" type="password" autocomplete="current-password" required /></label>
+                <label>新密码<input name="newPassword" type="password" minlength="8" autocomplete="new-password" placeholder="至少 8 位" required /></label>
+                <button class="primary-action" type="submit">保存新密码</button>
+              </form>
+              <p id="password-status" class="inline-status" hidden></p>
+            </article>
+          </section>
+
+          <section id="model-credentials" class="admin-view" data-admin-panel="model-credentials" hidden>
+            <header class="admin-page-head"><div><p class="eyebrow">WORKER MODEL ACCESS</p><h1>模型凭据管理</h1><p>配置 Worker 调用 OpenAI Responses 协议模型所需的连接信息。</p></div></header>
+            <div class="frontend-only-notice"><strong>前端配置草稿</strong><span>当前页面不会读取、保存或发送任何模型凭据；后端接入后再启用保存。</span></div>
+            <article class="admin-panel credential-panel standalone-panel">
+              <div class="panel-heading"><div><h2>Worker 模型连接</h2><p class="panel-copy">请求目标遵循 <code>POST {Base URL}/responses</code>。</p></div><span class="protocol-badge">Responses API</span></div>
+              <form id="worker-credential-form" class="credential-form">
+                <label>Worker<select id="credential-worker" name="workerId"><option value="mac-container">Mac Container Worker</option></select></label>
+                <label>协议<select id="credential-protocol" name="protocol" disabled><option value="responses">OpenAI Responses API</option></select></label>
+                <label class="field-wide">Base URL<input id="credential-base-url" name="baseURL" type="url" placeholder="https://api.example.com/v1" autocomplete="off" /></label>
+                <label>模型 ID<input id="credential-model-id" name="model" placeholder="例如 deepseek-v4-flash" autocomplete="off" /></label>
+                <label>API Key<div class="secret-input"><input id="credential-api-key" name="apiKey" type="password" placeholder="输入 Worker 使用的 API Key" autocomplete="new-password" /><button id="credential-key-toggle" type="button">显示</button></div></label>
+                <div class="endpoint-preview field-wide"><span>请求端点预览</span><code id="credential-endpoint-preview">POST {Base URL}/responses</code></div>
+                <button class="primary-action credential-save" type="submit" disabled>保存配置（后端待接入）</button>
+              </form>
+            </article>
+          </section>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>

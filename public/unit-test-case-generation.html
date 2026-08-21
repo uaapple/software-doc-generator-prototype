@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>单元测试用例生成</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/feedback-widget.css" />
   </head>
   <body data-page-kind="unit-test-case-generation">
     <main class="layout">
@@ -18,10 +17,7 @@
           </div>
         </div>
         <div class="nav-links">
-          <a class="nav-link" href="/">工程列表</a>
-          <a class="nav-link" href="/skill-management">技能管理</a>
-          <a class="nav-link active" href="/unit-test-case-generation">单元测试用例生成</a>
-          <a class="nav-link" href="/replay-lab">Replay Lab</a>
+          <a class="nav-link" href="/">生成工具</a>
         </div>
       </nav>
 
@@ -32,7 +28,7 @@
           <p class="strip-text">上传 Simulink 模型和同名数据文件后发起后台 TCSD Excel 生成任务。</p>
         </div>
         <div class="strip-actions">
-          <a class="hero-link secondary" href="/">返回工程列表</a>
+          <a class="hero-link secondary" href="/">返回生成工具</a>
         </div>
       </section>
 
@@ -117,6 +113,6 @@
 
     <script type="module" src="/unit-test-case-generation.js"></script>
     <script type="module" src="/task-queue-widget.js"></script>
-    <script type="module" src="/feedback-widget.js"></script>
+    <script type="module" src="/auth-client.js"></script>
   </body>
 </html>

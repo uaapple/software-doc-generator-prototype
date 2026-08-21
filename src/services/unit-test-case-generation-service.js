@@ -1043,6 +1043,7 @@ export class UnitTestCaseGenerationService {
         summary: "",
         errorMessage: "",
         progress: buildProgress("queued"),
+        createdBy: metadata.createdBy ? { id: metadata.createdBy.id, username: metadata.createdBy.username, displayName: metadata.createdBy.displayName } : null,
         unitTestProject,
         workerProfile: publicUnitTestWorkerProfile(workerProfile),
         inputs: {

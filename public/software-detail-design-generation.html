@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>软件详设生成</title>
     <link rel="stylesheet" href="/app.css" />
-    <link rel="stylesheet" href="/feedback-widget.css" />
     <style>
       body[data-page-kind="software-module-description-generation"] .module-description-pipeline {
         display: grid;
@@ -145,10 +144,7 @@
           </div>
         </div>
         <div class="nav-links">
-          <a class="nav-link" href="/">工程列表</a>
-          <a class="nav-link active" href="/generation-tools.html">生成工具</a>
-          <a class="nav-link" href="/skill-management">技能管理</a>
-          <a class="nav-link" href="/replay-lab">Replay Lab</a>
+          <a class="nav-link" href="/">生成工具</a>
         </div>
       </nav>
 
@@ -159,7 +155,7 @@
           <p class="strip-text">上传 Simulink 模型、同名数据文件和可选初始化脚本后，发起软件详细设计生成任务。</p>
         </div>
         <div class="strip-actions">
-          <a class="hero-link secondary" href="/generation-tools.html">返回生成工具</a>
+          <a class="hero-link secondary" href="/">返回生成工具</a>
         </div>
       </section>
 
@@ -245,6 +241,6 @@
 
     <script type="module" src="/software-detail-design-generation.js"></script>
     <script type="module" src="/task-queue-widget.js"></script>
-    <script type="module" src="/feedback-widget.js"></script>
+    <script type="module" src="/auth-client.js"></script>
   </body>
 </html>
