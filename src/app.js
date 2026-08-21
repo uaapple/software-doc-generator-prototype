@@ -28,6 +28,8 @@ import { ReplayLabService, DEFAULT_REPLAY_LAB_TEMPLATE_TASK_ID } from "./service
 import { FeedbackTicketService } from "./services/feedback-ticket-service.js";
 import { buildStoredUploadName, normalizeUploadedFileName } from "./services/upload-filename.js";
 import { HermesAgentClient } from "./services/hermes-agent-client.js";
+import { SimpleAuthService } from "./services/simple-auth-service.js";
+import { TaskStatisticsService } from "./services/task-statistics-service.js";
 
 function toClientProject(project) {
   if (!project) {
@@ -306,6 +308,12 @@ export async function createApp() {
   const skillLoader = new SkillLoader();
   const replayLabService = new ReplayLabService();
   const feedbackTicketService = new FeedbackTicketService();
+  const authService = new SimpleAuthService(config.dataDir);
+  const taskStatisticsService = new TaskStatisticsService({
+    unitDir: config.unitTestCase.taskStoreDir,
+    detailDir: config.softwareModuleDescription.taskStoreDir
+  });
+  await authService.ensureInitialized();
   await skillBundleService.ensureInitialized();
   await llmProfileService.ensureInitialized();
   await projectService.recoverStaleGenerationTasks();
@@ -485,6 +493,69 @@ export async function createApp() {
   app.use(express.json({ limit: "2mb" }));
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
+  });
+
+  app.get(["/login", "/login.html"], (_req, res) => {
+    res.sendFile("login.html", { root: config.publicDir });
+  });
+  app.get("/api/auth/status", async (req, res) => {
+    const session = authService.sessionFromRequest(req);
+    res.json({ authenticated: Boolean(session), user: session?.user || null, setupRequired: await authService.setupRequired() });
+  });
+  app.post("/api/auth/bootstrap", async (req, res, next) => {
+    try {
+      const user = await authService.bootstrap(req.body || {});
+      const session = await authService.login(user.username, req.body?.password || "");
+      res.setHeader("Set-Cookie", authService.cookieHeader(session.token));
+      res.status(201).json({ user: session.user });
+    } catch (error) { next(error); }
+  });
+  app.post("/api/auth/login", async (req, res, next) => {
+    try {
+      const session = await authService.login(req.body?.username, req.body?.password);
+      res.setHeader("Set-Cookie", authService.cookieHeader(session.token));
+      res.json({ user: session.user });
+    } catch (error) { next(error); }
+  });
+  app.post("/api/auth/logout", (req, res) => {
+    authService.logout(req);
+    res.setHeader("Set-Cookie", authService.clearCookieHeader());
+    res.json({ ok: true });
+  });
+  app.post("/api/auth/change-password", async (req, res, next) => {
+    const session = authService.sessionFromRequest(req);
+    if (!session) return res.status(401).json({ error: "请先登录。" });
+    try {
+      await authService.changePassword(session.user.id, req.body?.oldPassword, req.body?.newPassword);
+      res.setHeader("Set-Cookie", authService.clearCookieHeader());
+      res.json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
+  app.use((req, res, next) => {
+    if (/\.(?:css|js|jpg|jpeg|png|svg|ico)$/i.test(req.path) || req.path === "/api/health" || req.path.startsWith("/api/auth/") || req.path === "/login" || req.path === "/login.html") return next();
+    const session = authService.sessionFromRequest(req);
+    if (!session) {
+      if (req.path.startsWith("/api/")) return res.status(401).json({ error: "请先登录。", code: "authentication_required" });
+      return res.redirect(302, "/login");
+    }
+    req.authUser = session.user;
+    next();
+  });
+
+  app.get("/api/admin/accounts", async (req, res) => {
+    if (req.authUser?.role !== "admin") return res.status(403).json({ error: "需要管理员权限。" });
+    res.json({ accounts: await authService.listAccounts() });
+  });
+  app.post("/api/admin/accounts", async (req, res, next) => {
+    if (req.authUser?.role !== "admin") return res.status(403).json({ error: "需要管理员权限。" });
+    try { res.status(201).json({ account: await authService.createAccount(req.body || {}) }); } catch (error) { next(error); }
+  });
+  app.get("/api/admin/statistics", async (req, res, next) => {
+    if (req.authUser?.role !== "admin") return res.status(403).json({ error: "需要管理员权限。" });
+    try {
+      res.json(await taskStatisticsService.getStatistics({ taskType: req.query.taskType || "all", groupBy: "project", projectId: req.query.projectId || "all", accountId: req.query.accountId || "all", startedFrom: req.query.startedFrom || "", startedTo: req.query.startedTo || "" }, await authService.listAccounts()));
+    } catch (error) { next(error); }
   });
 
   app.get("/api/task-queue", async (_req, res, next) => {
@@ -694,7 +765,7 @@ export async function createApp() {
     ]),
     async (req, res, next) => {
       try {
-        const task = await unitTestCaseGenerationService.createTask(req.files || {}, req.body || {});
+        const task = await unitTestCaseGenerationService.createTask(req.files || {}, { ...(req.body || {}), createdBy: req.authUser });
         hermesTaskQueueService.enqueue({
           id: task.id,
           type: "unit_test_case_generation",
@@ -779,7 +850,7 @@ export async function createApp() {
     ]),
     async (req, res, next) => {
       try {
-        const task = await softwareModuleDescriptionGenerationService.createTask(req.files || {}, req.body || {});
+        const task = await softwareModuleDescriptionGenerationService.createTask(req.files || {}, { ...(req.body || {}), createdBy: req.authUser });
         hermesTaskQueueService.enqueue({
           id: task.id,
           type: "software_module_description_generation",
@@ -813,78 +884,47 @@ export async function createApp() {
     }
   });
 
-  app.get("/", (_req, res) => {
-    res.sendFile("index.html", { root: config.publicDir });
-  });
-  app.get("/projects/new", (_req, res) => {
-    res.sendFile("project-create.html", { root: config.publicDir });
-  });
-  app.get("/projects/:projectId/edit", (_req, res) => {
-    res.sendFile("project-create.html", { root: config.publicDir });
-  });
-  app.get("/projects/:projectId", (_req, res) => {
-    res.sendFile("project-detail.html", { root: config.publicDir });
-  });
-  app.get("/projects/:projectId/modules/new", (_req, res) => {
-    res.sendFile("module-create.html", { root: config.publicDir });
-  });
-  app.get("/projects/:projectId/modules/:moduleId/edit", (_req, res) => {
-    res.sendFile("module-create.html", { root: config.publicDir });
-  });
-  app.get("/projects/:projectId/modules/:moduleId", (_req, res) => {
-    res.sendFile("module-detail.html", { root: config.publicDir });
-  });
-  app.get("/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/:taskId", (_req, res) => {
-    res.sendFile("task-detail.html", { root: config.publicDir });
-  });
-  app.get("/projects/:projectId/modules/:moduleId/tasks/:taskId", (_req, res) => {
-    res.sendFile("task-detail.html", { root: config.publicDir });
-  });
-  app.get("/requirement-generation", (_req, res) => {
-    res.sendFile("requirement-generation.html", { root: config.publicDir });
-  });
-  app.get("/detail-design-generation", (_req, res) => {
-    res.sendFile("detail-design-generation.html", { root: config.publicDir });
-  });
-  app.get("/generation-tools", (_req, res) => {
+  const serveGenerationTools = (_req, res) => {
     res.sendFile("generation-tools.html", { root: config.publicDir });
-  });
-  app.get("/software-detail-design-generation", (_req, res) => {
+  };
+  const redirectToGenerationTools = (_req, res) => {
+    res.redirect(302, "/");
+  };
+
+  app.get(["/", "/generation-tools", "/generation-tools.html"], serveGenerationTools);
+  app.get(["/software-detail-design-generation", "/software-detail-design-generation.html"], (_req, res) => {
     res.sendFile("software-detail-design-generation.html", { root: config.publicDir });
   });
-  app.get("/document-extractor", (_req, res) => {
-    res.sendFile("document-extractor.html", { root: config.publicDir });
-  });
-  app.get("/slx-parser", (_req, res) => {
-    res.sendFile("slx-parser.html", { root: config.publicDir });
-  });
-  app.get("/windows-worker-debug", (_req, res) => {
-    res.sendFile("windows-worker-debug.html", { root: config.publicDir });
-  });
-  app.get("/slx-interpreter", (_req, res) => {
-    res.sendFile("slx-parser.html", { root: config.publicDir });
-  });
-  app.get("/hil-test-case-generation", (_req, res) => {
-    res.sendFile("hil-test-case-generation.html", { root: config.publicDir });
-  });
-  app.get("/unit-test-case-generation", (_req, res) => {
+  app.get(["/unit-test-case-generation", "/unit-test-case-generation.html"], (_req, res) => {
     res.sendFile("unit-test-case-generation.html", { root: config.publicDir });
   });
-  app.get("/skill-refinement", (_req, res) => {
-    res.sendFile("skill-refinement.html", { root: config.publicDir });
+  app.get(["/admin", "/admin.html"], (req, res) => {
+    if (req.authUser?.role !== "admin") return res.redirect(302, "/");
+    res.sendFile("admin.html", { root: config.publicDir });
   });
-  app.get("/skill-management", (_req, res) => {
-    res.sendFile("skill-management.html", { root: config.publicDir });
-  });
-  app.get("/feedback-pool", (_req, res) => {
-    res.sendFile("feedback-pool.html", { root: config.publicDir });
-  });
-  app.get("/feedback-tickets", (_req, res) => {
-    res.sendFile("feedback-tickets.html", { root: config.publicDir });
-  });
-  app.get("/replay-lab", (_req, res) => {
-    res.sendFile("replay-lab.html", { root: config.publicDir });
-  });
+  app.get([
+    "/projects/new",
+    "/projects/:projectId/edit",
+    "/projects/:projectId",
+    "/projects/:projectId/modules/new",
+    "/projects/:projectId/modules/:moduleId/edit",
+    "/projects/:projectId/modules/:moduleId",
+    "/projects/:projectId/modules/:moduleId/spaces/:documentType/tasks/:taskId",
+    "/projects/:projectId/modules/:moduleId/tasks/:taskId",
+    "/requirement-generation",
+    "/detail-design-generation",
+    "/document-extractor",
+    "/slx-parser",
+    "/windows-worker-debug",
+    "/slx-interpreter",
+    "/hil-test-case-generation",
+    "/skill-refinement",
+    "/skill-management",
+    "/feedback-pool",
+    "/feedback-tickets",
+    "/replay-lab"
+  ], redirectToGenerationTools);
+  app.get(/\.html$/i, redirectToGenerationTools);
   app.use("/feedback-ticket-assets", express.static(config.feedbackTicketUploadDir));
   app.use(express.static(config.publicDir));
 

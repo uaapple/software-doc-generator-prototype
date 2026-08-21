@@ -74,6 +74,7 @@ COPY --chown=node:node \
   src/services/skill-registry-service.js \
   src/services/skill-rule-service.js \
   src/services/skill-work-order-service.js \
+  src/services/simple-auth-service.js \
   src/services/slx-model-analysis-service.js \
   src/services/slx-model-fact-adapter.js \
   src/services/software-detail-pipeline-contract.js \
@@ -85,6 +86,7 @@ COPY --chown=node:node \
   src/services/spreadsheet-extraction-service.js \
   src/services/storage.js \
   src/services/tcsd-pipeline-contract.js \
+  src/services/task-statistics-service.js \
   src/services/template-service.js \
   src/services/unit-test-case-generation-service.js \
   src/services/upload-filename.js \
