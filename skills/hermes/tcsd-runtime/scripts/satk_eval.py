@@ -226,7 +226,7 @@ DEDICATED_WORKER = os.environ.get("TCSD_DEDICATED_WORKER", "").lower() in {"1", 
 CLEAN_STALE_MCP = os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "true", "yes", "on"}
 SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new" if DEDICATED_WORKER else "existing")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
-DISPLAY_MODE = os.environ.get("SATK_MATLAB_DISPLAY_MODE", "").strip()
+DISPLAY_MODE = os.environ.get("SATK_MATLAB_DISPLAY_MODE", "nodesktop").strip()
 LOG_FOLDER = Path(os.environ.get("SATK_MCP_LOG_FOLDER", default_log_folder()))
 
 
