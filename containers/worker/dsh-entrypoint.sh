@@ -42,6 +42,19 @@ if [ ! -f "$headless_patch" ] || ! grep -q 'dsh-headless-tcsd' "$headless_patch"
   cp /opt/sdg/app/containers/worker/headless-production-preset.patch.yml "$headless_patch"
 fi
 
+# Apply the production DSH LLM provider defaults for the deepseek-official
+# route into $DSH_HOME/settings.yaml (the settings-file document DSH loads and
+# hot-reloads). Optional overrides:
+#   DSH_LLM_REASONING_EFFORT        off|low|high|max   (default: max)
+#   DSH_LLM_MAX_RETRIES             non-negative int   (default: 5)
+#   DSH_LLM_STREAM_IDLE_TIMEOUT_MS  positive int       (default: 180000)
+# A failure is non-fatal: DSH keeps the stock defaults and the worker still
+# starts; the diagnostics line goes to stderr for the container logs.
+if [ -x /usr/local/bin/apply-llm-settings.mjs ]; then
+  node /usr/local/bin/apply-llm-settings.mjs \
+    || echo "tcsd-dsh-worker: apply-llm-settings failed; keeping existing DSH settings" >&2
+fi
+
 # Role switch: APP_RUNTIME_ROLE=hermes-agent runs the Worker service (backend
 # dispatches generation tasks via HERMES_TRANSPORT=api -> POST /internal/dsh/tasks,
 # which spawns a headless DSH session per task). Without a role (or with a task

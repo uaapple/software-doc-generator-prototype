@@ -135,6 +135,9 @@ COPY containers/worker/dsh-headless-tcsd.mjs /usr/local/lib/node_modules/@deepse
 RUN chmod 0644 /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-headless/lib/index.js
 COPY containers/worker/tcsd-gateway-transport /usr/local/bin/tcsd-gateway-transport
 COPY containers/worker/dsh-entrypoint.sh /usr/local/bin/tcsd-dsh-worker
+# Applies the production DSH LLM provider defaults ($DSH_HOME/settings.yaml)
+# from the optional DSH_LLM_* environment variables at container start.
+COPY containers/worker/apply-llm-settings.mjs /usr/local/bin/apply-llm-settings.mjs
 COPY containers/worker/THIRD_PARTY_NOTICES.md /opt/sdg/THIRD_PARTY_LICENSES/THIRD_PARTY_NOTICES.md
 COPY containers/worker/dsh-MIT.txt /opt/sdg/THIRD_PARTY_LICENSES/dsh-MIT.txt
 
@@ -165,7 +168,7 @@ RUN mkdir -p \
       /var/lib/sdg/logs \
       /var/lib/sdg/project-addons \
       /var/lib/sdg/tmp && \
-    chmod 0755 /usr/local/bin/tcsd-dsh-worker /usr/local/bin/tcsd-gateway-transport && \
+    chmod 0755 /usr/local/bin/tcsd-dsh-worker /usr/local/bin/tcsd-gateway-transport /usr/local/bin/apply-llm-settings.mjs && \
     chmod 0644 /usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-headless/lib/index.js && \
     chown -R 10001:10001 /var/lib/sdg /opt/sdg/app /opt/sdg/THIRD_PARTY_LICENSES
 

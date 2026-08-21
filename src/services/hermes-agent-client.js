@@ -3790,6 +3790,80 @@ export class HermesAgentClient {
     return materializeTcsdPipelineArtifacts(body, options.localWorkspaceDir || "");
   }
 
+  /**
+   * Fetch the DSH session log for a worker-side TCSD job over the Worker
+   * API. The platform and the worker do not share a data volume in the
+   * production topology, so the platform export endpoint forwards the log
+   * from the worker instead of reading a local path.
+   *
+   * Returns `{ ok, status, text, fileName, correlationId }` on success.
+   * The worker serves the trimmed JSONL (assistant/chunk deltas removed),
+   * identical to the platform's local export behavior.
+   */
+  async fetchTcsdDshSessionLog(jobId = "", options = {}) {
+    const target = new URL(
+      `${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}/dsh-session-log`
+    );
+    const transport = target.protocol === "https:" ? https : http;
+    const timeoutMs = Math.max(1000, Number(options.timeoutMs || this.timeoutMs) || this.timeoutMs);
+    const maxResponseBytes = Math.max(
+      64 * 1024,
+      Number(options.maxResponseBytes || this.maxControlResponseBytes) || this.maxControlResponseBytes
+    );
+    const correlationId = `tcsd-${randomUUID()}`;
+    let response;
+    try {
+      response = await new Promise((resolve, reject) => {
+        const request = transport.request(target, {
+          method: "GET",
+          timeout: timeoutMs,
+          headers: { ...this._authHeaders(), "X-SDG-Correlation-ID": correlationId }
+        }, (result) => {
+          let text = "";
+          let responseBytes = 0;
+          let rejected = false;
+          result.setEncoding("utf8");
+          result.on("data", (chunk) => {
+            responseBytes += Buffer.byteLength(chunk);
+            if (responseBytes > maxResponseBytes) {
+              rejected = true;
+              result.destroy();
+              reject(Object.assign(new Error("DSH 会话日志响应超过允许大小。"), {
+                code: "tcsd_worker_response_too_large"
+              }));
+              return;
+            }
+            text += chunk;
+          });
+          result.on("end", () => {
+            if (rejected) return;
+            const disposition = String(result.headers["content-disposition"] || "");
+            const fileNameMatch = disposition.match(/filename="?([^";]+)"?/i);
+            resolve({
+              ok: result.statusCode >= 200 && result.statusCode < 300,
+              status: result.statusCode,
+              text,
+              fileName: fileNameMatch ? fileNameMatch[1] : "",
+              correlationId: String(result.headers["x-sdg-correlation-id"] || "")
+            });
+          });
+        });
+        request.on("timeout", () => request.destroy(Object.assign(
+          new Error("TCSD Worker 会话日志请求超时。"),
+          { code: "tcsd_poll_timeout" }
+        )));
+        request.on("error", reject);
+        request.end();
+      });
+    } catch (cause) {
+      throw createTcsdTransportError({ operation: "dsh-session-log", cause, correlationId });
+    }
+    if (!response.ok) {
+      throw createTcsdTransportError({ operation: "dsh-session-log", response, correlationId });
+    }
+    return response;
+  }
+
   async cancelTcsdPipelineJob(jobId = "") {
     const target = new URL(`${this.baseURL}/internal/tcsd-pipeline/jobs/${encodeURIComponent(jobId)}/cancel`);
     const transport = target.protocol === "https:" ? https : http;

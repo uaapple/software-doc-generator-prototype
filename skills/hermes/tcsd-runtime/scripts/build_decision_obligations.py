@@ -29,6 +29,11 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+try:
+    from derive_logical_mcdc_mappings import derive_state
+except ImportError:  # pragma: no cover - tool path fallback
+    derive_state = None  # type: ignore[assignment]
+
 SCHEMA = "simulink-ut-decision-obligations/v1"
 MAX_DEPTH = 4
 DEFAULT_TARGET_BLOCK_TYPES = {
@@ -378,6 +383,41 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
             criteria = params.get("Criteria", "u2 >= Threshold")
             threshold = str(params.get("Threshold", ""))
             control_port = _switch_control_port(criteria)
+            raw_control = inputs.get(control_port)
+            if raw_control is not None and raw_control[0] == "expression":
+                # 批次 2（EngA12 实测）：Switch 控制端经 Logic/Relational/UnitDelay 链。
+                # MATLAB 侧已生成结构化表达式节点（trace_logical_mcdc 同构），这里复用
+                # derive_state 把 true/false 判据翻译成根输入/标定参数组合义务。
+                try:
+                    node = json.loads(str(raw_control[1]))
+                except (TypeError, ValueError):
+                    node = None
+                if not isinstance(node, dict):
+                    items.append(obligation(sid=sid, model=model, path=path,
+                                            outcome=f"switch true ({criteria})", status="unresolved",
+                                            reason="expression_parse_failed: 控制端表达式不可解析"))
+                    items.append(obligation(sid=sid, model=model, path=path,
+                                            outcome=f"switch false ({criteria})", status="unresolved",
+                                            reason="expression_parse_failed: 控制端表达式不可解析"))
+                    continue
+                for desired, outcome_tag in ((True, "true"), (False, "false")):
+                    state = derive_state(node, desired, f"switch/{sid}")
+                    if state.resolved and (state.inputs or state.params):
+                        item = obligation(sid=sid, model=model, path=path,
+                                          outcome=f"switch {outcome_tag} ({criteria})", status="required",
+                                          match={**state.inputs}, params=state.params or None)
+                        item["evidence_state"] = "scenario_activation_logic_chain"
+                        item["reason"] = (
+                            f"控制端经逻辑链表达式推导 {desired}："
+                            + ", ".join(f"{k}={v:g}" for k, v in state.inputs.items())
+                            + (", " + ", ".join(f"p {k}={v:g}" for k, v in state.params.items()) if state.params else ""))
+                        items.append(item)
+                    else:
+                        detail = "; ".join(state.issues[:3]) if state.issues else "无法推导根输入组合"
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"switch {outcome_tag} ({criteria})", status="unresolved",
+                                                reason=f"logic_chain_unresolved: {detail}"))
+                continue
             control = _control(inputs, control_port)
             if control is None:
                 items.append(obligation(sid=sid, model=model, path=path,
@@ -437,6 +477,39 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                     items.append(obligation(sid=sid, model=model, path=path,
                                             outcome=f"switch false ({criteria})", status="unresolved",
                                             reason=f"unsupported_criteria: {criteria}"))
+            elif kind == "expression":
+                # 批次 2（EngA12 实测）：Switch 控制端经 Logic/Relational/UnitDelay 链。
+                # MATLAB 侧已生成结构化表达式节点（trace_logical_mcdc 同构），这里复用
+                # derive_state 把 true/false 判据翻译成根输入/标定参数组合义务。
+                try:
+                    node = json.loads(str(value))
+                except (TypeError, ValueError):
+                    node = None
+                if not isinstance(node, dict):
+                    items.append(obligation(sid=sid, model=model, path=path,
+                                            outcome=f"switch true ({criteria})", status="unresolved",
+                                            reason="expression_parse_failed: 控制端表达式不可解析"))
+                    items.append(obligation(sid=sid, model=model, path=path,
+                                            outcome=f"switch false ({criteria})", status="unresolved",
+                                            reason="expression_parse_failed: 控制端表达式不可解析"))
+                    continue
+                for desired, outcome_tag in ((True, "true"), (False, "false")):
+                    state = derive_state(node, desired, f"switch/{sid}")
+                    if state.resolved and (state.inputs or state.params):
+                        item = obligation(sid=sid, model=model, path=path,
+                                          outcome=f"switch {outcome_tag} ({criteria})", status="required",
+                                          match={**state.inputs}, params=state.params or None)
+                        item["evidence_state"] = "scenario_activation_logic_chain"
+                        item["reason"] = (
+                            f"控制端经逻辑链表达式推导 {desired}："
+                            + ", ".join(f"{k}={v:g}" for k, v in state.inputs.items())
+                            + (", " + ", ".join(f"p {k}={v:g}" for k, v in state.params.items()) if state.params else ""))
+                        items.append(item)
+                    else:
+                        detail = "; ".join(state.issues[:3]) if state.issues else "无法推导根输入组合"
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"switch {outcome_tag} ({criteria})", status="unresolved",
+                                                reason=f"logic_chain_unresolved: {detail}"))
             else:
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"switch true ({criteria})", status="unreachable",
@@ -591,10 +664,26 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
             else:
                 data_port_order = params.get("DataPortOrder", "One-based")
                 values = range(count) if "Zero" in str(data_port_order) else range(1, count + 1)
+            # MPS output-chain calibration gates (A05 D04): a downstream Switch
+            # whose criterion is a `~= 0` calibration parameter bypasses the MPS
+            # outputs (lazy evaluation) while that parameter stays non-zero, so
+            # selector cases never execute. Attach `p Param=0` to every selector
+            # obligation so the case actually reaches the MPS. Gate params are
+            # collected by collect_decision_blocks.m (rec.gate_params).
+            gate_params = rec.get("gate_params") or []
+            if isinstance(gate_params, str):
+                gate_params = [gate_params]
+            gate_override = {p: 0 for p in gate_params if p}
             for value in values:
-                items.append(obligation(sid=sid, model=model, path=path,
-                                        outcome=f"selector={value}", status="required",
-                                        match={name: value}))
+                item = obligation(sid=sid, model=model, path=path,
+                                  outcome=f"selector={value}", status="required",
+                                  match={name: value}, params=gate_override or None)
+                if gate_override:
+                    item["evidence_state"] = "scenario_activation_mps_gate"
+                    item["reason"] = (
+                        f"MPS 输出链标定门控 {','.join(gate_override)} 默认钉死 MPS 惰性旁路；"
+                        f"此用例覆盖参数=0 打开 MPS 使 selector={value} 生效（场景激活）")
+                items.append(item)
 
         elif btype == "Saturate":
             u = _float_or_none(str(params.get("UpperLimit", "")))

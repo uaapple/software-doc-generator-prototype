@@ -20,7 +20,7 @@ function collect_decision_blocks(rootDir, model, matFileName, initScripts, outpu
     allBlocks = find_system(model, 'LookUnderMasks', 'all', 'FollowLinks', 'on');
 
     targetTypes = {'Switch', 'RelationalOperator', 'MinMax', 'MultiPortSwitch', 'Saturate', 'Abs'};
-    recs = struct('path', {}, 'sid', {}, 'type', {}, 'params', {}, 'inputs', {});
+    recs = struct('path', {}, 'sid', {}, 'type', {}, 'params', {}, 'inputs', {}, 'gate_params', {});
     gates = struct('path', {}, 'type', {}, 'inputs', {});
     for i = 1:numel(allBlocks)
         b = allBlocks{i};
@@ -40,6 +40,11 @@ function collect_decision_blocks(rootDir, model, matFileName, initScripts, outpu
         rec.params = collect_params(b, bt);
         inps = collect_inputs(b, rootInputs, 0);
         rec.inputs = inps(:).';
+        if strcmp(bt, 'MultiPortSwitch')
+            rec.gate_params = collect_mps_gate_params(b, rootInputs);
+        else
+            rec.gate_params = {};
+        end
         recs(end + 1) = rec; %#ok<AGROW>
     end
 
@@ -51,6 +56,59 @@ end
 
 function ok = is_input_port(portType)
     ok = strcmpi(char(string(portType)), 'input') || strcmpi(char(string(portType)), 'inport');
+end
+
+function gates = collect_mps_gate_params(b, rootInputs)
+%COLLECT_MPS_GATE_PARAMS Find calibration parameters that gate whether the
+% MultiPortSwitch output chain is actually executed. A MPS whose output feeds
+% a downstream Switch whose criterion is a `~= 0` calibration parameter is
+% bypassed (lazy evaluation) while that parameter is non-zero (A05 D04:
+% RngPrdn_bFuRngEstimUseSwt_C default 1 pins Switch5/7/9 to bypass the MPS
+% outputs, so selector obligations never execute). Collect those parameters
+% so the obligation builder can attach a `p Param=0` override.
+    gates = {};
+    try
+        ph = get_param(b, 'PortHandles');
+    catch
+        return;
+    end
+    for p = 1:numel(ph.Outport)
+        try
+            line = get_param(ph.Outport(p), 'Line');
+            if isequal(line, -1)
+                continue;
+            end
+            dsts = get_param(line, 'DstPortHandle');
+            for k = 1:numel(dsts)
+                dstBlock = get_param(dsts(k), 'Parent');
+                if ~strcmp(safe_block_type(dstBlock), 'Switch')
+                    continue;
+                end
+                criteria = '';
+                try
+                    criteria = get_param(dstBlock, 'Criteria');
+                catch
+                end
+                controlPort = switch_control_port(criteria);
+                if controlPort < 1
+                    continue;
+                end
+                [kind, value] = trace_upstream_of_port(dstBlock, controlPort, rootInputs, 0);
+                if strcmp(kind, 'param') && ~isempty(value) && ~any(strcmp(gates, value))
+                    gates{end + 1} = value; %#ok<AGROW>
+                end
+            end
+        catch
+        end
+    end
+end
+
+function port = switch_control_port(criteria)
+    port = 0;
+    m = regexp(criteria, '^u(\d+)\s*[<>=~!]+', 'tokens', 'once');
+    if ~isempty(m)
+        port = str2double(m{1});
+    end
 end
 
 function bt = safe_block_type(b)
@@ -83,7 +141,7 @@ function params = collect_params(b, bt)
         case 'MinMax'
             names = {'Function', 'Inputs'};
         case 'MultiPortSwitch'
-            names = {'Inputs', 'DataPortOrder'};
+            names = {'Inputs', 'DataPortOrder', 'DataPortIndices'};
         case 'Saturate'
             names = {'UpperLimit', 'LowerLimit'};
         case 'Abs'
@@ -249,9 +307,186 @@ function [kind, value] = trace_upstream(srcPath, rootInputs, depth)
             end
             up = upstream_of(gotos{1}, 1);
             [kind, value] = trace_upstream(up, rootInputs, depth + 1);
+        case {'Logic', 'RelationalOperator', 'UnitDelay', 'Delay', 'Memory', 'Switch', ...
+              'MinMax', 'Abs', 'Saturate', 'DataTypeConversion', 'Sum', 'Gain', 'Bias'}
+            % 批次 2（EngA12 实测）：Switch 控制端经 Logic/Relational/UnitDelay 链时，
+            % 递归生成结构化表达式节点（kind='expression'），Python 侧用
+            % derive_state 推导 true/false 根输入组合（与 trace_logical_mcdc 同构）。
+            [kind, value] = trace_expression(srcPath, rootInputs, depth);
         otherwise
             kind = 'unresolved';
             value = ['unsupported_src_type_' st];
+    end
+end
+
+function [kind, value] = trace_expression(srcPath, rootInputs, depth)
+    kind = 'expression';
+    node = struct('kind', 'block', 'blockType', '');
+    try
+        node.blockType = get_param(srcPath, 'BlockType');
+    catch
+        kind = 'unresolved';
+        value = 'expression_block_missing';
+        return;
+    end
+    switch node.blockType
+        case 'Logic'
+            node.kind = 'logic';
+            try
+                node.operator = upper(char(string(get_param(srcPath, 'Operator'))));
+            catch
+            end
+        case 'RelationalOperator'
+            node.kind = 'relational';
+            try
+                node.operator = char(string(get_param(srcPath, 'Operator')));
+            catch
+            end
+        case 'UnitDelay'
+            node.kind = 'stateful';
+            try
+                node.initialCondition = char(string(get_param(srcPath, 'InitialCondition')));
+            catch
+            end
+            try
+                node.delayLength = char(string(get_param(srcPath, 'DelayLength')));
+            catch
+            end
+        case {'Delay', 'Memory'}
+            node.kind = 'stateful';
+        case 'Switch'
+            node.kind = 'switch';
+            try
+                node.criteria = char(string(get_param(srcPath, 'Criteria')));
+            catch
+            end
+            try
+                node.threshold = char(string(get_param(srcPath, 'Threshold')));
+            catch
+            end
+        case 'MinMax'
+            node.kind = 'minmax';
+            try
+                node.function = char(string(get_param(srcPath, 'Function')));
+            catch
+            end
+        case 'Abs'
+            node.kind = 'abs';
+        case 'Sum'
+            node.kind = 'sum';
+            try
+                node.function = char(string(get_param(srcPath, 'Inputs')));
+            catch
+            end
+        case {'DataTypeConversion', 'Gain', 'Bias'}
+            node.kind = 'block';
+            node.semantic = lower(node.blockType);
+    end
+    try
+        ph = get_param(srcPath, 'PortHandles');
+        inputs = struct('index', {}, 'trace', {});
+        for p = 1:numel(ph.Inport)
+            inputs(p).index = p;
+            line = get_param(ph.Inport(p), 'Line');
+            if isequal(line, -1)
+                inputs(p).trace = struct('kind', 'unconnected');
+                continue;
+            end
+            srcPort = get_param(line, 'SrcPortHandle');
+            srcBlock = get_param(srcPort, 'Parent');
+            srcPortNumber = get_param(srcPort, 'PortNumber');
+            inputs(p).trace = trace_expression_node(srcBlock, srcPortNumber, rootInputs, depth + 1);
+        end
+        node.inputs = inputs;
+    catch
+    end
+    value = jsonencode(node);
+end
+
+function node = trace_expression_node(srcPath, srcPortNumber, rootInputs, depth)
+    node = struct('kind', 'unknown');
+    if depth > 24
+        node.kind = 'depth_limit';
+        return;
+    end
+    try
+        st = get_param(srcPath, 'BlockType');
+    catch
+        node.kind = 'block_missing';
+        return;
+    end
+    switch st
+        case 'Inport'
+            node.kind = 'root_inport';
+            node.signal = char(string(get_param(srcPath, 'Name')));
+            node.isRootInput = ismember(node.signal, rootInputs) && ...
+                strcmp(get_param(srcPath, 'Parent'), bdroot(srcPath));
+            if ~node.isRootInput
+                % 子系统 Inport：向上解析父级端口直至根输入（批次 2）
+                node.kind = 'subsystem_inport';
+                node.source = struct('kind', 'unresolved_subsystem_inport');
+                try
+                    portNo = str2double(get_param(srcPath, 'Port'));
+                    parentSystem = get_param(srcPath, 'Parent');
+                    if ~isempty(parentSystem) && ~strcmp(parentSystem, bdroot(srcPath))
+                        parentHandles = get_param(parentSystem, 'PortHandles');
+                        if portNo >= 1 && portNo <= numel(parentHandles.Inport)
+                            line = get_param(parentHandles.Inport(portNo), 'Line');
+                            if ~isequal(line, -1)
+                                srcPort = get_param(line, 'SrcPortHandle');
+                                node.source = trace_expression_node(get_param(srcPort, 'Parent'), ...
+                                    get_param(srcPort, 'PortNumber'), rootInputs, depth + 1);
+                            end
+                        end
+                    end
+                catch
+                end
+            end
+        case 'Constant'
+            node.kind = 'constant';
+            try
+                node.value = char(string(get_param(srcPath, 'Value')));
+            catch
+                node.value = '';
+            end
+        case {'Logic', 'RelationalOperator', 'UnitDelay', 'Delay', 'Memory', 'Switch', ...
+              'MinMax', 'Abs', 'Saturate', 'DataTypeConversion', 'Sum', 'Gain', 'Bias'}
+            [~, expr] = trace_expression(srcPath, rootInputs, depth);
+            try
+                node = jsondecode(expr);
+            catch
+                node.kind = 'expression_parse_failed';
+            end
+        case 'Goto'
+            node.kind = 'goto';
+            try
+                node.gotoTag = char(string(get_param(srcPath, 'GotoTag')));
+            catch
+            end
+        case 'From'
+            node.kind = 'from';
+            node.source = struct('kind', 'unresolved_goto_source');
+            try
+                tag = char(string(get_param(srcPath, 'GotoTag')));
+                node.gotoTag = tag;
+                gotos = find_system(bdroot(srcPath), 'LookUnderMasks', 'all', ...
+                                    'FollowLinks', 'on', 'BlockType', 'Goto', 'GotoTag', tag);
+                if numel(gotos) == 1
+                    phg = get_param(gotos{1}, 'PortHandles');
+                    if ~isempty(phg.Inport)
+                        lineg = get_param(phg.Inport(1), 'Line');
+                        if ~isequal(lineg, -1)
+                            srcPortg = get_param(lineg, 'SrcPortHandle');
+                            node.source = trace_expression_node(get_param(srcPortg, 'Parent'), ...
+                                get_param(srcPortg, 'PortNumber'), rootInputs, depth + 1);
+                        end
+                    end
+                end
+            catch
+            end
+        otherwise
+            node.kind = 'block';
+            node.semantic = lower(st);
     end
 end
 

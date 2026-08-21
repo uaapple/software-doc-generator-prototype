@@ -401,10 +401,16 @@ MC/DC 37.5%）；ParkCrl B02：`RPACmd` 为 R/S 两链共享根，锁存无法�
 生成场景用例。**批次 1 已代码化（2026-08-19）**：Switch 控制端口按判据解析（u2→端口 2，
 修复硬编码端口 3）、标定默认值翻转义务（scenario_activation_calibration_default 证据）、
 MPS DataPortIndices。**批次 2 缺口（EngA12 实测）**：Switch 控制端经 Logic/Relational/
-UnitDelay 链时追踪器停下（unsupported_src_type_*）→ 多条件根输入链仍无法生成翻转用例；
-设计：collect_decision_blocks.m 对 Logic 控制链复用 trace_logical_mcdc 的逻辑映射
-（true_inputs/false_inputs 已是根输入组合），把 Switch 义务与逻辑算子映射打通。
-生成场景用例；当前为 Agent 纪律（10.2 候选有效性同源），代码化是下一步改进项。
+UnitDelay 链时追踪器停下（unsupported_src_type_*）→ 多条件根输入链仍无法生成翻转用例。
+**批次 2 已代码化（2026-08-21）**：`collect_decision_blocks.m` 的 `trace_upstream` 对
+Logic/RelationalOperator/UnitDelay/Delay/Memory/Switch/MinMax/Abs/Saturate/Sum/Gain/Bias
+生成结构化表达式节点（kind 与 trace_logical_mcdc 对齐：logic/relational/stateful/switch/
+minmax/abs/sum，子系统 Inport 与 From 穿透到根输入）；`build_decision_obligations.py`
+Switch 分支对控制端表达式复用 `derive_state` 推导 true/false 根输入组合义务（证据
+`scenario_activation_logic_chain`）。实证（EngA11 任务模型）：Switch 控制端 expression
+从 0 → 19 个；简单 AND 链（`AND(stRefuReq~=0, stMode==2)`）端到端推导
+`{stRefuReq:1,stMode:2}` / `{stRefuReq:0,stMode:2}`；跨层 From/Sum+UnitDelay 复杂链
+derive_state 保守标 `logic_chain_unresolved`（留给探针，符合设计）。
 
 **最小功能域密度**：故障/有效性信号族（`*SigErr`/`*Vld`/`*Flt`/`*FltLvl`/诊断使能复位）、
 连续阈值边界输入、模式/配置枚举、Stateflow 目标状态、诊断/错误路径、独立运行模式 —— 每个域
@@ -616,6 +622,22 @@ checkpoint**。步骤：
     时序，且预期每块每轮只能覆盖部分向量。
     **配额预期**：单轮 16 候选 ≈ +20~25 向量；MC/DC 缺口 >30 向量的模型（如 A11 总量
     85）单轮必然 partial——按配额如实交付并列出缺口清单，这不是失败。
+5.8. **MPS 数据链标定门控（RngPrdn A05 D04 实测，2026-08-21）**：MultiPortSwitch 的
+    **selector 义务正确（match 根输入合法值）但用例执行后 MPS 覆盖恒 0**——根因不是
+    覆盖记录问题，而是 **MPS 输出链被下游 Switch 旁路（惰性求值）**：MPS 输出直连的
+    Switch（如 Switch5/7/9）判据是 `~= 0` 的标定参数（如 `RngPrdn_bFuRngEstimUseSwt_C`
+    默认=1），参数非 0 时 Switch 选非 MPS 分支 → MPS 从不执行 → `decisioninfo [0 4]`，
+    而 MPS 又**出现在覆盖分母**（110 含 MPS）→ 覆盖缺口看似"义务无效"实则"块没执行"。
+    识别要点：① selector 用例仿真成功但该 MPS 的 `executionCount` 全 0；② 物理探针/
+    cvt 逆向确认 selector 值确实到达（链直连根输入）；③ 查 MPS 输出端口直接下游的
+    Switch 判据来源——若为标定参数 Constant 且判据 `~= 0`，即门控参数。处置：
+    **selector 义务必须附带门控参数覆盖 `p Param=0`**（打开 MPS 链），证据
+    `scenario_activation_mps_gate`。**已代码化（2026-08-21）**：`collect_decision_blocks.m`
+    对 MPS 收集输出链下游 Switch 判据参数（`rec.gate_params`，含 DataPortIndices 收集），
+    `build_decision_obligations.py` 把门控参数并入 selector 义务 `match.params`。
+    这是"标定默认值钉死"模式（liuts B02/B03 Switch 判据门控）的 **MPS 变体**：B02/B03
+    门控的是 Switch 判据本身，这里门控的是 **MPS 输出链**——修复轮遇到 MPS 全 0 覆盖时
+    优先查输出链门控，而不是怀疑 selector 义务/探针。
 6. **探针确认（可选但强烈建议）**：用 `probe_block_inputs.py` 或一次多场景 probe
    （充电/非充电各若干步）实测缺口块执行计数；执行计数 0 即坐实死路径。
 7. **结果**：0 候选 + 1 具体 unresolved（`logic_unreachable`）是**合法且高质量**的 Stage 10

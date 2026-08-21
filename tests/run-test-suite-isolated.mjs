@@ -76,6 +76,16 @@ const suites = [
     args: ["tests/tcsd-job-cancellation-tests.mjs"]
   },
   {
+    id: "tcsd-dsh-session-log",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/tcsd-dsh-session-log-tests.mjs"]
+  },
+  {
+    id: "apply-llm-settings",
+    command: process.execPath,
+    args: ["--disable-warning=ExperimentalWarning", "tests/apply-llm-settings-tests.mjs"]
+  },
+  {
     id: "matlab-gateway-lease",
     command: process.execPath,
     args: ["tests/matlab-gateway-lease-tests.mjs"]

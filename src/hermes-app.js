@@ -1701,6 +1701,95 @@ export async function createHermesApp(options = {}) {
     }
   });
 
+  app.get("/internal/tcsd-pipeline/jobs/:jobId/dsh-session-log", requireHermesAuth, async (req, res, next) => {
+    try {
+      const correlationId = ensureTcsdCorrelation(req, res);
+      const job = await tcsdJobs.get(req.params.jobId);
+      if (!job) {
+        logTcsdRequest("session_log_job_missing", {
+          correlationId,
+          jobId: req.params.jobId,
+          httpStatus: 404
+        });
+        return res.status(404).json({
+          error: "TCSD 作业不存在。",
+          code: TCSD_ERROR_CODES.jobNotFound,
+          correlationId
+        });
+      }
+      // The DSH headless runner persists the session log under the job's
+      // output dir ($TCSD_OUTPUT_DIR/.tcsd-dsh/session[.events].jsonl).
+      // Output dir is authoritative; fall back to workspace/outputs for
+      // legacy jobs. The platform cannot read this path when the worker is
+      // a separate host, so this endpoint forwards the log over the API.
+      const outputDirs = [];
+      const jobOutputDir = String(job.input?.outputDir || "").trim();
+      if (jobOutputDir) outputDirs.push(jobOutputDir);
+      const jobWorkspaceDir = String(job.input?.workspaceDir || "").trim();
+      if (jobWorkspaceDir) outputDirs.push(path.join(jobWorkspaceDir, "outputs"));
+      const sessionDirs = outputDirs.map((dir) => path.join(dir, ".tcsd-dsh"));
+      const candidates = [
+        ...sessionDirs.map((dir) => path.join(dir, "session.jsonl")),
+        ...sessionDirs.map((dir) => path.join(dir, "session.events.jsonl")),
+        ...sessionDirs.map((dir) => path.join(dir, "session.log"))
+      ];
+      let logFile = "";
+      for (const candidate of candidates) {
+        try {
+          const stat = await fs.stat(candidate);
+          if (stat.isFile()) {
+            logFile = candidate;
+            break;
+          }
+        } catch {
+          // candidate missing; try the next one
+        }
+      }
+      if (!logFile) {
+        logTcsdRequest("session_log_not_found", {
+          correlationId,
+          jobId: job.jobId,
+          httpStatus: 404
+        });
+        return res.status(404).json({
+          error: "该任务没有 DSH 会话日志（可能由 Hermes 执行，或会话日志未落盘）",
+          code: "dsh_session_log_not_found",
+          correlationId
+        });
+      }
+      const baseName = String(
+        job.input?.modelSlxOriginalName || job.input?.modelSlxFileName || ""
+      ).replace(/\.[^.]+$/, "") || "model";
+      const fileName = `${baseName}_dsh_session_log.jsonl`;
+      if (logFile.endsWith("session.jsonl") || logFile.endsWith("session.events.jsonl")) {
+        // Raw streaming deltas (assistant/chunk) dominate the file (≈69MB of
+        // a 74MB log for one task); the final content is fully carried by
+        // assistant/message. Trim them when serving so the export stays
+        // comparable to the DSH desktop export (a few MB).
+        const raw = await fs.readFile(logFile, "utf8");
+        const trimmed = raw.split("\n").filter((line) => !line.includes('"type":"assistant/chunk"')).join("\n");
+        logTcsdRequest("session_log_served", {
+          correlationId,
+          jobId: job.jobId,
+          httpStatus: 200
+        });
+        res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+        return res.type("application/octet-stream").send(trimmed);
+      }
+      // The session log lives under the dotfile directory .tcsd-dsh; send's
+      // default dotfiles handling ("ignore") 404s any dotfile path, so allow
+      // dotfiles explicitly for this download.
+      logTcsdRequest("session_log_served", {
+        correlationId,
+        jobId: job.jobId,
+        httpStatus: 200
+      });
+      return res.download(logFile, fileName, { dotfiles: "allow" });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   app.post("/internal/tcsd-pipeline/jobs/:jobId/cancel", requireHermesAuth, async (req, res, next) => {
     try {
       const result = await tcsdJobs.cancel(req.params.jobId);
