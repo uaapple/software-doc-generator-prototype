@@ -7,11 +7,17 @@ import json
 import hashlib
 import os
 import platform
+import re
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
 from pathlib import Path
 
 
@@ -74,7 +80,122 @@ def resolve_server(**kwargs) -> tuple[Path, str]:
     raise FileNotFoundError(f"SATK MCP server not found; searched: {searched}")
 
 
+def gateway_url(environ=None) -> str:
+    values = os.environ if environ is None else environ
+    return str(values.get("SATK_GATEWAY_URL") or "").strip().rstrip("/")
+
+
+def gateway_headers(environ=None, *, evaluate: bool = False) -> dict[str, str]:
+    values = os.environ if environ is None else environ
+    token = str(values.get("MATLAB_MCP_AUTH_TOKEN") or "").strip()
+    if not token:
+        raise RuntimeError("MATLAB_MCP_AUTH_TOKEN is unavailable to the controlled Gateway script")
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+    if evaluate:
+        evaluate_token = str(values.get("MATLAB_GATEWAY_EVALUATE_TOKEN") or "").strip()
+        if not evaluate_token:
+            raise RuntimeError("MATLAB_GATEWAY_EVALUATE_TOKEN is unavailable to the controlled Gateway script")
+        headers["X-SDG-Evaluate-Token"] = evaluate_token
+        headers["X-SDG-Gateway-Caller"] = "tcsd-runtime"
+    return headers
+
+
+def gateway_request(
+    method: str,
+    route: str,
+    *,
+    payload: dict | None = None,
+    environ=None,
+    timeout_s: float = 30.0,
+    retry_delays: tuple[float, ...] = (0.1, 0.25),
+    sleep=time.sleep,
+) -> dict:
+    base_url = gateway_url(environ)
+    if not base_url:
+        raise RuntimeError("SATK_GATEWAY_URL is not configured")
+    normalized_method = str(method or "").upper()
+    retryable = normalized_method in {"GET", "PUT", "DELETE"}
+    body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    requires_evaluate_token = normalized_method == "POST" and route.startswith("/api/jobs/") and not route.endswith("/cancel")
+    for attempt in range(len(retry_delays) + 1):
+        request = urllib.request.Request(
+            f"{base_url}{route}",
+            data=body,
+            headers=gateway_headers(environ, evaluate=requires_evaluate_token),
+            method=normalized_method,
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_s) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            response_text = exc.read().decode("utf-8", errors="replace")
+            try:
+                response = json.loads(response_text)
+                message = response.get("error", {}).get("message") or response_text
+                code = response.get("error", {}).get("code") or f"HTTP_{exc.code}"
+            except json.JSONDecodeError:
+                message = response_text or str(exc)
+                code = f"HTTP_{exc.code}"
+            raise RuntimeError(f"MATLAB Gateway {code}: {message}") from exc
+        except urllib.error.URLError as exc:
+            if retryable and attempt < len(retry_delays):
+                sleep(max(0.0, float(retry_delays[attempt])))
+                continue
+            raise RuntimeError(f"MATLAB Gateway is unavailable: {exc.reason}") from exc
+    raise RuntimeError("MATLAB Gateway retry loop ended unexpectedly")
+
+
 def server_info(**kwargs) -> dict[str, object]:
+    values = kwargs.get("environ")
+    if gateway_url(values):
+        health = gateway_request("GET", "/health", environ=values)
+        version = gateway_request("GET", "/version", environ=values)
+        if (
+            health.get("ok") is not True
+            or health.get("service") != "matlab-gateway"
+            or health.get("schema") != "matlab-gateway-health/v1"
+            or version.get("service") != "matlab-gateway"
+            or version.get("schema") != "matlab-gateway-version/v1"
+        ):
+            raise RuntimeError("MATLAB Gateway health/version evidence is invalid")
+        evidence_payload = {
+            "schema": "tcsd-matlab-gateway-evidence/v1",
+            "authenticated": bool(gateway_headers(values).get("Authorization")),
+            "health": {
+                "schema": health["schema"],
+                "service": health["service"],
+                "ok": health["ok"],
+                "gatewayVersion": health.get("version", "unknown"),
+            },
+            "version": {
+                "schema": version["schema"],
+                "service": version["service"],
+                "gatewayVersion": version.get("gatewayVersion", "unknown"),
+                "matlabRelease": version.get("matlabRelease", "unknown"),
+                "matlabMcpVersion": version.get("matlabMcpVersion", "unknown"),
+                "satkVersion": version.get("satkVersion", "unknown"),
+            },
+        }
+        evidence_sha256 = hashlib.sha256(
+            json.dumps(
+                evidence_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return {
+            "discovery": "matlab-gateway",
+            "gatewayUrl": gateway_url(values),
+            "gatewayVersion": version.get("gatewayVersion", "unknown"),
+            "matlabRelease": version.get("matlabRelease", "unknown"),
+            "matlabMcpVersion": version.get("matlabMcpVersion", "unknown"),
+            "satkVersion": version.get("satkVersion", "unknown"),
+            "gatewayEvidence": {
+                **evidence_payload,
+                "sha256": evidence_sha256,
+            },
+        }
     server, source = resolve_server(**kwargs)
     digest = hashlib.sha256()
     with server.open("rb") as handle:
@@ -102,25 +223,39 @@ DEFAULT_EXTENSION = (
     else Path.home() / ".matlab" / "agentic-toolkits" / "simulink" / "tools" / "tools.json"
 )
 DEDICATED_WORKER = os.environ.get("TCSD_DEDICATED_WORKER", "").lower() in {"1", "true", "yes", "on"}
-# Stale-MCP cleanup is decoupled from DEDICATED_WORKER: killing previously
-# launched MCP server processes from inside a command is observed by the host
-# execution environment, which answers by SIGTERM-ing the whole command (the
-# orphaned work still completes, but every subsequent stage pays a wait loop).
-# Cleanup therefore only runs when explicitly requested via TCSD_CLEAN_STALE_MCP.
 CLEAN_STALE_MCP = os.environ.get("TCSD_CLEAN_STALE_MCP", "").lower() in {"1", "true", "yes", "on"}
 SESSION_MODE = os.environ.get("SATK_MATLAB_SESSION_MODE", "new" if DEDICATED_WORKER else "existing")
 MATLAB_ROOT = os.environ.get("SATK_MATLAB_ROOT", "")
+DISPLAY_MODE = os.environ.get("SATK_MATLAB_DISPLAY_MODE", "").strip()
 LOG_FOLDER = Path(os.environ.get("SATK_MCP_LOG_FOLDER", default_log_folder()))
-# Headless by default: MATLAB must not pop its desktop over the user's screen
-# during unattended generation runs. Set SATK_MATLAB_DISPLAY_MODE=desktop to
-# restore the GUI (e.g. when debugging visuals interactively).
-DISPLAY_MODE = os.environ.get("SATK_MATLAB_DISPLAY_MODE", "nodesktop")
 
 
 def send(proc: subprocess.Popen[str], msg: dict) -> None:
     assert proc.stdin is not None
     proc.stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
     proc.stdin.flush()
+
+
+def build_server_command(
+    selected_server: Path,
+    *,
+    session_mode: str = SESSION_MODE,
+    matlab_root: str = MATLAB_ROOT,
+    display_mode: str = DISPLAY_MODE,
+    log_folder: Path = LOG_FOLDER,
+    extension_file: Path = DEFAULT_EXTENSION,
+) -> list[str]:
+    command = [
+        str(selected_server),
+        f"--matlab-session-mode={session_mode}",
+        f"--log-folder={log_folder}",
+        f"--extension-file={extension_file}",
+    ]
+    if display_mode:
+        command.append(f"--matlab-display-mode={display_mode}")
+    if session_mode != "existing" and matlab_root:
+        command.append(f"--matlab-root={matlab_root}")
+    return command
 
 
 def read_json(proc: subprocess.Popen[str], timeout_s: float = 120.0) -> dict:
@@ -162,7 +297,256 @@ def mcp_response_failed(message: dict) -> bool:
     if "error" in message:
         return True
     result = message.get("result")
-    return isinstance(result, dict) and result.get("isError") is True
+    if isinstance(result, dict) and result.get("isError") is True:
+        return True
+    if isinstance(result, str):
+        text = result
+    elif isinstance(result, dict) and isinstance(result.get("content"), list):
+        text = "\n".join(
+            str(item.get("text") or "")
+            for item in result["content"]
+            if isinstance(item, dict) and item.get("type") == "text"
+        )
+    else:
+        text = ""
+    normalized = text.strip()
+    return bool(
+        re.search(r"^(?:error\b|failed\s+to\b|failure\b|unable\s+to\b|cannot\b)", normalized, re.IGNORECASE)
+        or re.search(r"(?:^|\r?\n)\s*(?:error\s+using\b|error\s+in\b|错误使用|出错)\s*", normalized, re.IGNORECASE)
+    )
+
+
+def mirror_runtime_matlab_scripts(code: str, *, environ=None) -> str:
+    values = os.environ if environ is None else environ
+    container_root_text = str(
+        values.get("MATLAB_GATEWAY_CONTAINER_ROOT") or "/var/lib/sdg/data"
+    ).strip()
+    container_root = Path(container_root_text).resolve()
+    source_dir = Path(__file__).resolve().parent
+    matlab_sources = sorted(source_dir.glob("*.m"))
+    digest = hashlib.sha256()
+    for source in matlab_sources:
+        digest.update(source.name.encode("utf-8"))
+        digest.update(source.read_bytes())
+    mirror_dir = (
+        container_root
+        / ".matlab-gateway-runtime"
+        / digest.hexdigest()
+        / "scripts"
+    )
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    for source in matlab_sources:
+        target = mirror_dir / source.name
+        if not target.exists() or target.read_bytes() != source.read_bytes():
+            shutil.copy2(source, target)
+    return code.replace(str(source_dir), str(mirror_dir))
+
+
+def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
+    values = os.environ if environ is None else environ
+    mapping_id = str(values.get("SATK_GATEWAY_MAPPING_ID") or "worker-data").strip()
+    if mapping_id != "worker-data":
+        raise RuntimeError("SATK_GATEWAY_MAPPING_ID must be worker-data")
+    workspace_id = f"satk-{uuid.uuid4().hex}"
+    asset_id = "matlab-code"
+    job_id = f"eval-{uuid.uuid4().hex}"
+    timeout_s = max(1.0, float(values.get("SATK_GATEWAY_TIMEOUT_SECONDS") or 600))
+    code = mirror_runtime_matlab_scripts(code_file.read_text(encoding="utf-8"), environ=values)
+    workspace_route = f"/api/workspaces/{urllib.parse.quote(workspace_id)}"
+    job_route = f"/api/jobs/{urllib.parse.quote(job_id)}"
+    query = urllib.parse.urlencode({"workspaceId": workspace_id})
+    owner_job_id = str(values.get("TCSD_JOB_ID") or "").strip()
+    active_job_marker = None
+    if owner_job_id:
+        output_dir = str(values.get("TCSD_OUTPUT_DIR") or "").strip()
+        if output_dir:
+            active_job_marker = Path(output_dir) / ".tcsd-runtime" / "active-gateway-job.json"
+    created = False
+    try:
+        gateway_request(
+            "PUT",
+            workspace_route,
+            payload={"mappingId": mapping_id},
+            environ=values,
+        )
+        created = True
+        gateway_request(
+            "PUT",
+            f"{workspace_route}/assets/{asset_id}/text",
+            payload={"fileName": code_file.name, "content": code},
+            environ=values,
+        )
+        if active_job_marker is not None:
+            active_job_marker.parent.mkdir(parents=True, exist_ok=True)
+            active_job_marker.write_text(
+                json.dumps(
+                    {
+                        "schema": "tcsd-active-gateway-job/v1",
+                        "ownerJobId": owner_job_id,
+                        "workspaceId": workspace_id,
+                        "jobId": job_id,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+        gateway_request(
+            "POST",
+            job_route,
+            payload={
+                "workspaceId": workspace_id,
+                "operation": "evaluate_matlab_code",
+                "inputAssetId": asset_id,
+                "timeoutMs": int(timeout_s * 1000),
+            },
+            environ=values,
+        )
+        deadline = time.monotonic() + timeout_s + 10.0
+        while time.monotonic() < deadline:
+            job = gateway_request(
+                "GET",
+                f"{job_route}?{query}",
+                environ=values,
+            )
+            status = job.get("status")
+            if status == "succeeded":
+                artifact_id = urllib.parse.quote(str(job.get("artifactId") or ""))
+                artifact = gateway_request(
+                    "GET",
+                    f"{workspace_route}/artifacts/{artifact_id}",
+                    environ=values,
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "result": artifact.get("result"),
+                }
+            if status in {"failed", "cancelled", "timed_out"}:
+                error = job.get("error") or {}
+                return {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "error": {
+                        "code": error.get("code") or "MATLAB_GATEWAY_JOB_FAILED",
+                        "message": error.get("message") or f"MATLAB Gateway job {status}",
+                        "data": {
+                            "gatewayJobId": job_id,
+                            "gatewayStatus": status,
+                            "timeoutSeconds": timeout_s,
+                        },
+                    },
+                }
+            time.sleep(0.2)
+        gateway_request(
+            "POST",
+            f"{job_route}/cancel",
+            payload={"workspaceId": workspace_id},
+            environ=values,
+        )
+        return {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "error": {
+                "code": "MATLAB_GATEWAY_POLL_TIMEOUT",
+                "message": f"Timed out waiting for MATLAB Gateway after {timeout_s:g}s",
+                "data": {
+                    "gatewayJobId": job_id,
+                    "gatewayStatus": "poll_timed_out",
+                    "timeoutSeconds": timeout_s,
+                },
+            },
+        }
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "error": {
+                "code": "MATLAB_GATEWAY_REQUEST_FAILED",
+                "message": str(exc),
+                "data": {
+                    "gatewayJobId": job_id,
+                    "gatewayStatus": "request_failed",
+                    "timeoutSeconds": timeout_s,
+                },
+            },
+        }
+    finally:
+        if active_job_marker is not None:
+            try:
+                active_job_marker.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if created:
+            try:
+                gateway_request("DELETE", workspace_route, environ=values)
+            except RuntimeError:
+                pass
+
+
+def gateway_failure_budget_path(*, environ=None) -> Path | None:
+    values = os.environ if environ is None else environ
+    if str(values.get("TCSD_STAGE_INDEX") or "").strip() != "10":
+        return None
+    output_dir = str(values.get("TCSD_OUTPUT_DIR") or "").strip()
+    job_id = str(values.get("TCSD_JOB_ID") or "").strip()
+    attempt = str(values.get("TCSD_STAGE_ATTEMPT") or "1").strip() or "1"
+    if not output_dir or not job_id:
+        return None
+    return Path(output_dir) / ".tcsd-runtime" / f"gateway-failure-budget-stage-10-attempt-{attempt}.json"
+
+
+def gateway_failure_limit(*, environ=None) -> int:
+    values = os.environ if environ is None else environ
+    try:
+        return max(1, int(values.get("TCSD_STAGE10_GATEWAY_FAILURE_LIMIT") or 3))
+    except (TypeError, ValueError):
+        return 3
+
+
+def read_gateway_failure_count(path: Path | None) -> int:
+    if path is None:
+        return 0
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return max(0, int(payload.get("consecutiveFailureCount") or 0))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return 0
+
+
+def write_gateway_failure_count(path: Path | None, count: int, code: str) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    temporary.write_text(
+        json.dumps(
+            {
+                "schema": "tcsd-stage10-gateway-failure-budget/v1",
+                "consecutiveFailureCount": max(0, int(count)),
+                "lastErrorCode": str(code or "MATLAB_GATEWAY_JOB_FAILED"),
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def gateway_budget_exhausted_result(count: int, limit: int) -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {
+            "code": "MATLAB_GATEWAY_FAILURE_BUDGET_EXHAUSTED",
+            "message": f"Stage 10 stopped Gateway evaluation after {count} consecutive failures.",
+            "data": {
+                "gatewayStatus": "failure_budget_exhausted",
+                "consecutiveFailureCount": count,
+                "failureLimit": limit,
+            },
+        },
+    }
 
 
 def process_rows() -> list[tuple[int, str]]:
@@ -266,12 +650,7 @@ def terminate_process(pid: int) -> bool:
         if platform.system() == "Windows":
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False, capture_output=True)
         else:
-            # Send the signal through an external `kill` command rather than
-            # os.kill(): killing another process from inside the Python process
-            # is observed by the host execution environment, which answers by
-            # terminating the whole command (SIGTERM to the shell). External
-            # process management stays invisible to that observation.
-            subprocess.run(["kill", "-TERM", str(pid)], check=False, capture_output=True)
+            os.kill(pid, signal.SIGTERM)
         return True
     except Exception:
         return False
@@ -303,6 +682,37 @@ def main() -> int:
         print("usage: satk_eval.py MATLAB_CODE_FILE | --server-info", file=sys.stderr)
         return 2
 
+    code_file = Path(sys.argv[1])
+    if gateway_url():
+        budget_path = gateway_failure_budget_path()
+        failure_limit = gateway_failure_limit()
+        failure_count = read_gateway_failure_count(budget_path)
+        if failure_count >= failure_limit:
+            print(json.dumps(gateway_budget_exhausted_result(failure_count, failure_limit), ensure_ascii=False, indent=2))
+            return 1
+        try:
+            result = evaluate_over_gateway(code_file)
+        except (OSError, RuntimeError, ValueError) as exc:
+            result = {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "error": {
+                    "code": "MATLAB_GATEWAY_REQUEST_FAILED",
+                    "message": str(exc),
+                },
+            }
+        if mcp_response_failed(result):
+            error = result.get("error") if isinstance(result.get("error"), dict) else {}
+            write_gateway_failure_count(
+                budget_path,
+                failure_count + 1,
+                str(error.get("code") or "MATLAB_GATEWAY_JOB_FAILED"),
+            )
+        elif budget_path is not None:
+            write_gateway_failure_count(budget_path, 0, "")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1 if mcp_response_failed(result) else 0
+
     try:
         selected_server, _ = resolve_server()
     except FileNotFoundError as exc:
@@ -312,19 +722,10 @@ def main() -> int:
         print(f"SATK MCP extension file not found: {DEFAULT_EXTENSION}", file=sys.stderr)
         return 1
 
-    code = Path(sys.argv[1]).read_text(encoding="utf-8")
+    code = code_file.read_text(encoding="utf-8")
     LOG_FOLDER.mkdir(parents=True, exist_ok=True)
     clean_stale_mcp_processes()
-    command = [
-        str(selected_server),
-        f"--matlab-session-mode={SESSION_MODE}",
-        f"--log-folder={LOG_FOLDER}",
-        f"--extension-file={DEFAULT_EXTENSION}",
-    ]
-    if SESSION_MODE != "existing":
-        command.append(f"--matlab-display-mode={DISPLAY_MODE}")
-        if MATLAB_ROOT:
-            command.append(f"--matlab-root={MATLAB_ROOT}")
+    command = build_server_command(selected_server)
 
     proc = subprocess.Popen(
         command,

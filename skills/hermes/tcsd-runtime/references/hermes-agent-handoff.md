@@ -26,7 +26,7 @@ The agent must automatically:
 - deliver the Excel workbook with `expValue(...)` expectations as the required output. JSON/spec/simulation files may be used as internal script artifacts, but a separate validation report is not required unless the user explicitly asks for one.
 - always generate `outputs/<model>_tcsd_execution_manifest.json` through the completed quality loop. Although internal reports are not user deliverables, this manifest is mandatory platform completion evidence and must reference the actual simulation and coverage artifacts.
 - build and validate the `.xlsx` before any simulation, coverage run, or expected-output backfill. In Hermes/production, this workbook is an artifact checkpoint; final success still requires simulation-backed top-level `expValue(...)` lines.
-- stop simulation/backfill after the first MATLAB/MCP/SATK timeout, including a 600s `mcp_matlab_satk_evaluate_matlab_code` timeout, and return `status: "failed"` with a clear warning rather than marking a workbook without expectations as completed.
+- stop simulation/backfill after the first MATLAB/MCP/SATK timeout and return `status: "failed"` with a clear warning rather than marking a workbook without expectations as completed. The Gateway default is 600 seconds, but the deterministic host runtime may submit a larger bounded timeout for workload-scaled Stage 6 and Stage 11 probes; do not replace that calculated budget with an Agent-side retry loop.
 - clean the MATLAB/SATK session before returning, so later Hermes tasks do not inherit loaded models, project-addon support paths, or stale MCP state from this task.
 
 Only ask for clarification when the `.slx`, matching `.mat`, MATLAB/SATK runtime, or a required dependency is actually missing.

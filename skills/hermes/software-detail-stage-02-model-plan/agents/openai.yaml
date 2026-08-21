@@ -1,0 +1,7 @@
+interface:
+  display_name: "Simulink 模块功能描述 · 阶段 2 模型规划"
+  short_description: "轻量扫描模型并建立文档单元、分析单元与边界计划"
+  default_prompt: "Use $software-detail-stage-02-model-plan to build the hierarchy, boundary allowlists, and bounded analysis queue from the initialized model."
+
+policy:
+  allow_implicit_invocation: false

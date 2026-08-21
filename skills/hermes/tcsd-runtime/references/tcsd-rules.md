@@ -115,11 +115,11 @@ Example: `expValue(170.83727,0.1,0.1)` means expected value `170.83727`, checked
 
 For simulation-derived values, use `expValue(value)` by default. Use `expValue(value,duration,offset)` only when the output is stable across the requested window and the delayed/windowed check is intentional.
 
-Only write a simulation-derived expected output when that output is stable until the next `[+...]` action step. If the output ramps or keeps changing during the following hold interval, omit that output expectation for the whole Test unless the user explicitly asks for a dense sampled staircase.
+Only write a simulation-derived expected output when that output is stable until the next `[+...]` action step. The stability window includes both the current event and the next event because MQTester can evaluate the expectation at that right endpoint. Treat the result as unverified unless the simulation observes both endpoints at distinct timestamps. If the output ramps or keeps changing during the following hold interval, omit that output expectation for the step unless the user explicitly asks for a dense sampled staircase.
 
 For stateful top-level outputs fed by Stateflow Charts, UnitDelay/Delay/Memory, latch/edge logic, or `*_Old` feedback, do not write expectations from initialization/default values. Expectations after `[+delay]` are checked after that delay has elapsed, so a state machine may already have transitioned before the check window starts. Backfill these outputs only from a trusted full simulation or MQTester-equivalent trace that confirms a stable post-delay value; otherwise omit them from the Test.
 
-Stimulus coverage and expected-output backfill are separate concerns. Keep a Test/action step when it is needed to cover a decision outcome even if the relevant top-level output is dynamic and therefore omitted from expected outputs.
+Stimulus coverage and expected-output backfill are separate concerns. Keep an action step when it is needed to cover a decision outcome even if the relevant top-level output is dynamic and therefore omitted from that step. The delivered workbook must still contain at least one simulation-verified root-Outport `expValue(...)` in the Action of every ordinary `Type=Test` row. A deterministic baseline therefore needs an observation interval followed by the independent final empty delay; a single final-delay marker is not a deliverable Test.
 
 ### Semantic Claim Consistency Gate
 

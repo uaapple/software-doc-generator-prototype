@@ -7,10 +7,23 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 import sys
+import urllib.request
 from pathlib import Path
 from typing import Any
+
+# The platform semantic validator invokes this script with `python -I -B`
+# (isolated mode), where sys.path[0] is NOT the script directory; without this
+# bootstrap the sibling-module imports below fail with ModuleNotFoundError.
+# Under a plain invocation sys.path[0] already is the script directory and the
+# normalization is a no-op.
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+SCRIPT_DIRECTORY_TEXT = str(SCRIPT_DIRECTORY)
+if not sys.path or sys.path[0] != SCRIPT_DIRECTORY_TEXT:
+    sys.path[:] = [entry for entry in sys.path if entry != SCRIPT_DIRECTORY_TEXT]
+    sys.path.insert(0, SCRIPT_DIRECTORY_TEXT)
 
 from openpyxl import load_workbook
 
@@ -87,6 +100,21 @@ def canonical(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def gateway_health_ok(gateway_url: str) -> tuple[bool, str]:
+    """Live health probe of the MATLAB Gateway (no auth required on /health)."""
+    try:
+        with urllib.request.urlopen(f"{gateway_url}/health", timeout=10) as response:
+            value = json.loads(response.read().decode("utf-8"))
+        return (
+            isinstance(value, dict)
+            and value.get("schema") == "matlab-gateway-health/v1"
+            and value.get("ok") is True
+            and value.get("service") == "matlab-gateway"
+        ), ""
+    except Exception as exc:  # pragma: no cover - network dependent
+        return False, str(exc)
+
+
 def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
     _, gate = find_json_schema(request, ENVIRONMENT_SCHEMA)
     dependencies = gate.get("pythonDependencies")
@@ -97,6 +125,33 @@ def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
     server = satk.get("server") if isinstance(satk, dict) else None
     modules = dependencies.get("modules") if isinstance(dependencies, dict) else None
     required_modules = {"yaml", "openpyxl"}
+    discovery = str((server or {}).get("discovery") or "")
+    configured_gateway_url = str(os.environ.get("SATK_GATEWAY_URL") or "").strip().rstrip("/")
+    gateway_mode = discovery == "matlab-gateway"
+    if gateway_mode:
+        health_ok, health_error = gateway_health_ok(configured_gateway_url)
+        server_ok = bool(
+            configured_gateway_url
+            and str((server or {}).get("transport") or "") == "tcsd-gateway-transport"
+            and health_ok
+        )
+        server_invalid_reason = (
+            "configured SATK_GATEWAY_URL is empty"
+            if not configured_gateway_url
+            else (
+                "transport is not tcsd-gateway-transport"
+                if str((server or {}).get("transport") or "") != "tcsd-gateway-transport"
+                else f"gateway health probe failed: {health_error}"
+            )
+        )
+    else:
+        server_ok = bool(
+            isinstance(server, dict)
+            and Path(str(server.get("path") or "")).is_file()
+            and re.fullmatch(r"[a-f0-9]{64}", str(server.get("sha256") or ""))
+            and int(server.get("sizeBytes") or 0) > 0
+        )
+        server_invalid_reason = "direct MCP executable evidence is incomplete"
     if (
         gate.get("passed") is not True
         or not isinstance(modules, dict)
@@ -124,11 +179,21 @@ def validate_environment(request: dict[str, Any]) -> dict[str, Any]:
         or satk.get("nonceMatched") is not True
         or not satk.get("runner")
         or not isinstance(server, dict)
-        or not Path(str(server.get("path") or "")).is_file()
-        or not re.fullmatch(r"[a-f0-9]{64}", str(server.get("sha256") or ""))
-        or int(server.get("sizeBytes") or 0) <= 0
+        or not server_ok
     ):
-        raise ValueError("environment canary evidence is incomplete or internally inconsistent")
+        raise ValueError(f"environment canary evidence is incomplete or internally inconsistent: {server_invalid_reason}")
+    if gateway_mode:
+        return {
+            "environmentSchema": ENVIRONMENT_SCHEMA,
+            "dependencyModules": sorted(required_modules),
+            "workspaceIoPassed": True,
+            "matlabNonceSha256": hashlib.sha256(str(gate["nonce"]).encode()).hexdigest(),
+            "simulinkLoaded": True,
+            "satkSentinelWritten": True,
+            "satkServerDiscovery": discovery,
+            "satkGatewayTransport": str(server.get("transport")),
+            "satkGatewayUrl": configured_gateway_url,
+        }
     server_path = Path(str(server["path"])).resolve()
     if hashlib.sha256(server_path.read_bytes()).hexdigest() != server["sha256"]:
         raise ValueError("environment canary MCP server hash does not match the selected executable")

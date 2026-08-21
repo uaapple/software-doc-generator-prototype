@@ -94,6 +94,9 @@ def run(command: list[str], cwd: Path) -> None:
     subprocess.run(command, cwd=cwd, check=True)
 
 def run_satk(command: list[str], cwd: Path, *, stage: int, context: str) -> None:
+    transport = os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip()
+    if transport and len(command) >= 2 and Path(command[1]).name == "satk_eval.py":
+        command = [transport, *command[1:]]
     try:
         subprocess.run(command, cwd=cwd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as error:
@@ -207,9 +210,14 @@ def stage_run(
         manifest = out / ".tcsd-evidence" / "input-manifest.json"; write_json(manifest, {"schema": "tcsd-input-manifest/v1", "jobId": job["jobId"], "files": [{"path": str(item), "size": item.stat().st_size} for item in required], "projectAddon": inp.get("projectAddonCopy", {})})
         finish(job, stage, summary="输入文件与项目附件已验证。", artifacts=[artifact(root, manifest)]); return
     if stage == 2:
-        matlab_root = matlab_root_path(inp)
-        matlab = matlab_root / "bin" / ("matlab.exe" if os.name == "nt" else "matlab")
-        if not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
+        # Gateway topology: MATLAB lives on the host behind the Gateway, so the
+        # local executable check is skipped; the canary below verifies Gateway
+        # health and the controlled transport instead.
+        gateway_mode = bool(os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip()) and bool(os.environ.get("SATK_GATEWAY_URL", "").strip())
+        if not gateway_mode:
+            matlab_root = matlab_root_path(inp)
+            matlab = matlab_root / "bin" / ("matlab.exe" if os.name == "nt" else "matlab")
+            if not matlab.exists(): raise RuntimeError(f"MATLAB executable missing: {matlab}")
         if not (scripts() / "satk_eval.py").is_file(): raise RuntimeError("SATK runtime runner is missing")
         env = out / ".tcsd-evidence" / "environment.json"; env.parent.mkdir(parents=True, exist_ok=True)
         fixture = os.environ.get("TCSD_PIPELINE_ENV_CANARY_FIXTURE", "")
@@ -217,7 +225,10 @@ def stage_run(
             shutil.copy2(fixture, env)
         else:
             satk_runtime = load_module("tcsd_satk_eval", scripts() / "satk_eval.py")
-            selected_server = satk_runtime.server_info()
+            if os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip() and satk_runtime.gateway_url():
+                selected_server = {"discovery": "matlab-gateway", "transport": "tcsd-gateway-transport"}
+            else:
+                selected_server = satk_runtime.server_info()
             modules: dict[str, dict[str, str]] = {}
             for module_name in ("yaml", "openpyxl"):
                 module = __import__(module_name)
@@ -271,7 +282,7 @@ def stage_run(
                 "schema": "tcsd-environment-gate/v2",
                 "jobId": job["jobId"],
                 "nonce": nonce,
-                "matlabRoot": str(matlab_root),
+                "matlabRoot": "host-matlab-gateway" if gateway_mode else str(matlab_root),
                 "python": sys.executable,
                 "runner": str(scripts() / "satk_eval.py"),
                 "pythonDependencies": {"passed": True, "modules": modules},
@@ -458,6 +469,8 @@ def stage_run(
                     str(interface),
                     "--threshold",
                     str(threshold),
+                    "--probe-results",
+                    str(out / f"{model}_state_probe_results.json"),
                     "--output",
                     str(brief),
                 ],

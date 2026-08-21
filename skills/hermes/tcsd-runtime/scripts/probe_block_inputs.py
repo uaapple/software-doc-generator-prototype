@@ -58,10 +58,14 @@ def main() -> int:
     if not satk.is_file():
         print(f"SATK runner missing: {satk}", file=sys.stderr)
         return 2
+    import os
     import subprocess
+    command = [sys.executable, str(satk), str(entry)]
+    transport = os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip()
+    if transport:
+        command = [transport, str(satk), str(entry)]
     try:
-        subprocess.run([sys.executable, str(satk), str(entry)], cwd=workspace, check=True,
-                       capture_output=True, text=True)
+        subprocess.run(command, cwd=workspace, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as error:
         detail = (error.stdout or "").strip()[-1500:] or (error.stderr or "").strip()[-1500:]
         print(f"probe_block_inputs: SATK/MATLAB failed: {detail}", file=sys.stderr)

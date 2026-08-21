@@ -164,7 +164,11 @@ def write_matlab_entry(path: Path, code: str) -> Path:
 
 
 def run_satk(python: str, scripts: Path, entry: Path, root_dir: Path) -> None:
-    run([python, str(scripts / "satk_eval.py"), str(entry)], cwd=root_dir)
+    transport = os.environ.get("TCSD_GATEWAY_TRANSPORT", "").strip()
+    command = [python, str(scripts / "satk_eval.py"), str(entry)]
+    if transport:
+        command = [transport, str(scripts / "satk_eval.py"), str(entry)]
+    run(command, cwd=root_dir)
 
 
 def validate_mapping(

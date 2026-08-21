@@ -28,6 +28,8 @@ Stage 10 is intentionally split into a reasoning boundary and a deterministic bo
 4. The existing IR synthesizer performs full-stimulus deduplication and appends accepted candidates without replacing functional Tests.
 5. The deterministic runtime builds the candidate workbook and runs simulation/backfill before accepting the repair. Stage 11 then runs the authoritative final simulation and coverage collection.
 
+The coverage judge uses explicit `Masking` mode. It reuses the candidate suite simulation to collect coverage once, compares the resulting suite-level `mcdcinfo` state with the stage-9 baseline, and accepts only newly achieved independent-effect pairs. The baseline and candidate evidence must declare the same model checksum, MC/DC mode, and loaded `ITKLib.slx` path. Per-test coverage runs are forbidden in this path.
+
 An empty deterministic candidate set is not enough to end Stage 10. The Agent must either produce a host-valid candidate or record one of the specific structural/probe reasons allowed by the Stage 10 proposal schema.
 
 ## Coverage Feedback Script
@@ -82,7 +84,8 @@ Use this protocol when an uncovered item is driven by a latch, Memory/UnitDelay 
 3. Resolve timing and count semantics from the model, not from naming. Distinguish fast edge counts from long holds, and distinguish within-window pulses from pulses separated far enough to reset a counter or off-delay.
 4. Probe the model in memory when static inspection is not enough. Add temporary observation points or equivalent logging for the latch output, counter value, edge detector output, reset signal, delay output, and Switch selector. Do not save these probes into the model, and do not write internal-signal expectations into the final TCSD workbook.
 5. Synthesize a set sequence that proves the active state can be reached. Prefer compact pulse trains or timed transitions that satisfy the counter/window logic, then hold only as long as required for the root Outport to observe the new state.
-   `maxStepsPerTest` limits TCSD action entries, not Simulink sample periods. A finite counter or timer may execute thousands of sample hits inside one `delay_s`; encode that hold as one action when the local dependency slice proves the duration.
+   TCSD action entries have no per-test count limit, but Simulink sample periods still do not count as action entries. A finite counter or timer may execute thousands of sample hits inside one `delay_s`; encode that hold as one action when the local dependency slice proves the duration.
+   For EdgeRising and EdgeFalling, preserve the full stable-initial-state, edge-trigger, observation, and restore sequence. Do not shorten it to satisfy a historical action-entry limit.
 6. Synthesize the matching reset or cancel sequence after the active state is reached. Cancellation chains often need their own ordered prerequisites; a cancel-only test that starts from reset state does not cover the intended branch.
 7. Convert the successful probe into self-contained TCSD Tests. Include the root-input actions, scalar parameter overrides when needed, waits, and root Outport `expValue(...)` checks for both inactive and active states when reachable.
 8. If the state cannot be reached within one bounded pass, mark the uncovered item as `unreachable_candidate` with the observed counter/timer/reset evidence instead of guessing a static vector.

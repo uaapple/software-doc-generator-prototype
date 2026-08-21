@@ -1,0 +1,6 @@
+interface:
+  display_name: "Simulink 模块功能描述 · 阶段 8 内容检查"
+  short_description: "校验并修正层级、边界、密度、覆盖与写作问题"
+  default_prompt: "Use $software-detail-stage-08-content-check to validate and repair the software-detail draft against hierarchy, boundary, coverage, density, and writing rules."
+policy:
+  allow_implicit_invocation: false

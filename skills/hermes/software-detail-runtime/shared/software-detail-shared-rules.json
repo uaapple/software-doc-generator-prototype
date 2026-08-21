@@ -1,0 +1,59 @@
+{
+  "schema": "software-detail-shared-rules/v1",
+  "version": "1.0.0",
+  "sourceCommit": "ce5d3c2c08788fa8ab9013f18bd985f7355df0b6",
+  "sourceMap": "docs/software-detail-skill-stage-map.json",
+  "consumerStageIds": [
+    "software-detail-stage-01-initialize",
+    "software-detail-stage-02-model-plan",
+    "software-detail-stage-03-evidence-extract",
+    "software-detail-stage-04-output-ledger",
+    "software-detail-stage-05-boundary-projection",
+    "software-detail-stage-06-architecture-draft",
+    "software-detail-stage-07-module-draft",
+    "software-detail-stage-08-content-check",
+    "software-detail-stage-09-docx-finalize"
+  ],
+  "rules": [
+    {
+      "id": "SDD-DEF-001",
+      "text": "Treat the Simulink model as the source of truth. Do not base content on prior generated documents or example documents unless the user explicitly requests that comparison."
+    },
+    {
+      "id": "SDD-DEF-002",
+      "text": "Quality is the first priority. The target for every selected functional module is condition/action implementation prose with explicit set, reset, selection, hold, restore, fallback, lookup, delay, or output-assignment behavior when those constructs exist. Do not narrow evidence scope, skip modules, or emit port-summary prose to save time."
+    },
+    {
+      "id": "SDD-DEF-003",
+      "text": "Use one task-owned MATLAB process/session as the default evidence path. For front-end, unattended, or production document-generation tasks, start a task-owned new MATLAB process, such as one `matlab -batch` job or MCP/SATK `new` session, rather than trying to attach to a user-open MATLAB first. Load and initialize MATLAB once per generation task, keep the model open while collecting evidence and drafting, and close only task-owned model state at the end."
+    },
+    {
+      "id": "SDD-DEF-010",
+      "text": "Treat each `document_unit`'s direct Inports and Outports as the default narrative boundary. Trace internal signals, states, parameters, tables, and child outputs as private evidence, but do not print identifiers that are invisible at the document-unit boundary."
+    },
+    {
+      "id": "SDD-DEF-011",
+      "text": "Apply the boundary allowlist per document unit, not as exclusive global signal ownership. A signal may legitimately be an A02 direct output and an A01 direct input; it may appear in A01 prose when it is listed in A01 `allowedInputs`. If the connected A02 Outport and A01 Inport use different names, use the A01-side direct Inport name inside the A01 section."
+    },
+    {
+      "id": "SDD-DEF-018",
+      "text": "Preserve exact identifiers in private evidence. In final prose, use only identifiers on the document-unit allowlist: direct Inports, direct Outports, and identifiers the user explicitly approves for publication."
+    },
+    {
+      "id": "SDD-DEF-020",
+      "text": "Keep final documents focused on functional design. Do not output evidence-collection or model-configuration metadata such as MATLAB/SATK load status, update success, solver, target file, or model version unless the user explicitly asks for that audit information."
+    },
+    {
+      "id": "SDD-OUT-001",
+      "text": "Use Chinese for narrative text unless the user asks otherwise."
+    },
+    {
+      "id": "SDD-OUT-002",
+      "text": "Keep allowed boundary signal names untranslated. Do not print internal identifiers or invent Chinese expansions for them."
+    },
+    {
+      "id": "SDD-OUT-013",
+      "text": "Do not infer requirements, design bases, calibration intent, or business meaning beyond the model evidence."
+    }
+  ]
+}

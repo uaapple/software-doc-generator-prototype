@@ -1,0 +1,6 @@
+interface:
+  display_name: "Simulink 模块功能描述 · 阶段 4 输出账本"
+  short_description: "按文档单元聚合证据并建立输出优先覆盖账本"
+  default_prompt: "Use $software-detail-stage-04-output-ledger to aggregate evidence into an output-first private ledger and coverage record."
+policy:
+  allow_implicit_invocation: false

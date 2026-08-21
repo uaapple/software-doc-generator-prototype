@@ -108,6 +108,7 @@ The mapping validator checks workbook assignment states, not comments. A vector 
 - For an N-input AND, generate an all-true baseline to get true output, then N single-false cases such as `FTT`, `TFT`, `TTF` so each input independently drives false output.
 - MC/DC is not full combinational coverage. Do not generate `2^N` combinations unless the user explicitly asks for truth-table exhaustion; the default obligation is the baseline plus one independent-toggle case per input.
 - For nested or chained logical expressions, target the effective logical operator input values. If an upstream NOT feeds the operator, invert the raw stimulus so the operator input receives the intended true/false value.
+- For an EdgeRising or EdgeFalling path, use a dedicated ordered sequence: hold the opposite state for one sample interval, trigger the requested edge, observe for one sample interval, then restore the input. Keep unrelated AND inputs true and unrelated OR inputs false while observing the edge.
 - For enum/constant equality inputs, resolve the constant value from the loaded MAT/init/data-dictionary/model workspace before writing TCSD. If a logical input compares `ModeInput == TargetMode`, use the resolved value of `TargetMode`, not a guessed Boolean `1`.
 - For Boolean scalar calibrations/parameters that feed logical ports directly, create paired parameter mappings. For an AND input, the all-true vector needs `p Cal=1;` and that port's single-false vector needs `p Cal=0;`; for an OR input, the all-false baseline needs `p Cal=0;` and that port's single-true vector needs `p Cal=1;`. If the calibration default is `0`, the generated TCSD still must include the `p Cal=1;` override wherever the true state is required.
 - If a calibration participates through a RelationalOperator, resolve the compared threshold/enum first, then choose parameter values on both sides of that exact comparison. Put those values in `true_params` / `false_params`, not in comments.
@@ -160,9 +161,24 @@ Use the bundled scripts to reduce repeated manual repair work:
 2. Run `derive_logical_mcdc_mappings.py` to convert root inputs, NOT paths, nested AND/OR paths, and symbolic Constant parameters into explicit true/false input and parameter mappings.
 3. Build normal obligations with `build_logical_mcdc_obligations.py`.
 4. If workbook validation reports missing vectors whose obligations already contain `match.inputs`/`match.params`, run `augment_tcsd_for_mcdc.py` and rebuild the workbook.
-5. For unresolved state/timing ports, run `build_state_probe_plan.py`; it searches only the target dependency slice and emits at most 32 candidates with at most 8 steps each.
+5. For unresolved state/timing ports, run `build_state_probe_plan.py`; it searches only the target dependency slice and preserves one primary candidate per planned target. It uses resolved value thresholds and timing thresholds separately, records a target direction only when static evaluation proves it, and keeps alternate candidates outside the first MATLAB pass. A candidate may contain all ordered action steps required by its evidenced sequence.
 6. Run `probe_logical_mcdc_vectors.m` with the explicit state-probe CaseJson. Keep the complete verified `stimulus` sequence in the generated obligation and TCSD supplemental Test.
 7. Probe the augmented workbook for actual vectors and Simulink Coverage, then run `build_probe_mcdc_obligations.py` again.
 8. Treat unresolved probe vectors as mapping failures unless a reviewer supplies an explicit `unreachable` override with a concrete structural reason. Treat any actual Condition/Decision/MC/DC metric below the target (80% by default) as the trigger for one report-guided repair pass, not as a hard final-delivery failure.
 
 The default mapping gate remains `missing_count = 0` and `unresolved_count = 0`; `unreachable_count > 0` is acceptable only when every item has a specific model/probe reason. The coverage target is Condition/Decision/MC/DC each at least 80%. If the first report misses that target, repair once and then deliver the final measured result while explicitly reporting any metric still below 80%.
+# 覆盖组合快速实验
+
+在修改正式十二阶段流程前，可以直接复用既有任务的逻辑追踪、覆盖中间结果和基线用例，运行确定性覆盖组合实验：
+
+```bash
+python3 scripts/analyze_mcdc_strategy_experiment.py \
+  --logical-traces <model>_logical_traces.json \
+  --legacy-coverage-ir <model>_coverage_ir.json \
+  --baseline-cases <model>_cases_mcdc.json \
+  --verification-cases pair-verification-cases.json \
+  --max-verification-pairs 3 \
+  --output strategy-experiment.json
+```
+
+实验工具直接调用正式的原子条件 MC/DC 规划核心，不维护第二套策略实现。输出必须区分：旧策略已有的完整测试对、新策略新增的完整可执行测试对、仍不可执行的条件与原因。生成的少量验证用例可以交给 `probe_logical_mcdc_vectors.m` 做定向 MATLAB 仿真；只有实际逻辑端口向量与预测一致，才可将对应策略接入正式阶段。
