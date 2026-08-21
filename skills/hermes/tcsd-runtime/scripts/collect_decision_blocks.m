@@ -20,7 +20,7 @@ function collect_decision_blocks(rootDir, model, matFileName, initScripts, outpu
     allBlocks = find_system(model, 'LookUnderMasks', 'all', 'FollowLinks', 'on');
 
     targetTypes = {'Switch', 'RelationalOperator', 'MinMax', 'MultiPortSwitch', 'Saturate', 'Abs'};
-    recs = struct('path', {}, 'sid', {}, 'type', {}, 'params', {}, 'inputs', {});
+    recs = struct('path', {}, 'sid', {}, 'type', {}, 'params', {}, 'inputs', {}, 'gate_params', {});
     gates = struct('path', {}, 'type', {}, 'inputs', {});
     for i = 1:numel(allBlocks)
         b = allBlocks{i};
@@ -40,6 +40,11 @@ function collect_decision_blocks(rootDir, model, matFileName, initScripts, outpu
         rec.params = collect_params(b, bt);
         inps = collect_inputs(b, rootInputs, 0);
         rec.inputs = inps(:).';
+        if strcmp(bt, 'MultiPortSwitch')
+            rec.gate_params = collect_mps_gate_params(b, rootInputs);
+        else
+            rec.gate_params = {};
+        end
         recs(end + 1) = rec; %#ok<AGROW>
     end
 
@@ -51,6 +56,59 @@ end
 
 function ok = is_input_port(portType)
     ok = strcmpi(char(string(portType)), 'input') || strcmpi(char(string(portType)), 'inport');
+end
+
+function gates = collect_mps_gate_params(b, rootInputs)
+%COLLECT_MPS_GATE_PARAMS Find calibration parameters that gate whether the
+% MultiPortSwitch output chain is actually executed. A MPS whose output feeds
+% a downstream Switch whose criterion is a `~= 0` calibration parameter is
+% bypassed (lazy evaluation) while that parameter is non-zero (A05 D04:
+% RngPrdn_bFuRngEstimUseSwt_C default 1 pins Switch5/7/9 to bypass the MPS
+% outputs, so selector obligations never execute). Collect those parameters
+% so the obligation builder can attach a `p Param=0` override.
+    gates = {};
+    try
+        ph = get_param(b, 'PortHandles');
+    catch
+        return;
+    end
+    for p = 1:numel(ph.Outport)
+        try
+            line = get_param(ph.Outport(p), 'Line');
+            if isequal(line, -1)
+                continue;
+            end
+            dsts = get_param(line, 'DstPortHandle');
+            for k = 1:numel(dsts)
+                dstBlock = get_param(dsts(k), 'Parent');
+                if ~strcmp(safe_block_type(dstBlock), 'Switch')
+                    continue;
+                end
+                criteria = '';
+                try
+                    criteria = get_param(dstBlock, 'Criteria');
+                catch
+                end
+                controlPort = switch_control_port(criteria);
+                if controlPort < 1
+                    continue;
+                end
+                [kind, value] = trace_upstream_of_port(dstBlock, controlPort, rootInputs, 0);
+                if strcmp(kind, 'param') && ~isempty(value) && ~any(strcmp(gates, value))
+                    gates{end + 1} = value; %#ok<AGROW>
+                end
+            end
+        catch
+        end
+    end
+end
+
+function port = switch_control_port(criteria)
+    port = 0;
+    m = regexp(criteria, '^u(\d+)\s*[<>=~!]+', 'tokens', 'once');
+    if ~isempty(m)
+        port = str2double(m{1});
+    end
 end
 
 function bt = safe_block_type(b)
@@ -83,7 +141,7 @@ function params = collect_params(b, bt)
         case 'MinMax'
             names = {'Function', 'Inputs'};
         case 'MultiPortSwitch'
-            names = {'Inputs', 'DataPortOrder'};
+            names = {'Inputs', 'DataPortOrder', 'DataPortIndices'};
         case 'Saturate'
             names = {'UpperLimit', 'LowerLimit'};
         case 'Abs'

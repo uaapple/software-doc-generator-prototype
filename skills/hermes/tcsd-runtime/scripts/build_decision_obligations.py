@@ -591,10 +591,26 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
             else:
                 data_port_order = params.get("DataPortOrder", "One-based")
                 values = range(count) if "Zero" in str(data_port_order) else range(1, count + 1)
+            # MPS output-chain calibration gates (A05 D04): a downstream Switch
+            # whose criterion is a `~= 0` calibration parameter bypasses the MPS
+            # outputs (lazy evaluation) while that parameter stays non-zero, so
+            # selector cases never execute. Attach `p Param=0` to every selector
+            # obligation so the case actually reaches the MPS. Gate params are
+            # collected by collect_decision_blocks.m (rec.gate_params).
+            gate_params = rec.get("gate_params") or []
+            if isinstance(gate_params, str):
+                gate_params = [gate_params]
+            gate_override = {p: 0 for p in gate_params if p}
             for value in values:
-                items.append(obligation(sid=sid, model=model, path=path,
-                                        outcome=f"selector={value}", status="required",
-                                        match={name: value}))
+                item = obligation(sid=sid, model=model, path=path,
+                                  outcome=f"selector={value}", status="required",
+                                  match={name: value}, params=gate_override or None)
+                if gate_override:
+                    item["evidence_state"] = "scenario_activation_mps_gate"
+                    item["reason"] = (
+                        f"MPS 输出链标定门控 {','.join(gate_override)} 默认钉死 MPS 惰性旁路；"
+                        f"此用例覆盖参数=0 打开 MPS 使 selector={value} 生效（场景激活）")
+                items.append(item)
 
         elif btype == "Saturate":
             u = _float_or_none(str(params.get("UpperLimit", "")))
