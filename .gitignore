@@ -20,6 +20,7 @@ docs/generated-requirements-overview.html
 docs/skill-overview.html
 .env
 .env.container
+.env.gateway
 data/llm-profiles.json
 .DS_Store
 tmp/
