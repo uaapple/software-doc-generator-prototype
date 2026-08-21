@@ -469,6 +469,8 @@ def stage_run(
                     str(interface),
                     "--threshold",
                     str(threshold),
+                    "--probe-results",
+                    str(out / f"{model}_state_probe_results.json"),
                     "--output",
                     str(brief),
                 ],

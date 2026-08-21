@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -109,6 +110,97 @@ def normalized_detail(item: dict[str, Any], model: str, coverage_class: str, ind
     }
 
 
+def extract_probe_observed_vectors(probe_data: Any) -> list[dict[str, Any]]:
+    """Collect empirically observed non-baseline AND/OR input vectors from the
+    state probe results so the repair brief can reference stimuli that are
+    known to reproduce a specific truth vector (e.g. FT/TF), instead of
+    requiring the Agent to re-derive them statically.
+
+    Each entry keeps the full observed input/parameter snapshot and the
+    temporal stimulus that produced it. Only vectors that flip at least one
+    port away from the all-true (AND) / all-false (OR) baseline are kept:
+    those are exactly the independent-effect vectors MC/DC coverage needs.
+    """
+    if not isinstance(probe_data, dict):
+        return []
+    reports: list[dict[str, Any]] = []
+    for value in probe_data.values():
+        if isinstance(value, dict) and isinstance(value.get("observations"), list):
+            reports.append(value)
+    if not reports and isinstance(probe_data.get("observations"), list):
+        reports.append(probe_data)
+    observed: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for report in reports:
+        for obs in report.get("observations") or []:
+            if not isinstance(obs, dict):
+                continue
+            vectors = obs.get("vectors")
+            if not isinstance(vectors, dict):
+                continue
+            for operator_id, vector in vectors.items():
+                if not isinstance(vector, dict) or not vector.get("ok"):
+                    continue
+                values = vector.get("values")
+                operator = str(vector.get("operator") or "").upper()
+                if not isinstance(values, list) or not values:
+                    continue
+                truth = [bool(value) for value in values]
+                if operator == "AND" and all(truth):
+                    continue  # baseline all-true carries no MC/DC increment
+                if operator == "OR" and not any(truth):
+                    continue  # baseline all-false carries no MC/DC increment
+                if operator not in {"AND", "OR"}:
+                    continue
+                label = "".join("T" if value else "F" for value in truth)
+                inputs = obs.get("inputs")
+                params = obs.get("params")
+                if not isinstance(inputs, dict):
+                    inputs = {}
+                if not isinstance(params, dict):
+                    params = {}
+                stimulus = obs.get("stimulus")
+                # Deduplicate by the observable input/parameter combination
+                # (not by stimulus/test_id): the same input snapshot observed
+                # across several probe tests is one reproducible stimulus.
+                key = json.dumps(
+                    {
+                        "operator_id": str(operator_id),
+                        "label": label,
+                        "inputs": {k: inputs[k] for k in sorted(inputs)},
+                        "params": {k: params[k] for k in sorted(params)},
+                    },
+                    sort_keys=True,
+                    default=str,
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                entry: dict[str, Any] = {
+                    "operator_id": str(operator_id),
+                    "operator": operator,
+                    "block_path": str(vector.get("block_path") or ""),
+                    "vector": label,
+                    "observed_inputs": inputs,
+                    "observed_params": params,
+                }
+                if isinstance(stimulus, dict):
+                    entry["stimulus"] = stimulus
+                if obs.get("test_id"):
+                    entry["observed_in_test"] = str(obs["test_id"])
+                observed.append(entry)
+    # Independent-effect vectors first: AND single-false (FT/TF) and OR
+    # single-true (TF/FT) are exactly the MC/DC increments; all-false (AND)
+    # / all-true (OR) vectors only help Condition/Decision, so sort them last.
+    observed.sort(
+        key=lambda item: (
+            sum(1 for ch in item["vector"] if ch == "F") if item.get("operator") == "AND" else sum(1 for ch in item["vector"] if ch == "T"),
+            len(item.get("observed_params") or {}),
+        )
+    )
+    return observed
+
+
 def build_brief(
     *,
     job_id: str,
@@ -120,6 +212,7 @@ def build_brief(
     trace_path: str,
     interface_path: str,
     threshold: float,
+    probe_observed_vectors: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     records = coverage_records(coverage)
     record = records.get(model)
@@ -175,7 +268,7 @@ def build_brief(
 
     elements: dict[tuple[str, str], dict[str, str]] = {}
     trace_elements(traces, elements)
-    return {
+    brief = {
         "schema": BRIEF_SCHEMA,
         "jobId": job_id,
         "model": model,
@@ -202,6 +295,14 @@ def build_brief(
             "repairPassLimit": 1,
         },
     }
+    if probe_observed_vectors:
+        # Empirically observed non-baseline AND/OR truth vectors (from the
+        # stage-06 state probe): stimuli known to reproduce a specific vector.
+        # The Agent should prefer these as candidate starting points over pure
+        # static re-derivation, since they were observed in an actual
+        # simulation with the real model.
+        brief["observedVectors"] = probe_observed_vectors
+    return brief
 
 
 def ensure_mapping(value: Any, label: str) -> dict[str, Any]:
@@ -448,6 +549,7 @@ def main() -> int:
     prepare.add_argument("--coverage-ir", required=True)
     prepare.add_argument("--interface", required=True)
     prepare.add_argument("--threshold", type=float, default=80)
+    prepare.add_argument("--probe-results", default="", help="state_probe_results.json path (optional); non-baseline observed AND/OR vectors are attached to the brief")
     prepare.add_argument("--output", required=True)
     validate = subparsers.add_parser("validate")
     validate.add_argument("--brief", required=True)
@@ -462,6 +564,14 @@ def main() -> int:
         traces_path = Path(args.logical_traces)
         ir_path = Path(args.coverage_ir)
         interface_path = Path(args.interface)
+        probe_observed_vectors: list[dict[str, Any]] = []
+        if args.probe_results:
+            probe_path = Path(args.probe_results)
+            if probe_path.is_file():
+                try:
+                    probe_observed_vectors = extract_probe_observed_vectors(read_json(probe_path))
+                except Exception as error:  # never fail prepare because of probe enrichment
+                    print(f"prepare: probe observed vectors unavailable: {error}", file=sys.stderr)
         brief = build_brief(
             job_id=args.job_id,
             model=args.model,
@@ -472,9 +582,10 @@ def main() -> int:
             trace_path=str(traces_path),
             interface_path=str(interface_path),
             threshold=args.threshold,
+            probe_observed_vectors=probe_observed_vectors,
         )
         write_json(Path(args.output), brief)
-        print(json.dumps({"output": args.output, "deficits": len(brief["metricDeficits"])}, ensure_ascii=False))
+        print(json.dumps({"output": args.output, "deficits": len(brief["metricDeficits"]), "observedVectors": len(brief.get("observedVectors") or [])}, ensure_ascii=False))
         return 0
 
     brief = read_json(Path(args.brief))

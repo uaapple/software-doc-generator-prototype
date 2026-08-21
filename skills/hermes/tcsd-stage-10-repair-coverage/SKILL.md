@@ -14,6 +14,7 @@ Both prompt commands invoke the shared `tcsd-runtime/scripts/run_tcsd_pipeline_s
 2. Run the exact **prepare command** from the prompt. Read the generated `tcsd-coverage-repair-brief/v1`.
 3. If `repairRequired=false`, run the exact apply command without inventing a proposal; the runtime will emit the skipped result.
 4. For every below-threshold metric, start from the brief's measured block path, SID, missing outcome, description, logical trace, and Coverage IR. If the report exposes only a model-level deficit, use MATLAB/SATK to locate the exact uncovered block before proposing a case.
+4b. If the brief carries `observedVectors`（stage-06 状态探针实测到的非基线 AND/OR 真值向量），优先以其中的 `observed_inputs` / `observed_params` / `stimulus` 作为候选刺激起点：这些组合已在真实模型仿真中被观测到可复现对应真值向量（如 FT/TF），比纯静态反推更可靠。可将观测刺激直接整理进候选的 `controller` 与 `stimulus`，仅补充缺失的时序或前置状态。
 5. Inspect only the target block's local upstream dependency slice. Identify:
    - controlling root inputs;
    - scalar parameters and their initialization values;
