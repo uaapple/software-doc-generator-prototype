@@ -13,16 +13,28 @@ const envPath = requestedEnvPath
   : fs.existsSync(path.join(rootDir, ".env.container"))
     ? path.join(rootDir, ".env.container")
     : path.join(rootDir, ".env.container.example");
-const envValues = readEnvFile(envPath);
+const envFileValues = readEnvFile(envPath);
+const sharedSecretsPath = String(
+  envFileValues.SDG_SHARED_SECRETS_FILE || process.env.SDG_SHARED_SECRETS_FILE || ""
+).trim();
+const sharedSecretValues = sharedSecretsPath && fs.existsSync(sharedSecretsPath)
+  ? readEnvFile(sharedSecretsPath)
+  : {};
+const envValues = { ...envFileValues, ...sharedSecretValues };
 const composeArgs = [
   "compose",
   "--env-file",
-  envPath,
+  envPath
+];
+if (sharedSecretsPath) {
+  composeArgs.push("--env-file", sharedSecretsPath);
+}
+composeArgs.push(
   "--file",
   path.join(rootDir, "compose.yaml"),
   "--file",
   path.join(rootDir, "compose.mac.yaml")
-];
+);
 const actionsRequiringSecrets = new Set(["up", "config", "restart", "test"]);
 const requiredSecrets = [
   "HERMES_AGENT_TOKEN",

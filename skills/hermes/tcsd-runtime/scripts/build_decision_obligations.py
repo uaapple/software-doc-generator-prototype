@@ -263,6 +263,35 @@ def _parse_data_port_indices(raw: Any) -> list[int] | None:
     return values or None
 
 
+def _mps_legal_selectors(params: dict[str, Any], input_port_count: int) -> list[int]:
+    """Legal selector values of a MultiPortSwitch.
+
+    Compiled-model ground truth is DataPortOrder plus the number of data
+    ports (port 1 is the selector). The model-file `DataPortIndices` literal
+    is trusted only when its length matches the data-port count; a literal
+    whose length disagrees with the actual port count is a representation
+    artifact, and driving its out-of-range values aborts the simulation
+    (PwrLimEng B03_ISGLimTq MPS: Inputs=2 / DataPortOrder=Zero-based →
+    legal {0,1}, but DataPortIndices={1,2,3} → value 2/3 abort the sim with
+    "控制端口值 '2' 不在 '0' 到 '1' 之间").
+    """
+    data_port_count = max(0, int(input_port_count) - 1)
+    data_port_order = str(params.get("DataPortOrder") or "")
+    order_values: list[int] = []
+    if "Zero" in data_port_order:
+        order_values = list(range(data_port_count))
+    elif "One" in data_port_order:
+        order_values = list(range(1, data_port_count + 1))
+    indices = _parse_data_port_indices(params.get("DataPortIndices"))
+    if indices is not None and len(indices) == data_port_count:
+        return indices
+    if order_values:
+        return order_values
+    if indices is not None:
+        return indices
+    return list(range(1, data_port_count + 1))
+
+
 def _param_bounds(inputs: dict[int, tuple[str, Any]], port: int) -> dict[str, Any] | None:
     """Return (min, max, value) bounds for a parameter-driven input port, if
     the MATLAB collector attached them. Values are None when unavailable."""
@@ -650,7 +679,6 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                                         match=match or None, params=param_match or None))
 
         elif btype == "MultiPortSwitch":
-            count = int(_float_or_none(str(params.get("Inputs", ""))) or 2) - 1
             selector = _control(inputs, 1)
             if selector is None or selector[0] != "input":
                 items.append(obligation(sid=sid, model=model, path=path,
@@ -658,12 +686,7 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                                         reason="missing_static_controller: selector in:1 未解析到根输入"))
                 continue
             name = selector[1]
-            indices = _parse_data_port_indices(params.get("DataPortIndices"))
-            if indices is not None:
-                values = indices
-            else:
-                data_port_order = params.get("DataPortOrder", "One-based")
-                values = range(count) if "Zero" in str(data_port_order) else range(1, count + 1)
+            values = _mps_legal_selectors(params, len(inputs))
             # MPS output-chain calibration gates (A05 D04): a downstream Switch
             # whose criterion is a `~= 0` calibration parameter bypasses the MPS
             # outputs (lazy evaluation) while that parameter stays non-zero, so
@@ -914,7 +937,7 @@ def generate_obligations(slx: SlxModel, model: str) -> list[dict[str, Any]]:
                                         match=match))
 
         elif btype == "MultiPortSwitch":
-            count = block["ports"].get("in", 2) - 1
+            total_ports = block["ports"].get("in", 2)
             selector = slx.trace_input(sid, "1")
             if selector is None or selector[0] != "input":
                 items.append(obligation(sid=sid, model=model, path=path,
@@ -922,12 +945,7 @@ def generate_obligations(slx: SlxModel, model: str) -> list[dict[str, Any]]:
                                         reason="missing_static_controller: selector in:1 不是根 Inport"))
                 continue
             name = selector[1]
-            indices = _parse_data_port_indices(params.get("DataPortIndices"))
-            if indices is not None:
-                values = indices
-            else:
-                data_port_order = params.get("DataPortOrder", "One-based")
-                values = range(count) if "Zero" in data_port_order else range(1, count + 1)
+            values = _mps_legal_selectors(params, total_ports)
             for value in values:
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"selector={value}", status="required",
