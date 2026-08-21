@@ -1,0 +1,116 @@
+{
+  "schema": "sdg-main-unification-production-candidate/v2",
+  "generatedAt": "2026-08-21T11:16:51+08:00",
+  "candidateTag": "tcsd-dsh-worker-production-candidate-v1-run32442128886",
+  "candidateRevisionBinding": "annotated-tag-peeled-commit",
+  "validatedSourceRevision": "18192a16facaf66cc1171bd76fe7dc543c41ae04",
+  "containerBuildRevision": "18192a16facaf66cc1171bd76fe7dc543c41ae04",
+  "deploymentToolRevision": "18192a16facaf66cc1171bd76fe7dc543c41ae04",
+  "supersedesCandidate": {
+    "tag": "tcsd-stage10-zero-delta-partial-production-candidate-v1-run31747865167",
+    "tagObject": "68d7336876b99b73e0b64316cf6e97b626547ca2",
+    "peeledCommit": "aac4f969fcb36545766951fd0421181113527cd2",
+    "reason": "以生产热修底座整合已验证的 DSH 单元测试用例生成架构，单元测试用例生成不再采用旧 Hermes Agent 阶段执行器；同时包含第十阶段实测状态探针向量注入修复。"
+  },
+  "scope": {
+    "summary": "将单元测试用例生成的阶段 Agent 执行全面切换为 DeepSeek Harness，保留现有十二阶段宿主编排、MATLAB Gateway 和确定性运行时契约；Platform 同步提供 DSH 阶段状态、日志导出与期望值完成校验。",
+    "platformAction": "deploy-new-exact-ghcr-image-via-wx11p-relay",
+    "workerAction": "deploy-new-exact-ghcr-image",
+    "nativeGatewayAction": "reuse-deployed-v9-and-validate-only",
+    "schemaCompatibility": "保持现有 TCSD pipeline v2、任务 API、产物命名与旧任务读取兼容；新增 DSH 执行证据和会话日志定位。"
+  },
+  "windowsPowerShell51Evidence": {
+    "status": "passed",
+    "workflowName": "Native Gateway companion Windows PowerShell 5.1",
+    "workflowPath": ".github/workflows/native-gateway-companion-ps51.yml",
+    "workflowSha256": "4d61292ea88b32ad4ddb6c60d86568f063bc0cb074a53eba6bc47eb9eee2bc9f",
+    "runId": 32442128886,
+    "runAttempt": 1,
+    "event": "workflow_dispatch",
+    "headSha": "18192a16facaf66cc1171bd76fe7dc543c41ae04",
+    "runStatus": "completed",
+    "conclusion": "success",
+    "runUrl": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/32442128886",
+    "job": {
+      "id": 96654773378,
+      "name": "PowerShell 5.1 and wrapper startup contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/actions/runs/32442128886/job/96654773378",
+      "requiredSteps": [
+        {"name": "Check out exact revision", "conclusion": "success"},
+        {"name": "Run companion tests with Windows PowerShell 5.1", "conclusion": "success"},
+        {"name": "Install locked Node.js dependencies", "conclusion": "success"},
+        {"name": "Reproduce legacy native env wrapper startup", "conclusion": "success"}
+      ]
+    },
+    "runMetadataSha256": "6496632b2a1068ef27e21194b7378b197cabf7c1bb048d06acfabac8fefadddc",
+    "runLogsZipSha256": "a61fdf6871e80ff2a03e943e2e4582bde198a6a70dda100a722932cf167e257c"
+  },
+  "images": {
+    "platform": {
+      "action": "deploy",
+      "imageRevision": "sha256:2b671b928ec1f1c32039a9ff1f97a2972e6cfe8763f5ad01ffd0c797a32d609b",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:cd7a72f32d26aa8094832bf0a0827f2a25748b67489b23721ddf1cf9abbb50c5",
+      "registryIndexDigest": "sha256:cd7a72f32d26aa8094832bf0a0827f2a25748b67489b23721ddf1cf9abbb50c5",
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    "worker": {
+      "action": "deploy",
+      "imageRevision": "sha256:3e4de0c81076ae169dfa9163ba8036109f7a6b2f89e8c5630991fae127f0799e",
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:13cac708d671fe928283f1f51ae1e8ec25664b95c9a992c566a20aa4ec76db65",
+      "registryIndexDigest": "sha256:13cac708d671fe928283f1f51ae1e8ec25664b95c9a992c566a20aa4ec76db65",
+      "os": "linux",
+      "architecture": "amd64"
+    }
+  },
+  "nativeGateway": {
+    "action": "reuse-deployed-v9-and-validate-only",
+    "companionVersion": 9,
+    "releaseAssetIncluded": false,
+    "reason": "本候选未修改 Native MATLAB Gateway 受管文件。"
+  },
+  "releaseAssets": {
+    "container-release-18192a16faca.json": "ced044fe69cfd3e1a42c8261bda7445cd85ef6e1aa8903318ec9e3952ab98084",
+    "scan-summary.json": "8d6675ba7d7ac519716991c60df8cadfe5e1464ab919435259daf9408fb922a4",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-2b671b928ec1.sbom.spdx.json": "fd1f617a77c78ef99b11fa2c1afce51928e7590fecdb0d1cda7a560b3be2b997",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-2b671b928ec1.trivy.json": "cb35204738fa2be3cc4f1457be4ee562c0625392cbf4f8712ac30b435ec1dd2f",
+    "ghcr.io_uaapple_software-doc-generator-platform_img-2b671b928ec1.trivy.json.policy.json": "764bf6c4009b7b35e77602f64551e414e360765cd43e25b3242d5bba8ef55a57",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-3e4de0c81076.sbom.spdx.json": "d5dc5312498d38f1b9a898050418de81818f841045ac9d3cd6c4003bbbf1a2fe",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-3e4de0c81076.trivy.json": "f3a87a29846e2be96988933789495902974254e485872dc75dbbfa4d7321374d",
+    "ghcr.io_uaapple_software-doc-generator-worker_img-3e4de0c81076.trivy.json.policy.json": "f65735f0707941d604e4422fbe3b3e25850fe5e30f518736f8e36051394fc7fa"
+  },
+  "distribution": {
+    "ghcrExactDigest": "primary-distribution",
+    "offlineImageArchives": "on-demand-only",
+    "githubReleaseFullImageTar": "not-required",
+    "platformDistribution": "wx11p-exact-pull-and-putty-relay-to-linux",
+    "githubRelease": {
+      "requiredState": "published-non-draft-non-prerelease",
+      "tag": "tcsd-dsh-worker-production-candidate-v1-run32442128886",
+      "url": "https://github.com/uaapple/software-doc-generator-prototype/releases/tag/tcsd-dsh-worker-production-candidate-v1-run32442128886"
+    }
+  },
+  "rollbackAnchors": {
+    "expectedCurrentProductionCandidate": "tcsd-stage10-zero-delta-partial-production-candidate-v1-run31747865167",
+    "platform": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-platform@sha256:347d821c9a3be13ab921e0cafea0569f3f6f00ea8af3e040b2e7ec4a319aaefd"
+    },
+    "worker": {
+      "registryReference": "ghcr.io/uaapple/software-doc-generator-worker@sha256:9981a0395d3045ddf5e80eb4d3744d94060fd8145ca06f4d92505510f8d31a06",
+      "imageRevision": "sha256:956428f3d6876f09016fbd2715b1c3d43914ee62c9b26049ffb1db836ef6cfab"
+    },
+    "nativeGateway": "保持已部署 v9，不切换",
+    "rule": "部署前以生产实际 inspect 为权威；若实际值不同，记录实际精确 digest 和本地 image ID 作为回滚锚点。"
+  },
+  "acceptance": {
+    "tcsdDshTests": "passed-executor-provenance-prompt-credential-boundary-and-gateway-transport",
+    "containerReleaseChecks": "passed-container-static-production-boundary-transfer-secret-and-policy-checks",
+    "containerScans": "platform-and-worker-syft-trivy-passed-policy-findings-zero-secrets-zero",
+    "windowsPowerShell51": "passed-run-32442128886-job-96654773378",
+    "localContainerSmoke": "passed-platform-worker-gateway-health-and-empty-active-queue-before-final-source-fix",
+    "productionDeployment": "not-performed",
+    "productionRealTaskAcceptance": "pending-user"
+  }
+}
