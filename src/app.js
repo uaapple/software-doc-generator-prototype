@@ -89,6 +89,62 @@ function normalizeDebugTimeoutMs(value, fallback = 60000) {
   return Math.min(Math.max(Number.isFinite(timeoutMs) ? timeoutMs : fallback, 1000), 10 * 60 * 1000);
 }
 
+/**
+ * Locate the DSH session log file on the platform's own filesystem.
+ *
+ * The pipeline runs in the Worker's ws-* workspace (job.input.outputDir),
+ * NOT the platform task dir; this only resolves when the platform and the
+ * worker share the same data volume (single-host dev / legacy tasks). In the
+ * production topology (Linux platform + Windows worker, separate data
+ * volumes) it returns an empty logFile and the caller must forward the log
+ * through the Worker API instead.
+ */
+async function resolveLocalDshSessionLog(task = {}) {
+  const outputDirs = [];
+  const jobId = String(task.pipeline?.jobId || "").trim();
+  if (jobId) {
+    try {
+      const job = await readJson(path.join(config.tcsdPipeline?.jobStoreDir || "", `${jobId}.json`));
+      const jobOutputDir = String(job?.input?.outputDir || "").trim();
+      if (jobOutputDir) outputDirs.push(jobOutputDir);
+    } catch {
+      // job record missing; fall back to the task workspace
+    }
+  }
+  if (task.workspace?.outputDir) outputDirs.push(task.workspace.outputDir);
+  if (task.workspace?.agentOutputDir) outputDirs.push(task.workspace.agentOutputDir);
+  const sessionDirs = outputDirs.map((dir) => path.join(dir, ".tcsd-dsh"));
+  const candidates = [
+    ...sessionDirs.map((dir) => path.join(dir, "session.jsonl")),
+    ...sessionDirs.map((dir) => path.join(dir, "session.events.jsonl")),
+    ...sessionDirs.map((dir) => path.join(dir, "session.log"))
+  ];
+  for (const candidate of candidates) {
+    try {
+      const stat = await fs.stat(candidate);
+      if (stat.isFile()) {
+        return { logFile: candidate, outputDirs };
+      }
+    } catch {
+      // candidate missing; try the next one
+    }
+  }
+  return { logFile: "", outputDirs };
+}
+
+function serveTrimmedSessionLog(res, content = "", fileName = "") {
+  // Raw streaming deltas (assistant/chunk) dominate the file (≈69MB of a
+  // 74MB log for one task); the final content is fully carried by
+  // assistant/message. Trim them when serving so the export stays comparable
+  // to the DSH desktop export (a few MB), for old and new tasks alike.
+  const trimmed = String(content || "")
+    .split("\n")
+    .filter((line) => !line.includes('"type":"assistant/chunk"'))
+    .join("\n");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  return res.type("application/octet-stream").send(trimmed);
+}
+
 function getBearerHeaders(token = "") {
   const authToken = String(token || "").trim();
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
@@ -535,70 +591,85 @@ export async function createApp() {
 
   app.get("/api/unit-test-case-generation/tasks/:taskId/dsh-session-log", async (req, res, next) => {
     try {
-      const task = await unitTestCaseGenerationService.getTask(req.params.taskId);
+      // Use the raw task record: the public task view deliberately omits the
+      // `workspace` block, whose local outputDir is the first local-log
+      // candidate for single-host / legacy tasks.
+      const task = await unitTestCaseGenerationService.readTask(req.params.taskId);
       if (!task) {
         return res.status(404).json({ error: "单元测试用例生成任务不存在", code: "unit_test_case_task_not_found" });
       }
-      // The pipeline runs in the Worker's ws-* workspace (job.input.outputDir),
-      // NOT the platform task dir; the platform shares the same data volume, so
-      // that path is directly readable here. Try the job record first, then
-      // fall back to the task workspace (single-host / legacy tasks).
-      const outputDirs = [];
+      const baseName = String(task.inputs?.modelSlx?.originalName || "model").replace(/\.[^.]+$/, "");
+      const fileName = `${baseName}_dsh_session_log.jsonl`;
+
+      // Phase 1 — local read: works on single-host / shared-data-volume
+      // deployments and legacy tasks (platform and worker share the data
+      // volume, so the ws-* path is directly readable here).
+      const { logFile, outputDirs } = await resolveLocalDshSessionLog(task);
+      if (logFile) {
+        if (logFile.endsWith("session.jsonl") || logFile.endsWith("session.events.jsonl")) {
+          return serveTrimmedSessionLog(res, await fs.readFile(logFile, "utf8"), fileName);
+        }
+        // The session log lives under the dotfile directory .tcsd-dsh; send's
+        // default dotfiles handling ("ignore") 404s any dotfile path, so allow
+        // dotfiles explicitly for this download.
+        return res.download(logFile, fileName, { dotfiles: "allow" });
+      }
+
+      // Phase 2 — production topology: the Linux platform and the Windows
+      // worker do not share a data volume, so the DSH session log only exists
+      // on the worker. Forward it through the Worker API. The worker serves
+      // the same trimmed JSONL shape as the local export.
       const jobId = String(task.pipeline?.jobId || "").trim();
       if (jobId) {
+        let workerProfile = null;
         try {
-          const job = await readJson(path.join(config.tcsdPipeline?.jobStoreDir || "", `${jobId}.json`));
-          const jobOutputDir = String(job?.input?.outputDir || "").trim();
-          if (jobOutputDir) outputDirs.push(jobOutputDir);
+          workerProfile = resolveUnitTestWorkerProfile(task.workerProfile?.id || task.workerId || "");
         } catch {
-          // job record missing; fall back to the task workspace
+          workerProfile = null;
+        }
+        if (workerProfile?.hermesBaseURL) {
+          try {
+            const client = new HermesAgentClient({
+              transport: workerProfile.hermesTransport || "api",
+              baseURL: workerProfile.hermesBaseURL,
+              apiMode: workerProfile.hermesApiMode || config.hermes.apiMode || "json",
+              authToken: workerProfile.hermesAuthToken || config.hermes.authToken || "",
+              timeoutMs: normalizeDebugTimeoutMs(undefined, 30000)
+            });
+            const remote = await client.fetchTcsdDshSessionLog(jobId);
+            return serveTrimmedSessionLog(res, remote.text, remote.fileName || fileName);
+          } catch (error) {
+            const remoteCode = String(error?.details?.remoteCode || error?.code || "").trim();
+            if (remoteCode === "dsh_session_log_not_found") {
+              return res.status(404).json({
+                error: "该任务没有 DSH 会话日志（可能由 Hermes 执行，或会话日志未落盘）",
+                code: "dsh_session_log_not_found"
+              });
+            }
+            if (remoteCode === "tcsd_job_not_found") {
+              return res.status(404).json({
+                error: "任务没有可用的 DSH 会话日志",
+                code: "dsh_session_log_unavailable"
+              });
+            }
+            return res.status(502).json({
+              error: "无法从 Worker 获取 DSH 会话日志（Worker 暂不可用或请求失败）。",
+              code: "dsh_session_log_worker_unavailable"
+            });
+          }
         }
       }
-      if (task.workspace?.outputDir) outputDirs.push(task.workspace.outputDir);
+
+      // Phase 3 — nothing resolvable locally or remotely: keep the historical
+      // error split (no candidate output dir vs. output dir present but no
+      // log file ever written, e.g. Hermes-executed tasks).
       if (!outputDirs.length) {
         return res.status(404).json({ error: "任务没有可用的 DSH 会话日志", code: "dsh_session_log_unavailable" });
       }
-      const sessionDirs = outputDirs.map((dir) => path.join(dir, ".tcsd-dsh"));
-      const candidates = [
-        ...sessionDirs.map((dir) => path.join(dir, "session.jsonl")),
-        ...sessionDirs.map((dir) => path.join(dir, "session.events.jsonl")),
-        ...sessionDirs.map((dir) => path.join(dir, "session.log"))
-      ];
-      let logFile = "";
-      for (const candidate of candidates) {
-        try {
-          const stat = await fs.stat(candidate);
-          if (stat.isFile()) {
-            logFile = candidate;
-            break;
-          }
-        } catch {
-          // candidate missing; try the next one
-        }
-      }
-      if (!logFile) {
-        return res.status(404).json({
-          error: "该任务没有 DSH 会话日志（可能由 Hermes 执行，或会话日志未落盘）",
-          code: "dsh_session_log_not_found"
-        });
-      }
-      const baseName = String(task.inputs?.modelSlx?.originalName || "model").replace(/\.[^.]+$/, "");
-      const fileName = `${baseName}_dsh_session_log.jsonl`;
-      if (logFile.endsWith("session.jsonl") || logFile.endsWith("session.events.jsonl")) {
-        // Raw streaming deltas (assistant/chunk) dominate the file (≈69MB of
-        // a 74MB log for one task); the final content is fully carried by
-        // assistant/message. Trim them when serving so the export stays
-        // comparable to the DSH desktop export (a few MB), for old and new
-        // tasks alike.
-        const raw = await fs.readFile(logFile, "utf8");
-        const trimmed = raw.split("\n").filter((line) => !line.includes('"type":"assistant/chunk"')).join("\n");
-        res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-        return res.type("application/octet-stream").send(trimmed);
-      }
-      // The session log lives under the dotfile directory .tcsd-dsh; send's
-      // default dotfiles handling ("ignore") 404s any dotfile path, so allow
-      // dotfiles explicitly for this download.
-      res.download(logFile, fileName, { dotfiles: "allow" });
+      return res.status(404).json({
+        error: "该任务没有 DSH 会话日志（可能由 Hermes 执行，或会话日志未落盘）",
+        code: "dsh_session_log_not_found"
+      });
     } catch (error) {
       next(error);
     }

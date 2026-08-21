@@ -351,6 +351,8 @@ Linux release 在切换前必须先对旧 release 执行 `scripts/rollback-linux
 
 TCSD 生产入口固定为 `POST /internal/tcsd-pipeline/jobs` 与 `GET /internal/tcsd-pipeline/jobs/:jobId`，共享作业协议为 `tcsd-agent-stage-pipeline/v2`。Linux 平台只创建、轮询和对账远端 job；Windows Hermes Agent 持久化 job 与阶段事件，并通过 `TcsdHermesStageExecutor` 为十二个阶段分别启动一个全新的 Hermes session。Worker 的 FIFO 串行门返回 `等待执行` 时，Platform 必须继续展示 `queued/排队中`，只有 Worker job 真正进入 `正在执行` 后才能展示 `running/运行中`；Worker 已接收排队不等于 Worker 不可用。旧整体 Agent step 和平台直接运行 Python 的生产入口已经删除，不存在双轨或 fallback。
 
+DSH 会话日志导出（任务详情页「DSH 会话日志」）在 Linux/Windows 分离部署下不得按本地路径读取：DSH 日志落在 Windows Worker 的 `job.input.outputDir/.tcsd-dsh/session[.events].jsonl`（`ws-<uuid>/outputs`），Linux 平台读不到。平台导出接口 `GET /api/unit-test-case-generation/tasks/:taskId/dsh-session-log` 的解析顺序固定为：① 平台本地文件（单机/共享数据卷与旧任务，原始任务记录的 `workspace.outputDir`/`agentOutputDir` 与本地 job 记录）；② 通过任务固化的 Worker profile 调用 `GET /internal/tcsd-pipeline/jobs/:jobId/dsh-session-log` 转发（Worker 侧按 `job.input.outputDir` 优先、`workspaceDir/outputs` 回退读取并剔除 `assistant/chunk` 行，与桌面导出体量一致）；③ 两者皆无时保持 `dsh_session_log_unavailable`/`dsh_session_log_not_found` 历史错误语义，Worker 不可达返回 502 `dsh_session_log_worker_unavailable`。
+
 十二个 `skills/hermes/tcsd-stage-*` 目录各自只包含一个原子 `SKILL.md` 与发现元数据。Windows 任务启动前由 `TcsdHermesSkillRegistry` 把它们安装到所选 Hermes profile 的 `skills/tcsd/<skill-name>`，把共享 runtime 安装到相邻的 `skills/tcsd/tcsd-runtime`，然后真实执行 `hermes [-p <profile>] skills list`；缺少任一名称、目录、版本、SKILL.md hash 或 bundle hash时，任务 fail-closed。可以在发布后运行：
 
 ```powershell

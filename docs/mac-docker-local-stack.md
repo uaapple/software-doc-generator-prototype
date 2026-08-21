@@ -51,7 +51,9 @@ curl -s http://127.0.0.1:3101/health    # Worker（hermes-server）
   Worker（`POST /internal/dsh/tasks`）→ Worker 内 `dsh --profile headless` 跑完整
   12 阶段（确定性运行时 + Gateway 访问宿主 MATLAB）→ 产物/checkpoint/三件套落回共享
   `data-docker/` → 前端展示。
-- 任务详情页「DSH 会话日志」按钮导出该任务的 session.jsonl。
+- 任务详情页「DSH 会话日志」按钮导出该任务的 session.jsonl（本地栈：平台直接读共享
+  `data-docker/` 下 `job.input.outputDir/.tcsd-dsh/session*.jsonl`；生产分离架构：平台经
+  Worker API `GET /internal/tcsd-pipeline/jobs/:jobId/dsh-session-log` 转发，两端无需共享数据卷）。
 
 ## 4. 验证点
 
