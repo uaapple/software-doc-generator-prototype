@@ -29,6 +29,11 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+try:
+    from derive_logical_mcdc_mappings import derive_state
+except ImportError:  # pragma: no cover - tool path fallback
+    derive_state = None  # type: ignore[assignment]
+
 SCHEMA = "simulink-ut-decision-obligations/v1"
 MAX_DEPTH = 4
 DEFAULT_TARGET_BLOCK_TYPES = {
@@ -378,6 +383,41 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
             criteria = params.get("Criteria", "u2 >= Threshold")
             threshold = str(params.get("Threshold", ""))
             control_port = _switch_control_port(criteria)
+            raw_control = inputs.get(control_port)
+            if raw_control is not None and raw_control[0] == "expression":
+                # 批次 2（EngA12 实测）：Switch 控制端经 Logic/Relational/UnitDelay 链。
+                # MATLAB 侧已生成结构化表达式节点（trace_logical_mcdc 同构），这里复用
+                # derive_state 把 true/false 判据翻译成根输入/标定参数组合义务。
+                try:
+                    node = json.loads(str(raw_control[1]))
+                except (TypeError, ValueError):
+                    node = None
+                if not isinstance(node, dict):
+                    items.append(obligation(sid=sid, model=model, path=path,
+                                            outcome=f"switch true ({criteria})", status="unresolved",
+                                            reason="expression_parse_failed: 控制端表达式不可解析"))
+                    items.append(obligation(sid=sid, model=model, path=path,
+                                            outcome=f"switch false ({criteria})", status="unresolved",
+                                            reason="expression_parse_failed: 控制端表达式不可解析"))
+                    continue
+                for desired, outcome_tag in ((True, "true"), (False, "false")):
+                    state = derive_state(node, desired, f"switch/{sid}")
+                    if state.resolved and (state.inputs or state.params):
+                        item = obligation(sid=sid, model=model, path=path,
+                                          outcome=f"switch {outcome_tag} ({criteria})", status="required",
+                                          match={**state.inputs}, params=state.params or None)
+                        item["evidence_state"] = "scenario_activation_logic_chain"
+                        item["reason"] = (
+                            f"控制端经逻辑链表达式推导 {desired}："
+                            + ", ".join(f"{k}={v:g}" for k, v in state.inputs.items())
+                            + (", " + ", ".join(f"p {k}={v:g}" for k, v in state.params.items()) if state.params else ""))
+                        items.append(item)
+                    else:
+                        detail = "; ".join(state.issues[:3]) if state.issues else "无法推导根输入组合"
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"switch {outcome_tag} ({criteria})", status="unresolved",
+                                                reason=f"logic_chain_unresolved: {detail}"))
+                continue
             control = _control(inputs, control_port)
             if control is None:
                 items.append(obligation(sid=sid, model=model, path=path,
@@ -437,6 +477,39 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                     items.append(obligation(sid=sid, model=model, path=path,
                                             outcome=f"switch false ({criteria})", status="unresolved",
                                             reason=f"unsupported_criteria: {criteria}"))
+            elif kind == "expression":
+                # 批次 2（EngA12 实测）：Switch 控制端经 Logic/Relational/UnitDelay 链。
+                # MATLAB 侧已生成结构化表达式节点（trace_logical_mcdc 同构），这里复用
+                # derive_state 把 true/false 判据翻译成根输入/标定参数组合义务。
+                try:
+                    node = json.loads(str(value))
+                except (TypeError, ValueError):
+                    node = None
+                if not isinstance(node, dict):
+                    items.append(obligation(sid=sid, model=model, path=path,
+                                            outcome=f"switch true ({criteria})", status="unresolved",
+                                            reason="expression_parse_failed: 控制端表达式不可解析"))
+                    items.append(obligation(sid=sid, model=model, path=path,
+                                            outcome=f"switch false ({criteria})", status="unresolved",
+                                            reason="expression_parse_failed: 控制端表达式不可解析"))
+                    continue
+                for desired, outcome_tag in ((True, "true"), (False, "false")):
+                    state = derive_state(node, desired, f"switch/{sid}")
+                    if state.resolved and (state.inputs or state.params):
+                        item = obligation(sid=sid, model=model, path=path,
+                                          outcome=f"switch {outcome_tag} ({criteria})", status="required",
+                                          match={**state.inputs}, params=state.params or None)
+                        item["evidence_state"] = "scenario_activation_logic_chain"
+                        item["reason"] = (
+                            f"控制端经逻辑链表达式推导 {desired}："
+                            + ", ".join(f"{k}={v:g}" for k, v in state.inputs.items())
+                            + (", " + ", ".join(f"p {k}={v:g}" for k, v in state.params.items()) if state.params else ""))
+                        items.append(item)
+                    else:
+                        detail = "; ".join(state.issues[:3]) if state.issues else "无法推导根输入组合"
+                        items.append(obligation(sid=sid, model=model, path=path,
+                                                outcome=f"switch {outcome_tag} ({criteria})", status="unresolved",
+                                                reason=f"logic_chain_unresolved: {detail}"))
             else:
                 items.append(obligation(sid=sid, model=model, path=path,
                                         outcome=f"switch true ({criteria})", status="unreachable",

@@ -401,10 +401,16 @@ MC/DC 37.5%）；ParkCrl B02：`RPACmd` 为 R/S 两链共享根，锁存无法�
 生成场景用例。**批次 1 已代码化（2026-08-19）**：Switch 控制端口按判据解析（u2→端口 2，
 修复硬编码端口 3）、标定默认值翻转义务（scenario_activation_calibration_default 证据）、
 MPS DataPortIndices。**批次 2 缺口（EngA12 实测）**：Switch 控制端经 Logic/Relational/
-UnitDelay 链时追踪器停下（unsupported_src_type_*）→ 多条件根输入链仍无法生成翻转用例；
-设计：collect_decision_blocks.m 对 Logic 控制链复用 trace_logical_mcdc 的逻辑映射
-（true_inputs/false_inputs 已是根输入组合），把 Switch 义务与逻辑算子映射打通。
-生成场景用例；当前为 Agent 纪律（10.2 候选有效性同源），代码化是下一步改进项。
+UnitDelay 链时追踪器停下（unsupported_src_type_*）→ 多条件根输入链仍无法生成翻转用例。
+**批次 2 已代码化（2026-08-21）**：`collect_decision_blocks.m` 的 `trace_upstream` 对
+Logic/RelationalOperator/UnitDelay/Delay/Memory/Switch/MinMax/Abs/Saturate/Sum/Gain/Bias
+生成结构化表达式节点（kind 与 trace_logical_mcdc 对齐：logic/relational/stateful/switch/
+minmax/abs/sum，子系统 Inport 与 From 穿透到根输入）；`build_decision_obligations.py`
+Switch 分支对控制端表达式复用 `derive_state` 推导 true/false 根输入组合义务（证据
+`scenario_activation_logic_chain`）。实证（EngA11 任务模型）：Switch 控制端 expression
+从 0 → 19 个；简单 AND 链（`AND(stRefuReq~=0, stMode==2)`）端到端推导
+`{stRefuReq:1,stMode:2}` / `{stRefuReq:0,stMode:2}`；跨层 From/Sum+UnitDelay 复杂链
+derive_state 保守标 `logic_chain_unresolved`（留给探针，符合设计）。
 
 **最小功能域密度**：故障/有效性信号族（`*SigErr`/`*Vld`/`*Flt`/`*FltLvl`/诊断使能复位）、
 连续阈值边界输入、模式/配置枚举、Stateflow 目标状态、诊断/错误路径、独立运行模式 —— 每个域
