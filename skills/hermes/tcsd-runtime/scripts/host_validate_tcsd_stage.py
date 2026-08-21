@@ -34,6 +34,7 @@ from validate_agent_coverage_repair import (
     PROPOSAL_SCHEMA,
     VALIDATION_SCHEMA,
     build_brief,
+    extract_probe_observed_vectors,
     validate_proposal,
 )
 from validate_tcsd_workbook import load_interface_names, validate_workbook
@@ -457,6 +458,19 @@ def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
     traces_path = resolve_workspace_path(root, traces_ref, "stage 10 source logical traces")
     resolve_workspace_path(root, coverage_ir_ref, "stage 10 source Coverage IR")
     interface_path = resolve_workspace_path(root, interface_ref, "stage 10 source model interface")
+    probe_observed_vectors: list[dict[str, Any]] = []
+    probe_candidates = [
+        root / "outputs" / f"{brief.get('model')}_state_probe_results.json",
+        root / "outputs" / f"{brief.get('model')}_logic_probe_results.json",
+    ]
+    for probe_candidate in probe_candidates:
+        if not probe_candidate.is_file() or probe_candidate.stat().st_size <= 0:
+            continue
+        try:
+            probe_observed_vectors = extract_probe_observed_vectors(read_json(probe_candidate))
+        except Exception as error:
+            print(f"stage 10 probe observed vectors unavailable: {error}", file=sys.stderr)
+        break
     expected_brief = build_brief(
         job_id=str(request.get("jobId") or ""),
         model=str(brief.get("model") or ""),
@@ -467,6 +481,7 @@ def validate_repair(request: dict[str, Any]) -> dict[str, Any]:
         trace_path=traces_ref,
         interface_path=interface_ref,
         threshold=float(request.get("coverageThreshold") or 80),
+        probe_observed_vectors=probe_observed_vectors,
     )
     if canonical(brief) != canonical(expected_brief):
         raise ValueError("Agent repair brief does not match host-rebuilt measured coverage deficits")
