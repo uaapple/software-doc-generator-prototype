@@ -280,6 +280,45 @@ npm run container:prod:windows:test
 创建隔离 workspace 并完成真实 evaluate probe。不得用 host 侧 probe 替代
 容器侧路由验收。
 
+### DSH 模型配置快速切换
+
+Windows Worker 可以用 `scripts/manage-dsh-model-profiles.ps1` 保存和切换多套
+DSH 模型配置。工具不修改 Compose、DSH、Hermes 或现有 env 读取逻辑；
+它只会按现有 `.env` 格式替换 provider、model、API Key 和 Base URL。
+每套配置以明文 `.env` 片段保存在生产 env 同目录的
+`.dsh-model-profiles\<编号>.env`，该目录不得提交 Git。
+
+直接打开交互菜单：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\manage-dsh-model-profiles.ps1
+```
+
+首次使用时，选择 `Capture current config` 将当前 DeepSeek 配置保存为
+`1`；选择 `Add config` 新增 `2`。选择 `Switch and apply` 后，工具要求
+确认当前没有 queued/retrying/running 的 TCSD 任务，然后自动执行：
+
+```text
+container:prod:windows:config
+container:prod:windows:preflight
+container:prod:windows:up
+container:prod:windows:test
+```
+
+`up` 只使用现有精确镜像重新创建 Worker，不会 build。切换前的完整 env
+会自动备份；任一应用或测试步骤失败时，工具恢复原 env，并使用原
+配置重新创建和测试 Worker。自动 `test` 不调用真实上游模型；成功后仍需
+用一个经批准的非用户测试输入运行一次 TCSD 任务。
+
+如果生产 env 不在发布目录根目录，显式传入绝对路径：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\manage-dsh-model-profiles.ps1 `
+  -EnvFile C:\approved\path\.env.windows-docker-desktop
+```
+
 Windows 生产 env 明确设置：
 
 ```text

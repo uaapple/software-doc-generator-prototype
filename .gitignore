@@ -21,6 +21,11 @@ docs/skill-overview.html
 .env
 .env.container
 .env.gateway
+.env.windows-docker-desktop
+.env.linux-container-prod
+.dsh-model-profiles/
+*.dsh-switch-backup-*
+*.failed-switch-*
 data/llm-profiles.json
 .DS_Store
 tmp/
