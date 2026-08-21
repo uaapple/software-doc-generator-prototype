@@ -226,8 +226,8 @@ services:
 
 volumes:
   hermes-home:
-    name: sdg-hermes-home
+    name: ${SDG_HERMES_HOME_VOLUME:-sdg-hermes-home}
   platform-skills:
-    name: sdg-platform-skills
+    name: ${SDG_PLATFORM_SKILLS_VOLUME:-sdg-platform-skills}
   platform-home:
-    name: sdg-platform-home
+    name: ${SDG_PLATFORM_HOME_VOLUME:-sdg-platform-home}

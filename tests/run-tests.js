@@ -10577,7 +10577,7 @@ const tests = [
     }
   },
   {
-    name: "Primary app pages include the global feedback widget assets",
+    name: "Legacy app pages keep feedback assets while retained generation pages stay focused",
     run: async () => {
       const htmlPages = [
         "index.html",
@@ -10589,8 +10589,6 @@ const tests = [
         "task-detail.html",
         "requirement-generation.html",
         "detail-design-generation.html",
-        "generation-tools.html",
-        "software-detail-design-generation.html",
         "hil-test-case-generation.html",
         "feedback-tickets.html",
         "feedback-pool.html",
@@ -10603,6 +10601,15 @@ const tests = [
         const html = await fs.readFile(path.join(config.rootDir, "public", fileName), "utf8");
         assert.ok(html.includes('/feedback-widget.css'), `${fileName} should include feedback-widget.css`);
         assert.ok(html.includes('/feedback-widget.js'), `${fileName} should include feedback-widget.js`);
+      }
+      for (const fileName of [
+        "generation-tools.html",
+        "unit-test-case-generation.html",
+        "software-detail-design-generation.html"
+      ]) {
+        const html = await fs.readFile(path.join(config.rootDir, "public", fileName), "utf8");
+        assert.equal(html.includes('/feedback-widget.css'), false, `${fileName} should not include feedback styles`);
+        assert.equal(html.includes('/feedback-widget.js'), false, `${fileName} should not include feedback widget`);
       }
     }
   },
@@ -10711,36 +10718,27 @@ const tests = [
     }
   },
   {
-    name: "Feedback ticket page route serves the new console shell",
+    name: "Feedback ticket page redirects to the generation tools portal",
     run: async () => {
       await withTestServer(async ({ baseUrl }) => {
-        const response = await fetch(`${baseUrl}/feedback-tickets`);
-        assert.equal(response.status, 200);
-        const html = await response.text();
-
-        assert.ok(html.includes("反馈工单台"));
-        assert.ok(html.includes('id="ticket-search"'));
-        assert.ok(html.includes('id="ticket-list"'));
-        assert.ok(html.includes('id="ticket-detail"'));
+        const response = await fetch(`${baseUrl}/feedback-tickets`, { redirect: "manual" });
+        assert.equal(response.status, 302);
+        assert.equal(response.headers.get("location"), "/");
       });
     }
   },
   {
-    name: "Document extractor page route serves the extractor workspace",
+    name: "Document extractor page redirects to the generation tools portal",
     run: async () => {
       await withTestServer(async ({ baseUrl }) => {
-        const response = await fetch(`${baseUrl}/document-extractor`);
-        assert.equal(response.status, 200);
-        const html = await response.text();
-
-        assert.ok(html.includes("文档提取"));
-        assert.ok(html.includes('id="extract-form"'));
-        assert.ok(html.includes('id="paste-zone"'));
+        const response = await fetch(`${baseUrl}/document-extractor`, { redirect: "manual" });
+        assert.equal(response.status, 302);
+        assert.equal(response.headers.get("location"), "/");
       });
     }
   },
   {
-    name: "Project list opens generation tools with standalone software detail design page",
+    name: "Generation tools is the only portal and keeps both generation workbenches",
     run: async () => {
       const indexHtml = await fs.readFile(path.join(config.rootDir, "public", "index.html"), "utf8");
       const toolsHtml = await fs.readFile(path.join(config.rootDir, "public", "generation-tools.html"), "utf8");
@@ -10757,6 +10755,11 @@ const tests = [
       assert.ok(toolsHtml.includes('href="/software-detail-design-generation.html"'));
       assert.ok(toolsHtml.includes("单元测试用例生成"));
       assert.ok(toolsHtml.includes("软件详设生成"));
+      assert.equal(toolsHtml.includes("工程列表"), false);
+      assert.equal(toolsHtml.includes("技能管理"), false);
+      assert.equal(toolsHtml.includes("Replay Lab"), false);
+      assert.equal(toolsHtml.includes('/feedback-widget.js'), false);
+      assert.ok(toolsHtml.includes('/task-queue-widget.js'));
       assert.equal(toolsHtml.includes("/detail-design-generation"), false);
       assert.equal(toolsHtml.includes("需求 PDF"), false);
       assert.ok(moduleDescriptionHtml.includes("<title>软件详设生成</title>"));
@@ -10819,6 +10822,12 @@ const tests = [
       assert.ok(stylesheet.includes(".unit-task-filter"));
 
       await withTestServer(async ({ baseUrl }) => {
+        const rootResponse = await fetch(`${baseUrl}/`);
+        assert.equal(rootResponse.status, 200);
+        const rootHtml = await rootResponse.text();
+        assert.ok(rootHtml.includes("<title>生成工具</title>"));
+        assert.ok(rootHtml.includes('href="/unit-test-case-generation"'));
+
         const toolsResponse = await fetch(`${baseUrl}/generation-tools`);
         assert.equal(toolsResponse.status, 200);
         const servedToolsHtml = await toolsResponse.text();
@@ -10849,6 +10858,10 @@ const tests = [
         assert.ok(html.includes('id="unit-task-project-filter"'));
         assert.ok(html.includes('id="unit-start-button"'));
         assert.ok(html.includes('/unit-test-case-generation.js'));
+
+        const legacyHtmlResponse = await fetch(`${baseUrl}/skill-management.html`, { redirect: "manual" });
+        assert.equal(legacyHtmlResponse.status, 302);
+        assert.equal(legacyHtmlResponse.headers.get("location"), "/");
       });
     }
   },
@@ -11584,15 +11597,14 @@ const tests = [
     }
   },
   {
-    name: "Task detail page route supports document space task urls",
+    name: "Legacy task detail page routes redirect to the generation tools portal",
     run: async () => {
       await withTestServer(async ({ baseUrl }) => {
-        const response = await fetch(`${baseUrl}/projects/project-1/modules/module-1/spaces/software_requirement/tasks/task-1`);
-        assert.equal(response.status, 200);
-        const html = await response.text();
-
-        assert.ok(html.includes('data-page="task-detail"'));
-        assert.ok(html.includes('id="task-title"'));
+        const response = await fetch(`${baseUrl}/projects/project-1/modules/module-1/spaces/software_requirement/tasks/task-1`, {
+          redirect: "manual"
+        });
+        assert.equal(response.status, 302);
+        assert.equal(response.headers.get("location"), "/");
       });
     }
   },
@@ -12055,7 +12067,7 @@ const tests = [
     }
   },
   {
-    name: "Main pages load the global task queue widget",
+    name: "All retained generation pages keep the global task queue",
     run: async () => {
       const pages = [
         "index.html",
@@ -12064,14 +12076,19 @@ const tests = [
         "feedback-pool.html",
         "document-extractor.html",
         "requirement-generation.html",
-        "slx-parser.html",
-        "unit-test-case-generation.html",
-        "generation-tools.html",
-        "software-detail-design-generation.html"
+        "slx-parser.html"
       ];
       for (const page of pages) {
         const html = await fs.readFile(path.join(config.rootDir, "public", page), "utf8");
         assert.ok(html.includes('/task-queue-widget.js'), `${page} should load task queue widget`);
+      }
+      for (const page of [
+        "generation-tools.html",
+        "unit-test-case-generation.html",
+        "software-detail-design-generation.html"
+      ]) {
+        const html = await fs.readFile(path.join(config.rootDir, "public", page), "utf8");
+        assert.ok(html.includes('/task-queue-widget.js'), `${page} should load the global task queue`);
       }
       const script = await fs.readFile(path.join(config.rootDir, "public", "task-queue-widget.js"), "utf8");
       assert.ok(script.includes("/api/task-queue"));
