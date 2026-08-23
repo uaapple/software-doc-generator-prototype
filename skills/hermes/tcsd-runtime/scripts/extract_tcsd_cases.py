@@ -103,6 +103,8 @@ def parse_steps(
     steps: list[dict] = []
     unknowns: list[dict[str, str]] = []
     current: dict | None = None
+    pre_updates: dict[str, object] = {}
+    pre_params: dict[str, object] = {}
     for raw in (action or "").splitlines():
         match = STEP_RE.match(raw)
         if match:
@@ -111,17 +113,22 @@ def parse_steps(
             current = {
                 "marker": raw,
                 "delay_s": delay_seconds(match.group(1), match.group(2)),
-                "input_updates": {},
-                "param_updates": {},
+                "input_updates": dict(pre_updates),
+                "param_updates": dict(pre_params),
             }
-            continue
-        if current is None:
             continue
         context = f"row {row} test {test_id} action step {len(steps) + 1}"
         inputs, params, line_unknowns = parse_assignments(raw, input_names, context)
         unknowns.extend(line_unknowns)
-        current["input_updates"].update(inputs)
-        current["param_updates"].update(params)
+        if current is None:
+            # Assignments before the first step marker are applied at the
+            # start of the stimulus: attach them to the first step instead of
+            # silently dropping them (Stage 08 baseline hard-failure).
+            pre_updates.update(inputs)
+            pre_params.update(params)
+        else:
+            current["input_updates"].update(inputs)
+            current["param_updates"].update(params)
     if current is not None:
         steps.append(current)
     for idx, step in enumerate(steps, start=1):

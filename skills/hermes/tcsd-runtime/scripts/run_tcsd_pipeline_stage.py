@@ -130,17 +130,24 @@ def initial_spec(interface: dict[str, Any], model: str) -> dict[str, Any]:
     root = interface.get("rootPorts", interface); inputs = root.get("inputs", []); outputs_ = root.get("outputs", [])
     input_names, output_names = interface_names(inputs), interface_names(outputs_)
     initialization = "\n".join(f"{name}=0;" for name in input_names)
-    action = "\n".join([*(f"{name}=0;" for name in input_names), "[+0.1s]"])
+    # TCSD Action 语法是 marker-first：输入赋值必须位于某个步标记之后，
+    # 且末尾标记是纯观察窗口，不携带任何期望值。赋值写在首个标记之前会被
+    # extract/backfill 的解析器静默丢弃，导致基线被回填成空延时步而缺失
+    # expValue（Stage 08 硬失败）。因此基线用例将赋值作为第 1 步的刺激主体，
+    # 并以独立观察窗口收尾。
+    action = "\n".join(["[+0.1s]", *(f"{name}=0;" for name in input_names), "[+0.1s] // final observation window"])
     return {"model_name": model, "test_group": {"id": "TG_001", "name": model, "description": "确定性覆盖率基线"}, "tests": [{"id": "TC_001", "name": "确定性基线", "description": "由模型接口生成的确定性基线", "initialization": initialization, "action": action}]}
 STEP_MARKER_RE = re.compile(r"^\s*\[\+")
 EXP_VALUE_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*expValue\(\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*\)\s*;?\s*$")
 def workbook_steps(action: str) -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = []; current: dict[str, Any] | None = None
+    steps: list[dict[str, Any]] = []; current: dict[str, Any] | None = None; prelude: list[str] = []
     for raw in (action or "").splitlines():
         if STEP_MARKER_RE.match(raw):
             if current is not None: steps.append(current)
-            current = {"lines": []}
+            current = {"lines": list(prelude)}
+            prelude = []
         elif current is not None: current["lines"].append(raw)
+        else: prelude.append(raw)
     if current is not None: steps.append(current)
     for index, step in enumerate(steps, 1):
         values: dict[str, float] = {}; non_expected = []

@@ -19,13 +19,20 @@ ANY_EXPECTED_RE = re.compile(r"^\s*([A-Za-z_]\w*)\s*=\s*expValue\(")
 def parse_steps(action: str) -> list[dict]:
     steps: list[dict] = []
     current: dict | None = None
+    prelude: list[str] = []
     for raw in (action or "").splitlines():
         if STEP_RE.match(raw):
             if current is not None:
                 steps.append(current)
-            current = {"marker": raw, "lines": []}
+            current = {"marker": raw, "lines": list(prelude)}
+            prelude = []
         elif current is not None:
             current["lines"].append(raw)
+        else:
+            # Lines before the first step marker are applied at the start of
+            # the stimulus: keep them with the first step instead of silently
+            # dropping the assignments (Stage 08 baseline hard-failure).
+            prelude.append(raw)
     if current is not None:
         steps.append(current)
     for idx, step in enumerate(steps, start=1):
