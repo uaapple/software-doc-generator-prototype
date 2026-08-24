@@ -325,7 +325,16 @@ def cmd_run(args) -> int:
     if result_path.exists():
         result_path.unlink()
     code = run_runner(task, stage, manifest_path, result_path, mode=args.stage10_mode)
-    if code != 0 or not result_path.is_file():
+    if code != 0:
+        print(f"run: stage {stage} runner failed (exit {code})", file=sys.stderr)
+        return code or 1
+    if not result_path.is_file():
+        # Stage 10 的合法中间态：auto/prepare 模式下 brief 已生成、等待 Agent
+        # 写入修复提案（apply 需要提案才会写 result.json）。这不是失败，
+        # 不应以退出码 1 上报（曾把 stage 10 误判为阶段失败）。
+        if stage == 10 and (manifest_path.parent / "repair-brief.json").is_file():
+            print("run: stage 10 prepare completed; awaiting agent repair proposal", file=sys.stderr)
+            return 0
         print(f"run: stage {stage} runner failed (exit {code})", file=sys.stderr)
         return code or 1
     result = json.loads(result_path.read_text(encoding="utf-8"))
