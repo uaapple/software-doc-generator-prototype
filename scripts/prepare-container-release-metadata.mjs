@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -44,8 +45,11 @@ for (const name of ["platform", "worker"]) {
   };
 }
 
+const projectAddons = requireProjectAddons(source.projectAddons);
+prepareProjectAddonAssets(projectAddons, options, outputPath);
+
 const manifest = {
-  schema: "sdg-container-release/v3",
+  schema: "sdg-container-release/v4",
   generatedAt: new Date().toISOString(),
   deploymentToolRevision,
   containerBuildRevision,
@@ -55,6 +59,7 @@ const manifest = {
     githubReleaseFullImageTarRequired: false
   },
   images,
+  projectAddons,
   scans: source.scans
 };
 
@@ -70,6 +75,76 @@ function parseOptions(argumentsList) {
     parsed[match[1]] = match[2];
   }
   return parsed;
+}
+
+function requireProjectAddons(candidate) {
+  if (candidate?.schema !== "sdg-project-addon-release/v1") {
+    throw new Error("Source manifest is missing the project-specific addon release.");
+  }
+  if (!Array.isArray(candidate.projectIds) || !candidate.projectIds.length) {
+    throw new Error("Project addon release must list project IDs.");
+  }
+  for (const projectId of candidate.projectIds) {
+    if (!/^\d{2,}$/.test(String(projectId)) || !candidate.projects?.[projectId]?.fileCount) {
+      throw new Error(`Project addon release metadata is invalid: ${projectId}.`);
+    }
+  }
+  for (const key of ["archiveSha256", "manifestSha256"]) {
+    if (!/^[a-f0-9]{64}$/.test(String(candidate[key] || ""))) {
+      throw new Error(`Project addon release ${key} is invalid.`);
+    }
+  }
+  if (
+    !isAssetFileName(candidate.archiveFile, ".zip") ||
+    !isAssetFileName(candidate.manifestFile, ".json")
+  ) {
+    throw new Error("Project addon release asset names are invalid.");
+  }
+  return candidate;
+}
+
+function prepareProjectAddonAssets(candidate, parsedOptions, manifestOutputPath) {
+  const inputs = [
+    ["project-addon-archive", candidate.archiveFile, candidate.archiveSha256],
+    ["project-addon-manifest", candidate.manifestFile, candidate.manifestSha256]
+  ];
+  const destinationDirectory = path.dirname(manifestOutputPath);
+  fs.mkdirSync(destinationDirectory, { recursive: true });
+  for (const [optionName, assetFile, expectedSha256] of inputs) {
+    const sourceAsset = requireRegularFile(parsedOptions[optionName], optionName);
+    const actualSha256 = sha256File(sourceAsset);
+    if (actualSha256 !== expectedSha256) {
+      throw new Error(`--${optionName} SHA-256 does not match source release metadata.`);
+    }
+    const destinationAsset = path.join(destinationDirectory, assetFile);
+    if (path.resolve(sourceAsset) === path.resolve(destinationAsset)) continue;
+    if (fs.existsSync(destinationAsset)) {
+      if (sha256File(destinationAsset) !== expectedSha256) {
+        throw new Error(`Refusing to overwrite a different project addon asset: ${destinationAsset}`);
+      }
+      continue;
+    }
+    fs.copyFileSync(sourceAsset, destinationAsset, fs.constants.COPYFILE_EXCL);
+  }
+}
+
+function isAssetFileName(candidate, extension) {
+  const value = String(candidate || "");
+  return value === path.basename(value) && value.endsWith(extension);
+}
+
+function requireRegularFile(value, name) {
+  if (!value) throw new Error(`--${name} is required.`);
+  const resolved = path.resolve(value);
+  const metadata = fs.lstatSync(resolved, { throwIfNoEntry: false });
+  if (!metadata?.isFile() || metadata.isSymbolicLink()) {
+    throw new Error(`--${name} must reference a regular file.`);
+  }
+  return resolved;
+}
+
+function sha256File(filePath) {
+  return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
 function requirePath(value, name) {

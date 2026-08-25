@@ -202,7 +202,8 @@ MATLAB Gateway 的 `MATLAB_GATEWAY_HOST_ROOT` 必须解析到同一个 Windows
 mapping ID 固定为 `worker-data`。因此 Gateway 与 Worker 共享任务文件，但
 容器不会获得任意 Windows 绝对路径。
 
-项目 addon 不进入镜像。每个启用项目必须存在独立目录，例如：
+项目 addon 不进入镜像，也不存在“通用 addon”。每个启用项目只有自己的编号目录，
+例如：
 
 ```text
 C:\ProgramData\SoftwareDocGenerator\project-addons\01\init_Global.m
@@ -210,7 +211,24 @@ C:\ProgramData\SoftwareDocGenerator\project-addons\02\
 ```
 
 `UNIT_TEST_CASE_DEFAULT_PROJECTS=01_楚能,02_TMS` 保留前端展示名；生产 preflight
-和 Worker 运行时都从展示名解析项目 ID，只检查并挂载 `01`、`02` 目录。
+和 Worker 运行时都从展示名解析项目 ID。目录不能靠人工创建为空目录：必须从同一
+版本 Release 的 `project-addons-*.zip` 和 `project-addons-manifest-*.json` 安装，
+并按清单逐文件校验 `01`、`02` 的内容和 SHA-256。
+
+在生产机校验两个 Release 资产的外部 SHA-256 后安装：
+
+```powershell
+node .\scripts\install-project-addon-release.mjs `
+  --archive=<project-addons-版本.zip> `
+  --manifest=<project-addons-manifest-版本.json> `
+  --target=C:\ProgramData\SoftwareDocGenerator\project-addons `
+  --projects=01,02 `
+  --replace
+```
+
+首次安装可以省略 `--replace`。升级时该参数会先保留旧编号目录和旧清单备份，
+再安装新版本。随后执行 `container:prod:windows:preflight`；缺少安装清单、项目目录
+为空、文件被修改或项目编号不匹配都会 fail-closed。
 
 ### Windows 原生 Gateway companion
 
@@ -271,7 +289,7 @@ npm run container:prod:windows:test
 
 - Docker Server 为 `linux/amd64`。
 - 镜像引用不可变且镜像已存在。
-- addon 目录齐全。
+- addon Release 安装清单存在，且 `01`、`02` 项目文件逐一匹配清单。
 - Compose 只使用预构建镜像。
 
 `up` 先准备 bind mount/named volume 权限，再以 `--no-build` 启动 Worker。
@@ -421,8 +439,8 @@ npm run container:prod:linux:down
 
 - 不在生产机执行 `docker build`。
 - 不使用 `latest`、本地可变 tag 或未知 image ID。
-- 不把 `.env`、API Key、token、addon、输入输出、Hermes Home 或 MATLAB
-  产物提交 Git 或写入镜像。
+- 不把 `.env`、API Key、token、输入输出、Hermes Home 或 MATLAB 产物提交 Git
+  或写入镜像。项目 addon 不进 Git 和镜像，只进入受版本约束的私有 Release 资产。
 - 不因为容器 health 通过而跳过真实 TCSD 任务。
 - 不让旧 `/mcp/tools/analyze_slx` Gateway 冒充新版 workspace/job contract。
 - 不用 `MATLAB_GATEWAY_TOKEN` 代替 `MATLAB_GATEWAY_EVALUATE_TOKEN`，也不关闭

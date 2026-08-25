@@ -43,6 +43,7 @@ for (const [name, definition] of Object.entries(imageDefinitions)) {
 const buildContextRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sdg-container-release-"));
 const buildContextArchive = path.join(buildContextRoot, "source.tar");
 const buildContext = path.join(buildContextRoot, "source");
+let projectAddonRelease;
 
 const trackedChanges = run(
   "git",
@@ -69,6 +70,8 @@ try {
   run(process.execPath, ["tests/software-module-description-transport-regression.mjs"]);
   run(process.execPath, ["scripts/check-container-boundaries.mjs"]);
   run(process.execPath, ["scripts/check-container-secrets.mjs"]);
+
+  projectAddonRelease = await buildProjectAddonRelease();
 
   fs.mkdirSync(buildContext);
   run("git", ["archive", "--format=tar", "--output", buildContextArchive, "HEAD"]);
@@ -117,7 +120,7 @@ try {
   }
 
   const manifest = {
-    schema: "sdg-container-release/v3",
+    schema: "sdg-container-release/v4",
     generatedAt: new Date().toISOString(),
     deploymentToolRevision,
     distribution: {
@@ -127,6 +130,7 @@ try {
       githubReleaseFullImageTarRequired: false
     },
     images,
+    projectAddons: projectAddonRelease,
     scans: await collectScanEvidence()
   };
   const manifestPath = path.join(
@@ -137,6 +141,41 @@ try {
   console.log(manifestPath);
 } finally {
   fs.rmSync(buildContextRoot, { recursive: true, force: true });
+}
+
+async function buildProjectAddonRelease() {
+  const sourceDirectory = String(process.env.SDG_PROJECT_ADDON_SOURCE_DIR || "").trim();
+  const projects = String(process.env.SDG_PROJECT_ADDON_PROJECTS || "").trim();
+  if (!sourceDirectory || !projects) {
+    throw new Error(
+      "Container releases require SDG_PROJECT_ADDON_SOURCE_DIR and " +
+      "SDG_PROJECT_ADDON_PROJECTS (for example 01,02)."
+    );
+  }
+  fs.mkdirSync(outputDir, { recursive: true });
+  const releaseSuffix = `${shortDeploymentRevision}-${Date.now()}`;
+  const archiveFile = `project-addons-${releaseSuffix}.zip`;
+  const manifestFile = `project-addons-manifest-${releaseSuffix}.json`;
+  const archivePath = path.join(outputDir, archiveFile);
+  const manifestPath = path.join(outputDir, manifestFile);
+  run(process.execPath, [
+    "scripts/build-project-addon-release.mjs",
+    `--source=${sourceDirectory}`,
+    `--projects=${projects}`,
+    `--archive=${archivePath}`,
+    `--manifest=${manifestPath}`,
+    `--source-revision=${deploymentToolRevision}`
+  ]);
+  const addonManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  return {
+    schema: addonManifest.schema,
+    projectIds: addonManifest.projectIds,
+    projects: addonManifest.projects,
+    archiveFile,
+    archiveSha256: await sha256File(archivePath),
+    manifestFile,
+    manifestSha256: await sha256File(manifestPath)
+  };
 }
 
 async function collectScanEvidence() {

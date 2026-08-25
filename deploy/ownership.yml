@@ -136,6 +136,8 @@ shared:
   - scripts/container-scan-policy.mjs
   - scripts/container-image-revisions.mjs
   - scripts/build-container-release.mjs
+  - scripts/build-project-addon-release.mjs
+  - scripts/install-project-addon-release.mjs
   - scripts/prepare-container-release-metadata.mjs
   - scripts/create-offline-image-archive.mjs
   - scripts/container-production.mjs

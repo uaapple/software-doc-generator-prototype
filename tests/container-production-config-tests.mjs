@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -23,6 +24,8 @@ for (const required of [
   ".env.windows-docker-desktop.example",
   ".env.linux-container-prod.example",
   "scripts/container-production.mjs",
+  "scripts/build-project-addon-release.mjs",
+  "scripts/install-project-addon-release.mjs",
   "scripts/windows-production-directories.mjs",
   "scripts/build-container-release.mjs",
   "scripts/build-native-matlab-gateway-companion.mjs",
@@ -37,6 +40,7 @@ for (const required of [
 const windowsCompose = read("compose.windows-docker-desktop.yaml");
 const linuxCompose = read("compose.linux-prod.yaml");
 const releaseBuilder = read("scripts/build-container-release.mjs");
+const productionEntrypoint = read("scripts/container-production.mjs");
 const platformClosureCheckInvocation =
   'run(process.execPath, ["scripts/check-platform-container.mjs"]);';
 assert.match(windowsCompose, /APP_ENV:\s*production/);
@@ -48,6 +52,9 @@ assert.match(windowsCompose, /no-new-privileges:true/);
 assert.match(windowsCompose, /pull_policy:\s*never/);
 assert.doesNotMatch(windowsCompose, /^\s+build:/m);
 assert.doesNotMatch(windowsCompose, /^\s+platform:\n/m);
+assert.match(productionEntrypoint, /\.sdg-project-addons-manifest\.json/);
+assert.match(productionEntrypoint, /install-project-addon-release\.mjs/);
+assert.match(productionEntrypoint, /--verify-only/);
 
 assert.match(linuxCompose, /APP_ENV:\s*production/);
 assert.match(linuxCompose, /APP_RUNTIME_ROLE:\s*platform/);
@@ -303,8 +310,7 @@ function testWindowsAddonIdDirectories() {
     const stateRoot = path.join(temporaryDirectory, "gateway-state");
     const envFile = path.join(temporaryDirectory, "production.env");
     const fakeDocker = path.join(temporaryDirectory, "docker");
-    fs.mkdirSync(path.join(addonRoot, "01"), { recursive: true });
-    fs.mkdirSync(path.join(addonRoot, "02"), { recursive: true });
+    writeInstalledAddonFixture(addonRoot, ["01", "02"]);
     fs.writeFileSync(
       envFile,
       windowsEnvironment()
@@ -346,6 +352,40 @@ function testWindowsAddonIdDirectories() {
   } finally {
     fs.rmSync(temporaryDirectory, { recursive: true, force: true });
   }
+}
+
+function writeInstalledAddonFixture(addonRoot, projectIds) {
+  const projects = {};
+  for (const projectId of projectIds) {
+    const projectRoot = path.join(addonRoot, projectId);
+    const filePath = path.join(projectRoot, "init_Global.m");
+    const content = `% project ${projectId}\n`;
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(filePath, content, "utf8");
+    const fileSha256 = createHash("sha256").update(content).digest("hex");
+    const tree = createHash("sha256");
+    tree.update("init_Global.m");
+    tree.update("\0");
+    tree.update(fileSha256);
+    tree.update("\0");
+    projects[projectId] = {
+      fileCount: 1,
+      totalBytes: Buffer.byteLength(content),
+      treeSha256: tree.digest("hex"),
+      files: [{ path: "init_Global.m", size: Buffer.byteLength(content), sha256: fileSha256 }]
+    };
+  }
+  fs.writeFileSync(
+    path.join(addonRoot, ".sdg-project-addons-manifest.json"),
+    `${JSON.stringify({
+      schema: "sdg-project-addon-release/v1",
+      generatedAt: "2026-08-25T00:00:00.000Z",
+      sourceGitRevision: "a".repeat(40),
+      projectIds,
+      projects
+    }, null, 2)}\n`,
+    "utf8"
+  );
 }
 
 function testMutableImageFailsClosed() {

@@ -394,7 +394,7 @@ Stage 6 状态 Probe 和 Stage 11 最终覆盖率 Probe 都由宿主 runtime 根
 - `release/windows-prod` 包含 Hermes job 路由、`TcsdHermesStageExecutor`、十二技能、共享 runtime、MATLAB/SATK 和宿主 checkpoint。
 - shared 包含协议/schema、阶段目录、错误分类、bundle hash、配置和部署说明。
 - dev-only 包含 `tests/tcsd-runtime` 的合成模型、fake Hermes、负向合同测试和真实黑盒验收驱动；Windows release 不含 `tests/**`，runtime hash 也不包含测试夹具。
-- `data/unit-test-case-generation/**`、`APP_DATA_DIR/tcsd-pipeline-jobs`、`.tcsd-agent/**`、`.tcsd-checkpoints/**`、Hermes session/state DB、模型、MAT、addon、XLSX、coverage、日志和临时文件均是 runtime/local，不进入 release 或功能提交。
+- `data/unit-test-case-generation/**`、`APP_DATA_DIR/tcsd-pipeline-jobs`、`.tcsd-agent/**`、`.tcsd-checkpoints/**`、Hermes session/state DB、模型、MAT、XLSX、coverage、日志和临时文件均是 runtime/local，不进入 release 或功能提交。项目 addon 不进入 Git 或镜像，但作为独立、带清单的私有 Release 资产随版本交付。
 
 Linux 的 `UNIT_TEST_CASE_REMOTE_POLL_WINDOW_MS` 只控制单次同步窗口；超时或短暂网络失败保持 `running/workerPending`，由 `UNIT_TEST_CASE_RECONCILE_INTERVAL_MS` 继续对账。404 job-not-found 才作为永久失败。Windows 需要配置 `TCSD_PIPELINE_PYTHON`、`MATLAB_ROOT` 和上述阶段 Hermes 变量。
 
@@ -415,7 +415,7 @@ Windows full/source 包同时携带固定清单 `requirements/tcsd-runtime.txt`�
 - Linux 平台端负责 `/software-detail-design-generation` 页面、`/api/software-module-description-generation/tasks` API、上传下载、任务持久化、队列状态和向 Hermes Agent HTTP 服务发起请求，不直接运行 MATLAB，也不读取 Windows addon root。
 - Windows VM 端负责 `simulink_module_description_generate` step、项目 addon 复制、Hermes CLI、MATLAB/SATK、`simulink-module-description-generator` skill 和 DOCX 产物生成。
 - Shared 协议负责把 `workspaceDir/modelSlxPath/modelMatPath/outputDir/unitTestProject/skillName/expectedOutputPattern` 以及可选 `modelInitScriptPath/modelInitScriptFileName/projectInitScripts` 固定传给 Hermes，再把返回或回收得到的 `outputs/*.docx` 归一化成平台 artifact。
-- 运行态数据只留在 `data/software-module-description-generation/**`；外部项目 addon 包仍只放在 Agent 机器配置的 addon root 下，部署端不要把用户上传的 `.slx/.mat/.m`、生成的 `.docx` 或 addon 包内容带进 release 分支。
+- 运行态数据只留在 `data/software-module-description-generation/**`；项目 addon 从私有 Release 资产安装到 Agent 机器配置的 addon root。部署端不要把用户上传的 `.slx/.mat/.m`、生成的 `.docx` 或 addon 内容带进 release 分支、Git 或镜像。
 
 新增配置项：
 
@@ -465,7 +465,7 @@ Windows release；Windows 继续使用自己的 MCP 参数。MCP 子进程错误
 项目选择只在平台端保存编号和展示名，例如 `01_楚能`、`02_TMS`；任务 payload 内部只依赖 `unitTestProject.id`，例如 `01`。Hermes Agent 启动 CLI 前会从当前 Agent 进程的 `UNIT_TEST_CASE_PROJECT_ADDON_ROOT/<编号>` 复制全部 addon 内容到 workspace 根目录。Mac 本地默认 addon root 是 `.local/project-addons`，目录示例为 `.local/project-addons/01`；Windows 生产默认 addon root 是 `C:\ProgramData\SoftwareDocGenerator\project-addons`，目录示例为 `C:\ProgramData\SoftwareDocGenerator\project-addons\01`。
 Windows 容器生产 preflight 同样从 `UNIT_TEST_CASE_DEFAULT_PROJECTS` 的展示名解析数字项目 ID，不能要求宿主目录使用 `01_楚能` 或 `02_TMS`。
 
-初始化脚本支持两种模式：未上传 `.m` 时，Hermes/skill 使用项目 addon 中已经复制到 workspace 的通用初始化脚本，由 `setup_ut_support(rootDir)` 自动发现；上传 `.m` 时，平台把脚本放入 `workspace/inputs` 并通过 `projectInitScripts` 显式传给 Hermes，Hermes/skill 应优先执行该模型级脚本，不再用 addon 自动发现来决定初始化入口。addon 仍会照常复制和加入 MATLAB path，用于库、数据字典、接口包和其他项目依赖。
+初始化脚本支持两种模式：未上传 `.m` 时，Hermes/skill 使用所选编号项目 addon 中已经复制到 workspace 的初始化脚本，由 `setup_ut_support(rootDir)` 自动发现；上传 `.m` 时，平台把脚本放入 `workspace/inputs` 并通过 `projectInitScripts` 显式传给 Hermes，Hermes/skill 应优先执行该模型级脚本，不再用 addon 自动发现来决定初始化入口。不存在跨项目复用的通用 addon；所选项目 addon 仍会照常复制和加入 MATLAB path，用于库、数据字典、接口包和其他项目依赖。
 
 生产 Linux 和 Windows VM 如果不是同一套绝对路径，需要在 Linux 平台端设置：
 
@@ -481,7 +481,7 @@ UNIT_TEST_CASE_PROJECT_ADMIN_CODE=114301
 UNIT_TEST_CASE_DEFAULT_PROJECTS=01_楚能,02_TMS
 ```
 
-Windows VM 用户自行维护 addon 目录内容；平台和 Agent 只按编号复制，不创建、不删除、不编辑这些外部包。
+Windows VM 必须从当前私有 Release 的 addon ZIP 和 manifest 安装这些编号目录；平台和 Agent 运行时只按编号复制，不创建、不编辑 addon 内容。生产 preflight 会验证已安装 manifest 以及每个文件的 SHA-256，人工创建空的 `01`、`02` 目录不能通过。
 
 ```bash
 SATK_MCP_LOG_FOLDER=C:\\Temp\\matlab-mcp-core-server-codex
@@ -493,9 +493,20 @@ SATK_MATLAB_SESSION_MODE=new
 Platform/Worker 容器的普通本地构建与私有 GHCR 发布分别使用版本化脚本：
 
 ```bash
+SDG_PROJECT_ADDON_SOURCE_DIR=/安全的外部/project-addons \
+SDG_PROJECT_ADDON_PROJECTS=01,02 \
 node scripts/build-container-release.mjs
+
+SDG_PROJECT_ADDON_SOURCE_DIR=/安全的外部/project-addons \
+SDG_PROJECT_ADDON_PROJECTS=01,02 \
 node scripts/build-container-release.mjs --push
 ```
+
+外部源目录结构必须是 `01/`、`02/` 等纯编号目录，每个目录至少包含一个真实文件；
+构建会同时产出 `project-addons-*.zip` 和 `project-addons-manifest-*.json`，并把二者
+名称及 SHA-256 写入容器发布 manifest。缺少外部源、项目目录为空、存在符号链接或
+项目编号不匹配时，整个发布构建直接失败。两个 addon 资产必须与容器候选资产一起
+上传到同一个私有 Release，不能用仓库中的历史 support-package 代替任何项目 addon。
 
 两个入口默认都不生成完整镜像 tar；`publish` 只推送并记录精确 GHCR digest。
 旧 `npm run container:release:build` 仍保留为兼容别名，但其历史 `--offline`
@@ -503,9 +514,10 @@ node scripts/build-container-release.mjs --push
 生产端已经给出精确的 GHCR 分发阻塞证据后，使用上文单镜像入口生成。
 
 如果镜像 rootfs 输入未变、只需用新的部署工具提交重新固化候选元数据，使用
-`node scripts/prepare-container-release-metadata.mjs --source=<既有已验证manifest> ...`
+`node scripts/prepare-container-release-metadata.mjs --source=<既有已验证manifest> --project-addon-archive=<既有addon ZIP> --project-addon-manifest=<既有addon manifest> ...`
 生成不含 tar 字段的新 manifest。该入口必须同时给出 Platform/Worker 回滚
-`repository@sha256`，不得重建或重推已有镜像。
+`repository@sha256`，不得重建或重推已有镜像。入口会重新校验两个 addon 资产的
+SHA-256，并把它们复制到新候选 manifest 的输出目录，避免新 Release 漏传 addon。
 
 Linux 包：
 

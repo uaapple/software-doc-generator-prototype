@@ -307,12 +307,30 @@ function prepareDirectories() {
       }
       return match[1];
     });
-    const missing = projectAddonIds.filter(
-      (projectId) => !fs.existsSync(path.join(addonRoot, projectId))
+    verifyInstalledProjectAddons(addonRoot, projectAddonIds);
+  }
+}
+
+function verifyInstalledProjectAddons(addonRoot, projectAddonIds) {
+  const manifestPath = path.join(addonRoot, ".sdg-project-addons-manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(
+      "Project addon release manifest is missing. Install the project-specific addon Release asset before preflight."
     );
-    if (missing.length) {
-      throw new Error(`Project addon directories are missing: ${missing.join(", ")}.`);
-    }
+  }
+  const result = spawnSync(
+    process.execPath,
+    [
+      "scripts/install-project-addon-release.mjs",
+      "--verify-only",
+      `--manifest=${manifestPath}`,
+      `--target=${addonRoot}`,
+      `--projects=${projectAddonIds.join(",")}`
+    ],
+    { cwd: rootDir, env: process.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+  );
+  if (result.status !== 0) {
+    throw new Error(String(result.stderr || result.stdout || "Project addon verification failed.").trim());
   }
 }
 

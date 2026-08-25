@@ -14,6 +14,14 @@ const schema = JSON.parse(
 assert.match(builder, /primary: "ghcr-exact-digest"/);
 assert.match(builder, /offlineImageArchives: "on-demand-only"/);
 assert.match(builder, /githubReleaseFullImageTarRequired: false/);
+assert.match(builder, /SDG_PROJECT_ADDON_SOURCE_DIR/);
+assert.match(builder, /SDG_PROJECT_ADDON_PROJECTS/);
+assert.match(builder, /build-project-addon-release\.mjs/);
+assert.match(builder, /projectAddons: projectAddonRelease/);
+assert.match(metadataBuilder, /requireProjectAddons/);
+assert.match(metadataBuilder, /project-addon-archive/);
+assert.match(metadataBuilder, /project-addon-manifest/);
+assert.match(metadataBuilder, /SHA-256 does not match source release metadata/);
 assert.match(builder, /process\.argv\.includes\("--offline"\)/);
 assert.match(builder, /Full-image offline archives are not regular Release assets/);
 assert.match(metadataBuilder, /offlineImageArchives: "on-demand-only"/);
