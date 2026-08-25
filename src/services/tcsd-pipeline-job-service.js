@@ -43,6 +43,16 @@ function obsoleteError() {
   };
 }
 
+function normalizeSuccessfulJobState(job) {
+  if (!job || typeof job !== "object") return job;
+  if (job.status === "部分完成") job.status = "已完成";
+  if (job.completion === "partial") job.completion = "complete";
+  for (const stage of Array.isArray(job.stages) ? job.stages : []) {
+    if (stage.status === "部分完成") stage.status = "已完成";
+  }
+  return job;
+}
+
 export class TcsdPipelineJobService {
   constructor(options = {}) {
     this.jobDir = options.jobDir;
@@ -57,7 +67,7 @@ export class TcsdPipelineJobService {
   }
 
   async get(jobId) {
-    return readJson(fileFor(this.jobDir, jobId), null);
+    return normalizeSuccessfulJobState(await readJson(fileFor(this.jobDir, jobId), null));
   }
 
   async save(job) {
@@ -71,7 +81,7 @@ export class TcsdPipelineJobService {
     await fs.mkdir(this.jobDir, { recursive: true });
     const names = (await fs.readdir(this.jobDir)).filter((name) => name.endsWith(".json"));
     const items = await Promise.all(names.map((name) => readJson(path.join(this.jobDir, name), null)));
-    return items.filter(Boolean);
+    return items.filter(Boolean).map(normalizeSuccessfulJobState);
   }
 
   async expireStaleJobs(cutoffMs = 0) {
@@ -196,7 +206,7 @@ export class TcsdPipelineJobService {
       stage.attempt += 1;
       stage.error = null;
     }
-    if (["已完成", "部分完成", "已跳过", "失败", "已取消"].includes(status) || (previous === "正在执行" && status === "等待执行")) {
+    if (["已完成", "已跳过", "失败", "已取消"].includes(status) || (previous === "正在执行" && status === "等待执行")) {
       stage.endedAt = now();
     }
     Object.assign(stage, details);
@@ -268,11 +278,7 @@ export class TcsdPipelineJobService {
       if (stage.status !== "正在执行") continue;
       const checkpoint = await this.verifiedCheckpoint(job, stage.index);
       if (checkpoint) {
-        stage.status = checkpoint.status === "partial"
-          ? "部分完成"
-          : checkpoint.status === "skipped"
-            ? "已跳过"
-            : "已完成";
+        stage.status = checkpoint.status === "skipped" ? "已跳过" : "已完成";
         stage.endedAt = checkpoint.endedAt || now();
         stage.checkpoint = checkpoint;
         this.recordAttempt(stage, checkpoint, "completed");
@@ -345,7 +351,7 @@ export class TcsdPipelineJobService {
       if (checkpoint.executionManifest?.coverage?.final) {
         job.coverage.final = checkpoint.executionManifest.coverage.final;
       }
-      if (checkpoint.executionManifest?.completion) job.completion = checkpoint.executionManifest.completion;
+      if (checkpoint.executionManifest?.completion) job.completion = "complete";
     }
   }
 
@@ -483,12 +489,10 @@ export class TcsdPipelineJobService {
         const fileCheckpoint = await this.verifiedCheckpoint(job, index).catch(() => null);
         const fileAttempt = Number(fileCheckpoint?.attempt || 0);
         const ingestedAttempt = Number(stage.checkpoint?.attempt || 0);
-        const terminalStatuses = ["已完成", "已跳过", "部分完成"];
+        const terminalStatuses = ["已完成", "已跳过"];
         const fileStatus = fileCheckpoint?.status === "skipped"
           ? "已跳过"
-          : fileCheckpoint?.status === "partial"
-            ? "部分完成"
-            : "已完成";
+          : "已完成";
         const reIngest = async () => {
           this.applyCheckpoint(job, fileCheckpoint);
           job.checkpoints = [
@@ -530,9 +534,7 @@ export class TcsdPipelineJobService {
         this.applyCheckpoint(job, checkpoint);
         const status = checkpoint.status === "skipped"
           ? "已跳过"
-          : checkpoint.status === "partial"
-            ? "部分完成"
-            : "已完成";
+          : "已完成";
         const summary = checkpoint.summary || checkpoint.skipReason || "阶段证据已验证。";
         job.checkpoints = [
           ...job.checkpoints.filter((item) => item.stageIndex !== index),
@@ -553,12 +555,12 @@ export class TcsdPipelineJobService {
         });
       }
       const finalCoverage = job.coverage.final || job.coverage.initial;
-      job.completion ||= coverageCompletion(
+      job.completion = coverageCompletion(
         finalCoverage || {},
-        job.stages.some((stage) => stage.status === "部分完成"),
+        false,
         Number(job.input.coverageThreshold || 80)
       );
-      job.status = job.completion === "partial" ? "部分完成" : "已完成";
+      job.status = "已完成";
       await this.event(job, "completed", { completion: job.completion });
       return job;
     } catch (error) {

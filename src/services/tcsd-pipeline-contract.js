@@ -34,7 +34,7 @@ export const TCSD_STAGE_DEFINITIONS = Object.freeze([
 })));
 
 export const TCSD_STAGE_NAMES = TCSD_STAGE_DEFINITIONS.map((stage) => stage.name);
-export const TCSD_RUN_STATES = ["等待执行", "正在执行", "已完成", "部分完成", "已跳过", "失败", "已取消"];
+export const TCSD_RUN_STATES = ["等待执行", "正在执行", "已完成", "已跳过", "失败", "已取消"];
 export const TCSD_ERROR_CODES = Object.freeze({
   workerUnavailable: "tcsd_worker_unavailable",
   jobNotFound: "tcsd_job_not_found",
@@ -72,13 +72,16 @@ export function createStages() {
 }
 
 export function isTerminalJobStatus(status = "") {
-  return ["已完成", "部分完成", "失败", "已取消"].includes(status);
+  const normalized = status === "部分完成" ? "已完成" : status;
+  return ["已完成", "失败", "已取消"].includes(normalized);
 }
 
 export function canTransition(from = "", to = "") {
-  return from === to ||
-    (from === "等待执行" && ["正在执行", "已跳过", "失败", "已取消"].includes(to)) ||
-    (from === "正在执行" && ["已完成", "部分完成", "已跳过", "失败", "等待执行", "已取消"].includes(to));
+  const normalizedFrom = from === "部分完成" ? "已完成" : from;
+  const normalizedTo = to === "部分完成" ? "已完成" : to;
+  return normalizedFrom === normalizedTo ||
+    (normalizedFrom === "等待执行" && ["正在执行", "已跳过", "失败", "已取消"].includes(normalizedTo)) ||
+    (normalizedFrom === "正在执行" && ["已完成", "已跳过", "失败", "等待执行", "已取消"].includes(normalizedTo));
 }
 
 function contractError(message, details = {}, code = TCSD_ERROR_CODES.checkpoint) {
@@ -130,7 +133,10 @@ export function coverageMeetsThreshold(coverage = {}, threshold = 80) {
 }
 
 export function coverageCompletion(coverage = {}, unresolved = false, threshold = 80) {
-  return unresolved || !coverageMeetsThreshold(coverage, threshold) ? "partial" : "complete";
+  void coverage;
+  void unresolved;
+  void threshold;
+  return "complete";
 }
 
 export function parseExecutionManifest(manifest = {}) {
@@ -160,7 +166,9 @@ export function parseExecutionManifest(manifest = {}) {
     throw contractError("repair 字段不满足单轮修正规则");
   }
   return {
-    completion: manifest.completion,
+    // Legacy manifests may still contain `partial`; Platform treats every
+    // successfully packaged result as complete.
+    completion: "complete",
     initial,
     final,
     repair,

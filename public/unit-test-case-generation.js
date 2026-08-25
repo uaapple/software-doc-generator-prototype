@@ -38,7 +38,6 @@ const STATUS_LABELS = {
   queued: "排队中",
   running: "运行中",
   completed: "已完成",
-  partial: "部分完成",
   failed: "失败",
   cancelled: "已取消"
 };
@@ -110,6 +109,68 @@ function renderCoverageChip(coverage) {
     })
     .filter(Boolean);
   return blocks.length ? blocks.join(" ｜ ") : "";
+}
+
+function coverageSummary(coverage) {
+  if (!coverage || typeof coverage !== "object") return null;
+  const models = coverage.models && typeof coverage.models === "object" ? coverage.models : {};
+  const modelRecord = Object.values(models).find((record) => record && typeof record === "object") || null;
+  const metrics = {};
+  for (const key of ["condition", "decision", "mcdc"]) {
+    const percent = Number(modelRecord?.[key]?.percent);
+    metrics[key] = Number.isFinite(percent) ? percent : null;
+  }
+  return Object.values(metrics).some((value) => value !== null)
+    ? { metrics }
+    : null;
+}
+
+function renderCoverageSnapshot(stage, label, tone) {
+  const summary = coverageSummary(stage?.checkpoint?.coverage);
+  const labels = { condition: "Condition", decision: "Decision", mcdc: "MC/DC" };
+  const metrics = ["condition", "decision", "mcdc"]
+    .map((key) => {
+      const percent = summary?.metrics?.[key];
+      return `
+        <div class="unit-coverage-metric">
+          <span>${labels[key]}</span>
+          <strong>${percent === null || percent === undefined ? "—" : escapeHtml(formatPercent(percent))}</strong>
+        </div>
+      `;
+    })
+    .join("");
+  return `
+    <article class="unit-coverage-snapshot unit-coverage-snapshot-${tone}">
+      <div class="unit-coverage-snapshot-head">
+        <div>
+          <span>Stage ${escapeHtml(String(stage?.index || ""))}</span>
+          <h4>${escapeHtml(label)}</h4>
+        </div>
+        <b>${summary ? "已采集" : "未采集"}</b>
+      </div>
+      <div class="unit-coverage-metrics">${metrics}</div>
+    </article>
+  `;
+}
+
+function renderCoverageComparison(pipelineStages = []) {
+  const initialStage = pipelineStages.find((stage) => Number(stage?.index) === 9);
+  const finalStage = pipelineStages.find((stage) => Number(stage?.index) === 11);
+  return `
+    <section class="unit-detail-section unit-coverage-comparison">
+      <div class="unit-coverage-heading">
+        <div>
+          <span class="unit-coverage-kicker">COVERAGE</span>
+          <h3>覆盖率对比</h3>
+        </div>
+        <p>当前模型在用例修正前后的实测覆盖率。</p>
+      </div>
+      <div class="unit-coverage-grid">
+        ${renderCoverageSnapshot(initialStage, "初版覆盖率", "initial")}
+        ${renderCoverageSnapshot(finalStage, "终版覆盖率", "final")}
+      </div>
+    </section>
+  `;
 }
 
 function renderPipelineStage(stage, pipelineCheckpoints = []) {
@@ -826,42 +887,26 @@ function renderTaskDetail(task) {
     : "";
   const pipelineStages = Array.isArray(task.pipeline?.stages) ? task.pipeline.stages : [];
   const pipelineCheckpoints = Array.isArray(task.pipeline?.checkpoints) ? task.pipeline.checkpoints : [];
+  const coverageHtml = renderCoverageComparison(pipelineStages);
   const pipelineHtml = pipelineStages.length
     ? `<div class="unit-detail-section"><h3>十二阶段运行态</h3><p>整条流水线由单个 DSH 会话执行；阶段状态随运行时落盘的 checkpoint 逐段推进，展开可查看验证与产物追溯。</p><div class="unit-runtime-list">${pipelineStages.map((stage) => renderPipelineStage(stage, pipelineCheckpoints)).join("")}</div></div>`
     : "";
-  const delivery = task.workerDelivery || null;
-  const canRedeliver =
-    !task.pipeline?.jobId &&
-    (task.workerPending === true || delivery?.state === "blocked") &&
-    ["queued", "failed"].includes(task.status);
-  const deliveryHtml = delivery
-    ? `
-      <div class="unit-detail-section">
-        <h3>Worker 投递诊断</h3>
-        <dl class="unit-meta-list">
-          <div><dt>状态</dt><dd>${escapeHtml(delivery.state || "未记录")}</dd></div>
-          <div><dt>类别</dt><dd>${escapeHtml(delivery.category || "未记录")}</dd></div>
-          <div><dt>HTTP</dt><dd>${escapeHtml(delivery.httpStatus ? String(delivery.httpStatus) : "未记录")}</dd></div>
-          <div><dt>远端错误码</dt><dd>${escapeHtml(delivery.remoteCode || "未记录")}</dd></div>
-          <div><dt>准备失败原因</dt><dd>${escapeHtml(delivery.prepareFailureReason || "未记录")}</dd></div>
-          <div><dt>关联ID</dt><dd>${escapeHtml(delivery.correlationId || "未记录")}</dd></div>
-          <div><dt>最近失败</dt><dd>${escapeHtml(formatTime(delivery.lastFailureAt) || "未记录")}</dd></div>
-        </dl>
-        ${canRedeliver ? `<button class="btn btn-secondary" type="button" data-redeliver-task-id="${escapeHtml(task.id)}" ${state.redeliveringTaskIds.has(task.id) ? "disabled" : ""}>重新投递</button>` : ""}
-      </div>
-    `
-    : "";
-
   elements.taskDetail.innerHTML = `
-    <div class="unit-detail-summary">
-      <span class="unit-status unit-status-${escapeHtml(task.status)}">${escapeHtml(STATUS_LABELS[task.status] || task.status || "未知")}</span>
-      <div>
-        <strong>${escapeHtml(task.progress?.label || task.summary || "任务状态")}</strong>
-        <p>${escapeHtml(task.progress?.message || task.summary || task.errorMessage || "等待任务状态。")}</p>
+    <div class="unit-detail-summary unit-detail-summary-${escapeHtml(task.status)}">
+      <div class="unit-detail-summary-main">
+        <span class="unit-detail-summary-icon" aria-hidden="true">
+          <img src="/assets/icons/shield-check.svg" alt="" />
+        </span>
+        <div class="unit-detail-summary-copy">
+          <strong>${escapeHtml(task.progress?.label || task.summary || "任务状态")}</strong>
+          <p>${escapeHtml(task.progress?.message || task.summary || task.errorMessage || "等待任务状态。")}</p>
+        </div>
       </div>
+      <span class="unit-status unit-status-${escapeHtml(task.status)}">${escapeHtml(STATUS_LABELS[task.status] || task.status || "未知")}</span>
     </div>
     ${artifactHtml}
     ${dshLogHtml}
+    ${coverageHtml}
     <div class="unit-detail-grid">
       <div class="unit-detail-section">
         <h3>输入文件</h3>
@@ -875,17 +920,8 @@ function renderTaskDetail(task) {
           <div><dt>更新时间</dt><dd>${escapeHtml(formatTime(task.updatedAt))}</dd></div>
         </dl>
       </div>
-      <div class="unit-detail-section">
-        <h3>Hermes Step</h3>
-        <dl class="unit-meta-list">
-          <div><dt>Step</dt><dd>${escapeHtml(task.hermes?.stepType || "tcsd_stage_execute")}</dd></div>
-          <div><dt>Pipeline</dt><dd>${escapeHtml(task.hermes?.pipelineName || "tcsd-stage-skills")}</dd></div>
-          <div><dt>输出</dt><dd>${escapeHtml(task.hermes?.expectedOutputPattern || "outputs/*_tcsd.xlsx")}</dd></div>
-        </dl>
-      </div>
     </div>
     ${errorHtml}
-    ${deliveryHtml}
     ${warningHtml}
     ${pipelineHtml}
     ${runtimeHtml}
