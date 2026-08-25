@@ -448,5 +448,42 @@ class DecisionObligationBlocksTests(unittest.TestCase):
             self.assertEqual(report["summary"]["unreachable_count"], 0)
 
 
+
+class MpsLegalSelectorsTests(unittest.TestCase):
+    """_mps_legal_selectors 必须优先 DataPortOrder 推导（零/一基），
+    DataPortIndices 仅作兜底。回归：EngStrtStop A23_B04 的
+    Multiport Switch4 Zero-based + DataPortIndices={1,2,3}（长度==数据端口数）
+    曾直接返回 {1,2,3}，产生越界 selector=3（MATLAB 实测合法 {0,1,2}），
+    导致 Stage 8 仿真报 MPS selector 越界（沉淀分支工作树修复，2026-08-26）。"""
+
+    def _legal(self, params, input_port_count):
+        return script("build_decision_obligations.py")._mps_legal_selectors(params, input_port_count)
+
+    def test_length_match_zero_based_prefers_dataportorder(self):
+        # A23_B04 实锤：DataPortIndices 长度==数据端口数且 Zero-based，
+        # 不得使用 {1,2,3}，合法值必须为 {0,1,2}
+        legal = self._legal({"DataPortOrder": "Zero-based contiguous", "DataPortIndices": "{1,2,3}"}, 4)
+        self.assertEqual(legal, [0, 1, 2])
+
+    def test_one_based_prefers_dataportorder(self):
+        legal = self._legal({"DataPortOrder": "One-based contiguous", "DataPortIndices": "{1,2,3}"}, 4)
+        self.assertEqual(legal, [1, 2, 3])
+
+    def test_length_mismatch_zero_based(self):
+        # B03 场景：长度不匹配（{1,2,3} vs 2 数据端口）→ Zero-based 推导 {0,1}
+        legal = self._legal({"DataPortOrder": "Zero-based contiguous", "DataPortIndices": "{1,2,3}"}, 3)
+        self.assertEqual(legal, [0, 1])
+
+    def test_dataportindices_fallback_only_when_no_order(self):
+        # DataPortOrder 缺失时 DataPortIndices 兜底
+        legal = self._legal({"DataPortIndices": "{10,11,12}"}, 4)
+        self.assertEqual(legal, [10, 11, 12])
+
+    def test_no_order_no_indices_defaults_one_based(self):
+        legal = self._legal({}, 4)
+        self.assertEqual(legal, [1, 2, 3])
+
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -75,6 +75,11 @@ class TcsdGuardrailsTest(unittest.TestCase):
             "probe_failure_diagnostic",
             "探针失败现场持久化（MATLAB 报错全文，e8060ca9/232f3c90 教训）",
         ),
+        (
+            "build_decision_obligations.py",
+            "Always prefer the DataPortOrder-derived",
+            "MPS selector 优先 DataPortOrder 推导（A23_B04 越界修复，2026-08-26）",
+        ),
     ]
 
     def test_key_fix_markers_present(self):
