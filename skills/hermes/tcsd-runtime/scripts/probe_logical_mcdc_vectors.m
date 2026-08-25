@@ -38,6 +38,7 @@ for m = 1:numel(modelNames)
     tests = normalize_struct_array(spec.tests);
     for testIndex = 1:numel(tests)
         [obs, testCoverage] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex), rootDir, matFileName, ~isempty(opts.CoverageJson));
+        append_probe_progress(rootDir, modelName, struct('test_id', struct_text(tests(testIndex), 'test_id'), 'status', 'completed', 'step_count', numel(tests(testIndex).steps), 'serial', testIndex, 'at', datestr(now, 'yyyy-mm-ddTHH:MM:SS')));
         if ~isempty(testCoverage)
             if isempty(aggregateCoverage)
                 aggregateCoverage = testCoverage;
@@ -354,6 +355,9 @@ end
 try
     out = sim(in);
 catch ME
+    % 无论何种失败，先持久化 MATLAB 异常现场（模型/候选/报错全文），
+    % 再按既有语义处理：MPS selector 记录为候选观测失败，其余向上抛出。
+    probe_failure_diagnostic(rootDir, modelName, test, ME, currentTime);
     if is_mps_selector_error(ME)
         observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
         for k = 1:numel(steps)
@@ -817,6 +821,51 @@ tf = (contains(report, 'Multiport Switch', 'IgnoreCase', true) || contains(repor
         || contains(report, '控制端口') ...
         || contains(report, 'does not correspond', 'IgnoreCase', true) ...
         || contains(report, '不对应'));
+end
+
+function append_probe_progress(rootDir, modelName, payload)
+% 候选级进度：每次候选完成/失败各追加一行 JSON，失败时重跑即可定位断点。
+try
+    progressPath = fullfile(rootDir, 'outputs', [modelName '_probe_progress.jsonl']);
+    folder = fileparts(progressPath);
+    if ~exist(folder, 'dir')
+        mkdir(folder);
+    end
+    fid = fopen(progressPath, 'a');
+    if fid < 0
+        return;
+    end
+    fprintf(fid, '%s\n', jsonencode(payload));
+    fclose(fid);
+catch
+end
+end
+
+function probe_failure_diagnostic(rootDir, modelName, test, ME, currentTime)
+% 持久化 MATLAB 异常现场：失败候选 + 报错全文（getReport extended），
+% 避免 Gateway 清理后原始错误文本丢失（e8060ca9/232f3c90 教训）。
+try
+    diagDir = fullfile(rootDir, 'outputs');
+    if exist(diagDir, 'dir') ~= 7
+        mkdir(diagDir);
+    end
+    payload = struct();
+    payload.schema = 'simulink-ut-probe-failure/v1';
+    payload.model = modelName;
+    payload.test_id = struct_text(test, 'test_id');
+    payload.steps = numel(test.steps);
+    payload.elapsed_s = round(currentTime * 1000) / 1000;
+    payload.failed_at = datestr(now, 'yyyy-mm-ddTHH:MM:SS');
+    payload.message = char(string(ME.message));
+    try
+        payload.report = getReport(ME, 'extended', 'hyperlinks', 'off');
+    catch
+        payload.report = char(string(ME.message));
+    end
+    write_json(fullfile(diagDir, [modelName '_probe_failure.json']), payload);
+    append_probe_progress(rootDir, modelName, struct('test_id', payload.test_id, 'status', 'failed', 'step_count', payload.steps, 'elapsed_s', payload.elapsed_s, 'message', payload.message, 'at', payload.failed_at));
+catch
+end
 end
 
 function local_cleanup(models, oldDir, oldPath)
