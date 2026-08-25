@@ -400,6 +400,7 @@ function buildAgentPath(localPath = "", options = {}) {
 }
 
 function buildProgress(status = "queued", message = "") {
+  const normalizedStatus = status === "partial" ? "completed" : status;
   const progressByStatus = {
     queued: { stage: "queued", percent: 4, label: "等待执行", message: message || "任务已进入 Hermes 队列。" },
     running: { stage: "running", percent: 45, label: "Hermes 生成中", message: message || "Hermes Agent 正在生成 TCSD Excel。" },
@@ -407,9 +408,17 @@ function buildProgress(status = "queued", message = "") {
     failed: { stage: "failed", percent: 100, label: "已失败", message: message || "生成任务失败，请查看错误原因。" }
   };
   return {
-    ...(progressByStatus[status] || progressByStatus.queued),
+    ...(progressByStatus[normalizedStatus] || progressByStatus.queued),
     updatedAt: now()
   };
+}
+
+function normalizeSuccessfulTaskStatus(status = "") {
+  return status === "partial" ? "completed" : status;
+}
+
+function normalizeSuccessfulPipelineStatus(status = "") {
+  return status === "部分完成" ? "已完成" : status;
 }
 
 function isQueuedWorkerPipelineStatus(status = "") {
@@ -561,7 +570,7 @@ function publicPipelineStage(stage = {}) {
   return {
     index: Number(stage.index || 0) || 0,
     name: String(stage.name || "").slice(0, 160),
-    status: String(stage.status || "").slice(0, 60),
+    status: String(normalizeSuccessfulPipelineStatus(stage.status || "")).slice(0, 60),
     summary: publicExecutionMessage(stage.status, stage.error?.code),
     skillName: String(stage.skillName || "").slice(0, 160),
     skillVersion: String(stage.skillVersion || "").slice(0, 80),
@@ -618,23 +627,24 @@ function publicPipelineStage(stage = {}) {
 
 function publicTask(task = {}) {
   const workerProfile = publicUnitTestWorkerProfile(task.workerProfile) || publicUnitTestWorkerProfile(resolveUnitTestWorkerProfile(""));
+  const taskStatus = normalizeSuccessfulTaskStatus(task.status || "queued");
   return {
     id: String(task.id || ""),
     type: String(task.type || QUEUE_TYPE),
-    status: String(task.status || "queued"),
+    status: String(taskStatus),
     title: String(task.title || "").slice(0, 200),
     createdAt: String(task.createdAt || ""),
     updatedAt: String(task.updatedAt || ""),
     startedAt: String(task.startedAt || ""),
     completedAt: String(task.completedAt || ""),
     failedAt: String(task.failedAt || ""),
-    summary: publicExecutionMessage(task.status, task.workerDelivery?.remoteCode),
+    summary: publicExecutionMessage(taskStatus, task.workerDelivery?.remoteCode),
     errorMessage: publicTaskErrorMessage(task),
     progress: task.progress ? {
-      stage: String(task.progress.stage || "").slice(0, 60),
+      stage: String(normalizeSuccessfulTaskStatus(task.progress.stage || "")).slice(0, 60),
       percent: Number(task.progress.percent || 0) || 0,
       label: String(task.progress.label || "").slice(0, 120),
-      message: publicExecutionMessage(task.progress.stage || task.status, task.workerDelivery?.remoteCode),
+      message: publicExecutionMessage(normalizeSuccessfulTaskStatus(task.progress.stage || taskStatus), task.workerDelivery?.remoteCode),
       updatedAt: String(task.progress.updatedAt || "")
     } : null,
     unitTestProject: normalizeTaskProjectSnapshot(task.unitTestProject),
@@ -658,7 +668,7 @@ function publicTask(task = {}) {
     runtimeEvents: (Array.isArray(task.runtimeEvents) ? task.runtimeEvents : []).slice(-80).map((event) => ({
       at: String(event?.at || ""),
       type: String(event?.type || "").slice(0, 80),
-      status: String(event?.status || "").slice(0, 60),
+      status: String(normalizeSuccessfulTaskStatus(event?.status || "")).slice(0, 60),
       level: String(event?.level || "").slice(0, 40),
       label: String(event?.label || "").slice(0, 160),
       message: publicExecutionMessage(event?.status, event?.code),
@@ -680,14 +690,14 @@ function publicTask(task = {}) {
     })),
     timeline: (Array.isArray(task.timeline) ? task.timeline : []).slice(-100).map((entry) => ({
       at: String(entry?.at || ""),
-      status: String(entry?.status || "").slice(0, 60),
+      status: String(normalizeSuccessfulTaskStatus(entry?.status || "")).slice(0, 60),
       message: publicExecutionMessage(entry?.status)
     })),
     pipeline: task.pipeline ? {
       jobId: safeDeliveryText(task.pipeline.jobId, 200),
       schema: String(task.pipeline.schema || "").slice(0, 160),
-      status: String(task.pipeline.status || "").slice(0, 60),
-      completion: String(task.pipeline.completion || "").slice(0, 60),
+      status: String(normalizeSuccessfulPipelineStatus(task.pipeline.status || "")).slice(0, 60),
+      completion: String(task.pipeline.completion === "partial" ? "complete" : task.pipeline.completion || "").slice(0, 60),
       stages: (Array.isArray(task.pipeline.stages) ? task.pipeline.stages : []).map(publicPipelineStage),
       checkpoints: (Array.isArray(task.pipeline.checkpoints) ? task.pipeline.checkpoints : []).slice(0, 20).map((checkpoint) => ({
         stageIndex: Number(checkpoint?.stageIndex || 0) || 0,
@@ -1227,8 +1237,8 @@ export class UnitTestCaseGenerationService {
     task.pipeline = {
       jobId: job.jobId,
       schema: job.schema,
-      status: job.status,
-      completion: job.completion || "",
+      status: normalizeSuccessfulPipelineStatus(job.status),
+      completion: job.completion === "partial" ? "complete" : job.completion || "",
       stages: Array.isArray(job.stages) ? job.stages : [],
       checkpoints: Array.isArray(job.checkpoints) ? job.checkpoints : [],
       coverage: job.coverage || null,
@@ -1240,9 +1250,7 @@ export class UnitTestCaseGenerationService {
       ? "cancelled"
       : job.status === "失败"
       ? "failed"
-      : job.status === "部分完成"
-        ? "partial"
-        : job.status === "已完成"
+      : ["已完成", "部分完成"].includes(job.status)
           ? "completed"
           : workerQueued
             ? "queued"
@@ -1342,7 +1350,7 @@ export class UnitTestCaseGenerationService {
       throw createHttpError(job.error?.message || "TCSD 阶段执行失败。", 502, job.error?.code || "tcsd_stage_failed");
     }
     if (job.status === "已取消") return { status: "cancelled", jobId: job.jobId };
-    return { status: "succeeded", artifact: { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [], warnings: [] }, metrics: { pipelineJobId: job.jobId }, pipelineJob: job };
+    return { status: "succeeded", artifact: { status: "completed", summary: "TCSD 已完成。", outputFiles: job.artifacts || [], warnings: [] }, metrics: { pipelineJobId: job.jobId }, pipelineJob: job };
   }
 
   async runTask(taskId = "") {
@@ -1603,7 +1611,7 @@ export class UnitTestCaseGenerationService {
       );
     }
     const timestamp = now();
-    task.status = hermesArtifact.status === "partial" ? "partial" : "completed";
+    task.status = "completed";
     task.completedAt = timestamp;
     task.updatedAt = timestamp;
     task.summary = hermesArtifact.summary || `已生成 ${artifacts.length} 个 TCSD Excel 文件。`;
@@ -1688,7 +1696,7 @@ export class UnitTestCaseGenerationService {
         return this.getTask(taskId);
       }
       if (["已完成", "部分完成"].includes(job.status)) {
-        const completed = await this.completeTask(taskId, { status: job.completion === "partial" ? "partial" : "completed", summary: job.completion === "partial" ? "TCSD 已部分完成，可下载产物。" : "TCSD 已完成。", outputFiles: job.artifacts || [] }, { metrics: { pipelineJobId: job.jobId } });
+        const completed = await this.completeTask(taskId, { status: "completed", summary: "TCSD 已完成。", outputFiles: job.artifacts || [] }, { metrics: { pipelineJobId: job.jobId } });
         await this.cleanupRemotePipelineUpload(hermesAgentClient, job.jobId);
         return completed;
       }
