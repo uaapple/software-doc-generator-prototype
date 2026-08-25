@@ -205,6 +205,13 @@ function toMatlabModelBase(originalName = "", fallbackBase = "model") {
   return base;
 }
 
+function displayModelBaseName(originalName = "") {
+  // 展示用模型名：保留原始字符与大小写，仅去除扩展名（如 example.slx → example）。
+  const normalized = normalizeUploadedFileName(originalName);
+  if (!normalized) return "";
+  return String(path.parse(path.basename(String(normalized))).name || "").trim();
+}
+
 function normalizeTaskFiles(files = {}) {
   return {
     modelSlx: Array.isArray(files.modelSlx) ? files.modelSlx : [],
@@ -1030,11 +1037,12 @@ export class UnitTestCaseGenerationService {
         : null;
 
       const createdAt = now();
+      const modelBaseName = displayModelBaseName(modelSlx.originalname);
       const task = {
         id: taskId,
         type: QUEUE_TYPE,
         status: "queued",
-        title: metadata.title || "单元测试用例生成",
+        title: metadata.title || (modelBaseName ? `${modelBaseName} 单元测试用例` : "单元测试用例生成"),
         createdAt,
         updatedAt: createdAt,
         startedAt: "",

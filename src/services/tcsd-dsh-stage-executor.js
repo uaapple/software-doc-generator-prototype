@@ -239,13 +239,15 @@ export class TcsdDshStageExecutor {
       get status() { return this._summary?.status ?? "running"; },
       get stderr() { return this._summary?.stderr ?? ""; }
     };
-    exitPromise.then((result) => {
+    exitPromise.then(async (result) => {
+      const usageSummary = await this.collectSessionUsage(job).catch(() => null);
       handle._summary = {
         status: "completed",
         endedAt: new Date().toISOString(),
         durationMs: Date.now() - startedMs,
-        totalTokens: 0,
-        turns: 1,
+        totalTokens: usageSummary?.totalTokens ?? 0,
+        turns: usageSummary?.turns ?? 1,
+        tokenDetails: usageSummary?.details || null,
         stdoutBytes: Buffer.byteLength(String(result?.stdout || "")),
         stderrBytes: Buffer.byteLength(String(result?.stderr || "")),
         code: result?.code,
@@ -311,6 +313,54 @@ export class TcsdDshStageExecutor {
       // keep the configured command name as a fallback
     }
     return configured;
+  }
+
+  async collectSessionUsage(job) {
+    // Aggregate real LLM token usage from the DSH session logs the headless
+    // runner dumps under <outputDir>/.tcsd-dsh/ (session.jsonl preferred,
+    // session.events.jsonl fallback). Previously totalTokens was hard-coded
+    // to 0, so every checkpoint reported 0 tokens in the admin portal.
+    const outputDir = path.resolve(String(job?.input?.outputDir || ""));
+    if (!outputDir || outputDir === path.resolve(".")) return null;
+    const sessionDir = path.join(outputDir, ".tcsd-dsh");
+    const candidates = ["session.jsonl", "session.events.jsonl"].map((name) => path.join(sessionDir, name));
+    for (const file of candidates) {
+      let text = "";
+      try {
+        text = await fs.readFile(file, "utf8");
+      } catch {
+        continue;
+      }
+      const details = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 };
+      let turns = 0;
+      let matched = false;
+      for (const line of text.split("\n")) {
+        const trimmed = String(line || "").trim();
+        if (!trimmed) continue;
+        let record = null;
+        try {
+          record = JSON.parse(trimmed);
+        } catch {
+          continue;
+        }
+        const usage = record?.data?.usage || record?.message?.usage || record?.usage || null;
+        if (usage && typeof usage === "object") {
+          let sum = 0;
+          for (const key of Object.keys(details)) {
+            const value = Math.max(0, Number(usage[key] || 0) || 0);
+            details[key] += value;
+            sum += value;
+          }
+          if (sum > 0) matched = true;
+        }
+        if (record?.type === "turn/end") turns += 1;
+      }
+      const totalTokens = details.inputTokens + details.outputTokens + details.cacheReadTokens + details.cacheWriteTokens;
+      if (matched || turns > 0) {
+        return { details, totalTokens, turns: Math.max(1, turns) };
+      }
+    }
+    return null;
   }
 
   async persistSessionTranscript(job, result, prompt) {
@@ -566,7 +616,7 @@ export class TcsdDshStageExecutor {
         // the one physical DSH session is attached as additive telemetry.
         profile: this.preset,
         model: session.model,
-        tokenUsage: { totalTokens: Number(session.totalTokens || 0) },
+        tokenUsage: { ...(session.tokenDetails || {}), totalTokens: Number(session.totalTokens || 0) },
         dsh: {
           sessionId: session.sessionId,
           profile: this.profile,

@@ -20,7 +20,7 @@ function beijingDate(value = "") {
   return new Date(timestamp + (8 * 60 * 60 * 1000)).toISOString().slice(0, 10);
 }
 
-function usageFrom(task = {}) {
+export function usageFrom(task = {}) {
   let values = (task.pipeline?.stages || []).map((stage) => stage?.checkpoint?.agent?.tokenUsage).filter(Boolean);
   if (!values.length) {
     const latestBySession = new Map();
@@ -29,15 +29,49 @@ function usageFrom(task = {}) {
   }
   if (!values.length && task.hermes?.tokenUsage) values = [task.hermes.tokenUsage];
   if (!values.length) return null;
-  const result = values.reduce((sum, item) => {
-    for (const key of ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokens"]) sum[key] += Math.max(0, Number(item?.[key] || 0) || 0);
-    return sum;
-  }, { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 });
-  result.totalTokens = result.inputTokens + result.outputTokens + result.cacheReadTokens + result.cacheWriteTokens;
+  const DETAIL_KEYS = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokens"];
+  const result = DETAIL_KEYS.reduce((sum, key) => ({ ...sum, [key]: 0 }), {});
+  let aggregatedTotal = 0;
+  for (const item of values) {
+    const detailValues = DETAIL_KEYS.filter((key) => Number(item?.[key] || 0) > 0);
+    if (detailValues.length) {
+      for (const key of detailValues) result[key] += Math.max(0, Number(item?.[key] || 0) || 0);
+    } else {
+      // Platform checkpoints historically aggregate into a single totalTokens
+      // (no detail fields); count it instead of silently reporting zero.
+      aggregatedTotal += Math.max(0, Number(item?.totalTokens || 0) || 0);
+    }
+  }
+  const detailTotal = result.inputTokens + result.outputTokens + result.cacheReadTokens + result.cacheWriteTokens;
+  if (!detailTotal && !aggregatedTotal) return null;
+  result.totalTokens = detailTotal || aggregatedTotal;
   result.pricingPeriod = pricingPeriod(task.startedAt || task.createdAt);
   const prices = PRICES_CNY_PER_MILLION[result.pricingPeriod];
   result.estimatedCostCny = ((result.cacheReadTokens * prices.cacheHitInput) + ((result.inputTokens + result.cacheWriteTokens) * prices.cacheMissInput) + (result.outputTokens * prices.output)) / 1_000_000;
   return result;
+}
+
+const FALLBACK_TITLES = new Set(["单元测试用例生成", "软件详设生成"]);
+const TYPE_LABELS = { unit_test: "单元测试用例", software_detail: "软件详设" };
+
+function modelBaseName(task = {}) {
+  const original = String(
+    task.inputs?.modelSlx?.originalName ||
+    task.inputs?.modelSlx?.workspaceName ||
+    path.basename(String(task.inputs?.modelSlx?.storedName || "")) ||
+    ""
+  ).trim();
+  if (!original || original === "任务") return "";
+  return original.replace(/\.[^.]+$/, "").trim();
+}
+
+export function displayTaskTitle(task = {}) {
+  const explicit = String(task.title || "").trim();
+  const label = TYPE_LABELS[task.statisticsType] || "任务";
+  if (explicit && !FALLBACK_TITLES.has(explicit) && explicit !== "任务") return explicit;
+  const base = modelBaseName(task);
+  if (base) return `${base} ${label}`;
+  return explicit || "任务";
 }
 
 async function loadTasks(dir = "", type = "") {
@@ -70,7 +104,7 @@ export class TaskStatisticsService {
       return {
         id: task.id,
         type: task.statisticsType,
-        title: task.title || task.inputs?.modelSlx?.originalName || "任务",
+        title: displayTaskTitle(task),
         projectId: project.id || "unassigned",
         projectName: project.label || project.name || "未归属项目",
         accountId: account?.id || "legacy",
