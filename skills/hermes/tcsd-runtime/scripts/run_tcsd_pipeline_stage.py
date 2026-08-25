@@ -8,6 +8,12 @@ from typing import Any
 
 INPUT_SCHEMA = "tcsd-agent-stage-input/v1"
 RESULT_SCHEMA = "tcsd-agent-stage-result/v1"
+STAGE6_PROBE_TIMEOUT_BASE_SECONDS = 600
+STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS = 5
+STAGE6_PROBE_TIMEOUT_MAX_SECONDS = 3600
+STAGE11_PROBE_TIMEOUT_BASE_SECONDS = 600
+STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS = 30
+STAGE11_PROBE_TIMEOUT_MAX_SECONDS = 3600
 
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path); module = importlib.util.module_from_spec(spec); assert spec.loader; spec.loader.exec_module(module); return module
@@ -15,6 +21,20 @@ def load_module(name: str, path: Path):
 def read_json(path: Path) -> dict[str, Any]: return json.loads(path.read_text(encoding="utf-8"))
 def write_json(path: Path, value: Any) -> None: path.parent.mkdir(parents=True, exist_ok=True); path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 def file_sha256(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()
+def probe_timeout_seconds(count: int, *, base: int, per_unit: int, maximum: int) -> int:
+    configured = os.environ.get("SATK_GATEWAY_TIMEOUT_SECONDS", "").strip()
+    configured_floor = base
+    if configured:
+        try:
+            configured_floor = max(1, int(float(configured)))
+        except ValueError:
+            configured_floor = base
+    adaptive = base + max(0, count) * per_unit
+    return min(maximum, max(configured_floor, adaptive))
+def stage6_probe_timeout_seconds(candidate_count: int) -> int:
+    return probe_timeout_seconds(candidate_count, base=STAGE6_PROBE_TIMEOUT_BASE_SECONDS, per_unit=STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS, maximum=STAGE6_PROBE_TIMEOUT_MAX_SECONDS)
+def stage11_probe_timeout_seconds(case_count: int) -> int:
+    return probe_timeout_seconds(case_count, base=STAGE11_PROBE_TIMEOUT_BASE_SECONDS, per_unit=STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS, maximum=STAGE11_PROBE_TIMEOUT_MAX_SECONDS)
 def planning_mapping_assessment(raw: dict[str, Any], obligations: Path, root: Path) -> dict[str, Any]:
     assessment = dict(raw)
     raw_status = str(assessment.pop("status", "failed"))
@@ -384,18 +404,19 @@ def stage_run(
     if stage == 6:
         plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
         probe_artifacts = [artifact(root, plan)]; candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))
+        probe_timeout_seconds = stage6_probe_timeout_seconds(candidate_count)
         if candidate_count > 0:
             probe_results = out / f"{model}_state_probe_results.json"; probe_fixture = os.environ.get("TCSD_PIPELINE_PROBE_RESULTS_FIXTURE", "")
             if probe_fixture:
                 shutil.copy2(probe_fixture, probe_results); run([sys.executable, str(scripts()/"build_probe_mcdc_obligations.py"), "--probe-results", str(probe_results), "--model", model, "--output-dir", str(out), "--logical-mappings", str(mapping)], root)
-            else: obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json")
+            else: obligations, _ = quality.run_probe(python=sys.executable, scripts=scripts(), root_dir=root, model=model, mat_file=inp["modelMatPath"], init_scripts=inp.get("projectInitScripts", []), unreachable_overrides="", collect_coverage=False, coverage_threshold=float(inp.get("coverageThreshold", 80)), case_json=plan, output_name=f"{model}_state_probe_results.json", gateway_timeout_seconds=probe_timeout_seconds)
             read_json(probe_results)
             ir_args = [sys.executable, str(scripts()/"build_coverage_ir.py"), "--logical-traces", str(traces), "--probe-results", str(probe_results), "--obligations", str(obligations)]
             if state.get("decisionObligations") and Path(state["decisionObligations"]).is_file():
                 ir_args += ["--decision-obligations", str(state["decisionObligations"])]
             run(ir_args + ["--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
-        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0}); return
+        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0, "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None}); return
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)
@@ -744,8 +765,8 @@ def stage_run(
     final_cov=out/f"{model}_final_coverage_summary.json"
     if stage == 11:
         if not state.get("repairApplied"): finish(job,stage,status="skipped",summary="修正未实际应用，引用首轮仿真与覆盖率。",skipReason="修正未实际应用，引用首轮结果。",artifacts=[]); return
-        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface,result_name=f"{model}_final_simulation_results.json"); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold); final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
-        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=final_report,evidence={"simulationResult":str(sim.relative_to(root)),"expValueCount":backfill["workbookBackfillCount"],**backfill}); return
+        workbook=Path(state["workbook"]); cases=quality.extract_cases(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,interface_json=interface); case_count=len(read_json(cases).get("tests",[])); probe_timeout_seconds=stage11_probe_timeout_seconds(case_count); sim=quality.simulate_and_backfill(python=sys.executable,scripts=scripts(),root_dir=root,model=model,workbook=workbook,case_json=cases,mat_file=inp["modelMatPath"],outputs=",".join(read_json(interface).get("outputs",[])),exclude_outputs="",interface_json=interface,result_name=f"{model}_final_simulation_results.json"); backfill=simulation_backfill_evidence(read_json(sim),workbook); ob,cov=quality.run_probe(python=sys.executable,scripts=scripts(),root_dir=root,model=model,mat_file=inp["modelMatPath"],init_scripts=inp.get("projectInitScripts",[]),unreachable_overrides="",collect_coverage=True,coverage_threshold=threshold,gateway_timeout_seconds=probe_timeout_seconds); final_report={"schema":"tcsd-coverage-report/v1","models":read_json(cov)}; write_json(final_cov,final_report); state.update({"finalSimulation":str(sim),"finalCoverage":str(final_cov),"finalBackfillEvidence":backfill,"obligations":str(ob)}); save_state(job,state)
+        finish(job,stage,summary="修正后最终仿真、回填与覆盖率检查已完成。",artifacts=[artifact(root,workbook,"xlsx","workbook"),artifact(root,sim),artifact(root,final_cov)],coverage=final_report,evidence={"simulationResult":str(sim.relative_to(root)),"caseCount":case_count,"probeTimeoutSeconds":probe_timeout_seconds,"expValueCount":backfill["workbookBackfillCount"],**backfill}); return
     if stage == 12:
         cleanup=out/f"{model}_tcsd_cleanup.json"
         owned_candidates=[out/".tcsd-runtime"/"stage04_interface.m",out/".tcsd-runtime"/"job.json",out/f"{model}_probe_mcdc_entry.m",out/f"{model}_simulate_mcdc_entry.m"]; removed=[]
