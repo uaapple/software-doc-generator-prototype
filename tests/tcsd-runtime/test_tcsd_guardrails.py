@@ -65,6 +65,21 @@ class TcsdGuardrailsTest(unittest.TestCase):
             "pre_updates",
             "用例提取器保留首标记前赋值（Stage 8 防御性修复）",
         ),
+        (
+            "probe_logical_mcdc_vectors.m",
+            "append_probe_progress",
+            "探针候选级进度落盘（Stage 6 故障定位）",
+        ),
+        (
+            "probe_logical_mcdc_vectors.m",
+            "probe_failure_diagnostic",
+            "探针失败现场持久化（MATLAB 报错全文，e8060ca9/232f3c90 教训）",
+        ),
+        (
+            "build_decision_obligations.py",
+            "Always prefer the DataPortOrder-derived",
+            "MPS selector 优先 DataPortOrder 推导（A23_B04 越界修复，2026-08-26）",
+        ),
     ]
 
     def test_key_fix_markers_present(self):

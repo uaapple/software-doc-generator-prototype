@@ -282,11 +282,16 @@ def _mps_legal_selectors(params: dict[str, Any], input_port_count: int) -> list[
         order_values = list(range(data_port_count))
     elif "One" in data_port_order:
         order_values = list(range(1, data_port_count + 1))
-    indices = _parse_data_port_indices(params.get("DataPortIndices"))
-    if indices is not None and len(indices) == data_port_count:
-        return indices
+    # DataPortIndices is a data-port *numbering* layout, not a selector value
+    # domain. The legal selector set is DataPortOrder + data-port count only.
+    # PwrLimEng B03 covered a length mismatch (literal {1,2,3} vs 2 data
+    # ports); EngStrtStop A23_B04 exposed the length-match + Zero-based case,
+    # where trusting DataPortIndices={1,2,3} yields selector 3 which is out of
+    # range for the actual {0,1,2}. Always prefer the DataPortOrder-derived
+    # values; keep DataPortIndices only as a last-resort fallback.
     if order_values:
         return order_values
+    indices = _parse_data_port_indices(params.get("DataPortIndices"))
     if indices is not None:
         return indices
     return list(range(1, data_port_count + 1))
