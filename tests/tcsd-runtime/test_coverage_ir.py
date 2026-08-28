@@ -297,6 +297,52 @@ class MpsSelectorDomainResolutionTests(unittest.TestCase):
         )
         self.assertTrue(any_3)
 
+    def test_stimulus_out_of_domain_value_marks_unresolved_without_rewrite(self):
+        coverage_ir = script("build_coverage_ir.py")
+        evidence = {
+            "obligations": [{
+                "id": "temporal_probe", "model": "VehCfg_A01", "coverage_class": "MCDC",
+                "required_outcome": "state transition", "status": "required",
+                "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 1}, "params": {}},
+                "stimulus": {"initial_inputs": {"ibsw_stREEVBatDrvRngCfg": 3},
+                             "steps": [{"delay_s": 0.1, "input_updates": {"ibsw_stREEVBatDrvRngCfg": 2}, "param_updates": {}}],
+                             "evidence_step": 1},
+            }]
+        }
+        result = coverage_ir.build_ir({"model": "VehCfg_A01", "operators": []},
+                                      evidence_obligations=evidence,
+                                      decision_obligations=self.SELECTOR_OBLIGATIONS)
+        item = next(value for value in result["items"] if value["id"] == "temporal_probe")
+        self.assertEqual(item["reachability"]["status"], "unresolved")
+        self.assertTrue(item["reachability"].get("reason", "").startswith("selector_domain_constraint"))
+        # stimulus 值保持原样（不改写时间序列值）
+        self.assertEqual(item["stimulus"]["initial_inputs"]["ibsw_stREEVBatDrvRngCfg"], 3)
+        self.assertEqual(item["stimulus"]["steps"][0]["input_updates"]["ibsw_stREEVBatDrvRngCfg"], 2)
+
+    def test_empty_intersection_is_kept_as_known_conflict(self):
+        coverage_ir = script("build_coverage_ir.py")
+        obligations = {
+            "obligations": [
+                {"id": "a_selector_0", "match": {"inputs": {"X": 0}}, "selector_domain": [0]},
+                {"id": "b_selector_1", "match": {"inputs": {"X": 1}}, "selector_domain": [1]},
+            ]
+        }
+        domains = coverage_ir.selector_domains(obligations)
+        self.assertEqual(domains, {"X": set()})
+        # 空域=已知冲突：任何该输入的值都不得放行 → unresolved
+        evidence = {
+            "obligations": [{
+                "id": "conflict", "model": "M", "coverage_class": "MCDC",
+                "required_outcome": "relational false (X == 1)", "status": "required",
+                "match": {"inputs": {"X": 2}, "params": {}},
+            }]
+        }
+        result = coverage_ir.build_ir({"model": "M", "operators": []},
+                                      evidence_obligations=evidence, decision_obligations=obligations)
+        item = next(value for value in result["items"] if value["id"] == "conflict")
+        self.assertEqual(item["reachability"]["status"], "unresolved")
+        self.assertTrue(item["reachability"].get("reason", "").startswith("selector_domain_constraint"))
+
     def test_selector_domains_intersection_over_multiple_mps(self):
         coverage_ir = script("build_coverage_ir.py")
         obligations = {

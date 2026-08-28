@@ -130,7 +130,10 @@ def selector_domains(decision_obligations: dict[str, Any] | None) -> dict[str, s
                 domains[key] = {value}
             else:
                 domains[key].add(value)
-    return {name: values for name, values in domains.items() if values}
+    # An intersection that becomes empty is a *known* conflict (no value can
+    # run every driven MPS simultaneously); keep it so callers mark items
+    # unresolved instead of treating the input as unconstrained.
+    return dict(domains)
 
 
 RELATIONAL_OUTCOME_RE = re.compile(
@@ -154,52 +157,93 @@ def _in_domain(operator: str, constant: float, domain: set[int], desired: bool) 
 
 
 def resolve_in_selector_domain(item: dict[str, Any], domains: dict[str, set[int]]) -> list[dict[str, Any]]:
-    """Resolve controller input values against known selector domains.
+    """Resolve controller and temporal input values against known selector domains.
 
-    Out-of-domain values are replaced with the nearest in-domain value that
-    still satisfies the declared ``required_outcome`` (recorded as
-    ``selector_domain_rechoice``). When the outcome cannot be satisfied inside
-    the domain -- or cannot be parsed -- the item is marked unresolved with a
-    ``selector_domain_constraint`` issue instead of silently distorting the
-    coverage semantics (VehCfg_A01 regression: 3 -> must be 1 for
-    ``ibsw_stREEVBatDrvRngCfg == 2 false``, and ``<= 2 false`` has no
-    in-domain solution at all).
+    Out-of-domain controller values are replaced with the nearest in-domain
+    value that still satisfies the declared ``required_outcome`` (recorded as
+    ``selector_domain_rechoice``). Temporal (stimulus) values are never
+    rewritten in place -- changing them could destroy an edge/state transition
+    -- so they only ever downgrade the item to unresolved. When the outcome
+    cannot be satisfied inside the domain (or the domain is empty = no value
+    runs every driven MPS), the item is marked unresolved with a
+    ``selector_domain_constraint`` reason/issue (VehCfg_A01 regression:
+    3 -> 1 for ``== 2 false``; ``<= 2 false`` has no in-domain solution).
     """
     adjusted: list[dict[str, Any]] = []
     if not domains:
         return adjusted
-    controller = item.get("controller")
-    direct = controller.get("direct_inputs") if isinstance(controller, dict) else None
-    if not isinstance(direct, dict):
-        return adjusted
     match = RELATIONAL_OUTCOME_RE.match(str(item.get("required_outcome") or ""))
-    for name, raw in list(direct.items()):
-        domain = domains.get(str(name))
-        if not domain:
-            continue
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            continue
-        if value.is_integer() and int(value) in domain:
-            continue
-        chosen = None
-        if match and match.group(2) == str(name):
-            chosen = _in_domain(match.group(3), float(match.group(4)), domain, match.group(1) == "true")
-        if chosen is not None:
-            direct[name] = chosen
-            adjusted.append({"input": str(name), "was": value, "now": chosen, "reason": "selector_domain_rechoice"})
-            continue
+    controller = item.get("controller") if isinstance(item.get("controller"), dict) else {}
+    direct = controller.get("direct_inputs") if isinstance(controller.get("direct_inputs"), dict) else {}
+
+    def fail(name: str, value: float, reason_suffix: str) -> None:
         reach = item.setdefault("reachability", {})
         if reach.get("status") in ("required", "", None):
             reach["status"] = "unresolved"
-        issues = [str(issue) for issue in (reach.get("issues") or [])]
-        issues.append(
-            f"selector_domain_constraint: {name}={value:g} 不在合法域 {sorted(domain)}"
-            + ("，且域内无满足目标的值" if match and match.group(2) == str(name) else "，无法在域内保持目标语义")
+        ordered = sorted(domains.get(str(name), set()))
+        message = (
+            f"selector_domain_constraint: {name}={value:g} 不在合法域 {ordered}"
+            f"（{'域内无任何可同时驱动所有 MPS 的值' if not ordered else '无法在域内保持目标语义'}）：{reason_suffix}"
         )
+        reach["reason"] = message
+        issues = [str(issue) for issue in (reach.get("issues") or [])]
+        issues.append(message)
         reach["issues"] = issues
         adjusted.append({"input": str(name), "was": value, "now": None, "reason": "selector_domain_constraint"})
+
+    for container, mutate in ((direct, True),):
+        for name, raw in list(container.items()):
+            domain = domains.get(str(name))
+            if domain is None:
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value.is_integer() and int(value) in domain:
+                continue
+            chosen = None
+            if match and match.group(2) == str(name):
+                chosen = _in_domain(match.group(3), float(match.group(4)), domain, match.group(1) == "true")
+            if chosen is not None and mutate:
+                container[name] = chosen
+                adjusted.append({"input": str(name), "was": value, "now": chosen, "reason": "selector_domain_rechoice"})
+                continue
+            fail(str(name), value, match.group(1) + " " + match.group(3) + " " + match.group(4) if match else "无法解析目标语义")
+    # Temporal stimulus: do not rewrite values (edge/state semantics), only
+    # guard against out-of-domain values reaching Stage 8 unchanged.
+    stimulus = item.get("stimulus") if isinstance(item.get("stimulus"), dict) else {}
+    for scope in ("initial_inputs",):
+        container = stimulus.get(scope)
+        if isinstance(container, dict):
+            for name, raw in list(container.items()):
+                domain = domains.get(str(name))
+                if domain is None:
+                    continue
+                try:
+                    value = float(raw)
+                except (TypeError, ValueError):
+                    continue
+                if value.is_integer() and int(value) in domain:
+                    continue
+                fail(str(name), value, f"{scope} 时域值超出合法域（不改写以避免破坏边沿/状态转换）")
+    for step in stimulus.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        updates = step.get("input_updates")
+        if not isinstance(updates, dict):
+            continue
+        for name, raw in list(updates.items()):
+            domain = domains.get(str(name))
+            if domain is None:
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value.is_integer() and int(value) in domain:
+                continue
+            fail(str(name), value, "step input_updates 超出合法域（不改写以避免破坏边沿/状态转换）")
     return adjusted
 
 

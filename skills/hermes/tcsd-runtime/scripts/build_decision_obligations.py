@@ -329,7 +329,11 @@ def mps_selector_domains(raw_blocks: list[dict[str, Any]]) -> dict[str, set[int]
             aggregated[name] = legal
         else:
             aggregated[name] = aggregated[name] & legal
-    return {name: values for name, values in aggregated.items() if values}
+    # An empty intersection is a *known* conflict (no value can drive every
+    # MPS the input feeds simultaneously); keep it so the caller marks the
+    # relational obligations unresolved instead of emitting out-of-domain
+    # values.
+    return {name: values for name, values in aggregated.items() if values is not None}
 
 
 def _domain_relational_pair(
@@ -691,7 +695,7 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                 }
                 if c is not None and operator in pairs:
                     domain = selector_domains.get(str(left[1]))
-                    if domain:
+                    if domain is not None:
                         # Selector-domain-aware choice: pick in-domain values
                         # that still satisfy the side; a side without an
                         # in-domain solution is unreachable for this input

@@ -518,6 +518,54 @@ class SelectorDomainGenerationTests(unittest.TestCase):
         # Inputs=3 → len(inputs)=4 → 数据端口 3 → {0,1,2}；Inputs=2 → {0,1}；交集 {0,1}
         self.assertEqual(gen.mps_selector_domains(blocks["blocks"]), {"X": {0, 1}})
 
+
+class SelectorDomainChainTests(unittest.TestCase):
+    """生成链路集成：blocks(Equal18 input==2 const + MPS 域{0,1,2})
+    → generate_from_blocks → 848 义务 → 合并 IR → synthesize → TC 值 1。
+    VehCfg_A01 回归：==2 false 原以 c+1 生成 3，现域内选 1。"""
+
+    def test_generation_chain_picks_in_domain_value(self):
+        decision = script("build_decision_obligations.py")
+        synthesis = script("synthesize_tcsd_from_coverage_ir.py")
+        coverage = script("build_coverage_ir.py")
+        blocks = {
+            "schema": "simulink-ut-decision-blocks/v1",
+            "model": "VehCfg_A01",
+            "blocks": [
+                {"type": "RelationalOperator", "path": "VehCfg_A01/A01_VehicleParameterConfg/Equal18", "sid": "848",
+                 "params": {"Operator": "=="},
+                 "inputs": [
+                     {"port": 1, "src_kind": "input", "src_value": "ibsw_stREEVBatDrvRngCfg"},
+                     {"port": 2, "src_kind": "const", "src_value": "2"},
+                 ]},
+                {"type": "MultiPortSwitch", "path": "VehCfg_A01/A01_VehicleParameterConfg/Multiport Switch4", "sid": "952",
+                 "params": {"Inputs": "3", "DataPortOrder": "Zero-based contiguous", "DataPortIndices": "{1,2,3}"},
+                 "inputs": [
+                     {"port": 1, "src_kind": "input", "src_value": "ibsw_stREEVBatDrvRngCfg"},
+                     {"port": 2, "src_kind": "param", "src_value": "VehCfg_stREEVBatRng200_SC", "src_param_value": 0},
+                     {"port": 3, "src_kind": "param", "src_value": "VehCfg_stREEVBatRng300_SC", "src_param_value": 1},
+                     {"port": 4, "src_kind": "param", "src_value": "VehCfg_stREEVBatRng120_SC", "src_param_value": 2},
+                 ]},
+            ],
+        }
+        obligations = decision.generate_from_blocks(blocks, "VehCfg_A01")
+        false_item = next(o for o in obligations if "relational false (ibsw_stREEVBatDrvRngCfg == 2)" == o.get("required_outcome"))
+        self.assertEqual(false_item["match"]["inputs"]["ibsw_stREEVBatDrvRngCfg"], 1)
+        # 合并 IR
+        ir = coverage.build_ir({"model": "VehCfg_A01", "operators": []},
+                               decision_obligations={"obligations": obligations})
+        item = next(it for it in ir["items"] if it["id"].endswith("_relational_false_ibsw_stREEVBatDrvRngCfg_2_"))
+        self.assertEqual((item.get("controller") or {}).get("direct_inputs", {}).get("ibsw_stREEVBatDrvRngCfg"), 1)
+        self.assertEqual(item["reachability"]["status"], "required")
+        # 合成
+        spec = {"tests": [{"id": "TC_001", "name": "baseline", "initialization": "", "action": "[+0.1s]"}]}
+        result, _ = synthesis.synthesize(spec, ir)
+        added = [t for t in result["tests"] if t["id"] != "TC_001"]
+        self.assertTrue(any(
+            "ibsw_stREEVBatDrvRngCfg=1" in str(t.get("initialization") or "")
+            for t in added
+        ))
+
 if __name__ == "__main__":
     unittest.main()
 
