@@ -203,5 +203,75 @@ class CoverageIrTests(unittest.TestCase):
             self.assertEqual(report["output_test_count"], 2)
 
 
+
+class MpsSelectorDomainClampTests(unittest.TestCase):
+    """VehCfg_A01 回归：root_input_boundary 对 'x <= 2' 的 false 侧生成纯数学
+    值 3，但 ibsw_stREEVBatDrvRngCfg 是 MPS selector 输入（合法 {0,1,2}，来自
+    decision_obligations 的 952_selector_* 义务），3 会令 Multiport Switch4
+    越界导致 Stage 8 仿真失败。build_coverage_ir 应以决策义务值域 clamp 并在
+    value_domain_notes 中透明记录。"""
+
+    TRACE = {
+        "model": "VehCfg_A01",
+        "operators": [{
+            "id": "VehCfg_A01:594", "sid": "VehCfg_A01:594",
+            "block_path": "VehCfg_A01/A01_VehicleParameterConfg/AND",
+            "operator": "AND",
+            "ports": [
+                {"index": 1, "trace": {"kind": "relational", "operator": "<=", "inputs": [
+                    {"index": 1, "trace": {"kind": "root_inport", "signal": "ibsw_stREEVBatDrvRngCfg"}},
+                    {"index": 2, "trace": {"kind": "constant", "value": 2}},
+                ]}},
+                {"index": 2, "trace": {"kind": "root_inport", "signal": "ibsw_bACCCfg"}},
+            ],
+        }],
+    }
+
+    SELECTOR_OBLIGATIONS = {
+        "schema": "simulink-ut-decision-obligations/v1",
+        "model": "VehCfg_A01",
+        "obligations": [
+            {"id": "952_selector_0", "model": "VehCfg_A01", "coverage_class": "Decision",
+             "required_outcome": "selector=0", "status": "required",
+             "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 0}, "params": {"VehCfg_bREEVBatDrvRngCfgOvrd_C": 0}}},
+            {"id": "952_selector_1", "model": "VehCfg_A01", "coverage_class": "Decision",
+             "required_outcome": "selector=1", "status": "required",
+             "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 1}, "params": {}}},
+            {"id": "952_selector_2", "model": "VehCfg_A01", "coverage_class": "Decision",
+             "required_outcome": "selector=2", "status": "required",
+             "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 2}, "params": {}}},
+        ],
+    }
+
+    def _inputs(self, item):
+        return (item.get("controller") or {}).get("direct_inputs") or {}
+
+    def test_boundary_value_3_is_clamped_into_selector_domain(self):
+        coverage_ir = script("build_coverage_ir.py")
+        result = coverage_ir.build_ir(self.TRACE, decision_obligations=self.SELECTOR_OBLIGATIONS)
+        values_3 = [
+            item["id"] for item in result["items"]
+            if self._inputs(item).get("ibsw_stREEVBatDrvRngCfg") == 3
+        ]
+        self.assertEqual(values_3, [])
+        clamped = [
+            item for item in result["items"]
+            if any((note or {}).get("reason") == "selector_domain_clamp" for note in (item.get("value_domain_notes") or []))
+        ]
+        self.assertTrue(clamped, "应有域修正记录")
+        note = clamped[0]["value_domain_notes"][0]
+        self.assertEqual(note["was"], 3)
+        self.assertEqual(note["now"], 2)
+        self.assertEqual(self._inputs(clamped[0]).get("ibsw_stREEVBatDrvRngCfg"), 2)
+
+    def test_no_decision_obligations_keeps_structural_behavior(self):
+        # 无决策义务（存量运行路径）时保持原行为：3 保留，不受影响
+        coverage_ir = script("build_coverage_ir.py")
+        result = coverage_ir.build_ir(self.TRACE)
+        any_3 = any(self._inputs(item).get("ibsw_stREEVBatDrvRngCfg") == 3 for item in result["items"])
+        self.assertTrue(any_3)
+
+
 if __name__ == "__main__":
     unittest.main()
+

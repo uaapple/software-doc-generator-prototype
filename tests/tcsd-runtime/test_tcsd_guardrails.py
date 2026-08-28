@@ -80,6 +80,11 @@ class TcsdGuardrailsTest(unittest.TestCase):
             "Always prefer the DataPortOrder-derived",
             "MPS selector 优先 DataPortOrder 推导（A23_B04 越界修复，2026-08-26）",
         ),
+        (
+            "build_coverage_ir.py",
+            "selector_domain_clamp",
+            "IR 对 MPS selector 输入域裁剪（VehCfg_A01 越界修复，2026-08-27）",
+        ),
     ]
 
     def test_key_fix_markers_present(self):

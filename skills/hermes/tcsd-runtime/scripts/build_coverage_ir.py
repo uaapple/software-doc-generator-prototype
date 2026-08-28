@@ -82,6 +82,80 @@ def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> 
     }
 
 
+def selector_domains(decision_obligations: dict[str, Any] | None) -> dict[str, set[int]]:
+    """Collect MPS selector value domains from decision obligations.
+
+    Selector obligations are emitted as `<sid>_selector_<v>` with a single
+    numeric match input; together they define the legal selector domain of a
+    root input (e.g. ibsw_stREEVBatDrvRngCfg -> {0,1,2}). Root-input boundary
+    recipes (relational false side, root_input_boundary) otherwise pick a
+    purely mathematical value (x <= 2 false -> 3) that is out of the domain
+    and aborts the simulation on the MPS (VehCfg_A01 Multiport Switch4).
+    """
+    domains: dict[str, set[int]] = {}
+    if not decision_obligations:
+        return domains
+    raw = decision_obligations.get("obligations", decision_obligations)
+    if not isinstance(raw, list):
+        return domains
+    for obligation in raw:
+        if not isinstance(obligation, dict):
+            continue
+        if "_selector_" not in str(obligation.get("id") or ""):
+            continue
+        match = obligation.get("match") if isinstance(obligation.get("match"), dict) else {}
+        inputs = match.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for name, value in inputs.items():
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                continue
+            domains.setdefault(str(name), set()).add(value)
+    return {name: values for name, values in domains.items() if values}
+
+
+def clamp_to_selector_domains(item: dict[str, Any], domains: dict[str, set[int]]) -> list[dict[str, Any]]:
+    """Clamp controller/stimulus input values into known selector domains.
+
+    Returns the list of adjusted entries (input, was, now) so the IR stays
+    transparent about the fix; an empty list means nothing was adjusted.
+    """
+    adjusted: list[dict[str, Any]] = []
+    if not domains:
+        return adjusted
+
+    def fix(values: dict[str, Any]) -> dict[str, Any]:
+        for name, raw in list(values.items()):
+            domain = domains.get(str(name))
+            if not domain:
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value.is_integer() and int(value) in domain:
+                continue
+            ordered = sorted(domain)
+            nearest = min(ordered, key=lambda candidate: (abs(candidate - value), candidate))
+            adjusted.append({"input": str(name), "was": value, "now": nearest})
+            values[name] = nearest
+        return values
+
+    controller = item.get("controller")
+    if isinstance(controller, dict) and isinstance(controller.get("direct_inputs"), dict):
+        controller["direct_inputs"] = fix(controller["direct_inputs"])
+    stimulus = item.get("stimulus")
+    if isinstance(stimulus, dict):
+        if isinstance(stimulus.get("initial_inputs"), dict):
+            stimulus["initial_inputs"] = fix(stimulus["initial_inputs"])
+        for step in stimulus.get("steps") or []:
+            if isinstance(step, dict) and isinstance(step.get("input_updates"), dict):
+                step["input_updates"] = fix(step["input_updates"])
+    return adjusted
+
+
 def build_ir(
     trace_payload: dict[str, Any], *, probe_payload: dict[str, Any] | None = None,
     evidence_obligations: dict[str, Any] | None = None,
@@ -138,6 +212,17 @@ def build_ir(
     # Stable ID ordering makes output independent of traversal/dict order.
     unique = {item["id"]: item for item in items}
     values = [unique[key] for key in sorted(unique)]
+    # MPS selector inputs carry a legal value domain from decision
+    # obligations; purely mathematical root-input boundary values (e.g. 3 for
+    # "x <= 2 false") may fall outside it and abort the simulation. Clamp and
+    # record transparency notes (VehCfg_A01 Multiport Switch4 regression).
+    domains = selector_domains(decision_obligations)
+    for item in values:
+        adjusted = clamp_to_selector_domains(item, domains)
+        if adjusted:
+            notes = item.setdefault("value_domain_notes", [])
+            for entry in adjusted:
+                notes.append({**entry, "reason": "selector_domain_clamp"})
     return {"schema": SCHEMA, "model": model, "items": values, "summary": {status: sum(item["reachability"]["status"] == status for item in values) for status in sorted(VALID_STATUS)}}
 
 
