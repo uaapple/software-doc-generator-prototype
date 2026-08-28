@@ -38,6 +38,7 @@ from pathlib import Path
 SCHEMA_INPUT = "tcsd-agent-stage-input/v1"
 SCHEMA_RESULT = "tcsd-agent-stage-result/v1"
 SCHEMA_CHECKPOINT = "tcsd-agent-stage-checkpoint/v2"
+SCHEMA_ATTEMPT_RESULT = "tcsd-attempt-result/v1"
 SCHEMA_MANIFEST = "simulink-ut-tcsd-execution-manifest/v1"
 SCHEMA_TIMELINE = "tcsd-stage-timeline/v1"
 SCHEMA_ARTIFACTS = "tcsd-artifact-manifest/v1"
@@ -84,8 +85,59 @@ def hash_tree(root: Path) -> str:
 
 
 def write_json(path: Path, value) -> None:
+    """Atomic JSON persistence: temp file (same filesystem) + fsync + rename.
+
+    Temp names embed pid and a random suffix so concurrent writers of the same
+    target never collide; a crash leaves at most an orphan temp file."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path = path.parent / f".{path.name}.tmp-{os.getpid()}-{uuidlib.uuid4().hex[:8]}"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+def write_attempt_result(attempt_dir: Path, workspace: Path, *, job_id: str, stage: int,
+                         attempt: int, runtime_status: str, validation_status: str,
+                         stage_status: str, runtime_path: Path | None,
+                         semantic_path: Path | None,
+                         error: dict | None = None) -> Path:
+    """Composite per-attempt result referencing the immutable runtime output and
+    the semantic verdict. Written atomically on every terminal path (runtime
+    failure, semantic failure, success) so the host can always recover a
+    structured outcome even when no checkpoint exists."""
+    def reference(path: Path | None) -> dict | None:
+        if path is None or not path.is_file():
+            return None
+        return {
+            "path": path.resolve().relative_to(workspace.resolve()).as_posix(),
+            "sha256": sha256_file(path),
+        }
+    payload = {
+        "schema": SCHEMA_ATTEMPT_RESULT,
+        "jobId": job_id,
+        "stageIndex": stage,
+        "attempt": attempt,
+        "runtimeStatus": runtime_status,
+        "validationStatus": validation_status,
+        "stageStatus": stage_status,
+        "runtime": reference(runtime_path),
+        "semantic": reference(semantic_path),
+    }
+    if error:
+        payload["error"] = error
+    attempt_result_path = attempt_dir / "attempt-result.json"
+    write_json(attempt_result_path, payload)
+    return attempt_result_path
 
 
 def tcsd_env() -> dict:
@@ -151,11 +203,27 @@ def semantic_validate(task: dict, stage: int, result: dict, runtime_dir: Path,
     proc = subprocess.run([sys.executable, str(script), "--request", str(request_path)],
                           cwd=task["workspace"]["directory"], env=tcsd_env(),
                           capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"host semantic validator failed for stage {stage}: {proc.stderr[-500:]}")
-    report = json.loads(proc.stdout.strip())
-    write_json(report_path, report)
-    return report
+    if proc.returncode == 0:
+        report = json.loads(proc.stdout.strip())
+        write_json(report_path, report)
+        return report
+    # The validator itself distinguishes "did not pass" (exit 1, failure report
+    # on stderr) from crashes; both must persist a structured verdict on disk so
+    # the attempt outcome survives even when the validation failed.
+    failure_report = {"schema": SCHEMA_SEMANTIC, "stageIndex": stage, "passed": False,
+                      "details": {}, "message": ""}
+    stderr_text = (proc.stderr or "").strip()
+    try:
+        parsed = json.loads(stderr_text.splitlines()[-1] if stderr_text else "{}")
+        if isinstance(parsed, dict) and parsed.get("passed") is False:
+            failure_report = parsed
+    except (ValueError, IndexError):
+        pass
+    if not failure_report.get("message"):
+        failure_report["message"] = stderr_text[-800:] or "host semantic validator failed without output"
+    failure_report["stageIndex"] = stage
+    write_json(report_path, failure_report)
+    return failure_report
 
 
 def skill_bundle_info(stage: int) -> dict:
@@ -179,7 +247,8 @@ def skill_bundle_info(stage: int) -> dict:
 
 def write_checkpoint(task: dict, stage: int, attempt: int, manifest_path: Path,
                      result_path: Path, semantic: dict, validation_report_path: Path,
-                     tool_log_summary: list) -> Path:
+                     tool_log_summary: list, attempt_result_path: Path | None = None,
+                     runtime_status: str = "", validation_status: str = "") -> Path:
     result = json.loads(result_path.read_text(encoding="utf-8"))
     checkpoint = {
         "schema": SCHEMA_CHECKPOINT,
@@ -197,6 +266,13 @@ def write_checkpoint(task: dict, stage: int, attempt: int, manifest_path: Path,
             "path": str(result_path.relative_to(task["workspace"]["directory"])),
             "sha256": sha256_file(result_path),
         },
+        "attemptResult": {
+            "path": str(attempt_result_path.relative_to(task["workspace"]["directory"])),
+            "sha256": sha256_file(attempt_result_path),
+            "runtimeStatus": runtime_status,
+            "validationStatus": validation_status,
+            "stageStatus": result.get("status"),
+        } if attempt_result_path is not None else None,
         "validation": {
             "passed": True,
             "reportPath": str(validation_report_path.relative_to(task["workspace"]["directory"])),
@@ -288,7 +364,13 @@ def cmd_run(args) -> int:
     workspace = Path(task["workspace"]["directory"])
     attempt_dir = workspace / "outputs" / ".tcsd-agent" / f"stage-{stage:02d}" / f"attempt-{attempt}"
     manifest_path = attempt_dir / "manifest.json"
-    result_path = attempt_dir / "result.json"
+    # Three-layer result protocol:
+    #   runtime-result.json  — owned by the deterministic runtime (never rewritten)
+    #   semantic-validation.json — owned by the semantic validator (written on
+    #                              failure too)
+    #   attempt-result.json  — composite outcome owned by this orchestrator
+    runtime_result_path = attempt_dir / "runtime-result.json"
+    legacy_result_path = attempt_dir / "result.json"
     semantic_request = attempt_dir / "semantic-request.json"
     semantic_report = attempt_dir / "semantic-validation.json"
     validation_report = attempt_dir / "validation.json"
@@ -322,32 +404,72 @@ def cmd_run(args) -> int:
         },
     }
     write_json(manifest_path, manifest)
-    if result_path.exists():
-        result_path.unlink()
-    code = run_runner(task, stage, manifest_path, result_path, mode=args.stage10_mode)
+    if runtime_result_path.exists():
+        runtime_result_path.unlink()
+    if legacy_result_path.exists():
+        legacy_result_path.unlink()
+    code = run_runner(task, stage, manifest_path, runtime_result_path, mode=args.stage10_mode)
+    if legacy_result_path.is_file() and not runtime_result_path.is_file():
+        # Upgrade path: an older runtime still writes result.json; treat it as
+        # the runtime output so downstream layers keep working unchanged.
+        legacy_result_path.rename(runtime_result_path)
     if code != 0:
-        print(f"run: stage {stage} runner failed (exit {code})", file=sys.stderr)
+        runtime_status = "failed"
+        try:
+            runtime_status = str(json.loads(runtime_result_path.read_text(encoding="utf-8")).get("status") or "failed")
+        except (OSError, ValueError):
+            pass
+        error = {"code": "tcsd_stage_runtime_failed", "message": f"stage {stage} runtime failed (exit {code})"}
+        write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                             attempt=attempt, runtime_status=runtime_status,
+                             validation_status="not_applicable", stage_status="failed",
+                             runtime_path=runtime_result_path if runtime_result_path.is_file() else None,
+                             semantic_path=None, error=error)
+        print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
         return code or 1
-    if not result_path.is_file():
+    if not runtime_result_path.is_file():
         # Stage 10 的合法中间态：auto/prepare 模式下 brief 已生成、等待 Agent
         # 写入修复提案（apply 需要提案才会写 result.json）。这不是失败，
         # 不应以退出码 1 上报（曾把 stage 10 误判为阶段失败）。
         if stage == 10 and (manifest_path.parent / "repair-brief.json").is_file():
             print("run: stage 10 prepare completed; awaiting agent repair proposal", file=sys.stderr)
             return 0
-        print(f"run: stage {stage} runner failed (exit {code})", file=sys.stderr)
+        error = {"code": "tcsd_stage_runtime_failed", "message": f"stage {stage} runtime failed (exit {code})"}
+        write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                             attempt=attempt, runtime_status="failed",
+                             validation_status="not_applicable", stage_status="failed",
+                             runtime_path=None, semantic_path=None, error=error)
+        print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
         return code or 1
-    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result = json.loads(runtime_result_path.read_text(encoding="utf-8"))
+    runtime_status = str(result.get("status") or "failed")
     semantic = {"schema": SCHEMA_SEMANTIC, "stageIndex": stage, "passed": True, "details": {},
                 "_reportPath": semantic_report, "_sha256": ""}
+    validation_status = "not_applicable"
     if stage in SEMANTIC_STAGES and result.get("status") != "skipped":
+        validation_status = "failed"
         semantic = semantic_validate(task, stage, result, Path(bundle["runtimeDir"]),
                                      semantic_request, semantic_report)
         semantic["_reportPath"] = semantic_report
         semantic["_sha256"] = sha256_file(semantic_report)
         if not semantic.get("passed"):
-            print(f"run: stage {stage} semantic validation failed", file=sys.stderr)
+            # Terminal structured failure: the runtime output is preserved as-is
+            # (it did complete), the failed semantic verdict is on disk, and the
+            # composite attempt result records "runtime completed, validation
+            # failed" so the host can distinguish the two layers.
+            error = {
+                "code": "tcsd_stage_validation_failed",
+                "message": str(semantic.get("message") or "semantic validation failed"),
+                "details": semantic.get("details") or {},
+            }
+            write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                                 attempt=attempt, runtime_status=runtime_status,
+                                 validation_status="failed", stage_status="failed",
+                                 runtime_path=runtime_result_path,
+                                 semantic_path=semantic_report, error=error)
+            print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
             return 1
+        validation_status = "passed"
     report = {"schema": "tcsd-host-validation-report/v1", "jobId": task["id"], "stageIndex": stage,
               "attempt": attempt, "passed": True}
     write_json(validation_report, report)
@@ -357,8 +479,18 @@ def cmd_run(args) -> int:
     persisted = {key: value for key, value in semantic.items() if not key.startswith("_")}
     write_json(semantic_report, persisted)
     semantic["_sha256"] = sha256_file(semantic_report)
-    checkpoint = write_checkpoint(task, stage, attempt, manifest_path, result_path,
-                                  semantic, validation_report, [])
+    attempt_result_path = write_attempt_result(attempt_dir, workspace, job_id=task["id"],
+                                               stage=stage, attempt=attempt,
+                                               runtime_status=runtime_status,
+                                               validation_status=validation_status,
+                                               stage_status=runtime_status,
+                                               runtime_path=runtime_result_path,
+                                               semantic_path=semantic_report)
+    checkpoint = write_checkpoint(task, stage, attempt, manifest_path, runtime_result_path,
+                                  semantic, validation_report, [],
+                                  attempt_result_path=attempt_result_path,
+                                  runtime_status=runtime_status,
+                                  validation_status=validation_status)
     print(f"stage {stage:02d} checkpoint: {checkpoint}")
     return 0
 

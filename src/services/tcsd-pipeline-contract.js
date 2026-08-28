@@ -42,6 +42,7 @@ export const TCSD_ERROR_CODES = Object.freeze({
   checkpoint: "tcsd_checkpoint_invalid",
   stage: "tcsd_stage_failed",
   stageRuntime: "tcsd_stage_runtime_failed",
+  stageCheckpointMissing: "tcsd_stage_checkpoint_missing",
   validation: "tcsd_stage_validation_failed",
   telemetry: "tcsd_stage_telemetry_unavailable",
   sessionReuse: "tcsd_stage_session_reused",
