@@ -484,6 +484,40 @@ class MpsLegalSelectorsTests(unittest.TestCase):
         self.assertEqual(legal, [1, 2, 3])
 
 
+
+class SelectorDomainGenerationTests(unittest.TestCase):
+    """生成源头守卫：relational 义务对 MPS selector 输入的取值必须域内
+    语义选值；域内无解标记 unresolved（VehCfg_A01 848/858 == 2 false 曾取
+    2+1=3 越界，现应取 1）。"""
+
+    def test_domain_relational_pair_eq2(self):
+        gen = script("build_decision_obligations.py")
+        self.assertEqual(gen._domain_relational_pair("==", 2, {0, 1, 2}), (2.0, 1.0))
+
+    def test_domain_relational_pair_le2_false_no_solution(self):
+        gen = script("build_decision_obligations.py")
+        # <= 2 的 false 在 {0,1,2} 内无解
+        self.assertEqual(gen._domain_relational_pair("<=", 2, {0, 1, 2}), (2.0, None))
+
+    def test_domain_relational_pair_ge2(self):
+        gen = script("build_decision_obligations.py")
+        self.assertEqual(gen._domain_relational_pair(">=", 2, {0, 1, 2}), (2.0, 1.0))
+
+    def test_mps_selector_domains_intersection(self):
+        gen = script("build_decision_obligations.py")
+        blocks = {
+            "blocks": [
+                {"type": "MultiPortSwitch", "params": {"Inputs": "3", "DataPortOrder": "Zero-based contiguous", "DataPortIndices": "{1,2,3}"},
+                 "inputs": [{"port": 1, "src_kind": "input", "src_value": "X"},
+                            {"port": 2, "src_kind": "param", "src_value": "P1"}, {"port": 3, "src_kind": "param", "src_value": "P2"}, {"port": 4, "src_kind": "param", "src_value": "P3"}]},
+                {"type": "MultiPortSwitch", "params": {"Inputs": "2", "DataPortOrder": "Zero-based contiguous", "DataPortIndices": "{1,2,3}"},
+                 "inputs": [{"port": 1, "src_kind": "input", "src_value": "X"},
+                            {"port": 2, "src_kind": "param", "src_value": "Q1"}, {"port": 3, "src_kind": "param", "src_value": "Q2"}]},
+            ]
+        }
+        # Inputs=3 → len(inputs)=4 → 数据端口 3 → {0,1,2}；Inputs=2 → {0,1}；交集 {0,1}
+        self.assertEqual(gen.mps_selector_domains(blocks["blocks"]), {"X": {0, 1}})
+
 if __name__ == "__main__":
     unittest.main()
 

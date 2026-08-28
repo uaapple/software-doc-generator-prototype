@@ -297,6 +297,65 @@ def _mps_legal_selectors(params: dict[str, Any], input_port_count: int) -> list[
     return list(range(1, data_port_count + 1))
 
 
+def mps_selector_domains(raw_blocks: list[dict[str, Any]]) -> dict[str, set[int]]:
+    """Root-input -> intersection of legal selector domains of every
+    MultiPortSwitch it drives (port 1 selector). An input may feed several
+    MPS blocks with different data-port counts; only values legal for ALL of
+    them are safe to drive (VehCfg_A01: ibsw_stREEVBatDrvRngCfg drives seven
+    Inputs=3 MPS blocks, legal domain {0,1,2})."""
+    aggregated: dict[str, set[int] | None] = {}
+    for rec in raw_blocks:
+        if str(rec.get("type") or "") != "MultiPortSwitch":
+            continue
+        params = rec.get("params") or {}
+        raw_inputs = rec.get("inputs") or []
+        if isinstance(raw_inputs, dict):
+            raw_inputs = [raw_inputs]
+        entries = []
+        for entry in raw_inputs:
+            try:
+                port = int(entry.get("port"))
+            except (TypeError, ValueError):
+                continue
+            entries.append((port, entry))
+        selector = next((item for port, item in entries if port == 1), None)
+        if selector is None or str(selector.get("src_kind") or "") != "input":
+            continue
+        name = str(selector.get("src_value") or "").strip()
+        if not name:
+            continue
+        legal = set(_mps_legal_selectors(params, len(entries)))
+        if name not in aggregated:
+            aggregated[name] = legal
+        else:
+            aggregated[name] = aggregated[name] & legal
+    return {name: values for name, values in aggregated.items() if values}
+
+
+def _domain_relational_pair(
+    operator: str, constant: float, domain: set[int],
+) -> tuple[float | None, float | None]:
+    """(true_value, false_value) inside a selector domain for `x op constant`.
+
+    A side with no in-domain value satisfying it returns None; callers must
+    emit an unresolved obligation instead of an out-of-domain value (which
+    aborts the simulation on the MPS it drives)."""
+    def pick(desired: bool) -> float | None:
+        candidates = [
+            value for value in domain
+            if ((value > constant if operator == ">" else
+                 value >= constant if operator == ">=" else
+                 value < constant if operator == "<" else
+                 value <= constant if operator == "<=" else
+                 value == constant if operator == "==" else
+                 value != constant) == desired)
+        ]
+        if not candidates:
+            return None
+        return float(min(candidates, key=lambda value: (abs(value - constant), value)))
+    return pick(True), pick(False)
+
+
 def _param_bounds(inputs: dict[int, tuple[str, Any]], port: int) -> dict[str, Any] | None:
     """Return (min, max, value) bounds for a parameter-driven input port, if
     the MATLAB collector attached them. Values are None when unavailable."""
@@ -386,6 +445,7 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
     raw_blocks = blocks_data.get("blocks") or []
     if isinstance(raw_blocks, dict):
         raw_blocks = [raw_blocks]
+    selector_domains = mps_selector_domains(raw_blocks)
     for rec in raw_blocks:
         btype = rec.get("type")
         if btype not in DEFAULT_TARGET_BLOCK_TYPES:
@@ -630,6 +690,29 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                     "<": (c - 1, c), "<=": (c, c + 1),
                 }
                 if c is not None and operator in pairs:
+                    domain = selector_domains.get(str(left[1]))
+                    if domain:
+                        # Selector-domain-aware choice: pick in-domain values
+                        # that still satisfy the side; a side without an
+                        # in-domain solution is unreachable for this input
+                        # (VehCfg_A01: "== 2" false on an MPS selector with
+                        # legal {0,1,2} must use 1, not 2+1=3).
+                        true_val, false_val = _domain_relational_pair(operator, c, domain)
+                        outcomes = (("true", true_val), ("false", false_val))
+                        for tag, value in outcomes:
+                            if value is None:
+                                items.append(obligation(
+                                    sid=sid, model=model, path=path,
+                                    outcome=f"relational {tag} ({left[1]} {operator} {right[1]})",
+                                    status="unresolved",
+                                    reason=(f"selector_domain_constraint: {left[1]} 合法域"
+                                            f" {sorted(domain)} 内无满足 {operator} {c:g} {tag} 的值")))
+                            else:
+                                items.append(obligation(
+                                    sid=sid, model=model, path=path,
+                                    outcome=f"relational {tag} ({left[1]} {operator} {right[1]})",
+                                    status="required", match={left[1]: value}))
+                        continue
                     true_val, false_val = pairs[operator]
                     items.append(obligation(sid=sid, model=model, path=path,
                                             outcome=f"relational true ({left[1]} {operator} {right[1]})",
@@ -692,6 +775,7 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                 continue
             name = selector[1]
             values = _mps_legal_selectors(params, len(inputs))
+            item_domain = sorted(set(values))
             # MPS output-chain calibration gates (A05 D04): a downstream Switch
             # whose criterion is a `~= 0` calibration parameter bypasses the MPS
             # outputs (lazy evaluation) while that parameter stays non-zero, so
@@ -706,6 +790,7 @@ def generate_from_blocks(blocks_data: dict[str, Any], model: str) -> list[dict[s
                 item = obligation(sid=sid, model=model, path=path,
                                   outcome=f"selector={value}", status="required",
                                   match={name: value}, params=gate_override or None)
+                item["selector_domain"] = item_domain
                 if gate_override:
                     item["evidence_state"] = "scenario_activation_mps_gate"
                     item["reason"] = (
@@ -952,9 +1037,11 @@ def generate_obligations(slx: SlxModel, model: str) -> list[dict[str, Any]]:
             name = selector[1]
             values = _mps_legal_selectors(params, total_ports)
             for value in values:
-                items.append(obligation(sid=sid, model=model, path=path,
-                                        outcome=f"selector={value}", status="required",
-                                        match={name: value}))
+                item = obligation(sid=sid, model=model, path=path,
+                                  outcome=f"selector={value}", status="required",
+                                  match={name: value})
+                item["selector_domain"] = sorted(set(values))
+                items.append(item)
 
         elif btype == "Saturate":
             upper = params.get("UpperLimit", "")

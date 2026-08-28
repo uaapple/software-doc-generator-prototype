@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -85,12 +86,14 @@ def normalize_item(item: dict[str, Any], coverage_class: str, *, model: str) -> 
 def selector_domains(decision_obligations: dict[str, Any] | None) -> dict[str, set[int]]:
     """Collect MPS selector value domains from decision obligations.
 
-    Selector obligations are emitted as `<sid>_selector_<v>` with a single
-    numeric match input; together they define the legal selector domain of a
-    root input (e.g. ibsw_stREEVBatDrvRngCfg -> {0,1,2}). Root-input boundary
-    recipes (relational false side, root_input_boundary) otherwise pick a
-    purely mathematical value (x <= 2 false -> 3) that is out of the domain
-    and aborts the simulation on the MPS (VehCfg_A01 Multiport Switch4).
+    Prefer the authoritative ``selector_domain`` field emitted by
+    build_decision_obligations (intersection over every MPS the input drives);
+    fall back to aggregating ``<sid>_selector_<v>`` match values (union of the
+    individually emitted legal values, kept only as a historical-data
+    fallback). Root-input boundary recipes (relational false side,
+    root_input_boundary) otherwise pick a purely mathematical value (x == 2
+    false -> 3) that is out of the domain and aborts the simulation on the MPS
+    (VehCfg_A01 Multiport Switch4 / ibsw_stREEVBatDrvRngCfg).
     """
     domains: dict[str, set[int]] = {}
     if not decision_obligations:
@@ -101,58 +104,102 @@ def selector_domains(decision_obligations: dict[str, Any] | None) -> dict[str, s
     for obligation in raw:
         if not isinstance(obligation, dict):
             continue
-        if "_selector_" not in str(obligation.get("id") or ""):
-            continue
         match = obligation.get("match") if isinstance(obligation.get("match"), dict) else {}
         inputs = match.get("inputs")
         if not isinstance(inputs, dict):
+            continue
+        declared = obligation.get("selector_domain")
+        if isinstance(declared, list) and declared:
+            try:
+                values = {int(value) for value in declared}
+            except (TypeError, ValueError):
+                continue
+            for name in inputs:
+                key = str(name)
+                domains[key] = values if key not in domains else domains[key] & values
+            continue
+        if "_selector_" not in str(obligation.get("id") or ""):
             continue
         for name, value in inputs.items():
             try:
                 value = int(value)
             except (TypeError, ValueError):
                 continue
-            domains.setdefault(str(name), set()).add(value)
+            key = str(name)
+            if key not in domains:
+                domains[key] = {value}
+            else:
+                domains[key].add(value)
     return {name: values for name, values in domains.items() if values}
 
 
-def clamp_to_selector_domains(item: dict[str, Any], domains: dict[str, set[int]]) -> list[dict[str, Any]]:
-    """Clamp controller/stimulus input values into known selector domains.
+RELATIONAL_OUTCOME_RE = re.compile(
+    r"^relational (true|false) \(([A-Za-z_]\w*) ([<>=~!]+) ([-+]?\d+(?:\.\d+)?)\)$"
+)
 
-    Returns the list of adjusted entries (input, was, now) so the IR stays
-    transparent about the fix; an empty list means nothing was adjusted.
+
+def _in_domain(operator: str, constant: float, domain: set[int], desired: bool) -> float | None:
+    candidates = [
+        value for value in domain
+        if ((value > constant if operator == ">" else
+             value >= constant if operator == ">=" else
+             value < constant if operator == "<" else
+             value <= constant if operator == "<=" else
+             value == constant if operator == "==" else
+             value != constant) == desired)
+    ]
+    if not candidates:
+        return None
+    return float(min(candidates, key=lambda value: (abs(value - constant), value)))
+
+
+def resolve_in_selector_domain(item: dict[str, Any], domains: dict[str, set[int]]) -> list[dict[str, Any]]:
+    """Resolve controller input values against known selector domains.
+
+    Out-of-domain values are replaced with the nearest in-domain value that
+    still satisfies the declared ``required_outcome`` (recorded as
+    ``selector_domain_rechoice``). When the outcome cannot be satisfied inside
+    the domain -- or cannot be parsed -- the item is marked unresolved with a
+    ``selector_domain_constraint`` issue instead of silently distorting the
+    coverage semantics (VehCfg_A01 regression: 3 -> must be 1 for
+    ``ibsw_stREEVBatDrvRngCfg == 2 false``, and ``<= 2 false`` has no
+    in-domain solution at all).
     """
     adjusted: list[dict[str, Any]] = []
     if not domains:
         return adjusted
-
-    def fix(values: dict[str, Any]) -> dict[str, Any]:
-        for name, raw in list(values.items()):
-            domain = domains.get(str(name))
-            if not domain:
-                continue
-            try:
-                value = float(raw)
-            except (TypeError, ValueError):
-                continue
-            if value.is_integer() and int(value) in domain:
-                continue
-            ordered = sorted(domain)
-            nearest = min(ordered, key=lambda candidate: (abs(candidate - value), candidate))
-            adjusted.append({"input": str(name), "was": value, "now": nearest})
-            values[name] = nearest
-        return values
-
     controller = item.get("controller")
-    if isinstance(controller, dict) and isinstance(controller.get("direct_inputs"), dict):
-        controller["direct_inputs"] = fix(controller["direct_inputs"])
-    stimulus = item.get("stimulus")
-    if isinstance(stimulus, dict):
-        if isinstance(stimulus.get("initial_inputs"), dict):
-            stimulus["initial_inputs"] = fix(stimulus["initial_inputs"])
-        for step in stimulus.get("steps") or []:
-            if isinstance(step, dict) and isinstance(step.get("input_updates"), dict):
-                step["input_updates"] = fix(step["input_updates"])
+    direct = controller.get("direct_inputs") if isinstance(controller, dict) else None
+    if not isinstance(direct, dict):
+        return adjusted
+    match = RELATIONAL_OUTCOME_RE.match(str(item.get("required_outcome") or ""))
+    for name, raw in list(direct.items()):
+        domain = domains.get(str(name))
+        if not domain:
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if value.is_integer() and int(value) in domain:
+            continue
+        chosen = None
+        if match and match.group(2) == str(name):
+            chosen = _in_domain(match.group(3), float(match.group(4)), domain, match.group(1) == "true")
+        if chosen is not None:
+            direct[name] = chosen
+            adjusted.append({"input": str(name), "was": value, "now": chosen, "reason": "selector_domain_rechoice"})
+            continue
+        reach = item.setdefault("reachability", {})
+        if reach.get("status") in ("required", "", None):
+            reach["status"] = "unresolved"
+        issues = [str(issue) for issue in (reach.get("issues") or [])]
+        issues.append(
+            f"selector_domain_constraint: {name}={value:g} 不在合法域 {sorted(domain)}"
+            + ("，且域内无满足目标的值" if match and match.group(2) == str(name) else "，无法在域内保持目标语义")
+        )
+        reach["issues"] = issues
+        adjusted.append({"input": str(name), "was": value, "now": None, "reason": "selector_domain_constraint"})
     return adjusted
 
 
@@ -218,11 +265,11 @@ def build_ir(
     # record transparency notes (VehCfg_A01 Multiport Switch4 regression).
     domains = selector_domains(decision_obligations)
     for item in values:
-        adjusted = clamp_to_selector_domains(item, domains)
+        adjusted = resolve_in_selector_domain(item, domains)
         if adjusted:
             notes = item.setdefault("value_domain_notes", [])
             for entry in adjusted:
-                notes.append({**entry, "reason": "selector_domain_clamp"})
+                notes.append(dict(entry))
     return {"schema": SCHEMA, "model": model, "items": values, "summary": {status: sum(item["reachability"]["status"] == status for item in values) for status in sorted(VALID_STATUS)}}
 
 

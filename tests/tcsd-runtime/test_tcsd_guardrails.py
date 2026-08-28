@@ -82,8 +82,13 @@ class TcsdGuardrailsTest(unittest.TestCase):
         ),
         (
             "build_coverage_ir.py",
-            "selector_domain_clamp",
-            "IR 对 MPS selector 输入域裁剪（VehCfg_A01 越界修复，2026-08-27）",
+            "selector_domain_rechoice",
+            "IR 域内重选满足语义的值/无解标 unresolved（VehCfg_A01 越界修复，2026-08-27）",
+        ),
+        (
+            "build_decision_obligations.py",
+            "selector_domain_constraint",
+            "决策义务生成器按 MPS selector 域生成时序值（VehCfg_A01 源头修复，2026-08-27）",
         ),
     ]
 
