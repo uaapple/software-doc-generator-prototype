@@ -39,7 +39,11 @@ SCHEMA_INPUT = "tcsd-agent-stage-input/v1"
 SCHEMA_RESULT = "tcsd-agent-stage-result/v1"
 SCHEMA_CHECKPOINT = "tcsd-agent-stage-checkpoint/v2"
 SCHEMA_ATTEMPT_RESULT = "tcsd-attempt-result/v1"
+SCHEMA_LEASE = "tcsd-stage-lease/v1"
 SCHEMA_MANIFEST = "simulink-ut-tcsd-execution-manifest/v1"
+LEASE_HEARTBEAT_SECONDS = 5.0
+LEASE_STALE_SECONDS = 45.0
+EXIT_LEASE_ACTIVE = 3
 SCHEMA_TIMELINE = "tcsd-stage-timeline/v1"
 SCHEMA_ARTIFACTS = "tcsd-artifact-manifest/v1"
 SCHEMA_SEMANTIC = "tcsd-host-semantic-validation/v1"
@@ -171,6 +175,124 @@ def run_runner(task: dict, stage: int, manifest_path: Path, result_path: Path, m
                                      "--repair-proposal", str(proposal)],
                               cwd=task["workspace"]["directory"], env=tcsd_env()).returncode
     return subprocess.run(cmd, cwd=task["workspace"]["directory"], env=tcsd_env()).returncode
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
+
+
+def lease_path(workspace: Path, stage: int, attempt: int) -> Path:
+    return Path(workspace) / "outputs" / ".tcsd-runtime" / "leases" / f"stage-{stage:02d}-attempt-{attempt}.json"
+
+
+def acquire_lease(workspace: Path, *, job_id: str, stage: int, attempt: int,
+                  run_id: str, runtime_hash: str = "") -> dict | None:
+    """Atomically claim the stage/attempt slot.
+
+    Returns the lease payload on success. Returns None when a fresh lease is
+    held by another live owner — the caller must NOT start a second overlapping
+    execution (the bbc72245 incident shape: two Gateway jobs writing one
+    progress file). Stale leases (dead owner or expired heartbeat) are taken
+    over transparently."""
+    target = lease_path(workspace, stage, attempt)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": SCHEMA_LEASE,
+        "jobId": job_id,
+        "stageIndex": stage,
+        "attempt": attempt,
+        "runId": run_id,
+        "ownerPid": os.getpid(),
+        "runtimeHash": runtime_hash,
+        "acquiredAt": __import__("datetime").datetime.now().isoformat(),
+        "heartbeatAt": __import__("datetime").datetime.now().isoformat(),
+    }
+    try:
+        handle = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        existing = {}
+        try:
+            existing = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing = {}
+        stale = True
+        if existing.get("ownerPid") and _pid_alive(int(existing["ownerPid"])):
+            try:
+                heartbeat = __import__("datetime").datetime.fromisoformat(str(existing.get("heartbeatAt")))
+                age = (__import__("datetime").datetime.now() - heartbeat).total_seconds()
+                stale = age > LEASE_STALE_SECONDS
+            except (TypeError, ValueError):
+                stale = True
+        if not stale:
+            return None
+        payload["tookOverFrom"] = {
+            "runId": existing.get("runId"),
+            "ownerPid": existing.get("ownerPid"),
+        }
+        try:
+            os.unlink(target)
+        except OSError:
+            return None
+        try:
+            handle = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return None
+    with os.fdopen(handle, "w", encoding="utf-8") as file_handle:
+        json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+        file_handle.flush()
+        os.fsync(file_handle.fileno())
+    return payload
+
+
+def refresh_lease(workspace: Path, stage: int, attempt: int) -> None:
+    target = lease_path(workspace, stage, attempt)
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    payload["heartbeatAt"] = __import__("datetime").datetime.now().isoformat()
+    temporary = target.parent / f".{target.name}.tmp-{os.getpid()}-{uuidlib.uuid4().hex[:8]}"
+    try:
+        with open(temporary, "w", encoding="utf-8") as file_handle:
+            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+        os.replace(temporary, target)
+    except OSError:
+        if temporary.exists():
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+
+
+def release_lease(workspace: Path, stage: int, attempt: int) -> None:
+    try:
+        lease_path(workspace, stage, attempt).unlink()
+    except OSError:
+        pass
+
+
+def start_lease_heartbeat(workspace: Path, stage: int, attempt: int):
+    """Background heartbeat so a live runner is never judged stale. Returns a
+    threading.Event usable as a stop signal."""
+    import threading
+
+    stop = threading.Event()
+
+    def beat():
+        while not stop.wait(LEASE_HEARTBEAT_SECONDS):
+            refresh_lease(workspace, stage, attempt)
+
+    thread = threading.Thread(target=beat, name="tcsd-lease-heartbeat", daemon=True)
+    thread.start()
+    return stop
 
 
 def semantic_validate(task: dict, stage: int, result: dict, runtime_dir: Path,
@@ -362,6 +484,38 @@ def cmd_run(args) -> int:
     stage = int(args.stage)
     attempt = int(args.attempt or 1)
     workspace = Path(task["workspace"]["directory"])
+    bundle = skill_bundle_info(stage)
+    run_id = uuidlib.uuid4().hex[:12]
+    lease = acquire_lease(workspace, job_id=task["id"], stage=stage, attempt=attempt,
+                          run_id=run_id, runtime_hash=bundle["runtime"]["bundleHash"])
+    if lease is None:
+        # A fresh lease held by a live owner: refuse to start a second
+        # overlapping execution (two Gateway jobs writing one progress file was
+        # the bbc72245 incident shape). The agent should poll the existing
+        # attempt artifacts instead of resubmitting.
+        active = {}
+        try:
+            active = json.loads(lease_path(workspace, stage, attempt).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        error = {
+            "code": "tcsd_stage_lease_active",
+            "message": f"stage {stage} attempt {attempt} 已有活跃执行（runId={active.get('runId')}），禁止重复提交；请轮询既有产物。",
+            "activeRunId": active.get("runId"),
+            "activeOwnerPid": active.get("ownerPid"),
+            "activeHeartbeatAt": active.get("heartbeatAt"),
+        }
+        print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
+        return EXIT_LEASE_ACTIVE
+    heartbeat_stop = start_lease_heartbeat(workspace, stage, attempt)
+    try:
+        return _execute_stage_run(args, task, stage, attempt, workspace, bundle)
+    finally:
+        heartbeat_stop.set()
+        release_lease(workspace, stage, attempt)
+
+
+def _execute_stage_run(args, task, stage, attempt, workspace, bundle) -> int:
     attempt_dir = workspace / "outputs" / ".tcsd-agent" / f"stage-{stage:02d}" / f"attempt-{attempt}"
     manifest_path = attempt_dir / "manifest.json"
     # Three-layer result protocol:
@@ -374,7 +528,6 @@ def cmd_run(args) -> int:
     semantic_request = attempt_dir / "semantic-request.json"
     semantic_report = attempt_dir / "semantic-validation.json"
     validation_report = attempt_dir / "validation.json"
-    bundle = skill_bundle_info(stage)
     manifest = {
         "schema": SCHEMA_INPUT,
         "pipelineSchema": "tcsd-agent-stage-pipeline/v2",
@@ -404,6 +557,37 @@ def cmd_run(args) -> int:
         },
     }
     write_json(manifest_path, manifest)
+    gateway_marker = workspace / "outputs" / ".tcsd-runtime" / "active-gateway-job.json"
+    if gateway_marker.is_file():
+        # A previous Gateway submission may still be running on the host
+        # MATLAB. Only a stale marker (dead owner, no fresh heartbeat) may be
+        # reclaimed here; otherwise refuse to submit a duplicate job.
+        active_job = {}
+        try:
+            active_job = json.loads(gateway_marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            active_job = {}
+        marker_stale = True
+        owner_pid = active_job.get("ownerPid")
+        if owner_pid and _pid_alive(int(owner_pid)):
+            try:
+                heartbeat = __import__("datetime").datetime.fromisoformat(str(active_job.get("heartbeatAt")))
+                marker_stale = (__import__("datetime").datetime.now() - heartbeat).total_seconds() > LEASE_STALE_SECONDS
+            except (TypeError, ValueError):
+                marker_stale = True
+        if not marker_stale:
+            error = {
+                "code": "tcsd_gateway_job_active",
+                "message": "检测到活跃的 MATLAB Gateway 作业，禁止重复提交；等待其完成或被取消后再运行本阶段。",
+                "gatewayJobId": active_job.get("jobId"),
+                "gatewayOwnerPid": owner_pid,
+            }
+            print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
+            return EXIT_LEASE_ACTIVE
+        try:
+            gateway_marker.unlink()
+        except OSError:
+            pass
     if runtime_result_path.exists():
         runtime_result_path.unlink()
     if legacy_result_path.exists():

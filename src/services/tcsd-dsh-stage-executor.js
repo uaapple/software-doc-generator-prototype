@@ -142,7 +142,9 @@ export class TcsdDshStageExecutor {
       "开始生成。",
       `生成的最终测试用例 Excel（${model}_Test0001_tcsd.xlsx）额外复制一份到模型所在的目录 ${inputDirectory}。`,
       "这是平台已创建的受管任务；不得运行 init、不得创建另一工作区或改变 task.json。",
-      `仅用 Python 前台依次运行：${runner} run --task ${taskPath} --stage 1 至 12（Stage 10 保持 auto），然后 ${runner} finish --task ${taskPath}。`,
+      `依次运行：${runner} run --task ${taskPath} --stage 1 至 12（Stage 10 保持 auto），然后 ${runner} finish --task ${taskPath}。`,
+      "执行方式（必须遵守）：runner 一律以后台任务方式启动（前台运行会被 600 秒强制终止——Stage 6/11 经常超过 10 分钟，前台必然失败）；启动后轮询 outputs/.tcsd-checkpoints/stage-XX.json（成功）与 outputs/.tcsd-agent/stage-XX/attempt-N/attempt-result.json（终态，含失败原因）直到其中之一出现；runner 以退出码 3 结束表示已有活跃执行或存在活跃 Gateway 作业，此时不得重新提交，继续轮询既有产物。",
+      "失败诊断：若 attempt-result.json 显示 runtimeStatus=failed 或 validationStatus=failed，以其中 error.message 为准记录失败原因；它不是要求你重跑的信号——阶段终态一经落盘即不可更改。",
       "完成以 outputs/.tcsd-checkpoints/ 下 12 个 checkpoint 和 outputs/.tcsd-host 三件套为准。",
       "纪律（必须遵守）：严格按 1→12 顺序，每阶段仅运行一次 runner；阶段结果（含 partial/skipped/completed）即终态，禁止对任何已产出 checkpoint 的阶段重跑或追加修改；覆盖率补救只发生在 stage-10；stage-11 完成后立即 stage-12 与 finish，不得在阶段间进行任何额外 MATLAB 仿真、探针、覆盖率收集、诊断或用例修改；stage-12 是纯清理打包，无论覆盖率如何都直接收尾，未达标缺口由 finish 记为 unresolved。"
     ].join("\n");

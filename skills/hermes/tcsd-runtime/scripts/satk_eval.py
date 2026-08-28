@@ -13,12 +13,37 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from datetime import datetime
 from pathlib import Path
+
+# Set when the process receives SIGTERM/SIGINT. The Gateway polling loop checks
+# it so a killed foreground runner still cancels its remote MATLAB job instead
+# of leaving an orphan writing into the shared workspace.
+terminate_requested = threading.Event()
+
+
+def _handle_terminate_signal(signum, frame) -> None:
+    terminate_requested.set()
+
+
+def install_terminate_handlers() -> None:
+    for signal_name in ("SIGTERM", "SIGINT"):
+        signum = getattr(signal, signal_name, None)
+        if signum is not None:
+            try:
+                signal.signal(signum, _handle_terminate_signal)
+            except (OSError, ValueError):
+                pass
+
+
+def datetime_now_iso() -> str:
+    return datetime.now().isoformat()
 
 
 def executable_name(name: str) -> str:
@@ -377,19 +402,26 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             environ=values,
         )
         if active_job_marker is not None:
+            # Ownership marker for the live Gateway job. The runner refuses to
+            # submit a duplicate while this marker is fresh; heartbeat keeps it
+            # fresh while this process is polling, and a SIGTERM handler still
+            # cancels the remote job on the way out.
             active_job_marker.parent.mkdir(parents=True, exist_ok=True)
-            active_job_marker.write_text(
-                json.dumps(
-                    {
-                        "schema": "tcsd-active-gateway-job/v1",
-                        "ownerJobId": owner_job_id,
-                        "workspaceId": workspace_id,
-                        "jobId": job_id,
-                    },
-                    ensure_ascii=False,
-                ),
+            marker_payload = {
+                "schema": "tcsd-active-gateway-job/v1",
+                "ownerJobId": owner_job_id,
+                "workspaceId": workspace_id,
+                "jobId": job_id,
+                "ownerPid": os.getpid(),
+                "startedAt": datetime_now_iso(),
+                "heartbeatAt": datetime_now_iso(),
+            }
+            marker_tmp = active_job_marker.parent / f".{active_job_marker.name}.tmp-{os.getpid()}"
+            marker_tmp.write_text(
+                json.dumps(marker_payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            marker_tmp.replace(active_job_marker)
         gateway_request(
             "POST",
             job_route,
@@ -402,7 +434,36 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             environ=values,
         )
         deadline = time.monotonic() + timeout_s + 10.0
+        last_heartbeat = 0.0
         while time.monotonic() < deadline:
+            if terminate_requested.is_set():
+                # SIGTERM/SIGINT received (e.g. the harness killed the foreground
+                # runner): cancel the remote job best-effort so the host-side
+                # MATLAB work does not keep running as an orphan writing into
+                # this workspace.
+                try:
+                    gateway_request(
+                        "POST",
+                        f"{job_route}/cancel",
+                        payload={"workspaceId": workspace_id},
+                        environ=values,
+                        timeout_s=5.0,
+                    )
+                except (OSError, RuntimeError, ValueError):
+                    pass
+                return {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "error": {
+                        "code": "MATLAB_GATEWAY_JOB_CANCELLED_LOCAL",
+                        "message": "Evaluation cancelled because the local process received a termination signal.",
+                        "data": {
+                            "gatewayJobId": job_id,
+                            "gatewayStatus": "cancelled_locally",
+                            "timeoutSeconds": timeout_s,
+                        },
+                    },
+                }
             job = gateway_request(
                 "GET",
                 f"{job_route}?{query}",
@@ -436,7 +497,25 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
                         },
                     },
                 }
-            time.sleep(0.2)
+            if active_job_marker is not None and time.monotonic() - last_heartbeat > 5.0:
+                # Keep the ownership marker fresh so the stage runner can tell
+                # "live job" from "stale marker" without querying the Gateway.
+                last_heartbeat = time.monotonic()
+                try:
+                    marker_payload = json.loads(active_job_marker.read_text(encoding="utf-8"))
+                    marker_payload["heartbeatAt"] = datetime_now_iso()
+                    marker_tmp = active_job_marker.parent / f".{active_job_marker.name}.tmp-{os.getpid()}"
+                    marker_tmp.write_text(
+                        json.dumps(marker_payload, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    marker_tmp.replace(active_job_marker)
+                except (OSError, ValueError):
+                    pass
+            try:
+                time.sleep(0.2)
+            except InterruptedError:
+                pass
         gateway_request(
             "POST",
             f"{job_route}/cancel",
@@ -671,6 +750,7 @@ def clean_stale_mcp_processes() -> None:
 
 
 def main() -> int:
+    install_terminate_handlers()
     if len(sys.argv) == 2 and sys.argv[1] == "--server-info":
         try:
             print(json.dumps(server_info(), ensure_ascii=False))
