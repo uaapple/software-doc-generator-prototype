@@ -232,19 +232,18 @@ PROBE_TERMINAL_STATUSES = {
 
 
 def _attach_plan_gaps(reconciliation: dict[str, Any], plan_summary: dict[str, Any]) -> None:
-    """Plan-level gaps that never reach the simulation (unprobeable targets,
-    budget-truncated ports) belong in the same gap accounting as observation
-    gaps: otherwise an all-unprobeable model reports zero gaps and a `partial`
-    stage verdict gets rejected by the contract (review blocker 1)."""
+    """Register plan-level gaps that never reach the simulation (unprobeable
+    targets, budget-truncated ports). The TOTAL gapCount is recomputed after
+    the observation loop — computing it here ran BEFORE the counts existed,
+    so a mismatch-only failure reported gapCount=0 (review blocker 1)."""
     reconciliation["unprobeableTargetCount"] = int(plan_summary.get("unprobeable_target_count") or 0)
     reconciliation["budgetTruncatedTargetCount"] = int(plan_summary.get("budget_truncated_target_count") or 0)
-    reconciliation["gapCount"] = (
-        reconciliation.get("mismatchCount", 0)
-        + reconciliation.get("transientFailedCount", 0)
-        + reconciliation.get("notExecutedCount", 0)
-        + reconciliation.get("mpsBlockedCount", 0)
-        + reconciliation["unprobeableTargetCount"]
-        + reconciliation["budgetTruncatedTargetCount"]
+    reconciliation["planLevelGapCount"] = int(
+        plan_summary.get("plan_level_gap_count")
+        or (
+            reconciliation["unprobeableTargetCount"]
+            + reconciliation["budgetTruncatedTargetCount"]
+        )
     )
 
 
@@ -376,6 +375,13 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
     accounted = len({(test_id, step) for (test_id, step) in seen
                      if test_id in planned and step in planned[test_id]})
     recon["conserved"] = accounted == recon["plannedStepCount"]
+    # Final gap tally: observation gaps + plan-level gaps, computed AFTER all
+    # observation counters are final.
+    recon["gapCount"] = (
+        recon["mismatchCount"] + recon["transientFailedCount"]
+        + recon["notExecutedCount"] + recon["mpsBlockedCount"]
+        + recon["planLevelGapCount"]
+    )
     if not recon["conserved"]:
         missing = sorted(
             (test_id, step)

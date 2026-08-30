@@ -304,9 +304,10 @@ def acquire_lease(workspace: Path, *, job_id: str, stage: int, attempt: int,
             return None
         if taken_over_from is not None:
             payload["tookOverFrom"] = taken_over_from
-        json.dump(payload, file_handle := os.fdopen(handle, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-        file_handle.flush()
-        os.fsync(file_handle.fileno())
+        with os.fdopen(handle, "w", encoding="utf-8") as file_handle:
+            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
     return payload
 
 

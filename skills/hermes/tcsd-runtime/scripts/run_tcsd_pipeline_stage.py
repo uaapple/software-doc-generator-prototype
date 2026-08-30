@@ -603,10 +603,14 @@ def stage_run(
                 ir_args += ["--decision-obligations", str(state["decisionObligations"])]
             run(ir_args + ["--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         reconciliation = probe_observation_reconciliation(probe_results) if candidate_count > 0 else None
+        plan_level_gap_count = int(plan_data.get("summary", {}).get("plan_level_gap_count") or 0)
         gap_count = int(reconciliation["gapCount"]) if reconciliation else 0
-        # Unprobeable targets are registered gaps too: with every target
-        # unobservable the stage must NOT report completed (review P1).
-        gap_count += unprobeable_target_count
+        # Plan-level gaps (unprobeable / strategy-not-executable /
+        # budget-truncated targets) are registered gaps too: the stage must
+        # NOT report completed when they exist — the semantic reconciliation
+        # counts them, and a `completed` verdict would be rejected by the Node
+        # contract (review blocker 2).
+        gap_count += plan_level_gap_count
         state["statePlan"] = str(plan)
         if reconciliation is not None:
             state["stateProbeReconciliation"] = reconciliation
@@ -616,7 +620,7 @@ def stage_run(
         elif gap_count == 0:
             summary = "状态及时序刺激已生成并由实际 Probe 验证。"
         else:
-            summary = f"状态及时序刺激已生成；{gap_count} 项缺口（含 {unprobeable_target_count} 个不可探测目标）未获可信观测，已登记（partial），以第 9 阶段实测覆盖为准。"
+            summary = f"状态及时序刺激已生成；{gap_count} 项缺口（其中计划级缺口 {plan_level_gap_count} 项，其余为观测缺口）已登记（partial），以第 9 阶段实测覆盖为准。"
         finish(
             job, stage,
             status="partial" if gap_count > 0 else "completed",
@@ -628,6 +632,7 @@ def stage_run(
                 "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None,
                 "unprobeableTargetCount": unprobeable_target_count,
                 "budgetTruncatedTargetCount": int(plan_data.get("summary", {}).get("budget_truncated_target_count") or 0),
+                "planLevelGapCount": plan_level_gap_count,
                 "precheck": precheck_evidence,
                 "reconciliation": reconciliation,
             },

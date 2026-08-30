@@ -634,7 +634,7 @@ class PipelineStageRunnerTests(unittest.TestCase):
             env["TCSD_PIPELINE_PRECHECK_CAPABILITY_FIXTURE"] = str(capability_fixture)
             result = run_stage(6, env=env)
             self.assertEqual(result["status"], "partial")
-            self.assertIn("未获可信观测", result["summary"])
+            self.assertIn("2 项缺口", result["summary"])
             recon = result["evidence"]["reconciliation"]
             self.assertEqual(recon["observedCount"], 1)
             self.assertEqual(recon["mismatchCount"], 1)

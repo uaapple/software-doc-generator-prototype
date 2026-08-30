@@ -174,6 +174,15 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
     distributed as an even per-port quota so coverage stays spread across
     targets instead of the first few ports eating everything."""
     capabilities = capabilities or {}
+    # Only strategies the execution probe can actually honour may produce
+    # candidates. `noninvasive_signal_log` is a precheck VERDICT whose
+    # collection path is not implemented yet: letting those candidates run
+    # through the To Workspace executor would reproduce the bbc72245
+    # target_unavailable batch. Until the signal-log collection is implemented
+    # (and proven on a real MATLAB host), such targets are conservative,
+    # registered gaps. Legacy plans without capability input (strategy
+    # "unspecified") keep the historical behaviour.
+    executable_strategies = {"to_workspace_probe"}
     quota = max_candidates
     budgeted_ports = None
     if total_budget is not None and total_budget > 0:
@@ -245,6 +254,17 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                 target["unprobeable_reason"] = str(capability.get("reason") or "precheck marked unprobeable")
                 targets.append(target)
                 continue
+            if capability and strategy not in executable_strategies:
+                # A verdict exists but its collection path is not implemented
+                # by the executor (e.g. noninvasive_signal_log). Register the
+                # target as a gap instead of simulating an observation that
+                # cannot be collected.
+                target["status"] = "strategy_not_executable"
+                target["unprobeable_reason"] = str(
+                    capability.get("reason") or f"strategy {strategy!r} has no executor support"
+                )
+                targets.append(target)
+                continue
             if budgeted_ports is not None and (op_id, index) not in budgeted_ports:
                 # Hard global budget: ports beyond the budget keep their target
                 # record (nothing vanishes from reconciliation) but produce no
@@ -314,6 +334,14 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             "candidate_count": len(tests),
             "unplanned_count": sum(1 for item in targets if item["status"] != "planned"),
             "unprobeable_target_count": sum(1 for item in targets if item["status"] == "unprobeable"),
+            "nonexecutable_target_count": sum(
+                1 for item in targets if item["status"] in ("unprobeable", "strategy_not_executable")
+            ),
+            "budget_truncated_target_count": sum(1 for item in targets if item["status"] == "budget_truncated"),
+            "plan_level_gap_count": sum(
+                1 for item in targets
+                if item["status"] in ("unprobeable", "strategy_not_executable", "budget_truncated")
+            ),
             "total_budget": total_budget,
             "per_port_quota": quota if total_budget else None,
             "budget_truncated_target_count": sum(1 for item in targets if item["status"] == "budget_truncated"),

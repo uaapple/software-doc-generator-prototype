@@ -175,6 +175,25 @@ class ProbeReconciliationTest(unittest.TestCase):
         self.assertEqual(recon["mpsBlockedCount"], 2)
         self.assertEqual(recon["conserved"], True)
 
+    def test_mixed_observation_and_plan_gaps_sum_up(self):
+        # Review blocker 1 regression: gapCount must be recomputed AFTER the
+        # observation loop. A mismatch-only failure previously reported
+        # gapCount=0 because plan gaps were attached before counting.
+        plan = make_plan()
+        plan["summary"]["unprobeable_target_count"] = 4
+        plan["summary"]["budget_truncated_target_count"] = 2
+        request = self._request(plan, self._probe_results([
+            observation("STATE_PROBE_0001", 1, "observed"),
+            observation("STATE_PROBE_0001", 2, "observed"),
+            observation("STATE_PROBE_0002", 1, "observed"),
+            observation("STATE_PROBE_0002", 2, "simulation_mismatch",
+                        reason="stimulus_did_not_drive_target"),
+        ]))
+        recon = VALIDATOR.validate_probe(request)["reconciliation"]
+        self.assertEqual(recon["mismatchCount"], 1)
+        self.assertEqual(recon["gapCount"], 7, "1 observation gap + 4 unprobeable + 2 truncated")
+        self.assertEqual(recon["conserved"], True)
+
     def test_plan_gaps_flow_into_gap_count(self):
         # Review blocker 1: unprobeable targets and budget-truncated ports are
         # plan-level gaps and MUST appear in the reconciliation gapCount — an

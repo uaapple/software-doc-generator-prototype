@@ -279,7 +279,7 @@
     },
     {
       "path": "scripts/build_state_probe_plan.py",
-      "sha256": "019e59c4dd49012e4f7e5634a82c4e7cb2bb1d148f3b3a2f4100641e2730a994",
+      "sha256": "3ebb0edab433b0de7a537c564ec06c94b4d81ad5cc6712b91efc34040c44dd2d",
       "mode": 493
     },
     {
@@ -319,7 +319,7 @@
     },
     {
       "path": "scripts/dsh_stage_runner.py",
-      "sha256": "c8944de02b04335502b80f6e83f1c46c5302ba9009e8ae0cac3e49392322cd01",
+      "sha256": "383b7042888d4a9583914c494209d88ee1ac820b86a5b1060b32027899032ee1",
       "mode": 420
     },
     {
@@ -329,7 +329,7 @@
     },
     {
       "path": "scripts/host_validate_tcsd_stage.py",
-      "sha256": "a5d209ee0ba84eb5b7edf77f905dc368d2b0f8161a590ea3f776192b2ea170b3",
+      "sha256": "a1dd197d9f3fa304b6a859b65a98a1b9276264429eb908b4e19fa3406c59277a",
       "mode": 420
     },
     {
@@ -374,7 +374,7 @@
     },
     {
       "path": "scripts/run_tcsd_pipeline_stage.py",
-      "sha256": "12f12e2bdac2a3d56244b478cfe62df304eb81e606bd3814984e8c4c779c9cad",
+      "sha256": "cb21c4b5838a1c79bf798f4239eb856a560a3c743d50a9752123612a50692cea",
       "mode": 420
     },
     {

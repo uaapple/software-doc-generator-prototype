@@ -91,13 +91,31 @@ class CapabilityPlanTest(unittest.TestCase):
         self.assertTrue(all(t["target"]["operator_id"] != "M:10" for t in plan["tests"]))
         self.assertEqual(plan["summary"]["unprobeable_target_count"], 1)
 
-    def test_observable_strategies_preserve_candidate_generation(self):
+    def test_noninvasive_verdict_without_executor_support_is_a_gap(self):
+        # Review blocker 3: noninvasive_signal_log is a precheck verdict whose
+        # collection path is NOT implemented by the executor. Such targets are
+        # registered gaps (no candidates) instead of simulating observations
+        # that cannot be collected.
         plan = self._build({
             "M:10": {"strategy": "noninvasive_signal_log", "reason": "signal logging accepted"},
             "M:20": {"strategy": "to_workspace_probe", "reason": "accepted"},
         })
+        target_10 = next(t for t in plan["targets"] if t["operator_id"] == "M:10")
+        target_20 = next(t for t in plan["targets"] if t["operator_id"] == "M:20")
+        self.assertEqual(target_10["status"], "strategy_not_executable")
+        self.assertEqual(target_10["candidate_count"], 0)
+        self.assertEqual(target_20["status"], "planned")
+        self.assertEqual(target_20["candidate_count"] > 0, True)
+        self.assertEqual(plan["summary"]["plan_level_gap_count"], 1)
+        self.assertTrue(all(t["target"]["operator_id"] != "M:10" for t in plan["tests"]))
+
+    def test_observable_strategies_preserve_candidate_generation(self):
+        plan = self._build({
+            "M:10": {"strategy": "to_workspace_probe", "reason": "accepted"},
+            "M:20": {"strategy": "to_workspace_probe", "reason": "accepted"},
+        })
         self.assertEqual(plan["summary"]["candidate_count"] > 0, True)
-        self.assertEqual(plan["summary"]["unprobeable_target_count"], 0)
+        self.assertEqual(plan["summary"]["plan_level_gap_count"], 0)
         self.assertTrue(all(t["status"] == "planned" for t in plan["targets"]))
 
     def test_missing_capability_preserves_legacy_behaviour(self):

@@ -444,8 +444,12 @@ export async function validateStageResult(raw = {}, context = {}) {
         throw contractError("无缺口时第 6 阶段不得记为 partial");
       }
       // Three-way consistency: plan summary, runtime evidence, and semantic
-      // details must agree on the unprobeable/budget-truncated counts.
+      // details must agree on BOTH plan-level gap kinds AND on the observation
+      // gaps and the final total (review blocker 2 follow-up).
       const planSummary = artifacts.find((item) => item.path?.endsWith("_state_probe_plan.json"));
+      const observationGapKeys = [
+        "mismatchCount", "transientFailedCount", "notExecutedCount", "mpsBlockedCount",
+      ];
       if (planSummary) {
         const parsed = JSON.parse(await fs.readFile(planSummary.absolutePath, "utf8"));
         const planUnprobeable = Number(parsed.summary?.unprobeable_target_count || 0);
@@ -457,12 +461,33 @@ export async function validateStageResult(raw = {}, context = {}) {
           throw contractError("第 6 阶段 Probe 计划与语义校验的缺口计数不一致");
         }
       }
-      const runtimeUnprobeable = Number(raw.evidence?.unprobeableTargetCount || 0);
-      if (
-        Number.isFinite(runtimeUnprobeable) &&
-        runtimeUnprobeable !== Number(reconciliation.unprobeableTargetCount || 0)
-      ) {
-        throw contractError("第 6 阶段运行证据与语义校验的不可探测目标计数不一致");
+      const runtimePlanGapChecks = [
+        ["unprobeableTargetCount", Number(raw.evidence?.unprobeableTargetCount || 0)],
+        ["budgetTruncatedTargetCount", Number(raw.evidence?.budgetTruncatedTargetCount || 0)],
+        ["planLevelGapCount", Number(raw.evidence?.planLevelGapCount || 0)],
+      ];
+      for (const [key, runtimeValue] of runtimePlanGapChecks) {
+        if (Number.isFinite(runtimeValue) && runtimeValue !== Number(reconciliation[key] || 0)) {
+          throw contractError(`第 6 阶段运行证据与语义校验的 ${key} 不一致`);
+        }
+      }
+      const runtimeReconciliation = raw.evidence?.reconciliation;
+      if (runtimeReconciliation && typeof runtimeReconciliation === "object") {
+        for (const key of observationGapKeys) {
+          if (
+            Number.isFinite(Number(runtimeReconciliation[key])) &&
+            Number(runtimeReconciliation[key]) !== Number(reconciliation[key] || 0)
+          ) {
+            throw contractError(`第 6 阶段运行证据与语义校验的观测缺口 ${key} 不一致`);
+          }
+        }
+      }
+      const recomputedGap = observationGapKeys.reduce(
+        (total, key) => total + Number(reconciliation[key] || 0),
+        Number(reconciliation.planLevelGapCount || 0)
+      );
+      if (recomputedGap !== Number(reconciliation.gapCount || 0)) {
+        throw contractError("第 6 阶段缺口总数与各分类计数之和不一致");
       }
     } else if (details.candidateCount > 0 && Number(details.observationCount || 0) < details.candidateCount) {
       // Legacy semantic reports (pre-reconciliation) keep the old invariant.
