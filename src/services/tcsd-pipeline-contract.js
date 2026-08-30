@@ -418,12 +418,33 @@ export async function validateStageResult(raw = {}, context = {}) {
   }
   if (context.stageIndex === 6) {
     await requireArtifactSchema(artifacts, ["simulink-ut-state-probe-plan/v1"]);
-    const semantic = requireSemanticEvidence(context, 6);
+    const details = requireSemanticEvidence(context, 6);
     if (
-      Number(raw.evidence?.candidateCount || 0) !== semantic.candidateCount ||
-      raw.evidence?.probeExecuted !== semantic.probeExecuted ||
-      (semantic.candidateCount > 0 && Number(semantic.observationCount || 0) < semantic.candidateCount)
+      Number(raw.evidence?.candidateCount || 0) !== details.candidateCount ||
+      raw.evidence?.probeExecuted !== details.probeExecuted
     ) {
+      throw contractError("第 6 阶段 Probe 计划与执行状态不一致");
+    }
+    const reconciliation = details.reconciliation;
+    if (reconciliation) {
+      // Reconciliation contract: every planned step reaches exactly one
+      // terminal state, and the stage status must match the observed gaps.
+      if (reconciliation.conserved !== true) {
+        throw contractError("第 6 阶段 Probe 对账不守恒，存在无终态的计划步骤");
+      }
+      const gapCount =
+        Number(reconciliation.mismatchCount || 0) +
+        Number(reconciliation.transientFailedCount || 0) +
+        Number(reconciliation.notExecutedCount || 0) +
+        Number(reconciliation.mpsBlockedCount || 0);
+      if (raw.status === "completed" && gapCount > 0) {
+        throw contractError("存在未获可信观测的步骤时，第 6 阶段不得记为 completed");
+      }
+      if (raw.status === "partial" && gapCount === 0) {
+        throw contractError("无缺口时第 6 阶段不得记为 partial");
+      }
+    } else if (details.candidateCount > 0 && Number(details.observationCount || 0) < details.candidateCount) {
+      // Legacy semantic reports (pre-reconciliation) keep the old invariant.
       throw contractError("第 6 阶段 Probe 计划、执行状态与实际观察证据不一致");
     }
   }

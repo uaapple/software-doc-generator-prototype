@@ -56,6 +56,36 @@ class TcsdGuardrailsTest(unittest.TestCase):
             "Stage 10 prepare 中间态不被误判为失败（b7e34b2 修复）",
         ),
         (
+            "dsh_stage_runner.py",
+            "attempt-result.json",
+            "三层结果协议：attempt 综合终态落盘（bbc72245 修复）",
+        ),
+        (
+            "dsh_stage_runner.py",
+            "reconcile_gateway_job",
+            "Gateway 四分支对账状态机（不取消健康作业/状态未知禁止盲提交）",
+        ),
+        (
+            "build_state_probe_plan.py",
+            "unprobeable_target_count",
+            "探针预检：unprobeable 算子不生成候选（bbc72245 修复）",
+        ),
+        (
+            "probe_logical_mcdc_vectors.m",
+            "not_executed_with_reason",
+            "观测终态细分：空观测必须携带结构化原因",
+        ),
+        (
+            "host_validate_tcsd_stage.py",
+            "PROBE_TERMINAL_STATUSES",
+            "Stage 6 校验对账化：缺口登记而非一票否决",
+        ),
+        (
+            "run_tcsd_pipeline_stage.py",
+            "probe_observation_reconciliation",
+            "Stage 6 缺口 partial 终态（对账摘要进 evidence）",
+        ),
+        (
             "backfill_expected_outputs.py",
             "prelude",
             "回填解析器保留首标记前赋值（Stage 8 防御性修复）",

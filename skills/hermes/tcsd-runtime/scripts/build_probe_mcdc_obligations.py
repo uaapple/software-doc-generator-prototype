@@ -455,15 +455,16 @@ def main() -> int:
     overrides = load_overrides(args.unreachable_overrides)
     mappings = mapping_index(json.loads(Path(args.logical_mappings).read_text(encoding="utf-8"))) if args.logical_mappings else {}
     selected = set(args.model or []) or None
-    exit_code = 0
+    # Unresolved vectors are a legitimate terminal outcome under the
+    # reconciliation contract: the obligations file registers each gap and the
+    # stage ends as `partial` — a non-zero exit here would turn a registered
+    # gap back into a hard failure ( bbc72245 shape). Only crashes fail.
     for model, report in model_items(data, selected):
         built = build_for_model(model, report, overrides=overrides, missing_status=args.missing_status, mappings=mappings)
         out = out_dir / args.output_pattern.format(model=model)
         out.write_text(json.dumps(built, ensure_ascii=False, indent=2), encoding="utf-8")
         print(out, built["summary"])
-        if built["summary"].get("unresolved_count", 0):
-            exit_code = 1
-    return exit_code
+    return 0
 
 
 if __name__ == "__main__":

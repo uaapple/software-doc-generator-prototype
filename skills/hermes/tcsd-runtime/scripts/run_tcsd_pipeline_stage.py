@@ -171,6 +171,48 @@ def run_probe_capability_precheck(job: dict, model: str, root: Path, out: Path,
         "capabilities": capabilities,
     }
     return capability_output, evidence
+def probe_observation_reconciliation(probe_results: Path) -> dict:
+    """Terminal-state tally across every probe report (reconciliation contract
+    tcsd-probe-recon/v1). gapCount>0 forces the stage to end as `partial` so
+    the platform sees "completed with registered gaps" instead of a hard
+    failure — the authoritative verdict remains the Stage 9 measured
+    coverage."""
+    payload = read_json(probe_results)
+    recon = {
+        "observedCount": 0, "mismatchCount": 0, "transientFailedCount": 0,
+        "notExecutedCount": 0, "mpsBlockedCount": 0, "otherCount": 0, "gapCount": 0,
+    }
+    reports = []
+    if isinstance(payload, dict):
+        for value in payload.values():
+            if isinstance(value, dict) and value.get("schema") == "simulink-ut-logical-mcdc-probe/v2":
+                reports.append(value)
+    for report in reports:
+        observations = report.get("observations")
+        if not isinstance(observations, list):
+            continue
+        for observation in observations:
+            if not isinstance(observation, dict):
+                continue
+            status = str(observation.get("prediction_status") or "")
+            if status in ("observed", "matched_prediction"):
+                recon["observedCount"] += 1
+            elif status == "simulation_mismatch":
+                recon["mismatchCount"] += 1
+            elif status == "transient_failed":
+                recon["transientFailedCount"] += 1
+            elif status == "not_executed_with_reason":
+                recon["notExecutedCount"] += 1
+            elif status == "simulation_error_mps_selector":
+                recon["mpsBlockedCount"] += 1
+            else:
+                recon["otherCount"] += 1
+    recon["gapCount"] = (recon["mismatchCount"] + recon["transientFailedCount"]
+                         + recon["notExecutedCount"] + recon["mpsBlockedCount"]
+                         + recon["otherCount"])
+    return recon
+
+
 def planning_mapping_assessment(raw: dict[str, Any], obligations: Path, root: Path) -> dict[str, Any]:
     assessment = dict(raw)
     raw_status = str(assessment.pop("status", "failed"))
@@ -560,8 +602,32 @@ def stage_run(
             if state.get("decisionObligations") and Path(state["decisionObligations"]).is_file():
                 ir_args += ["--decision-obligations", str(state["decisionObligations"])]
             run(ir_args + ["--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
-        state["statePlan"] = str(plan); save_state(job, state)
-        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0, "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None, "unprobeableTargetCount": unprobeable_target_count, "precheck": precheck_evidence}); return
+        reconciliation = probe_observation_reconciliation(probe_results) if candidate_count > 0 else None
+        gap_count = int(reconciliation["gapCount"]) if reconciliation else 0
+        state["statePlan"] = str(plan)
+        if reconciliation is not None:
+            state["stateProbeReconciliation"] = reconciliation
+        save_state(job, state)
+        if candidate_count == 0:
+            summary = "未发现需要额外 Probe 的状态及时序候选。"
+        elif gap_count == 0:
+            summary = "状态及时序刺激已生成并由实际 Probe 验证。"
+        else:
+            summary = f"状态及时序刺激已生成；{gap_count} 个计划步骤未获可信观测，缺口已登记（partial），以第 9 阶段实测覆盖为准。"
+        finish(
+            job, stage,
+            status="partial" if gap_count > 0 else "completed",
+            summary=summary,
+            artifacts=probe_artifacts,
+            evidence={
+                "candidateCount": candidate_count,
+                "probeExecuted": candidate_count > 0,
+                "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None,
+                "unprobeableTargetCount": unprobeable_target_count,
+                "precheck": precheck_evidence,
+                "reconciliation": reconciliation,
+            },
+        ); return
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)

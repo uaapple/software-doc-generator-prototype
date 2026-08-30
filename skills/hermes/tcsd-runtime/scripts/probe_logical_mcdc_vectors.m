@@ -359,7 +359,7 @@ catch ME
     % 再按既有语义处理：MPS selector 记录为候选观测失败，其余向上抛出。
     probe_failure_diagnostic(rootDir, modelName, test, ME, currentTime);
     if is_mps_selector_error(ME)
-        observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
+        observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'execution_reason', {}, 'error_message', {});
         for k = 1:numel(steps)
             observations(k).step_index = steps(k).index;
             observations(k).time_s = eventTimes(k);
@@ -369,6 +369,7 @@ catch ME
             observations(k).stimulus = stimulus_prefix(test, k);
             observations(k).target = ensure_struct(test, 'target');
             observations(k).prediction_status = 'simulation_error_mps_selector';
+            observations(k).execution_reason = 'mps_selector_domain_error';
             observations(k).error_message = ME.message;
         end
         return;
@@ -383,7 +384,7 @@ if collectCoverage
             'Coverage was enabled but tc_sd_covdata was not returned: %s', ME.message);
     end
 end
-observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'error_message', {});
+observations = struct('step_index', {}, 'time_s', {}, 'inputs', {}, 'params', {}, 'vectors', {}, 'stimulus', {}, 'target', {}, 'prediction_status', {}, 'execution_reason', {}, 'error_message', {});
 for k = 1:numel(steps)
     observations(k).step_index = steps(k).index;
     observations(k).time_s = eventTimes(k);
@@ -392,7 +393,9 @@ for k = 1:numel(steps)
     observations(k).vectors = sample_vectors(out, probes, eventTimes(k));
     observations(k).stimulus = stimulus_prefix(test, k);
     observations(k).target = ensure_struct(test, 'target');
-    observations(k).prediction_status = prediction_status(observations(k).target, observations(k).vectors);
+    [observations(k).prediction_status, observations(k).execution_reason] = ...
+        prediction_status(observations(k).target, observations(k).vectors);
+    observations(k).error_message = '';
 end
 end
 
@@ -409,9 +412,20 @@ end
 stimulus.evidence_step = stepIndex;
 end
 
-function status = prediction_status(target, vectors)
+function [status, reason] = prediction_status(target, vectors)
+% Terminal observation states (reconciliation contract, tcsd-probe-recon/v1):
+%   observed / matched_prediction  — trustworthy observation
+%   simulation_mismatch            — executed but the stimulus did not drive
+%                                    the target to the expected value
+%   not_executed_with_reason       — probe data absent/truncated; the reason
+%                                    field always carries a concrete cause
+% 'target_unavailable' is no longer produced: probe insertion failures are
+% decided by the capability precheck, and a runtime gap must never hide behind
+% a bare status word.
 status = 'not_predicted';
+reason = '';
 if isempty(fieldnames(target)) || ~isfield(target, 'operator_id') || ~isfield(target, 'port_index')
+    reason = 'target_missing_from_plan';
     return;
 end
 fields = fieldnames(vectors);
@@ -422,7 +436,8 @@ for i = 1:numel(fields)
     end
     portIndex = double(target.port_index);
     if portIndex < 1 || portIndex > numel(vector.values)
-        status = 'target_unavailable';
+        status = 'not_executed_with_reason';
+        reason = 'probe_data_truncated';
         return;
     end
     if ~isfield(target, 'expected_port_value') || isempty(target.expected_port_value)
@@ -435,10 +450,12 @@ for i = 1:numel(fields)
         status = 'matched_prediction';
     else
         status = 'simulation_mismatch';
+        reason = 'stimulus_did_not_drive_target';
     end
     return;
 end
-status = 'target_unavailable';
+status = 'not_executed_with_reason';
+reason = 'probe_data_missing';
 end
 
 function summary = coverage_summary(cvd, modelName, testCount, threshold)

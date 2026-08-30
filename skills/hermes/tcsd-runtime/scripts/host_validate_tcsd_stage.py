@@ -220,7 +220,22 @@ def probe_reports(payload: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+PROBE_TRUSTED_STATUSES = {"observed", "matched_prediction"}
+PROBE_TERMINAL_STATUSES = {
+    "observed", "matched_prediction", "simulation_mismatch",
+    "transient_failed", "not_executed_with_reason",
+    "simulation_error_mps_selector",
+}
+# "target_unavailable" is deliberately absent: the capability precheck decides
+# probeability up front, and a bare status word must never hide a runtime gap
+# again (production task bbc72245).
+
+
 def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
+    """Reconciliation-style validation: every planned step must reach exactly
+    one terminal state. Trustworthy observations are counted; mismatch /
+    transient / not-executed steps are surfaced as explicit gaps instead of
+    failing the whole stage — the authoritative coverage comes from Stage 9."""
     _, plan = find_json_schema(request, PROBE_PLAN_SCHEMA)
     tests = plan.get("tests")
     summary = plan.get("summary")
@@ -247,7 +262,11 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
     if candidate_count == 0:
         if evidence.get("probeExecuted") is not False:
             raise ValueError("empty Probe plan must explicitly report probeExecuted=false")
-        return {"candidateCount": 0, "probeExecuted": False, "observationCount": 0}
+        return {"candidateCount": 0, "probeExecuted": False, "observationCount": 0,
+                "reconciliation": {"plannedStepCount": 0, "observedCount": 0,
+                                   "mismatchCount": 0, "transientFailedCount": 0,
+                                   "notExecutedCount": 0, "mpsBlockedCount": 0,
+                                   "conserved": True}}
     if evidence.get("probeExecuted") is not True:
         raise ValueError("Probe candidates exist but probeExecuted is not true")
     reports: list[dict[str, Any]] = []
@@ -256,7 +275,16 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
     if not reports:
         raise ValueError("Probe candidates exist but no actual Probe result is present")
     observed: dict[str, set[int]] = {}
-    observation_count = 0
+    recon = {
+        "plannedStepCount": sum(len(indices) for indices in planned.values()),
+        "observedCount": 0,
+        "mismatchCount": 0,
+        "transientFailedCount": 0,
+        "notExecutedCount": 0,
+        "mpsBlockedCount": 0,
+        "conserved": False,
+    }
+    seen: dict[tuple[str, int], str] = {}
     for report in reports:
         observations = report.get("observations")
         if not isinstance(observations, list):
@@ -266,6 +294,25 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
                 continue
             test_id = str(observation.get("test_id") or "")
             step_index = int(observation.get("step_index") or 0)
+            status = str(observation.get("prediction_status") or "")
+            if status == "target_unavailable":
+                raise ValueError(
+                    "Probe observation reported bare target_unavailable; the "
+                    "capability precheck must classify such targets up front "
+                    f"({test_id} step {step_index})"
+                )
+            key = (test_id, step_index)
+            if key in seen and seen[key] == status:
+                continue  # duplicate observation with identical verdict
+            if (
+                test_id not in planned
+                or step_index not in planned[test_id]
+                or status not in PROBE_TERMINAL_STATUSES
+            ):
+                raise ValueError(
+                    f"Probe observation contradicts its planned target or uses an "
+                    f"unknown terminal status ({test_id} step {step_index}: {status!r})"
+                )
             vectors = observation.get("vectors")
             valid_vectors = [
                 vector
@@ -275,24 +322,53 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
                 and vector.get("ok") is True
                 and isinstance(vector.get("values"), list)
             ] if isinstance(vectors, dict) else []
-            mps_blocked = observation.get("prediction_status") == "simulation_error_mps_selector"
-            if (
-                test_id not in planned
-                or step_index not in planned[test_id]
-                or not isinstance(observation.get("inputs"), dict)
-                or (not valid_vectors and not mps_blocked)
-                or observation.get("prediction_status") in {"target_unavailable", "simulation_mismatch"}
-            ):
-                raise ValueError("Probe observation is missing executed values or contradicts its planned target")
+            if status in PROBE_TRUSTED_STATUSES:
+                if not valid_vectors:
+                    raise ValueError(
+                        f"Trusted probe observation lacks executed values ({test_id} step {step_index})"
+                    )
+                recon["observedCount"] += 1
+            elif status == "simulation_mismatch":
+                if not observation.get("execution_reason"):
+                    raise ValueError(
+                        f"simulation_mismatch observation lacks execution_reason ({test_id} step {step_index})"
+                    )
+                recon["mismatchCount"] += 1
+            elif status == "transient_failed":
+                recon["transientFailedCount"] += 1
+            elif status == "simulation_error_mps_selector":
+                recon["mpsBlockedCount"] += 1
+            else:  # not_executed_with_reason
+                if not observation.get("execution_reason"):
+                    raise ValueError(
+                        f"not_executed_with_reason observation lacks execution_reason ({test_id} step {step_index})"
+                    )
+                recon["notExecutedCount"] += 1
+            seen[key] = status
             observed.setdefault(test_id, set()).add(step_index)
-            observation_count += 1
-    for test_id, indices in planned.items():
-        if observed.get(test_id) != indices:
-            raise ValueError(f"Probe candidate {test_id} was not observed for every planned step")
+    # Conservation: every planned step is accounted for exactly once, and no
+    # candidate vanished. Duplicated identical verdicts collapse above.
+    accounted = len({(test_id, step) for (test_id, step) in seen
+                     if test_id in planned and step in planned[test_id]})
+    recon["conserved"] = accounted == recon["plannedStepCount"]
+    if not recon["conserved"]:
+        missing = sorted(
+            (test_id, step)
+            for test_id, indices in planned.items()
+            for step in indices
+            if (test_id, step) not in seen
+        )
+        preview = ", ".join(f"{test_id}#{step}" for test_id, step in missing[:8])
+        raise ValueError(
+            f"Probe reconciliation is not conserved: {len(missing)} planned step(s) "
+            f"have no terminal observation ({preview})"
+        )
+    observation_count = recon["observedCount"] + recon["mismatchCount"] + recon["mpsBlockedCount"]
     return {
         "candidateCount": candidate_count,
         "probeExecuted": True,
         "observationCount": observation_count,
+        "reconciliation": recon,
     }
 
 
