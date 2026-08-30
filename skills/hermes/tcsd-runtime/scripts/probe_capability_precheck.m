@@ -219,3 +219,20 @@ end
 cleanup = onCleanup(@() fclose(fid));
 fprintf(fid, '%s', jsonencode(data, 'PrettyPrint', true));
 end
+
+function close_foreign_loaded_model(modelName, rootDir)
+% If the same model name is already loaded from another directory (e.g. a
+% prior run of this probe), close it before loading the workspace copy so
+% the in-memory trial mutations can never reach the foreign file.
+if ~bdIsLoaded(modelName)
+    return;
+end
+try
+    loadedPath = get_param(modelName, 'FileName');
+    if ~startsWith(string(loadedPath), string(rootDir))
+        bdclose(modelName);
+    end
+catch
+    bdclose(modelName);
+end
+end

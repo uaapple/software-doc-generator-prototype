@@ -320,7 +320,7 @@
     {
       "path": "scripts/dsh_stage_runner.py",
       "sha256": "383b7042888d4a9583914c494209d88ee1ac820b86a5b1060b32027899032ee1",
-      "mode": 420
+      "mode": 493
     },
     {
       "path": "scripts/extract_tcsd_cases.py",
@@ -349,7 +349,7 @@
     },
     {
       "path": "scripts/probe_capability_precheck.m",
-      "sha256": "10a5fda7a71a29e33f9f4dd9f4dc0e8b726f7862cc96b3260735e888cea9b286",
+      "sha256": "c3b45018589b52776b284c66d119e9718de71d537eb38f491042d02ec8b16eea",
       "mode": 384
     },
     {
