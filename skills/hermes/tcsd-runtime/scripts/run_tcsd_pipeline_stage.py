@@ -627,6 +627,7 @@ def stage_run(
                 "probeExecuted": candidate_count > 0,
                 "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None,
                 "unprobeableTargetCount": unprobeable_target_count,
+                "budgetTruncatedTargetCount": int(plan_data.get("summary", {}).get("budget_truncated_target_count") or 0),
                 "precheck": precheck_evidence,
                 "reconciliation": reconciliation,
             },

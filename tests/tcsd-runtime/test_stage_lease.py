@@ -175,10 +175,12 @@ class StageLeaseTest(unittest.TestCase):
         outputs = [json.loads(proc.communicate(timeout=30)[0].strip().splitlines()[-1]) for proc in procs]
         winners = [item for item in outputs if item["winner"]]
         self.assertEqual(len(winners), 1, f"exactly one taker may win, got {outputs}")
-        self.assertEqual(winners[0]["runId"], "run-b")
-        # The loser must not have clobbered the winner's lease.
+        # Either taker may win the race — the invariant is "exactly one" and
+        # that the winner's lease survives intact.
+        self.assertIn(winners[0]["runId"], {"run-b", "run-c"})
         final = json.loads(RUNNER_MODULE.lease_path(self.workspace, 6, 1).read_text(encoding="utf-8"))
-        self.assertEqual(final["runId"], "run-b")
+        self.assertEqual(final["runId"], winners[0]["runId"])
+        self.assertNotEqual(final["runId"], "run-stale")
 
     def test_tokenless_release_still_works_for_legacy_callers(self):
         # Tokenless calls may only touch leases that carry NO ownerToken (the

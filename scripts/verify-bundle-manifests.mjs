@@ -42,6 +42,10 @@ for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
     try {
       const content = readFileSync(absolute);
       const actualMode = statSync(absolute).mode & 0o777;
+      if (file.sha256 && createHash("sha256").update(content).digest("hex") !== file.sha256) {
+        console.error(`FAIL ${entry.name}/${file.path}: content drift (sha256 differs from manifest)`);
+        failures += 1;
+      }
       hash.update(file.path);
       hash.update("\0");
       hash.update(content);

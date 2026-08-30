@@ -175,6 +175,26 @@ class ProbeReconciliationTest(unittest.TestCase):
         self.assertEqual(recon["mpsBlockedCount"], 2)
         self.assertEqual(recon["conserved"], True)
 
+    def test_plan_gaps_flow_into_gap_count(self):
+        # Review blocker 1: unprobeable targets and budget-truncated ports are
+        # plan-level gaps and MUST appear in the reconciliation gapCount — an
+        # all-unprobeable model still ends `partial`, never a zero-gap verdict.
+        plan = make_plan()
+        plan["summary"]["unprobeable_target_count"] = 4
+        plan["summary"]["budget_truncated_target_count"] = 2
+        request = self._request(plan, self._probe_results([
+            observation("STATE_PROBE_0001", 1, "observed"),
+            observation("STATE_PROBE_0001", 2, "observed"),
+            observation("STATE_PROBE_0002", 1, "observed"),
+            observation("STATE_PROBE_0002", 2, "observed"),
+        ]))
+        details = VALIDATOR.validate_probe(request)
+        recon = details["reconciliation"]
+        self.assertEqual(recon["unprobeableTargetCount"], 4)
+        self.assertEqual(recon["budgetTruncatedTargetCount"], 2)
+        self.assertEqual(recon["gapCount"], 6, "observation gaps are zero here, plan gaps alone make 6")
+        self.assertEqual(recon["conserved"], True)
+
     def test_stage_reconciliation_summary(self):
         # Runtime-side tally mirrors the validator semantics.
         results = self._probe_results([

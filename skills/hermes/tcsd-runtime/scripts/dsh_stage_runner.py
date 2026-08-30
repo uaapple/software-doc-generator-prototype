@@ -765,6 +765,15 @@ def _execute_stage_run(args, task, stage, attempt, workspace, bundle) -> int:
         },
     }
     write_json(manifest_path, manifest)
+    if stage == 10:
+        # Clear the previous attempt's awaiting_proposal intermediate state as
+        # soon as the apply run starts, so an agent re-polling attempt-result
+        # cannot mistake the stale state for "still waiting".
+        write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                             attempt=attempt, runtime_status="running",
+                             validation_status="not_applicable",
+                             stage_status="applying",
+                             runtime_path=None, semantic_path=None, error=None)
     reconciliation = reconcile_gateway_job(workspace)
     if reconciliation["action"] != "proceed":
         error = {

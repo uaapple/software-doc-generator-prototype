@@ -428,20 +428,41 @@ export async function validateStageResult(raw = {}, context = {}) {
     const reconciliation = details.reconciliation;
     if (reconciliation) {
       // Reconciliation contract: every planned step reaches exactly one
-      // terminal state, and the stage status must match the observed gaps.
+      // terminal state, and the stage status must match the TOTAL gap —
+      // observation gaps (mismatch/transient/not-executed/MPS) PLUS plan-level
+      // gaps (unprobeable targets, budget-truncated ports). Omitting the plan
+      // gaps made an all-unprobeable model report zero gaps and rejected its
+      // `partial` verdict (review blocker 1, GearDiag shape).
       if (reconciliation.conserved !== true) {
         throw contractError("第 6 阶段 Probe 对账不守恒，存在无终态的计划步骤");
       }
-      const gapCount =
-        Number(reconciliation.mismatchCount || 0) +
-        Number(reconciliation.transientFailedCount || 0) +
-        Number(reconciliation.notExecutedCount || 0) +
-        Number(reconciliation.mpsBlockedCount || 0);
+      const gapCount = Number(reconciliation.gapCount || 0);
       if (raw.status === "completed" && gapCount > 0) {
-        throw contractError("存在未获可信观测的步骤时，第 6 阶段不得记为 completed");
+        throw contractError("存在未获可信观测或不可探测目标时，第 6 阶段不得记为 completed");
       }
       if (raw.status === "partial" && gapCount === 0) {
         throw contractError("无缺口时第 6 阶段不得记为 partial");
+      }
+      // Three-way consistency: plan summary, runtime evidence, and semantic
+      // details must agree on the unprobeable/budget-truncated counts.
+      const planSummary = artifacts.find((item) => item.path?.endsWith("_state_probe_plan.json"));
+      if (planSummary) {
+        const parsed = JSON.parse(await fs.readFile(planSummary.absolutePath, "utf8"));
+        const planUnprobeable = Number(parsed.summary?.unprobeable_target_count || 0);
+        const planTruncated = Number(parsed.summary?.budget_truncated_target_count || 0);
+        if (
+          planUnprobeable !== Number(reconciliation.unprobeableTargetCount || 0) ||
+          planTruncated !== Number(reconciliation.budgetTruncatedTargetCount || 0)
+        ) {
+          throw contractError("第 6 阶段 Probe 计划与语义校验的缺口计数不一致");
+        }
+      }
+      const runtimeUnprobeable = Number(raw.evidence?.unprobeableTargetCount || 0);
+      if (
+        Number.isFinite(runtimeUnprobeable) &&
+        runtimeUnprobeable !== Number(reconciliation.unprobeableTargetCount || 0)
+      ) {
+        throw contractError("第 6 阶段运行证据与语义校验的不可探测目标计数不一致");
       }
     } else if (details.candidateCount > 0 && Number(details.observationCount || 0) < details.candidateCount) {
       // Legacy semantic reports (pre-reconciliation) keep the old invariant.

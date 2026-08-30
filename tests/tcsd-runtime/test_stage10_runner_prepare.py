@@ -174,6 +174,25 @@ class Stage10RunnerPrepareTest(unittest.TestCase):
         self.assertEqual(attempt_result["runtimeStatus"], "completed")
         self.assertEqual(attempt_result["validationStatus"], "passed")
         self.assertEqual(attempt_result["stageStatus"], "completed")
+
+    def test_stage10_prepare_persists_awaiting_proposal_intermediate(self):
+        # Review P0-4: prepare writes the repair brief and returns WITHOUT a
+        # checkpoint. The intermediate state must be persisted as
+        # attempt-result(stageStatus=awaiting_proposal) so a background agent
+        # polling attempt-result can observe it (instead of waiting forever).
+        code, stderr = self._run_cmd(proposal=False)
+        self.assertEqual(code, 0)
+        attempt_result = json.loads(
+            (self._attempt_dir() / "attempt-result.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(attempt_result["stageStatus"], "awaiting_proposal")
+        self.assertEqual(attempt_result["runtimeStatus"], "completed")
+        self.assertTrue((self._attempt_dir() / "repair-brief.json").is_file())
+        self.assertFalse((self.root / "workspace" / "outputs" / ".tcsd-checkpoints" / "stage-10.json").exists())
+
+    def test_stage10_apply_writes_checkpoint_and_clears_intermediate(self):
+        code, stderr = self._run_cmd(proposal=True)
+        self.assertEqual(code, 0)
         checkpoint = self.root / "workspace" / "outputs" / ".tcsd-checkpoints" / "stage-10.json"
         self.assertTrue(checkpoint.is_file())
         data = json.loads(checkpoint.read_text(encoding="utf-8"))
@@ -181,6 +200,7 @@ class Stage10RunnerPrepareTest(unittest.TestCase):
         self.assertEqual(data["stageIndex"], 10)
         self.assertEqual(data["result"]["path"], "outputs/.tcsd-agent/stage-10/attempt-1/runtime-result.json")
         self.assertEqual(data["attemptResult"]["runtimeStatus"], "completed")
+        self.assertEqual(data["attemptResult"]["stageStatus"], "completed")
 
 
 if __name__ == "__main__":

@@ -231,6 +231,23 @@ PROBE_TERMINAL_STATUSES = {
 # again (production task bbc72245).
 
 
+def _attach_plan_gaps(reconciliation: dict[str, Any], plan_summary: dict[str, Any]) -> None:
+    """Plan-level gaps that never reach the simulation (unprobeable targets,
+    budget-truncated ports) belong in the same gap accounting as observation
+    gaps: otherwise an all-unprobeable model reports zero gaps and a `partial`
+    stage verdict gets rejected by the contract (review blocker 1)."""
+    reconciliation["unprobeableTargetCount"] = int(plan_summary.get("unprobeable_target_count") or 0)
+    reconciliation["budgetTruncatedTargetCount"] = int(plan_summary.get("budget_truncated_target_count") or 0)
+    reconciliation["gapCount"] = (
+        reconciliation.get("mismatchCount", 0)
+        + reconciliation.get("transientFailedCount", 0)
+        + reconciliation.get("notExecutedCount", 0)
+        + reconciliation.get("mpsBlockedCount", 0)
+        + reconciliation["unprobeableTargetCount"]
+        + reconciliation["budgetTruncatedTargetCount"]
+    )
+
+
 def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
     """Reconciliation-style validation: every planned step must reach exactly
     one terminal state. Trustworthy observations are counted; mismatch /
@@ -262,11 +279,13 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
     if candidate_count == 0:
         if evidence.get("probeExecuted") is not False:
             raise ValueError("empty Probe plan must explicitly report probeExecuted=false")
+        recon = {"plannedStepCount": 0, "observedCount": 0,
+                 "mismatchCount": 0, "transientFailedCount": 0,
+                 "notExecutedCount": 0, "mpsBlockedCount": 0,
+                 "conserved": True}
+        _attach_plan_gaps(recon, summary)
         return {"candidateCount": 0, "probeExecuted": False, "observationCount": 0,
-                "reconciliation": {"plannedStepCount": 0, "observedCount": 0,
-                                   "mismatchCount": 0, "transientFailedCount": 0,
-                                   "notExecutedCount": 0, "mpsBlockedCount": 0,
-                                   "conserved": True}}
+                "reconciliation": recon}
     if evidence.get("probeExecuted") is not True:
         raise ValueError("Probe candidates exist but probeExecuted is not true")
     reports: list[dict[str, Any]] = []
@@ -284,6 +303,7 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
         "mpsBlockedCount": 0,
         "conserved": False,
     }
+    _attach_plan_gaps(recon, summary)
     seen: dict[tuple[str, int], str] = {}
     for report in reports:
         observations = report.get("observations")
