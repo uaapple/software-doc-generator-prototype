@@ -104,6 +104,38 @@ class StageLeaseTest(unittest.TestCase):
         age = datetime.now() - datetime.fromisoformat(refreshed["heartbeatAt"])
         self.assertLess(age.total_seconds(), 10)
 
+    def test_evicted_owner_cannot_renew_or_delete_new_lease(self):
+        # bbc72245 review P0: after a takeover the OLD owner's heartbeat thread
+        # must not overwrite the new owner's lease, and the old owner's
+        # release must not delete it.
+        first = self._acquire(run_id="run-a")
+        assert first is not None
+        old_token = first["ownerToken"]
+        target = RUNNER_MODULE.lease_path(self.workspace, 6, 1)
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        payload["heartbeatAt"] = (datetime.now() - timedelta(seconds=120)).isoformat()
+        target.write_text(json.dumps(payload), encoding="utf-8")
+        second = self._acquire(run_id="run-b")
+        assert second is not None
+        self.assertNotEqual(second["ownerToken"], old_token)
+        # Evicted owner refreshes: the new lease heartbeat must be untouched.
+        RUNNER_MODULE.refresh_lease(self.workspace, 6, 1, old_token)
+        after_refresh = json.loads(target.read_text(encoding="utf-8"))
+        self.assertEqual(after_refresh["runId"], "run-b")
+        self.assertEqual(after_refresh["ownerToken"], second["ownerToken"])
+        # Evicted owner releases: the new lease must survive.
+        RUNNER_MODULE.release_lease(self.workspace, 6, 1, old_token)
+        after_release = json.loads(target.read_text(encoding="utf-8"))
+        self.assertEqual(after_release["runId"], "run-b")
+        # The new owner CAN release its own lease.
+        RUNNER_MODULE.release_lease(self.workspace, 6, 1, second["ownerToken"])
+        self.assertFalse(target.exists())
+
+    def test_tokenless_release_still_works_for_legacy_callers(self):
+        self._acquire()
+        RUNNER_MODULE.release_lease(self.workspace, 6, 1)
+        self.assertFalse(RUNNER_MODULE.lease_path(self.workspace, 6, 1).exists())
+
 
 class GatewayMarkerGuardTest(unittest.TestCase):
     def setUp(self):

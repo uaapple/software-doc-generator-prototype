@@ -239,6 +239,7 @@ def acquire_lease(workspace: Path, *, job_id: str, stage: int, attempt: int,
         "stageIndex": stage,
         "attempt": attempt,
         "runId": run_id,
+        "ownerToken": uuidlib.uuid4().hex,
         "ownerPid": os.getpid(),
         "runtimeHash": runtime_hash,
         "acquiredAt": __import__("datetime").datetime.now().isoformat(),
@@ -281,11 +282,17 @@ def acquire_lease(workspace: Path, *, job_id: str, stage: int, attempt: int,
     return payload
 
 
-def refresh_lease(workspace: Path, stage: int, attempt: int) -> None:
+def refresh_lease(workspace: Path, stage: int, attempt: int, owner_token: str = "") -> None:
+    """Renew the heartbeat, but ONLY for the lease this process owns. After a
+    takeover the old owner's token no longer matches: without this check the
+    evicted owner would keep overwriting the new owner's heartbeat (and its
+    release would delete the new lease entirely)."""
     target = lease_path(workspace, stage, attempt)
     try:
         payload = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, ValueError):
+        return
+    if owner_token and str(payload.get("ownerToken") or "") != str(owner_token):
         return
     payload["heartbeatAt"] = __import__("datetime").datetime.now().isoformat()
     temporary = target.parent / f".{target.name}.tmp-{os.getpid()}-{uuidlib.uuid4().hex[:8]}"
@@ -301,14 +308,22 @@ def refresh_lease(workspace: Path, stage: int, attempt: int) -> None:
                 pass
 
 
-def release_lease(workspace: Path, stage: int, attempt: int) -> None:
+def release_lease(workspace: Path, stage: int, attempt: int, owner_token: str = "") -> None:
+    target = lease_path(workspace, stage, attempt)
+    if owner_token:
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if str(payload.get("ownerToken") or "") != str(owner_token):
+            return  # the lease was taken over by someone else; leave it alone
     try:
-        lease_path(workspace, stage, attempt).unlink()
+        target.unlink()
     except OSError:
         pass
 
 
-def start_lease_heartbeat(workspace: Path, stage: int, attempt: int):
+def start_lease_heartbeat(workspace: Path, stage: int, attempt: int, owner_token: str = ""):
     """Background heartbeat so a live runner is never judged stale. Returns a
     threading.Event usable as a stop signal."""
     import threading
@@ -317,7 +332,7 @@ def start_lease_heartbeat(workspace: Path, stage: int, attempt: int):
 
     def beat():
         while not stop.wait(LEASE_HEARTBEAT_SECONDS):
-            refresh_lease(workspace, stage, attempt)
+            refresh_lease(workspace, stage, attempt, owner_token)
 
     thread = threading.Thread(target=beat, name="tcsd-lease-heartbeat", daemon=True)
     thread.start()
@@ -633,12 +648,13 @@ def cmd_run(args) -> int:
         }
         print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
         return EXIT_LEASE_ACTIVE
-    heartbeat_stop = start_lease_heartbeat(workspace, stage, attempt)
+    owner_token = str(lease.get("ownerToken") or "")
+    heartbeat_stop = start_lease_heartbeat(workspace, stage, attempt, owner_token)
     try:
         return _execute_stage_run(args, task, stage, attempt, workspace, bundle)
     finally:
         heartbeat_stop.set()
-        release_lease(workspace, stage, attempt)
+        release_lease(workspace, stage, attempt, owner_token)
 
 
 def _execute_stage_run(args, task, stage, attempt, workspace, bundle) -> int:
