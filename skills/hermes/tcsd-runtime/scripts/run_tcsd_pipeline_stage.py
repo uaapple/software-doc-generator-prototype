@@ -120,7 +120,7 @@ def build_probe_capability_request(mapping: Path, request_path: Path) -> int:
 
 
 def run_probe_capability_precheck(job: dict, model: str, root: Path, out: Path,
-                                  mapping: Path, python=sys.executable):
+                                  mapping: Path, quality: Any, python=sys.executable):
     """Classify probe observability for every candidate operator before any
     simulation. Returns (capability_path_or_None, evidence dict)."""
     model_path = Path(job["input"]["modelSlxPath"])
@@ -581,7 +581,9 @@ def stage_run(
         finish(job, stage, summary="Condition、Decision 与 MC/DC 覆盖目标已形成 Coverage IR。", artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir), artifact(root, decision_obligations)]); return
     if stage == 6:
         plan = out / f"{model}_state_probe_plan.json"
-        capability_path, precheck_evidence = run_probe_capability_precheck(job, model, root, out, mapping)
+        capability_path, precheck_evidence = run_probe_capability_precheck(
+            job, model, root, out, mapping, quality
+        )
         plan_cmd = [sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)]
         if capability_path is not None:
             plan_cmd += ["--probe-capability", str(capability_path)]

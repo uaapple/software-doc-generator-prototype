@@ -169,6 +169,55 @@ class CapabilityRequestTest(unittest.TestCase):
             self.assertEqual([item["id"] for item in request["operators"]], ["M:10", "M:20"])
             self.assertEqual(request["operators"][0]["block_path"], "M/AND")
 
+    def test_cache_miss_uses_explicit_quality_runtime(self):
+        """The production Stage 6 path must not depend on a hidden global
+        named ``quality``.  Fixture-based tests return before this branch and
+        previously missed the resulting NameError."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root / "outputs"
+            out.mkdir()
+            model_path = root / "M.slx"
+            model_path.write_bytes(b"model")
+            mapping = out / "M_logical_operators.json"
+            mapping.write_text(json.dumps({
+                "model": "M",
+                "operators": [{"id": "M:10", "block_path": "M/AND"}],
+            }), encoding="utf-8")
+            capability_output = out / "M_probe_capability.json"
+
+            class FakeQuality:
+                def __init__(self):
+                    self.entry_called = False
+                    self.run_called = False
+
+                def write_matlab_entry(self, path, code):
+                    self.entry_called = True
+                    path.write_text(code, encoding="utf-8")
+                    return path
+
+                def run_satk(self, python, scripts, entry, **kwargs):
+                    self.run_called = True
+                    capability_output.write_text(json.dumps({
+                        "schema": STAGE_MODULE.PROBE_CAPABILITY_SCHEMA,
+                        "strategyVersion": STAGE_MODULE.PROBE_CAPABILITY_STRATEGY_VERSION,
+                        "capabilities": {
+                            "M:10": {"strategy": "to_workspace_probe", "reason": "accepted"},
+                        },
+                    }), encoding="utf-8")
+
+            quality = FakeQuality()
+            job = {"input": {"modelSlxPath": str(model_path)}}
+            capability_path, evidence = STAGE_MODULE.run_probe_capability_precheck(
+                job, "M", root, out, mapping, quality
+            )
+
+            self.assertEqual(capability_path, capability_output)
+            self.assertTrue(quality.entry_called)
+            self.assertTrue(quality.run_called)
+            self.assertEqual(evidence["cache"], "miss")
+            self.assertEqual(evidence["operatorCount"], 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
