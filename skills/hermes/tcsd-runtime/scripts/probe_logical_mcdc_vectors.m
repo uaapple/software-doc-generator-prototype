@@ -38,7 +38,11 @@ for m = 1:numel(modelNames)
     tests = normalize_struct_array(spec.tests);
     for testIndex = 1:numel(tests)
         [obs, testCoverage] = run_test_probe(modelName, inputNames, inputTypes, inputDims, probes, tests(testIndex), rootDir, matFileName, ~isempty(opts.CoverageJson));
-        append_probe_progress(rootDir, modelName, struct('test_id', struct_text(tests(testIndex), 'test_id'), 'status', 'completed', 'step_count', numel(tests(testIndex).steps), 'serial', testIndex, 'at', datestr(now, 'yyyy-mm-ddTHH:MM:SS')));
+        progressTestId = struct_text(tests(testIndex), 'test_id');
+        if isempty(progressTestId)
+            progressTestId = sprintf('test_%06d', testIndex);
+        end
+        append_probe_progress(rootDir, modelName, struct('test_id', progressTestId, 'status', 'completed', 'step_count', numel(tests(testIndex).steps), 'serial', testIndex, 'at', datestr(now, 'yyyy-mm-ddTHH:MM:SS')));
         if ~isempty(testCoverage)
             if isempty(aggregateCoverage)
                 aggregateCoverage = testCoverage;
@@ -601,10 +605,14 @@ for parentIndex = 1:numel(parent)
 end
 end
 
-function value = struct_text(item, fallback)
-value = optional_struct_text(item, 'text');
-if isempty(value)
-    value = fallback;
+function value = struct_text(item, fieldName)
+% Reads the NAMED field as text; returns '' when missing. The previous
+% implementation read item.text and fell back to the FIELD NAME literal, which
+% is how every progress line ended up with the literal test_id "test_id"
+% (bbc72245), making the progress file useless for resume decisions.
+value = '';
+if isstruct(item) && isfield(item, fieldName)
+    value = char(string(item.(fieldName)));
 end
 end
 

@@ -27,15 +27,46 @@ async function listBundleFiles(rootDir, currentDir = rootDir) {
 }
 
 export async function hashTcsdBundle(bundleDir) {
+  // Manifest-driven hashing: when bundle-manifest.json is present (generated
+  // at build time by tools/generate-bundle-manifests.mjs), the hash covers
+  // exactly the listed files — path, content, and mode. Stray build-context
+  // files (.DS_Store, __pycache__) can no longer shift a deployed bundle's
+  // hash, which previously made production hash drift undiagnosable.
+  const manifestPath = path.join(bundleDir, "bundle-manifest.json");
+  let manifest = null;
+  try {
+    const parsed = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+    if (parsed?.schema === "tcsd-bundle-manifest/v1" && Array.isArray(parsed.files)) {
+      manifest = parsed;
+    }
+  } catch {
+    manifest = null;
+  }
+  if (manifest) {
+    const hash = createHash("sha256");
+    for (const file of manifest.files) {
+      hash.update(file.path);
+      hash.update("\0");
+      hash.update(await fs.readFile(path.join(bundleDir, file.path)));
+      hash.update("\0");
+      hash.update(String(file.mode ?? ""));
+      hash.update("\0");
+    }
+    return { sha256: hash.digest("hex"), fileCount: manifest.files.length, manifestDriven: true };
+  }
+  // Fallback (dev checkouts without manifests): walk the directory but skip
+  // the manifest file itself so both modes stay comparable.
   const hash = createHash("sha256");
-  const files = await listBundleFiles(bundleDir);
+  const files = (await listBundleFiles(bundleDir)).filter(
+    (file) => file.relativePath !== "bundle-manifest.json"
+  );
   for (const file of files) {
     hash.update(file.relativePath);
     hash.update("\0");
     hash.update(await fs.readFile(file.absolutePath));
     hash.update("\0");
   }
-  return { sha256: hash.digest("hex"), fileCount: files.length };
+  return { sha256: hash.digest("hex"), fileCount: files.length, manifestDriven: false };
 }
 
 export async function hashTcsdFile(filePath) {

@@ -78,10 +78,36 @@ def sha256_file(path: Path) -> str:
 
 
 def hash_tree(root: Path) -> str:
+    """Manifest-driven bundle hashing (mirrors the Node hashTcsdBundle).
+
+    When bundle-manifest.json exists (generated at build time by
+    tools/generate-bundle-manifests.mjs), the hash covers exactly the listed
+    files — path, content, and mode — so stray files in the deployed tree
+    (.DS_Store, __pycache__) cannot shift the hash. Without a manifest the
+    legacy directory walk applies, skipping the manifest file itself."""
+    root = Path(root)
+    manifest_path = root / "bundle-manifest.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except ValueError:
+            manifest = None
+        if isinstance(manifest, dict) and manifest.get("schema") == "tcsd-bundle-manifest/v1" and isinstance(manifest.get("files"), list):
+            digest = hashlib.sha256()
+            for entry in manifest["files"]:
+                relative = str(entry.get("path") or "")
+                target = root / relative
+                digest.update(relative.encode())
+                digest.update(b"\0")
+                digest.update(target.read_bytes() if target.is_file() else b"")
+                digest.update(b"\0")
+                digest.update(str(entry.get("mode", "")).encode())
+                digest.update(b"\0")
+            return digest.hexdigest()
     digest = hashlib.sha256()
     files = []
     for item in sorted(root.rglob("*")):
-        if item.is_file():
+        if item.is_file() and item.name != "bundle-manifest.json" and item.name != ".DS_Store" and item.parent.name != "__pycache__":
             files.append(item)
     for item in files:
         digest.update(item.relative_to(root).as_posix().encode())

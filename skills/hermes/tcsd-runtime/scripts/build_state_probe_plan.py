@@ -159,15 +159,38 @@ def normalize_param_values(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, sample_time: float,
-               capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
+               capabilities: dict[str, Any] | None = None,
+               total_budget: int | None = None) -> dict[str, Any]:
     """Build the probe candidate plan.
 
     ``capabilities`` maps operator id -> {"strategy": ..., "reason": ...} from
     the precheck job. Operators judged ``unprobeable`` by the precheck never
     produce candidates: the alternative was 600+ target_unavailable observations
     polluting the results (production task bbc72245), and "unprobeable" may only
-    ever be produced by this precheck, never by a runtime error."""
+    ever be produced by this precheck, never by a runtime error.
+
+    ``total_budget`` bounds the WHOLE plan (production A09_GearDiag produced
+    1214 candidates / 45 MB of observations from a single model). The budget is
+    distributed as an even per-port quota so coverage stays spread across
+    targets instead of the first few ports eating everything."""
     capabilities = capabilities or {}
+    quota = max_candidates
+    if total_budget is not None and total_budget > 0:
+        qualifying = 0
+        for operator in report.get("operators", []):
+            if not isinstance(operator, dict):
+                continue
+            if capabilities.get(str(operator.get("id") or ""), {}).get("strategy") == "unprobeable":
+                continue
+            for port in operator.get("ports", []) if isinstance(operator.get("ports"), list) else []:
+                if not isinstance(port, dict):
+                    continue
+                trace = port.get("trace") if isinstance(port.get("trace"), dict) else {}
+                deps = collect_dependencies(trace)
+                if (deps.stateful or deps.unsupported) and deps.inputs:
+                    qualifying += 1
+        if qualifying > 0:
+            quota = min(max_candidates, max(1, total_budget // qualifying))
     tests: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -223,7 +246,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             for control in sorted(deps.inputs):
                 for start, end in ((0, 1), (1, 0)):
                     for hold in holds:
-                        if target["candidate_count"] >= max_candidates:
+                        if target["candidate_count"] >= quota:
                             break
                         key = json.dumps([op_id, index, control, start, end, hold, sibling_inputs, sibling_params, param_values], sort_keys=True)
                         if key in seen:
@@ -256,11 +279,11 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                             }
                         )
                         target["candidate_count"] += 1
-                    if target["candidate_count"] >= max_candidates:
+                    if target["candidate_count"] >= quota:
                         break
-                if target["candidate_count"] >= max_candidates:
+                if target["candidate_count"] >= quota:
                     break
-            if target["candidate_count"] >= max_candidates:
+            if target["candidate_count"] >= quota:
                 target["bounded"] = True
             if not target["candidate_count"]:
                 target["status"] = "candidate_exhausted"
@@ -276,6 +299,8 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             "candidate_count": len(tests),
             "unplanned_count": sum(1 for item in targets if item["status"] != "planned"),
             "unprobeable_target_count": sum(1 for item in targets if item["status"] == "unprobeable"),
+            "total_budget": total_budget,
+            "per_port_quota": quota if total_budget else None,
         },
     }
 
@@ -285,6 +310,8 @@ def main() -> int:
     parser.add_argument("--traces", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--max-candidates-per-port", type=int, default=32)
+    parser.add_argument("--max-total-candidates", type=int, default=240,
+                        help="global plan budget; distributed as an even per-port quota")
     parser.add_argument("--max-steps-per-candidate", type=int, default=8)
     parser.add_argument("--sample-time", type=float, default=0.01)
     parser.add_argument("--probe-capability", default="",
@@ -301,7 +328,7 @@ def main() -> int:
         if not isinstance(capabilities, dict):
             capabilities = {}
     plan = build_plan(items[0], max(1, args.max_candidates_per_port), max(1, args.max_steps_per_candidate), max(1e-6, args.sample_time),
-                      capabilities=capabilities)
+                      capabilities=capabilities, total_budget=max(1, args.max_total_candidates))
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
