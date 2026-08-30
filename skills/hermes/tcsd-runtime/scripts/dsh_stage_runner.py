@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import uuid as uuidlib
+from datetime import datetime
 from pathlib import Path
 
 SCHEMA_INPUT = "tcsd-agent-stage-input/v1"
@@ -44,6 +45,7 @@ SCHEMA_MANIFEST = "simulink-ut-tcsd-execution-manifest/v1"
 LEASE_HEARTBEAT_SECONDS = 5.0
 LEASE_STALE_SECONDS = 45.0
 EXIT_LEASE_ACTIVE = 3
+GATEWAY_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timed_out"}
 SCHEMA_TIMELINE = "tcsd-stage-timeline/v1"
 SCHEMA_ARTIFACTS = "tcsd-artifact-manifest/v1"
 SCHEMA_SEMANTIC = "tcsd-host-semantic-validation/v1"
@@ -68,6 +70,7 @@ STAGE_SKILLS = [
 SEMANTIC_STAGES = {2, 6, 7, 8, 9, 10, 11}
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent.parent.parent
+SATK_SCRIPT = SCRIPT_DIR / "satk_eval.py"
 
 
 def sha256_file(path: Path) -> str:
@@ -293,6 +296,103 @@ def start_lease_heartbeat(workspace: Path, stage: int, attempt: int):
     thread = threading.Thread(target=beat, name="tcsd-lease-heartbeat", daemon=True)
     thread.start()
     return stop
+
+
+def query_gateway_job_status(job_id: str, workspace_id: str) -> dict:
+    """Ask the Gateway for the real job state via the satk_eval CLI so the
+    credential contract and URL handling stay in exactly one place."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(SATK_SCRIPT), "--job-status", str(job_id), str(workspace_id)],
+            capture_output=True, text=True, timeout=30,
+        )
+        return json.loads(proc.stdout.strip() or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return {"status": None, "error": f"gateway status query failed: {exc}"}
+
+
+def cancel_gateway_job_cli(job_id: str, workspace_id: str) -> dict:
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(SATK_SCRIPT), "--cancel-job", str(job_id), str(workspace_id)],
+            capture_output=True, text=True, timeout=30,
+        )
+        return json.loads(proc.stdout.strip() or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return {"cancelled": False, "error": f"gateway cancel failed: {exc}"}
+
+
+def read_gateway_marker(workspace: Path) -> dict | None:
+    marker = Path(workspace) / "outputs" / ".tcsd-runtime" / "active-gateway-job.json"
+    if not marker.is_file():
+        return None
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _unlink_gateway_marker(workspace: Path) -> None:
+    try:
+        (Path(workspace) / "outputs" / ".tcsd-runtime" / "active-gateway-job.json").unlink()
+    except OSError:
+        pass
+
+
+def reconcile_gateway_job(workspace: Path, *, query=query_gateway_job_status,
+                          cancel=cancel_gateway_job_cli, now=None) -> dict:
+    """Four-branch takeover state machine over the active Gateway job marker:
+
+      marker absent                        -> proceed
+      query fails (real state unknown)     -> refuse  (never resubmit blind)
+      job reached a terminal state         -> collect results, release, proceed
+      job active + fresh heartbeat + owner -> refuse  (a healthy job owns the slot)
+      job active + dead owner/stale heart  -> takeover: cancel orphan, proceed
+
+    Dependency-injected query/cancel keep this unit-testable without a Gateway.
+    """
+    clock = now or datetime.now
+    marker = read_gateway_marker(workspace)
+    if marker is None:
+        return {"action": "proceed", "gatewayStatus": "absent"}
+    job_id = str(marker.get("jobId") or "")
+    workspace_id = str(marker.get("workspaceId") or "")
+    owner_pid = marker.get("ownerPid")
+    owner_alive = bool(owner_pid) and _pid_alive(int(owner_pid))
+    heartbeat_fresh = False
+    try:
+        heartbeat = datetime.fromisoformat(str(marker.get("heartbeatAt")))
+        heartbeat_fresh = (clock() - heartbeat).total_seconds() <= LEASE_STALE_SECONDS
+    except (TypeError, ValueError):
+        heartbeat_fresh = False
+    if not job_id or not workspace_id:
+        # Unusable (legacy) marker content: reclaim only when clearly stale.
+        if heartbeat_fresh and owner_alive:
+            return {"action": "refuse", "gatewayStatus": "unknown_marker",
+                    "reason": "Gateway 标记心跳新鲜但缺少作业标识，无法安全判定"}
+        _unlink_gateway_marker(workspace)
+        return {"action": "proceed", "gatewayStatus": "reclaimed_unusable_marker"}
+    status_info = query(job_id, workspace_id)
+    if status_info.get("error") or not status_info.get("status"):
+        return {
+            "action": "refuse",
+            "gatewayStatus": "unknown",
+            "gatewayJobId": job_id,
+            "reason": f"Gateway 作业状态查询失败，禁止盲目重复提交：{status_info.get('error')}",
+        }
+    status = str(status_info["status"])
+    if status in GATEWAY_TERMINAL_STATUSES:
+        _unlink_gateway_marker(workspace)
+        return {"action": "proceed", "gatewayStatus": status, "gatewayJobId": job_id,
+                "note": "先前作业已终态，标记已释放"}
+    if heartbeat_fresh and owner_alive:
+        return {"action": "refuse", "gatewayStatus": status, "gatewayJobId": job_id,
+                "reason": "检测到健康的活跃 MATLAB Gateway 作业，禁止重复提交；等待其完成或取消"}
+    cancel(job_id, workspace_id)
+    _unlink_gateway_marker(workspace)
+    return {"action": "proceed", "gatewayStatus": status, "gatewayJobId": job_id,
+            "note": "owner 已失效（心跳超时或进程退出），孤儿作业已取消并接管"}
 
 
 def semantic_validate(task: dict, stage: int, result: dict, runtime_dir: Path,
@@ -557,37 +657,18 @@ def _execute_stage_run(args, task, stage, attempt, workspace, bundle) -> int:
         },
     }
     write_json(manifest_path, manifest)
-    gateway_marker = workspace / "outputs" / ".tcsd-runtime" / "active-gateway-job.json"
-    if gateway_marker.is_file():
-        # A previous Gateway submission may still be running on the host
-        # MATLAB. Only a stale marker (dead owner, no fresh heartbeat) may be
-        # reclaimed here; otherwise refuse to submit a duplicate job.
-        active_job = {}
-        try:
-            active_job = json.loads(gateway_marker.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            active_job = {}
-        marker_stale = True
-        owner_pid = active_job.get("ownerPid")
-        if owner_pid and _pid_alive(int(owner_pid)):
-            try:
-                heartbeat = __import__("datetime").datetime.fromisoformat(str(active_job.get("heartbeatAt")))
-                marker_stale = (__import__("datetime").datetime.now() - heartbeat).total_seconds() > LEASE_STALE_SECONDS
-            except (TypeError, ValueError):
-                marker_stale = True
-        if not marker_stale:
-            error = {
-                "code": "tcsd_gateway_job_active",
-                "message": "检测到活跃的 MATLAB Gateway 作业，禁止重复提交；等待其完成或被取消后再运行本阶段。",
-                "gatewayJobId": active_job.get("jobId"),
-                "gatewayOwnerPid": owner_pid,
-            }
-            print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
-            return EXIT_LEASE_ACTIVE
-        try:
-            gateway_marker.unlink()
-        except OSError:
-            pass
+    reconciliation = reconcile_gateway_job(workspace)
+    if reconciliation["action"] != "proceed":
+        error = {
+            "code": "tcsd_gateway_job_active",
+            "message": reconciliation.get("reason") or "检测到活跃的 MATLAB Gateway 作业，禁止重复提交。",
+            "gatewayStatus": reconciliation.get("gatewayStatus"),
+            "gatewayJobId": reconciliation.get("gatewayJobId"),
+        }
+        print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
+        return EXIT_LEASE_ACTIVE
+    if reconciliation.get("note"):
+        print(json.dumps({"reconciliation": reconciliation}, ensure_ascii=False), file=sys.stderr)
     if runtime_result_path.exists():
         runtime_result_path.unlink()
     if legacy_result_path.exists():

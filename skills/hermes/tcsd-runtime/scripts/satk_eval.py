@@ -367,6 +367,44 @@ def mirror_runtime_matlab_scripts(code: str, *, environ=None) -> str:
     return code.replace(str(source_dir), str(mirror_dir))
 
 
+GATEWAY_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timed_out"}
+
+
+def query_gateway_job(job_id: str, workspace_id: str, *, environ=None) -> dict:
+    """Query the real Gateway job status for reconciliation decisions.
+
+    Returns {"status": <gateway status or None>, "error": <str or None>}; a
+    non-None error means the true state is unknown and callers must treat the
+    slot as occupied rather than resubmitting blind."""
+    values = os.environ if environ is None else environ
+    query = urllib.parse.urlencode({"workspaceId": workspace_id})
+    try:
+        job = gateway_request(
+            "GET",
+            f"/api/jobs/{urllib.parse.quote(str(job_id))}?{query}",
+            environ=values,
+            timeout_s=10.0,
+        )
+        return {"status": str(job.get("status") or ""), "error": None}
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {"status": None, "error": str(exc)}
+
+
+def cancel_gateway_job(job_id: str, workspace_id: str, *, environ=None) -> dict:
+    values = os.environ if environ is None else environ
+    try:
+        gateway_request(
+            "POST",
+            f"/api/jobs/{urllib.parse.quote(str(job_id))}/cancel",
+            payload={"workspaceId": workspace_id},
+            environ=values,
+            timeout_s=10.0,
+        )
+        return {"cancelled": True, "error": None}
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {"cancelled": False, "error": str(exc)}
+
+
 def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
     values = os.environ if environ is None else environ
     mapping_id = str(values.get("SATK_GATEWAY_MAPPING_ID") or "worker-data").strip()
@@ -758,8 +796,21 @@ def main() -> int:
         except FileNotFoundError as exc:
             print(str(exc), file=sys.stderr)
             return 1
+    if len(sys.argv) == 4 and sys.argv[1] == "--job-status":
+        # Reconciliation helper: real Gateway job state for a marker reference.
+        result = query_gateway_job(sys.argv[2], sys.argv[3])
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result.get("error") is None else 1
+    if len(sys.argv) == 4 and sys.argv[1] == "--cancel-job":
+        result = cancel_gateway_job(sys.argv[2], sys.argv[3])
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result.get("cancelled") else 1
     if len(sys.argv) != 2:
-        print("usage: satk_eval.py MATLAB_CODE_FILE | --server-info", file=sys.stderr)
+        print(
+            "usage: satk_eval.py MATLAB_CODE_FILE | --server-info"
+            " | --job-status JOB_ID WORKSPACE_ID | --cancel-job JOB_ID WORKSPACE_ID",
+            file=sys.stderr,
+        )
         return 2
 
     code_file = Path(sys.argv[1])

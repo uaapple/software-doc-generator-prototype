@@ -264,11 +264,11 @@ export class TcsdDshStageExecutor {
 
   async awaitStageCheckpoint(job, stageIndex, session) {
     // Poll the shared workspace for the runner-written checkpoint of this
-    // stage while the single DSH session is still running. Returns the
-    // checkpoint path once present; if the session ends before the stage
-    // checkpoint appeared, the per-attempt outcome files (attempt-result.json,
-    // falling back to the raw runtime result) are read so the surfaced error
-    // carries the real exit code and the structured runner/validation verdict.
+    // stage. After the DSH session ends, a background runner may still be
+    // finishing the stage (the bbc72245 orphan shape), so the poll keeps
+    // waiting while the runner lease heartbeat is fresh and only fails once
+    // the runner is provably gone — surfacing the structured attempt outcome
+    // and any live Gateway job marker in the error details.
     const checkpointPath = path.join(
       path.resolve(job.input.outputDir),
       ".tcsd-checkpoints",
@@ -276,23 +276,17 @@ export class TcsdDshStageExecutor {
     );
     const pollMs = Math.max(2000, Number(this.pollIntervalMs || 5000));
     const deadline = Date.now() + this.timeoutMs;
+    let sessionExited = false;
+    let sessionExitOutcome = null;
     while (Date.now() < deadline) {
-      const exit = await Promise.race([
-        session.exitPromise.then(
-          () => "exit",
-          (cause) => ({ error: cause })
-        ),
-        new Promise((resolve) => setTimeout(resolve, pollMs))
-      ]);
-      try {
-        const stat = await fs.stat(checkpointPath);
-        if (stat.isFile()) {
-          return checkpointPath;
-        }
-      } catch {
-        // checkpoint not written yet
-      }
-      if (exit === "exit" || (exit && typeof exit === "object" && exit.error)) {
+      if (!sessionExited) {
+        const exit = await Promise.race([
+          session.exitPromise.then(
+            () => "exit",
+            (cause) => ({ error: cause })
+          ),
+          new Promise((resolve) => setTimeout(resolve, pollMs))
+        ]);
         if (exit && typeof exit === "object" && exit.error) {
           // The session transport itself failed (spawn error / worker HTTP
           // error) — a genuine session failure, not a missing checkpoint.
@@ -301,33 +295,123 @@ export class TcsdDshStageExecutor {
             stderr: String(session.stderr || "")
           }), this.timeoutMs);
         }
-        const sessionOutcome = await session.exitPromise.then(null, () => null);
-        const attemptOutcome = await this.collectAttemptOutcome(job, stageIndex);
-        const exitCode = Number.isInteger(sessionOutcome?.code)
-          ? sessionOutcome.code
-          : Number.isInteger(attemptOutcome?.exitCode) ? attemptOutcome.exitCode : null;
-        const outcomeSummary = attemptOutcome
-          ? `运行状态=${attemptOutcome.runtimeStatus}，校验状态=${attemptOutcome.validationStatus}`
-            + `，阶段终态=${attemptOutcome.stageStatus}`
-            + (attemptOutcome.error?.message ? `；失败原因：${attemptOutcome.error.message}` : "")
-          : "attempt 目录中未找到任何结构化结果文件。";
-        throw Object.assign(
-          new Error(`DSH 会话已结束，但阶段 ${stageIndex} 的 checkpoint 未产出。${outcomeSummary}`),
-          {
-            code: TCSD_ERROR_CODES.stageCheckpointMissing,
-            details: {
-              stageIndex,
-              ...(Number.isInteger(exitCode) ? { exitCode } : {}),
-              sessionStderr: String(session.stderr || "").slice(-2000),
-              ...(attemptOutcome ? { attempt: attemptOutcome } : {})
+        if (exit === "exit") {
+          sessionExited = true;
+          sessionExitOutcome = await session.exitPromise.then(null, () => null);
+        }
+      }
+      try {
+        const stat = await fs.stat(checkpointPath);
+        if (stat.isFile()) {
+          return checkpointPath;
+        }
+      } catch {
+        // checkpoint not written yet
+      }
+      const attemptOutcome = await this.collectAttemptOutcome(job, stageIndex);
+      if (attemptOutcome?.stageStatus === "failed") {
+        throw await this.checkpointMissingError(job, stageIndex, {
+          sessionExitOutcome,
+          sessionStderr: String(session.stderr || ""),
+          attempt: attemptOutcome
+        });
+      }
+      if (sessionExited) {
+        const lease = await this.readRunnerLease(job, stageIndex);
+        const leaseAlive = lease !== null && this.leaseHeartbeatFresh(lease);
+        if (!leaseAlive) {
+          // One grace poll absorbs the write/rename race before declaring the
+          // runner gone for good.
+          await new Promise((resolve) => setTimeout(resolve, pollMs));
+          try {
+            const stat = await fs.stat(checkpointPath);
+            if (stat.isFile()) {
+              return checkpointPath;
             }
+          } catch {
+            // still missing
           }
-        );
+          const finalOutcome = await this.collectAttemptOutcome(job, stageIndex);
+          throw await this.checkpointMissingError(job, stageIndex, {
+            sessionExitOutcome,
+            sessionStderr: String(session.stderr || ""),
+            attempt: finalOutcome ?? attemptOutcome,
+            lease
+          });
+        }
+        // Lease heartbeat fresh: the orphaned background runner is still
+        // working and may yet produce the checkpoint — keep polling.
       }
     }
     throw publicRuntimeError(Object.assign(new Error("timed out waiting for the DSH stage checkpoint."), {
       code: "ETIMEDOUT"
     }), this.timeoutMs);
+  }
+
+  leaseHeartbeatFresh(lease) {
+    // Keep in sync with LEASE_STALE_SECONDS in dsh_stage_runner.py. The host
+    // cannot verify the owner pid (different container), so liveness is judged
+    // purely by heartbeat age.
+    const stamp = Date.parse(String(lease?.heartbeatAt || ""));
+    return Number.isFinite(stamp) && Date.now() - stamp <= 45000;
+  }
+
+  async readRunnerLease(job, stageIndex) {
+    const leasesDir = path.join(
+      path.resolve(job.input.outputDir),
+      ".tcsd-runtime",
+      "leases"
+    );
+    let names = [];
+    try {
+      names = (await fs.readdir(leasesDir, { withFileTypes: true }))
+        .filter((entry) => entry.isFile() && entry.name.startsWith(`stage-${String(stageIndex).padStart(2, "0")}-attempt-`))
+        .map((entry) => entry.name);
+    } catch {
+      return null;
+    }
+    let freshest = null;
+    for (const name of names) {
+      const payload = await readJson(path.join(leasesDir, name), null);
+      if (!payload || payload.schema !== "tcsd-stage-lease/v1") continue;
+      if (!freshest || String(payload.heartbeatAt || "") > String(freshest.heartbeatAt || "")) {
+        freshest = { ...payload, leaseFile: name };
+      }
+    }
+    return freshest;
+  }
+
+  async checkpointMissingError(job, stageIndex, { sessionExitOutcome, sessionStderr, attempt, lease }) {
+    const exitCode = Number.isInteger(sessionExitOutcome?.code)
+      ? sessionExitOutcome.code
+      : null;
+    const gatewayMarker = await readJson(
+      path.join(path.resolve(job.input.outputDir), ".tcsd-runtime", "active-gateway-job.json"),
+      null
+    );
+    const summary = attempt
+      ? `运行状态=${attempt.runtimeStatus}，校验状态=${attempt.validationStatus}，阶段终态=${attempt.stageStatus}`
+        + (attempt.error?.message ? `；失败原因：${attempt.error.message}` : "")
+      : "attempt 目录中未找到任何结构化结果文件。";
+    const runnerNote = lease
+      ? "runner 租约已陈旧（后台 runner 已停止）。"
+      : "未发现活跃的 runner 租约。";
+    return Object.assign(
+      new Error(`DSH 会话已结束，但阶段 ${stageIndex} 的 checkpoint 未产出。${summary}${runnerNote}`),
+      {
+        code: TCSD_ERROR_CODES.stageCheckpointMissing,
+        details: {
+          stageIndex,
+          ...(Number.isInteger(exitCode) ? { exitCode } : {}),
+          sessionStderr: String(sessionStderr || "").slice(-2000),
+          ...(attempt ? { attempt } : {}),
+          ...(lease ? { runnerLease: { runId: lease.runId, heartbeatAt: lease.heartbeatAt } } : {}),
+          ...(gatewayMarker
+            ? { gatewayJob: { jobId: gatewayMarker.jobId, ownerPid: gatewayMarker.ownerPid, heartbeatAt: gatewayMarker.heartbeatAt } }
+            : {})
+        }
+      }
+    );
   }
 
   async collectAttemptOutcome(job, stageIndex) {
