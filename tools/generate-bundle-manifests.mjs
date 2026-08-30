@@ -14,6 +14,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const hermesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "skills", "hermes");
+// Scope: manifest-driven hashing is a TCSD pipeline contract. The
+// software-detail bundles use their own independent traversal hash
+// (hashSoftwareDetailBundle) — a manifest file there would POLLUTE that hash
+// instead of governing it.
+const BUNDLE_PREFIX = "tcsd-";
 const IGNORED = new Set(["bundle-manifest.json", ".DS_Store"]);
 const IGNORED_DIRECTORIES = new Set(["__pycache__", ".DS_Store"]);
 
@@ -58,7 +63,7 @@ async function buildManifest(bundleDir) {
 async function main() {
   const check = process.argv.includes("--check");
   const bundles = (await fs.readdir(hermesDir, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(BUNDLE_PREFIX))
     .map((entry) => path.join(hermesDir, entry.name));
   let mismatches = 0;
   for (const bundleDir of bundles) {

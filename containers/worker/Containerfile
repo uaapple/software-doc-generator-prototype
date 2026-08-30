@@ -107,10 +107,11 @@ COPY containers/worker/configure-hermes.py ./containers/worker/configure-hermes.
 
 # The authoritative TCSD runtime is copied file-class by file-class. Project
 # MAT/SLDD/SLX/Addons are supplied through the host-approved project addon store.
-COPY skills/hermes/tcsd-runtime/scripts/ ./skills/hermes/tcsd-runtime/scripts/
-COPY skills/hermes/tcsd-runtime/references/ ./skills/hermes/tcsd-runtime/references/
-COPY skills/hermes/tcsd-runtime/bundle-manifest.json ./skills/hermes/tcsd-runtime/bundle-manifest.json
-COPY skills/hermes/tcsd-runtime/assets/templates/tcsd_template.xlsx ./skills/hermes/tcsd-runtime/assets/templates/tcsd_template.xlsx
+# The runtime bundle is copied WHOLE: bundle-manifest.json lists every file
+# (including assets/support-package) and hashTcsdBundle reads exactly that set
+# in manifest mode — a partial copy made the worker fail with ENOENT before
+# Stage 1 (review finding P0-1).
+COPY skills/hermes/tcsd-runtime/ ./skills/hermes/tcsd-runtime/
 COPY skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py ./skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py
 COPY skills/hermes/tcsd-stage-01-validate-inputs/ ./skills/hermes/tcsd-stage-01-validate-inputs/
 COPY skills/hermes/tcsd-stage-02-check-environment/ ./skills/hermes/tcsd-stage-02-check-environment/
@@ -159,6 +160,11 @@ COPY skills/hermes/software-detail-stage-06-architecture-draft/ ./skills/hermes/
 COPY skills/hermes/software-detail-stage-07-module-draft/ ./skills/hermes/software-detail-stage-07-module-draft/
 COPY skills/hermes/software-detail-stage-08-content-check/ ./skills/hermes/software-detail-stage-08-content-check/
 COPY skills/hermes/software-detail-stage-09-docx-finalize/ ./skills/hermes/software-detail-stage-09-docx-finalize/
+COPY scripts/verify-bundle-manifests.mjs ./scripts/verify-bundle-manifests.mjs
+# Build-time gate: every tcsd manifest entry must exist in the image and the
+# image must not carry unlisted files (review finding P0-1). Placed after ALL
+# skills/hermes COPY lines so every bundle is verified.
+RUN node ./scripts/verify-bundle-manifests.mjs ./skills/hermes
 
 RUN mkdir -p \
       /var/lib/sdg/data/uploads \
