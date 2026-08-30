@@ -604,6 +604,9 @@ def stage_run(
             run(ir_args + ["--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         reconciliation = probe_observation_reconciliation(probe_results) if candidate_count > 0 else None
         gap_count = int(reconciliation["gapCount"]) if reconciliation else 0
+        # Unprobeable targets are registered gaps too: with every target
+        # unobservable the stage must NOT report completed (review P1).
+        gap_count += unprobeable_target_count
         state["statePlan"] = str(plan)
         if reconciliation is not None:
             state["stateProbeReconciliation"] = reconciliation
@@ -613,7 +616,7 @@ def stage_run(
         elif gap_count == 0:
             summary = "状态及时序刺激已生成并由实际 Probe 验证。"
         else:
-            summary = f"状态及时序刺激已生成；{gap_count} 个计划步骤未获可信观测，缺口已登记（partial），以第 9 阶段实测覆盖为准。"
+            summary = f"状态及时序刺激已生成；{gap_count} 项缺口（含 {unprobeable_target_count} 个不可探测目标）未获可信观测，已登记（partial），以第 9 阶段实测覆盖为准。"
         finish(
             job, stage,
             status="partial" if gap_count > 0 else "completed",

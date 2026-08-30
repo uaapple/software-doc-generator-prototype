@@ -111,6 +111,27 @@ class PlanBudgetTest(unittest.TestCase):
         self.assertEqual(budgeted["summary"]["per_port_quota"], 1,
                          "quota never exceeds the per-port cap")
 
+    def test_budget_is_a_hard_cap_when_ports_outnumber_it(self):
+        # Review P1: quota = max(1, budget // qualifying) still overshoots when
+        # ports outnumber the budget. The plan must truncate: first `budget`
+        # ports keep one candidate each, the rest are budget_truncated (kept
+        # in targets so reconciliation never loses them).
+        report = self._report()
+        for extra in range(3, 8):
+            report["operators"].append({
+                "id": f"M:{extra}", "operator": "AND", "ports": [
+                    {"index": 1, "trace": {"kind": "stateful", "source": {"kind": "root_inport", "signal": f"x{extra}"}}},
+                    {"index": 2, "trace": {"kind": "root_inport", "signal": f"y{extra}"}},
+                ],
+            })
+        budget = 3
+        plan = PLANNER.build_plan(report, 32, 8, 0.01, total_budget=budget)
+        self.assertLessEqual(plan["summary"]["candidate_count"], budget)
+        self.assertEqual(plan["summary"]["budget_truncated_target_count"], 4)
+        truncated = [t for t in plan["targets"] if t["status"] == "budget_truncated"]
+        self.assertTrue(truncated, "truncated targets must remain in the plan")
+        self.assertTrue(all(t["candidate_count"] == 0 for t in truncated))
+
     def test_budget_none_keeps_legacy_behaviour(self):
         legacy = PLANNER.build_plan(self._report(), 32, 8, 0.01, total_budget=None)
         self.assertIsNone(legacy["summary"]["total_budget"])

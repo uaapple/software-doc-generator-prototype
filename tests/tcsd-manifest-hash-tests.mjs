@@ -43,6 +43,28 @@ try {
     } finally {
       await rm(stray, { force: true });
     }
+    // An UNLISTED real file is deployment drift and must fail loudly.
+    const unlisted = path.join(bundle, "unlisted.txt");
+    await writeFile(unlisted, "drift");
+    try {
+      await assert.rejects(
+        () => hashTcsdBundle(bundle),
+        (error) => error.message.includes("清单之外的文件")
+      );
+    } finally {
+      await rm(unlisted, { force: true });
+    }
+    // chmod drift shifts the hash (actual on-disk mode is hashed).
+    const skillFile = path.join(bundle, "SKILL.md");
+    const { chmod, stat } = await import("node:fs/promises");
+    const originalMode = (await stat(skillFile)).mode & 0o777;
+    await chmod(skillFile, 0o600);
+    try {
+      const chmodded = await hashTcsdBundle(bundle);
+      assert.notEqual(chmodded.sha256, first.sha256, "chmod drift must shift the manifest hash");
+    } finally {
+      await chmod(skillFile, originalMode);
+    }
     // Touch a listed file: hash changes (content is covered).
     const target = path.join(bundle, "SKILL.md");
     const original = await readFile(target, "utf8");
@@ -71,7 +93,7 @@ try {
 
   // 4. Tool --check detects drift (temp clone of a bundle with a stale manifest).
   {
-    const fake = path.join(root, "drift", "skills", "hermes", "my-bundle");
+    const fake = path.join(root, "drift", "skills", "hermes", "tcsd-my-bundle");
     await mkdir(fake, { recursive: true });
     await writeFile(path.join(fake, "a.txt"), "A");
     const toolSource = await readFile(path.resolve("tools/generate-bundle-manifests.mjs"), "utf8");

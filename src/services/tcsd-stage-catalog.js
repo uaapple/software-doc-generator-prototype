@@ -44,13 +44,32 @@ export async function hashTcsdBundle(bundleDir) {
   }
   if (manifest) {
     const hash = createHash("sha256");
+    const listed = new Set();
     for (const file of manifest.files) {
+      const absolute = path.join(bundleDir, file.path);
+      // Missing file -> ENOENT here: an incomplete image must fail loudly.
+      const [content, stats] = [await fs.readFile(absolute), await fs.stat(absolute)];
+      // Actual on-disk permission, not the manifest record: chmod drift in
+      // the image must shift the hash (review P1).
       hash.update(file.path);
       hash.update("\0");
-      hash.update(await fs.readFile(path.join(bundleDir, file.path)));
+      hash.update(content);
       hash.update("\0");
-      hash.update(String(file.mode ?? ""));
+      hash.update(String(stats.mode & 0o777));
       hash.update("\0");
+      listed.add(file.path);
+    }
+    // Extra files are deployment drift, silently ignoring them hid the
+    // bbc72245 hash shift. Only clearly allowed system noise is exempt.
+    const exempt = (relativePath) =>
+      relativePath === "bundle-manifest.json" ||
+      relativePath === ".DS_Store" ||
+      relativePath.split("/").some((segment) => segment === "__pycache__" || segment === ".pytest_cache");
+    const extra = (await listBundleFiles(bundleDir))
+      .map((file) => file.relativePath)
+      .filter((relativePath) => !listed.has(relativePath) && !exempt(relativePath));
+    if (extra.length) {
+      throw new Error(`bundle 目录包含清单之外的文件（部署漂移）：${extra.slice(0, 5).join(", ")}`);
     }
     return { sha256: hash.digest("hex"), fileCount: manifest.files.length, manifestDriven: true };
   }

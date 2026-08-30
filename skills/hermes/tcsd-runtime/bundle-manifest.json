@@ -279,7 +279,7 @@
     },
     {
       "path": "scripts/build_state_probe_plan.py",
-      "sha256": "f2bbdb24f2124be5c5d5f4aaa35c48b580a1bb416b5cd4a254c992056c37ff62",
+      "sha256": "019e59c4dd49012e4f7e5634a82c4e7cb2bb1d148f3b3a2f4100641e2730a994",
       "mode": 493
     },
     {
@@ -319,7 +319,7 @@
     },
     {
       "path": "scripts/dsh_stage_runner.py",
-      "sha256": "35a1e347ffbbb334962d3ba2c821e0e5d7667911db59e64d2774c704a194d677",
+      "sha256": "8adbbf889ab78153faf5f9b2b312912b23e9bcd17bf042e2c6321ff241d72a9f",
       "mode": 420
     },
     {
@@ -329,7 +329,7 @@
     },
     {
       "path": "scripts/host_validate_tcsd_stage.py",
-      "sha256": "3689480dea3357fe67e589599692c543029a892df284d9386398c5598f97dde1",
+      "sha256": "9549b893e3b7cc2eb40958fd4b462e3eff3a4e373b5787dac785be458ced52b8",
       "mode": 420
     },
     {
@@ -374,7 +374,7 @@
     },
     {
       "path": "scripts/run_tcsd_pipeline_stage.py",
-      "sha256": "da31b87ed3645e92abaa98f6af46a649c541686bda5f2e0a28898d21a7f11ab7",
+      "sha256": "be0fafd27fb42fb6910e2a1488583a4e510fc005b5bf24ac2e3320b7c8ed8f81",
       "mode": 420
     },
     {
@@ -384,7 +384,7 @@
     },
     {
       "path": "scripts/satk_eval.py",
-      "sha256": "9d8353405ed5558fe8d26ea556ffddbe3e711ea6b79acf8d7c008634ab507240",
+      "sha256": "510d36fdfc210b45de9489997602671fa8fd7b20ebe6b6d815bdf41f4d12feb9",
       "mode": 493
     },
     {

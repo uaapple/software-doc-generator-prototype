@@ -665,6 +665,21 @@ def cmd_run(args) -> int:
     heartbeat_stop = start_lease_heartbeat(workspace, stage, attempt, owner_token)
     try:
         return _execute_stage_run(args, task, stage, attempt, workspace, bundle)
+    except BaseException as error:
+        # Crash guard: even an orchestrator exception (bad JSON, unexpected
+        # shape) must leave a terminal attempt result behind, otherwise the
+        # host only sees a bare session failure again.
+        try:
+            crash_dir = workspace / "outputs" / ".tcsd-agent" / f"stage-{stage:02d}" / f"attempt-{attempt}"
+            write_attempt_result(crash_dir, workspace, job_id=task["id"], stage=stage,
+                                 attempt=attempt, runtime_status="failed",
+                                 validation_status="not_applicable", stage_status="failed",
+                                 runtime_path=None, semantic_path=None,
+                                 error={"code": "tcsd_stage_runner_crashed",
+                                        "message": str(error)[:800]})
+        except Exception:
+            pass
+        raise
     finally:
         heartbeat_stop.set()
         release_lease(workspace, stage, attempt, owner_token)
@@ -735,11 +750,16 @@ def _execute_stage_run(args, task, stage, attempt, workspace, bundle) -> int:
         legacy_result_path.rename(runtime_result_path)
     if code != 0:
         runtime_status = "failed"
+        runtime_error = None
         try:
-            runtime_status = str(json.loads(runtime_result_path.read_text(encoding="utf-8")).get("status") or "failed")
+            runtime_payload = json.loads(runtime_result_path.read_text(encoding="utf-8"))
+            runtime_status = str(runtime_payload.get("status") or "failed")
+            raw_error = runtime_payload.get("error")
+            if isinstance(raw_error, dict) and raw_error.get("message"):
+                runtime_error = raw_error
         except (OSError, ValueError):
             pass
-        error = {"code": "tcsd_stage_runtime_failed", "message": f"stage {stage} runtime failed (exit {code})"}
+        error = runtime_error or {"code": "tcsd_stage_runtime_failed", "message": f"stage {stage} runtime failed (exit {code})"}
         write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
                              attempt=attempt, runtime_status=runtime_status,
                              validation_status="not_applicable", stage_status="failed",
@@ -751,7 +771,16 @@ def _execute_stage_run(args, task, stage, attempt, workspace, bundle) -> int:
         # Stage 10 的合法中间态：auto/prepare 模式下 brief 已生成、等待 Agent
         # 写入修复提案（apply 需要提案才会写 result.json）。这不是失败，
         # 不应以退出码 1 上报（曾把 stage 10 误判为阶段失败）。
+        # 中间态必须落盘为 attempt-result（stageStatus=awaiting_proposal）：
+        # prompt 要求 agent 轮询 checkpoint / attempt-result 判定阶段终态，
+        # 只写 brief 而不落盘中间态会让后台等待永远无法结束（评审 P0-4）。
         if stage == 10 and (manifest_path.parent / "repair-brief.json").is_file():
+            write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                                 attempt=attempt, runtime_status="completed",
+                                 validation_status="not_applicable",
+                                 stage_status="awaiting_proposal",
+                                 runtime_path=None, semantic_path=None,
+                                 error=None)
             print("run: stage 10 prepare completed; awaiting agent repair proposal", file=sys.stderr)
             return 0
         error = {"code": "tcsd_stage_runtime_failed", "message": f"stage {stage} runtime failed (exit {code})"}

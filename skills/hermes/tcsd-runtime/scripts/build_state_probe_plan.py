@@ -175,12 +175,14 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
     targets instead of the first few ports eating everything."""
     capabilities = capabilities or {}
     quota = max_candidates
+    budgeted_ports = None
     if total_budget is not None and total_budget > 0:
-        qualifying = 0
+        qualifying_ports: list[tuple[str, int]] = []
         for operator in report.get("operators", []):
             if not isinstance(operator, dict):
                 continue
-            if capabilities.get(str(operator.get("id") or ""), {}).get("strategy") == "unprobeable":
+            operator_id = str(operator.get("id") or operator.get("sid") or operator.get("block_path") or "")
+            if capabilities.get(operator_id, {}).get("strategy") == "unprobeable":
                 continue
             for port in operator.get("ports", []) if isinstance(operator.get("ports"), list) else []:
                 if not isinstance(port, dict):
@@ -188,9 +190,15 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                 trace = port.get("trace") if isinstance(port.get("trace"), dict) else {}
                 deps = collect_dependencies(trace)
                 if (deps.stateful or deps.unsupported) and deps.inputs:
-                    qualifying += 1
-        if qualifying > 0:
-            quota = min(max_candidates, max(1, total_budget // qualifying))
+                    qualifying_ports.append((operator_id, int(port.get("index") or 0)))
+        # Hard cap: when ports outnumber the budget the plan keeps the FIRST
+        # budget ports (one candidate each) and marks the rest truncated —
+        # quota = max(1, budget // qualifying) would still overshoot the cap.
+        if len(qualifying_ports) > total_budget:
+            budgeted_ports = set(qualifying_ports[:total_budget])
+            quota = 1
+        elif qualifying_ports:
+            quota = min(max_candidates, max(1, total_budget // len(qualifying_ports)))
     tests: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -235,6 +243,13 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                 # candidates for it would only end as target_unavailable.
                 target["status"] = "unprobeable"
                 target["unprobeable_reason"] = str(capability.get("reason") or "precheck marked unprobeable")
+                targets.append(target)
+                continue
+            if budgeted_ports is not None and (op_id, index) not in budgeted_ports:
+                # Hard global budget: ports beyond the budget keep their target
+                # record (nothing vanishes from reconciliation) but produce no
+                # candidates.
+                target["status"] = "budget_truncated"
                 targets.append(target)
                 continue
             if not deps.inputs:
@@ -301,6 +316,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             "unprobeable_target_count": sum(1 for item in targets if item["status"] == "unprobeable"),
             "total_budget": total_budget,
             "per_port_quota": quota if total_budget else None,
+            "budget_truncated_target_count": sum(1 for item in targets if item["status"] == "budget_truncated"),
         },
     }
 

@@ -302,8 +302,13 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
                     f"({test_id} step {step_index})"
                 )
             key = (test_id, step_index)
-            if key in seen and seen[key] == status:
-                continue  # duplicate observation with identical verdict
+            if key in seen:
+                if seen[key] == status:
+                    continue  # duplicate observation with identical verdict
+                raise ValueError(
+                    f"Probe observation carries conflicting terminal statuses for "
+                    f"{test_id} step {step_index}: {seen[key]!r} vs {status!r}"
+                )
             if (
                 test_id not in planned
                 or step_index not in planned[test_id]
