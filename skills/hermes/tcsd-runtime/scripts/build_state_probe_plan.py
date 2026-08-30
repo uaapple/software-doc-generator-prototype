@@ -158,7 +158,62 @@ def normalize_param_values(params: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, sample_time: float) -> dict[str, Any]:
+def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, sample_time: float,
+               capabilities: dict[str, Any] | None = None,
+               total_budget: int | None = None) -> dict[str, Any]:
+    """Build the probe candidate plan.
+
+    ``capabilities`` maps operator id -> {"strategy": ..., "reason": ...} from
+    the precheck job. Operators judged ``unprobeable`` by the precheck never
+    produce candidates: the alternative was 600+ target_unavailable observations
+    polluting the results (production task bbc72245), and "unprobeable" may only
+    ever be produced by this precheck, never by a runtime error.
+
+    ``total_budget`` bounds the WHOLE plan (production A09_GearDiag produced
+    1214 candidates / 45 MB of observations from a single model). The budget is
+    distributed as an even per-port quota so coverage stays spread across
+    targets instead of the first few ports eating everything."""
+    capabilities = capabilities or {}
+    # Only strategies the execution probe can actually honour may produce
+    # candidates. `noninvasive_signal_log` is a precheck VERDICT whose
+    # collection path is not implemented yet: letting those candidates run
+    # through the To Workspace executor would reproduce the bbc72245
+    # target_unavailable batch. Until the signal-log collection is implemented
+    # (and proven on a real MATLAB host), such targets are conservative,
+    # registered gaps. Legacy plans without capability input (strategy
+    # "unspecified") keep the historical behaviour.
+    executable_strategies = {"to_workspace_probe"}
+    quota = max_candidates
+    budgeted_ports = None
+    if total_budget is not None and total_budget > 0:
+        qualifying_ports: list[tuple[str, int]] = []
+        for operator in report.get("operators", []):
+            if not isinstance(operator, dict):
+                continue
+            operator_id = str(operator.get("id") or operator.get("sid") or operator.get("block_path") or "")
+            capability = capabilities.get(operator_id) or {}
+            strategy = str(capability.get("strategy") or "unspecified")
+            # Budget quota must use the SAME executable-strategy judgement as
+            # the planner below: targets that will not produce candidates
+            # (unprobeable / strategy-not-executable) must not consume budget
+            # slots and squeeze out genuinely executable targets.
+            if strategy != "unspecified" and strategy not in executable_strategies:
+                continue
+            for port in operator.get("ports", []) if isinstance(operator.get("ports"), list) else []:
+                if not isinstance(port, dict):
+                    continue
+                trace = port.get("trace") if isinstance(port.get("trace"), dict) else {}
+                deps = collect_dependencies(trace)
+                if (deps.stateful or deps.unsupported) and deps.inputs:
+                    qualifying_ports.append((operator_id, int(port.get("index") or 0)))
+        # Hard cap: when ports outnumber the budget the plan keeps the FIRST
+        # budget ports (one candidate each) and marks the rest truncated —
+        # quota = max(1, budget // qualifying) would still overshoot the cap.
+        if len(qualifying_ports) > total_budget:
+            budgeted_ports = set(qualifying_ports[:total_budget])
+            quota = 1
+        elif qualifying_ports:
+            quota = min(max_candidates, max(1, total_budget // len(qualifying_ports)))
     tests: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -195,6 +250,34 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                 "candidate_count": 0,
                 "status": "planned",
             }
+            capability = capabilities.get(op_id) or {}
+            strategy = str(capability.get("strategy") or "unspecified")
+            target["probe_strategy"] = strategy
+            if strategy == "unprobeable":
+                # The precheck proved this target cannot be observed; planning
+                # candidates for it would only end as target_unavailable.
+                target["status"] = "unprobeable"
+                target["unprobeable_reason"] = str(capability.get("reason") or "precheck marked unprobeable")
+                targets.append(target)
+                continue
+            if capability and strategy not in executable_strategies:
+                # A verdict exists but its collection path is not implemented
+                # by the executor (e.g. noninvasive_signal_log). Register the
+                # target as a gap instead of simulating an observation that
+                # cannot be collected.
+                target["status"] = "strategy_not_executable"
+                target["unprobeable_reason"] = str(
+                    capability.get("reason") or f"strategy {strategy!r} has no executor support"
+                )
+                targets.append(target)
+                continue
+            if budgeted_ports is not None and (op_id, index) not in budgeted_ports:
+                # Hard global budget: ports beyond the budget keep their target
+                # record (nothing vanishes from reconciliation) but produce no
+                # candidates.
+                target["status"] = "budget_truncated"
+                targets.append(target)
+                continue
             if not deps.inputs:
                 target["status"] = "unsupported_semantics" if deps.unsupported else "candidate_exhausted"
                 targets.append(target)
@@ -204,7 +287,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             for control in sorted(deps.inputs):
                 for start, end in ((0, 1), (1, 0)):
                     for hold in holds:
-                        if target["candidate_count"] >= max_candidates:
+                        if target["candidate_count"] >= quota:
                             break
                         key = json.dumps([op_id, index, control, start, end, hold, sibling_inputs, sibling_params, param_values], sort_keys=True)
                         if key in seen:
@@ -237,11 +320,11 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                             }
                         )
                         target["candidate_count"] += 1
-                    if target["candidate_count"] >= max_candidates:
+                    if target["candidate_count"] >= quota:
                         break
-                if target["candidate_count"] >= max_candidates:
+                if target["candidate_count"] >= quota:
                     break
-            if target["candidate_count"] >= max_candidates:
+            if target["candidate_count"] >= quota:
                 target["bounded"] = True
             if not target["candidate_count"]:
                 target["status"] = "candidate_exhausted"
@@ -256,6 +339,17 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             "target_count": len(targets),
             "candidate_count": len(tests),
             "unplanned_count": sum(1 for item in targets if item["status"] != "planned"),
+            "unprobeable_target_count": sum(1 for item in targets if item["status"] == "unprobeable"),
+            "nonexecutable_target_count": sum(
+                1 for item in targets if item["status"] in ("unprobeable", "strategy_not_executable")
+            ),
+            "budget_truncated_target_count": sum(1 for item in targets if item["status"] == "budget_truncated"),
+            "plan_level_gap_count": sum(
+                1 for item in targets
+                if item["status"] in ("unprobeable", "strategy_not_executable", "budget_truncated")
+            ),
+            "total_budget": total_budget,
+            "per_port_quota": quota if total_budget else None,
         },
     }
 
@@ -265,14 +359,25 @@ def main() -> int:
     parser.add_argument("--traces", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--max-candidates-per-port", type=int, default=32)
+    parser.add_argument("--max-total-candidates", type=int, default=240,
+                        help="global plan budget; distributed as an even per-port quota")
     parser.add_argument("--max-steps-per-candidate", type=int, default=8)
     parser.add_argument("--sample-time", type=float, default=0.01)
+    parser.add_argument("--probe-capability", default="",
+                        help="precheck capability JSON (operator id -> strategy/reason)")
     args = parser.parse_args()
     payload = json.loads(Path(args.traces).read_text(encoding="utf-8"))
     items = reports(payload)
     if len(items) != 1:
         raise SystemExit("state probe planner requires one model-specific logical trace")
-    plan = build_plan(items[0], max(1, args.max_candidates_per_port), max(1, args.max_steps_per_candidate), max(1e-6, args.sample_time))
+    capabilities = {}
+    if args.probe_capability:
+        capability_payload = json.loads(Path(args.probe_capability).read_text(encoding="utf-8"))
+        capabilities = capability_payload.get("capabilities") if isinstance(capability_payload, dict) else {}
+        if not isinstance(capabilities, dict):
+            capabilities = {}
+    plan = build_plan(items[0], max(1, args.max_candidates_per_port), max(1, args.max_steps_per_candidate), max(1e-6, args.sample_time),
+                      capabilities=capabilities, total_budget=max(1, args.max_total_candidates))
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")

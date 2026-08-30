@@ -1,0 +1,426 @@
+{
+  "schema": "tcsd-bundle-manifest/v1",
+  "fileCount": 84,
+  "files": [
+    {
+      "path": "assets/support-package/Cornex_Config.sldd",
+      "sha256": "c76c2c97de303c6cec6d9c6ab1257836c951d0e189bc01fc63ec1aa37074346a",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/CornexMdlCfg.mat",
+      "sha256": "f7c5d5cc4af8f5497f73a8d273032b8e79ffa06ccd15639411ca53b8b78aa4a4",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/init_Global.m",
+      "sha256": "ee6804328cb4fa4e61d332104c3a233c98ad3629985c1c3ff4a769605e3d584e",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/AccumImage.jpg",
+      "sha256": "9a60676fb6047844d43827260d9fd8f34f9e181042cc9e6c1a7b9060f5dfe6b3",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/DrvtImage.jpg",
+      "sha256": "c955c71d93724115cceae2a954d84caf412220ab0d8dc14a9c82a22e9b1466a2",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/InlineDescriptionCbHandler.m",
+      "sha256": "be19ce8e68267d9dd8a4bf7c101ebbd73bfc1d1b67d253364eacf714ea89b21a",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/ITKLib.slx",
+      "sha256": "24a89f39e571d3dcd98a02f601245cdcf01e0e9d708192ea91a968240b82dfd3",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/revTableBlockHandler.m",
+      "sha256": "b11f1cb6a039182166cee699d63a3ba368194e51719378b56e6cfcccb9924063",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/sl_customization.m",
+      "sha256": "e91ba666cb2ed64695c84be3367651781cc3a6761f8a083892e0bef654a47b86",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/slblocks.m",
+      "sha256": "85a8bf5ab756430c4da9d1d92825d28297f830da84da9635b3cf4c2415997332",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/SqrtImage.jpg",
+      "sha256": "8b38a71157d22a9198fcbcd76338ff9b8b54bf24bee94f8f4b1683e8ac0b59d1",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+CornexCsc/@Parameter/Parameter.m",
+      "sha256": "c6add9dde0f0b060feaa07fd36403503c93b633faf33446c651527808f378b2d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+CornexCsc/@Signal/Signal.m",
+      "sha256": "a5a905b1118e39d10b2611ba033fc23e41967b6e56a19542f42573a1e684af4a",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+CornexCsc/csc_registration.m",
+      "sha256": "b5d03d5d46b2032823eb17d61f93f3cdc520f7faab5c8fbf420f77210c3080bc",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/@CSCTypeAttributes_Unstructed/CSCTypeAttributes_Unstructed.p",
+      "sha256": "b548f77cdb747d99718080edb41736474670eb1a358b16b622b1474bade66e96",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/@Parameter/Parameter.p",
+      "sha256": "169fba32ea4fc5e6502fa05741fb783e8c07f15e7edb51cf4f3c18c55996e4e4",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/@Signal/Signal.p",
+      "sha256": "857483a6170f79003e0634d6110eb8092f6f2f2e54bdf389b1e5e3da945ff97b",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/csc_registration.p",
+      "sha256": "5e351fa6462b956ca9be829e50929f8f8ff23dd041f613e072efb4c6480e598d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/tlc/EcoObjCompilerFlag.tlc",
+      "sha256": "28e477e045835925624773ee7cae051dc9beaca2f5f030b4165c895e6aacf28d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/tlc/EcoObjGetSet.tlc",
+      "sha256": "77ce77e6dd6da691539918242f2916f5051012c2853e3ec425f970c930934bc6",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/tlc/EcoObjUnstructured.tlc",
+      "sha256": "8de5861a58a33bb0557c4066bcc5063afd6724c50bdab90c033cc6ca8ccbe483",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+HMATCTMSCSC/@Parameter/Parameter.m",
+      "sha256": "eaa26d6b7a96c35767ea212e96dfbe1df8f15882afb106fbffbde3c7c4782638",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+HMATCTMSCSC/@Signal/Signal.m",
+      "sha256": "14d977c21c4dcef05d3c6269f2a9c984f8636d4838a1e5a53e800cc1ad1970cf",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+HMATCTMSCSC/csc_registration.m",
+      "sha256": "f81c8f31b9c9cd56e7bce579a718aa3c24abf63e354b00560164ad2d0558ccf7",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKBmsCsc/@Parameter/Parameter.m",
+      "sha256": "bb3d2d3b28b39e8e96f3f87b47b673d5a5aab8dfb113e8e73d0e483cf5ec7104",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKBmsCsc/@Signal/Signal.m",
+      "sha256": "aa109c6f8da5c5b671c5ee984e1fa95a231d641cddf54f401be8ae5192126dc9",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKBmsCsc/csc_registration.m",
+      "sha256": "736a2bcc8af9da5d3149def347b3fbd4ef736a2eaf7b36f5db0749531a560f18",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCAMOSCsc/@Parameter/Parameter.m",
+      "sha256": "c124b315ebbf3b57b5abbc211bf5c81678ee79609ec6076a8f3f311570c7fd88",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCAMOSCsc/@Signal/Signal.m",
+      "sha256": "56166da481ad89499a36c789351b48493aa87ee91b1dad683ed62bbceae3f33b",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCAMOSCsc/csc_registration.m",
+      "sha256": "bf4c5087473b6a5c2872ddb94b559699a3d1416167c46851735415b208dbc80d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCCsc/@Parameter/Parameter.m",
+      "sha256": "e9bc5a9b8ef74a070ac7b381c118604e4ed9849fe6e60e5a98acca1f377dc2c2",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCCsc/@Signal/Signal.m",
+      "sha256": "01a7451d8fa93c617da88a4afaf23346ec71ad03d56c0e88ace62e99b7d42697",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCCsc/csc_registration.m",
+      "sha256": "7f806dcac9ab1af6bf97dccf90f4565f6d79b5b02087238371770e80f144cf98",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+KP31Csc/@Parameter/Parameter.m",
+      "sha256": "4da22ad50e7ab945ccaa4590b48be184cf2f721d314cd9fd2cb769b4c5b34ebe",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+KP31Csc/@Signal/Signal.m",
+      "sha256": "aee274c0286ede075af6a1388cf0455db0a34158e605c70689b713c5896ff6e7",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+KP31Csc/csc_registration.m",
+      "sha256": "11f8f8c772c54b4296dece85e95c32d3c220090a91b28e574089b292676733b7",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+SmartMiCSC/@Parameter/Parameter.m",
+      "sha256": "4104fe70504783e8511fd46714de31a6b34707f0757c3aaac2332a19c6bd1b8d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+SmartMiCSC/@Signal/Signal.m",
+      "sha256": "210b4d54ec40a4795dd483d53960a1e5f822251f9f4263adcf7fdcad369e0823",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+SmartMiCSC/csc_registration.m",
+      "sha256": "8f32faa978073177c8ffa3303ab0f371d850318f0bbf1b179d6539bded2dc6d2",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKLib.slx",
+      "sha256": "24a89f39e571d3dcd98a02f601245cdcf01e0e9d708192ea91a968240b82dfd3",
+      "mode": 420
+    },
+    {
+      "path": "assets/templates/tcsd_template.xlsx",
+      "sha256": "095f42d89b2eba6efe2dcfc38f8ae7d5057eeb7dec37daeba4597ca62ed02407",
+      "mode": 420
+    },
+    {
+      "path": "references/coverage-closure.md",
+      "sha256": "58b38b2f6ba511adf3bbb3ce8b624cf59e545b7a0ab4f93aa46ece2f92a39b6e",
+      "mode": 420
+    },
+    {
+      "path": "references/coverage-ir-contract.md",
+      "sha256": "3838bf830bc916c85aadb2c3bd7fc89ef092fa09da3cd51dc05d9b88ce61c084",
+      "mode": 420
+    },
+    {
+      "path": "references/hermes-agent-handoff.md",
+      "sha256": "623db3cc5d5913a998d55034662fabe1ef992c5bb24e902e0ddd93c43cdd437c",
+      "mode": 420
+    },
+    {
+      "path": "references/mcdc-feedback-repair.md",
+      "sha256": "e8e6ba3fad41b0090a0f81c7af1b270802befe4fe55610aafcc69e336d7d1a34",
+      "mode": 420
+    },
+    {
+      "path": "references/support-package.md",
+      "sha256": "4e4b21dcf1f165bfb167b650643197ab14aa84370692e50a19cd783c74ed0b2b",
+      "mode": 420
+    },
+    {
+      "path": "references/tcsd-rules.md",
+      "sha256": "3f1d107c4be096f80cfb649dfe0cc81a1138de35af9f3ce841ec80c2d87b123b",
+      "mode": 420
+    },
+    {
+      "path": "references/workflow-details.md",
+      "sha256": "17664781640ebd4bc20aff01ae2748612a25fb966015ac884cdebbe6c80884c1",
+      "mode": 420
+    },
+    {
+      "path": "scripts/augment_tcsd_for_mcdc.py",
+      "sha256": "938ffb922d98980a573f69da73c2ccfd532c210088332960334b31c478aeaa98",
+      "mode": 493
+    },
+    {
+      "path": "scripts/backfill_expected_outputs.py",
+      "sha256": "2b0be30903c8392219888e46514b713c3c43cd495c038e65e7523b10d8d1ca4c",
+      "mode": 493
+    },
+    {
+      "path": "scripts/build_atomic_mcdc_repair_plan.py",
+      "sha256": "10be7a0fba1ddd6e3320af9ac55bc20352f701e642e169ebe39bc7d22b4bb6e9",
+      "mode": 493
+    },
+    {
+      "path": "scripts/build_coverage_ir.py",
+      "sha256": "9ef7fde55a7d7b51bd013c640f66429df4ae52d5f92fa5e6d6d6a309c1b6b67e",
+      "mode": 420
+    },
+    {
+      "path": "scripts/build_decision_obligations.py",
+      "sha256": "b6eddf3afe7d073bbfe5e2e2c2345203d7b24f55bd34e5371f0a3a4c8bbe345f",
+      "mode": 493
+    },
+    {
+      "path": "scripts/build_logical_mcdc_obligations.py",
+      "sha256": "9184699e05851a742db8ff8964d9d5bbcce630dff053ac9ea581ae59866727cc",
+      "mode": 493
+    },
+    {
+      "path": "scripts/build_probe_mcdc_obligations.py",
+      "sha256": "101cb2f9c88180d4feddb478fbea6d32e93c90d6cca2fd53105be2b32fe7b280",
+      "mode": 493
+    },
+    {
+      "path": "scripts/build_state_probe_plan.py",
+      "sha256": "e3ad2e840f4b6289c03bc58a7a9a9d8fb02d5f9f599b8dc99c114b6e4bb22e9f",
+      "mode": 493
+    },
+    {
+      "path": "scripts/build_tcsd_from_json.py",
+      "sha256": "b8015be6d41a5a272eee7c7e556a569a9db396bdcabf857f9aecc1967e9f4ac3",
+      "mode": 493
+    },
+    {
+      "path": "scripts/cast_input_for_simulink_ut.m",
+      "sha256": "dd9eb0085d6dfce6ba76785c4794384c2881438df505f434bfa97b61e731782c",
+      "mode": 420
+    },
+    {
+      "path": "scripts/cast_parameter_override_for_simulink_ut.m",
+      "sha256": "ce4fc8323651d0320f5f70773f3d2b4e27a08b8e561a1eed9bcf3293e3bd8654",
+      "mode": 420
+    },
+    {
+      "path": "scripts/collect_decision_blocks.m",
+      "sha256": "bdd0b185e095d42df6cb6450ed72ff0d9fd33be641ac660226dbd4f2a8de4182",
+      "mode": 420
+    },
+    {
+      "path": "scripts/collect_mcdc_coverage_feedback.m",
+      "sha256": "cf5b4d0270ac15e2ceaa1b95425b9aa75d03d86d6cf07c26d1f690c525aa656a",
+      "mode": 420
+    },
+    {
+      "path": "scripts/configure_tcsd_sim_config.m",
+      "sha256": "63a74e9166a18974272768d4b038fc435495fe45a72df96a864ddcdd65f3e6fd",
+      "mode": 420
+    },
+    {
+      "path": "scripts/derive_logical_mcdc_mappings.py",
+      "sha256": "3ea89d8046acebb623171444be45819168a19f73d44c9d3f7a2f83d2e8cbaa15",
+      "mode": 493
+    },
+    {
+      "path": "scripts/dsh_stage_runner.py",
+      "sha256": "383b7042888d4a9583914c494209d88ee1ac820b86a5b1060b32027899032ee1",
+      "mode": 493
+    },
+    {
+      "path": "scripts/extract_tcsd_cases.py",
+      "sha256": "0438fd50fff074516ab3e8c1c06133709e821a783d97ba4975206efd3dee73c5",
+      "mode": 493
+    },
+    {
+      "path": "scripts/host_validate_tcsd_stage.py",
+      "sha256": "4b1d83feef85483d1ca994c09f70775b49fa390a00c11de048a11c99973d10b6",
+      "mode": 420
+    },
+    {
+      "path": "scripts/inspect_slx_xml.py",
+      "sha256": "f278dffc25afbe6d528f922bc8c2350a8a21827dca85f4df0ea52b0e6d6753bf",
+      "mode": 493
+    },
+    {
+      "path": "scripts/probe_block_inputs_with_params.m",
+      "sha256": "e5d1ddf11df8e1e212c8a6e78000a93a4dcec482f1a9684f216fafd2200b0cac",
+      "mode": 420
+    },
+    {
+      "path": "scripts/probe_block_inputs.py",
+      "sha256": "4c1d26960ba0808ecc513f5bb5c4bd0ad1e36d8ffa35615fc97ca07194fb2e48",
+      "mode": 493
+    },
+    {
+      "path": "scripts/probe_capability_precheck.m",
+      "sha256": "c3b45018589b52776b284c66d119e9718de71d537eb38f491042d02ec8b16eea",
+      "mode": 384
+    },
+    {
+      "path": "scripts/probe_logical_mcdc_vectors.m",
+      "sha256": "ad37ce5a87864f9aa98ac671ae33d70f185760350bdc8a3e2144feaee6470cd1",
+      "mode": 420
+    },
+    {
+      "path": "scripts/read_hermes_session.py",
+      "sha256": "5a43252fdb9db2d2416f78dfdf5124a0c8b7689ebe5b9696794ade18d8f9c642",
+      "mode": 420
+    },
+    {
+      "path": "scripts/resolve_hermes_session.py",
+      "sha256": "872b67d7b03d45b7deca28f4ff3873423cca0b9268ee927e74b75279a60a6270",
+      "mode": 420
+    },
+    {
+      "path": "scripts/restore_degraded_workspace_value_for_simulink_ut.m",
+      "sha256": "06fe2209b98d2fa849a19229555068c3db5b498d5aeb41fbe7384f650ca02e35",
+      "mode": 420
+    },
+    {
+      "path": "scripts/run_tcsd_pipeline_stage.py",
+      "sha256": "3900ac986e2188e76818953a19b4d586cdf8673dcc77583fdeaa8887eae60958",
+      "mode": 420
+    },
+    {
+      "path": "scripts/run_tcsd_quality_loop.py",
+      "sha256": "f23956ea45e531237fef12e9d38c4b3288b8accdb28565f7eeb5c5a96bdf9474",
+      "mode": 493
+    },
+    {
+      "path": "scripts/satk_eval.py",
+      "sha256": "6c16805f6c6dd2d50d4bf4cfd092733da8892765fab442833caec4397523aa0e",
+      "mode": 493
+    },
+    {
+      "path": "scripts/setup_ut_support.m",
+      "sha256": "ca60218bc015a7df0ef2ca938d0dd808ec914f520ce4446870e16de800b6a865",
+      "mode": 420
+    },
+    {
+      "path": "scripts/simulate_tcsd_cases.m",
+      "sha256": "8eb59c954ca69ce687f9a590c8f6080862289af23726f08546e90c5d4b912c6b",
+      "mode": 420
+    },
+    {
+      "path": "scripts/synthesize_tcsd_from_coverage_ir.py",
+      "sha256": "0e5c19fb873e02cd94d0398daadf3cf36a4bc84fecea7fdc4f899ffb747d3faf",
+      "mode": 420
+    },
+    {
+      "path": "scripts/trace_logical_mcdc.m",
+      "sha256": "edf30c13ab72063760a7af4298f06c2a08c54d5402d368482d4a7763439f1503",
+      "mode": 420
+    },
+    {
+      "path": "scripts/validate_agent_coverage_repair.py",
+      "sha256": "855713cdab0c837df13497fc9a693a1e02f11c32f0252b0ee1c3f9a7536be013",
+      "mode": 420
+    },
+    {
+      "path": "scripts/validate_logical_mcdc_mapping.py",
+      "sha256": "fb558591364ae93252b08179b2122db4a984c1b25ab5fe26b149928b3db7dfb5",
+      "mode": 493
+    },
+    {
+      "path": "scripts/validate_tcsd_workbook.py",
+      "sha256": "744adece20f7c8135c340b2bfe61fdb0717963910a9fd3b15c6e5d33cccf112b",
+      "mode": 493
+    }
+  ]
+}

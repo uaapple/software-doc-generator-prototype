@@ -13,6 +13,7 @@ from openpyxl import Workbook
 
 RUNTIME = Path(__file__).resolve().parents[2] / "skills" / "hermes" / "tcsd-runtime"
 SCRIPT = RUNTIME / "scripts" / "run_tcsd_pipeline_stage.py"
+PLANNER_SCRIPT = RUNTIME / "scripts" / "build_state_probe_plan.py"
 SATK_SCRIPT = RUNTIME / "scripts" / "satk_eval.py"
 REPAIR_SCRIPT = RUNTIME / "scripts" / "validate_agent_coverage_repair.py"
 SPEC = importlib.util.spec_from_file_location("run_tcsd_pipeline_stage", SCRIPT)
@@ -559,13 +560,129 @@ class PipelineStageRunnerTests(unittest.TestCase):
             run_stage(5)
             before = json.loads((output / "GenericModel_coverage_obligations.json").read_text(encoding="utf-8"))
             self.assertGreater(before["summary"]["unresolved_count"], 0)
-            env = dict(os.environ); env["TCSD_PIPELINE_PROBE_RESULTS_FIXTURE"] = str(probe_fixture)
+            capability = {
+                "schema": "tcsd-probe-capability/v1", "model": "GenericModel",
+                "strategyVersion": RUNNER.PROBE_CAPABILITY_STRATEGY_VERSION,
+                "capabilities": {"GenericModel:1": {"strategy": "to_workspace_probe", "reason": "trial accepted"}},
+            }
+            capability_fixture = root / "probe-capability.json"
+            capability_fixture.write_text(json.dumps(capability), encoding="utf-8")
+            env = dict(os.environ)
+            env["TCSD_PIPELINE_PROBE_RESULTS_FIXTURE"] = str(probe_fixture)
+            env["TCSD_PIPELINE_PRECHECK_CAPABILITY_FIXTURE"] = str(capability_fixture)
             result = run_stage(6, env=env)
             after = json.loads((output / "GenericModel_coverage_obligations.json").read_text(encoding="utf-8"))
             self.assertEqual(result["schema"], "tcsd-agent-stage-result/v1")
             self.assertTrue(result["evidence"]["probeExecuted"])
+            self.assertTrue(result["evidence"]["precheck"]["precheckExecuted"])
+            self.assertEqual(result["evidence"]["unprobeableTargetCount"], 0)
+            self.assertEqual(result["status"], "completed", "无缺口时必须是 completed")
+            self.assertTrue((output / "GenericModel_probe_capability.json").is_file())
             self.assertFalse((output / ".tcsd-checkpoints").exists())
             self.assertEqual(after["summary"]["unresolved_count"], 0)
+
+    def test_stage_six_ends_partial_when_observations_have_gaps(self):
+        # mismatch / not_executed observations are registered gaps: the stage
+        # ends as `partial` (never a hard failure, never silent `completed`),
+        # with the reconciliation tally in the evidence.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); output = root / "outputs"; output.mkdir()
+            model = root / "GenericModel.slx"; mat = root / "GenericModel.mat"; model.write_bytes(b"slx"); mat.write_bytes(b"mat")
+            trace = {
+                "schema": "simulink-ut-logical-mcdc-trace/v2", "model": "GenericModel", "operator_count": 1,
+                "operators": [{"id": "GenericModel:1", "sid": "GenericModel:1", "block_path": "GenericModel/Decision", "operator": "AND", "ports": [
+                    {"index": 1, "trace": {"kind": "relational", "operator": ">", "inputs": [{"trace": {"kind": "stateful", "block_type": "UnitDelay", "inputs": [{"trace": {"kind": "root_inport", "signal": "Enable"}}]}}, {"trace": {"kind": "constant", "value": "0"}}]}},
+                    {"index": 2, "trace": {"kind": "root_inport", "signal": "Request"}},
+                ]}],
+            }
+            (output / "GenericModel_logical_traces.json").write_text(json.dumps(trace), encoding="utf-8")
+            probe = {"GenericModel": {"schema": "simulink-ut-logical-mcdc-probe/v2", "model": "GenericModel", "probes": [{"id": "GenericModel:1", "sid": "GenericModel:1", "block_path": "GenericModel/Decision", "operator": "AND", "port_names": ["u1", "u2"]}], "observations": []}}
+            for index, (label, status, reason) in enumerate((
+                ("TT", "observed", None), ("FT", "simulation_mismatch", "stimulus_did_not_drive_target"),
+                ("TF", "not_executed_with_reason", "probe_data_missing"),
+            ), 1):
+                entry = {"test_id": f"STATE_PROBE_{index:04d}", "row": index, "step_index": 2, "time_s": 0.1,
+                         "inputs": {"Enable": int(label[0] == "T"), "Request": int(label[1] == "T")}, "params": {},
+                         "vectors": {"decision": {"id": "GenericModel:1", "label": label, "ok": status == "observed"}},
+                         "stimulus": {"initial_inputs": {"Enable": 0, "Request": 1}, "initial_params": {}, "steps": [], "evidence_step": 2},
+                         "prediction_status": status}
+                if reason:
+                    entry["execution_reason"] = reason
+                probe["GenericModel"]["observations"].append(entry)
+            probe_fixture = root / "probe-results.json"; probe_fixture.write_text(json.dumps(probe), encoding="utf-8")
+            capability = {
+                "schema": "tcsd-probe-capability/v1", "model": "GenericModel",
+                "strategyVersion": RUNNER.PROBE_CAPABILITY_STRATEGY_VERSION,
+                "capabilities": {"GenericModel:1": {"strategy": "to_workspace_probe", "reason": "trial accepted"}},
+            }
+            capability_fixture = root / "probe-capability.json"
+            capability_fixture.write_text(json.dumps(capability), encoding="utf-8")
+            job = {"jobId": "job-cli", "resources": {"ownerJobId": "job-cli"}, "input": {"workspaceDir": str(root), "outputDir": str(output), "modelSlxPath": str(model), "modelMatPath": str(mat), "coverageThreshold": 80}}
+            def run_stage(stage, env=None):
+                manifest = root / f"stage-{stage:02d}-input.json"
+                target = output / ".tcsd-results" / f"stage-{stage:02d}.json"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                manifest.write_text(json.dumps({"schema": "tcsd-agent-stage-input/v1", "jobId": "job-cli", "stageIndex": stage, "attempt": 1, "job": job}), encoding="utf-8")
+                subprocess.run(
+                    [sys.executable, str(SCRIPT), "--manifest", str(manifest), "--result", str(target)],
+                    check=True, cwd=root, env=env,
+                )
+                return json.loads(target.read_text(encoding="utf-8"))
+            run_stage(5)
+            env = dict(os.environ)
+            env["TCSD_PIPELINE_PROBE_RESULTS_FIXTURE"] = str(probe_fixture)
+            env["TCSD_PIPELINE_PRECHECK_CAPABILITY_FIXTURE"] = str(capability_fixture)
+            result = run_stage(6, env=env)
+            self.assertEqual(result["status"], "partial")
+            self.assertIn("2 项缺口", result["summary"])
+            recon = result["evidence"]["reconciliation"]
+            self.assertEqual(recon["observedCount"], 1)
+            self.assertEqual(recon["mismatchCount"], 1)
+            self.assertEqual(recon["notExecutedCount"], 1)
+            self.assertEqual(recon["gapCount"], 2)
+
+    def test_stage_six_skips_unprobeable_operators_before_simulation(self):
+        # Operators the precheck proved unobservable never reach the probe: no
+        # candidates, no wasted simulations, reason carried on the target.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); output = root / "outputs"; output.mkdir()
+            model = root / "LibModel.slx"; mat = root / "LibModel.mat"; model.write_bytes(b"slx"); mat.write_bytes(b"mat")
+            trace = {
+                "schema": "simulink-ut-logical-mcdc-trace/v2", "model": "LibModel", "operator_count": 2,
+                "operators": [
+                    {"id": "LibModel:1", "sid": "LibModel:1", "block_path": "LibModel/Decision", "operator": "AND", "ports": [
+                        {"index": 1, "trace": {"kind": "stateful", "block_type": "UnitDelay", "inputs": [{"trace": {"kind": "root_inport", "signal": "Enable"}}]}},
+                        {"index": 2, "trace": {"kind": "root_inport", "signal": "Request"}},
+                    ]},
+                    {"id": "LibModel:2", "sid": "LibModel:2", "block_path": "LibModel/DebCnt/DebounceEnable/Logical", "operator": "AND", "ports": [
+                        {"index": 1, "trace": {"kind": "stateful", "block_type": "UnitDelay", "inputs": [{"trace": {"kind": "root_inport", "signal": "Sig"}}]}},
+                        {"index": 2, "trace": {"kind": "root_inport", "signal": "Other"}},
+                    ]},
+                ],
+            }
+            (output / "LibModel_logical_traces.json").write_text(json.dumps(trace), encoding="utf-8")
+            plan = root / "LibModel_state_probe_plan.json"
+            capability = {
+                "schema": "tcsd-probe-capability/v1", "model": "LibModel",
+                "strategyVersion": RUNNER.PROBE_CAPABILITY_STRATEGY_VERSION,
+                "capabilities": {"LibModel:2": {"strategy": "unprobeable", "reason": "linked_library_mutation_denied: ..."}},
+            }
+            capability_path = root / "capability.json"
+            capability_path.write_text(json.dumps(capability), encoding="utf-8")
+            subprocess.run(
+                [sys.executable, str(PLANNER_SCRIPT), "--traces", str(output / "LibModel_logical_traces.json"),
+                 "--output", str(plan), "--probe-capability", str(capability_path)],
+                check=True, cwd=root,
+            )
+            data = json.loads(plan.read_text(encoding="utf-8"))
+            by_operator = {item["operator_id"]: item for item in data["targets"]}
+            self.assertEqual(by_operator["LibModel:1"]["status"], "planned")
+            self.assertEqual(by_operator["LibModel:1"]["candidate_count"] > 0, True)
+            self.assertEqual(by_operator["LibModel:2"]["status"], "unprobeable")
+            self.assertEqual(by_operator["LibModel:2"]["candidate_count"], 0)
+            self.assertIn("linked_library_mutation_denied", by_operator["LibModel:2"]["unprobeable_reason"])
+            self.assertEqual(data["summary"]["unprobeable_target_count"], 1)
+            self.assertTrue(all(item["target"]["operator_id"] != "LibModel:2" for item in data["tests"]))
 
     def test_coverage_threshold_uses_all_three_metrics_for_every_model(self):
         report = {"M1": {"condition": {"percent": 90}, "decision": {"percent": 90}, "mcdc": {"percent": 79}}}

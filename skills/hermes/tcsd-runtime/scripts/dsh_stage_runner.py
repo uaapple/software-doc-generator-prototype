@@ -25,6 +25,7 @@ Everything is plain Python: no node, no hand-written manifests.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -33,12 +34,24 @@ import shutil
 import subprocess
 import sys
 import uuid as uuidlib
+from datetime import datetime
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - the runner executes on Linux only
+    fcntl = None
 
 SCHEMA_INPUT = "tcsd-agent-stage-input/v1"
 SCHEMA_RESULT = "tcsd-agent-stage-result/v1"
 SCHEMA_CHECKPOINT = "tcsd-agent-stage-checkpoint/v2"
+SCHEMA_ATTEMPT_RESULT = "tcsd-attempt-result/v1"
+SCHEMA_LEASE = "tcsd-stage-lease/v1"
 SCHEMA_MANIFEST = "simulink-ut-tcsd-execution-manifest/v1"
+LEASE_HEARTBEAT_SECONDS = 5.0
+LEASE_STALE_SECONDS = 45.0
+EXIT_LEASE_ACTIVE = 3
+GATEWAY_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timed_out"}
 SCHEMA_TIMELINE = "tcsd-stage-timeline/v1"
 SCHEMA_ARTIFACTS = "tcsd-artifact-manifest/v1"
 SCHEMA_SEMANTIC = "tcsd-host-semantic-validation/v1"
@@ -63,6 +76,7 @@ STAGE_SKILLS = [
 SEMANTIC_STAGES = {2, 6, 7, 8, 9, 10, 11}
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent.parent.parent
+SATK_SCRIPT = SCRIPT_DIR / "satk_eval.py"
 
 
 def sha256_file(path: Path) -> str:
@@ -70,10 +84,36 @@ def sha256_file(path: Path) -> str:
 
 
 def hash_tree(root: Path) -> str:
+    """Manifest-driven bundle hashing (mirrors the Node hashTcsdBundle).
+
+    When bundle-manifest.json exists (generated at build time by
+    tools/generate-bundle-manifests.mjs), the hash covers exactly the listed
+    files — path, content, and mode — so stray files in the deployed tree
+    (.DS_Store, __pycache__) cannot shift the hash. Without a manifest the
+    legacy directory walk applies, skipping the manifest file itself."""
+    root = Path(root)
+    manifest_path = root / "bundle-manifest.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except ValueError:
+            manifest = None
+        if isinstance(manifest, dict) and manifest.get("schema") == "tcsd-bundle-manifest/v1" and isinstance(manifest.get("files"), list):
+            digest = hashlib.sha256()
+            for entry in manifest["files"]:
+                relative = str(entry.get("path") or "")
+                target = root / relative
+                digest.update(relative.encode())
+                digest.update(b"\0")
+                digest.update(target.read_bytes() if target.is_file() else b"")
+                digest.update(b"\0")
+                digest.update(str(entry.get("mode", "")).encode())
+                digest.update(b"\0")
+            return digest.hexdigest()
     digest = hashlib.sha256()
     files = []
     for item in sorted(root.rglob("*")):
-        if item.is_file():
+        if item.is_file() and item.name != "bundle-manifest.json" and item.name != ".DS_Store" and item.parent.name != "__pycache__":
             files.append(item)
     for item in files:
         digest.update(item.relative_to(root).as_posix().encode())
@@ -84,8 +124,59 @@ def hash_tree(root: Path) -> str:
 
 
 def write_json(path: Path, value) -> None:
+    """Atomic JSON persistence: temp file (same filesystem) + fsync + rename.
+
+    Temp names embed pid and a random suffix so concurrent writers of the same
+    target never collide; a crash leaves at most an orphan temp file."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path = path.parent / f".{path.name}.tmp-{os.getpid()}-{uuidlib.uuid4().hex[:8]}"
+    try:
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+def write_attempt_result(attempt_dir: Path, workspace: Path, *, job_id: str, stage: int,
+                         attempt: int, runtime_status: str, validation_status: str,
+                         stage_status: str, runtime_path: Path | None,
+                         semantic_path: Path | None,
+                         error: dict | None = None) -> Path:
+    """Composite per-attempt result referencing the immutable runtime output and
+    the semantic verdict. Written atomically on every terminal path (runtime
+    failure, semantic failure, success) so the host can always recover a
+    structured outcome even when no checkpoint exists."""
+    def reference(path: Path | None) -> dict | None:
+        if path is None or not path.is_file():
+            return None
+        return {
+            "path": path.resolve().relative_to(workspace.resolve()).as_posix(),
+            "sha256": sha256_file(path),
+        }
+    payload = {
+        "schema": SCHEMA_ATTEMPT_RESULT,
+        "jobId": job_id,
+        "stageIndex": stage,
+        "attempt": attempt,
+        "runtimeStatus": runtime_status,
+        "validationStatus": validation_status,
+        "stageStatus": stage_status,
+        "runtime": reference(runtime_path),
+        "semantic": reference(semantic_path),
+    }
+    if error:
+        payload["error"] = error
+    attempt_result_path = attempt_dir / "attempt-result.json"
+    write_json(attempt_result_path, payload)
+    return attempt_result_path
 
 
 def tcsd_env() -> dict:
@@ -121,6 +212,282 @@ def run_runner(task: dict, stage: int, manifest_path: Path, result_path: Path, m
     return subprocess.run(cmd, cwd=task["workspace"]["directory"], env=tcsd_env()).returncode
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
+
+
+def lease_path(workspace: Path, stage: int, attempt: int) -> Path:
+    return Path(workspace) / "outputs" / ".tcsd-runtime" / "leases" / f"stage-{stage:02d}-attempt-{attempt}.json"
+
+
+@contextlib.contextmanager
+def _lease_dir_lock(workspace: Path):
+    """Serialize every lease check-and-modify within the leases directory.
+
+    Check-then-modify on the lease FILE cannot be atomic (read → verify →
+    replace/unlink races against a concurrent takeover). The directory-level
+    exclusive flock makes each whole operation atomic instead; without fcntl
+    (non-POSIX) we degrade to no locking, which the runner never hits — it
+    executes on Linux only."""
+    leases_dir = Path(workspace) / "outputs" / ".tcsd-runtime" / "leases"
+    leases_dir.mkdir(parents=True, exist_ok=True)
+    if fcntl is None:  # pragma: no cover
+        yield
+        return
+    descriptor = os.open(leases_dir, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def acquire_lease(workspace: Path, *, job_id: str, stage: int, attempt: int,
+                  run_id: str, runtime_hash: str = "") -> dict | None:
+    """Atomically claim the stage/attempt slot.
+
+    Returns the lease payload on success. Returns None when a fresh lease is
+    held by another live owner — the caller must NOT start a second overlapping
+    execution (the bbc72245 incident shape: two Gateway jobs writing one
+    progress file). Stale leases (dead owner or expired heartbeat) are taken
+    over transparently."""
+    target = lease_path(workspace, stage, attempt)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": SCHEMA_LEASE,
+        "jobId": job_id,
+        "stageIndex": stage,
+        "attempt": attempt,
+        "runId": run_id,
+        "ownerToken": uuidlib.uuid4().hex,
+        "ownerPid": os.getpid(),
+        "runtimeHash": runtime_hash,
+        "acquiredAt": __import__("datetime").datetime.now().isoformat(),
+        "heartbeatAt": __import__("datetime").datetime.now().isoformat(),
+    }
+    with _lease_dir_lock(workspace):
+        taken_over_from = None
+        try:
+            existing = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing = None
+        if existing is not None:
+            stale = True
+            if existing.get("ownerPid") and _pid_alive(int(existing["ownerPid"])):
+                try:
+                    heartbeat = datetime.fromisoformat(str(existing.get("heartbeatAt")))
+                    stale = (datetime.now() - heartbeat).total_seconds() > LEASE_STALE_SECONDS
+                except (TypeError, ValueError):
+                    stale = True
+            if not stale:
+                return None
+            # Atomic takeover: rename the stale lease AWAY (exclusive — a
+            # concurrent taker loses this race with ENOENT and can never
+            # delete our freshly created lease), then create ours.
+            taken_over_from = {"runId": existing.get("runId"), "ownerPid": existing.get("ownerPid")}
+            try:
+                os.rename(target, target.with_name(f".{target.name}.takenover-{uuidlib.uuid4().hex[:8]}"))
+            except OSError:
+                return None
+        try:
+            handle = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return None
+        if taken_over_from is not None:
+            payload["tookOverFrom"] = taken_over_from
+        with os.fdopen(handle, "w", encoding="utf-8") as file_handle:
+            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+    return payload
+
+
+def refresh_lease(workspace: Path, stage: int, attempt: int, owner_token: str = "") -> None:
+    """Renew the heartbeat, but ONLY for the lease this process owns. After a
+    takeover the old owner's token no longer matches: without this check the
+    evicted owner would keep overwriting the new owner's heartbeat (and its
+    release would delete the new lease entirely)."""
+    target = lease_path(workspace, stage, attempt)
+    with _lease_dir_lock(workspace):
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        lease_token = str(payload.get("ownerToken") or "")
+        if lease_token:
+            if not owner_token or lease_token != owner_token:
+                return
+        elif owner_token:
+            return
+        payload["heartbeatAt"] = datetime.now().isoformat()
+        temporary = target.parent / f".{target.name}.tmp-{os.getpid()}-{uuidlib.uuid4().hex[:8]}"
+        try:
+            with open(temporary, "w", encoding="utf-8") as file_handle:
+                json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+            os.replace(temporary, target)
+        except OSError:
+            if temporary.exists():
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
+
+
+def release_lease(workspace: Path, stage: int, attempt: int, owner_token: str = "") -> None:
+    target = lease_path(workspace, stage, attempt)
+    with _lease_dir_lock(workspace):
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        lease_token = str(payload.get("ownerToken") or "")
+        if lease_token:
+            # A tokenless call must NOT touch a token-bearing lease.
+            if not owner_token or lease_token != owner_token:
+                return
+        elif owner_token:
+            return
+        try:
+            target.unlink()
+        except OSError:
+            pass
+
+
+def start_lease_heartbeat(workspace: Path, stage: int, attempt: int, owner_token: str = ""):
+    """Background heartbeat so a live runner is never judged stale. Returns a
+    threading.Event usable as a stop signal."""
+    import threading
+
+    stop = threading.Event()
+
+    def beat():
+        while not stop.wait(LEASE_HEARTBEAT_SECONDS):
+            refresh_lease(workspace, stage, attempt, owner_token)
+
+    thread = threading.Thread(target=beat, name="tcsd-lease-heartbeat", daemon=True)
+    thread.start()
+    return stop
+
+
+def query_gateway_job_status(job_id: str, workspace_id: str) -> dict:
+    """Ask the Gateway for the real job state via the satk_eval CLI so the
+    credential contract and URL handling stay in exactly one place."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(SATK_SCRIPT), "--job-status", str(job_id), str(workspace_id)],
+            capture_output=True, text=True, timeout=30,
+        )
+        return json.loads(proc.stdout.strip() or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return {"status": None, "error": f"gateway status query failed: {exc}"}
+
+
+def cancel_gateway_job_cli(job_id: str, workspace_id: str) -> dict:
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(SATK_SCRIPT), "--cancel-job", str(job_id), str(workspace_id)],
+            capture_output=True, text=True, timeout=30,
+        )
+        return json.loads(proc.stdout.strip() or "{}")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        return {"cancelled": False, "error": f"gateway cancel failed: {exc}"}
+
+
+def read_gateway_marker(workspace: Path) -> dict | None:
+    marker = Path(workspace) / "outputs" / ".tcsd-runtime" / "active-gateway-job.json"
+    if not marker.is_file():
+        return None
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _unlink_gateway_marker(workspace: Path) -> None:
+    try:
+        (Path(workspace) / "outputs" / ".tcsd-runtime" / "active-gateway-job.json").unlink()
+    except OSError:
+        pass
+
+
+def reconcile_gateway_job(workspace: Path, *, query=query_gateway_job_status,
+                          cancel=cancel_gateway_job_cli, now=None) -> dict:
+    """Four-branch takeover state machine over the active Gateway job marker:
+
+      marker absent                        -> proceed
+      query fails (real state unknown)     -> refuse  (never resubmit blind)
+      job reached a terminal state         -> collect results, release, proceed
+      job active + fresh heartbeat + owner -> refuse  (a healthy job owns the slot)
+      job active + dead owner/stale heart  -> takeover: cancel orphan, proceed
+
+    Dependency-injected query/cancel keep this unit-testable without a Gateway.
+    """
+    clock = now or datetime.now
+    marker = read_gateway_marker(workspace)
+    if marker is None:
+        return {"action": "proceed", "gatewayStatus": "absent"}
+    job_id = str(marker.get("jobId") or "")
+    workspace_id = str(marker.get("workspaceId") or "")
+    owner_pid = marker.get("ownerPid")
+    owner_alive = bool(owner_pid) and _pid_alive(int(owner_pid))
+    heartbeat_fresh = False
+    try:
+        heartbeat = datetime.fromisoformat(str(marker.get("heartbeatAt")))
+        heartbeat_fresh = (clock() - heartbeat).total_seconds() <= LEASE_STALE_SECONDS
+    except (TypeError, ValueError):
+        heartbeat_fresh = False
+    if not job_id or not workspace_id:
+        # Unusable (legacy) marker content: reclaim only when clearly stale.
+        if heartbeat_fresh and owner_alive:
+            return {"action": "refuse", "gatewayStatus": "unknown_marker",
+                    "reason": "Gateway 标记心跳新鲜但缺少作业标识，无法安全判定"}
+        _unlink_gateway_marker(workspace)
+        return {"action": "proceed", "gatewayStatus": "reclaimed_unusable_marker"}
+    status_info = query(job_id, workspace_id)
+    if status_info.get("error") or not status_info.get("status"):
+        return {
+            "action": "refuse",
+            "gatewayStatus": "unknown",
+            "gatewayJobId": job_id,
+            "reason": f"Gateway 作业状态查询失败，禁止盲目重复提交：{status_info.get('error')}",
+        }
+    status = str(status_info["status"])
+    if status in GATEWAY_TERMINAL_STATUSES:
+        _unlink_gateway_marker(workspace)
+        return {"action": "proceed", "gatewayStatus": status, "gatewayJobId": job_id,
+                "note": "先前作业已终态，标记已释放"}
+    if heartbeat_fresh and owner_alive:
+        return {"action": "refuse", "gatewayStatus": status, "gatewayJobId": job_id,
+                "reason": "检测到健康的活跃 MATLAB Gateway 作业，禁止重复提交；等待其完成或取消"}
+    # Takeover: cancellation is only a REQUEST until the Gateway confirms a
+    # terminal state. Deleting the marker on an unconfirmed cancel let the
+    # orphan keep running while the next runner saw a clean workspace — the
+    # exact overlap this state machine exists to prevent.
+    cancel_result = cancel(job_id, workspace_id)
+    if not cancel_result.get("cancelled"):
+        return {"action": "refuse", "gatewayStatus": status, "gatewayJobId": job_id,
+                "reason": f"接管取消请求失败（{cancel_result.get('error')}），保留作业标记并拒绝重复提交"}
+    confirmation = query(job_id, workspace_id)
+    confirmed_status = str(confirmation.get("status") or "")
+    if confirmation.get("error") or confirmed_status not in GATEWAY_TERMINAL_STATUSES:
+        return {"action": "refuse", "gatewayStatus": confirmed_status or "unknown",
+                "gatewayJobId": job_id,
+                "reason": "取消已请求但 Gateway 未确认终态，保留作业标记并拒绝重复提交"}
+    _unlink_gateway_marker(workspace)
+    return {"action": "proceed", "gatewayStatus": f"{confirmed_status} (taken over)", "gatewayJobId": job_id,
+            "note": "owner 已失效，孤儿作业取消已获 Gateway 终态确认，标记释放"}
+
+
 def semantic_validate(task: dict, stage: int, result: dict, runtime_dir: Path,
                       request_path: Path, report_path: Path) -> dict:
     interface_path = ""
@@ -151,11 +518,27 @@ def semantic_validate(task: dict, stage: int, result: dict, runtime_dir: Path,
     proc = subprocess.run([sys.executable, str(script), "--request", str(request_path)],
                           cwd=task["workspace"]["directory"], env=tcsd_env(),
                           capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"host semantic validator failed for stage {stage}: {proc.stderr[-500:]}")
-    report = json.loads(proc.stdout.strip())
-    write_json(report_path, report)
-    return report
+    if proc.returncode == 0:
+        report = json.loads(proc.stdout.strip())
+        write_json(report_path, report)
+        return report
+    # The validator itself distinguishes "did not pass" (exit 1, failure report
+    # on stderr) from crashes; both must persist a structured verdict on disk so
+    # the attempt outcome survives even when the validation failed.
+    failure_report = {"schema": SCHEMA_SEMANTIC, "stageIndex": stage, "passed": False,
+                      "details": {}, "message": ""}
+    stderr_text = (proc.stderr or "").strip()
+    try:
+        parsed = json.loads(stderr_text.splitlines()[-1] if stderr_text else "{}")
+        if isinstance(parsed, dict) and parsed.get("passed") is False:
+            failure_report = parsed
+    except (ValueError, IndexError):
+        pass
+    if not failure_report.get("message"):
+        failure_report["message"] = stderr_text[-800:] or "host semantic validator failed without output"
+    failure_report["stageIndex"] = stage
+    write_json(report_path, failure_report)
+    return failure_report
 
 
 def skill_bundle_info(stage: int) -> dict:
@@ -179,7 +562,8 @@ def skill_bundle_info(stage: int) -> dict:
 
 def write_checkpoint(task: dict, stage: int, attempt: int, manifest_path: Path,
                      result_path: Path, semantic: dict, validation_report_path: Path,
-                     tool_log_summary: list) -> Path:
+                     tool_log_summary: list, attempt_result_path: Path | None = None,
+                     runtime_status: str = "", validation_status: str = "") -> Path:
     result = json.loads(result_path.read_text(encoding="utf-8"))
     checkpoint = {
         "schema": SCHEMA_CHECKPOINT,
@@ -197,6 +581,13 @@ def write_checkpoint(task: dict, stage: int, attempt: int, manifest_path: Path,
             "path": str(result_path.relative_to(task["workspace"]["directory"])),
             "sha256": sha256_file(result_path),
         },
+        "attemptResult": {
+            "path": str(attempt_result_path.relative_to(task["workspace"]["directory"])),
+            "sha256": sha256_file(attempt_result_path),
+            "runtimeStatus": runtime_status,
+            "validationStatus": validation_status,
+            "stageStatus": result.get("status"),
+        } if attempt_result_path is not None else None,
         "validation": {
             "passed": True,
             "reportPath": str(validation_report_path.relative_to(task["workspace"]["directory"])),
@@ -286,13 +677,66 @@ def cmd_run(args) -> int:
     stage = int(args.stage)
     attempt = int(args.attempt or 1)
     workspace = Path(task["workspace"]["directory"])
+    bundle = skill_bundle_info(stage)
+    run_id = uuidlib.uuid4().hex[:12]
+    lease = acquire_lease(workspace, job_id=task["id"], stage=stage, attempt=attempt,
+                          run_id=run_id, runtime_hash=bundle["runtime"]["bundleHash"])
+    if lease is None:
+        # A fresh lease held by a live owner: refuse to start a second
+        # overlapping execution (two Gateway jobs writing one progress file was
+        # the bbc72245 incident shape). The agent should poll the existing
+        # attempt artifacts instead of resubmitting.
+        active = {}
+        try:
+            active = json.loads(lease_path(workspace, stage, attempt).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        error = {
+            "code": "tcsd_stage_lease_active",
+            "message": f"stage {stage} attempt {attempt} 已有活跃执行（runId={active.get('runId')}），禁止重复提交；请轮询既有产物。",
+            "activeRunId": active.get("runId"),
+            "activeOwnerPid": active.get("ownerPid"),
+            "activeHeartbeatAt": active.get("heartbeatAt"),
+        }
+        print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
+        return EXIT_LEASE_ACTIVE
+    owner_token = str(lease.get("ownerToken") or "")
+    heartbeat_stop = start_lease_heartbeat(workspace, stage, attempt, owner_token)
+    try:
+        return _execute_stage_run(args, task, stage, attempt, workspace, bundle)
+    except BaseException as error:
+        # Crash guard: even an orchestrator exception (bad JSON, unexpected
+        # shape) must leave a terminal attempt result behind, otherwise the
+        # host only sees a bare session failure again.
+        try:
+            crash_dir = workspace / "outputs" / ".tcsd-agent" / f"stage-{stage:02d}" / f"attempt-{attempt}"
+            write_attempt_result(crash_dir, workspace, job_id=task["id"], stage=stage,
+                                 attempt=attempt, runtime_status="failed",
+                                 validation_status="not_applicable", stage_status="failed",
+                                 runtime_path=None, semantic_path=None,
+                                 error={"code": "tcsd_stage_runner_crashed",
+                                        "message": str(error)[:800]})
+        except Exception:
+            pass
+        raise
+    finally:
+        heartbeat_stop.set()
+        release_lease(workspace, stage, attempt, owner_token)
+
+
+def _execute_stage_run(args, task, stage, attempt, workspace, bundle) -> int:
     attempt_dir = workspace / "outputs" / ".tcsd-agent" / f"stage-{stage:02d}" / f"attempt-{attempt}"
     manifest_path = attempt_dir / "manifest.json"
-    result_path = attempt_dir / "result.json"
+    # Three-layer result protocol:
+    #   runtime-result.json  — owned by the deterministic runtime (never rewritten)
+    #   semantic-validation.json — owned by the semantic validator (written on
+    #                              failure too)
+    #   attempt-result.json  — composite outcome owned by this orchestrator
+    runtime_result_path = attempt_dir / "runtime-result.json"
+    legacy_result_path = attempt_dir / "result.json"
     semantic_request = attempt_dir / "semantic-request.json"
     semantic_report = attempt_dir / "semantic-validation.json"
     validation_report = attempt_dir / "validation.json"
-    bundle = skill_bundle_info(stage)
     manifest = {
         "schema": SCHEMA_INPUT,
         "pipelineSchema": "tcsd-agent-stage-pipeline/v2",
@@ -322,32 +766,107 @@ def cmd_run(args) -> int:
         },
     }
     write_json(manifest_path, manifest)
-    if result_path.exists():
-        result_path.unlink()
-    code = run_runner(task, stage, manifest_path, result_path, mode=args.stage10_mode)
+    if stage == 10:
+        # Clear the previous attempt's awaiting_proposal intermediate state as
+        # soon as the apply run starts, so an agent re-polling attempt-result
+        # cannot mistake the stale state for "still waiting".
+        write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                             attempt=attempt, runtime_status="running",
+                             validation_status="not_applicable",
+                             stage_status="applying",
+                             runtime_path=None, semantic_path=None, error=None)
+    reconciliation = reconcile_gateway_job(workspace)
+    if reconciliation["action"] != "proceed":
+        error = {
+            "code": "tcsd_gateway_job_active",
+            "message": reconciliation.get("reason") or "检测到活跃的 MATLAB Gateway 作业，禁止重复提交。",
+            "gatewayStatus": reconciliation.get("gatewayStatus"),
+            "gatewayJobId": reconciliation.get("gatewayJobId"),
+        }
+        print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
+        return EXIT_LEASE_ACTIVE
+    if reconciliation.get("note"):
+        print(json.dumps({"reconciliation": reconciliation}, ensure_ascii=False), file=sys.stderr)
+    if runtime_result_path.exists():
+        runtime_result_path.unlink()
+    if legacy_result_path.exists():
+        legacy_result_path.unlink()
+    code = run_runner(task, stage, manifest_path, runtime_result_path, mode=args.stage10_mode)
+    if legacy_result_path.is_file() and not runtime_result_path.is_file():
+        # Upgrade path: an older runtime still writes result.json; treat it as
+        # the runtime output so downstream layers keep working unchanged.
+        legacy_result_path.rename(runtime_result_path)
     if code != 0:
-        print(f"run: stage {stage} runner failed (exit {code})", file=sys.stderr)
+        runtime_status = "failed"
+        runtime_error = None
+        try:
+            runtime_payload = json.loads(runtime_result_path.read_text(encoding="utf-8"))
+            runtime_status = str(runtime_payload.get("status") or "failed")
+            raw_error = runtime_payload.get("error")
+            if isinstance(raw_error, dict) and raw_error.get("message"):
+                runtime_error = raw_error
+        except (OSError, ValueError):
+            pass
+        error = runtime_error or {"code": "tcsd_stage_runtime_failed", "message": f"stage {stage} runtime failed (exit {code})"}
+        write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                             attempt=attempt, runtime_status=runtime_status,
+                             validation_status="not_applicable", stage_status="failed",
+                             runtime_path=runtime_result_path if runtime_result_path.is_file() else None,
+                             semantic_path=None, error=error)
+        print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
         return code or 1
-    if not result_path.is_file():
+    if not runtime_result_path.is_file():
         # Stage 10 的合法中间态：auto/prepare 模式下 brief 已生成、等待 Agent
         # 写入修复提案（apply 需要提案才会写 result.json）。这不是失败，
         # 不应以退出码 1 上报（曾把 stage 10 误判为阶段失败）。
+        # 中间态必须落盘为 attempt-result（stageStatus=awaiting_proposal）：
+        # prompt 要求 agent 轮询 checkpoint / attempt-result 判定阶段终态，
+        # 只写 brief 而不落盘中间态会让后台等待永远无法结束（评审 P0-4）。
         if stage == 10 and (manifest_path.parent / "repair-brief.json").is_file():
+            write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                                 attempt=attempt, runtime_status="completed",
+                                 validation_status="not_applicable",
+                                 stage_status="awaiting_proposal",
+                                 runtime_path=None, semantic_path=None,
+                                 error=None)
             print("run: stage 10 prepare completed; awaiting agent repair proposal", file=sys.stderr)
             return 0
-        print(f"run: stage {stage} runner failed (exit {code})", file=sys.stderr)
+        error = {"code": "tcsd_stage_runtime_failed", "message": f"stage {stage} runtime failed (exit {code})"}
+        write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                             attempt=attempt, runtime_status="failed",
+                             validation_status="not_applicable", stage_status="failed",
+                             runtime_path=None, semantic_path=None, error=error)
+        print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
         return code or 1
-    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result = json.loads(runtime_result_path.read_text(encoding="utf-8"))
+    runtime_status = str(result.get("status") or "failed")
     semantic = {"schema": SCHEMA_SEMANTIC, "stageIndex": stage, "passed": True, "details": {},
                 "_reportPath": semantic_report, "_sha256": ""}
+    validation_status = "not_applicable"
     if stage in SEMANTIC_STAGES and result.get("status") != "skipped":
+        validation_status = "failed"
         semantic = semantic_validate(task, stage, result, Path(bundle["runtimeDir"]),
                                      semantic_request, semantic_report)
         semantic["_reportPath"] = semantic_report
         semantic["_sha256"] = sha256_file(semantic_report)
         if not semantic.get("passed"):
-            print(f"run: stage {stage} semantic validation failed", file=sys.stderr)
+            # Terminal structured failure: the runtime output is preserved as-is
+            # (it did complete), the failed semantic verdict is on disk, and the
+            # composite attempt result records "runtime completed, validation
+            # failed" so the host can distinguish the two layers.
+            error = {
+                "code": "tcsd_stage_validation_failed",
+                "message": str(semantic.get("message") or "semantic validation failed"),
+                "details": semantic.get("details") or {},
+            }
+            write_attempt_result(attempt_dir, workspace, job_id=task["id"], stage=stage,
+                                 attempt=attempt, runtime_status=runtime_status,
+                                 validation_status="failed", stage_status="failed",
+                                 runtime_path=runtime_result_path,
+                                 semantic_path=semantic_report, error=error)
+            print(json.dumps(error, ensure_ascii=False), file=sys.stderr)
             return 1
+        validation_status = "passed"
     report = {"schema": "tcsd-host-validation-report/v1", "jobId": task["id"], "stageIndex": stage,
               "attempt": attempt, "passed": True}
     write_json(validation_report, report)
@@ -357,8 +876,18 @@ def cmd_run(args) -> int:
     persisted = {key: value for key, value in semantic.items() if not key.startswith("_")}
     write_json(semantic_report, persisted)
     semantic["_sha256"] = sha256_file(semantic_report)
-    checkpoint = write_checkpoint(task, stage, attempt, manifest_path, result_path,
-                                  semantic, validation_report, [])
+    attempt_result_path = write_attempt_result(attempt_dir, workspace, job_id=task["id"],
+                                               stage=stage, attempt=attempt,
+                                               runtime_status=runtime_status,
+                                               validation_status=validation_status,
+                                               stage_status=runtime_status,
+                                               runtime_path=runtime_result_path,
+                                               semantic_path=semantic_report)
+    checkpoint = write_checkpoint(task, stage, attempt, manifest_path, runtime_result_path,
+                                  semantic, validation_report, [],
+                                  attempt_result_path=attempt_result_path,
+                                  runtime_status=runtime_status,
+                                  validation_status=validation_status)
     print(f"stage {stage:02d} checkpoint: {checkpoint}")
     return 0
 

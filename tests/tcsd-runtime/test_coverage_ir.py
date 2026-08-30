@@ -203,5 +203,160 @@ class CoverageIrTests(unittest.TestCase):
             self.assertEqual(report["output_test_count"], 2)
 
 
+
+class MpsSelectorDomainResolutionTests(unittest.TestCase):
+    """VehCfg_A01 回归：relational 义务对 'x == 2' 的 false 侧生成纯数学值 3，
+    但 x（ibsw_stREEVBatDrvRngCfg）是 MPS selector 输入（合法 {0,1,2}），
+    3 会令 Multiport Switch4 越界导致 Stage 8 仿真失败。IR 层必须：
+    1) 在域内重新选择**仍满足目标语义**的值（==2 false -> 1，即改选 1 而非歪曲成 2）；
+    2) 域内无解时（如 <=2 false）标记 unresolved，而不是改变语义；
+    3) 无决策义务时行为保持不变。"""
+
+    TRACE_EQ2 = {"model": "VehCfg_A01", "operators": []}
+    TRACE_PLANNER = {
+        "model": "VehCfg_A01",
+        "operators": [{
+            "id": "VehCfg_A01:594", "sid": "VehCfg_A01:594",
+            "block_path": "VehCfg_A01/A01_VehicleParameterConfg/AND",
+            "operator": "AND",
+            "ports": [
+                {"index": 1, "trace": {"kind": "relational", "operator": "==", "inputs": [
+                    {"index": 1, "trace": {"kind": "root_inport", "signal": "ibsw_stREEVBatDrvRngCfg"}},
+                    {"index": 2, "trace": {"kind": "constant", "value": 2}},
+                ]}},
+                {"index": 2, "trace": {"kind": "root_inport", "signal": "ibsw_bACCCfg"}},
+            ],
+        }],
+    }
+
+    def _decision_obligations(self, operator: str) -> dict:
+        return {
+            "schema": "simulink-ut-decision-obligations/v1",
+            "model": "VehCfg_A01",
+            "obligations": [
+                {"id": "848_relational_true_ibsw_stREEVBatDrvRngCfg_2_", "model": "VehCfg_A01",
+                 "coverage_class": "MCDC", "required_outcome": f"relational true (ibsw_stREEVBatDrvRngCfg {operator} 2)",
+                 "status": "required", "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 2}, "params": {}}},
+                {"id": "848_relational_false_ibsw_stREEVBatDrvRngCfg_2_", "model": "VehCfg_A01",
+                 "coverage_class": "MCDC", "required_outcome": f"relational false (ibsw_stREEVBatDrvRngCfg {operator} 2)",
+                 "status": "required", "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 3}, "params": {}}},
+                *self.SELECTOR_OBLIGATIONS["obligations"],
+            ],
+        }
+
+    SELECTOR_OBLIGATIONS = {
+        "schema": "simulink-ut-decision-obligations/v1",
+        "model": "VehCfg_A01",
+        "obligations": [
+            {"id": "952_selector_0", "model": "VehCfg_A01", "coverage_class": "Decision",
+             "required_outcome": "selector=0", "status": "required",
+             "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 0}, "params": {}}, "selector_domain": [0, 1, 2]},
+            {"id": "952_selector_1", "model": "VehCfg_A01", "coverage_class": "Decision",
+             "required_outcome": "selector=1", "status": "required",
+             "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 1}, "params": {}}, "selector_domain": [0, 1, 2]},
+            {"id": "952_selector_2", "model": "VehCfg_A01", "coverage_class": "Decision",
+             "required_outcome": "selector=2", "status": "required",
+             "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 2}, "params": {}}, "selector_domain": [0, 1, 2]},
+        ],
+    }
+
+    def _inputs(self, item):
+        return (item.get("controller") or {}).get("direct_inputs") or {}
+
+    def _notes(self, item):
+        return item.get("value_domain_notes") or []
+
+    def test_eq2_false_rechooses_in_domain_value(self):
+        coverage_ir = script("build_coverage_ir.py")
+        result = coverage_ir.build_ir(self.TRACE_EQ2, decision_obligations=self._decision_obligations("=="))
+        target = next(
+            item for item in result["items"]
+            if item["id"].endswith("_relational_false_ibsw_stREEVBatDrvRngCfg_2_")
+        )
+        self.assertEqual(self._inputs(target).get("ibsw_stREEVBatDrvRngCfg"), 1)
+        self.assertEqual(target["reachability"]["status"], "required")
+        self.assertTrue(any(note.get("reason") == "selector_domain_rechoice" and note.get("was") == 3 and note.get("now") == 1 for note in self._notes(target)))
+
+    def test_le2_false_has_no_in_domain_solution_marks_unresolved(self):
+        coverage_ir = script("build_coverage_ir.py")
+        result = coverage_ir.build_ir(self.TRACE_EQ2, decision_obligations=self._decision_obligations("<="))
+        target = next(
+            item for item in result["items"]
+            if item["id"].endswith("_relational_false_ibsw_stREEVBatDrvRngCfg_2_")
+        )
+        self.assertEqual(target["reachability"]["status"], "unresolved")
+        self.assertTrue(any("selector_domain_constraint" in str(issue) for issue in (target["reachability"].get("issues") or [])))
+        self.assertTrue(any(note.get("reason") == "selector_domain_constraint" for note in self._notes(target)))
+
+    def test_no_decision_obligations_keeps_structural_behavior(self):
+        coverage_ir = script("build_coverage_ir.py")
+        result = coverage_ir.build_ir(self.TRACE_PLANNER)
+        any_3 = any(
+            self._inputs(item).get("ibsw_stREEVBatDrvRngCfg") == 3 and item["reachability"]["status"] == "required"
+            for item in result["items"]
+        )
+        self.assertTrue(any_3)
+
+    def test_stimulus_out_of_domain_value_marks_unresolved_without_rewrite(self):
+        coverage_ir = script("build_coverage_ir.py")
+        evidence = {
+            "obligations": [{
+                "id": "temporal_probe", "model": "VehCfg_A01", "coverage_class": "MCDC",
+                "required_outcome": "state transition", "status": "required",
+                "match": {"inputs": {"ibsw_stREEVBatDrvRngCfg": 1}, "params": {}},
+                "stimulus": {"initial_inputs": {"ibsw_stREEVBatDrvRngCfg": 3},
+                             "steps": [{"delay_s": 0.1, "input_updates": {"ibsw_stREEVBatDrvRngCfg": 2}, "param_updates": {}}],
+                             "evidence_step": 1},
+            }]
+        }
+        result = coverage_ir.build_ir({"model": "VehCfg_A01", "operators": []},
+                                      evidence_obligations=evidence,
+                                      decision_obligations=self.SELECTOR_OBLIGATIONS)
+        item = next(value for value in result["items"] if value["id"] == "temporal_probe")
+        self.assertEqual(item["reachability"]["status"], "unresolved")
+        self.assertTrue(item["reachability"].get("reason", "").startswith("selector_domain_constraint"))
+        # stimulus 值保持原样（不改写时间序列值）
+        self.assertEqual(item["stimulus"]["initial_inputs"]["ibsw_stREEVBatDrvRngCfg"], 3)
+        self.assertEqual(item["stimulus"]["steps"][0]["input_updates"]["ibsw_stREEVBatDrvRngCfg"], 2)
+
+    def test_empty_intersection_is_kept_as_known_conflict(self):
+        coverage_ir = script("build_coverage_ir.py")
+        obligations = {
+            "obligations": [
+                {"id": "a_selector_0", "match": {"inputs": {"X": 0}}, "selector_domain": [0]},
+                {"id": "b_selector_1", "match": {"inputs": {"X": 1}}, "selector_domain": [1]},
+            ]
+        }
+        domains = coverage_ir.selector_domains(obligations)
+        self.assertEqual(domains, {"X": set()})
+        # 空域=已知冲突：任何该输入的值都不得放行 → unresolved
+        evidence = {
+            "obligations": [{
+                "id": "conflict", "model": "M", "coverage_class": "MCDC",
+                "required_outcome": "relational false (X == 1)", "status": "required",
+                "match": {"inputs": {"X": 2}, "params": {}},
+            }]
+        }
+        result = coverage_ir.build_ir({"model": "M", "operators": []},
+                                      evidence_obligations=evidence, decision_obligations=obligations)
+        item = next(value for value in result["items"] if value["id"] == "conflict")
+        self.assertEqual(item["reachability"]["status"], "unresolved")
+        self.assertTrue(item["reachability"].get("reason", "").startswith("selector_domain_constraint"))
+
+    def test_selector_domains_intersection_over_multiple_mps(self):
+        coverage_ir = script("build_coverage_ir.py")
+        obligations = {
+            "obligations": [
+                {"id": "a_selector_0", "match": {"inputs": {"X": 0}}, "selector_domain": [0, 1, 2]},
+                {"id": "a_selector_1", "match": {"inputs": {"X": 1}}, "selector_domain": [0, 1, 2]},
+                {"id": "b_selector_0", "match": {"inputs": {"X": 0}}, "selector_domain": [0, 1]},
+                {"id": "b_selector_1", "match": {"inputs": {"X": 1}}, "selector_domain": [0, 1]},
+            ]
+        }
+        domains = coverage_ir.selector_domains(obligations)
+        self.assertEqual(domains, {"X": {0, 1}})
+
+
 if __name__ == "__main__":
     unittest.main()
+

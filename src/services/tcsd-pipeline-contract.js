@@ -42,6 +42,7 @@ export const TCSD_ERROR_CODES = Object.freeze({
   checkpoint: "tcsd_checkpoint_invalid",
   stage: "tcsd_stage_failed",
   stageRuntime: "tcsd_stage_runtime_failed",
+  stageCheckpointMissing: "tcsd_stage_checkpoint_missing",
   validation: "tcsd_stage_validation_failed",
   telemetry: "tcsd_stage_telemetry_unavailable",
   sessionReuse: "tcsd_stage_session_reused",
@@ -425,12 +426,98 @@ export async function validateStageResult(raw = {}, context = {}) {
   }
   if (context.stageIndex === 6) {
     await requireArtifactSchema(artifacts, ["simulink-ut-state-probe-plan/v1"]);
-    const semantic = requireSemanticEvidence(context, 6);
+    const details = requireSemanticEvidence(context, 6);
     if (
-      Number(raw.evidence?.candidateCount || 0) !== semantic.candidateCount ||
-      raw.evidence?.probeExecuted !== semantic.probeExecuted ||
-      (semantic.candidateCount > 0 && Number(semantic.observationCount || 0) < semantic.candidateCount)
+      Number(raw.evidence?.candidateCount || 0) !== details.candidateCount ||
+      raw.evidence?.probeExecuted !== details.probeExecuted
     ) {
+      throw contractError("第 6 阶段 Probe 计划与执行状态不一致");
+    }
+    const reconciliation = details.reconciliation;
+    if (reconciliation) {
+      // Reconciliation contract: every planned step reaches exactly one
+      // terminal state, and the stage status must match the TOTAL gap —
+      // observation gaps (mismatch/transient/not-executed/MPS) PLUS plan-level
+      // gaps (unprobeable targets, budget-truncated ports). Omitting the plan
+      // gaps made an all-unprobeable model report zero gaps and rejected its
+      // `partial` verdict (review blocker 1, GearDiag shape).
+      if (reconciliation.conserved !== true) {
+        throw contractError("第 6 阶段 Probe 对账不守恒，存在无终态的计划步骤");
+      }
+      const gapCount = Number(reconciliation.gapCount || 0);
+      if (raw.status === "completed" && gapCount > 0) {
+        throw contractError("存在未获可信观测或不可探测目标时，第 6 阶段不得记为 completed");
+      }
+      if (raw.status === "partial" && gapCount === 0) {
+        throw contractError("无缺口时第 6 阶段不得记为 partial");
+      }
+      // Three-way consistency: plan summary, runtime evidence, and semantic
+      // details must agree on BOTH plan-level gap kinds AND on the observation
+      // gaps and the final total (review blocker 2 follow-up).
+      const planSummary = artifacts.find((item) => item.path?.endsWith("_state_probe_plan.json"));
+      const observationGapKeys = [
+        "mismatchCount", "transientFailedCount", "notExecutedCount", "mpsBlockedCount",
+      ];
+      if (planSummary) {
+        const parsed = JSON.parse(await fs.readFile(planSummary.absolutePath, "utf8"));
+        // Recompute the plan-level gap kinds from the plan TARGETS themselves
+        // (not from the summary): runtime and semantic both copy these values,
+        // so agreement between them proves nothing if the plan itself is
+        // wrong (review follow-up).
+        const planTargets = Array.isArray(parsed.targets) ? parsed.targets : [];
+        const targetStatus = (status) => planTargets.filter((item) => item.status === status).length;
+        const planUnprobeable = targetStatus("unprobeable");
+        const planNotExecutable = targetStatus("strategy_not_executable");
+        const planTruncated = targetStatus("budget_truncated");
+        const planLevelGap = planUnprobeable + planNotExecutable + planTruncated;
+        const summaryUnprobeable = Number(parsed.summary?.unprobeable_target_count || 0);
+        const summaryTruncated = Number(parsed.summary?.budget_truncated_target_count || 0);
+        const summaryLevelGap = Number(parsed.summary?.plan_level_gap_count || 0);
+        if (
+          planUnprobeable !== summaryUnprobeable ||
+          planTruncated !== summaryTruncated ||
+          (summaryLevelGap > 0 && planLevelGap !== summaryLevelGap)
+        ) {
+          throw contractError("第 6 阶段 Probe 计划目标与摘要的缺口计数不一致");
+        }
+        if (
+          planUnprobeable !== Number(reconciliation.unprobeableTargetCount || 0) ||
+          planTruncated !== Number(reconciliation.budgetTruncatedTargetCount || 0) ||
+          planLevelGap !== Number(reconciliation.planLevelGapCount || 0)
+        ) {
+          throw contractError("第 6 阶段 Probe 计划与语义校验的缺口计数不一致");
+        }
+      }
+      const runtimePlanGapChecks = [
+        ["unprobeableTargetCount", Number(raw.evidence?.unprobeableTargetCount || 0)],
+        ["budgetTruncatedTargetCount", Number(raw.evidence?.budgetTruncatedTargetCount || 0)],
+        ["planLevelGapCount", Number(raw.evidence?.planLevelGapCount || 0)],
+      ];
+      for (const [key, runtimeValue] of runtimePlanGapChecks) {
+        if (Number.isFinite(runtimeValue) && runtimeValue !== Number(reconciliation[key] || 0)) {
+          throw contractError(`第 6 阶段运行证据与语义校验的 ${key} 不一致`);
+        }
+      }
+      const runtimeReconciliation = raw.evidence?.reconciliation;
+      if (runtimeReconciliation && typeof runtimeReconciliation === "object") {
+        for (const key of observationGapKeys) {
+          if (
+            Number.isFinite(Number(runtimeReconciliation[key])) &&
+            Number(runtimeReconciliation[key]) !== Number(reconciliation[key] || 0)
+          ) {
+            throw contractError(`第 6 阶段运行证据与语义校验的观测缺口 ${key} 不一致`);
+          }
+        }
+      }
+      const recomputedGap = observationGapKeys.reduce(
+        (total, key) => total + Number(reconciliation[key] || 0),
+        Number(reconciliation.planLevelGapCount || 0)
+      );
+      if (recomputedGap !== Number(reconciliation.gapCount || 0)) {
+        throw contractError("第 6 阶段缺口总数与各分类计数之和不一致");
+      }
+    } else if (details.candidateCount > 0 && Number(details.observationCount || 0) < details.candidateCount) {
+      // Legacy semantic reports (pre-reconciliation) keep the old invariant.
       throw contractError("第 6 阶段 Probe 计划、执行状态与实际观察证据不一致");
     }
   }

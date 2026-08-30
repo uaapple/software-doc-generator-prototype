@@ -13,12 +13,37 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from datetime import datetime
 from pathlib import Path
+
+# Set when the process receives SIGTERM/SIGINT. The Gateway polling loop checks
+# it so a killed foreground runner still cancels its remote MATLAB job instead
+# of leaving an orphan writing into the shared workspace.
+terminate_requested = threading.Event()
+
+
+def _handle_terminate_signal(signum, frame) -> None:
+    terminate_requested.set()
+
+
+def install_terminate_handlers() -> None:
+    for signal_name in ("SIGTERM", "SIGINT"):
+        signum = getattr(signal, signal_name, None)
+        if signum is not None:
+            try:
+                signal.signal(signum, _handle_terminate_signal)
+            except (OSError, ValueError):
+                pass
+
+
+def datetime_now_iso() -> str:
+    return datetime.now().isoformat()
 
 
 def executable_name(name: str) -> str:
@@ -342,6 +367,44 @@ def mirror_runtime_matlab_scripts(code: str, *, environ=None) -> str:
     return code.replace(str(source_dir), str(mirror_dir))
 
 
+GATEWAY_TERMINAL_STATUSES = {"succeeded", "failed", "cancelled", "timed_out"}
+
+
+def query_gateway_job(job_id: str, workspace_id: str, *, environ=None) -> dict:
+    """Query the real Gateway job status for reconciliation decisions.
+
+    Returns {"status": <gateway status or None>, "error": <str or None>}; a
+    non-None error means the true state is unknown and callers must treat the
+    slot as occupied rather than resubmitting blind."""
+    values = os.environ if environ is None else environ
+    query = urllib.parse.urlencode({"workspaceId": workspace_id})
+    try:
+        job = gateway_request(
+            "GET",
+            f"/api/jobs/{urllib.parse.quote(str(job_id))}?{query}",
+            environ=values,
+            timeout_s=10.0,
+        )
+        return {"status": str(job.get("status") or ""), "error": None}
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {"status": None, "error": str(exc)}
+
+
+def cancel_gateway_job(job_id: str, workspace_id: str, *, environ=None) -> dict:
+    values = os.environ if environ is None else environ
+    try:
+        gateway_request(
+            "POST",
+            f"/api/jobs/{urllib.parse.quote(str(job_id))}/cancel",
+            payload={"workspaceId": workspace_id},
+            environ=values,
+            timeout_s=10.0,
+        )
+        return {"cancelled": True, "error": None}
+    except (OSError, RuntimeError, ValueError) as exc:
+        return {"cancelled": False, "error": str(exc)}
+
+
 def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
     values = os.environ if environ is None else environ
     mapping_id = str(values.get("SATK_GATEWAY_MAPPING_ID") or "worker-data").strip()
@@ -362,6 +425,13 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
         if output_dir:
             active_job_marker = Path(output_dir) / ".tcsd-runtime" / "active-gateway-job.json"
     created = False
+    # Marker lifecycle (review blocker 3): once the marker is PUBLISHED it is
+    # retained by default. Only OUR OWN observation that the Gateway job
+    # reached a terminal state may set marker_retained back to False and let
+    # the finally block delete it. A lost POST response, an interrupted poll
+    # or an unconfirmed cancel must all keep the marker — otherwise an orphan
+    # MATLAB job keeps running while the next runner sees a clean workspace.
+    marker_retained = True
     try:
         gateway_request(
             "PUT",
@@ -377,19 +447,26 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             environ=values,
         )
         if active_job_marker is not None:
+            # Ownership marker for the live Gateway job. The runner refuses to
+            # submit a duplicate while this marker is fresh; heartbeat keeps it
+            # fresh while this process is polling, and a SIGTERM handler still
+            # cancels the remote job on the way out.
             active_job_marker.parent.mkdir(parents=True, exist_ok=True)
-            active_job_marker.write_text(
-                json.dumps(
-                    {
-                        "schema": "tcsd-active-gateway-job/v1",
-                        "ownerJobId": owner_job_id,
-                        "workspaceId": workspace_id,
-                        "jobId": job_id,
-                    },
-                    ensure_ascii=False,
-                ),
+            marker_payload = {
+                "schema": "tcsd-active-gateway-job/v1",
+                "ownerJobId": owner_job_id,
+                "workspaceId": workspace_id,
+                "jobId": job_id,
+                "ownerPid": os.getpid(),
+                "startedAt": datetime_now_iso(),
+                "heartbeatAt": datetime_now_iso(),
+            }
+            marker_tmp = active_job_marker.parent / f".{active_job_marker.name}.tmp-{os.getpid()}"
+            marker_tmp.write_text(
+                json.dumps(marker_payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            marker_tmp.replace(active_job_marker)
         gateway_request(
             "POST",
             job_route,
@@ -402,13 +479,67 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             environ=values,
         )
         deadline = time.monotonic() + timeout_s + 10.0
+        last_heartbeat = 0.0
         while time.monotonic() < deadline:
+            if terminate_requested.is_set():
+                # SIGTERM/SIGINT received (e.g. the harness killed the foreground
+                # runner): cancel the remote job best-effort. The marker is
+                # RETAINED unless the Gateway confirms cancellation — deleting
+                # it unconditionally let an orphan keep running while the next
+                # runner saw a clean workspace (bbc72245 overlap shape).
+                marker_retained = True
+                try:
+                    gateway_request(
+                        "POST",
+                        f"{job_route}/cancel",
+                        payload={"workspaceId": workspace_id},
+                        environ=values,
+                        timeout_s=5.0,
+                    )
+                    confirmation = gateway_request(
+                        "GET",
+                        f"{job_route}?{query}",
+                        environ=values,
+                        timeout_s=5.0,
+                    )
+                    if str(confirmation.get("status") or "") in GATEWAY_TERMINAL_STATUSES:
+                        marker_retained = False
+                except (OSError, RuntimeError, ValueError):
+                    pass
+                if active_job_marker is not None and marker_retained:
+                    try:
+                        marker_payload = json.loads(active_job_marker.read_text(encoding="utf-8"))
+                        marker_payload["cancelledRequested"] = True
+                        marker_tmp = active_job_marker.parent / f".{active_job_marker.name}.tmp-{os.getpid()}"
+                        marker_tmp.write_text(
+                            json.dumps(marker_payload, ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
+                        marker_tmp.replace(active_job_marker)
+                    except (OSError, ValueError):
+                        pass
+                return {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "error": {
+                        "code": "MATLAB_GATEWAY_JOB_CANCELLED_LOCAL",
+                        "message": "Evaluation cancelled because the local process received a termination signal.",
+                        "data": {
+                            "gatewayJobId": job_id,
+                            "gatewayStatus": "cancelled_locally",
+                            "markerRetained": marker_retained,
+                            "timeoutSeconds": timeout_s,
+                        },
+                    },
+                }
             job = gateway_request(
                 "GET",
                 f"{job_route}?{query}",
                 environ=values,
             )
             status = job.get("status")
+            if status in GATEWAY_TERMINAL_STATUSES:
+                marker_retained = False
             if status == "succeeded":
                 artifact_id = urllib.parse.quote(str(job.get("artifactId") or ""))
                 artifact = gateway_request(
@@ -436,13 +567,41 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
                         },
                     },
                 }
-            time.sleep(0.2)
-        gateway_request(
-            "POST",
-            f"{job_route}/cancel",
-            payload={"workspaceId": workspace_id},
-            environ=values,
-        )
+            if active_job_marker is not None and time.monotonic() - last_heartbeat > 5.0:
+                # Keep the ownership marker fresh so the stage runner can tell
+                # "live job" from "stale marker" without querying the Gateway.
+                last_heartbeat = time.monotonic()
+                try:
+                    marker_payload = json.loads(active_job_marker.read_text(encoding="utf-8"))
+                    marker_payload["heartbeatAt"] = datetime_now_iso()
+                    marker_tmp = active_job_marker.parent / f".{active_job_marker.name}.tmp-{os.getpid()}"
+                    marker_tmp.write_text(
+                        json.dumps(marker_payload, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    marker_tmp.replace(active_job_marker)
+                except (OSError, ValueError):
+                    pass
+            try:
+                time.sleep(0.2)
+            except InterruptedError:
+                pass
+        try:
+            gateway_request(
+                "POST",
+                f"{job_route}/cancel",
+                payload={"workspaceId": workspace_id},
+                environ=values,
+            )
+            confirmation = gateway_request(
+                "GET",
+                f"{job_route}?{query}",
+                environ=values,
+            )
+            if str(confirmation.get("status") or "") in GATEWAY_TERMINAL_STATUSES:
+                marker_retained = False
+        except (OSError, RuntimeError, ValueError):
+            marker_retained = True
         return {
             "jsonrpc": "2.0",
             "id": 2,
@@ -471,7 +630,7 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             },
         }
     finally:
-        if active_job_marker is not None:
+        if active_job_marker is not None and marker_retained is not True:
             try:
                 active_job_marker.unlink(missing_ok=True)
             except OSError:
@@ -671,6 +830,7 @@ def clean_stale_mcp_processes() -> None:
 
 
 def main() -> int:
+    install_terminate_handlers()
     if len(sys.argv) == 2 and sys.argv[1] == "--server-info":
         try:
             print(json.dumps(server_info(), ensure_ascii=False))
@@ -678,8 +838,21 @@ def main() -> int:
         except FileNotFoundError as exc:
             print(str(exc), file=sys.stderr)
             return 1
+    if len(sys.argv) == 4 and sys.argv[1] == "--job-status":
+        # Reconciliation helper: real Gateway job state for a marker reference.
+        result = query_gateway_job(sys.argv[2], sys.argv[3])
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result.get("error") is None else 1
+    if len(sys.argv) == 4 and sys.argv[1] == "--cancel-job":
+        result = cancel_gateway_job(sys.argv[2], sys.argv[3])
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result.get("cancelled") else 1
     if len(sys.argv) != 2:
-        print("usage: satk_eval.py MATLAB_CODE_FILE | --server-info", file=sys.stderr)
+        print(
+            "usage: satk_eval.py MATLAB_CODE_FILE | --server-info"
+            " | --job-status JOB_ID WORKSPACE_ID | --cancel-job JOB_ID WORKSPACE_ID",
+            file=sys.stderr,
+        )
         return 2
 
     code_file = Path(sys.argv[1])

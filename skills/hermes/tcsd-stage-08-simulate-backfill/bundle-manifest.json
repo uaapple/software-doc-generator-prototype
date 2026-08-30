@@ -1,0 +1,16 @@
+{
+  "schema": "tcsd-bundle-manifest/v1",
+  "fileCount": 2,
+  "files": [
+    {
+      "path": "agents/openai.yaml",
+      "sha256": "667a946026f9cad25b7b75b2e0bf819587a7e77cd396ced36d857c54cea19958",
+      "mode": 420
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "e240ca635fae6530d1a371ada9cf5bd5ff3bb301d8d4874507b6199c67d04134",
+      "mode": 420
+    }
+  ]
+}

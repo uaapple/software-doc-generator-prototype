@@ -27,6 +27,16 @@ const runnerStateFor = (job) => path.join(
   "runner-state.json"
 );
 
+// Gateway failure texts that mark a transient (retryable) runner failure.
+// Anything else — deterministic runner crashes, model-inherent constraints,
+// validation verdicts — must not burn a second full attempt.
+const TRANSIENT_GATEWAY_MARKERS = [
+  "MATLAB_GATEWAY_POLL_TIMEOUT",
+  "Timed out waiting for MATLAB Gateway",
+  "MATLAB_GATEWAY_JOB_CANCELLED_LOCAL",
+  "MATLAB_GATEWAY_REQUEST_FAILED",
+];
+
 function publicError(error = {}) {
   return {
     code: typeof error.code === "string" ? error.code : TCSD_ERROR_CODES.stage,
@@ -402,6 +412,59 @@ export class TcsdPipelineJobService {
     await fs.rename(tempPath, snapshot.targetPath);
   }
 
+  async readActiveGatewayMarker(job) {
+    return readJson(
+      path.join(path.resolve(job.input.outputDir), ".tcsd-runtime", "active-gateway-job.json"),
+      null
+    );
+  }
+
+  transientFailureReason(error) {
+    if (
+      error?.code === TCSD_ERROR_CODES.timeout ||
+      error?.code === TCSD_ERROR_CODES.pollTimeout ||
+      error?.code === TCSD_ERROR_CODES.transientNetwork
+    ) {
+      return String(error.message || "transient failure");
+    }
+    if (error?.code === TCSD_ERROR_CODES.stageCheckpointMissing) {
+      const message = String(error.details?.attempt?.error?.message || "");
+      if (message && TRANSIENT_GATEWAY_MARKERS.some((marker) => message.includes(marker))) {
+        return message;
+      }
+    }
+    return null;
+  }
+
+  async evaluateRetry(job, index, error) {
+    if (error?.code === TCSD_ERROR_CODES.validation || error?.code === TCSD_ERROR_CODES.stalled) {
+      return {
+        retry: true,
+        summary: error.code === TCSD_ERROR_CODES.stalled
+          ? "Hermes 会话长时间无结果且无可观察进展，将使用新 session 自动重试一次。"
+          : "宿主确定性校验失败，将使用新 session 自动修复一次。",
+      };
+    }
+    const transient = this.transientFailureReason(error);
+    if (transient) {
+      // Two-phase rule: transient failures may retry once with identical
+      // hashes, but only after the previous Gateway job is confirmed gone —
+      // otherwise the retry would overlap the very job that timed out.
+      const marker = await this.readActiveGatewayMarker(job);
+      if (marker) {
+        return {
+          retry: false,
+          summary: "检测到暂态 Gateway 故障，但旧作业标记仍活跃；为避免重复提交不自动重试。",
+        };
+      }
+      return {
+        retry: true,
+        summary: `检测到暂态 Gateway 故障（${transient.slice(0, 160)}），旧作业已终止，自动重试一次。`,
+      };
+    }
+    return { retry: false, summary: "" };
+  }
+
   async executeStage(job, index) {
     const stage = job.stages[index - 1];
     let validationReportPath = stage.attempts?.at(-1)?.validationReportPath || "";
@@ -437,15 +500,13 @@ export class TcsdPipelineJobService {
             details: { stageIndex: index, attempt: stage.attempt, stateRestoreFailed: true }
           });
         }
-        const retryable = [TCSD_ERROR_CODES.validation, TCSD_ERROR_CODES.stalled].includes(error.code);
-        if (retryable && stage.attempt < 2) {
+        const retryDecision = await this.evaluateRetry(job, index, error);
+        if (retryDecision.retry && stage.attempt < 2) {
           if (error.code === TCSD_ERROR_CODES.validation) {
             validationReportPath = error.details?.validationReportPath || validationReportPath;
           }
           await this.setStage(job, index, "等待执行", {
-            summary: error.code === TCSD_ERROR_CODES.stalled
-              ? "Hermes 会话长时间无结果且无可观察进展，将使用新 session 自动重试一次。"
-              : "宿主确定性校验失败，将使用新 session 自动修复一次。",
+            summary: retryDecision.summary,
             error: normalized
           });
           continue;

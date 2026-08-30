@@ -81,7 +81,16 @@ export async function readJson(filePath, fallback = null) {
 export async function writeJson(filePath, value) {
   const jsonText = JSON.stringify(value, null, 2);
   const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${randomUUID()}`;
-  await fs.writeFile(tempPath, jsonText, "utf8");
+  // Write through a handle and fsync before rename so terminal JSON artifacts
+  // (checkpoints, attempt results, validation reports) survive a host crash
+  // without ending up truncated or empty.
+  const handle = await fs.open(tempPath, "w");
+  try {
+    await handle.writeFile(jsonText, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
   let lastError = null;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {

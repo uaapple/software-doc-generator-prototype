@@ -142,7 +142,10 @@ export class TcsdDshStageExecutor {
       "开始生成。",
       `生成的最终测试用例 Excel（${model}_Test0001_tcsd.xlsx）额外复制一份到模型所在的目录 ${inputDirectory}。`,
       "这是平台已创建的受管任务；不得运行 init、不得创建另一工作区或改变 task.json。",
-      `仅用 Python 前台依次运行：${runner} run --task ${taskPath} --stage 1 至 12（Stage 10 保持 auto），然后 ${runner} finish --task ${taskPath}。`,
+      `依次运行：${runner} run --task ${taskPath} --stage 1 至 12（Stage 10 保持 auto），然后 ${runner} finish --task ${taskPath}。`,
+      "执行方式（必须遵守）：runner 一律以后台任务方式启动（前台运行会被 600 秒强制终止——Stage 6/11 经常超过 10 分钟，前台必然失败）；启动后轮询 outputs/.tcsd-checkpoints/stage-XX.json（成功）与 outputs/.tcsd-agent/stage-XX/attempt-N/attempt-result.json（终态，含失败原因）直到其中之一出现；runner 以退出码 3 结束表示已有活跃执行或存在活跃 Gateway 作业，此时不得重新提交，继续轮询既有产物。",
+      "Stage 10 特殊流程（唯一允许两次调用 runner 的阶段）：首次运行 stage 10（保持 auto）后轮询 attempt-result.json，当其 stageStatus 为 awaiting_proposal 时读取同目录 repair-brief.json，撰写 repair-proposal.json 写入同目录，然后再次运行 stage 10 使其进入 apply；两次调用之间不得做任何 MATLAB 仿真或覆盖率采集。",
+      "失败诊断：若 attempt-result.json 显示 runtimeStatus=failed 或 validationStatus=failed，以其中 error.message 为准记录失败原因；它不是要求你重跑的信号——阶段终态一经落盘即不可更改。",
       "完成以 outputs/.tcsd-checkpoints/ 下 12 个 checkpoint 和 outputs/.tcsd-host 三件套为准。",
       "纪律（必须遵守）：严格按 1→12 顺序，每阶段仅运行一次 runner；阶段结果（含 partial/skipped/completed）即终态，禁止对任何已产出 checkpoint 的阶段重跑或追加修改；覆盖率补救只发生在 stage-10；stage-11 完成后立即 stage-12 与 finish，不得在阶段间进行任何额外 MATLAB 仿真、探针、覆盖率收集、诊断或用例修改；stage-12 是纯清理打包，无论覆盖率如何都直接收尾，未达标缺口由 finish 记为 unresolved。"
     ].join("\n");
@@ -262,9 +265,11 @@ export class TcsdDshStageExecutor {
 
   async awaitStageCheckpoint(job, stageIndex, session) {
     // Poll the shared workspace for the runner-written checkpoint of this
-    // stage while the single DSH session is still running. Returns the
-    // checkpoint path once present; throws with the dsh stderr if the session
-    // ended before the stage checkpoint appeared.
+    // stage. After the DSH session ends, a background runner may still be
+    // finishing the stage (the bbc72245 orphan shape), so the poll keeps
+    // waiting while the runner lease heartbeat is fresh and only fails once
+    // the runner is provably gone — surfacing the structured attempt outcome
+    // and any live Gateway job marker in the error details.
     const checkpointPath = path.join(
       path.resolve(job.input.outputDir),
       ".tcsd-checkpoints",
@@ -272,11 +277,30 @@ export class TcsdDshStageExecutor {
     );
     const pollMs = Math.max(2000, Number(this.pollIntervalMs || 5000));
     const deadline = Date.now() + this.timeoutMs;
+    let sessionExited = false;
+    let sessionExitOutcome = null;
     while (Date.now() < deadline) {
-      const exit = await Promise.race([
-        session.exitPromise.then(() => "exit"),
-        new Promise((resolve) => setTimeout(resolve, pollMs))
-      ]);
+      if (!sessionExited) {
+        const exit = await Promise.race([
+          session.exitPromise.then(
+            () => "exit",
+            (cause) => ({ error: cause })
+          ),
+          new Promise((resolve) => setTimeout(resolve, pollMs))
+        ]);
+        if (exit && typeof exit === "object" && exit.error) {
+          // The session transport itself failed (spawn error / worker HTTP
+          // error) — a genuine session failure, not a missing checkpoint.
+          throw publicRuntimeError(Object.assign(new Error("DSH session ended before the stage checkpoint was written."), {
+            code: 1,
+            stderr: String(session.stderr || "")
+          }), this.timeoutMs);
+        }
+        if (exit === "exit") {
+          sessionExited = true;
+          sessionExitOutcome = await session.exitPromise.then(null, () => null);
+        }
+      }
       try {
         const stat = await fs.stat(checkpointPath);
         if (stat.isFile()) {
@@ -285,16 +309,161 @@ export class TcsdDshStageExecutor {
       } catch {
         // checkpoint not written yet
       }
-      if (exit === "exit") {
-        throw publicRuntimeError(Object.assign(new Error("DSH session ended before the stage checkpoint was written."), {
-          code: 1,
-          stderr: String(session.stderr || "")
-        }), this.timeoutMs);
+      const attemptOutcome = await this.collectAttemptOutcome(job, stageIndex);
+      if (attemptOutcome?.stageStatus === "failed") {
+        throw await this.checkpointMissingError(job, stageIndex, {
+          sessionExitOutcome,
+          sessionStderr: String(session.stderr || ""),
+          attempt: attemptOutcome
+        });
+      }
+      if (sessionExited) {
+        const lease = await this.readRunnerLease(job, stageIndex);
+        const leaseAlive = lease !== null && this.leaseHeartbeatFresh(lease);
+        if (!leaseAlive) {
+          // One grace poll absorbs the write/rename race before declaring the
+          // runner gone for good.
+          await new Promise((resolve) => setTimeout(resolve, pollMs));
+          try {
+            const stat = await fs.stat(checkpointPath);
+            if (stat.isFile()) {
+              return checkpointPath;
+            }
+          } catch {
+            // still missing
+          }
+          const finalOutcome = await this.collectAttemptOutcome(job, stageIndex);
+          throw await this.checkpointMissingError(job, stageIndex, {
+            sessionExitOutcome,
+            sessionStderr: String(session.stderr || ""),
+            attempt: finalOutcome ?? attemptOutcome,
+            lease
+          });
+        }
+        // Lease heartbeat fresh: the orphaned background runner is still
+        // working and may yet produce the checkpoint — keep polling.
       }
     }
     throw publicRuntimeError(Object.assign(new Error("timed out waiting for the DSH stage checkpoint."), {
       code: "ETIMEDOUT"
     }), this.timeoutMs);
+  }
+
+  leaseHeartbeatFresh(lease) {
+    // Keep in sync with LEASE_STALE_SECONDS in dsh_stage_runner.py. The host
+    // cannot verify the owner pid (different container), so liveness is judged
+    // purely by heartbeat age.
+    const stamp = Date.parse(String(lease?.heartbeatAt || ""));
+    return Number.isFinite(stamp) && Date.now() - stamp <= 45000;
+  }
+
+  async readRunnerLease(job, stageIndex) {
+    const leasesDir = path.join(
+      path.resolve(job.input.outputDir),
+      ".tcsd-runtime",
+      "leases"
+    );
+    let names = [];
+    try {
+      names = (await fs.readdir(leasesDir, { withFileTypes: true }))
+        .filter((entry) => entry.isFile() && entry.name.startsWith(`stage-${String(stageIndex).padStart(2, "0")}-attempt-`))
+        .map((entry) => entry.name);
+    } catch {
+      return null;
+    }
+    let freshest = null;
+    for (const name of names) {
+      const payload = await readJson(path.join(leasesDir, name), null);
+      if (!payload || payload.schema !== "tcsd-stage-lease/v1") continue;
+      if (!freshest || String(payload.heartbeatAt || "") > String(freshest.heartbeatAt || "")) {
+        freshest = { ...payload, leaseFile: name };
+      }
+    }
+    return freshest;
+  }
+
+  async checkpointMissingError(job, stageIndex, { sessionExitOutcome, sessionStderr, attempt, lease }) {
+    const exitCode = Number.isInteger(sessionExitOutcome?.code)
+      ? sessionExitOutcome.code
+      : null;
+    const gatewayMarker = await readJson(
+      path.join(path.resolve(job.input.outputDir), ".tcsd-runtime", "active-gateway-job.json"),
+      null
+    );
+    const summary = attempt
+      ? `运行状态=${attempt.runtimeStatus}，校验状态=${attempt.validationStatus}，阶段终态=${attempt.stageStatus}`
+        + (attempt.error?.message ? `；失败原因：${attempt.error.message}` : "")
+      : "attempt 目录中未找到任何结构化结果文件。";
+    const runnerNote = lease
+      ? "runner 租约已陈旧（后台 runner 已停止）。"
+      : "未发现活跃的 runner 租约。";
+    return Object.assign(
+      new Error(`DSH 会话已结束，但阶段 ${stageIndex} 的 checkpoint 未产出。${summary}${runnerNote}`),
+      {
+        code: TCSD_ERROR_CODES.stageCheckpointMissing,
+        details: {
+          stageIndex,
+          ...(Number.isInteger(exitCode) ? { exitCode } : {}),
+          sessionStderr: String(sessionStderr || "").slice(-2000),
+          ...(attempt ? { attempt } : {}),
+          ...(lease ? { runnerLease: { runId: lease.runId, heartbeatAt: lease.heartbeatAt } } : {}),
+          ...(gatewayMarker
+            ? { gatewayJob: { jobId: gatewayMarker.jobId, ownerPid: gatewayMarker.ownerPid, heartbeatAt: gatewayMarker.heartbeatAt } }
+            : {})
+        }
+      }
+    );
+  }
+
+  async collectAttemptOutcome(job, stageIndex) {
+    // Read the newest attempt's composite outcome written by the in-session
+    // runner orchestrator. Supports both the current three-layer protocol
+    // (attempt-result.json referencing runtime-result.json) and the legacy
+    // single result.json so mid-upgrade workspaces stay diagnosable.
+    const attemptRoot = path.join(
+      path.resolve(job.input.outputDir),
+      ".tcsd-agent",
+      `stage-${String(stageIndex).padStart(2, "0")}`
+    );
+    let attemptDirs = [];
+    try {
+      attemptDirs = (await fs.readdir(attemptRoot, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && /^attempt-\d+$/.test(entry.name))
+        .map((entry) => entry.name)
+        .sort((left, right) => Number(right.split("-")[1]) - Number(left.split("-")[1]));
+    } catch {
+      return null;
+    }
+    for (const dir of attemptDirs) {
+      const attemptDir = path.join(attemptRoot, dir);
+      const attempt = Number(dir.split("-")[1]);
+      const attemptResult = await readJson(path.join(attemptDir, "attempt-result.json"), null);
+      if (attemptResult && attemptResult.schema === "tcsd-attempt-result/v1") {
+        return {
+          attemptDir: path.relative(path.resolve(job.input.workspaceDir), attemptDir).replaceAll(path.sep, "/"),
+          attempt,
+          runtimeStatus: String(attemptResult.runtimeStatus || ""),
+          validationStatus: String(attemptResult.validationStatus || ""),
+          stageStatus: String(attemptResult.stageStatus || ""),
+          error: attemptResult.error || null
+        };
+      }
+      for (const name of ["runtime-result.json", "result.json"]) {
+        const raw = await readJson(path.join(attemptDir, name), null);
+        if (raw?.schema === "tcsd-agent-stage-result/v1") {
+          const failed = raw.status === "failed";
+          return {
+            attemptDir: path.relative(path.resolve(job.input.workspaceDir), attemptDir).replaceAll(path.sep, "/"),
+            attempt,
+            runtimeStatus: String(raw.status || ""),
+            validationStatus: failed ? "not_applicable" : "unknown",
+            stageStatus: failed ? "failed" : "unknown",
+            error: failed ? (raw.error || { code: "tcsd_stage_runtime_failed", message: raw.summary || "" }) : null
+          };
+        }
+      }
+    }
+    return null;
   }
 
   resolveDshCli() {

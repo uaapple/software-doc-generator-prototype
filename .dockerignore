@@ -49,3 +49,13 @@ skills/hermes/**/assets/support-package/**
 **/*.mat
 **/*.sldd
 **/~$*
+# Worker 镜像运行时契约：tcsd-runtime 的 support-package 资源由
+# bundle-manifest.json 登记（就地校验门），必须进入构建上下文。
+# 排除规则先匹配后，此处按顺序反向放行，保持「最后匹配生效」。
+!skills/hermes/tcsd-runtime/assets/
+!skills/hermes/tcsd-runtime/assets/**
+!skills/hermes/tcsd-runtime/assets/support-package/
+!skills/hermes/tcsd-runtime/assets/support-package/**
+!skills/hermes/tcsd-runtime/assets/support-package/**/*.slx
+!skills/hermes/tcsd-runtime/assets/support-package/**/*.mat
+!skills/hermes/tcsd-runtime/assets/support-package/**/*.sldd
