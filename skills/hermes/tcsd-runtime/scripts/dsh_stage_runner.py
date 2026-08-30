@@ -25,6 +25,7 @@ Everything is plain Python: no node, no hand-written manifests.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -35,6 +36,11 @@ import sys
 import uuid as uuidlib
 from datetime import datetime
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - the runner executes on Linux only
+    fcntl = None
 
 SCHEMA_INPUT = "tcsd-agent-stage-input/v1"
 SCHEMA_RESULT = "tcsd-agent-stage-result/v1"
@@ -222,6 +228,29 @@ def lease_path(workspace: Path, stage: int, attempt: int) -> Path:
     return Path(workspace) / "outputs" / ".tcsd-runtime" / "leases" / f"stage-{stage:02d}-attempt-{attempt}.json"
 
 
+@contextlib.contextmanager
+def _lease_dir_lock(workspace: Path):
+    """Serialize every lease check-and-modify within the leases directory.
+
+    Check-then-modify on the lease FILE cannot be atomic (read → verify →
+    replace/unlink races against a concurrent takeover). The directory-level
+    exclusive flock makes each whole operation atomic instead; without fcntl
+    (non-POSIX) we degrade to no locking, which the runner never hits — it
+    executes on Linux only."""
+    leases_dir = Path(workspace) / "outputs" / ".tcsd-runtime" / "leases"
+    leases_dir.mkdir(parents=True, exist_ok=True)
+    if fcntl is None:  # pragma: no cover
+        yield
+        return
+    descriptor = os.open(leases_dir, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
 def acquire_lease(workspace: Path, *, job_id: str, stage: int, attempt: int,
                   run_id: str, runtime_hash: str = "") -> dict | None:
     """Atomically claim the stage/attempt slot.
@@ -245,38 +274,37 @@ def acquire_lease(workspace: Path, *, job_id: str, stage: int, attempt: int,
         "acquiredAt": __import__("datetime").datetime.now().isoformat(),
         "heartbeatAt": __import__("datetime").datetime.now().isoformat(),
     }
-    try:
-        handle = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        existing = {}
+    with _lease_dir_lock(workspace):
+        taken_over_from = None
         try:
             existing = json.loads(target.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            existing = {}
-        stale = True
-        if existing.get("ownerPid") and _pid_alive(int(existing["ownerPid"])):
+            existing = None
+        if existing is not None:
+            stale = True
+            if existing.get("ownerPid") and _pid_alive(int(existing["ownerPid"])):
+                try:
+                    heartbeat = datetime.fromisoformat(str(existing.get("heartbeatAt")))
+                    stale = (datetime.now() - heartbeat).total_seconds() > LEASE_STALE_SECONDS
+                except (TypeError, ValueError):
+                    stale = True
+            if not stale:
+                return None
+            # Atomic takeover: rename the stale lease AWAY (exclusive — a
+            # concurrent taker loses this race with ENOENT and can never
+            # delete our freshly created lease), then create ours.
+            taken_over_from = {"runId": existing.get("runId"), "ownerPid": existing.get("ownerPid")}
             try:
-                heartbeat = __import__("datetime").datetime.fromisoformat(str(existing.get("heartbeatAt")))
-                age = (__import__("datetime").datetime.now() - heartbeat).total_seconds()
-                stale = age > LEASE_STALE_SECONDS
-            except (TypeError, ValueError):
-                stale = True
-        if not stale:
-            return None
-        payload["tookOverFrom"] = {
-            "runId": existing.get("runId"),
-            "ownerPid": existing.get("ownerPid"),
-        }
-        try:
-            os.unlink(target)
-        except OSError:
-            return None
+                os.rename(target, target.with_name(f".{target.name}.takenover-{uuidlib.uuid4().hex[:8]}"))
+            except OSError:
+                return None
         try:
             handle = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             return None
-    with os.fdopen(handle, "w", encoding="utf-8") as file_handle:
-        json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+        if taken_over_from is not None:
+            payload["tookOverFrom"] = taken_over_from
+        json.dump(payload, file_handle := os.fdopen(handle, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
         file_handle.flush()
         os.fsync(file_handle.fileno())
     return payload
@@ -288,39 +316,49 @@ def refresh_lease(workspace: Path, stage: int, attempt: int, owner_token: str = 
     evicted owner would keep overwriting the new owner's heartbeat (and its
     release would delete the new lease entirely)."""
     target = lease_path(workspace, stage, attempt)
-    try:
-        payload = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return
-    if owner_token and str(payload.get("ownerToken") or "") != str(owner_token):
-        return
-    payload["heartbeatAt"] = __import__("datetime").datetime.now().isoformat()
-    temporary = target.parent / f".{target.name}.tmp-{os.getpid()}-{uuidlib.uuid4().hex[:8]}"
-    try:
-        with open(temporary, "w", encoding="utf-8") as file_handle:
-            json.dump(payload, file_handle, ensure_ascii=False, indent=2)
-        os.replace(temporary, target)
-    except OSError:
-        if temporary.exists():
-            try:
-                temporary.unlink()
-            except OSError:
-                pass
-
-
-def release_lease(workspace: Path, stage: int, attempt: int, owner_token: str = "") -> None:
-    target = lease_path(workspace, stage, attempt)
-    if owner_token:
+    with _lease_dir_lock(workspace):
         try:
             payload = json.loads(target.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return
-        if str(payload.get("ownerToken") or "") != str(owner_token):
-            return  # the lease was taken over by someone else; leave it alone
-    try:
-        target.unlink()
-    except OSError:
-        pass
+        lease_token = str(payload.get("ownerToken") or "")
+        if lease_token:
+            if not owner_token or lease_token != owner_token:
+                return
+        elif owner_token:
+            return
+        payload["heartbeatAt"] = datetime.now().isoformat()
+        temporary = target.parent / f".{target.name}.tmp-{os.getpid()}-{uuidlib.uuid4().hex[:8]}"
+        try:
+            with open(temporary, "w", encoding="utf-8") as file_handle:
+                json.dump(payload, file_handle, ensure_ascii=False, indent=2)
+            os.replace(temporary, target)
+        except OSError:
+            if temporary.exists():
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
+
+
+def release_lease(workspace: Path, stage: int, attempt: int, owner_token: str = "") -> None:
+    target = lease_path(workspace, stage, attempt)
+    with _lease_dir_lock(workspace):
+        try:
+            payload = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        lease_token = str(payload.get("ownerToken") or "")
+        if lease_token:
+            # A tokenless call must NOT touch a token-bearing lease.
+            if not owner_token or lease_token != owner_token:
+                return
+        elif owner_token:
+            return
+        try:
+            target.unlink()
+        except OSError:
+            pass
 
 
 def start_lease_heartbeat(workspace: Path, stage: int, attempt: int, owner_token: str = ""):

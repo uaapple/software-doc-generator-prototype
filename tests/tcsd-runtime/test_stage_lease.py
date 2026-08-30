@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -88,18 +89,20 @@ class StageLeaseTest(unittest.TestCase):
         self.assertIsNotNone(takeover, "a dead owner must not block resubmission")
 
     def test_release_removes_lease(self):
-        self._acquire()
-        RUNNER_MODULE.release_lease(self.workspace, 6, 1)
+        lease = self._acquire()
+        assert lease is not None
+        RUNNER_MODULE.release_lease(self.workspace, 6, 1, lease["ownerToken"])
         self.assertFalse(RUNNER_MODULE.lease_path(self.workspace, 6, 1).exists())
         self.assertIsNotNone(self._acquire(run_id="run-ccc"))
 
     def test_heartbeat_refreshes_timestamp(self):
-        self._acquire()
+        lease = self._acquire()
+        assert lease is not None
         target = RUNNER_MODULE.lease_path(self.workspace, 6, 1)
         payload = json.loads(target.read_text(encoding="utf-8"))
         payload["heartbeatAt"] = (datetime.now() - timedelta(seconds=60)).isoformat()
         target.write_text(json.dumps(payload), encoding="utf-8")
-        RUNNER_MODULE.refresh_lease(self.workspace, 6, 1)
+        RUNNER_MODULE.refresh_lease(self.workspace, 6, 1, lease["ownerToken"])
         refreshed = json.loads(target.read_text(encoding="utf-8"))
         age = datetime.now() - datetime.fromisoformat(refreshed["heartbeatAt"])
         self.assertLess(age.total_seconds(), 10)
@@ -131,10 +134,65 @@ class StageLeaseTest(unittest.TestCase):
         RUNNER_MODULE.release_lease(self.workspace, 6, 1, second["ownerToken"])
         self.assertFalse(target.exists())
 
-    def test_tokenless_release_still_works_for_legacy_callers(self):
+    def test_tokenless_calls_cannot_touch_token_bearing_lease(self):
+        # Review P0: the tokenless legacy path must not bypass ownership on a
+        # token-bearing lease.
         self._acquire()
-        RUNNER_MODULE.release_lease(self.workspace, 6, 1)
-        self.assertFalse(RUNNER_MODULE.lease_path(self.workspace, 6, 1).exists())
+        target = RUNNER_MODULE.lease_path(self.workspace, 6, 1)
+        RUNNER_MODULE.refresh_lease(self.workspace, 6, 1)  # no token
+        RUNNER_MODULE.release_lease(self.workspace, 6, 1)  # no token
+        self.assertTrue(target.exists(), "tokenless calls must leave a token lease intact")
+
+    def test_concurrent_takeovers_admit_exactly_one_winner(self):
+        # Review P0: two live processes taking over the SAME stale lease must
+        # not both succeed — the old unlink/create window allowed taker C to
+        # delete taker B's fresh lease. Verified with real processes.
+        import subprocess
+        import textwrap
+
+        self._acquire(run_id="run-stale")
+        target = RUNNER_MODULE.lease_path(self.workspace, 6, 1)
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        payload["heartbeatAt"] = (datetime.now() - timedelta(seconds=120)).isoformat()
+        target.write_text(json.dumps(payload), encoding="utf-8")
+
+        worker = textwrap.dedent('''
+            import json, sys
+            sys.path.insert(0, {runner_parent!r})
+            from dsh_stage_runner import acquire_lease
+            result = acquire_lease({workspace!r}, job_id="job-1", stage=6, attempt=1,
+                                   run_id=sys.argv[1], runtime_hash="h")
+            print(json.dumps({{"winner": result is not None, "runId": result["runId"] if result else None}}))
+        ''').format(runner_parent=str(RUNTIME / "scripts"), workspace=str(self.workspace))
+
+        script = self.workspace / "taker.py"
+        script.write_text(worker, encoding="utf-8")
+        procs = [
+            subprocess.Popen([sys.executable, str(script), f"run-{name}"],
+                             stdout=subprocess.PIPE, text=True)
+            for name in ("b", "c")
+        ]
+        outputs = [json.loads(proc.communicate(timeout=30)[0].strip().splitlines()[-1]) for proc in procs]
+        winners = [item for item in outputs if item["winner"]]
+        self.assertEqual(len(winners), 1, f"exactly one taker may win, got {outputs}")
+        self.assertEqual(winners[0]["runId"], "run-b")
+        # The loser must not have clobbered the winner's lease.
+        final = json.loads(RUNNER_MODULE.lease_path(self.workspace, 6, 1).read_text(encoding="utf-8"))
+        self.assertEqual(final["runId"], "run-b")
+
+    def test_tokenless_release_still_works_for_legacy_callers(self):
+        # Tokenless calls may only touch leases that carry NO ownerToken (the
+        # pre-token format). A token-bearing lease is off limits to them.
+        target = RUNNER_MODULE.lease_path(self.workspace, 6, 1)
+        legacy = {
+            "schema": RUNNER_MODULE.SCHEMA_LEASE, "jobId": "job-1",
+            "stageIndex": 6, "attempt": 1, "runId": "run-legacy",
+            "ownerPid": os.getpid(), "heartbeatAt": datetime.now().isoformat(),
+        }
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(legacy), encoding="utf-8")
+        RUNNER_MODULE.release_lease(self.workspace, 6, 1)  # no token
+        self.assertFalse(target.exists(), "legacy tokenless lease must remain releasable")
 
 
 class GatewayMarkerGuardTest(unittest.TestCase):
