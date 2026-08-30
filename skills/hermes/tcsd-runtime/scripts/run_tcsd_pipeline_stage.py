@@ -35,6 +35,142 @@ def stage6_probe_timeout_seconds(candidate_count: int) -> int:
     return probe_timeout_seconds(candidate_count, base=STAGE6_PROBE_TIMEOUT_BASE_SECONDS, per_unit=STAGE6_PROBE_TIMEOUT_PER_CANDIDATE_SECONDS, maximum=STAGE6_PROBE_TIMEOUT_MAX_SECONDS)
 def stage11_probe_timeout_seconds(case_count: int) -> int:
     return probe_timeout_seconds(case_count, base=STAGE11_PROBE_TIMEOUT_BASE_SECONDS, per_unit=STAGE11_PROBE_TIMEOUT_PER_CASE_SECONDS, maximum=STAGE11_PROBE_TIMEOUT_MAX_SECONDS)
+
+PROBE_CAPABILITY_SCHEMA = "tcsd-probe-capability/v1"
+PROBE_CAPABILITY_CACHE_SCHEMA = "tcsd-probe-capability-cache/v1"
+PROBE_CAPABILITY_STRATEGY_VERSION = "v1"
+PROBE_PRECHECK_TIMEOUT_SECONDS = 900
+
+
+def workspace_model_fingerprint(model_path: Path, root: Path) -> str:
+    """Cache key for the capability precheck: model + every workspace library +
+    the precheck strategy itself. A library or model change invalidates prior
+    verdicts (an operator probeable under one library revision may be denied
+    under the next)."""
+    import hashlib as _hashlib
+    digest = _hashlib.sha256()
+    candidates = [model_path]
+    for slx in sorted(root.glob("*.slx")):
+        if slx.resolve() != model_path.resolve():
+            candidates.append(slx)
+    for path in candidates:
+        if path.is_file():
+            digest.update(path.name.encode())
+            digest.update(b"\0")
+            digest.update(_hashlib.sha256(path.read_bytes()).digest())
+            digest.update(b"\0")
+    digest.update(PROBE_CAPABILITY_STRATEGY_VERSION.encode())
+    precheck_script = scripts() / "probe_capability_precheck.m"
+    if precheck_script.is_file():
+        digest.update(_hashlib.sha256(precheck_script.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+def probe_capability_cache_path(out: Path) -> Path:
+    return out / ".tcsd-runtime" / "probe-capability-cache.json"
+
+
+def load_probe_capability_cache(out: Path, model: str, fingerprint: str):
+    try:
+        payload = read_json(probe_capability_cache_path(out))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("schema") != PROBE_CAPABILITY_CACHE_SCHEMA:
+        return None
+    if payload.get("model") != model or payload.get("fingerprint") != fingerprint:
+        return None
+    if payload.get("strategyVersion") != PROBE_CAPABILITY_STRATEGY_VERSION:
+        return None
+    capabilities = payload.get("capabilities")
+    return capabilities if isinstance(capabilities, dict) else None
+
+
+def save_probe_capability_cache(out: Path, model: str, fingerprint: str, capabilities: dict) -> None:
+    write_json(probe_capability_cache_path(out), {
+        "schema": PROBE_CAPABILITY_CACHE_SCHEMA,
+        "model": model,
+        "fingerprint": fingerprint,
+        "strategyVersion": PROBE_CAPABILITY_STRATEGY_VERSION,
+        "capabilities": capabilities,
+        "computedAt": __import__("datetime").datetime.now().isoformat(),
+    })
+
+
+def build_probe_capability_request(mapping: Path, request_path: Path) -> int:
+    """Extract the operators to classify from the logical mapping report."""
+    payload = read_json(mapping)
+    items = []
+    if isinstance(payload, dict):
+        operators = payload.get("operators")
+        if isinstance(operators, dict):
+            operators = [operators]
+        if isinstance(operators, list):
+            items = [item for item in operators if isinstance(item, dict)]
+    request = {
+        "schema": "tcsd-probe-capability-request/v1",
+        "model": payload.get("model") if isinstance(payload, dict) else "",
+        "operators": [
+            {"id": str(item.get("id") or item.get("sid") or item.get("block_path") or ""),
+             "block_path": str(item.get("block_path") or "")}
+            for item in items
+        ],
+    }
+    write_json(request_path, request)
+    return len(request["operators"])
+
+
+def run_probe_capability_precheck(job: dict, model: str, root: Path, out: Path,
+                                  mapping: Path, python=sys.executable):
+    """Classify probe observability for every candidate operator before any
+    simulation. Returns (capability_path_or_None, evidence dict)."""
+    model_path = Path(job["input"]["modelSlxPath"])
+    fingerprint = workspace_model_fingerprint(model_path, root)
+    cached = load_probe_capability_cache(out, model, fingerprint)
+    if cached is not None:
+        return None, {"precheckExecuted": False, "cache": "hit",
+                      "strategyVersion": PROBE_CAPABILITY_STRATEGY_VERSION,
+                      "capabilities": cached}
+    precheck_fixture = os.environ.get("TCSD_PIPELINE_PRECHECK_CAPABILITY_FIXTURE", "").strip()
+    capability_output = out / f"{model}_probe_capability.json"
+    if precheck_fixture:
+        # Test/offline fixture: same pattern as TCSD_PIPELINE_PROBE_RESULTS_FIXTURE.
+        shutil.copy2(precheck_fixture, capability_output)
+        payload = read_json(capability_output)
+        if payload.get("schema") != PROBE_CAPABILITY_SCHEMA:
+            raise RuntimeError(f"probe capability fixture schema invalid: {payload.get('schema')!r}")
+        capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
+        return capability_output, {"precheckExecuted": True, "cache": "fixture",
+                                   "strategyVersion": PROBE_CAPABILITY_STRATEGY_VERSION,
+                                   "capabilities": capabilities}
+    request_path = out / ".tcsd-runtime" / "probe-capability-request.json"
+    operator_count = build_probe_capability_request(mapping, request_path)
+    entry = quality.write_matlab_entry(out / f"{model}_probe_capability_entry.m", "\n".join([
+        f"rootDir = '{str(root).replace(chr(39), chr(39) * 2)}';",
+        f"addpath('{str(scripts()).replace(chr(39), chr(39) * 2)}');",
+        f"probe_capability_precheck(rootDir, '{model}', "
+        f"'{str(request_path).replace(chr(39), chr(39) * 2)}', "
+        f"'{str(capability_output).replace(chr(39), chr(39) * 2)}');",
+    ]))
+    quality.run_satk(python, scripts(), entry, root_dir=root,
+                     gateway_timeout_seconds=PROBE_PRECHECK_TIMEOUT_SECONDS)
+    payload = read_json(capability_output)
+    if payload.get("schema") != PROBE_CAPABILITY_SCHEMA:
+        raise RuntimeError(f"probe capability precheck produced {payload.get('schema')!r}")
+    if payload.get("strategyVersion") != PROBE_CAPABILITY_STRATEGY_VERSION:
+        raise RuntimeError("probe capability precheck strategy version mismatch")
+    capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
+    save_probe_capability_cache(out, model, fingerprint, capabilities)
+    unprobeable = sum(1 for item in capabilities.values()
+                      if isinstance(item, dict) and item.get("strategy") == "unprobeable")
+    evidence = {
+        "precheckExecuted": True,
+        "cache": "miss",
+        "strategyVersion": PROBE_CAPABILITY_STRATEGY_VERSION,
+        "operatorCount": operator_count,
+        "unprobeableCount": unprobeable,
+        "capabilities": capabilities,
+    }
+    return capability_output, evidence
 def planning_mapping_assessment(raw: dict[str, Any], obligations: Path, root: Path) -> dict[str, Any]:
     assessment = dict(raw)
     raw_status = str(assessment.pop("status", "failed"))
@@ -402,8 +538,17 @@ def stage_run(
         state.update({"mapping": str(mapping), "obligations": str(obligations), "coverageIr": str(coverage_ir), "decisionObligations": str(decision_obligations)}); save_state(job, state)
         finish(job, stage, summary="Condition、Decision 与 MC/DC 覆盖目标已形成 Coverage IR。", artifacts=[artifact(root, mapping), artifact(root, obligations), artifact(root, coverage_ir), artifact(root, decision_obligations)]); return
     if stage == 6:
-        plan = out / f"{model}_state_probe_plan.json"; run([sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)], root); plan_data = read_json(plan)
-        probe_artifacts = [artifact(root, plan)]; candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))
+        plan = out / f"{model}_state_probe_plan.json"
+        capability_path, precheck_evidence = run_probe_capability_precheck(job, model, root, out, mapping)
+        plan_cmd = [sys.executable, str(scripts()/"build_state_probe_plan.py"), "--traces", str(traces), "--output", str(plan)]
+        if capability_path is not None:
+            plan_cmd += ["--probe-capability", str(capability_path)]
+        run(plan_cmd, root); plan_data = read_json(plan)
+        probe_artifacts = [artifact(root, plan)]
+        if capability_path is not None:
+            probe_artifacts.append(artifact(root, capability_path))
+        candidate_count = int(plan_data.get("summary", {}).get("candidate_count") or len(plan_data.get("tests", [])))
+        unprobeable_target_count = int(plan_data.get("summary", {}).get("unprobeable_target_count") or 0)
         probe_timeout_seconds = stage6_probe_timeout_seconds(candidate_count)
         if candidate_count > 0:
             probe_results = out / f"{model}_state_probe_results.json"; probe_fixture = os.environ.get("TCSD_PIPELINE_PROBE_RESULTS_FIXTURE", "")
@@ -416,7 +561,7 @@ def stage_run(
                 ir_args += ["--decision-obligations", str(state["decisionObligations"])]
             run(ir_args + ["--output", str(coverage_ir)], root); probe_artifacts.extend([artifact(root, probe_results), artifact(root, obligations), artifact(root, coverage_ir)])
         state["statePlan"] = str(plan); save_state(job, state)
-        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0, "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None}); return
+        finish(job, stage, summary="状态及时序刺激已生成并由实际 Probe 验证。" if candidate_count > 0 else "未发现需要额外 Probe 的状态及时序候选。", artifacts=probe_artifacts, evidence={"candidateCount": candidate_count, "probeExecuted": candidate_count > 0, "probeTimeoutSeconds": probe_timeout_seconds if candidate_count > 0 else None, "unprobeableTargetCount": unprobeable_target_count, "precheck": precheck_evidence}); return
     spec, workbook = out / f"{model}_tcsd_spec.json", out / f"{model}_Test0001_tcsd.xlsx"
     if stage == 7:
         write_json(spec, initial_spec(read_json(interface), model)); run([sys.executable, str(scripts()/"build_tcsd_from_json.py"), "--template", str(scripts().parent/"assets"/"templates"/"tcsd_template.xlsx"), "--spec", str(spec), "--output", str(workbook), "--interface-json", str(interface)], root)

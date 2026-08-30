@@ -158,7 +158,16 @@ def normalize_param_values(params: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, sample_time: float) -> dict[str, Any]:
+def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, sample_time: float,
+               capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Build the probe candidate plan.
+
+    ``capabilities`` maps operator id -> {"strategy": ..., "reason": ...} from
+    the precheck job. Operators judged ``unprobeable`` by the precheck never
+    produce candidates: the alternative was 600+ target_unavailable observations
+    polluting the results (production task bbc72245), and "unprobeable" may only
+    ever be produced by this precheck, never by a runtime error."""
+    capabilities = capabilities or {}
     tests: list[dict[str, Any]] = []
     targets: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -195,6 +204,16 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
                 "candidate_count": 0,
                 "status": "planned",
             }
+            capability = capabilities.get(op_id) or {}
+            strategy = str(capability.get("strategy") or "unspecified")
+            target["probe_strategy"] = strategy
+            if strategy == "unprobeable":
+                # The precheck proved this target cannot be observed; planning
+                # candidates for it would only end as target_unavailable.
+                target["status"] = "unprobeable"
+                target["unprobeable_reason"] = str(capability.get("reason") or "precheck marked unprobeable")
+                targets.append(target)
+                continue
             if not deps.inputs:
                 target["status"] = "unsupported_semantics" if deps.unsupported else "candidate_exhausted"
                 targets.append(target)
@@ -256,6 +275,7 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             "target_count": len(targets),
             "candidate_count": len(tests),
             "unplanned_count": sum(1 for item in targets if item["status"] != "planned"),
+            "unprobeable_target_count": sum(1 for item in targets if item["status"] == "unprobeable"),
         },
     }
 
@@ -267,12 +287,21 @@ def main() -> int:
     parser.add_argument("--max-candidates-per-port", type=int, default=32)
     parser.add_argument("--max-steps-per-candidate", type=int, default=8)
     parser.add_argument("--sample-time", type=float, default=0.01)
+    parser.add_argument("--probe-capability", default="",
+                        help="precheck capability JSON (operator id -> strategy/reason)")
     args = parser.parse_args()
     payload = json.loads(Path(args.traces).read_text(encoding="utf-8"))
     items = reports(payload)
     if len(items) != 1:
         raise SystemExit("state probe planner requires one model-specific logical trace")
-    plan = build_plan(items[0], max(1, args.max_candidates_per_port), max(1, args.max_steps_per_candidate), max(1e-6, args.sample_time))
+    capabilities = {}
+    if args.probe_capability:
+        capability_payload = json.loads(Path(args.probe_capability).read_text(encoding="utf-8"))
+        capabilities = capability_payload.get("capabilities") if isinstance(capability_payload, dict) else {}
+        if not isinstance(capabilities, dict):
+            capabilities = {}
+    plan = build_plan(items[0], max(1, args.max_candidates_per_port), max(1, args.max_steps_per_candidate), max(1e-6, args.sample_time),
+                      capabilities=capabilities)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
