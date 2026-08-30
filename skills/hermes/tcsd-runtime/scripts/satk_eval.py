@@ -425,7 +425,13 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
         if output_dir:
             active_job_marker = Path(output_dir) / ".tcsd-runtime" / "active-gateway-job.json"
     created = False
-    marker_retained = False
+    # Marker lifecycle (review blocker 3): once the marker is PUBLISHED it is
+    # retained by default. Only OUR OWN observation that the Gateway job
+    # reached a terminal state may set marker_retained back to False and let
+    # the finally block delete it. A lost POST response, an interrupted poll
+    # or an unconfirmed cancel must all keep the marker — otherwise an orphan
+    # MATLAB job keeps running while the next runner sees a clean workspace.
+    marker_retained = True
     try:
         gateway_request(
             "PUT",
@@ -532,6 +538,8 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
                 environ=values,
             )
             status = job.get("status")
+            if status in GATEWAY_TERMINAL_STATUSES:
+                marker_retained = False
             if status == "succeeded":
                 artifact_id = urllib.parse.quote(str(job.get("artifactId") or ""))
                 artifact = gateway_request(
@@ -622,7 +630,7 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             },
         }
     finally:
-        if active_job_marker is not None and not marker_retained:
+        if active_job_marker is not None and marker_retained is not True:
             try:
                 active_job_marker.unlink(missing_ok=True)
             except OSError:
