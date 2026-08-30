@@ -425,6 +425,7 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
         if output_dir:
             active_job_marker = Path(output_dir) / ".tcsd-runtime" / "active-gateway-job.json"
     created = False
+    marker_retained = False
     try:
         gateway_request(
             "PUT",
@@ -476,9 +477,11 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
         while time.monotonic() < deadline:
             if terminate_requested.is_set():
                 # SIGTERM/SIGINT received (e.g. the harness killed the foreground
-                # runner): cancel the remote job best-effort so the host-side
-                # MATLAB work does not keep running as an orphan writing into
-                # this workspace.
+                # runner): cancel the remote job best-effort. The marker is
+                # RETAINED unless the Gateway confirms cancellation — deleting
+                # it unconditionally let an orphan keep running while the next
+                # runner saw a clean workspace (bbc72245 overlap shape).
+                marker_retained = True
                 try:
                     gateway_request(
                         "POST",
@@ -487,8 +490,28 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
                         environ=values,
                         timeout_s=5.0,
                     )
+                    confirmation = gateway_request(
+                        "GET",
+                        f"{job_route}?{query}",
+                        environ=values,
+                        timeout_s=5.0,
+                    )
+                    if str(confirmation.get("status") or "") in GATEWAY_TERMINAL_STATUSES:
+                        marker_retained = False
                 except (OSError, RuntimeError, ValueError):
                     pass
+                if active_job_marker is not None and marker_retained:
+                    try:
+                        marker_payload = json.loads(active_job_marker.read_text(encoding="utf-8"))
+                        marker_payload["cancelledRequested"] = True
+                        marker_tmp = active_job_marker.parent / f".{active_job_marker.name}.tmp-{os.getpid()}"
+                        marker_tmp.write_text(
+                            json.dumps(marker_payload, ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
+                        marker_tmp.replace(active_job_marker)
+                    except (OSError, ValueError):
+                        pass
                 return {
                     "jsonrpc": "2.0",
                     "id": 2,
@@ -498,6 +521,7 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
                         "data": {
                             "gatewayJobId": job_id,
                             "gatewayStatus": "cancelled_locally",
+                            "markerRetained": marker_retained,
                             "timeoutSeconds": timeout_s,
                         },
                     },
@@ -554,12 +578,22 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
                 time.sleep(0.2)
             except InterruptedError:
                 pass
-        gateway_request(
-            "POST",
-            f"{job_route}/cancel",
-            payload={"workspaceId": workspace_id},
-            environ=values,
-        )
+        try:
+            gateway_request(
+                "POST",
+                f"{job_route}/cancel",
+                payload={"workspaceId": workspace_id},
+                environ=values,
+            )
+            confirmation = gateway_request(
+                "GET",
+                f"{job_route}?{query}",
+                environ=values,
+            )
+            if str(confirmation.get("status") or "") in GATEWAY_TERMINAL_STATUSES:
+                marker_retained = False
+        except (OSError, RuntimeError, ValueError):
+            marker_retained = True
         return {
             "jsonrpc": "2.0",
             "id": 2,
@@ -588,7 +622,7 @@ def evaluate_over_gateway(code_file: Path, *, environ=None) -> dict:
             },
         }
     finally:
-        if active_job_marker is not None:
+        if active_job_marker is not None and not marker_retained:
             try:
                 active_job_marker.unlink(missing_ok=True)
             except OSError:

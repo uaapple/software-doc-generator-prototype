@@ -54,18 +54,23 @@ class GatewayReconcileTest(unittest.TestCase):
             "heartbeatAt": (datetime.now() - timedelta(seconds=heartbeat_age)).isoformat(),
         }), encoding="utf-8")
 
-    def _reconcile(self, status="running", query_error=None):
+    def _reconcile(self, status="running", query_error=None, *, statuses=None, cancel_error=None):
         calls = {"query": 0, "cancel": 0}
 
         def query(job_id, workspace_id):
             calls["query"] += 1
             if query_error:
                 return {"status": None, "error": query_error}
+            if statuses is not None:
+                index = min(calls["query"], len(statuses)) - 1
+                return {"status": statuses[index], "error": None}
             return {"status": status, "error": None}
 
         def cancel(job_id, workspace_id):
             calls["cancel"] += 1
             self.cancelled.append(job_id)
+            if cancel_error:
+                return {"cancelled": False, "error": cancel_error}
             return {"cancelled": True, "error": None}
 
         result = RUNNER_MODULE.reconcile_gateway_job(self.workspace, query=query, cancel=cancel)
@@ -100,15 +105,32 @@ class GatewayReconcileTest(unittest.TestCase):
         self.assertTrue(self.marker.exists())
 
     def test_dead_owner_takes_over_and_cancels_orphan(self):
+        # Cancel succeeds and the Gateway confirms the terminal state.
         self.write_marker(heartbeat_age=0.0, pid=2 ** 22)
-        result = self._reconcile(status="running")
+        result = self._reconcile(status="running", statuses=["running", "cancelled"])
         self.assertEqual(result["action"], "proceed")
         self.assertEqual(self.cancelled, ["eval-x"], "orphan job must be cancelled on takeover")
         self.assertFalse(self.marker.exists())
 
+    def test_cancel_failure_keeps_marker_and_refuses(self):
+        self.write_marker(heartbeat_age=0.0, pid=2 ** 22)
+        result = self._reconcile(status="running", cancel_error="gateway unreachable")
+        self.assertEqual(result["action"], "refuse")
+        self.assertTrue(self.marker.exists(), "an unconfirmed cancel must retain the marker")
+        self.assertEqual(result["gatewayJobId"], "eval-x")
+
+    def test_cancel_without_gateway_confirmation_keeps_marker(self):
+        # Cancel accepted but the Gateway still reports the job as running:
+        # the orphan is NOT confirmed dead, so the marker stays and the slot
+        # remains closed.
+        self.write_marker(heartbeat_age=0.0, pid=2 ** 22)
+        result = self._reconcile(status="running", statuses=["running", "running"])
+        self.assertEqual(result["action"], "refuse")
+        self.assertTrue(self.marker.exists())
+
     def test_stale_heartbeat_takes_over_even_with_live_pid(self):
         self.write_marker(heartbeat_age=120.0, pid=os.getpid())
-        result = self._reconcile(status="running")
+        result = self._reconcile(status="running", statuses=["running", "cancelled"])
         self.assertEqual(result["action"], "proceed")
         self.assertEqual(self.cancelled, ["eval-x"])
         self.assertFalse(self.marker.exists())

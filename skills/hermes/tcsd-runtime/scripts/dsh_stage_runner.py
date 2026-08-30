@@ -430,10 +430,23 @@ def reconcile_gateway_job(workspace: Path, *, query=query_gateway_job_status,
     if heartbeat_fresh and owner_alive:
         return {"action": "refuse", "gatewayStatus": status, "gatewayJobId": job_id,
                 "reason": "检测到健康的活跃 MATLAB Gateway 作业，禁止重复提交；等待其完成或取消"}
-    cancel(job_id, workspace_id)
+    # Takeover: cancellation is only a REQUEST until the Gateway confirms a
+    # terminal state. Deleting the marker on an unconfirmed cancel let the
+    # orphan keep running while the next runner saw a clean workspace — the
+    # exact overlap this state machine exists to prevent.
+    cancel_result = cancel(job_id, workspace_id)
+    if not cancel_result.get("cancelled"):
+        return {"action": "refuse", "gatewayStatus": status, "gatewayJobId": job_id,
+                "reason": f"接管取消请求失败（{cancel_result.get('error')}），保留作业标记并拒绝重复提交"}
+    confirmation = query(job_id, workspace_id)
+    confirmed_status = str(confirmation.get("status") or "")
+    if confirmation.get("error") or confirmed_status not in GATEWAY_TERMINAL_STATUSES:
+        return {"action": "refuse", "gatewayStatus": confirmed_status or "unknown",
+                "gatewayJobId": job_id,
+                "reason": "取消已请求但 Gateway 未确认终态，保留作业标记并拒绝重复提交"}
     _unlink_gateway_marker(workspace)
-    return {"action": "proceed", "gatewayStatus": status, "gatewayJobId": job_id,
-            "note": "owner 已失效（心跳超时或进程退出），孤儿作业已取消并接管"}
+    return {"action": "proceed", "gatewayStatus": f"{confirmed_status} (taken over)", "gatewayJobId": job_id,
+            "note": "owner 已失效，孤儿作业取消已获 Gateway 终态确认，标记释放"}
 
 
 def semantic_validate(task: dict, stage: int, result: dict, runtime_dir: Path,
