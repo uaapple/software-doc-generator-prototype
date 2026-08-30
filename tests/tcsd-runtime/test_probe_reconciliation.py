@@ -175,6 +175,25 @@ class ProbeReconciliationTest(unittest.TestCase):
         self.assertEqual(recon["mpsBlockedCount"], 2)
         self.assertEqual(recon["conserved"], True)
 
+    def test_zero_candidates_with_plan_gaps_still_counts_total(self):
+        # Review blocker 1, fourth round: the zero-candidate branch returns
+        # BEFORE the observation loop, so its gapCount was never computed. An
+        # all-unprobeable model (runtime -> partial) was then rejected by the
+        # Node contract reading gapCount as 0.
+        plan = make_plan()
+        plan["summary"]["candidate_count"] = 0
+        plan["summary"]["unprobeable_target_count"] = 4
+        plan["summary"]["budget_truncated_target_count"] = 0
+        plan["summary"]["plan_level_gap_count"] = 4
+        plan["tests"] = []  # every target was judged unprobeable: no candidates
+        request = self._request(plan, self._probe_results([]))
+        request["evidence"]["candidateCount"] = 0
+        request["evidence"]["probeExecuted"] = False
+        recon = VALIDATOR.validate_probe(request)["reconciliation"]
+        self.assertEqual(recon["plannedStepCount"], 0)
+        self.assertEqual(recon["planLevelGapCount"], 4)
+        self.assertEqual(recon["gapCount"], 4, "zero-candidate plans must still surface plan-level gaps")
+
     def test_mixed_observation_and_plan_gaps_sum_up(self):
         # Review blocker 1 regression: gapCount must be recomputed AFTER the
         # observation loop. A mismatch-only failure previously reported

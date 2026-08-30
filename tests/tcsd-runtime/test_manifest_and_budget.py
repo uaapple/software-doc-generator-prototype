@@ -111,6 +111,31 @@ class PlanBudgetTest(unittest.TestCase):
         self.assertEqual(budgeted["summary"]["per_port_quota"], 1,
                          "quota never exceeds the per-port cap")
 
+    def test_budget_quota_excludes_nonexecutable_strategies(self):
+        # Review P1: targets whose strategy has no executor support must not
+        # consume budget slots — otherwise they squeeze genuinely executable
+        # targets into budget_truncated and the plan simulates nothing.
+        report = self._report()
+        report["operators"].append({
+            "id": "M:3", "operator": "AND", "ports": [
+                {"index": 1, "trace": {"kind": "stateful", "source": {"kind": "root_inport", "signal": "u5"}}},
+                {"index": 2, "trace": {"kind": "root_inport", "signal": "u6"}},
+            ],
+        })
+        capabilities = {
+            "M:1": {"strategy": "to_workspace_probe", "reason": "accepted"},
+            "M:2": {"strategy": "to_workspace_probe", "reason": "accepted"},
+            "M:3": {"strategy": "noninvasive_signal_log", "reason": "signal logging accepted"},
+        }
+        plan = PLANNER.build_plan(report, 32, 8, 0.01, capabilities=capabilities, total_budget=2)
+        by_operator = {t["operator_id"]: t for t in plan["targets"]}
+        self.assertEqual(by_operator["M:3"]["status"], "strategy_not_executable")
+        self.assertEqual(by_operator["M:3"]["candidate_count"], 0)
+        # Both executable ports keep their candidates despite budget=2.
+        self.assertEqual(by_operator["M:1"]["candidate_count"] > 0, True)
+        self.assertEqual(by_operator["M:2"]["candidate_count"] > 0, True)
+        self.assertEqual(plan["summary"]["plan_level_gap_count"], 1)
+
     def test_budget_is_a_hard_cap_when_ports_outnumber_it(self):
         # Review P1: quota = max(1, budget // qualifying) still overshoots when
         # ports outnumber the budget. The plan must truncate: first `budget`

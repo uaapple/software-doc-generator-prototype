@@ -279,7 +279,7 @@
     },
     {
       "path": "scripts/build_state_probe_plan.py",
-      "sha256": "3ebb0edab433b0de7a537c564ec06c94b4d81ad5cc6712b91efc34040c44dd2d",
+      "sha256": "e3ad2e840f4b6289c03bc58a7a9a9d8fb02d5f9f599b8dc99c114b6e4bb22e9f",
       "mode": 493
     },
     {
@@ -329,7 +329,7 @@
     },
     {
       "path": "scripts/host_validate_tcsd_stage.py",
-      "sha256": "a1dd197d9f3fa304b6a859b65a98a1b9276264429eb908b4e19fa3406c59277a",
+      "sha256": "4b1d83feef85483d1ca994c09f70775b49fa390a00c11de048a11c99973d10b6",
       "mode": 420
     },
     {

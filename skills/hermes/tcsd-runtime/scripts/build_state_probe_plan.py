@@ -191,7 +191,13 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             if not isinstance(operator, dict):
                 continue
             operator_id = str(operator.get("id") or operator.get("sid") or operator.get("block_path") or "")
-            if capabilities.get(operator_id, {}).get("strategy") == "unprobeable":
+            capability = capabilities.get(operator_id) or {}
+            strategy = str(capability.get("strategy") or "unspecified")
+            # Budget quota must use the SAME executable-strategy judgement as
+            # the planner below: targets that will not produce candidates
+            # (unprobeable / strategy-not-executable) must not consume budget
+            # slots and squeeze out genuinely executable targets.
+            if strategy != "unspecified" and strategy not in executable_strategies:
                 continue
             for port in operator.get("ports", []) if isinstance(operator.get("ports"), list) else []:
                 if not isinstance(port, dict):
@@ -344,7 +350,6 @@ def build_plan(report: dict[str, Any], max_candidates: int, max_steps: int, samp
             ),
             "total_budget": total_budget,
             "per_port_quota": quota if total_budget else None,
-            "budget_truncated_target_count": sum(1 for item in targets if item["status"] == "budget_truncated"),
         },
     }
 

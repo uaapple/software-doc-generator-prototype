@@ -283,6 +283,12 @@ def validate_probe(request: dict[str, Any]) -> dict[str, Any]:
                  "notExecutedCount": 0, "mpsBlockedCount": 0,
                  "conserved": True}
         _attach_plan_gaps(recon, summary)
+        # Zero candidates but plan-level gaps present (every target judged
+        # unprobeable / strategy-not-executable / budget-truncated): the total
+        # gapCount must still surface, otherwise the Node contract reads it as
+        # 0 and rejects the runtime's `partial` verdict (review blocker 1,
+        # fourth round). With no observations, observation gaps are all zero.
+        recon["gapCount"] = recon["planLevelGapCount"]
         return {"candidateCount": 0, "probeExecuted": False, "observationCount": 0,
                 "reconciliation": recon}
     if evidence.get("probeExecuted") is not True:

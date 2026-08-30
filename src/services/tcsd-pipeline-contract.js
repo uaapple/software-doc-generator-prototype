@@ -452,11 +452,30 @@ export async function validateStageResult(raw = {}, context = {}) {
       ];
       if (planSummary) {
         const parsed = JSON.parse(await fs.readFile(planSummary.absolutePath, "utf8"));
-        const planUnprobeable = Number(parsed.summary?.unprobeable_target_count || 0);
-        const planTruncated = Number(parsed.summary?.budget_truncated_target_count || 0);
+        // Recompute the plan-level gap kinds from the plan TARGETS themselves
+        // (not from the summary): runtime and semantic both copy these values,
+        // so agreement between them proves nothing if the plan itself is
+        // wrong (review follow-up).
+        const planTargets = Array.isArray(parsed.targets) ? parsed.targets : [];
+        const targetStatus = (status) => planTargets.filter((item) => item.status === status).length;
+        const planUnprobeable = targetStatus("unprobeable");
+        const planNotExecutable = targetStatus("strategy_not_executable");
+        const planTruncated = targetStatus("budget_truncated");
+        const planLevelGap = planUnprobeable + planNotExecutable + planTruncated;
+        const summaryUnprobeable = Number(parsed.summary?.unprobeable_target_count || 0);
+        const summaryTruncated = Number(parsed.summary?.budget_truncated_target_count || 0);
+        const summaryLevelGap = Number(parsed.summary?.plan_level_gap_count || 0);
+        if (
+          planUnprobeable !== summaryUnprobeable ||
+          planTruncated !== summaryTruncated ||
+          (summaryLevelGap > 0 && planLevelGap !== summaryLevelGap)
+        ) {
+          throw contractError("第 6 阶段 Probe 计划目标与摘要的缺口计数不一致");
+        }
         if (
           planUnprobeable !== Number(reconciliation.unprobeableTargetCount || 0) ||
-          planTruncated !== Number(reconciliation.budgetTruncatedTargetCount || 0)
+          planTruncated !== Number(reconciliation.budgetTruncatedTargetCount || 0) ||
+          planLevelGap !== Number(reconciliation.planLevelGapCount || 0)
         ) {
           throw contractError("第 6 阶段 Probe 计划与语义校验的缺口计数不一致");
         }
