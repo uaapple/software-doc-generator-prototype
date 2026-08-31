@@ -15,7 +15,9 @@ x-runtime-defaults: &runtime-defaults
 
 services:
   permissions-init:
-    platform: linux/amd64
+    # 仅执行 chgrp/chmod，架构无关；本机 arm64 基础镜像本地已有，
+    # 固定为本地架构可避免离线时向 registry 拉取 amd64 变体。
+    platform: linux/arm64
     image: ${SDG_NODE_IMAGE:-node:22.22.3-bookworm-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752}
     user: "0:0"
     read_only: true
