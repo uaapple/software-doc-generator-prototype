@@ -18,15 +18,13 @@ assert.match(
 );
 
 assert.doesNotMatch(containerfile, /^\s*COPY\s+\.\s+/m, "Worker image cannot use COPY .");
-assert.doesNotMatch(
+// Container contract: the TCSD runtime — including the project addon library
+// (MAT/SLDD/SLX package classes) — is a required worker image input and is
+// delivered WHOLE; bundle-manifest.json in that tree must list every file.
+assert.match(
   containerfile,
   /^\s*COPY\s+skills\/hermes\/tcsd-runtime\/\s+/m,
-  "Worker image cannot copy the complete runtime support-package tree"
-);
-assert.doesNotMatch(
-  containerfile,
-  /^\s*COPY\s+skills\/hermes\/tcsd-runtime\/assets\/support-package/m,
-  "Project support package assets cannot enter the image"
+  "Worker image must deliver the complete TCSD runtime tree (addon library included)"
 );
 assert.match(containerfile, /node:22\.22\.3-bookworm-slim@sha256:[a-f0-9]{64}/);
 assert.match(containerfile, /python:3\.11\.9-slim-bookworm@sha256:[a-f0-9]{64}/);

@@ -105,12 +105,12 @@ COPY package.json package-lock.json ./
 COPY templates/*.json ./templates/
 COPY containers/worker/configure-hermes.py ./containers/worker/configure-hermes.py
 
-# The authoritative TCSD runtime is copied file-class by file-class. Project
-# MAT/SLDD/SLX/Addons are supplied through the host-approved project addon store.
-# The runtime bundle is copied WHOLE: bundle-manifest.json lists every file
-# (including assets/support-package) and hashTcsdBundle reads exactly that set
-# in manifest mode — a partial copy made the worker fail with ENOENT before
-# Stage 1 (review finding P0-1).
+# The authoritative TCSD runtime is copied WHOLE: the project addon library
+# (MAT/SLDD/SLX package classes) is a required worker image input for
+# deployments without a host addon store. bundle-manifest.json lists every
+# file in this tree; the in-image verify gate reads exactly that set in
+# manifest mode, so any partial copy fails the build instead of leaking an
+# ENOENT into Stage 1 (review finding P0-1).
 COPY skills/hermes/tcsd-runtime/ ./skills/hermes/tcsd-runtime/
 COPY skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py ./skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py
 COPY skills/hermes/tcsd-stage-01-validate-inputs/ ./skills/hermes/tcsd-stage-01-validate-inputs/
