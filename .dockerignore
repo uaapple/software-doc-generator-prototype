@@ -49,3 +49,13 @@ skills/hermes/**/assets/support-package/**
 **/*.mat
 **/*.sldd
 **/~$*
+# Worker 镜像运行时契约：tcsd 运行时项目 addon 库（MAT/SLDD/SLX 包）
+# 由 bundle-manifest.json 登记并随镜像完整交付，必须进入构建上下文。
+# 先匹配的排除规则后，按顺序反向放行，保持「最后匹配生效」。
+!skills/hermes/tcsd-runtime/assets/
+!skills/hermes/tcsd-runtime/assets/**
+!skills/hermes/tcsd-runtime/assets/support-package/
+!skills/hermes/tcsd-runtime/assets/support-package/**
+!skills/hermes/tcsd-runtime/assets/support-package/**/*.slx
+!skills/hermes/tcsd-runtime/assets/support-package/**/*.mat
+!skills/hermes/tcsd-runtime/assets/support-package/**/*.sldd

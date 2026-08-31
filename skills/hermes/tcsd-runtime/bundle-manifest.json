@@ -1,7 +1,207 @@
 {
   "schema": "tcsd-bundle-manifest/v1",
-  "fileCount": 44,
+  "fileCount": 84,
   "files": [
+    {
+      "path": "assets/support-package/Cornex_Config.sldd",
+      "sha256": "c76c2c97de303c6cec6d9c6ab1257836c951d0e189bc01fc63ec1aa37074346a",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/CornexMdlCfg.mat",
+      "sha256": "f7c5d5cc4af8f5497f73a8d273032b8e79ffa06ccd15639411ca53b8b78aa4a4",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/init_Global.m",
+      "sha256": "ee6804328cb4fa4e61d332104c3a233c98ad3629985c1c3ff4a769605e3d584e",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/AccumImage.jpg",
+      "sha256": "9a60676fb6047844d43827260d9fd8f34f9e181042cc9e6c1a7b9060f5dfe6b3",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/DrvtImage.jpg",
+      "sha256": "c955c71d93724115cceae2a954d84caf412220ab0d8dc14a9c82a22e9b1466a2",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/InlineDescriptionCbHandler.m",
+      "sha256": "be19ce8e68267d9dd8a4bf7c101ebbd73bfc1d1b67d253364eacf714ea89b21a",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/ITKLib.slx",
+      "sha256": "24a89f39e571d3dcd98a02f601245cdcf01e0e9d708192ea91a968240b82dfd3",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/revTableBlockHandler.m",
+      "sha256": "b11f1cb6a039182166cee699d63a3ba368194e51719378b56e6cfcccb9924063",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/sl_customization.m",
+      "sha256": "e91ba666cb2ed64695c84be3367651781cc3a6761f8a083892e0bef654a47b86",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/slblocks.m",
+      "sha256": "85a8bf5ab756430c4da9d1d92825d28297f830da84da9635b3cf4c2415997332",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/GenLib/SqrtImage.jpg",
+      "sha256": "8b38a71157d22a9198fcbcd76338ff9b8b54bf24bee94f8f4b1683e8ac0b59d1",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+CornexCsc/@Parameter/Parameter.m",
+      "sha256": "c6add9dde0f0b060feaa07fd36403503c93b633faf33446c651527808f378b2d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+CornexCsc/@Signal/Signal.m",
+      "sha256": "a5a905b1118e39d10b2611ba033fc23e41967b6e56a19542f42573a1e684af4a",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+CornexCsc/csc_registration.m",
+      "sha256": "b5d03d5d46b2032823eb17d61f93f3cdc520f7faab5c8fbf420f77210c3080bc",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/@CSCTypeAttributes_Unstructed/CSCTypeAttributes_Unstructed.p",
+      "sha256": "b548f77cdb747d99718080edb41736474670eb1a358b16b622b1474bade66e96",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/@Parameter/Parameter.p",
+      "sha256": "169fba32ea4fc5e6502fa05741fb783e8c07f15e7edb51cf4f3c18c55996e4e4",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/@Signal/Signal.p",
+      "sha256": "857483a6170f79003e0634d6110eb8092f6f2f2e54bdf389b1e5e3da945ff97b",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/csc_registration.p",
+      "sha256": "5e351fa6462b956ca9be829e50929f8f8ff23dd041f613e072efb4c6480e598d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/tlc/EcoObjCompilerFlag.tlc",
+      "sha256": "28e477e045835925624773ee7cae051dc9beaca2f5f030b4165c895e6aacf28d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/tlc/EcoObjGetSet.tlc",
+      "sha256": "77ce77e6dd6da691539918242f2916f5051012c2853e3ec425f970c930934bc6",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+EcoObj/tlc/EcoObjUnstructured.tlc",
+      "sha256": "8de5861a58a33bb0557c4066bcc5063afd6724c50bdab90c033cc6ca8ccbe483",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+HMATCTMSCSC/@Parameter/Parameter.m",
+      "sha256": "eaa26d6b7a96c35767ea212e96dfbe1df8f15882afb106fbffbde3c7c4782638",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+HMATCTMSCSC/@Signal/Signal.m",
+      "sha256": "14d977c21c4dcef05d3c6269f2a9c984f8636d4838a1e5a53e800cc1ad1970cf",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+HMATCTMSCSC/csc_registration.m",
+      "sha256": "f81c8f31b9c9cd56e7bce579a718aa3c24abf63e354b00560164ad2d0558ccf7",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKBmsCsc/@Parameter/Parameter.m",
+      "sha256": "bb3d2d3b28b39e8e96f3f87b47b673d5a5aab8dfb113e8e73d0e483cf5ec7104",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKBmsCsc/@Signal/Signal.m",
+      "sha256": "aa109c6f8da5c5b671c5ee984e1fa95a231d641cddf54f401be8ae5192126dc9",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKBmsCsc/csc_registration.m",
+      "sha256": "736a2bcc8af9da5d3149def347b3fbd4ef736a2eaf7b36f5db0749531a560f18",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCAMOSCsc/@Parameter/Parameter.m",
+      "sha256": "c124b315ebbf3b57b5abbc211bf5c81678ee79609ec6076a8f3f311570c7fd88",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCAMOSCsc/@Signal/Signal.m",
+      "sha256": "56166da481ad89499a36c789351b48493aa87ee91b1dad683ed62bbceae3f33b",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCAMOSCsc/csc_registration.m",
+      "sha256": "bf4c5087473b6a5c2872ddb94b559699a3d1416167c46851735415b208dbc80d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCCsc/@Parameter/Parameter.m",
+      "sha256": "e9bc5a9b8ef74a070ac7b381c118604e4ed9849fe6e60e5a98acca1f377dc2c2",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCCsc/@Signal/Signal.m",
+      "sha256": "01a7451d8fa93c617da88a4afaf23346ec71ad03d56c0e88ace62e99b7d42697",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+ITKCCsc/csc_registration.m",
+      "sha256": "7f806dcac9ab1af6bf97dccf90f4565f6d79b5b02087238371770e80f144cf98",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+KP31Csc/@Parameter/Parameter.m",
+      "sha256": "4da22ad50e7ab945ccaa4590b48be184cf2f721d314cd9fd2cb769b4c5b34ebe",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+KP31Csc/@Signal/Signal.m",
+      "sha256": "aee274c0286ede075af6a1388cf0455db0a34158e605c70689b713c5896ff6e7",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+KP31Csc/csc_registration.m",
+      "sha256": "11f8f8c772c54b4296dece85e95c32d3c220090a91b28e574089b292676733b7",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+SmartMiCSC/@Parameter/Parameter.m",
+      "sha256": "4104fe70504783e8511fd46714de31a6b34707f0757c3aaac2332a19c6bd1b8d",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+SmartMiCSC/@Signal/Signal.m",
+      "sha256": "210b4d54ec40a4795dd483d53960a1e5f822251f9f4263adcf7fdcad369e0823",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKCToolsV015/ModelingTools/01_Csc/+SmartMiCSC/csc_registration.m",
+      "sha256": "8f32faa978073177c8ffa3303ab0f371d850318f0bbf1b179d6539bded2dc6d2",
+      "mode": 420
+    },
+    {
+      "path": "assets/support-package/ITKLib.slx",
+      "sha256": "24a89f39e571d3dcd98a02f601245cdcf01e0e9d708192ea91a968240b82dfd3",
+      "mode": 420
+    },
     {
       "path": "assets/templates/tcsd_template.xlsx",
       "sha256": "095f42d89b2eba6efe2dcfc38f8ae7d5057eeb7dec37daeba4597ca62ed02407",

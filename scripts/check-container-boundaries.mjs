@@ -33,11 +33,18 @@ for (const required of [
   "output",
   "release-dist",
   ".local",
-  "test-fixtures",
-  "skills/hermes/**/assets/support-package"
+  "test-fixtures"
 ]) {
   requirePattern(dockerignore, new RegExp(`^${required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m"), `.dockerignore must exclude ${required}`);
 }
+// Worker container contract: the TCSD runtime — including the project addon
+// library — is delivered whole into the worker image, so the build context
+// must re-include it after the generic exclusions.
+requirePattern(
+  dockerignore,
+  /^!skills\/hermes\/tcsd-runtime\/assets\/support-package\/\*\*/m,
+  ".dockerignore must re-include the worker runtime addon library"
+);
 
 const envExample = read(".env.container.example");
 forbidPattern(
@@ -54,6 +61,11 @@ for (const containerfile of ["docker/platform.Containerfile", "containers/worker
   forbidPattern(content, /(?:\/Users\/|[A-Za-z]:\\\\)/, `${containerfile} contains a host absolute path`);
   requirePattern(content, /\bUSER\b/, `${containerfile} must run as a non-root user`);
 }
+requirePattern(
+  read("containers/worker/Containerfile"),
+  /^\s*COPY\s+skills\/hermes\/tcsd-runtime\/\s+/m,
+  "containers/worker/Containerfile must deliver the complete TCSD runtime tree (addon library included)"
+);
 
 const compose = read("compose.yaml");
 requirePattern(compose, /platform:\s*linux\/amd64/g, "all container services must select linux/amd64");

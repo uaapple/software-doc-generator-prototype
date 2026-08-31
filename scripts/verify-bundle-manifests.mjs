@@ -72,9 +72,6 @@ for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         if (entry.name === "__pycache__") continue;
-        // Host-mounted project addon packages are git-tracked in the workspace
-        // but never copied into the worker image; do not report them as drift.
-        if (relative === "assets/support-package") continue;
         walk(path.join(current, entry.name), relative);
       } else if (!listed.has(relative)) {
         console.error(`FAIL ${entry.name}/${relative}: present in image but missing from manifest`);

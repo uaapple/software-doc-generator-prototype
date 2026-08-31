@@ -64,10 +64,7 @@ export async function hashTcsdBundle(bundleDir) {
     const exempt = (relativePath) =>
       relativePath === "bundle-manifest.json" ||
       relativePath === ".DS_Store" ||
-      relativePath.split("/").some((segment) => segment === "__pycache__" || segment === ".pytest_cache") ||
-      // Git-tracked host-side project addon packages (never copied into the
-      // worker image; supplied per project via the addon store).
-      relativePath.startsWith("assets/support-package/") || relativePath === "assets/support-package";
+      relativePath.split("/").some((segment) => segment === "__pycache__" || segment === ".pytest_cache");
     const extra = (await listBundleFiles(bundleDir))
       .map((file) => file.relativePath)
       .filter((relativePath) => !listed.has(relativePath) && !exempt(relativePath));
