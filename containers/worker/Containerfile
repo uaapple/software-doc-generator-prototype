@@ -106,12 +106,15 @@ COPY templates/*.json ./templates/
 COPY containers/worker/configure-hermes.py ./containers/worker/configure-hermes.py
 
 # The authoritative TCSD runtime is copied file-class by file-class. Project
-# MAT/SLDD/SLX/Addons are supplied through the host-approved project addon store.
-# The runtime bundle is copied WHOLE: bundle-manifest.json lists every file
-# (including assets/support-package) and hashTcsdBundle reads exactly that set
-# in manifest mode — a partial copy made the worker fail with ENOENT before
-# Stage 1 (review finding P0-1).
-COPY skills/hermes/tcsd-runtime/ ./skills/hermes/tcsd-runtime/
+# MAT/SLDD/SLX addon packages are supplied through the host-approved project
+# addon store and never enter the image. bundle-manifest.json lists exactly the
+# copied classes; the in-image verify gate reads that set in manifest mode, so
+# a partial copy fails the build instead of leaking an ENOENT into Stage 1
+# (review finding P0-1).
+COPY skills/hermes/tcsd-runtime/scripts/ ./skills/hermes/tcsd-runtime/scripts/
+COPY skills/hermes/tcsd-runtime/references/ ./skills/hermes/tcsd-runtime/references/
+COPY skills/hermes/tcsd-runtime/bundle-manifest.json ./skills/hermes/tcsd-runtime/bundle-manifest.json
+COPY skills/hermes/tcsd-runtime/assets/templates/tcsd_template.xlsx ./skills/hermes/tcsd-runtime/assets/templates/tcsd_template.xlsx
 COPY skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py ./skills/hermes/software-detail-runtime/scripts/matlab_gateway_lease.py
 COPY skills/hermes/tcsd-stage-01-validate-inputs/ ./skills/hermes/tcsd-stage-01-validate-inputs/
 COPY skills/hermes/tcsd-stage-02-check-environment/ ./skills/hermes/tcsd-stage-02-check-environment/

@@ -27,6 +27,16 @@ async function listFiles(dir, current = dir) {
   const files = [];
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name, "en"))) {
     if (IGNORED.has(entry.name) || IGNORED_DIRECTORIES.has(entry.name)) continue;
+    // Project addon packages (MAT/SLDD/SLX under assets/support-package) are
+    // host-mounted per-project data and never enter the worker image; image
+    // bundles follow .dockerignore and must not list them either.
+    if (
+      entry.isDirectory() &&
+      entry.name === "support-package" &&
+      path.basename(path.dirname(path.join(current, entry.name))) === "assets"
+    ) {
+      continue;
+    }
     const absolute = path.join(current, entry.name);
     if (entry.isDirectory()) {
       files.push(...(await listFiles(dir, absolute)));
